@@ -1,0 +1,49 @@
+.tabs {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  gap: 2px;
+  background: var(--bg-tertiary);
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.tab-icon {
+  font-size: 14px;
+}
+
+.tab-content {
+  background: var(--bg-secondary);
+  padding: 20px;
+  margin-top: 42px;
+  max-height: calc(100vh - 42px);
+  overflow-y: auto;
+}

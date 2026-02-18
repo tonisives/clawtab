@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Capability for all windows","local":true,"windows":["settings"],"permissions":["core:default","core:window:allow-show","core:window:allow-hide","core:event:default","opener:default"]}}
