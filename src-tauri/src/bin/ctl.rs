@@ -1,66 +1,28 @@
 use std::env;
-use std::path::PathBuf;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::UnixStream;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-enum IpcCommand {
-    Ping,
-    ListJobs,
-    RunJob { name: String },
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-enum IpcResponse {
-    Pong,
-    Ok,
-    Jobs(Vec<String>),
-    Error(String),
-}
-
-fn socket_path() -> PathBuf {
-    PathBuf::from("/tmp/clawdtab.sock")
-}
-
-async fn send_command(cmd: IpcCommand) -> Result<IpcResponse, String> {
-    let path = socket_path();
-
-    let stream = UnixStream::connect(&path)
-        .await
-        .map_err(|e| format!("Failed to connect (is clawdtab running?): {}", e))?;
-
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
-
-    let cmd_str = serde_json::to_string(&cmd).map_err(|e| e.to_string())?;
-    writer
-        .write_all(cmd_str.as_bytes())
-        .await
-        .map_err(|e| e.to_string())?;
-    writer.write_all(b"\n").await.map_err(|e| e.to_string())?;
-    writer.flush().await.map_err(|e| e.to_string())?;
-
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let response: IpcResponse =
-        serde_json::from_str(line.trim()).map_err(|e| format!("Invalid response: {}", e))?;
-
-    Ok(response)
-}
+use clawdtab_lib::ipc::{self, IpcCommand, IpcResponse};
 
 fn print_usage() {
     eprintln!("cwdtctl -- CLI for ClawdTab");
     eprintln!();
-    eprintln!("Usage: cwdtctl <command>");
+    eprintln!("Usage: cwdtctl <command> [args]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  ping              Check if ClawdTab is running");
-    eprintln!("  list              List all jobs");
+    eprintln!("  list | ls         List all jobs");
     eprintln!("  run <name>        Run a job by name");
+    eprintln!("  pause <name>      Pause a running job");
+    eprintln!("  resume <name>     Resume a paused job");
+    eprintln!("  restart <name>    Restart a job");
+    eprintln!("  status            Show job statuses");
+}
+
+fn require_name(args: &[String], cmd_name: &str) -> String {
+    if args.len() < 3 {
+        eprintln!("Error: '{}' requires a job name", cmd_name);
+        std::process::exit(1);
+    }
+    args[2].clone()
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -77,15 +39,19 @@ async fn main() {
     let ipc_cmd = match command {
         "ping" => IpcCommand::Ping,
         "list" | "ls" => IpcCommand::ListJobs,
-        "run" => {
-            if args.len() < 3 {
-                eprintln!("Error: 'run' requires a job name");
-                std::process::exit(1);
-            }
-            IpcCommand::RunJob {
-                name: args[2].clone(),
-            }
-        }
+        "run" => IpcCommand::RunJob {
+            name: require_name(&args, "run"),
+        },
+        "pause" => IpcCommand::PauseJob {
+            name: require_name(&args, "pause"),
+        },
+        "resume" => IpcCommand::ResumeJob {
+            name: require_name(&args, "resume"),
+        },
+        "restart" => IpcCommand::RestartJob {
+            name: require_name(&args, "restart"),
+        },
+        "status" => IpcCommand::GetStatus,
         "help" | "-h" | "--help" => {
             print_usage();
             std::process::exit(0);
@@ -97,7 +63,7 @@ async fn main() {
         }
     };
 
-    match send_command(ipc_cmd).await {
+    match ipc::send_command(ipc_cmd).await {
         Ok(response) => match response {
             IpcResponse::Pong => {
                 println!("pong");
@@ -111,6 +77,19 @@ async fn main() {
                 } else {
                     for job in jobs {
                         println!("{}", job);
+                    }
+                }
+            }
+            IpcResponse::Status(statuses) => {
+                if statuses.is_empty() {
+                    println!("No job statuses");
+                } else {
+                    let mut names: Vec<&String> = statuses.keys().collect();
+                    names.sort();
+                    for name in names {
+                        let status = &statuses[name];
+                        let state = serde_json::to_string(status).unwrap_or_default();
+                        println!("{}: {}", name, state);
                     }
                 }
             }

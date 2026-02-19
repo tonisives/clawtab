@@ -14,6 +14,7 @@ pub enum IpcCommand {
     PauseJob { name: String },
     ResumeJob { name: String },
     RestartJob { name: String },
+    GetStatus,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -21,6 +22,7 @@ pub enum IpcResponse {
     Pong,
     Ok,
     Jobs(Vec<String>),
+    Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
     Error(String),
 }
 

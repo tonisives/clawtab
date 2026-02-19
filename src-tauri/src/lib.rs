@@ -115,6 +115,10 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                 None => IpcResponse::Error(format!("Job not found: {}", name)),
             }
         }
+        IpcCommand::GetStatus => {
+            let status = state.job_status.lock().unwrap().clone();
+            IpcResponse::Status(status)
+        }
     }
 }
 
