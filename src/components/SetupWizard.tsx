@@ -60,7 +60,7 @@ export function SetupWizard({ onComplete }: Props) {
       setup_completed: true,
     };
     try {
-      await invoke("set_settings", { settings: updated });
+      await invoke("set_settings", { newSettings: updated });
       onComplete();
     } catch (e) {
       console.error("Failed to save settings:", e);
