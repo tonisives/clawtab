@@ -10,6 +10,24 @@ pub enum JobType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum JobStatus {
+    Idle,
+    Running {
+        run_id: String,
+        started_at: String,
+    },
+    Success {
+        last_run: String,
+    },
+    Failed {
+        last_run: String,
+        exit_code: i32,
+    },
+    Paused,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Job {
     pub name: String,
     pub job_type: JobType,
@@ -34,7 +52,7 @@ pub struct JobsConfig {
 
 impl JobsConfig {
     fn file_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("cron-manager").join("jobs.yaml"))
+        dirs::config_dir().map(|p| p.join("clawdtab").join("jobs.yaml"))
     }
 
     pub fn load() -> Self {

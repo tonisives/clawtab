@@ -3,7 +3,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
 pub fn socket_path() -> PathBuf {
-    PathBuf::from("/tmp/cron-manager.sock")
+    PathBuf::from("/tmp/clawdtab.sock")
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -96,7 +96,7 @@ pub async fn send_command(cmd: IpcCommand) -> Result<IpcResponse, String> {
 
     let stream = UnixStream::connect(&path)
         .await
-        .map_err(|e| format!("Failed to connect (is cron-manager running?): {}", e))?;
+        .map_err(|e| format!("Failed to connect (is clawdtab running?): {}", e))?;
 
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);

@@ -34,3 +34,17 @@ export interface AppSettings {
   default_work_dir: string;
   claude_path: string;
 }
+
+export interface ToolInfo {
+  name: string;
+  available: boolean;
+  version: string | null;
+  path: string | null;
+}
+
+export type JobStatus =
+  | { state: "idle" }
+  | { state: "running"; run_id: string; started_at: string }
+  | { state: "success"; last_run: string }
+  | { state: "failed"; last_run: string; exit_code: number }
+  | { state: "paused" };

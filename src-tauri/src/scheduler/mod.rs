@@ -1,11 +1,12 @@
 pub mod executor;
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use cron::Schedule;
 
-use crate::config::jobs::JobsConfig;
+use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
 use crate::secrets::SecretsManager;
@@ -19,9 +20,10 @@ pub fn start(
     secrets: Arc<Mutex<SecretsManager>>,
     history: Arc<Mutex<HistoryStore>>,
     settings: Arc<Mutex<AppSettings>>,
+    job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
 ) -> SchedulerHandle {
     let handle = tauri::async_runtime::spawn(async move {
-        run_loop(jobs_config, secrets, history, settings).await;
+        run_loop(jobs_config, secrets, history, settings, job_status).await;
     });
     SchedulerHandle { _handle: handle }
 }
@@ -31,6 +33,7 @@ async fn run_loop(
     secrets: Arc<Mutex<SecretsManager>>,
     history: Arc<Mutex<HistoryStore>>,
     settings: Arc<Mutex<AppSettings>>,
+    job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
 ) {
     let mut last_check = Utc::now();
 
@@ -69,8 +72,12 @@ async fn run_loop(
                 let secrets = Arc::clone(&secrets);
                 let history = Arc::clone(&history);
                 let settings = Arc::clone(&settings);
+                let job_status = Arc::clone(&job_status);
                 tauri::async_runtime::spawn(async move {
-                    executor::execute_job(&job, &secrets, &history, &settings, "cron").await;
+                    executor::execute_job(
+                        &job, &secrets, &history, &settings, &job_status, "cron",
+                    )
+                    .await;
                 });
             }
         }

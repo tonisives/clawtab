@@ -3,8 +3,9 @@ import { JobsPanel } from "./JobsPanel";
 import { SecretsPanel } from "./SecretsPanel";
 import { HistoryPanel } from "./HistoryPanel";
 import { GeneralSettings } from "./GeneralSettings";
+import { ToolsPanel } from "./ToolsPanel";
 
-type TabId = "jobs" | "secrets" | "history" | "settings";
+type TabId = "jobs" | "secrets" | "history" | "tools" | "settings";
 
 export function SettingsApp() {
   const [activeTab, setActiveTab] = useState<TabId>("jobs");
@@ -13,6 +14,7 @@ export function SettingsApp() {
     { id: "jobs", label: "Jobs", icon: "\u23F0" },
     { id: "secrets", label: "Secrets", icon: "\u26BF" },
     { id: "history", label: "History", icon: "\u2630" },
+    { id: "tools", label: "Tools", icon: "\u2692" },
     { id: "settings", label: "Settings", icon: "\u2699" },
   ];
 
@@ -35,6 +37,7 @@ export function SettingsApp() {
         {activeTab === "jobs" && <JobsPanel />}
         {activeTab === "secrets" && <SecretsPanel />}
         {activeTab === "history" && <HistoryPanel />}
+        {activeTab === "tools" && <ToolsPanel />}
         {activeTab === "settings" && <GeneralSettings />}
       </div>
     </div>

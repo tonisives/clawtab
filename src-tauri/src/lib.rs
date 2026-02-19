@@ -4,7 +4,9 @@ mod history;
 pub mod ipc;
 mod scheduler;
 mod secrets;
+mod tools;
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tauri::{
@@ -12,7 +14,7 @@ use tauri::{
     Manager,
 };
 
-use config::jobs::JobsConfig;
+use config::jobs::{JobStatus, JobsConfig};
 use config::settings::AppSettings;
 use history::HistoryStore;
 use ipc::{IpcCommand, IpcResponse};
@@ -25,6 +27,7 @@ pub struct AppState {
     pub secrets: Arc<Mutex<SecretsManager>>,
     pub history: Arc<Mutex<HistoryStore>>,
     pub scheduler: Arc<Mutex<Option<SchedulerHandle>>>,
+    pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -44,9 +47,17 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                     let secrets = Arc::clone(&state.secrets);
                     let history = Arc::clone(&state.history);
                     let settings = Arc::clone(&state.settings);
+                    let job_status = Arc::clone(&state.job_status);
                     tauri::async_runtime::spawn(async move {
-                        scheduler::executor::execute_job(&job, &secrets, &history, &settings, "cli")
-                            .await;
+                        scheduler::executor::execute_job(
+                            &job,
+                            &secrets,
+                            &history,
+                            &settings,
+                            &job_status,
+                            "cli",
+                        )
+                        .await;
                     });
                     IpcResponse::Ok
                 }
@@ -61,7 +72,7 @@ pub fn run() {
         .format_timestamp_secs()
         .init();
 
-    log::info!("cron-manager starting");
+    log::info!("clawdtab starting");
 
     let settings = Arc::new(Mutex::new(AppSettings::load()));
     let jobs_config = Arc::new(Mutex::new(JobsConfig::load()));
@@ -70,12 +81,16 @@ pub fn run() {
         HistoryStore::new().expect("failed to initialize history database"),
     ));
 
+    let job_status: Arc<Mutex<HashMap<String, JobStatus>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
     let app_state = AppState {
         settings: Arc::clone(&settings),
         jobs_config: Arc::clone(&jobs_config),
         secrets: Arc::clone(&secrets),
         history: Arc::clone(&history),
         scheduler: Arc::new(Mutex::new(None)),
+        job_status: Arc::clone(&job_status),
     };
 
     // Clones for IPC handler
@@ -85,6 +100,7 @@ pub fn run() {
         secrets: Arc::clone(&secrets),
         history: Arc::clone(&history),
         scheduler: Arc::clone(&app_state.scheduler),
+        job_status: Arc::clone(&job_status),
     };
 
     // Clones for scheduler
@@ -92,6 +108,7 @@ pub fn run() {
     let secrets_for_scheduler = Arc::clone(&secrets);
     let history_for_scheduler = Arc::clone(&history);
     let settings_for_scheduler = Arc::clone(&settings);
+    let job_status_for_scheduler = Arc::clone(&job_status);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -110,6 +127,8 @@ pub fn run() {
             commands::history::clear_history,
             commands::settings::get_settings,
             commands::settings::set_settings,
+            commands::status::get_job_statuses,
+            commands::tools::detect_tools,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -163,13 +182,14 @@ pub fn run() {
                 secrets_for_scheduler,
                 history_for_scheduler,
                 settings_for_scheduler,
+                job_status_for_scheduler,
             );
             {
                 let state: tauri::State<AppState> = app.state();
                 *state.scheduler.lock().unwrap() = Some(handle);
             }
 
-            log::info!("cron-manager setup complete");
+            log::info!("clawdtab setup complete");
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -20,6 +20,10 @@ body {
   color: var(--text-secondary);
 }
 
+.text-secondary {
+  color: var(--text-secondary);
+}
+
 .settings-container {
   display: flex;
   flex-direction: column;

@@ -506,6 +506,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "clawdtab"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "cron",
+ "dirs",
+ "env_logger",
+ "log",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yml",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -613,27 +634,6 @@ dependencies = [
  "chrono",
  "once_cell",
  "winnow 0.6.26",
-]
-
-[[package]]
-name = "cron-manager"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "cron",
- "dirs",
- "env_logger",
- "log",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yml",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
- "uuid",
 ]
 
 [[package]]

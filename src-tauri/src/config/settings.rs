@@ -24,7 +24,7 @@ impl Default for AppSettings {
 
 impl AppSettings {
     fn file_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("cron-manager").join("settings.yaml"))
+        dirs::config_dir().map(|p| p.join("clawdtab").join("settings.yaml"))
     }
 
     pub fn load() -> Self {

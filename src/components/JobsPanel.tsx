@@ -1,10 +1,34 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Job } from "../types";
+import type { Job, JobStatus } from "../types";
 import { JobEditor } from "./JobEditor";
+
+function StatusBadge({ status }: { status: JobStatus | undefined }) {
+  if (!status || status.state === "idle") {
+    return <span className="status-badge status-idle">idle</span>;
+  }
+  if (status.state === "running") {
+    return <span className="status-badge status-running">running</span>;
+  }
+  if (status.state === "success") {
+    return <span className="status-badge status-success">success</span>;
+  }
+  if (status.state === "failed") {
+    return (
+      <span className="status-badge status-failed">
+        failed ({status.exit_code})
+      </span>
+    );
+  }
+  if (status.state === "paused") {
+    return <span className="status-badge status-paused">paused</span>;
+  }
+  return null;
+}
 
 export function JobsPanel() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [statuses, setStatuses] = useState<Record<string, JobStatus>>({});
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -17,8 +41,22 @@ export function JobsPanel() {
     }
   };
 
+  const loadStatuses = async () => {
+    try {
+      const loaded = await invoke<Record<string, JobStatus>>(
+        "get_job_statuses"
+      );
+      setStatuses(loaded);
+    } catch (e) {
+      console.error("Failed to load statuses:", e);
+    }
+  };
+
   useEffect(() => {
     loadJobs();
+    loadStatuses();
+    const interval = setInterval(loadStatuses, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleToggle = async (name: string) => {
@@ -33,6 +71,8 @@ export function JobsPanel() {
   const handleRunNow = async (name: string) => {
     try {
       await invoke("run_job_now", { name });
+      // Poll status quickly after triggering
+      setTimeout(loadStatuses, 500);
     } catch (e) {
       console.error("Failed to run job:", e);
     }
@@ -75,7 +115,10 @@ export function JobsPanel() {
     <div className="settings-section">
       <div className="section-header">
         <h2>Jobs</h2>
-        <button className="btn btn-primary btn-sm" onClick={() => setIsCreating(true)}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => setIsCreating(true)}
+        >
           Add Job
         </button>
       </div>
@@ -83,7 +126,10 @@ export function JobsPanel() {
       {jobs.length === 0 ? (
         <div className="empty-state">
           <p>No jobs configured yet.</p>
-          <button className="btn btn-primary" onClick={() => setIsCreating(true)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => setIsCreating(true)}
+          >
             Create your first job
           </button>
         </div>
@@ -95,6 +141,7 @@ export function JobsPanel() {
               <th>Name</th>
               <th>Type</th>
               <th>Cron</th>
+              <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -113,6 +160,9 @@ export function JobsPanel() {
                 <td>{job.job_type}</td>
                 <td>
                   <code>{job.cron}</code>
+                </td>
+                <td>
+                  <StatusBadge status={statuses[job.name]} />
                 </td>
                 <td className="actions">
                   <div className="btn-group">

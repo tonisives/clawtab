@@ -53,9 +53,18 @@ pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(),
     let secrets = Arc::clone(&state.secrets);
     let history = Arc::clone(&state.history);
     let settings = Arc::clone(&state.settings);
+    let job_status = Arc::clone(&state.job_status);
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job(&job, &secrets, &history, &settings, "manual").await;
+        scheduler::executor::execute_job(
+            &job,
+            &secrets,
+            &history,
+            &settings,
+            &job_status,
+            "manual",
+        )
+        .await;
     });
 
     Ok(())

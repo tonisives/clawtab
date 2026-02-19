@@ -1,15 +1,15 @@
 [package]
-name = "cron-manager"
+name = "clawdtab"
 version = "0.1.0"
 edition = "2021"
-default-run = "cron-manager"
+default-run = "clawdtab"
 
 [lib]
-name = "cron_manager_lib"
+name = "clawdtab_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "cron-manager-ctl"
+name = "cwdtctl"
 path = "src/bin/ctl.rs"
 
 [build-dependencies]

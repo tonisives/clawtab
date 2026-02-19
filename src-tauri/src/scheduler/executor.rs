@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use tokio::process::Command;
 
-use crate::config::jobs::{Job, JobType};
+use crate::config::jobs::{Job, JobStatus, JobType};
 use crate::config::settings::AppSettings;
 use crate::history::{HistoryStore, RunRecord};
 use crate::secrets::SecretsManager;
@@ -13,10 +14,23 @@ pub async fn execute_job(
     secrets: &Arc<Mutex<SecretsManager>>,
     history: &Arc<Mutex<HistoryStore>>,
     settings: &Arc<Mutex<AppSettings>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     trigger: &str,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
+
+    // Mark as running
+    {
+        let mut status = job_status.lock().unwrap();
+        status.insert(
+            job.name.clone(),
+            JobStatus::Running {
+                run_id: run_id.clone(),
+                started_at: started_at.clone(),
+            },
+        );
+    }
 
     let record = RunRecord {
         id: run_id.clone(),
@@ -53,6 +67,22 @@ pub async fn execute_job(
                 job.name,
                 exit_code
             );
+
+            // Update status based on exit code
+            {
+                let mut status = job_status.lock().unwrap();
+                let new_status = match exit_code {
+                    Some(0) | None => JobStatus::Success {
+                        last_run: finished_at.clone(),
+                    },
+                    Some(code) => JobStatus::Failed {
+                        last_run: finished_at.clone(),
+                        exit_code: code,
+                    },
+                };
+                status.insert(job.name.clone(), new_status);
+            }
+
             let h = history.lock().unwrap();
             if let Err(e) = h.update_finished(&run_id, &finished_at, exit_code, &stdout, &stderr) {
                 log::error!("Failed to update run record: {}", e);
@@ -60,6 +90,18 @@ pub async fn execute_job(
         }
         Err(e) => {
             log::error!("[{}] Job '{}' failed: {}", run_id, job.name, e);
+
+            {
+                let mut status = job_status.lock().unwrap();
+                status.insert(
+                    job.name.clone(),
+                    JobStatus::Failed {
+                        last_run: finished_at.clone(),
+                        exit_code: -1,
+                    },
+                );
+            }
+
             let h = history.lock().unwrap();
             if let Err(e2) =
                 h.update_finished(&run_id, &finished_at, Some(-1), "", &e.to_string())
