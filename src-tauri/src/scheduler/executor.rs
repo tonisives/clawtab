@@ -284,16 +284,20 @@ async fn execute_folder_job(
 
     if !folder.has_entry_point {
         return Err(format!(
-            "No cwdt.md entry point found in {}",
+            "No job.md entry point found in {}",
             folder_path
         ));
     }
 
     let raw_prompt = folder.read_entry_point()?;
-    let prompt_content = format!(
-        "Read CLAUDE.md in this directory for environment context before starting.\n\n{}",
-        raw_prompt
-    );
+    let prompt_content = format!("@.cwdt/cwdt.md\n\n{}", raw_prompt);
+
+    // Run from the project root (parent of .cwdt), not the .cwdt dir itself
+    let project_root = std::path::Path::new(folder_path)
+        .parent()
+        .ok_or_else(|| format!("Cannot determine project root from {}", folder_path))?
+        .to_string_lossy()
+        .to_string();
 
     let (tmux_session, claude_path) = {
         let s = settings.lock().unwrap();
@@ -307,8 +311,7 @@ async fn execute_folder_job(
 
     let export_prefix = build_export_prefix(job, secrets);
 
-    // Use the folder itself as the working directory
-    let work_dir = folder_path.clone();
+    let work_dir = project_root;
     let window_name = format!("cm-{}", job.name);
 
     if !tmux::is_available() {

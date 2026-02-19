@@ -141,12 +141,12 @@ pub fn run() {
         HistoryStore::new().expect("failed to initialize history database"),
     ));
 
-    // Ensure agent + per-job CLAUDE.md files are fresh on startup
+    // Ensure agent + per-job cwdt.md context files are fresh on startup
     {
         let s = settings.lock().unwrap();
         let j = jobs_config.lock().unwrap();
         commands::jobs::ensure_agent_dir(&s, &j.jobs);
-        commands::jobs::regenerate_all_claude_mds(&s, &j.jobs);
+        commands::jobs::regenerate_all_cwdt_contexts(&s, &j.jobs);
     }
 
     let job_status: Arc<Mutex<HashMap<String, JobStatus>>> =

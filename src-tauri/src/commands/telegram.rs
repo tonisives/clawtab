@@ -29,12 +29,12 @@ pub fn set_telegram_config(
     settings.telegram = config;
     settings.save()?;
 
-    // Regenerate all CLAUDE.md files with updated telegram config
+    // Regenerate all cwdt.md context files with updated telegram config
     let settings_clone = settings.clone();
     drop(settings);
     let jobs = state.jobs_config.lock().unwrap().jobs.clone();
     super::jobs::ensure_agent_dir(&settings_clone, &jobs);
-    super::jobs::regenerate_all_claude_mds(&settings_clone, &jobs);
+    super::jobs::regenerate_all_cwdt_contexts(&settings_clone, &jobs);
 
     Ok(())
 }

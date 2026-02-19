@@ -18,7 +18,7 @@ const EDITOR_LABELS: Record<string, string> = {
 };
 
 const STEP_TIPS: Record<string, string> = {
-  folder: "Choose the project folder where your bot will work. A .cwdt/cwdt.md file will be created with directions for the AI.",
+  folder: "Choose the project folder where your bot will work. A .cwdt/job.md file will be created with directions for the AI.",
   schedule: "How often should this job run? Pick a preset, choose specific days, or write a cron expression.",
   secrets: "Select API keys and tokens this job needs. They'll be injected as environment variables when the job runs.",
   config: "Optional settings. Most jobs work fine with defaults.",
@@ -102,7 +102,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [weeklyDays, setWeeklyDays] = useState<string[]>(["Mon"]);
   const [weeklyTime, setWeeklyTime] = useState("09:00");
 
-  // cwdt.md edited tracking
+  // job.md edited tracking
   const [cwdtEdited, setCwdtEdited] = useState(!isNew);
 
   // Load settings and detected editors on mount
@@ -154,7 +154,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     }
   }, [currentStep, isWizard]);
 
-  // Auto-init cwdt.md and load preview when folder path changes
+  // Auto-init job.md and load preview when folder path changes
   const refreshCwdtPreview = useCallback((folderPath: string) => {
     invoke<string>("read_cwdt_entry", { folderPath })
       .then((content) => {
@@ -175,7 +175,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     }
   }, [form.folder_path, form.job_type, refreshCwdtPreview]);
 
-  // Poll cwdt.md for changes while on folder step (user may be editing in external editor)
+  // Poll job.md for changes while on folder step (user may be editing in external editor)
   useEffect(() => {
     if (!isWizard || currentStep !== "folder" || !form.folder_path) return;
     const interval = setInterval(() => {
@@ -287,7 +287,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
             Browse...
           </button>
         </div>
-        <span className="hint">Pick a project folder. A .cwdt/cwdt.md will be created inside it.</span>
+        <span className="hint">Pick a project folder. A .cwdt/job.md will be created inside it.</span>
       </div>
 
       <div className="form-group">
@@ -328,18 +328,18 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                 </option>
               ))}
             </select>
-            {!isNew && (
+            {!isNew && form.folder_path && (
               <button
                 className="btn btn-sm"
                 onClick={() => {
                   invoke("open_job_editor", {
                     folderPath: form.folder_path,
                     editor: preferredEditor,
-                    fileName: "CLAUDE.md",
+                    fileName: "cwdt.md",
                   });
                 }}
               >
-                Edit CLAUDE.md
+                Edit cwdt.md
               </button>
             )}
             <button
@@ -356,7 +356,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           )}
           {isWizard && !cwdtEdited && (
             <span className="hint" style={{ color: "var(--warning, #e6a700)" }}>
-              Edit cwdt.md before proceeding -- the default template must be changed.
+              Edit job.md before proceeding -- the default template must be changed.
             </span>
           )}
         </div>

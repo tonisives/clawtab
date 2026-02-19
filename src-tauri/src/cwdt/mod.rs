@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-/// A `.cwdt` folder job. Contains a `cwdt.md` entry point and optional supporting scripts.
+/// A `.cwdt` folder job. Contains a `job.md` entry point, auto-generated `cwdt.md` context, and optional scripts.
 #[derive(Debug, Clone, Serialize)]
 pub struct CwdtFolder {
     pub path: PathBuf,
@@ -16,7 +16,7 @@ impl CwdtFolder {
             return Err(format!("Not a directory: {}", path.display()));
         }
 
-        let entry_point = path.join("cwdt.md");
+        let entry_point = path.join("job.md");
         let has_entry_point = entry_point.exists();
 
         let scripts = list_scripts(path);
@@ -29,7 +29,7 @@ impl CwdtFolder {
     }
 
     pub fn entry_point(&self) -> PathBuf {
-        self.path.join("cwdt.md")
+        self.path.join("job.md")
     }
 
     /// Read the entry point content
@@ -53,8 +53,8 @@ fn list_scripts(dir: &Path) -> Vec<String> {
         let path = entry.path();
         if path.is_file() {
             let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            // Skip the entry point and auto-generated CLAUDE.md
-            if name == "cwdt.md" || name == "CLAUDE.md" {
+            // Skip the entry point and auto-generated context
+            if name == "job.md" || name == "cwdt.md" {
                 continue;
             }
             // Include script-like files
