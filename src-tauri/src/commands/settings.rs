@@ -14,6 +14,13 @@ pub fn set_settings(
     new_settings: AppSettings,
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
+    // Preserve telegram config if the incoming payload has None,
+    // since other panels (GeneralSettings, ToolsPanel) send the full
+    // settings object that was loaded before telegram was configured.
+    let telegram = settings.telegram.clone();
     *settings = new_settings;
+    if settings.telegram.is_none() {
+        settings.telegram = telegram;
+    }
     settings.save()
 }

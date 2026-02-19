@@ -43,6 +43,7 @@ export interface SecretEntry {
 export interface TelegramConfig {
   bot_token: string;
   chat_ids: number[];
+  chat_names: Record<string, string>;
   notify_on_success: boolean;
   notify_on_failure: boolean;
   agent_enabled: boolean;

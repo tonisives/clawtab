@@ -22,12 +22,15 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
   const [validating, setValidating] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [chatIds, setChatIds] = useState<number[]>([]);
+  const [chatNames, setChatNames] = useState<Record<string, string>>({});
   const [polling, setPolling] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
   const initializedRef = useRef(false);
   const tokenRef = useRef(token);
   tokenRef.current = token;
+  const chatNamesRef = useRef(chatNames);
+  chatNamesRef.current = chatNames;
   const completedRef = useRef(false);
 
   // Resume from existing config
@@ -37,6 +40,10 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
     const t = initialConfig.bot_token;
     setToken(t);
     tokenRef.current = t;
+    if (initialConfig.chat_names) {
+      setChatNames(initialConfig.chat_names);
+      chatNamesRef.current = initialConfig.chat_names;
+    }
     if (initialConfig.chat_ids.length > 0) {
       setChatIds(initialConfig.chat_ids);
       completedRef.current = true;
@@ -74,21 +81,25 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
       onComplete({
         bot_token: token,
         chat_ids: chatIds,
+        chat_names: chatNames,
         notify_on_success: true,
         notify_on_failure: true,
         agent_enabled: true,
       });
     }
-  }, [botInfo, chatIds, token, onComplete]);
+  }, [botInfo, chatIds, token, chatNames, onComplete]);
 
-  const saveConfig = async (botToken: string, ids: number[]) => {
-    const config: TelegramConfig = {
-      bot_token: botToken,
-      chat_ids: ids,
-      notify_on_success: true,
-      notify_on_failure: true,
-      agent_enabled: true,
-    };
+  const buildConfig = (botToken: string, ids: number[], names: Record<string, string>): TelegramConfig => ({
+    bot_token: botToken,
+    chat_ids: ids,
+    chat_names: names,
+    notify_on_success: true,
+    notify_on_failure: true,
+    agent_enabled: true,
+  });
+
+  const saveConfig = async (botToken: string, ids: number[], names?: Record<string, string>) => {
+    const config = buildConfig(botToken, ids, names ?? chatNamesRef.current);
     try {
       await invoke("set_telegram_config", { config });
     } catch (e) {
@@ -109,7 +120,6 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
       setBotInfo(info);
       setTokenError(null);
       await saveConfig(t, chatIds);
-      // Auto-start polling once token is validated
       startPolling();
     } catch (e) {
       setBotInfo(null);
@@ -151,7 +161,6 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
             if (prev.includes(id)) return prev;
             const updated = [...prev, id];
             saveConfig(currentToken, updated);
-            // Send confirmation to the newly detected chat
             invoke("test_telegram", { botToken: currentToken, chatId: id }).catch(() => {});
             return updated;
           });
@@ -166,10 +175,21 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
   const removeChatId = (id: number) => {
     const updated = chatIds.filter((c) => c !== id);
     setChatIds(updated);
-    saveConfig(token, updated);
+    const updatedNames = { ...chatNames };
+    delete updatedNames[String(id)];
+    setChatNames(updatedNames);
+    saveConfig(token, updated, updatedNames);
     if (updated.length === 0) {
       completedRef.current = false;
     }
+  };
+
+  const updateChatName = (id: number, name: string) => {
+    const updatedNames = { ...chatNames, [String(id)]: name };
+    if (!name) delete updatedNames[String(id)];
+    setChatNames(updatedNames);
+    chatNamesRef.current = updatedNames;
+    saveConfig(token, chatIds, updatedNames);
   };
 
   const [testingChat, setTestingChat] = useState<number | null>(null);
@@ -284,7 +304,7 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
         )}
 
         <div style={{ marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <label style={{ fontSize: 12, margin: 0 }}>Connected chats:</label>
             <button
               className="btn btn-sm"
@@ -296,29 +316,36 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
             </button>
           </div>
           {chatIds.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {chatIds.map((id) => (
-                <div
-                  key={id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                  }}
-                >
-                  <span
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {chatIds.map((id, idx) => (
+                <div key={id}>
+                  {idx > 0 && (
+                    <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "6px 0" }} />
+                  )}
+                  <div
                     style={{
-                      display: "inline-flex",
+                      display: "flex",
                       alignItems: "center",
-                      gap: 4,
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 4,
-                      padding: "2px 8px",
-                      fontSize: 12,
+                      gap: 8,
+                      padding: "4px 0",
                     }}
                   >
-                    <code>{id}</code>
+                    <input
+                      type="text"
+                      value={chatNames[String(id)] ?? ""}
+                      onChange={(e) => updateChatName(id, e.target.value)}
+                      placeholder="Name this chat..."
+                      style={{ width: "18ch" }}
+                    />
+                    <code style={{ fontSize: 12, whiteSpace: "nowrap" }}>{id}</code>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => testChat(id)}
+                      disabled={testingChat === id}
+                      style={{ fontSize: 11, padding: "1px 8px", whiteSpace: "nowrap" }}
+                    >
+                      {testingChat === id ? "Sending..." : "Test"}
+                    </button>
                     <button
                       onClick={() => removeChatId(id)}
                       style={{
@@ -326,7 +353,7 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
                         border: "none",
                         cursor: "pointer",
                         color: "var(--text-secondary)",
-                        padding: 0,
+                        padding: "0 2px",
                         fontSize: 14,
                         lineHeight: 1,
                       }}
@@ -334,15 +361,7 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
                     >
                       x
                     </button>
-                  </span>
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => testChat(id)}
-                    disabled={testingChat === id}
-                    style={{ fontSize: 11, padding: "1px 8px" }}
-                  >
-                    {testingChat === id ? "Sending..." : "Send test message"}
-                  </button>
+                  </div>
                 </div>
               ))}
             </div>

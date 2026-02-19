@@ -4,6 +4,8 @@ pub mod types;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 const MAX_MESSAGE_LEN: usize = 4096;
@@ -25,6 +27,7 @@ pub fn is_setup_polling() -> bool {
 pub struct TelegramConfig {
     pub bot_token: String,
     pub chat_ids: Vec<i64>,
+    pub chat_names: HashMap<String, String>,
     pub notify_on_success: bool,
     pub notify_on_failure: bool,
     pub agent_enabled: bool,
@@ -35,6 +38,7 @@ impl Default for TelegramConfig {
         Self {
             bot_token: String::new(),
             chat_ids: Vec::new(),
+            chat_names: HashMap::new(),
             notify_on_success: true,
             notify_on_failure: true,
             agent_enabled: false,

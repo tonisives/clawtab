@@ -27,11 +27,9 @@
   box-shadow: 0 0 0 3px var(--accent-hover);
 }
 
-.form-group input[type="text"],
-.form-group input[type="password"],
+input[type="text"],
+input[type="password"],
 .form-group textarea {
-  width: 100%;
-  max-width: 400px;
   padding: 8px 12px;
   border: 1px solid var(--border-color);
   border-radius: 6px;
@@ -40,15 +38,23 @@
   color: var(--text-primary);
 }
 
-.form-group input[type="text"]:focus,
-.form-group input[type="password"]:focus,
+.form-group input[type="text"],
+.form-group input[type="password"],
+.form-group textarea {
+  width: 100%;
+  max-width: 400px;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
 .form-group textarea:focus {
   outline: none;
   border-color: var(--accent-color);
   box-shadow: 0 0 0 3px var(--accent-hover);
 }
 
-.form-group input:disabled,
+input[type="text"]:disabled,
+input[type="password"]:disabled,
 .form-group textarea:disabled {
   opacity: 0.5;
   cursor: not-allowed;

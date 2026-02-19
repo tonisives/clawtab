@@ -243,6 +243,8 @@ pub fn run() {
                 tray.on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
                         if let Some(window) = app.get_webview_window("settings") {
+                            #[cfg(target_os = "macos")]
+                            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
@@ -257,10 +259,13 @@ pub fn run() {
             // Hide settings window on close instead of quitting
             if let Some(settings_window) = app.get_webview_window("settings") {
                 let window = settings_window.clone();
+                let app_handle = app.handle().clone();
                 settings_window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = window.hide();
+                        #[cfg(target_os = "macos")]
+                        let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
                     }
                 });
             }

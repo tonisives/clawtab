@@ -95,7 +95,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [browserSessionExists, setBrowserSessionExists] = useState(false);
   const [browserAuthUrl, setBrowserAuthUrl] = useState("https://");
   const [defaultTmuxSession, setDefaultTmuxSession] = useState("tgs");
-  const [defaultTelegramChatId, setDefaultTelegramChatId] = useState<number | null>(null);
+  const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
 
   // Schedule mode state
@@ -113,10 +113,13 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
       setPreferredEditor(s.preferred_editor);
       setDefaultTmuxSession(s.default_tmux_session || "tgs");
       if (s.telegram?.chat_ids?.length) {
-        const chatId = s.telegram.chat_ids[0];
-        setDefaultTelegramChatId(chatId);
+        const chats = s.telegram.chat_ids.map((id) => ({
+          id,
+          name: s.telegram?.chat_names?.[String(id)] ?? "",
+        }));
+        setTelegramChats(chats);
         if (isNew && form.telegram_chat_id === null) {
-          setForm((prev) => ({ ...prev, telegram_chat_id: chatId }));
+          setForm((prev) => ({ ...prev, telegram_chat_id: chats[0].id }));
         }
       }
     });
@@ -540,20 +543,37 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
       )}
 
       <div className="form-group">
-        <label>Telegram Chat ID</label>
-        <input
-          type="text"
-          value={form.telegram_chat_id ?? ""}
-          onChange={(e) => {
-            const val = e.target.value.trim();
-            setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) || null : null });
-          }}
-          placeholder={defaultTelegramChatId ? `Default: ${defaultTelegramChatId}` : "No global chat ID configured"}
-        />
+        <label>Telegram Chat</label>
+        {telegramChats.length > 0 ? (
+          <select
+            value={form.telegram_chat_id ?? ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) : null });
+            }}
+          >
+            <option value="">None</option>
+            {telegramChats.map((chat) => (
+              <option key={chat.id} value={chat.id}>
+                {chat.name ? `${chat.name} (${chat.id})` : String(chat.id)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={form.telegram_chat_id ?? ""}
+            onChange={(e) => {
+              const val = e.target.value.trim();
+              setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) || null : null });
+            }}
+            placeholder="No chats configured"
+          />
+        )}
         <span className="hint">
-          {defaultTelegramChatId
-            ? "Pre-filled from global telegram settings"
-            : "Configure telegram in Settings to set a default"}
+          {telegramChats.length > 0
+            ? "Select which chat receives notifications for this job"
+            : "Configure telegram in Settings to add chats"}
         </span>
       </div>
 
