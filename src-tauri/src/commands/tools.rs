@@ -1,10 +1,32 @@
+use tauri::State;
+
 use crate::tools;
+use crate::AppState;
 
 #[tauri::command]
-pub async fn detect_tools() -> Vec<tools::ToolInfo> {
-    tokio::task::spawn_blocking(tools::detect_tools)
+pub async fn detect_tools(state: State<'_, AppState>) -> Result<Vec<tools::ToolInfo>, String> {
+    let custom_paths = {
+        let s = state.settings.lock().unwrap();
+        s.tool_paths.clone()
+    };
+    tokio::task::spawn_blocking(move || tools::detect_tools(&custom_paths))
         .await
-        .unwrap_or_default()
+        .map_err(|e| format!("Detection failed: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_tool_path(
+    state: State<'_, AppState>,
+    tool_name: String,
+    path: String,
+) -> Result<(), String> {
+    let mut s = state.settings.lock().unwrap();
+    if path.is_empty() {
+        s.tool_paths.remove(&tool_name);
+    } else {
+        s.tool_paths.insert(tool_name, path);
+    }
+    s.save()
 }
 
 #[tauri::command]

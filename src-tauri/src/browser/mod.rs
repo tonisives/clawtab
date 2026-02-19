@@ -6,9 +6,8 @@ use std::path::PathBuf;
 /// Get the browser session directory for a job.
 /// Sessions are stored at `~/.config/clawdtab/browser-sessions/<job_name>/`.
 pub fn session_dir(job_name: &str) -> PathBuf {
-    dirs::config_dir()
+    crate::config::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("clawdtab")
         .join("browser-sessions")
         .join(job_name)
 }

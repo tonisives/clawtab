@@ -26,11 +26,24 @@ function StatusBadge({ status }: { status: JobStatus | undefined }) {
   return null;
 }
 
+function groupJobs(jobs: Job[]): Map<string, Job[]> {
+  const groups = new Map<string, Job[]>();
+  for (const job of jobs) {
+    const group = job.group || "default";
+    const list = groups.get(group) ?? [];
+    list.push(job);
+    groups.set(group, list);
+  }
+  return groups;
+}
+
 export function JobsPanel() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [statuses, setStatuses] = useState<Record<string, JobStatus>>({});
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const loadJobs = async () => {
     try {
@@ -71,7 +84,6 @@ export function JobsPanel() {
   const handleRunNow = async (name: string) => {
     try {
       await invoke("run_job_now", { name });
-      // Poll status quickly after triggering
       setTimeout(loadStatuses, 500);
     } catch (e) {
       console.error("Failed to run job:", e);
@@ -82,7 +94,6 @@ export function JobsPanel() {
     try {
       await invoke("focus_job_window", { name });
     } catch (e) {
-      // If focus fails (window doesn't exist), open a terminal instead
       try {
         await invoke("open_job_terminal", { name });
       } catch (e2) {
@@ -128,28 +139,143 @@ export function JobsPanel() {
   };
 
   const handleSave = async (job: Job) => {
+    setSaveError(null);
     try {
       await invoke("save_job", { job });
+      await loadJobs();
       setEditingJob(null);
       setIsCreating(false);
-      await loadJobs();
     } catch (e) {
+      const msg = typeof e === "string" ? e : String(e);
+      setSaveError(msg);
       console.error("Failed to save job:", e);
     }
   };
 
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) {
+        next.delete(group);
+      } else {
+        next.add(group);
+      }
+      return next;
+    });
+  };
+
   if (editingJob || isCreating) {
     return (
-      <JobEditor
-        job={editingJob}
-        onSave={handleSave}
-        onCancel={() => {
-          setEditingJob(null);
-          setIsCreating(false);
-        }}
-      />
+      <>
+        {saveError && (
+          <div style={{ padding: "8px 12px", marginBottom: 12, background: "var(--danger-bg, #2d1b1b)", border: "1px solid var(--danger, #e55)", borderRadius: 4, fontSize: 13 }}>
+            Save failed: {saveError}
+          </div>
+        )}
+        <JobEditor
+          job={editingJob}
+          onSave={handleSave}
+          onCancel={() => {
+            setEditingJob(null);
+            setIsCreating(false);
+            setSaveError(null);
+          }}
+        />
+      </>
     );
   }
+
+  const grouped = groupJobs(jobs);
+  const groupNames = Array.from(grouped.keys()).sort((a, b) => {
+    if (a === "default") return -1;
+    if (b === "default") return 1;
+    return a.localeCompare(b);
+  });
+  const isSingleGroup = groupNames.length <= 1;
+
+  const renderJobRow = (job: Job) => (
+    <tr key={job.name}>
+      <td>
+        <input
+          type="checkbox"
+          className="toggle-switch"
+          checked={job.enabled}
+          onChange={() => handleToggle(job.name)}
+        />
+      </td>
+      <td>{job.name}</td>
+      <td>{job.job_type}</td>
+      <td>
+        <code>{job.cron || "manual"}</code>
+      </td>
+      <td>
+        <StatusBadge status={statuses[job.name]} />
+      </td>
+      <td className="actions">
+        <div className="btn-group">
+          {(() => {
+            const status = statuses[job.name];
+            const state = status?.state ?? "idle";
+            const isTmuxJob = job.job_type === "claude" || job.job_type === "folder";
+
+            return (
+              <>
+                {state === "running" && (
+                  <>
+                    {isTmuxJob && (
+                      <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
+                        Open
+                      </button>
+                    )}
+                    <button className="btn btn-sm" onClick={() => handlePause(job.name)}>
+                      Pause
+                    </button>
+                  </>
+                )}
+                {state === "paused" && (
+                  <button className="btn btn-success btn-sm" onClick={() => handleResume(job.name)}>
+                    Resume
+                  </button>
+                )}
+                {state === "failed" && (
+                  <button className="btn btn-success btn-sm" onClick={() => handleRestart(job.name)}>
+                    Restart
+                  </button>
+                )}
+                {state === "success" && (
+                  <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
+                    Run Again
+                  </button>
+                )}
+                {(state === "idle" || !status) && (
+                  <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
+                    Run
+                  </button>
+                )}
+                {isTmuxJob && state !== "running" && (
+                  <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
+                    Open
+                  </button>
+                )}
+              </>
+            );
+          })()}
+          <button
+            className="btn btn-sm"
+            onClick={() => setEditingJob(job)}
+          >
+            Edit
+          </button>
+          <button
+            className="btn btn-danger btn-sm"
+            onClick={() => handleDelete(job.name)}
+          >
+            Delete
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="settings-section">
@@ -173,7 +299,7 @@ export function JobsPanel() {
             Create your first job
           </button>
         </div>
-      ) : (
+      ) : isSingleGroup ? (
         <table className="data-table">
           <thead>
             <tr>
@@ -186,91 +312,61 @@ export function JobsPanel() {
             </tr>
           </thead>
           <tbody>
-            {jobs.map((job) => (
-              <tr key={job.name}>
-                <td>
-                  <input
-                    type="checkbox"
-                    className="toggle-switch"
-                    checked={job.enabled}
-                    onChange={() => handleToggle(job.name)}
-                  />
-                </td>
-                <td>{job.name}</td>
-                <td>{job.job_type}</td>
-                <td>
-                  <code>{job.cron}</code>
-                </td>
-                <td>
-                  <StatusBadge status={statuses[job.name]} />
-                </td>
-                <td className="actions">
-                  <div className="btn-group">
-                    {(() => {
-                      const status = statuses[job.name];
-                      const state = status?.state ?? "idle";
-                      const isTmuxJob = job.job_type === "claude" || job.job_type === "folder";
-
-                      return (
-                        <>
-                          {state === "running" && (
-                            <>
-                              {isTmuxJob && (
-                                <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
-                                  Open
-                                </button>
-                              )}
-                              <button className="btn btn-sm" onClick={() => handlePause(job.name)}>
-                                Pause
-                              </button>
-                            </>
-                          )}
-                          {state === "paused" && (
-                            <button className="btn btn-success btn-sm" onClick={() => handleResume(job.name)}>
-                              Resume
-                            </button>
-                          )}
-                          {state === "failed" && (
-                            <button className="btn btn-success btn-sm" onClick={() => handleRestart(job.name)}>
-                              Restart
-                            </button>
-                          )}
-                          {state === "success" && (
-                            <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
-                              Run Again
-                            </button>
-                          )}
-                          {(state === "idle" || !status) && (
-                            <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
-                              Run
-                            </button>
-                          )}
-                          {isTmuxJob && state !== "running" && (
-                            <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
-                              Open
-                            </button>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => setEditingJob(job)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() => handleDelete(job.name)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {jobs.map(renderJobRow)}
           </tbody>
         </table>
+      ) : (
+        groupNames.map((group) => {
+          const groupJobs = grouped.get(group) ?? [];
+          const isCollapsed = collapsedGroups.has(group);
+          const displayName = group === "default" ? "General" : group;
+
+          return (
+            <div key={group} style={{ marginBottom: 16 }}>
+              <button
+                onClick={() => toggleGroup(group)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--text)",
+                  cursor: "pointer",
+                  padding: "4px 0",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  width: "100%",
+                }}
+              >
+                <span style={{ fontSize: 10, transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
+                  &#9660;
+                </span>
+                {displayName}
+                <span className="text-secondary" style={{ fontWeight: 400, fontSize: 12 }}>
+                  ({groupJobs.length})
+                </span>
+              </button>
+              {!isCollapsed && (
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Enabled</th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Cron</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupJobs.map(renderJobRow)}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );

@@ -14,6 +14,8 @@ export interface Job {
   aerospace_workspace: string | null;
   folder_path: string | null;
   telegram_chat_id: number | null;
+  group: string;
+  slug: string;
 }
 
 export interface AerospaceWorkspace {
@@ -55,6 +57,7 @@ export interface AppSettings {
   setup_completed: boolean;
   telegram: TelegramConfig | null;
   secrets_backend: string;
+  tool_paths: Record<string, string>;
 }
 
 export interface ToolInfo {

@@ -56,7 +56,7 @@ impl HistoryStore {
     }
 
     fn db_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("clawdtab").join("history.db"))
+        crate::config::config_dir().map(|p| p.join("history.db"))
     }
 
     pub fn insert(&self, record: &RunRecord) -> Result<(), String> {

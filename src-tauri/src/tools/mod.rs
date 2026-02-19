@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
@@ -253,6 +254,16 @@ const TOOLS: &[ToolSpec] = &[
         group: None,
         brew_formula: None,
     },
+    // Messaging
+    ToolSpec {
+        name: "Telegram",
+        binary: "Telegram",
+        version_flag: "",
+        category: "Optional",
+        required: false,
+        group: None,
+        brew_formula: Some("--cask telegram"),
+    },
 ];
 
 fn which(binary: &str) -> Option<String> {
@@ -269,14 +280,42 @@ fn which(binary: &str) -> Option<String> {
     }
 }
 
-fn get_version(spec: &ToolSpec) -> Option<String> {
+/// Check if a binary exists next to the current executable (bundled sibling)
+fn sibling_binary(binary: &str) -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let candidate = dir.join(binary);
+    if candidate.exists() {
+        Some(candidate.display().to_string())
+    } else {
+        None
+    }
+}
+
+/// Resolve the binary path: custom path > sibling > which
+fn resolve_binary(spec: &ToolSpec, custom_paths: &HashMap<String, String>) -> Option<String> {
+    // 1. User-specified custom path
+    if let Some(custom) = custom_paths.get(spec.name) {
+        if !custom.is_empty() && std::path::Path::new(custom).exists() {
+            return Some(custom.clone());
+        }
+    }
+    // 2. Bundled sibling binary
+    if let Some(path) = sibling_binary(spec.binary) {
+        return Some(path);
+    }
+    // 3. Standard PATH lookup
+    which(spec.binary)
+}
+
+fn get_version_from(binary_path: &str, spec: &ToolSpec) -> Option<String> {
     let output = if spec.name == "playwright" {
-        Command::new(spec.binary)
+        Command::new(binary_path)
             .args(spec.version_flag.split_whitespace())
             .output()
             .ok()?
     } else {
-        Command::new(spec.binary)
+        Command::new(binary_path)
             .arg(spec.version_flag)
             .output()
             .ok()?
@@ -285,7 +324,6 @@ fn get_version(spec: &ToolSpec) -> Option<String> {
     if output.status.success() {
         let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if text.is_empty() {
-            // Some tools write version to stderr
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             if stderr.is_empty() {
                 None
@@ -301,7 +339,6 @@ fn get_version(spec: &ToolSpec) -> Option<String> {
 }
 
 fn extract_version_string(raw: &str) -> String {
-    // Take just the first line
     raw.lines().next().unwrap_or(raw).to_string()
 }
 
@@ -321,7 +358,31 @@ fn is_terminal_running(name: &str) -> bool {
 }
 
 /// Detect a single tool's availability
-fn detect_tool(spec: &ToolSpec) -> ToolInfo {
+fn detect_tool(spec: &ToolSpec, custom_paths: &HashMap<String, String>) -> ToolInfo {
+    // Telegram is a macOS .app bundle, not a PATH binary
+    if spec.name == "Telegram" {
+        let app_path = "/Applications/Telegram.app";
+        let available = std::path::Path::new(app_path).exists();
+        return ToolInfo {
+            name: spec.name.to_string(),
+            available,
+            version: if available {
+                Some("installed".to_string())
+            } else {
+                None
+            },
+            path: if available {
+                Some(app_path.to_string())
+            } else {
+                None
+            },
+            category: spec.category.to_string(),
+            required: spec.required,
+            group: spec.group.map(|s| s.to_string()),
+            brew_formula: spec.brew_formula.map(|s| s.to_string()),
+        };
+    }
+
     // Terminal.app is always available on macOS
     if spec.name == "Terminal.app" {
         return ToolInfo {
@@ -336,16 +397,12 @@ fn detect_tool(spec: &ToolSpec) -> ToolInfo {
         };
     }
 
-    // For terminal apps, check both binary in PATH and running process
+    // For terminal apps, check both binary resolution and running process
     if spec.category == "Terminal" {
-        let path = which(spec.binary);
+        let path = resolve_binary(spec, custom_paths);
         let running = is_terminal_running(spec.name);
         let available = path.is_some() || running;
-        let version = if path.is_some() {
-            get_version(spec)
-        } else {
-            None
-        };
+        let version = path.as_ref().and_then(|p| get_version_from(p, spec));
         return ToolInfo {
             name: spec.name.to_string(),
             available,
@@ -358,11 +415,11 @@ fn detect_tool(spec: &ToolSpec) -> ToolInfo {
         };
     }
 
-    // Standard detection via which + version
-    let path = which(spec.binary);
+    // Standard detection: custom path > sibling > which
+    let path = resolve_binary(spec, custom_paths);
     let available = path.is_some();
     let version = if available {
-        get_version(spec)
+        path.as_ref().and_then(|p| get_version_from(p, spec))
     } else {
         None
     };
@@ -378,6 +435,6 @@ fn detect_tool(spec: &ToolSpec) -> ToolInfo {
     }
 }
 
-pub fn detect_tools() -> Vec<ToolInfo> {
-    TOOLS.iter().map(detect_tool).collect()
+pub fn detect_tools(custom_paths: &HashMap<String, String>) -> Vec<ToolInfo> {
+    TOOLS.iter().map(|s| detect_tool(s, custom_paths)).collect()
 }

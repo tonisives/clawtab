@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::telegram::TelegramConfig;
@@ -14,6 +15,8 @@ pub struct AppSettings {
     pub setup_completed: bool,
     pub telegram: Option<TelegramConfig>,
     pub secrets_backend: String,
+    /// User-specified custom paths for tools, keyed by tool name
+    pub tool_paths: HashMap<String, String>,
 }
 
 impl Default for AppSettings {
@@ -30,13 +33,14 @@ impl Default for AppSettings {
             setup_completed: false,
             telegram: None,
             secrets_backend: "both".to_string(),
+            tool_paths: HashMap::new(),
         }
     }
 }
 
 impl AppSettings {
     fn file_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("clawdtab").join("settings.yaml"))
+        super::config_dir().map(|p| p.join("settings.yaml"))
     }
 
     pub fn load() -> Self {

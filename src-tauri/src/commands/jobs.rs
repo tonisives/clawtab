@@ -15,19 +15,39 @@ pub fn get_jobs(state: State<AppState>) -> Vec<Job> {
 #[tauri::command]
 pub fn save_job(state: State<AppState>, job: Job) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
-    if let Some(existing) = config.jobs.iter_mut().find(|j| j.name == job.name) {
-        *existing = job;
-    } else {
-        config.jobs.push(job);
+
+    // Derive slug if not set
+    let mut job = job;
+    if job.slug.is_empty() {
+        job.slug = crate::config::jobs::derive_slug(
+            &job.folder_path.as_deref().unwrap_or(&job.name),
+            &config.jobs,
+        );
     }
-    config.save()
+
+    config.save_job(&job)?;
+
+    // Refresh in-memory list
+    *config = crate::config::jobs::JobsConfig::load();
+    Ok(())
 }
 
 #[tauri::command]
 pub fn delete_job(state: State<AppState>, name: String) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
-    config.jobs.retain(|j| j.name != name);
-    config.save()
+
+    let slug = config
+        .jobs
+        .iter()
+        .find(|j| j.name == name)
+        .map(|j| j.slug.clone())
+        .ok_or_else(|| format!("Job not found: {}", name))?;
+
+    config.delete_job(&slug)?;
+
+    // Refresh in-memory list
+    *config = crate::config::jobs::JobsConfig::load();
+    Ok(())
 }
 
 #[tauri::command]
@@ -35,8 +55,11 @@ pub fn toggle_job(state: State<AppState>, name: String) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
     if let Some(job) = config.jobs.iter_mut().find(|j| j.name == name) {
         job.enabled = !job.enabled;
+        let job = job.clone();
+        config.save_job(&job)?;
+        *config = crate::config::jobs::JobsConfig::load();
     }
-    config.save()
+    Ok(())
 }
 
 #[tauri::command]
@@ -212,4 +235,10 @@ pub fn read_cwdt_entry(folder_path: String) -> Result<String, String> {
         return Ok(String::new());
     }
     folder.read_entry_point()
+}
+
+#[tauri::command]
+pub fn derive_job_slug(state: State<AppState>, folder_path: String) -> String {
+    let config = state.jobs_config.lock().unwrap();
+    crate::config::jobs::derive_slug(&folder_path, &config.jobs)
 }

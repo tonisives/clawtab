@@ -5,7 +5,7 @@ interface Props {
   onChange: (value: string) => void;
 }
 
-const CRON_PRESETS: { label: string; value: string }[] = [
+export const CRON_PRESETS: { label: string; value: string }[] = [
   { label: "Every minute", value: "* * * * *" },
   { label: "Every 5 minutes", value: "*/5 * * * *" },
   { label: "Every 15 minutes", value: "*/15 * * * *" },
@@ -16,7 +16,7 @@ const CRON_PRESETS: { label: string; value: string }[] = [
   { label: "Weekly (Mon 9am)", value: "0 9 * * 1" },
 ];
 
-function describeCron(expr: string): string {
+export function describeCron(expr: string): string {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) return "Invalid cron expression";
 

@@ -1,14 +1,13 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { ToolInfo } from "../types";
 
 interface Props {
   tools: ToolInfo[];
   onRefresh: () => Promise<void>;
   showPath?: boolean;
-  /** Map from group name to selected tool name, e.g. { editor: "nvim", terminal: "ghostty" } */
   selections?: Record<string, string>;
-  /** Called when user selects a tool within a group */
   onSelect?: (group: string, toolName: string) => void;
 }
 
@@ -31,7 +30,6 @@ function buildGroups(tools: ToolInfo[]): ToolGroup[] {
 
     const groupNames = new Set(catTools.map((t) => t.group).filter(Boolean));
 
-    // Ungrouped tools first
     const ungrouped = catTools.filter((t) => !t.group);
     for (const tool of ungrouped) {
       const key = `${cat}::${tool.name}`;
@@ -46,7 +44,6 @@ function buildGroups(tools: ToolInfo[]): ToolGroup[] {
       });
     }
 
-    // Then grouped tools
     for (const gn of groupNames) {
       const key = `${cat}::${gn}`;
       if (seen.has(key)) continue;
@@ -112,23 +109,69 @@ function InstallButton({
   };
 
   return (
-    <span>
+    <>
       <button
         className="btn btn-sm"
         onClick={handleInstall}
         disabled={installing}
-        style={{ marginLeft: 8 }}
+        style={{ padding: "1px 6px", fontSize: 11 }}
       >
-        {installing ? "Installing..." : "Install"}
+        {installing ? "..." : "install"}
       </button>
       {error && (
         <span
-          style={{ color: "var(--danger-color)", fontSize: 11, marginLeft: 6 }}
+          style={{ color: "var(--danger-color)", fontSize: 11, marginLeft: 4 }}
           title={error}
         >
           failed
         </span>
       )}
+    </>
+  );
+}
+
+function LocateButton({
+  tool,
+  onRefresh,
+}: {
+  tool: ToolInfo;
+  onRefresh: () => Promise<void>;
+}) {
+  const handleLocate = async () => {
+    const selected = await open({
+      title: `Locate ${tool.name}`,
+      multiple: false,
+      directory: false,
+    });
+    if (selected) {
+      await invoke("set_tool_path", { toolName: tool.name, path: selected });
+      await onRefresh();
+    }
+  };
+
+  return (
+    <button
+      className="btn btn-sm"
+      onClick={handleLocate}
+      style={{ padding: "1px 6px", fontSize: 11 }}
+    >
+      locate
+    </button>
+  );
+}
+
+function ToolActions({
+  tool,
+  onRefresh,
+}: {
+  tool: ToolInfo;
+  onRefresh: () => Promise<void>;
+}) {
+  if (tool.available) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 4 }}>
+      <InstallButton tool={tool} onRefresh={onRefresh} />
+      <LocateButton tool={tool} onRefresh={onRefresh} />
     </span>
   );
 }
@@ -148,13 +191,12 @@ function SelectableGroupRows({
 }) {
   const [expanded, setExpanded] = useState(false);
   const isSelectable = !!onSelect && !!group.groupName;
-  const selected = selectedTool ?? group.tools.find((t) => t.available)?.name;
+  const selected = selectedTool || group.tools.find((t) => t.available)?.name;
 
   const selectedToolInfo = group.tools.find((t) => t.name === selected);
   const otherTools = group.tools.filter((t) => t.name !== selected);
   const hasOthers = otherTools.length > 0;
 
-  // For non-selectable groups or single-tool groups, just render flat rows
   if (!isSelectable || group.tools.length <= 1) {
     return (
       <>
@@ -173,7 +215,6 @@ function SelectableGroupRows({
 
   return (
     <>
-      {/* Selected tool row */}
       {selectedToolInfo && (
         <tr key={selectedToolInfo.name}>
           <td>
@@ -198,11 +239,14 @@ function SelectableGroupRows({
           )}
           <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
             <span className="status-badge status-success" style={{ fontSize: 11 }}>selected</span>
+            {!selectedToolInfo.available && (
+              <LocateButton tool={selectedToolInfo} onRefresh={onRefresh} />
+            )}
             {hasOthers && (
               <button
                 className="btn btn-sm"
                 onClick={() => setExpanded(!expanded)}
-                style={{ marginLeft: 6, padding: "1px 6px", fontSize: 11 }}
+                style={{ marginLeft: 4, padding: "1px 6px", fontSize: 11 }}
               >
                 {expanded ? "hide" : `+${otherTools.length} more`}
               </button>
@@ -210,7 +254,6 @@ function SelectableGroupRows({
           </td>
         </tr>
       )}
-      {/* Expanded other tools */}
       {expanded && otherTools.map((tool) => (
         <tr key={tool.name} style={{ opacity: tool.available ? 1 : 0.5 }}>
           <td>
@@ -246,7 +289,10 @@ function SelectableGroupRows({
                 select
               </button>
             ) : (
-              <InstallButton tool={tool} onRefresh={onRefresh} />
+              <span style={{ display: "inline-flex", gap: 4 }}>
+                <InstallButton tool={tool} onRefresh={onRefresh} />
+                {!tool.available && <LocateButton tool={tool} onRefresh={onRefresh} />}
+              </span>
             )}
           </td>
         </tr>
@@ -294,8 +340,8 @@ function ToolRow({
           )}
         </td>
       )}
-      <td>
-        <InstallButton tool={tool} onRefresh={onRefresh} />
+      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+        <ToolActions tool={tool} onRefresh={onRefresh} />
       </td>
     </tr>
   );
