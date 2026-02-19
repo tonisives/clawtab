@@ -1,3 +1,7 @@
+pub mod commands;
+pub mod polling;
+pub mod types;
+
 use serde::{Deserialize, Serialize};
 
 const MAX_MESSAGE_LEN: usize = 4096;
@@ -9,6 +13,7 @@ pub struct TelegramConfig {
     pub chat_ids: Vec<i64>,
     pub notify_on_success: bool,
     pub notify_on_failure: bool,
+    pub agent_enabled: bool,
 }
 
 impl Default for TelegramConfig {
@@ -18,6 +23,7 @@ impl Default for TelegramConfig {
             chat_ids: Vec::new(),
             notify_on_success: true,
             notify_on_failure: true,
+            agent_enabled: false,
         }
     }
 }

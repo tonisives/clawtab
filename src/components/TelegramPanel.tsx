@@ -8,6 +8,7 @@ export function TelegramPanel() {
   const [chatIdsText, setChatIdsText] = useState("");
   const [notifySuccess, setNotifySuccess] = useState(true);
   const [notifyFailure, setNotifyFailure] = useState(true);
+  const [agentEnabled, setAgentEnabled] = useState(false);
   const [testChatId, setTestChatId] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -20,6 +21,7 @@ export function TelegramPanel() {
         setChatIdsText(cfg.chat_ids.join(", "));
         setNotifySuccess(cfg.notify_on_success);
         setNotifyFailure(cfg.notify_on_failure);
+        setAgentEnabled(cfg.agent_enabled);
         if (cfg.chat_ids.length > 0) {
           setTestChatId(String(cfg.chat_ids[0]));
         }
@@ -40,6 +42,7 @@ export function TelegramPanel() {
       chat_ids: chatIds,
       notify_on_success: notifySuccess,
       notify_on_failure: notifyFailure,
+      agent_enabled: agentEnabled,
     };
 
     try {
@@ -56,6 +59,7 @@ export function TelegramPanel() {
       setConfig(null);
       setBotToken("");
       setChatIdsText("");
+      setAgentEnabled(false);
     } catch (e) {
       console.error("Failed to disable telegram:", e);
     }
@@ -80,9 +84,9 @@ export function TelegramPanel() {
 
   return (
     <div className="settings-section">
-      <h2>Telegram Notifications</h2>
+      <h2>Telegram</h2>
       <p className="section-description">
-        Receive job completion notifications via Telegram bot.
+        Receive job completion notifications and send commands via Telegram bot.
         Create a bot with @BotFather and get your chat ID from @userinfobot.
       </p>
 
@@ -106,8 +110,10 @@ export function TelegramPanel() {
           placeholder="123456789, -100123456789"
           style={{ maxWidth: "100%" }}
         />
-        <span className="hint">Comma-separated chat IDs to send notifications to</span>
+        <span className="hint">Comma-separated chat IDs for notifications and agent commands</span>
       </div>
+
+      <h3>Notifications</h3>
 
       <div className="form-group">
         <label>
@@ -130,6 +136,37 @@ export function TelegramPanel() {
           Notify on job failure
         </label>
       </div>
+
+      <h3>Agent Mode</h3>
+      <p className="section-description">
+        When enabled, the bot responds to commands from the allowed chat IDs.
+        The bot polls for messages and executes commands.
+      </p>
+
+      <div className="form-group">
+        <label>
+          <input
+            type="checkbox"
+            checked={agentEnabled}
+            onChange={(e) => setAgentEnabled(e.target.checked)}
+          />{" "}
+          Enable agent mode
+        </label>
+      </div>
+
+      {agentEnabled && (
+        <div style={{ border: "1px solid var(--border)", borderRadius: 4, padding: 12, marginBottom: 16 }}>
+          <p className="text-secondary" style={{ margin: "0 0 8px 0" }}>Available commands:</p>
+          <pre style={{ margin: 0, fontSize: 12 }}>
+{`/jobs    - List all configured jobs
+/status  - Show job statuses
+/run <name>    - Run a job
+/pause <name>  - Pause a running job
+/resume <name> - Resume a paused job
+/help    - Show help`}
+          </pre>
+        </div>
+      )}
 
       <div className="btn-group" style={{ marginBottom: 20 }}>
         <button className="btn btn-primary" onClick={handleSave}>

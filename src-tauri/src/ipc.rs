@@ -15,6 +15,7 @@ pub enum IpcCommand {
     ResumeJob { name: String },
     RestartJob { name: String },
     GetStatus,
+    OpenSettings,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -12,6 +12,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "cwdtctl"
 path = "src/bin/ctl.rs"
 
+[[bin]]
+name = "cwdttui"
+path = "src/bin/tui.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -31,6 +35,8 @@ anyhow = "1"
 dirs = "6"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["json"] }
+ratatui = "0.29"
+crossterm = "0.28"
 
 [lints.rust]
 warnings = "deny"

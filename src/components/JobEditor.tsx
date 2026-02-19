@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AerospaceWorkspace, Job, JobType } from "../types";
+import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry } from "../types";
 import { CronInput } from "./CronInput";
 
 interface Props {
@@ -27,17 +27,23 @@ const emptyJob: Job = {
 export function JobEditor({ job, onSave, onCancel }: Props) {
   const [form, setForm] = useState<Job>(job ?? emptyJob);
   const [argsText, setArgsText] = useState(form.args.join(" "));
-  const [secretKeysText, setSecretKeysText] = useState(form.secret_keys.join(", "));
   const [envText, setEnvText] = useState(
     Object.entries(form.env)
       .map(([k, v]) => `${k}=${v}`)
       .join("\n"),
   );
 
+  const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[]>([]);
   const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
   const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
+  const [cwdtPreview, setCwdtPreview] = useState<string | null>(null);
+  const [preferredEditor, setPreferredEditor] = useState("nvim");
 
   useEffect(() => {
+    invoke<SecretEntry[]>("list_secrets").then(setAvailableSecrets);
+    invoke<AppSettings>("get_settings").then((s) => {
+      setPreferredEditor(s.preferred_editor);
+    });
     invoke<boolean>("aerospace_available").then((avail) => {
       setAerospaceAvailable(avail);
       if (avail) {
@@ -46,15 +52,29 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     });
   }, []);
 
+  // Load cwdt.md preview when folder path changes
+  useEffect(() => {
+    if (form.job_type === "folder" && form.folder_path) {
+      invoke<string>("read_cwdt_entry", { folderPath: form.folder_path })
+        .then(setCwdtPreview)
+        .catch(() => setCwdtPreview(null));
+    } else {
+      setCwdtPreview(null);
+    }
+  }, [form.folder_path, form.job_type]);
+
   const isNew = job === null;
+
+  const toggleSecret = (key: string) => {
+    const keys = form.secret_keys.includes(key)
+      ? form.secret_keys.filter((k) => k !== key)
+      : [...form.secret_keys, key];
+    setForm({ ...form, secret_keys: keys });
+  };
 
   const handleSubmit = () => {
     const args = argsText
       .split(/\s+/)
-      .filter((s) => s.length > 0);
-    const secretKeys = secretKeysText
-      .split(",")
-      .map((s) => s.trim())
       .filter((s) => s.length > 0);
     const env: Record<string, string> = {};
     for (const line of envText.split("\n")) {
@@ -67,7 +87,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     onSave({
       ...form,
       args,
-      secret_keys: secretKeys,
       env,
     });
   };
@@ -104,17 +123,56 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
       </div>
 
       {form.job_type === "folder" ? (
-        <div className="form-group">
-          <label>Folder Path</label>
-          <input
-            type="text"
-            value={form.folder_path ?? ""}
-            onChange={(e) => setForm({ ...form, folder_path: e.target.value || null })}
-            placeholder="/path/to/.cwdt/my-job"
-            style={{ maxWidth: "100%" }}
-          />
-          <span className="hint">Path to a .cwdt folder containing cwdt.md</span>
-        </div>
+        <>
+          <div className="form-group">
+            <label>Folder Path</label>
+            <input
+              type="text"
+              value={form.folder_path ?? ""}
+              onChange={(e) => setForm({ ...form, folder_path: e.target.value || null })}
+              placeholder="/path/to/project/.cwdt"
+              style={{ maxWidth: "100%" }}
+            />
+            <span className="hint">Path to a folder containing cwdt.md with job directions</span>
+          </div>
+          {form.folder_path && (
+            <div className="form-group">
+              <div className="btn-group" style={{ marginBottom: 8 }}>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => {
+                    invoke("init_cwdt_folder", { folderPath: form.folder_path }).then(() => {
+                      invoke<string>("read_cwdt_entry", { folderPath: form.folder_path }).then(setCwdtPreview);
+                    });
+                  }}
+                >
+                  Init cwdt.md
+                </button>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => {
+                    invoke("open_job_editor", { folderPath: form.folder_path, editor: preferredEditor });
+                  }}
+                >
+                  Open in {preferredEditor}
+                </button>
+                <select
+                  value={preferredEditor}
+                  onChange={(e) => setPreferredEditor(e.target.value)}
+                  style={{ padding: "2px 6px", fontSize: 12 }}
+                >
+                  <option value="nvim">nvim</option>
+                  <option value="vscode">vscode</option>
+                </select>
+              </div>
+              {cwdtPreview !== null && (
+                <div style={{ border: "1px solid var(--border)", borderRadius: 4, padding: 8, maxHeight: 200, overflowY: "auto" }}>
+                  <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>{cwdtPreview || "(empty)"}</pre>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       ) : (
         <div className="form-group">
           <label>{form.job_type === "binary" ? "Binary Path" : "Prompt File Path"}</label>
@@ -152,15 +210,24 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
       />
 
       <div className="form-group">
-        <label>Secret Keys</label>
-        <input
-          type="text"
-          value={secretKeysText}
-          onChange={(e) => setSecretKeysText(e.target.value)}
-          placeholder="SECRET_KEY_1, SECRET_KEY_2"
-          style={{ maxWidth: "100%" }}
-        />
-        <span className="hint">Comma-separated Keychain secret names to inject as env vars</span>
+        <label>Secrets (injected as env vars)</label>
+        {availableSecrets.length === 0 ? (
+          <p className="text-secondary">No secrets configured. Add them in the Secrets tab.</p>
+        ) : (
+          <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 4, padding: 8 }}>
+            {availableSecrets.map((s) => (
+              <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.secret_keys.includes(s.key)}
+                  onChange={() => toggleSecret(s.key)}
+                />
+                <span>{s.key}</span>
+                <span className="text-secondary" style={{ fontSize: 11 }}>({s.source})</span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
 
       {form.job_type === "binary" && (

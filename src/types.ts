@@ -42,12 +42,14 @@ export interface TelegramConfig {
   chat_ids: number[];
   notify_on_success: boolean;
   notify_on_failure: boolean;
+  agent_enabled: boolean;
 }
 
 export interface AppSettings {
   default_tmux_session: string;
   default_work_dir: string;
   claude_path: string;
+  preferred_editor: string;
   setup_completed: boolean;
   telegram: TelegramConfig | null;
 }

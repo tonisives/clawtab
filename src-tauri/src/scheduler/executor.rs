@@ -54,8 +54,8 @@ pub async fn execute_job(
 
     let result = match job.job_type {
         JobType::Binary => execute_binary_job(job, secrets, settings).await,
-        JobType::Claude => execute_claude_job(job, settings).await,
-        JobType::Folder => execute_folder_job(job, settings).await,
+        JobType::Claude => execute_claude_job(job, secrets, settings).await,
+        JobType::Folder => execute_folder_job(job, secrets, settings).await,
     };
 
     let finished_at = Utc::now().to_rfc3339();
@@ -195,6 +195,7 @@ async fn execute_binary_job(
 
 async fn execute_claude_job(
     job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
 ) -> Result<(Option<i32>, String, String), String> {
     use crate::tmux;
@@ -212,6 +213,8 @@ async fn execute_claude_job(
         let cp = s.claude_path.clone();
         (session, wd, cp)
     };
+
+    let export_prefix = build_export_prefix(job, secrets);
 
     let window_name = format!("cm-{}", job.name);
     let prompt_path = &job.path;
@@ -233,8 +236,8 @@ async fn execute_claude_job(
     }
 
     let send_cmd = format!(
-        "cd {} && {} \"$(cat {})\"",
-        work_dir, claude_path, prompt_path
+        "{}cd {} && {} \"$(cat {})\"",
+        export_prefix, work_dir, claude_path, prompt_path
     );
 
     tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
@@ -256,6 +259,7 @@ async fn execute_claude_job(
 
 async fn execute_folder_job(
     job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
 ) -> Result<(Option<i32>, String, String), String> {
     use crate::cwdt::CwdtFolder;
@@ -287,6 +291,8 @@ async fn execute_folder_job(
         (session, cp)
     };
 
+    let export_prefix = build_export_prefix(job, secrets);
+
     // Use the folder itself as the working directory
     let work_dir = folder_path.clone();
     let window_name = format!("cm-{}", job.name);
@@ -307,8 +313,8 @@ async fn execute_folder_job(
     // Pass the prompt content directly to Claude via stdin-like heredoc
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = format!(
-        "cd {} && {} $'{}'",
-        work_dir, claude_path, escaped_prompt
+        "{}cd {} && {} $'{}'",
+        export_prefix, work_dir, claude_path, escaped_prompt
     );
 
     tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
@@ -329,4 +335,29 @@ async fn execute_folder_job(
     }
 
     Ok((Some(0), String::new(), String::new()))
+}
+
+/// Build an `export K=V && ` prefix from job's secret_keys.
+/// Returns empty string if no secrets are configured.
+fn build_export_prefix(job: &Job, secrets: &Arc<Mutex<SecretsManager>>) -> String {
+    if job.secret_keys.is_empty() {
+        return String::new();
+    }
+
+    let sm = secrets.lock().unwrap();
+    let mut exports = Vec::new();
+
+    for key in &job.secret_keys {
+        if let Some(value) = sm.get(key) {
+            // Shell-escape the value by wrapping in single quotes
+            let escaped = value.replace('\'', "'\\''");
+            exports.push(format!("{}='{}'", key, escaped));
+        }
+    }
+
+    if exports.is_empty() {
+        return String::new();
+    }
+
+    format!("export {} && ", exports.join(" "))
 }

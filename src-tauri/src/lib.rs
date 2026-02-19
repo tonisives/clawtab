@@ -119,6 +119,10 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             let status = state.job_status.lock().unwrap().clone();
             IpcResponse::Status(status)
         }
+        IpcCommand::OpenSettings => {
+            // GUI-only command, handled by the Tauri app
+            IpcResponse::Ok
+        }
     }
 }
 
@@ -165,6 +169,15 @@ pub fn run() {
     let settings_for_scheduler = Arc::clone(&settings);
     let job_status_for_scheduler = Arc::clone(&job_status);
 
+    // Clones for telegram agent
+    let telegram_agent_state = telegram::polling::AgentState {
+        settings: Arc::clone(&settings),
+        jobs_config: Arc::clone(&jobs_config),
+        secrets: Arc::clone(&secrets),
+        history: Arc::clone(&history),
+        job_status: Arc::clone(&job_status),
+    };
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(app_state)
@@ -177,6 +190,9 @@ pub fn run() {
             commands::jobs::pause_job,
             commands::jobs::resume_job,
             commands::jobs::restart_job,
+            commands::jobs::open_job_editor,
+            commands::jobs::init_cwdt_folder,
+            commands::jobs::read_cwdt_entry,
             commands::secrets::list_secrets,
             commands::secrets::set_secret,
             commands::secrets::delete_secret,
@@ -259,6 +275,11 @@ pub fn run() {
                 let state: tauri::State<AppState> = app.state();
                 *state.scheduler.lock().unwrap() = Some(handle);
             }
+
+            // Start telegram agent polling
+            tauri::async_runtime::spawn(async move {
+                telegram::polling::start_polling(telegram_agent_state).await;
+            });
 
             log::info!("clawdtab setup complete");
             Ok(())
