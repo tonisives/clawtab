@@ -1,5 +1,7 @@
+mod aerospace;
 mod commands;
 mod config;
+mod cwdt;
 mod history;
 pub mod ipc;
 mod scheduler;
@@ -66,6 +68,52 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                 None => IpcResponse::Error(format!("Job not found: {}", name)),
             }
         }
+        IpcCommand::PauseJob { name } => {
+            let mut status = state.job_status.lock().unwrap();
+            match status.get(&name) {
+                Some(config::jobs::JobStatus::Running { .. }) => {
+                    status.insert(name, config::jobs::JobStatus::Paused);
+                    IpcResponse::Ok
+                }
+                _ => IpcResponse::Error("Job is not running".to_string()),
+            }
+        }
+        IpcCommand::ResumeJob { name } => {
+            let mut status = state.job_status.lock().unwrap();
+            match status.get(&name) {
+                Some(config::jobs::JobStatus::Paused) => {
+                    status.insert(name, config::jobs::JobStatus::Idle);
+                    IpcResponse::Ok
+                }
+                _ => IpcResponse::Error("Job is not paused".to_string()),
+            }
+        }
+        IpcCommand::RestartJob { name } => {
+            let jobs = state.jobs_config.lock().unwrap();
+            let job = jobs.jobs.iter().find(|j| j.name == name);
+            match job {
+                Some(job) => {
+                    let job = job.clone();
+                    let secrets = Arc::clone(&state.secrets);
+                    let history = Arc::clone(&state.history);
+                    let settings = Arc::clone(&state.settings);
+                    let job_status = Arc::clone(&state.job_status);
+                    tauri::async_runtime::spawn(async move {
+                        scheduler::executor::execute_job(
+                            &job,
+                            &secrets,
+                            &history,
+                            &settings,
+                            &job_status,
+                            "restart",
+                        )
+                        .await;
+                    });
+                    IpcResponse::Ok
+                }
+                None => IpcResponse::Error(format!("Job not found: {}", name)),
+            }
+        }
     }
 }
 
@@ -121,6 +169,9 @@ pub fn run() {
             commands::jobs::delete_job,
             commands::jobs::toggle_job,
             commands::jobs::run_job_now,
+            commands::jobs::pause_job,
+            commands::jobs::resume_job,
+            commands::jobs::restart_job,
             commands::secrets::list_secrets,
             commands::secrets::set_secret,
             commands::secrets::delete_secret,
@@ -139,6 +190,8 @@ pub fn run() {
             commands::tmux::focus_job_window,
             commands::tmux::open_job_terminal,
             commands::tools::detect_tools,
+            commands::aerospace::aerospace_available,
+            commands::aerospace::list_aerospace_workspaces,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

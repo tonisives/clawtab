@@ -11,6 +11,9 @@ pub enum IpcCommand {
     Ping,
     ListJobs,
     RunJob { name: String },
+    PauseJob { name: String },
+    ResumeJob { name: String },
+    RestartJob { name: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

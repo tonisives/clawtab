@@ -91,6 +91,33 @@ export function JobsPanel() {
     }
   };
 
+  const handlePause = async (name: string) => {
+    try {
+      await invoke("pause_job", { name });
+      setTimeout(loadStatuses, 500);
+    } catch (e) {
+      console.error("Failed to pause job:", e);
+    }
+  };
+
+  const handleResume = async (name: string) => {
+    try {
+      await invoke("resume_job", { name });
+      setTimeout(loadStatuses, 500);
+    } catch (e) {
+      console.error("Failed to resume job:", e);
+    }
+  };
+
+  const handleRestart = async (name: string) => {
+    try {
+      await invoke("restart_job", { name });
+      setTimeout(loadStatuses, 500);
+    } catch (e) {
+      console.error("Failed to restart job:", e);
+    }
+  };
+
   const handleDelete = async (name: string) => {
     try {
       await invoke("delete_job", { name });
@@ -179,20 +206,53 @@ export function JobsPanel() {
                 </td>
                 <td className="actions">
                   <div className="btn-group">
-                    <button
-                      className="btn btn-success btn-sm"
-                      onClick={() => handleRunNow(job.name)}
-                    >
-                      Run
-                    </button>
-                    {job.job_type === "claude" && (
-                      <button
-                        className="btn btn-sm"
-                        onClick={() => handleOpenWindow(job.name)}
-                      >
-                        Open
-                      </button>
-                    )}
+                    {(() => {
+                      const status = statuses[job.name];
+                      const state = status?.state ?? "idle";
+                      const isTmuxJob = job.job_type === "claude" || job.job_type === "folder";
+
+                      return (
+                        <>
+                          {state === "running" && (
+                            <>
+                              {isTmuxJob && (
+                                <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
+                                  Open
+                                </button>
+                              )}
+                              <button className="btn btn-sm" onClick={() => handlePause(job.name)}>
+                                Pause
+                              </button>
+                            </>
+                          )}
+                          {state === "paused" && (
+                            <button className="btn btn-success btn-sm" onClick={() => handleResume(job.name)}>
+                              Resume
+                            </button>
+                          )}
+                          {state === "failed" && (
+                            <button className="btn btn-success btn-sm" onClick={() => handleRestart(job.name)}>
+                              Restart
+                            </button>
+                          )}
+                          {state === "success" && (
+                            <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
+                              Run Again
+                            </button>
+                          )}
+                          {(state === "idle" || !status) && (
+                            <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
+                              Run
+                            </button>
+                          )}
+                          {isTmuxJob && state !== "running" && (
+                            <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
+                              Open
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                     <button
                       className="btn btn-sm"
                       onClick={() => setEditingJob(job)}

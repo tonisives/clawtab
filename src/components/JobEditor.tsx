@@ -1,5 +1,6 @@
-import { useState } from "react";
-import type { Job, JobType } from "../types";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import type { AerospaceWorkspace, Job, JobType } from "../types";
 import { CronInput } from "./CronInput";
 
 interface Props {
@@ -19,6 +20,8 @@ const emptyJob: Job = {
   env: {},
   work_dir: null,
   tmux_session: null,
+  aerospace_workspace: null,
+  folder_path: null,
 };
 
 export function JobEditor({ job, onSave, onCancel }: Props) {
@@ -30,6 +33,18 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
       .map(([k, v]) => `${k}=${v}`)
       .join("\n"),
   );
+
+  const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
+  const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
+
+  useEffect(() => {
+    invoke<boolean>("aerospace_available").then((avail) => {
+      setAerospaceAvailable(avail);
+      if (avail) {
+        invoke<AerospaceWorkspace[]>("list_aerospace_workspaces").then(setAerospaceWorkspaces);
+      }
+    });
+  }, []);
 
   const isNew = job === null;
 
@@ -84,23 +99,38 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
         >
           <option value="binary">Binary</option>
           <option value="claude">Claude</option>
+          <option value="folder">Folder (.cwdt)</option>
         </select>
       </div>
 
-      <div className="form-group">
-        <label>{form.job_type === "binary" ? "Binary Path" : "Prompt File Path"}</label>
-        <input
-          type="text"
-          value={form.path}
-          onChange={(e) => setForm({ ...form, path: e.target.value })}
-          placeholder={
-            form.job_type === "binary"
-              ? "/path/to/binary"
-              : "x-marketing/prompt-product.md"
-          }
-          style={{ maxWidth: "100%" }}
-        />
-      </div>
+      {form.job_type === "folder" ? (
+        <div className="form-group">
+          <label>Folder Path</label>
+          <input
+            type="text"
+            value={form.folder_path ?? ""}
+            onChange={(e) => setForm({ ...form, folder_path: e.target.value || null })}
+            placeholder="/path/to/.cwdt/my-job"
+            style={{ maxWidth: "100%" }}
+          />
+          <span className="hint">Path to a .cwdt folder containing cwdt.md</span>
+        </div>
+      ) : (
+        <div className="form-group">
+          <label>{form.job_type === "binary" ? "Binary Path" : "Prompt File Path"}</label>
+          <input
+            type="text"
+            value={form.path}
+            onChange={(e) => setForm({ ...form, path: e.target.value })}
+            placeholder={
+              form.job_type === "binary"
+                ? "/path/to/binary"
+                : "x-marketing/prompt-product.md"
+            }
+            style={{ maxWidth: "100%" }}
+          />
+        </div>
+      )}
 
       {form.job_type === "binary" && (
         <div className="form-group">
@@ -160,18 +190,40 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
         />
       </div>
 
-      {form.job_type === "claude" && (
-        <div className="form-group">
-          <label>Tmux Session</label>
-          <input
-            type="text"
-            value={form.tmux_session ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, tmux_session: e.target.value || null })
-            }
-            placeholder="Leave empty to use default"
-          />
-        </div>
+      {(form.job_type === "claude" || form.job_type === "folder") && (
+        <>
+          <div className="form-group">
+            <label>Tmux Session</label>
+            <input
+              type="text"
+              value={form.tmux_session ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, tmux_session: e.target.value || null })
+              }
+              placeholder="Leave empty to use default"
+            />
+          </div>
+
+          {aerospaceAvailable && (
+            <div className="form-group">
+              <label>Aerospace Workspace</label>
+              <select
+                value={form.aerospace_workspace ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, aerospace_workspace: e.target.value || null })
+                }
+              >
+                <option value="">None</option>
+                {aerospaceWorkspaces.map((ws) => (
+                  <option key={ws.name} value={ws.name}>
+                    {ws.name}
+                  </option>
+                ))}
+              </select>
+              <span className="hint">Move tmux window to this workspace after creation</span>
+            </div>
+          )}
+        </>
       )}
 
       <div className="btn-group" style={{ marginTop: 20 }}>

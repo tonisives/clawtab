@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub enum JobType {
     Binary,
     Claude,
+    Folder,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +43,8 @@ pub struct Job {
     pub env: HashMap<String, String>,
     pub work_dir: Option<String>,
     pub tmux_session: Option<String>,
+    pub aerospace_workspace: Option<String>,
+    pub folder_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

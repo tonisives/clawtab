@@ -1,4 +1,4 @@
-export type JobType = "binary" | "claude";
+export type JobType = "binary" | "claude" | "folder";
 
 export interface Job {
   name: string;
@@ -11,6 +11,12 @@ export interface Job {
   env: Record<string, string>;
   work_dir: string | null;
   tmux_session: string | null;
+  aerospace_workspace: string | null;
+  folder_path: string | null;
+}
+
+export interface AerospaceWorkspace {
+  name: string;
 }
 
 export interface RunRecord {

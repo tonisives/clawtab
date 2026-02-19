@@ -55,6 +55,7 @@ pub async fn execute_job(
     let result = match job.job_type {
         JobType::Binary => execute_binary_job(job, secrets, settings).await,
         JobType::Claude => execute_claude_job(job, settings).await,
+        JobType::Folder => execute_folder_job(job, settings).await,
     };
 
     let finished_at = Utc::now().to_rfc3339();
@@ -214,6 +215,95 @@ async fn execute_claude_job(
     );
 
     tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
+
+    // Move to aerospace workspace if configured
+    if let Some(ref workspace) = job.aerospace_workspace {
+        if crate::aerospace::is_available() {
+            // Focus the tmux window first, then move it
+            let _ = tmux::focus_window(&tmux_session, &window_name);
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            if let Err(e) = crate::aerospace::move_window_to_workspace(workspace) {
+                log::warn!("Failed to move window to aerospace workspace '{}': {}", workspace, e);
+            }
+        }
+    }
+
+    Ok((Some(0), String::new(), String::new()))
+}
+
+async fn execute_folder_job(
+    job: &Job,
+    settings: &Arc<Mutex<AppSettings>>,
+) -> Result<(Option<i32>, String, String), String> {
+    use crate::cwdt::CwdtFolder;
+    use crate::tmux;
+
+    let folder_path = job
+        .folder_path
+        .as_ref()
+        .ok_or("Folder job requires folder_path")?;
+
+    let folder = CwdtFolder::from_path(std::path::Path::new(folder_path))?;
+
+    if !folder.has_entry_point {
+        return Err(format!(
+            "No cwdt.md entry point found in {}",
+            folder_path
+        ));
+    }
+
+    let prompt_content = folder.read_entry_point()?;
+
+    let (tmux_session, claude_path) = {
+        let s = settings.lock().unwrap();
+        let session = job
+            .tmux_session
+            .clone()
+            .unwrap_or_else(|| s.default_tmux_session.clone());
+        let cp = s.claude_path.clone();
+        (session, cp)
+    };
+
+    // Use the folder itself as the working directory
+    let work_dir = folder_path.clone();
+    let window_name = format!("cm-{}", job.name);
+
+    if !tmux::is_available() {
+        return Err("tmux is not installed".to_string());
+    }
+
+    if !tmux::session_exists(&tmux_session) {
+        tmux::create_session(&tmux_session)?;
+    }
+
+    if !tmux::window_exists(&tmux_session, &window_name) {
+        tmux::create_window(&tmux_session, &window_name)?;
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    // Pass the prompt content directly to Claude via stdin-like heredoc
+    let escaped_prompt = prompt_content.replace('\'', "'\\''");
+    let send_cmd = format!(
+        "cd {} && {} $'{}'",
+        work_dir, claude_path, escaped_prompt
+    );
+
+    tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
+
+    // Move to aerospace workspace if configured
+    if let Some(ref workspace) = job.aerospace_workspace {
+        if crate::aerospace::is_available() {
+            let _ = tmux::focus_window(&tmux_session, &window_name);
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            if let Err(e) = crate::aerospace::move_window_to_workspace(workspace) {
+                log::warn!(
+                    "Failed to move window to aerospace workspace '{}': {}",
+                    workspace,
+                    e
+                );
+            }
+        }
+    }
 
     Ok((Some(0), String::new(), String::new()))
 }
