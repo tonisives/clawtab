@@ -58,6 +58,7 @@ export interface AppSettings {
   setup_completed: boolean;
   telegram: TelegramConfig | null;
   secrets_backend: string;
+  preferred_browser: string;
   tool_paths: Record<string, string>;
 }
 

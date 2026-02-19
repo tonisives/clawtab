@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::config::jobs::{Job, JobStatus};
+use crate::config::settings::AppSettings;
 use crate::cwdt::CwdtFolder;
 use crate::scheduler;
 use crate::AppState;
@@ -29,6 +30,14 @@ pub fn save_job(state: State<AppState>, job: Job) -> Result<(), String> {
 
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
+
+    // Regenerate all CLAUDE.md files (agent + per-job)
+    let settings = state.settings.lock().unwrap().clone();
+    let jobs = config.jobs.clone();
+    drop(config);
+    ensure_agent_dir(&settings, &jobs);
+    regenerate_all_claude_mds(&settings, &jobs);
+
     Ok(())
 }
 
@@ -155,51 +164,118 @@ pub fn open_job_editor(
     state: State<AppState>,
     folder_path: String,
     editor: Option<String>,
+    file_name: Option<String>,
 ) -> Result<(), String> {
     let preferred_editor = editor.unwrap_or_else(|| {
         let s = state.settings.lock().unwrap();
         s.preferred_editor.clone()
     });
 
-    let cwdt_md = std::path::Path::new(&folder_path).join("cwdt.md");
+    let target_file = file_name.as_deref().unwrap_or("cwdt.md");
+    let file_path = std::path::Path::new(&folder_path).join(target_file);
 
-    // Create cwdt.md with template if it doesn't exist
-    if !cwdt_md.exists() {
+    // Create cwdt.md with template if it doesn't exist (only for cwdt.md)
+    if target_file == "cwdt.md" && !file_path.exists() {
         let template = "# Job Directions\n\nDescribe what the bot should do here.\n";
-        std::fs::write(&cwdt_md, template)
+        std::fs::write(&file_path, template)
             .map_err(|e| format!("Failed to create cwdt.md: {}", e))?;
     }
 
-    let cwdt_md_str = cwdt_md.display().to_string();
+    let file_path_str = file_path.display().to_string();
 
     match preferred_editor.as_str() {
         "code" => {
             std::process::Command::new("code")
-                .args([&folder_path, "--goto", &cwdt_md_str])
+                .args([&folder_path, "--goto", &file_path_str])
                 .spawn()
                 .map_err(|e| format!("Failed to open VS Code: {}", e))?;
         }
         "codium" => {
             std::process::Command::new("codium")
-                .args([&folder_path, "--goto", &cwdt_md_str])
+                .args([&folder_path, "--goto", &file_path_str])
                 .spawn()
                 .map_err(|e| format!("Failed to open VSCodium: {}", e))?;
         }
         "zed" => {
             std::process::Command::new("zed")
-                .arg(&cwdt_md_str)
+                .arg(&file_path_str)
                 .spawn()
                 .map_err(|e| format!("Failed to open Zed: {}", e))?;
         }
         "subl" => {
             std::process::Command::new("subl")
-                .arg(&cwdt_md_str)
+                .arg(&file_path_str)
                 .spawn()
                 .map_err(|e| format!("Failed to open Sublime Text: {}", e))?;
         }
         // Terminal-based editors: nvim, vim, hx, emacs
         editor => {
-            let cmd = format!("{} {}", editor, cwdt_md_str);
+            let cmd = format!("{} {}", editor, file_path_str);
+            crate::terminal::open_in_terminal(&cmd)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_job_in_editor(state: State<AppState>, name: String) -> Result<(), String> {
+    let config = state.jobs_config.lock().unwrap();
+    let job = config
+        .jobs
+        .iter()
+        .find(|j| j.name == name)
+        .ok_or_else(|| format!("Job '{}' not found", name))?;
+
+    // For folder jobs, open the parent of .cwdt; otherwise use work_dir
+    let folder = job
+        .folder_path
+        .as_ref()
+        .and_then(|p| {
+            let path = std::path::Path::new(p);
+            // If path ends in .cwdt, go up to the project root
+            if path.file_name().map(|n| n == ".cwdt").unwrap_or(false) {
+                path.parent().map(|p| p.display().to_string())
+            } else {
+                Some(p.clone())
+            }
+        })
+        .or_else(|| job.work_dir.clone())
+        .ok_or_else(|| "Job has no folder path or working directory".to_string())?;
+
+    let preferred_editor = {
+        let s = state.settings.lock().unwrap();
+        s.preferred_editor.clone()
+    };
+
+    match preferred_editor.as_str() {
+        "code" => {
+            std::process::Command::new("code")
+                .arg(&folder)
+                .spawn()
+                .map_err(|e| format!("Failed to open VS Code: {}", e))?;
+        }
+        "codium" => {
+            std::process::Command::new("codium")
+                .arg(&folder)
+                .spawn()
+                .map_err(|e| format!("Failed to open VSCodium: {}", e))?;
+        }
+        "zed" => {
+            std::process::Command::new("zed")
+                .arg(&folder)
+                .spawn()
+                .map_err(|e| format!("Failed to open Zed: {}", e))?;
+        }
+        "subl" => {
+            std::process::Command::new("subl")
+                .arg(&folder)
+                .spawn()
+                .map_err(|e| format!("Failed to open Sublime Text: {}", e))?;
+        }
+        // Terminal-based editors: nvim, vim, hx, emacs
+        editor => {
+            let cmd = format!("cd {} && {}", folder, editor);
             crate::terminal::open_in_terminal(&cmd)?;
         }
     }
@@ -241,4 +317,165 @@ pub fn read_cwdt_entry(folder_path: String) -> Result<String, String> {
 pub fn derive_job_slug(state: State<AppState>, folder_path: String) -> String {
     let config = state.jobs_config.lock().unwrap();
     crate::config::jobs::derive_slug(&folder_path, &config.jobs)
+}
+
+/// Generate the CLAUDE.md for the agent bot directory (~/.config/clawdtab/agent/).
+/// This gives the agent context about allowed directories and available tools.
+pub fn generate_agent_claude_md(settings: &AppSettings, jobs: &[Job]) -> String {
+    let mut out = String::new();
+
+    out.push_str("<!-- Auto-generated by ClawdTab. Regenerated on settings/jobs change. -->\n");
+    out.push_str("# ClawdTab Agent Bot\n\n");
+    out.push_str("You are the ClawdTab agentic bot, controlled via Telegram.\n\n");
+
+    // Collect unique allowed directories from jobs
+    let mut dirs: Vec<String> = Vec::new();
+    for job in jobs {
+        if let Some(ref fp) = job.folder_path {
+            if !dirs.contains(fp) {
+                dirs.push(fp.clone());
+            }
+        }
+        if let Some(ref wd) = job.work_dir {
+            if !dirs.contains(wd) {
+                dirs.push(wd.clone());
+            }
+        }
+    }
+    // Always include default work dir
+    if !settings.default_work_dir.is_empty() && !dirs.contains(&settings.default_work_dir) {
+        dirs.push(settings.default_work_dir.clone());
+    }
+
+    out.push_str("## Allowed Directories\n\n");
+    out.push_str("You have read and write access to these configured job directories:\n\n");
+    for d in &dirs {
+        out.push_str(&format!("- `{}`\n", d));
+    }
+
+    // Config dir
+    if let Some(config_dir) = crate::config::config_dir() {
+        out.push_str(&format!("\nYou also have access to ClawdTab config at `{}`\n", config_dir.display()));
+    }
+
+    out.push_str("\n## Rules\n\n");
+    out.push_str("- Only operate within the allowed directories listed above.\n");
+    out.push_str("- Do not modify system files outside these directories.\n");
+    out.push_str("- Use cwdtctl to interact with ClawdTab jobs.\n");
+
+    out.push_str("\n## Job Management CLI\n\n");
+    out.push_str("`cwdtctl` is available for managing ClawdTab jobs:\n\n");
+    out.push_str("```\n");
+    out.push_str("cwdtctl ping           # Check if ClawdTab daemon is running\n");
+    out.push_str("cwdtctl list           # List all configured jobs\n");
+    out.push_str("cwdtctl status         # Show status of all jobs\n");
+    out.push_str("cwdtctl run <name>     # Run a job immediately\n");
+    out.push_str("cwdtctl pause <name>   # Pause a running job\n");
+    out.push_str("cwdtctl resume <name>  # Resume a paused job\n");
+    out.push_str("cwdtctl restart <name> # Restart a job\n");
+    out.push_str("```\n");
+
+    out
+}
+
+/// Ensure the agent directory and CLAUDE.md exist with current config.
+pub fn ensure_agent_dir(settings: &AppSettings, jobs: &[Job]) {
+    let agent_dir = agent_dir_path();
+    if let Err(e) = std::fs::create_dir_all(&agent_dir) {
+        log::warn!("Failed to create agent dir: {}", e);
+        return;
+    }
+
+    let claude_md = generate_agent_claude_md(settings, jobs);
+    let claude_md_path = agent_dir.join("CLAUDE.md");
+    if let Err(e) = std::fs::write(&claude_md_path, claude_md) {
+        log::warn!("Failed to write agent CLAUDE.md: {}", e);
+    }
+}
+
+/// Regenerate CLAUDE.md for every folder job's .cwdt directory.
+pub fn regenerate_all_claude_mds(settings: &AppSettings, jobs: &[Job]) {
+    for job in jobs {
+        if job.job_type != crate::config::jobs::JobType::Folder {
+            continue;
+        }
+        if let Some(ref folder_path) = job.folder_path {
+            let content = generate_claude_md(job, settings);
+            let path = std::path::Path::new(folder_path).join("CLAUDE.md");
+            if let Err(e) = std::fs::write(&path, content) {
+                log::warn!("Failed to write CLAUDE.md for '{}': {}", job.name, e);
+            }
+        }
+    }
+}
+
+/// Returns the path to the agent working directory.
+pub fn agent_dir_path() -> std::path::PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".config")
+        .join("clawdtab")
+        .join("agent")
+}
+
+fn generate_claude_md(job: &Job, settings: &AppSettings) -> String {
+    let mut out = String::new();
+
+    out.push_str("<!-- Auto-generated by ClawdTab. Regenerated on settings/jobs change. -->\n");
+    out.push_str("# ClawdTab Environment\n\n");
+    out.push_str("You are running as an automated Claude Code job.\n");
+    out.push_str(&format!("Job name: `{}`\n", job.name));
+
+    out.push_str("\n## Rules\n\n");
+    out.push_str("- Only edit and look for files in the current directory.\n");
+
+    out.push_str("\n## Job Management CLI\n\n");
+    out.push_str("`cwdtctl` is available for managing ClawdTab jobs:\n\n");
+    out.push_str("```\n");
+    out.push_str("cwdtctl ping           # Check if ClawdTab daemon is running\n");
+    out.push_str("cwdtctl list           # List all configured jobs\n");
+    out.push_str("cwdtctl status         # Show status of all jobs\n");
+    out.push_str("cwdtctl run <name>     # Run a job immediately\n");
+    out.push_str("cwdtctl pause <name>   # Pause a running job\n");
+    out.push_str("cwdtctl resume <name>  # Resume a paused job\n");
+    out.push_str("cwdtctl restart <name> # Restart a job\n");
+    out.push_str("```\n");
+
+    // Telegram section: only if TELEGRAM_BOT_TOKEN is in secret_keys
+    if job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN") {
+        let chat_id = resolve_telegram_chat_id(job, settings);
+        if let Some(cid) = chat_id {
+            out.push_str("\n## Telegram\n\n");
+            out.push_str("The `TELEGRAM_BOT_TOKEN` env var is available. Send messages with:\n\n");
+            out.push_str("```bash\n");
+            out.push_str(&format!(
+                "curl -s -X POST \"https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{{\"chat_id\": {}, \"text\": \"Your message\", \"parse_mode\": \"HTML\"}}'\n",
+                cid
+            ));
+            out.push_str("```\n");
+        }
+    }
+
+    // Env vars section: only if any secrets configured
+    if !job.secret_keys.is_empty() {
+        out.push_str("\n## Environment Variables\n\n");
+        out.push_str("The following secrets are injected as env vars at runtime:\n\n");
+        for key in &job.secret_keys {
+            out.push_str(&format!("- `${}`\n", key));
+        }
+    }
+
+    out
+}
+
+fn resolve_telegram_chat_id(job: &Job, settings: &AppSettings) -> Option<i64> {
+    // Per-job chat_id takes priority
+    if let Some(cid) = job.telegram_chat_id {
+        return Some(cid);
+    }
+    // Fall back to first global chat_id
+    if let Some(ref tg) = settings.telegram {
+        return tg.chat_ids.first().copied();
+    }
+    None
 }

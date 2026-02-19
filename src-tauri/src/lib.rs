@@ -141,6 +141,14 @@ pub fn run() {
         HistoryStore::new().expect("failed to initialize history database"),
     ));
 
+    // Ensure agent + per-job CLAUDE.md files are fresh on startup
+    {
+        let s = settings.lock().unwrap();
+        let j = jobs_config.lock().unwrap();
+        commands::jobs::ensure_agent_dir(&s, &j.jobs);
+        commands::jobs::regenerate_all_claude_mds(&s, &j.jobs);
+    }
+
     let job_status: Arc<Mutex<HashMap<String, JobStatus>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
@@ -193,6 +201,7 @@ pub fn run() {
             commands::jobs::resume_job,
             commands::jobs::restart_job,
             commands::jobs::open_job_editor,
+            commands::jobs::open_job_in_editor,
             commands::jobs::init_cwdt_folder,
             commands::jobs::read_cwdt_entry,
             commands::jobs::derive_job_slug,
@@ -205,6 +214,8 @@ pub fn run() {
             commands::secrets::remove_gopass_secret,
             commands::history::get_history,
             commands::history::get_run_detail,
+            commands::history::get_job_runs,
+            commands::history::open_run_log,
             commands::history::clear_history,
             commands::settings::get_settings,
             commands::settings::set_settings,
@@ -228,6 +239,7 @@ pub fn run() {
             commands::browser::launch_browser_auth,
             commands::browser::check_browser_session,
             commands::browser::clear_browser_session,
+            commands::browser::check_playwright_installed,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

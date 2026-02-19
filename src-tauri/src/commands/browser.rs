@@ -1,8 +1,12 @@
 use crate::browser;
 
 #[tauri::command]
-pub async fn launch_browser_auth(job_name: String, url: String) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || browser::launch_auth_session(&url, &job_name))
+pub async fn launch_browser_auth(
+    job_name: String,
+    url: String,
+    browser: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || browser::launch_auth_session(&url, &job_name, &browser))
         .await
         .map_err(|e| format!("Failed to launch auth: {}", e))?
 }
@@ -19,4 +23,11 @@ pub async fn clear_browser_session(job_name: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || browser::clear_session(&job_name))
         .await
         .map_err(|e| format!("Failed to clear session: {}", e))?
+}
+
+#[tauri::command]
+pub async fn check_playwright_installed() -> Result<bool, String> {
+    tokio::task::spawn_blocking(browser::is_playwright_installed)
+        .await
+        .map_err(|e| format!("Failed to check playwright: {}", e))
 }

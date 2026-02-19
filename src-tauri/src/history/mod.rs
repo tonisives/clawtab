@@ -158,6 +158,37 @@ impl HistoryStore {
         }
     }
 
+    pub fn get_by_job_name(&self, job_name: &str, limit: usize) -> Result<Vec<RunRecord>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, job_name, started_at, finished_at, exit_code, trigger_type, stdout, stderr
+                 FROM runs WHERE job_name = ?1 ORDER BY started_at DESC LIMIT ?2",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let rows = stmt
+            .query_map(params![job_name, limit as i64], |row| {
+                Ok(RunRecord {
+                    id: row.get(0)?,
+                    job_name: row.get(1)?,
+                    started_at: row.get(2)?,
+                    finished_at: row.get(3)?,
+                    exit_code: row.get(4)?,
+                    trigger: row.get(5)?,
+                    stdout: row.get(6)?,
+                    stderr: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query history: {}", e))?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            records.push(row.map_err(|e| format!("Failed to read row: {}", e))?);
+        }
+        Ok(records)
+    }
+
     pub fn clear(&self) -> Result<(), String> {
         self.conn
             .execute("DELETE FROM runs", [])

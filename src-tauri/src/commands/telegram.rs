@@ -27,7 +27,16 @@ pub fn set_telegram_config(
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
     settings.telegram = config;
-    settings.save()
+    settings.save()?;
+
+    // Regenerate all CLAUDE.md files with updated telegram config
+    let settings_clone = settings.clone();
+    drop(settings);
+    let jobs = state.jobs_config.lock().unwrap().jobs.clone();
+    super::jobs::ensure_agent_dir(&settings_clone, &jobs);
+    super::jobs::regenerate_all_claude_mds(&settings_clone, &jobs);
+
+    Ok(())
 }
 
 #[tauri::command]

@@ -15,6 +15,7 @@ pub struct AppSettings {
     pub setup_completed: bool,
     pub telegram: Option<TelegramConfig>,
     pub secrets_backend: String,
+    pub preferred_browser: String,
     /// User-specified custom paths for tools, keyed by tool name
     pub tool_paths: HashMap<String, String>,
 }
@@ -33,6 +34,7 @@ impl Default for AppSettings {
             setup_completed: false,
             telegram: None,
             secrets_backend: "both".to_string(),
+            preferred_browser: "chrome".to_string(),
             tool_paths: HashMap::new(),
         }
     }

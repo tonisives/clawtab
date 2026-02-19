@@ -8,11 +8,10 @@ interface Props {
   onComplete: () => void;
 }
 
-type Step = "tools" | "paths" | "terminal" | "editor" | "secrets" | "telegram" | "done";
+type Step = "tools" | "terminal" | "editor" | "secrets" | "telegram" | "done";
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "tools", label: "Detect Tools" },
-  { id: "paths", label: "Configure Paths" },
   { id: "terminal", label: "Terminal" },
   { id: "editor", label: "Editor" },
   { id: "secrets", label: "Secrets" },
@@ -51,7 +50,11 @@ export function SetupWizard({ onComplete }: Props) {
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [gopassAvailable, setGopassAvailable] = useState(false);
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
+  const [telegramLoaded, setTelegramLoaded] = useState(false);
   const [telegramSkipped, setTelegramSkipped] = useState(false);
+  const [notifySuccess, setNotifySuccess] = useState(true);
+  const [notifyFailure, setNotifyFailure] = useState(true);
+  const [agentEnabled, setAgentEnabled] = useState(true);
 
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
   const hasTelegram = tools.some((t) => t.name === "Telegram" && t.available);
@@ -85,6 +88,15 @@ export function SetupWizard({ onComplete }: Props) {
     });
     loadTools();
     invoke<boolean>("gopass_available").then(setGopassAvailable);
+    invoke<TelegramConfig | null>("get_telegram_config").then((cfg) => {
+      if (cfg) {
+        setTelegramConfig(cfg);
+        setNotifySuccess(cfg.notify_on_success);
+        setNotifyFailure(cfg.notify_on_failure);
+        setAgentEnabled(cfg.agent_enabled);
+      }
+      setTelegramLoaded(true);
+    });
   }, []);
 
   const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
@@ -107,6 +119,20 @@ export function SetupWizard({ onComplete }: Props) {
     try {
       await invoke("set_telegram_config", { config });
       setTelegramConfig(config);
+      setNotifySuccess(config.notify_on_success);
+      setNotifyFailure(config.notify_on_failure);
+      setAgentEnabled(config.agent_enabled);
+    } catch (e) {
+      console.error("Failed to save telegram config:", e);
+    }
+  };
+
+  const saveTelegramSettings = async (overrides: Partial<TelegramConfig>) => {
+    if (!telegramConfig) return;
+    const updated: TelegramConfig = { ...telegramConfig, ...overrides };
+    try {
+      await invoke("set_telegram_config", { config: updated });
+      setTelegramConfig(updated);
     } catch (e) {
       console.error("Failed to save telegram config:", e);
     }
@@ -174,33 +200,6 @@ export function SetupWizard({ onComplete }: Props) {
               else if (group === "ai_agent") setClaudePath(toolName);
             }}
           />
-        </div>
-      )}
-
-      {currentStep === "paths" && (
-        <div>
-          <h3>Configure Paths</h3>
-          <div className="form-group">
-            <label>Claude CLI Path</label>
-            <input
-              type="text"
-              value={claudePath}
-              onChange={(e) => setClaudePath(e.target.value)}
-              placeholder="claude"
-            />
-            <span className="hint">Path to the Claude CLI binary</span>
-          </div>
-          <div className="form-group">
-            <label>Default Working Directory</label>
-            <input
-              type="text"
-              value={workDir}
-              onChange={(e) => setWorkDir(e.target.value)}
-              placeholder="~/workspace"
-              style={{ maxWidth: "100%" }}
-            />
-            <span className="hint">Default directory for running jobs</span>
-          </div>
         </div>
       )}
 
@@ -288,23 +287,10 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
       )}
 
-      {currentStep === "telegram" && (
+      {currentStep === "telegram" && telegramLoaded && (
         <div>
           <h3>Telegram Notifications</h3>
-          {telegramConfig ? (
-            <div>
-              <p style={{ color: "var(--success-color)" }}>
-                Telegram configured. Notifications will be sent to chat ID {telegramConfig.chat_ids.join(", ")}.
-              </p>
-              <button
-                className="btn btn-sm"
-                onClick={() => { setTelegramConfig(null); setTelegramSkipped(false); }}
-                style={{ marginTop: 8 }}
-              >
-                Reconfigure
-              </button>
-            </div>
-          ) : telegramSkipped ? (
+          {telegramSkipped ? (
             <div>
               <p className="section-description">
                 Telegram setup skipped. You can configure it later from the Telegram tab.
@@ -324,18 +310,69 @@ export function SetupWizard({ onComplete }: Props) {
               </p>
               <TelegramSetup
                 embedded
+                initialConfig={telegramConfig}
                 onComplete={(config) => {
                   handleTelegramComplete(config);
-                  goNext();
                 }}
               />
-              <button
-                className="btn btn-sm"
-                onClick={() => { setTelegramSkipped(true); goNext(); }}
-                style={{ marginTop: 8 }}
-              >
-                Skip for now
-              </button>
+
+              {telegramConfig && telegramConfig.chat_ids.length > 0 && (
+                <>
+                  <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
+                  <h4>Notifications</h4>
+                  <div className="form-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={notifySuccess}
+                        onChange={(e) => {
+                          setNotifySuccess(e.target.checked);
+                          saveTelegramSettings({ notify_on_success: e.target.checked });
+                        }}
+                      />{" "}
+                      Notify on job success
+                    </label>
+                  </div>
+                  <div className="form-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={notifyFailure}
+                        onChange={(e) => {
+                          setNotifyFailure(e.target.checked);
+                          saveTelegramSettings({ notify_on_failure: e.target.checked });
+                        }}
+                      />{" "}
+                      Notify on job failure
+                    </label>
+                  </div>
+
+                  <h4>Agent Mode</h4>
+                  <div className="form-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={agentEnabled}
+                        onChange={(e) => {
+                          setAgentEnabled(e.target.checked);
+                          saveTelegramSettings({ agent_enabled: e.target.checked });
+                        }}
+                      />{" "}
+                      Enable agent mode
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {!telegramConfig && (
+                <button
+                  className="btn btn-sm"
+                  onClick={() => { setTelegramSkipped(true); goNext(); }}
+                  style={{ marginTop: 8 }}
+                >
+                  Skip for now
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -349,8 +386,6 @@ export function SetupWizard({ onComplete }: Props) {
             or re-run this wizard from Settings.
           </p>
           <div style={{ marginTop: 12 }}>
-            <p><strong>Claude Path:</strong> {claudePath}</p>
-            <p><strong>Work Dir:</strong> {workDir}</p>
             {hasTmux ? (
               <p><strong>Tmux Session:</strong> {tmuxSession}</p>
             ) : (
@@ -372,7 +407,7 @@ export function SetupWizard({ onComplete }: Props) {
           <button className="btn btn-primary" onClick={handleFinish}>
             Finish Setup
           </button>
-        ) : currentStep === "telegram" && !telegramConfig && !telegramSkipped ? (
+        ) : currentStep === "telegram" && !telegramConfig?.chat_ids?.length && !telegramSkipped ? (
           null
         ) : (
           <button className="btn btn-primary" onClick={goNext}>

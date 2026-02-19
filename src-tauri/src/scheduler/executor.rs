@@ -289,7 +289,11 @@ async fn execute_folder_job(
         ));
     }
 
-    let prompt_content = folder.read_entry_point()?;
+    let raw_prompt = folder.read_entry_point()?;
+    let prompt_content = format!(
+        "Read CLAUDE.md in this directory for environment context before starting.\n\n{}",
+        raw_prompt
+    );
 
     let (tmux_session, claude_path) = {
         let s = settings.lock().unwrap();

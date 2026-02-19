@@ -92,8 +92,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [cwdtPreview, setCwdtPreview] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [availableEditors, setAvailableEditors] = useState<string[]>(["nvim"]);
-  const [browserSessionExists, setBrowserSessionExists] = useState(false);
-  const [browserAuthUrl, setBrowserAuthUrl] = useState("https://");
   const [defaultTmuxSession, setDefaultTmuxSession] = useState("tgs");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
@@ -140,7 +138,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     }
   }, [currentStep, isWizard, availableSecrets]);
 
-  // Load aerospace + browser session when entering config step (or on mount for edit mode)
+  // Load aerospace when entering config step (or on mount for edit mode)
   useEffect(() => {
     if (!isWizard || currentStep === "config") {
       invoke<boolean>("aerospace_available")
@@ -153,13 +151,8 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           }
         })
         .catch(() => setAerospaceAvailable(false));
-      if (form.job_type === "folder" && form.name) {
-        invoke<boolean>("check_browser_session", { jobName: form.name })
-          .then(setBrowserSessionExists)
-          .catch(() => setBrowserSessionExists(false));
-      }
     }
-  }, [currentStep, isWizard, form.name, form.job_type]);
+  }, [currentStep, isWizard]);
 
   // Auto-init cwdt.md and load preview when folder path changes
   const refreshCwdtPreview = useCallback((folderPath: string) => {
@@ -335,6 +328,20 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                 </option>
               ))}
             </select>
+            {!isNew && (
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  invoke("open_job_editor", {
+                    folderPath: form.folder_path,
+                    editor: preferredEditor,
+                    fileName: "CLAUDE.md",
+                  });
+                }}
+              >
+                Edit CLAUDE.md
+              </button>
+            )}
             <button
               className="btn btn-sm"
               onClick={() => refreshCwdtPreview(form.folder_path!)}
@@ -577,47 +584,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
         </span>
       </div>
 
-      {form.job_type === "folder" && form.name && (
-        <div className="form-group">
-          <label>
-            Browser Session{" "}
-            <span style={{ color: browserSessionExists ? "var(--success)" : "var(--text-secondary)", fontSize: 11 }}>
-              ({browserSessionExists ? "active" : "none"})
-            </span>
-          </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              type="text"
-              value={browserAuthUrl}
-              onChange={(e) => setBrowserAuthUrl(e.target.value)}
-              placeholder="https://x.com"
-              style={{ flex: 1 }}
-            />
-            <button
-              className="btn btn-sm"
-              onClick={() => {
-                invoke("launch_browser_auth", { jobName: form.name, url: browserAuthUrl })
-                  .catch((e) => alert(`Failed to launch auth browser: ${e}`));
-              }}
-            >
-              Launch Auth
-            </button>
-            {browserSessionExists && (
-              <button
-                className="btn btn-sm"
-                onClick={() => {
-                  invoke("clear_browser_session", { jobName: form.name }).then(() =>
-                    setBrowserSessionExists(false),
-                  );
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <span className="hint">Log in to sites the bot needs. Session persists across runs.</span>
-        </div>
-      )}
     </>
   );
 

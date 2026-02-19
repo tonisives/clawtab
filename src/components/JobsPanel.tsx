@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Job, JobStatus } from "../types";
+import type { Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
 
 function StatusBadge({ status }: { status: JobStatus | undefined }) {
@@ -35,6 +35,137 @@ function groupJobs(jobs: Job[]): Map<string, Job[]> {
     groups.set(group, list);
   }
   return groups;
+}
+
+function formatTime(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function RunsExpander({ jobName }: { jobName: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [runs, setRuns] = useState<RunRecord[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadRuns = async () => {
+    setLoading(true);
+    try {
+      const loaded = await invoke<RunRecord[]>("get_job_runs", { jobName });
+      setRuns(loaded);
+    } catch (e) {
+      console.error("Failed to load runs:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load on mount to check if there are any runs
+  useEffect(() => {
+    loadRuns();
+  }, [jobName]);
+
+  const handleToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next) loadRuns();
+  };
+
+  const handleOpenRun = async (run: RunRecord) => {
+    // Try to open the tmux window first
+    try {
+      await invoke("focus_job_window", { name: jobName });
+      return;
+    } catch {
+      // tmux window doesn't exist, open the log file
+    }
+    try {
+      await invoke("open_run_log", { runId: run.id });
+    } catch (e) {
+      console.error("Failed to open run log:", e);
+    }
+  };
+
+  // Don't render at all if no runs exist
+  if (runs !== null && runs.length === 0) return null;
+
+  return (
+    <tr>
+      <td colSpan={6} style={{ padding: 0, border: "none" }}>
+        <button
+          onClick={handleToggle}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            padding: "4px 8px",
+            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <span style={{
+            fontSize: 8,
+            transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
+            transition: "transform 0.15s",
+          }}>
+            &#9660;
+          </span>
+          Runs{runs !== null ? ` (${runs.length})` : ""}
+        </button>
+        {expanded && (
+          <div style={{ padding: "0 8px 8px 24px" }}>
+            {loading ? (
+              <span className="text-secondary" style={{ fontSize: 12 }}>Loading...</span>
+            ) : (
+              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                <tbody>
+                  {(runs ?? []).map((run) => (
+                    <tr key={run.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "3px 8px 3px 0", whiteSpace: "nowrap" }}>
+                        {formatTime(run.started_at)}
+                      </td>
+                      <td style={{ padding: "3px 8px" }}>
+                        {run.exit_code === null ? (
+                          <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
+                        ) : run.exit_code === 0 ? (
+                          <span className="status-badge status-success" style={{ fontSize: 11 }}>ok</span>
+                        ) : (
+                          <span className="status-badge status-failed" style={{ fontSize: 11 }}>exit {run.exit_code}</span>
+                        )}
+                      </td>
+                      <td style={{ padding: "3px 8px", color: "var(--text-secondary)" }}>
+                        {run.trigger}
+                      </td>
+                      <td style={{ padding: "3px 0", textAlign: "right" }}>
+                        <button
+                          className="btn btn-sm"
+                          style={{ fontSize: 11, padding: "1px 6px" }}
+                          onClick={() => handleOpenRun(run)}
+                        >
+                          Open
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </td>
+    </tr>
+  );
 }
 
 export function JobsPanel() {
@@ -87,18 +218,6 @@ export function JobsPanel() {
       setTimeout(loadStatuses, 500);
     } catch (e) {
       console.error("Failed to run job:", e);
-    }
-  };
-
-  const handleOpenWindow = async (name: string) => {
-    try {
-      await invoke("focus_job_window", { name });
-    } catch (e) {
-      try {
-        await invoke("open_job_terminal", { name });
-      } catch (e2) {
-        console.error("Failed to open terminal:", e2);
-      }
     }
   };
 
@@ -193,88 +312,85 @@ export function JobsPanel() {
   });
   const isSingleGroup = groupNames.length <= 1;
 
-  const renderJobRow = (job: Job) => (
-    <tr key={job.name}>
-      <td>
-        <input
-          type="checkbox"
-          className="toggle-switch"
-          checked={job.enabled}
-          onChange={() => handleToggle(job.name)}
-        />
-      </td>
-      <td>{job.name}</td>
-      <td>{job.job_type}</td>
-      <td>
-        <code>{job.cron || "manual"}</code>
-      </td>
-      <td>
-        <StatusBadge status={statuses[job.name]} />
-      </td>
-      <td className="actions">
-        <div className="btn-group">
-          {(() => {
-            const status = statuses[job.name];
-            const state = status?.state ?? "idle";
-            const isTmuxJob = job.job_type === "claude" || job.job_type === "folder";
+  const renderJobRows = (job: Job) => {
+    const status = statuses[job.name];
+    const state = status?.state ?? "idle";
 
-            return (
-              <>
-                {state === "running" && (
-                  <>
-                    {isTmuxJob && (
-                      <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
-                        Open
-                      </button>
-                    )}
-                    <button className="btn btn-sm" onClick={() => handlePause(job.name)}>
-                      Pause
-                    </button>
-                  </>
-                )}
-                {state === "paused" && (
-                  <button className="btn btn-success btn-sm" onClick={() => handleResume(job.name)}>
-                    Resume
-                  </button>
-                )}
-                {state === "failed" && (
-                  <button className="btn btn-success btn-sm" onClick={() => handleRestart(job.name)}>
-                    Restart
-                  </button>
-                )}
-                {state === "success" && (
-                  <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
-                    Run Again
-                  </button>
-                )}
-                {(state === "idle" || !status) && (
-                  <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
-                    Run
-                  </button>
-                )}
-                {isTmuxJob && state !== "running" && (
-                  <button className="btn btn-sm" onClick={() => handleOpenWindow(job.name)}>
-                    Open
-                  </button>
-                )}
-              </>
-            );
-          })()}
-          <button
-            className="btn btn-sm"
-            onClick={() => setEditingJob(job)}
-          >
-            Edit
-          </button>
-          <button
-            className="btn btn-danger btn-sm"
-            onClick={() => handleDelete(job.name)}
-          >
-            Delete
-          </button>
-        </div>
-      </td>
-    </tr>
+    return [
+      <tr key={job.name}>
+        <td>
+          <input
+            type="checkbox"
+            className="toggle-switch"
+            checked={job.enabled}
+            onChange={() => handleToggle(job.name)}
+          />
+        </td>
+        <td>{job.name}</td>
+        <td>{job.job_type}</td>
+        <td>
+          <code>{job.cron || "manual"}</code>
+        </td>
+        <td>
+          <StatusBadge status={status} />
+        </td>
+        <td className="actions">
+          <div className="btn-group">
+            {state === "running" && (
+              <button className="btn btn-sm" onClick={() => handlePause(job.name)}>
+                Pause
+              </button>
+            )}
+            {state === "paused" && (
+              <button className="btn btn-success btn-sm" onClick={() => handleResume(job.name)}>
+                Resume
+              </button>
+            )}
+            {state === "failed" && (
+              <button className="btn btn-success btn-sm" onClick={() => handleRestart(job.name)}>
+                Restart
+              </button>
+            )}
+            {state === "success" && (
+              <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
+                Run Again
+              </button>
+            )}
+            {(state === "idle" || !status) && (
+              <button className="btn btn-success btn-sm" onClick={() => handleRunNow(job.name)}>
+                Run
+              </button>
+            )}
+            <button
+              className="btn btn-sm"
+              onClick={() => setEditingJob(job)}
+            >
+              Edit
+            </button>
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={() => handleDelete(job.name)}
+            >
+              Delete
+            </button>
+          </div>
+        </td>
+      </tr>,
+      <RunsExpander key={`${job.name}-runs`} jobName={job.name} />,
+    ];
+  };
+
+  const tableHead = (
+    <thead>
+      <tr>
+        <th>Enabled</th>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Cron</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
   );
 
   return (
@@ -301,18 +417,9 @@ export function JobsPanel() {
         </div>
       ) : isSingleGroup ? (
         <table className="data-table">
-          <thead>
-            <tr>
-              <th>Enabled</th>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Cron</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
+          {tableHead}
           <tbody>
-            {jobs.map(renderJobRow)}
+            {jobs.flatMap(renderJobRows)}
           </tbody>
         </table>
       ) : (
@@ -349,18 +456,9 @@ export function JobsPanel() {
               </button>
               {!isCollapsed && (
                 <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Enabled</th>
-                      <th>Name</th>
-                      <th>Type</th>
-                      <th>Cron</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
+                  {tableHead}
                   <tbody>
-                    {groupJobs.map(renderJobRow)}
+                    {groupJobs.flatMap(renderJobRows)}
                   </tbody>
                 </table>
               )}

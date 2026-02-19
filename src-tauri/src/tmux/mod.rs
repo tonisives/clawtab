@@ -146,6 +146,146 @@ pub fn is_window_busy(session: &str, window: &str) -> bool {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
+pub struct PaneInfo {
+    pub pane_id: String,
+    pub current_command: String,
+    pub active: bool,
+}
+
+/// Split a window to create a new pane, returning the new pane ID (e.g. "%42").
+pub fn split_pane(session: &str, window: &str) -> Result<String, String> {
+    let target = format!("{}:{}", session, window);
+    let output = Command::new("tmux")
+        .args([
+            "split-window",
+            "-t",
+            &target,
+            "-P",
+            "-F",
+            "#{pane_id}",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to split pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Send keys to a specific pane by its ID (e.g. "%42").
+pub fn send_keys_to_pane(session: &str, pane_id: &str, keys: &str) -> Result<(), String> {
+    let target = format!("{}:{}", session, pane_id);
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", &target, keys, "Enter"])
+        .output()
+        .map_err(|e| format!("Failed to send keys to pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
+/// Capture the last N lines from a specific pane.
+pub fn capture_pane(session: &str, pane_id: &str, lines: u32) -> Result<String, String> {
+    let target = format!("{}:{}", session, pane_id);
+    let start = format!("-{}", lines);
+    let output = Command::new("tmux")
+        .args([
+            "capture-pane",
+            "-t",
+            &target,
+            "-p",
+            "-S",
+            &start,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to capture pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Check if a specific pane has an active (non-shell) process running.
+pub fn is_pane_busy(session: &str, pane_id: &str) -> bool {
+    let target = format!("{}:{}", session, pane_id);
+    let output = Command::new("tmux")
+        .args([
+            "list-panes",
+            "-t",
+            &target,
+            "-F",
+            "#{pane_id}:#{pane_current_command}",
+        ])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.lines().any(|line| {
+                if let Some((id, cmd)) = line.split_once(':') {
+                    id == pane_id
+                        && !cmd.trim().is_empty()
+                        && !matches!(
+                            cmd.trim(),
+                            "bash" | "zsh" | "fish" | "sh" | "dash"
+                        )
+                } else {
+                    false
+                }
+            })
+        }
+        _ => false,
+    }
+}
+
+/// List all panes in a window.
+#[allow(dead_code)]
+pub fn list_panes(session: &str, window: &str) -> Result<Vec<PaneInfo>, String> {
+    let target = format!("{}:{}", session, window);
+    let output = Command::new("tmux")
+        .args([
+            "list-panes",
+            "-t",
+            &target,
+            "-F",
+            "#{pane_id}:#{pane_current_command}:#{pane_active}",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to list panes: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(3, ':').collect();
+            if parts.len() >= 3 {
+                Some(PaneInfo {
+                    pane_id: parts[0].to_string(),
+                    current_command: parts[1].to_string(),
+                    active: parts[2] == "1",
+                })
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
     // Select the window within the session

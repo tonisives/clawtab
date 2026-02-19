@@ -53,8 +53,8 @@ fn list_scripts(dir: &Path) -> Vec<String> {
         let path = entry.path();
         if path.is_file() {
             let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            // Skip the entry point itself
-            if name == "cwdt.md" {
+            // Skip the entry point and auto-generated CLAUDE.md
+            if name == "cwdt.md" || name == "CLAUDE.md" {
                 continue;
             }
             // Include script-like files

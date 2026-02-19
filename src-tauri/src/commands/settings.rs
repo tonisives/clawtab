@@ -22,5 +22,14 @@ pub fn set_settings(
     if settings.telegram.is_none() {
         settings.telegram = telegram;
     }
-    settings.save()
+    settings.save()?;
+
+    // Regenerate all CLAUDE.md files with updated settings
+    let settings_clone = settings.clone();
+    drop(settings);
+    let jobs = state.jobs_config.lock().unwrap().jobs.clone();
+    super::jobs::ensure_agent_dir(&settings_clone, &jobs);
+    super::jobs::regenerate_all_claude_mds(&settings_clone, &jobs);
+
+    Ok(())
 }

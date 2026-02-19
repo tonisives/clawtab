@@ -34,9 +34,22 @@ fn browser_sessions_root() -> PathBuf {
         .join("browser-sessions")
 }
 
-/// Ensure playwright and its browser binaries are installed.
-/// Creates a package.json and runs `npm install playwright` + `npx playwright install chromium` if needed.
-fn ensure_playwright_installed() -> Result<(), String> {
+/// Check if the playwright node module is installed.
+pub fn is_playwright_installed() -> bool {
+    browser_sessions_root()
+        .join("node_modules")
+        .join("playwright")
+        .exists()
+}
+
+/// Whether the chosen browser needs playwright to download a bundled binary.
+/// Native channel browsers (chrome, brave) use the system-installed binary.
+fn needs_browser_download(browser: &str) -> bool {
+    matches!(browser, "chromium" | "firefox")
+}
+
+/// Ensure playwright node module is installed, and download browser binary if needed.
+fn ensure_playwright_installed(browser: &str) -> Result<(), String> {
     let root = browser_sessions_root();
     std::fs::create_dir_all(&root)
         .map_err(|e| format!("Failed to create browser-sessions dir: {}", e))?;
@@ -56,6 +69,7 @@ fn ensure_playwright_installed() -> Result<(), String> {
         let output = std::process::Command::new("npm")
             .args(["install"])
             .current_dir(&root)
+            .env("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1")
             .output()
             .map_err(|e| format!("Failed to run npm install: {}", e))?;
 
@@ -65,63 +79,99 @@ fn ensure_playwright_installed() -> Result<(), String> {
         }
     }
 
-    // Check if chromium browser binary is downloaded
+    if !needs_browser_download(browser) {
+        return Ok(());
+    }
+
     // Playwright stores browsers in ~/Library/Caches/ms-playwright/ on macOS
     let cache_dir = dirs::home_dir()
         .map(|h| h.join("Library/Caches/ms-playwright"))
         .unwrap_or_default();
-    let has_chromium = cache_dir.exists()
+
+    let browser_prefix = match browser {
+        "firefox" => "firefox",
+        _ => "chromium",
+    };
+
+    let has_binary = cache_dir.exists()
         && std::fs::read_dir(&cache_dir)
             .ok()
             .map(|entries| {
                 entries
                     .filter_map(|e| e.ok())
-                    .any(|e| e.file_name().to_string_lossy().starts_with("chromium"))
+                    .any(|e| e.file_name().to_string_lossy().starts_with(browser_prefix))
             })
             .unwrap_or(false);
 
-    if !has_chromium {
-        log::info!("Downloading chromium for playwright...");
+    if !has_binary {
+        log::info!("Downloading {} for playwright...", browser_prefix);
         let output = std::process::Command::new("npx")
-            .args(["playwright", "install", "chromium"])
+            .args(["playwright", "install", browser_prefix])
             .current_dir(&root)
             .output()
             .map_err(|e| format!("Failed to run playwright install: {}", e))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("playwright install chromium failed: {}", stderr));
+            return Err(format!("playwright install {} failed: {}", browser_prefix, stderr));
         }
     }
 
     Ok(())
 }
 
-/// Launch an interactive browser session so the user can log in.
-/// Uses Playwright's persistent context with `headless: false`.
-/// Auth state (cookies, localStorage) is saved to `auth.json` in the session dir.
-pub fn launch_auth_session(url: &str, job_name: &str) -> Result<(), String> {
-    ensure_playwright_installed()?;
-
-    let sess_dir = session_dir(job_name);
-    std::fs::create_dir_all(&sess_dir)
-        .map_err(|e| format!("Failed to create session dir: {}", e))?;
-
-    let auth_path = sess_dir.join("auth.json");
-    let user_data_dir = sess_dir.join("user-data");
-    let root = browser_sessions_root();
-
-    let script = format!(
-        r#"const {{ chromium }} = require('playwright');
-(async () => {{
-  const context = await chromium.launchPersistentContext({user_data_dir}, {{
+/// Build the playwright JS script based on browser choice.
+fn build_auth_script(
+    browser: &str,
+    user_data_dir: &str,
+    url: &str,
+    auth_path: &str,
+) -> String {
+    let (require_name, launch_opts) = match browser {
+        "chrome" => (
+            "chromium",
+            r#"{
+    channel: "chrome",
     headless: false,
-    viewport: {{ width: 1280, height: 900 }},
-  }});
+    viewport: { width: 1280, height: 900 },
+  }"#
+            .to_string(),
+        ),
+        "brave" => (
+            "chromium",
+            r#"{
+    executablePath: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    headless: false,
+    viewport: { width: 1280, height: 900 },
+  }"#
+            .to_string(),
+        ),
+        "firefox" => (
+            "firefox",
+            r#"{
+    headless: false,
+    viewport: { width: 1280, height: 900 },
+  }"#
+            .to_string(),
+        ),
+        // "chromium" or fallback
+        _ => (
+            "chromium",
+            r#"{
+    headless: false,
+    viewport: { width: 1280, height: 900 },
+  }"#
+            .to_string(),
+        ),
+    };
+
+    format!(
+        r#"const {{ {require_name} }} = require('playwright');
+(async () => {{
+  const context = await {require_name}.launchPersistentContext({user_data_dir}, {launch_opts});
   const page = context.pages()[0] || await context.newPage();
   await page.goto({url});
   console.log('Browser opened. Log in, then close the browser window to save session.');
-  // Periodically save state while the browser is open
   const saveInterval = setInterval(async () => {{
     try {{
       await context.storageState({{ path: {auth_path} }});
@@ -139,12 +189,35 @@ pub fn launch_auth_session(url: &str, job_name: &str) -> Result<(), String> {
   console.log('Session saved.');
 }})();
 "#,
-        user_data_dir = serde_json::to_string(&user_data_dir.to_string_lossy().as_ref())
-            .unwrap_or_default(),
-        url = serde_json::to_string(url).unwrap_or_default(),
-        auth_path = serde_json::to_string(&auth_path.to_string_lossy().as_ref())
-            .unwrap_or_default(),
-    );
+        require_name = require_name,
+        user_data_dir = user_data_dir,
+        url = url,
+        auth_path = auth_path,
+        launch_opts = launch_opts,
+    )
+}
+
+/// Launch an interactive browser session so the user can log in.
+/// Uses Playwright's persistent context with `headless: false`.
+/// Auth state (cookies, localStorage) is saved to `auth.json` in the session dir.
+pub fn launch_auth_session(url: &str, job_name: &str, browser: &str) -> Result<(), String> {
+    ensure_playwright_installed(browser)?;
+
+    let sess_dir = session_dir(job_name);
+    std::fs::create_dir_all(&sess_dir)
+        .map_err(|e| format!("Failed to create session dir: {}", e))?;
+
+    let auth_path = sess_dir.join("auth.json");
+    let user_data_dir = sess_dir.join("user-data");
+    let root = browser_sessions_root();
+
+    let user_data_dir_json =
+        serde_json::to_string(&user_data_dir.to_string_lossy().as_ref()).unwrap_or_default();
+    let url_json = serde_json::to_string(url).unwrap_or_default();
+    let auth_path_json =
+        serde_json::to_string(&auth_path.to_string_lossy().as_ref()).unwrap_or_default();
+
+    let script = build_auth_script(browser, &user_data_dir_json, &url_json, &auth_path_json);
 
     let tmp_script = sess_dir.join("_auth_launch.js");
     std::fs::write(&tmp_script, &script)
