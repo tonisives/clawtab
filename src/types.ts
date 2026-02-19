@@ -37,10 +37,19 @@ export interface SecretEntry {
   source: SecretSource;
 }
 
+export interface TelegramConfig {
+  bot_token: string;
+  chat_ids: number[];
+  notify_on_success: boolean;
+  notify_on_failure: boolean;
+}
+
 export interface AppSettings {
   default_tmux_session: string;
   default_work_dir: string;
   claude_path: string;
+  setup_completed: boolean;
+  telegram: TelegramConfig | null;
 }
 
 export interface ToolInfo {

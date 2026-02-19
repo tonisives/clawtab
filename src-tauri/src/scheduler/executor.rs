@@ -60,6 +60,12 @@ pub async fn execute_job(
 
     let finished_at = Utc::now().to_rfc3339();
 
+    // Get telegram config for notifications
+    let telegram_config = {
+        let s = settings.lock().unwrap();
+        s.telegram.clone()
+    };
+
     match result {
         Ok((exit_code, stdout, stderr)) => {
             log::info!(
@@ -69,24 +75,34 @@ pub async fn execute_job(
                 exit_code
             );
 
+            let success = matches!(exit_code, Some(0) | None);
+
             // Update status based on exit code
             {
                 let mut status = job_status.lock().unwrap();
-                let new_status = match exit_code {
-                    Some(0) | None => JobStatus::Success {
+                let new_status = if success {
+                    JobStatus::Success {
                         last_run: finished_at.clone(),
-                    },
-                    Some(code) => JobStatus::Failed {
+                    }
+                } else {
+                    JobStatus::Failed {
                         last_run: finished_at.clone(),
-                        exit_code: code,
-                    },
+                        exit_code: exit_code.unwrap_or(-1),
+                    }
                 };
                 status.insert(job.name.clone(), new_status);
             }
 
-            let h = history.lock().unwrap();
-            if let Err(e) = h.update_finished(&run_id, &finished_at, exit_code, &stdout, &stderr) {
-                log::error!("Failed to update run record: {}", e);
+            {
+                let h = history.lock().unwrap();
+                if let Err(e) = h.update_finished(&run_id, &finished_at, exit_code, &stdout, &stderr) {
+                    log::error!("Failed to update run record: {}", e);
+                }
+            }
+
+            // Send telegram notification (after dropping MutexGuard)
+            if let Some(ref tg) = telegram_config {
+                crate::telegram::notify_job_result(tg, &job.name, exit_code, success).await;
             }
         }
         Err(e) => {
@@ -103,11 +119,18 @@ pub async fn execute_job(
                 );
             }
 
-            let h = history.lock().unwrap();
-            if let Err(e2) =
-                h.update_finished(&run_id, &finished_at, Some(-1), "", &e.to_string())
             {
-                log::error!("Failed to update run record: {}", e2);
+                let h = history.lock().unwrap();
+                if let Err(e2) =
+                    h.update_finished(&run_id, &finished_at, Some(-1), "", &e.to_string())
+                {
+                    log::error!("Failed to update run record: {}", e2);
+                }
+            }
+
+            // Send telegram notification for failure (after dropping MutexGuard)
+            if let Some(ref tg) = telegram_config {
+                crate::telegram::notify_job_result(tg, &job.name, Some(-1), false).await;
             }
         }
     }

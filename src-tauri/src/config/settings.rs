@@ -1,12 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::telegram::TelegramConfig;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
     pub default_tmux_session: String,
     pub default_work_dir: String,
     pub claude_path: String,
+    pub setup_completed: bool,
+    pub telegram: Option<TelegramConfig>,
 }
 
 impl Default for AppSettings {
@@ -18,6 +22,8 @@ impl Default for AppSettings {
             default_tmux_session: "tgs".to_string(),
             default_work_dir: format!("{}/workspace/tgs/automation", home),
             claude_path: "claude".to_string(),
+            setup_completed: false,
+            telegram: None,
         }
     }
 }

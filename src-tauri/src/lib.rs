@@ -6,6 +6,7 @@ mod history;
 pub mod ipc;
 mod scheduler;
 mod secrets;
+pub mod telegram;
 mod terminal;
 mod tmux;
 mod tools;
@@ -192,6 +193,9 @@ pub fn run() {
             commands::tools::detect_tools,
             commands::aerospace::aerospace_available,
             commands::aerospace::list_aerospace_workspaces,
+            commands::telegram::get_telegram_config,
+            commands::telegram::set_telegram_config,
+            commands::telegram::test_telegram,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

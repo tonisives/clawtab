@@ -34,42 +34,48 @@ export function ToolsPanel() {
         </button>
       </div>
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Status</th>
-            <th>Tool</th>
-            <th>Version</th>
-            <th>Path</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tools.map((tool) => (
-            <tr key={tool.name}>
-              <td>
-                <span
-                  className={`status-dot ${tool.available ? "running" : "error"}`}
-                />
-              </td>
-              <td>{tool.name}</td>
-              <td>
-                {tool.version ? (
-                  <code>{tool.version}</code>
-                ) : (
-                  <span className="text-secondary">--</span>
-                )}
-              </td>
-              <td>
-                {tool.path ? (
-                  <code>{tool.path}</code>
-                ) : (
-                  <span className="text-secondary">not found</span>
-                )}
-              </td>
+      {loading && tools.length === 0 ? (
+        <div className="empty-state">
+          <p>Scanning for tools...</p>
+        </div>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Tool</th>
+              <th>Version</th>
+              <th>Path</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {tools.map((tool) => (
+              <tr key={tool.name}>
+                <td>
+                  <span
+                    className={`status-dot ${tool.available ? "running" : "error"}`}
+                  />
+                </td>
+                <td>{tool.name}</td>
+                <td>
+                  {tool.version ? (
+                    <code>{tool.version}</code>
+                  ) : (
+                    <span className="text-secondary">--</span>
+                  )}
+                </td>
+                <td>
+                  {tool.path ? (
+                    <code>{tool.path}</code>
+                  ) : (
+                    <span className="text-secondary">not found</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
