@@ -9,10 +9,11 @@ All configuration lives under `~/.config/clawdtab/`.
   settings.yaml              # App settings
   history.db                 # SQLite run history
   jobs/
-    <slug>/
-      job.yaml               # Job definition
-      logs/
-        <run-id>.log         # Captured output per run
+    <project-slug>/          # grouped by project
+      <job-name>/
+        job.yaml             # Job definition
+        logs/
+          <run-id>.log       # Captured output per run
 ```
 
 ## settings.yaml
@@ -42,35 +43,36 @@ All fields have defaults. The file is created by the setup wizard or on first se
 
 ## Job Definition (job.yaml)
 
-Each job is stored at `~/.config/clawdtab/jobs/<slug>/job.yaml`.
+Each job is stored at `~/.config/clawdtab/jobs/<project-slug>/<job-name>/job.yaml`.
 
 ```yaml
-name: daily-backup               # display name
-job_type: binary                  # binary | claude | folder
+name: myapp/deploy               # display name (project/job)
+job_type: folder                  # binary | claude | folder
 enabled: true
-path: /scripts/backup.sh         # binary path, prompt file, or .cwt folder
-args: ["--full"]                  # command arguments (binary jobs)
+path: ""                          # binary path or prompt file
+args: []                          # command arguments (binary jobs)
 cron: "0 0 * * *"                # standard cron expression
 secret_keys: [AWS_KEY, DB_PASS]  # secrets injected as env vars
 env:                              # static env vars
   ENVIRONMENT: production
-work_dir: /home/user/project     # overrides default_work_dir
+work_dir: null                    # overrides default_work_dir
 tmux_session: main               # overrides default_tmux_session
 aerospace_workspace: "3"         # move tmux window to this workspace
-folder_path: /project/.cwt      # required for folder jobs
+folder_path: /project/.cwt       # .cwt directory (folder jobs)
+job_name: deploy                  # subfolder within .cwt/ (folder jobs)
 telegram_chat_id: 12345678       # per-job notification routing
 group: default                   # grouping label
-slug: daily-backup               # auto-generated identifier
+slug: myapp/deploy               # auto-generated identifier
 ```
 
 ### Slug Generation
 
-Slugs are derived from `folder_path` (or `name` if no folder):
+Slugs are derived from `folder_path` (or `name`) + `job_name`:
 
-1. Take last 2 path components
-2. Lowercase, keep `[a-z0-9-]`
-3. Collapse consecutive dashes
-4. Truncate at dash boundary if > 20 chars
+1. Project part: last path component (excluding `.cwt`), slugified
+2. Job part: `job_name` field (defaults to `"default"`), slugified
+3. Combined as `project-slug/job-name`
+4. Slugify: lowercase, keep `[a-z0-9-]`, collapse dashes, truncate at 20 chars
 5. Deduplicate with `-2`, `-3` suffixes
 
 ### Cron Expressions
@@ -88,4 +90,10 @@ The scheduler polls every 30 seconds and checks if any scheduled time falls with
 
 ## Legacy Migration
 
-If a `jobs.yaml` file exists (flat list format), it is automatically migrated to folder-based storage on startup. The original is backed up as `jobs.yaml.bak`.
+Two migration paths run automatically on startup:
+
+1. **jobs.yaml** -- If a `jobs.yaml` file exists (flat list format), it is migrated to folder-based storage. The original is backed up as `jobs.yaml.bak`.
+
+2. **Flat slug dirs** -- If `jobs/<flat-slug>/job.yaml` exists (old single-level format), it is migrated to `jobs/<project-slug>/<job-name>/job.yaml`. Jobs without a `job_name` get `"default"`. Logs are moved along with the job.
+
+3. **.cwt root migration** -- If `.cwt/job.md` exists at the project level (old single-job format), it is lazily moved to `.cwt/default/job.md` on first access.

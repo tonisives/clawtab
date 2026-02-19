@@ -22,6 +22,7 @@ pub fn save_job(state: State<AppState>, job: Job) -> Result<(), String> {
     if job.slug.is_empty() {
         job.slug = crate::config::jobs::derive_slug(
             &job.folder_path.as_deref().unwrap_or(&job.name),
+            job.job_name.as_deref(),
             &config.jobs,
         );
     }
@@ -165,17 +166,24 @@ pub fn open_job_editor(
     folder_path: String,
     editor: Option<String>,
     file_name: Option<String>,
+    job_name: Option<String>,
 ) -> Result<(), String> {
     let preferred_editor = editor.unwrap_or_else(|| {
         let s = state.settings.lock().unwrap();
         s.preferred_editor.clone()
     });
 
+    let jn = job_name.as_deref().unwrap_or("default");
     let target_file = file_name.as_deref().unwrap_or("job.md");
-    let file_path = std::path::Path::new(&folder_path).join(target_file);
+
+    // Build file path: {folder_path}/{job_name}/{target_file}
+    let file_path = std::path::Path::new(&folder_path).join(jn).join(target_file);
 
     // Create job.md with template if it doesn't exist (only for job.md)
     if target_file == "job.md" && !file_path.exists() {
+        if let Some(parent) = file_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let template = "# Job Directions\n\nDescribe what the bot should do here.\n";
         std::fs::write(&file_path, template)
             .map_err(|e| format!("Failed to create job.md: {}", e))?;
@@ -284,29 +292,41 @@ pub fn open_job_in_editor(state: State<AppState>, name: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn init_cwt_folder(folder_path: String) -> Result<CwtFolder, String> {
-    let path = std::path::Path::new(&folder_path);
+pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<CwtFolder, String> {
+    let cwt_root = std::path::Path::new(&folder_path);
+    let job_name = job_name.as_deref().unwrap_or("default");
 
-    // Create directory if it doesn't exist
-    if !path.exists() {
-        std::fs::create_dir_all(path)
+    // Create .cwt/ root if it doesn't exist
+    if !cwt_root.exists() {
+        std::fs::create_dir_all(cwt_root)
             .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
-    let job_md = path.join("job.md");
+    // Lazy migration: move .cwt/job.md -> .cwt/default/job.md if needed
+    crate::config::jobs::migrate_cwt_root(cwt_root);
+
+    // Create job subfolder
+    let job_dir = cwt_root.join(job_name);
+    if !job_dir.exists() {
+        std::fs::create_dir_all(&job_dir)
+            .map_err(|e| format!("Failed to create job directory: {}", e))?;
+    }
+
+    let job_md = job_dir.join("job.md");
     if !job_md.exists() {
         let template = "# Job Directions\n\nDescribe what the bot should do here.\n";
         std::fs::write(&job_md, template)
             .map_err(|e| format!("Failed to create job.md: {}", e))?;
     }
 
-    CwtFolder::from_path(path)
+    CwtFolder::from_path_with_job(cwt_root, job_name)
 }
 
 #[tauri::command]
-pub fn read_cwt_entry(folder_path: String) -> Result<String, String> {
-    let path = std::path::Path::new(&folder_path);
-    let folder = CwtFolder::from_path(path)?;
+pub fn read_cwt_entry(folder_path: String, job_name: Option<String>) -> Result<String, String> {
+    let cwt_root = std::path::Path::new(&folder_path);
+    let job_name = job_name.as_deref().unwrap_or("default");
+    let folder = CwtFolder::from_path_with_job(cwt_root, job_name)?;
     if !folder.has_entry_point {
         return Ok(String::new());
     }
@@ -314,9 +334,25 @@ pub fn read_cwt_entry(folder_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn derive_job_slug(state: State<AppState>, folder_path: String) -> String {
+pub fn read_cwt_context(folder_path: String, job_name: Option<String>) -> Result<String, String> {
+    let cwt_root = std::path::Path::new(&folder_path);
+    let jn = job_name.as_deref().unwrap_or("default");
+    let cwt_md = cwt_root.join(jn).join("cwt.md");
+    if !cwt_md.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&cwt_md)
+        .map_err(|e| format!("Failed to read {}: {}", cwt_md.display(), e))
+}
+
+#[tauri::command]
+pub fn derive_job_slug(
+    state: State<AppState>,
+    folder_path: String,
+    job_name: Option<String>,
+) -> String {
     let config = state.jobs_config.lock().unwrap();
-    crate::config::jobs::derive_slug(&folder_path, &config.jobs)
+    crate::config::jobs::derive_slug(&folder_path, job_name.as_deref(), &config.jobs)
 }
 
 /// Generate the CLAUDE.md for the agent bot directory (~/.config/clawdtab/agent/).
@@ -393,15 +429,20 @@ pub fn ensure_agent_dir(settings: &AppSettings, jobs: &[Job]) {
     }
 }
 
-/// Regenerate cwt.md context file for every folder job's .cwt directory.
+/// Regenerate cwt.md context file for every folder job's .cwt/{job_name}/ directory.
 pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
     for job in jobs {
         if job.job_type != crate::config::jobs::JobType::Folder {
             continue;
         }
         if let Some(ref folder_path) = job.folder_path {
+            let jn = job.job_name.as_deref().unwrap_or("default");
             let content = generate_cwt_context(job, settings);
-            let path = std::path::Path::new(folder_path).join("cwt.md");
+            let job_dir = std::path::Path::new(folder_path).join(jn);
+            if !job_dir.exists() {
+                let _ = std::fs::create_dir_all(&job_dir);
+            }
+            let path = job_dir.join("cwt.md");
             if let Err(e) = std::fs::write(&path, content) {
                 log::warn!("Failed to write cwt.md for '{}': {}", job.name, e);
             }
@@ -420,6 +461,7 @@ pub fn agent_dir_path() -> std::path::PathBuf {
 
 fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     let mut out = String::new();
+    let jn = job.job_name.as_deref().unwrap_or("default");
 
     out.push_str("<!-- Auto-generated by ClawdTab. Regenerated on settings/jobs change. -->\n");
     out.push_str("# ClawdTab Environment\n\n");
@@ -428,7 +470,8 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
 
     out.push_str("\n## Rules\n\n");
     out.push_str("- Only edit and look for files in the current directory.\n");
-    out.push_str("- The job directions are in `.cwt/job.md`.\n");
+    out.push_str(&format!("- The job directions are in `.cwt/{}/job.md`.\n", jn));
+    out.push_str("- Shared project context is in `.cwt/cwt.md` (user-managed).\n");
 
     out.push_str("\n## Job Management CLI\n\n");
     out.push_str("`cwtctl` is available for managing ClawdTab jobs:\n\n");

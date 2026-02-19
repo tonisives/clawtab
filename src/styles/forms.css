@@ -95,3 +95,98 @@ input[type="password"]:disabled,
   min-height: 60px;
   font-family: monospace;
 }
+
+/* Field group cards */
+.field-group {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.field-group .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.field-group-title {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* Terminal-style preview */
+.terminal-preview {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #333;
+  font-size: 11px;
+  color: #888;
+  font-family: monospace;
+}
+
+.terminal-tabs {
+  display: flex;
+  gap: 0;
+}
+
+.terminal-tab {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #888;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.terminal-tab:hover {
+  color: #ccc;
+}
+
+.terminal-tab.active {
+  color: #d4d4d4;
+  border-bottom-color: var(--accent-color);
+}
+
+.terminal-body {
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #d4d4d4;
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .terminal-preview {
+    background: #0d0d0d;
+    border-color: #222;
+  }
+
+  .terminal-header {
+    background: #1a1a1a;
+    border-bottom-color: #222;
+  }
+}

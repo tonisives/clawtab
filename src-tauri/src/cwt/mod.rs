@@ -2,34 +2,53 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-/// A `.cwt` folder job. Contains a `job.md` entry point, auto-generated `cwt.md` context, and optional scripts.
+/// A `.cwt` folder job. Represents a single job within a `.cwt/` directory.
+/// The job lives at `{cwt_root}/{job_name}/job.md`.
 #[derive(Debug, Clone, Serialize)]
 pub struct CwtFolder {
+    /// The .cwt/ root directory
     pub path: PathBuf,
+    /// The job subfolder name (e.g., "deploy", "lint", "default")
+    pub job_name: String,
     pub has_entry_point: bool,
     pub scripts: Vec<String>,
 }
 
 impl CwtFolder {
-    pub fn from_path(path: &Path) -> Result<Self, String> {
-        if !path.is_dir() {
-            return Err(format!("Not a directory: {}", path.display()));
+    /// Create from a .cwt root path + job name.
+    /// The job directory is at `{cwt_root}/{job_name}/`.
+    pub fn from_path_with_job(cwt_root: &Path, job_name: &str) -> Result<Self, String> {
+        if !cwt_root.is_dir() {
+            return Err(format!("Not a directory: {}", cwt_root.display()));
         }
 
-        let entry_point = path.join("job.md");
+        let job_dir = cwt_root.join(job_name);
+        let entry_point = job_dir.join("job.md");
         let has_entry_point = entry_point.exists();
 
-        let scripts = list_scripts(path);
+        // Collect scripts from both the root .cwt/ and the job subfolder
+        let mut scripts = list_scripts(cwt_root);
+        if job_dir.is_dir() {
+            let job_scripts = list_scripts(&job_dir);
+            for s in job_scripts {
+                if !scripts.contains(&s) {
+                    scripts.push(s);
+                }
+            }
+        }
+        scripts.sort();
 
         Ok(Self {
-            path: path.to_path_buf(),
+            path: cwt_root.to_path_buf(),
+            job_name: job_name.to_string(),
             has_entry_point,
             scripts,
         })
     }
 
+    /// Path to this job's entry point (job.md)
     pub fn entry_point(&self) -> PathBuf {
-        self.path.join("job.md")
+        self.path.join(&self.job_name).join("job.md")
     }
 
     /// Read the entry point content
@@ -38,7 +57,6 @@ impl CwtFolder {
         std::fs::read_to_string(&path)
             .map_err(|e| format!("Failed to read {}: {}", path.display(), e))
     }
-
 }
 
 fn list_scripts(dir: &Path) -> Vec<String> {

@@ -7,8 +7,11 @@
 | `~/.config/clawdtab/settings.yaml` | App settings |
 | `~/.config/clawdtab/history.db` | SQLite run history (30-day retention) |
 | `~/.config/clawdtab/jobs/` | Job definitions directory |
-| `~/.config/clawdtab/jobs/<slug>/job.yaml` | Individual job config |
-| `~/.config/clawdtab/jobs/<slug>/logs/<run-id>.log` | Tmux job output log |
+| `~/.config/clawdtab/jobs/<project>/<job-name>/job.yaml` | Individual job config |
+| `~/.config/clawdtab/jobs/<project>/<job-name>/logs/<run-id>.log` | Tmux job output log |
+| `<project>/.cwt/cwt.md` | User-written shared context for all jobs in a project |
+| `<project>/.cwt/<job-name>/job.md` | Job-specific prompt/instructions |
+| `<project>/.cwt/<job-name>/cwt.md` | Auto-generated per-job context |
 | `/tmp/clawdtab.sock` | IPC Unix socket |
 
 ## Job Status Values

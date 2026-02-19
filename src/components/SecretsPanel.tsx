@@ -265,57 +265,8 @@ export function SecretsPanel() {
         Keychain. Gopass secrets stay in your gopass store and are refreshed on each app startup.
       </p>
 
-      {gopassAvailable && (
-        <div style={{ marginBottom: 12 }}>
-          <button
-            className="btn btn-sm"
-            onClick={handleLoadGopassEntries}
-            disabled={gopassLoading}
-          >
-            {gopassLoading ? "Loading..." : "Import from gopass"}
-          </button>
-        </div>
-      )}
-
-      {showGopassImport && (
-        <div style={{ marginBottom: 20, padding: 12, border: "1px solid var(--border)", borderRadius: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <strong>Import from gopass</strong>
-            <button
-              className="btn btn-sm"
-              onClick={() => {
-                setShowGopassImport(false);
-                setGopassSearch("");
-                setExpandedFolders(new Set());
-              }}
-            >
-              Close
-            </button>
-          </div>
-          <input
-            type="text"
-            value={gopassSearch}
-            onChange={(e) => setGopassSearch(e.target.value)}
-            placeholder="Filter entries..."
-            style={{ width: "100%", marginBottom: 8 }}
-          />
-          <div style={{ maxHeight: 300, overflowY: "auto" }}>
-            {filteredGopassEntries.length === 0 ? (
-              <p className="text-secondary">No entries found.</p>
-            ) : (
-              <GopassTreeView
-                nodes={gopassTree}
-                expanded={effectiveExpanded}
-                toggleFolder={toggleFolder}
-                onImport={handleImportGopass}
-                depth={0}
-              />
-            )}
-          </div>
-        </div>
-      )}
-
-      <div style={{ marginBottom: 20 }}>
+      <div className="field-group">
+        <span className="field-group-title">Add Secret</span>
         <div className="form-row" style={{ alignItems: "flex-end" }}>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Key</label>
@@ -343,6 +294,56 @@ export function SecretsPanel() {
             </button>
           </div>
         </div>
+
+        {gopassAvailable && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              className="btn btn-sm"
+              onClick={handleLoadGopassEntries}
+              disabled={gopassLoading}
+            >
+              {gopassLoading ? "Loading..." : "Import from gopass"}
+            </button>
+          </div>
+        )}
+
+        {showGopassImport && (
+          <div style={{ marginTop: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <strong>Import from gopass</strong>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setShowGopassImport(false);
+                  setGopassSearch("");
+                  setExpandedFolders(new Set());
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <input
+              type="text"
+              value={gopassSearch}
+              onChange={(e) => setGopassSearch(e.target.value)}
+              placeholder="Filter entries..."
+              style={{ width: "100%", marginBottom: 8 }}
+            />
+            <div style={{ maxHeight: 300, overflowY: "auto" }}>
+              {filteredGopassEntries.length === 0 ? (
+                <p className="text-secondary">No entries found.</p>
+              ) : (
+                <GopassTreeView
+                  nodes={gopassTree}
+                  expanded={effectiveExpanded}
+                  toggleFolder={toggleFolder}
+                  onImport={handleImportGopass}
+                  depth={0}
+                />
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {secrets.length === 0 ? (

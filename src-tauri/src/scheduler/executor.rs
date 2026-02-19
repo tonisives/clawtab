@@ -335,20 +335,31 @@ async fn execute_folder_job(
         .as_ref()
         .ok_or("Folder job requires folder_path")?;
 
-    let folder = CwtFolder::from_path(std::path::Path::new(folder_path))?;
+    let job_name = job.job_name.as_deref().unwrap_or("default");
+    let cwt_root = std::path::Path::new(folder_path);
+
+    // Lazy migration: move .cwt/job.md -> .cwt/default/job.md if needed
+    crate::config::jobs::migrate_cwt_root(cwt_root);
+
+    let folder = CwtFolder::from_path_with_job(cwt_root, job_name)?;
 
     if !folder.has_entry_point {
         return Err(format!(
-            "No job.md entry point found in {}",
-            folder_path
+            "No job.md entry point found in {}/{}",
+            folder_path, job_name
         ));
     }
 
     let raw_prompt = folder.read_entry_point()?;
-    let prompt_content = format!("@.cwt/cwt.md @.cwt/job.md\n\n{}", raw_prompt);
+
+    // Build prompt: shared context, then per-job context, then per-job instructions
+    let prompt_content = format!(
+        "@.cwt/cwt.md @.cwt/{}/cwt.md @.cwt/{}/job.md\n\n{}",
+        job_name, job_name, raw_prompt
+    );
 
     // Run from the project root (parent of .cwt), not the .cwt dir itself
-    let project_root = std::path::Path::new(folder_path)
+    let project_root = cwt_root
         .parent()
         .ok_or_else(|| format!("Cannot determine project root from {}", folder_path))?
         .to_string_lossy()

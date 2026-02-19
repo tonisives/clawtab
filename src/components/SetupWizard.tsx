@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, TelegramConfig, ToolInfo } from "../types";
+import type { AppSettings, Job, TelegramConfig, ToolInfo } from "../types";
 import { ToolGroupList } from "./ToolGroupList";
 import { TelegramSetup } from "./TelegramSetup";
 
@@ -8,7 +8,7 @@ interface Props {
   onComplete: () => void;
 }
 
-type Step = "tools" | "terminal" | "editor" | "secrets" | "telegram" | "done";
+type Step = "tools" | "terminal" | "editor" | "secrets" | "telegram" | "first-job" | "done";
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "tools", label: "Detect Tools" },
@@ -16,6 +16,7 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "editor", label: "Editor" },
   { id: "secrets", label: "Secrets" },
   { id: "telegram", label: "Telegram" },
+  { id: "first-job", label: "Test Job" },
   { id: "done", label: "Done" },
 ];
 
@@ -56,14 +57,25 @@ export function SetupWizard({ onComplete }: Props) {
   const [notifyFailure, setNotifyFailure] = useState(true);
   const [agentEnabled, setAgentEnabled] = useState(true);
 
+  // First-job step state
+  const [testJobStatus, setTestJobStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
+  const [testJobError, setTestJobError] = useState("");
+
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
   const hasTelegram = tools.some((t) => t.name === "Telegram" && t.available);
+  const hasTelegramConfigured = !!(telegramConfig && telegramConfig.chat_ids.length > 0);
   const availableTerminals = TERMINAL_OPTIONS.filter((opt) =>
     tools.some((t) => t.group === "terminal" && t.available && t.name.toLowerCase().startsWith(opt.value)),
   );
   const availableEditors = EDITOR_OPTIONS.filter((opt) =>
     tools.some((t) => t.group === "editor" && t.available && t.name === opt.value),
   );
+
+  // Filter steps: skip first-job if telegram is not configured
+  const visibleSteps = STEPS.filter((s) => {
+    if (s.id === "first-job" && !hasTelegramConfigured) return false;
+    return true;
+  });
 
   const loadTools = async () => {
     const detected = await invoke<ToolInfo[]>("detect_tools");
@@ -99,17 +111,17 @@ export function SetupWizard({ onComplete }: Props) {
     });
   }, []);
 
-  const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
+  const currentIdx = visibleSteps.findIndex((s) => s.id === currentStep);
 
   const goNext = () => {
-    if (currentIdx < STEPS.length - 1) {
-      setCurrentStep(STEPS[currentIdx + 1].id);
+    if (currentIdx < visibleSteps.length - 1) {
+      setCurrentStep(visibleSteps[currentIdx + 1].id);
     }
   };
 
   const goBack = () => {
     if (currentIdx > 0) {
-      setCurrentStep(STEPS[currentIdx - 1].id);
+      setCurrentStep(visibleSteps[currentIdx - 1].id);
     }
   };
 
@@ -138,6 +150,38 @@ export function SetupWizard({ onComplete }: Props) {
     }
   };
 
+  const handleCreateTestJob = async () => {
+    if (!telegramConfig || telegramConfig.chat_ids.length === 0) return;
+    setTestJobStatus("creating");
+    setTestJobError("");
+    try {
+      const testJob: Job = {
+        name: "telegram-test",
+        job_type: "binary",
+        enabled: true,
+        path: "echo",
+        args: ["ClawdTab setup complete -- telegram notifications are working."],
+        cron: "",
+        secret_keys: [],
+        env: {},
+        work_dir: null,
+        tmux_session: null,
+        aerospace_workspace: null,
+        folder_path: null,
+        job_name: null,
+        telegram_chat_id: telegramConfig.chat_ids[0],
+        group: "default",
+        slug: "",
+      };
+      await invoke("save_job", { job: testJob });
+      await invoke("run_job_now", { name: "telegram-test" });
+      setTestJobStatus("success");
+    } catch (e) {
+      setTestJobStatus("error");
+      setTestJobError(String(e));
+    }
+  };
+
   const handleFinish = async () => {
     if (!settings) return;
     const updated: AppSettings = {
@@ -162,7 +206,7 @@ export function SetupWizard({ onComplete }: Props) {
       <h2>ClawdTab Setup</h2>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
-        {STEPS.map((step, idx) => (
+        {visibleSteps.map((step, idx) => (
           <div
             key={step.id}
             style={{
@@ -176,7 +220,7 @@ export function SetupWizard({ onComplete }: Props) {
       </div>
 
       <p className="text-secondary" style={{ marginBottom: 16 }}>
-        Step {currentIdx + 1} of {STEPS.length}: {STEPS[currentIdx].label}
+        Step {currentIdx + 1} of {visibleSteps.length}: {visibleSteps[currentIdx].label}
       </p>
 
       {currentStep === "tools" && (
@@ -378,6 +422,73 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
       )}
 
+      {currentStep === "first-job" && (
+        <div>
+          <h3>Test Job</h3>
+          <p className="section-description">
+            Create a test job to verify Telegram notifications are working.
+            This creates a simple "telegram-test" job that sends a message to your configured chat.
+          </p>
+
+          <div className="field-group" style={{ marginTop: 16 }}>
+            <span className="field-group-title">Pre-filled test job</span>
+            <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> telegram-test</p>
+              <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Binary (echo)</p>
+              <p style={{ margin: "0 0 4px" }}><strong>Schedule:</strong> Manual only</p>
+              <p style={{ margin: "0 0 4px" }}>
+                <strong>Telegram:</strong>{" "}
+                {telegramConfig?.chat_ids[0] ?? "none"}
+              </p>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            {testJobStatus === "idle" && (
+              <div className="btn-group">
+                <button className="btn btn-primary" onClick={handleCreateTestJob}>
+                  Create & Run
+                </button>
+                <button className="btn" onClick={goNext}>
+                  Skip
+                </button>
+              </div>
+            )}
+
+            {testJobStatus === "creating" && (
+              <p className="text-secondary">Creating and running test job...</p>
+            )}
+
+            {testJobStatus === "success" && (
+              <div>
+                <p style={{ color: "var(--success-color)" }}>
+                  Test job created and triggered. Check your Telegram for a message.
+                </p>
+                <button className="btn btn-primary" onClick={goNext} style={{ marginTop: 8 }}>
+                  Continue
+                </button>
+              </div>
+            )}
+
+            {testJobStatus === "error" && (
+              <div>
+                <p style={{ color: "var(--danger-color)" }}>
+                  Failed: {testJobError}
+                </p>
+                <div className="btn-group" style={{ marginTop: 8 }}>
+                  <button className="btn" onClick={handleCreateTestJob}>
+                    Retry
+                  </button>
+                  <button className="btn" onClick={goNext}>
+                    Skip
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {currentStep === "done" && (
         <div>
           <h3>Setup Complete</h3>
@@ -407,6 +518,8 @@ export function SetupWizard({ onComplete }: Props) {
           <button className="btn btn-primary" onClick={handleFinish}>
             Finish Setup
           </button>
+        ) : currentStep === "first-job" ? (
+          null
         ) : currentStep === "telegram" && !telegramConfig?.chat_ids?.length && !telegramSkipped ? (
           null
         ) : (

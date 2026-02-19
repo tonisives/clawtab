@@ -399,7 +399,14 @@ function JobRow({
           onChange={onToggleEnabled}
         />
       </td>
-      <td>{job.name}</td>
+      <td>
+        {job.name}
+        {job.job_name && job.job_name !== "default" && (
+          <span className="text-secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+            ({job.job_name})
+          </span>
+        )}
+      </td>
       <td>{job.job_type}</td>
       <td>
         <code>{job.cron || "manual"}</code>

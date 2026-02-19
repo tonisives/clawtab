@@ -204,6 +204,7 @@ pub fn run() {
             commands::jobs::open_job_in_editor,
             commands::jobs::init_cwt_folder,
             commands::jobs::read_cwt_entry,
+            commands::jobs::read_cwt_context,
             commands::jobs::derive_job_slug,
             commands::secrets::list_secrets,
             commands::secrets::set_secret,

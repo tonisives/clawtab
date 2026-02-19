@@ -13,6 +13,7 @@ export interface Job {
   tmux_session: string | null;
   aerospace_workspace: string | null;
   folder_path: string | null;
+  job_name: string | null;
   telegram_chat_id: number | null;
   group: string;
   slug: string;
