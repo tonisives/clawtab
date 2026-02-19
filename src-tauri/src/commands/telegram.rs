@@ -73,10 +73,17 @@ pub async fn validate_bot_token(bot_token: String) -> Result<BotInfo, String> {
     Ok(BotInfo { username, id })
 }
 
-/// Reset the poll offset (call when starting a new setup session).
+/// Reset the poll offset and pause the agent poller so setup can detect new chats.
 #[tauri::command]
 pub fn reset_poll_offset() {
     POLL_OFFSET.store(0, Ordering::Relaxed);
+    crate::telegram::set_setup_polling(true);
+}
+
+/// Signal that setup polling has stopped so the agent poller can resume.
+#[tauri::command]
+pub fn stop_setup_polling() {
+    crate::telegram::set_setup_polling(false);
 }
 
 #[tauri::command]

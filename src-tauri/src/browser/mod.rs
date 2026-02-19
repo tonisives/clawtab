@@ -48,8 +48,22 @@ pub fn launch_auth_session(url: &str, job_name: &str) -> Result<(), String> {
   const page = context.pages()[0] || await context.newPage();
   await page.goto({url});
   console.log('Browser opened. Log in, then close the browser window to save session.');
+  // Periodically save state while the browser is open
+  const saveInterval = setInterval(async () => {{
+    try {{
+      await context.storageState({{ path: {auth_path} }});
+    }} catch (e) {{
+      // Context may be closing, ignore
+    }}
+  }}, 5000);
   await new Promise(resolve => context.on('close', resolve));
-  await context.storageState({{ path: {auth_path} }});
+  clearInterval(saveInterval);
+  // Final save attempt (may fail if context is already gone)
+  try {{
+    await context.storageState({{ path: {auth_path} }});
+  }} catch (e) {{
+    console.log('Final save skipped (browser already closed). Session was saved periodically.');
+  }}
   console.log('Session saved.');
 }})();
 "#,
@@ -65,10 +79,18 @@ pub fn launch_auth_session(url: &str, job_name: &str) -> Result<(), String> {
     std::fs::write(&tmp_script, &script)
         .map_err(|e| format!("Failed to write auth script: {}", e))?;
 
+    let log_path = sess_dir.join("_auth_launch.log");
+    let log_file = std::fs::File::create(&log_path)
+        .map_err(|e| format!("Failed to create log file: {}", e))?;
+    let stderr_file = log_file.try_clone()
+        .map_err(|e| format!("Failed to clone log file: {}", e))?;
+
     std::process::Command::new("node")
         .arg(&tmp_script)
+        .stdout(log_file)
+        .stderr(stderr_file)
         .spawn()
-        .map_err(|e| format!("Failed to launch auth browser: {}", e))?;
+        .map_err(|e| format!("Failed to launch auth browser: {}. Is Node.js installed with playwright? Try: npm install -g playwright", e))?;
 
     Ok(())
 }

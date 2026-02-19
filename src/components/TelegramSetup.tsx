@@ -63,6 +63,7 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      invoke("stop_setup_polling").catch(() => {});
     };
   }, []);
 
@@ -139,6 +140,7 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
       if (pollCountRef.current > 10) {
         if (pollRef.current) clearInterval(pollRef.current);
         setPolling(false);
+        invoke("stop_setup_polling").catch(() => {});
         return;
       }
       const currentToken = tokenRef.current;

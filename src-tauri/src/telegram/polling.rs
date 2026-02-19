@@ -36,6 +36,12 @@ pub async fn start_polling(state: AgentState) {
             }
         };
 
+        // Yield to setup poller so it can detect new chat IDs
+        if super::is_setup_polling() {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            continue;
+        }
+
         match get_updates(&config.bot_token, offset).await {
             Ok(updates) => {
                 for update in updates {

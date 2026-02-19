@@ -96,6 +96,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [browserAuthUrl, setBrowserAuthUrl] = useState("https://");
   const [defaultTmuxSession, setDefaultTmuxSession] = useState("tgs");
   const [defaultTelegramChatId, setDefaultTelegramChatId] = useState<number | null>(null);
+  const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
 
   // Schedule mode state
   const [manualOnly, setManualOnly] = useState(false);
@@ -500,34 +501,46 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               onChange={(e) =>
                 setForm({ ...form, tmux_session: e.target.value || null })
               }
-              placeholder="Leave empty to use default"
+              placeholder={`Default: ${defaultTmuxSession}`}
             />
           </div>
 
           {aerospaceAvailable && (
             <div className="form-group">
-              <label>Aerospace Workspace</label>
-              <select
-                value={form.aerospace_workspace ?? ""}
-                onChange={(e) =>
-                  setForm({ ...form, aerospace_workspace: e.target.value || null })
-                }
+              <label
+                style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                onClick={() => setAerospaceExpanded(!aerospaceExpanded)}
               >
-                <option value="">None</option>
-                {aerospaceWorkspaces.map((ws) => (
-                  <option key={ws.name} value={ws.name}>
-                    {ws.name}
-                  </option>
-                ))}
-              </select>
-              <span className="hint">Move tmux window to this workspace after creation</span>
+                <span style={{ fontSize: 10, transform: aerospaceExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s" }}>
+                  &#9660;
+                </span>
+                Aerospace Workspace
+              </label>
+              {aerospaceExpanded && (
+                <>
+                  <select
+                    value={form.aerospace_workspace ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, aerospace_workspace: e.target.value || null })
+                    }
+                  >
+                    <option value="">None</option>
+                    {aerospaceWorkspaces.map((ws) => (
+                      <option key={ws.name} value={ws.name}>
+                        {ws.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="hint">Move tmux window to this workspace after creation</span>
+                </>
+              )}
             </div>
           )}
         </>
       )}
 
       <div className="form-group">
-        <label>Telegram Chat ID (optional)</label>
+        <label>Telegram Chat ID</label>
         <input
           type="text"
           value={form.telegram_chat_id ?? ""}
@@ -535,9 +548,13 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
             const val = e.target.value.trim();
             setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) || null : null });
           }}
-          placeholder="Leave empty to use global chat IDs"
+          placeholder={defaultTelegramChatId ? `Default: ${defaultTelegramChatId}` : "No global chat ID configured"}
         />
-        <span className="hint">Override global telegram destination for this job</span>
+        <span className="hint">
+          {defaultTelegramChatId
+            ? "Pre-filled from global telegram settings"
+            : "Configure telegram in Settings to set a default"}
+        </span>
       </div>
 
       {form.job_type === "folder" && form.name && (
@@ -559,7 +576,8 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
             <button
               className="btn btn-sm"
               onClick={() => {
-                invoke("launch_browser_auth", { jobName: form.name, url: browserAuthUrl });
+                invoke("launch_browser_auth", { jobName: form.name, url: browserAuthUrl })
+                  .catch((e) => alert(`Failed to launch auth browser: ${e}`));
               }}
             >
               Launch Auth

@@ -2,9 +2,23 @@ pub mod commands;
 pub mod polling;
 pub mod types;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use serde::{Deserialize, Serialize};
 
 const MAX_MESSAGE_LEN: usize = 4096;
+
+/// When true, the agent poller yields to the setup poller so they don't compete
+/// for getUpdates from the same bot.
+static SETUP_POLLING_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+pub fn set_setup_polling(active: bool) {
+    SETUP_POLLING_ACTIVE.store(active, Ordering::Relaxed);
+}
+
+pub fn is_setup_polling() -> bool {
+    SETUP_POLLING_ACTIVE.load(Ordering::Relaxed)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
