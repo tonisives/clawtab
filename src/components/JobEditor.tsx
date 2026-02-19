@@ -94,6 +94,8 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [availableEditors, setAvailableEditors] = useState<string[]>(["nvim"]);
   const [browserSessionExists, setBrowserSessionExists] = useState(false);
   const [browserAuthUrl, setBrowserAuthUrl] = useState("https://");
+  const [defaultTmuxSession, setDefaultTmuxSession] = useState("tgs");
+  const [defaultTelegramChatId, setDefaultTelegramChatId] = useState<number | null>(null);
 
   // Schedule mode state
   const [manualOnly, setManualOnly] = useState(false);
@@ -108,6 +110,14 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
+      setDefaultTmuxSession(s.default_tmux_session || "tgs");
+      if (s.telegram?.chat_ids?.length) {
+        const chatId = s.telegram.chat_ids[0];
+        setDefaultTelegramChatId(chatId);
+        if (isNew && form.telegram_chat_id === null) {
+          setForm((prev) => ({ ...prev, telegram_chat_id: chatId }));
+        }
+      }
     });
     invoke<ToolInfo[]>("detect_tools").then((tools) => {
       const editors = tools
@@ -129,12 +139,16 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   // Load aerospace + browser session when entering config step (or on mount for edit mode)
   useEffect(() => {
     if (!isWizard || currentStep === "config") {
-      invoke<boolean>("aerospace_available").then((avail) => {
-        setAerospaceAvailable(avail);
-        if (avail) {
-          invoke<AerospaceWorkspace[]>("list_aerospace_workspaces").then(setAerospaceWorkspaces);
-        }
-      });
+      invoke<boolean>("aerospace_available")
+        .then((avail) => {
+          setAerospaceAvailable(avail);
+          if (avail) {
+            invoke<AerospaceWorkspace[]>("list_aerospace_workspaces")
+              .then(setAerospaceWorkspaces)
+              .catch(() => {});
+          }
+        })
+        .catch(() => setAerospaceAvailable(false));
       if (form.job_type === "folder" && form.name) {
         invoke<boolean>("check_browser_session", { jobName: form.name })
           .then(setBrowserSessionExists)
@@ -378,7 +392,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                       setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
                     }}
                   />
-                  Weekly schedule
+                  Daily schedule
                 </label>
                 <div style={{ opacity: useWeekly ? 1 : 0.4, pointerEvents: useWeekly ? "auto" : "none", paddingLeft: 24 }}>
                   <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>

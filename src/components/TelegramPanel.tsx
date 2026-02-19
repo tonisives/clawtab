@@ -51,6 +51,8 @@ export function TelegramPanel() {
 
   if (!loaded) return null;
 
+  const isConfigured = config && config.chat_ids.length > 0;
+
   return (
     <div className="settings-section">
       <h2>Telegram</h2>
@@ -58,13 +60,17 @@ export function TelegramPanel() {
         Receive job completion notifications and send commands via Telegram bot.
       </p>
 
+      <h2>Setup</h2>
       <TelegramSetup
         onComplete={handleSetupComplete}
         initialConfig={config}
       />
 
-      {config && config.chat_ids.length > 0 && (
+      {isConfigured && (
         <>
+          <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "24px 0" }} />
+          <h2>Configuration</h2>
+
           <h3>Notifications</h3>
 
           <div className="form-group">
@@ -129,15 +135,14 @@ export function TelegramPanel() {
             </div>
           )}
 
-          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 20 }}>
-            <h3>Danger Zone</h3>
-            <p className="section-description">
-              This removes your bot token and all chat IDs. You will need to set up Telegram again.
-            </p>
-            <button className="btn btn-danger" onClick={handleDisable}>
-              Remove Telegram Configuration
-            </button>
-          </div>
+          <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "24px 0" }} />
+          <h2 style={{ color: "var(--danger-color)" }}>Danger Zone</h2>
+          <p className="section-description">
+            This removes your bot token and all chat IDs. You will need to set up Telegram again.
+          </p>
+          <button className="btn btn-danger" onClick={handleDisable}>
+            Remove Telegram Configuration
+          </button>
         </>
       )}
     </div>
