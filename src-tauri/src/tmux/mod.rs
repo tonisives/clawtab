@@ -126,6 +126,26 @@ pub fn send_keys(session: &str, window: &str, keys: &str) -> Result<(), String> 
     Ok(())
 }
 
+/// Check if a tmux window has an active (non-shell) process running.
+/// Returns true if the pane's current command is something other than a shell.
+pub fn is_window_busy(session: &str, window: &str) -> bool {
+    let target = format!("{}:{}", session, window);
+    let output = Command::new("tmux")
+        .args(["list-panes", "-t", &target, "-F", "#{pane_current_command}"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.lines().any(|cmd| {
+                let cmd = cmd.trim();
+                !cmd.is_empty() && !matches!(cmd, "bash" | "zsh" | "fish" | "sh" | "dash")
+            })
+        }
+        _ => false,
+    }
+}
+
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
     // Select the window within the session

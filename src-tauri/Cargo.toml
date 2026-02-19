@@ -16,12 +16,17 @@ path = "src/bin/ctl.rs"
 name = "cwdttui"
 path = "src/bin/tui.rs"
 
+[[bin]]
+name = "cwdt-browse"
+path = "src/bin/browse.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0"

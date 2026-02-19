@@ -102,7 +102,7 @@ pub async fn execute_job(
 
             // Send telegram notification (after dropping MutexGuard)
             if let Some(ref tg) = telegram_config {
-                crate::telegram::notify_job_result(tg, &job.name, exit_code, success).await;
+                send_job_notification(tg, job.telegram_chat_id, &job.name, exit_code, success).await;
             }
         }
         Err(e) => {
@@ -130,7 +130,7 @@ pub async fn execute_job(
 
             // Send telegram notification for failure (after dropping MutexGuard)
             if let Some(ref tg) = telegram_config {
-                crate::telegram::notify_job_result(tg, &job.name, Some(-1), false).await;
+                send_job_notification(tg, job.telegram_chat_id, &job.name, Some(-1), false).await;
             }
         }
     }
@@ -235,6 +235,16 @@ async fn execute_claude_job(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
+    // Check if window has an active process
+    if tmux::window_exists(&tmux_session, &window_name)
+        && tmux::is_window_busy(&tmux_session, &window_name)
+    {
+        return Err(format!(
+            "Window '{}' still has an active process",
+            window_name
+        ));
+    }
+
     let send_cmd = format!(
         "{}cd {} && {} \"$(cat {})\"",
         export_prefix, work_dir, claude_path, prompt_path
@@ -310,6 +320,16 @@ async fn execute_folder_job(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
+    // Check if window has an active process
+    if tmux::window_exists(&tmux_session, &window_name)
+        && tmux::is_window_busy(&tmux_session, &window_name)
+    {
+        return Err(format!(
+            "Window '{}' still has an active process",
+            window_name
+        ));
+    }
+
     // Pass the prompt content directly to Claude via stdin-like heredoc
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = format!(
@@ -360,4 +380,47 @@ fn build_export_prefix(job: &Job, secrets: &Arc<Mutex<SecretsManager>>) -> Strin
     }
 
     format!("export {} && ", exports.join(" "))
+}
+
+/// Send telegram notification, routing to per-job chat_id if set.
+async fn send_job_notification(
+    config: &crate::telegram::TelegramConfig,
+    job_chat_id: Option<i64>,
+    job_name: &str,
+    exit_code: Option<i32>,
+    success: bool,
+) {
+    if !config.is_configured() {
+        return;
+    }
+
+    if success && !config.notify_on_success {
+        return;
+    }
+    if !success && !config.notify_on_failure {
+        return;
+    }
+
+    let status = if success { "completed" } else { "failed" };
+    let code_str = exit_code
+        .map(|c| format!(" (exit {})", c))
+        .unwrap_or_default();
+
+    let text = format!(
+        "<b>ClawdTab</b>: Job <code>{}</code> {}{}",
+        job_name, status, code_str
+    );
+
+    // Use per-job chat_id if set, otherwise fall back to global chat_ids
+    let chat_ids: Vec<i64> = if let Some(cid) = job_chat_id {
+        vec![cid]
+    } else {
+        config.chat_ids.clone()
+    };
+
+    for chat_id in chat_ids {
+        if let Err(e) = crate::telegram::send_message(&config.bot_token, chat_id, &text).await {
+            log::error!("Failed to send Telegram notification to {}: {}", chat_id, e);
+        }
+    }
 }

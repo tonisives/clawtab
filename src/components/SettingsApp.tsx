@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { JobsPanel } from "./JobsPanel";
 import { SecretsPanel } from "./SecretsPanel";
 import { HistoryPanel } from "./HistoryPanel";
@@ -9,7 +10,9 @@ import { TelegramPanel } from "./TelegramPanel";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
 
-type TabId = "jobs" | "secrets" | "history" | "tools" | "telegram" | "settings" | "setup";
+type TabId = "jobs" | "secrets" | "history" | "tools" | "telegram" | "settings";
+
+const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
 export function SettingsApp() {
   const [activeTab, setActiveTab] = useState<TabId>("jobs");
@@ -18,21 +21,25 @@ export function SettingsApp() {
 
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
-      if (!s.setup_completed) {
+      if (!s.setup_completed && !isSetupWindow) {
         setShowWizard(true);
       }
       setLoading(false);
     });
   }, []);
 
-  const handleWizardComplete = () => {
-    setShowWizard(false);
-    setActiveTab("jobs");
+  const handleWizardComplete = async () => {
+    if (isSetupWindow) {
+      await getCurrentWindow().close();
+    } else {
+      setShowWizard(false);
+      setActiveTab("jobs");
+    }
   };
 
   if (loading) return null;
 
-  if (showWizard) {
+  if (showWizard || isSetupWindow) {
     return (
       <div className="settings-container">
         <div className="tab-content">
@@ -49,7 +56,6 @@ export function SettingsApp() {
     { id: "tools", label: "Tools", icon: "\u2692" },
     { id: "telegram", label: "Telegram", icon: "\u2709" },
     { id: "settings", label: "Settings", icon: "\u2699" },
-    { id: "setup", label: "Setup", icon: "\u2728" },
   ];
 
   return (
@@ -68,15 +74,14 @@ export function SettingsApp() {
       </div>
 
       <div className="tab-content">
-        {activeTab === "jobs" && <JobsPanel />}
+        <div style={{ display: activeTab === "jobs" ? undefined : "none" }}>
+          <JobsPanel />
+        </div>
         {activeTab === "secrets" && <SecretsPanel />}
         {activeTab === "history" && <HistoryPanel />}
         {activeTab === "tools" && <ToolsPanel />}
         {activeTab === "telegram" && <TelegramPanel />}
         {activeTab === "settings" && <GeneralSettings />}
-        {activeTab === "setup" && (
-          <SetupWizard onComplete={() => setActiveTab("jobs")} />
-        )}
       </div>
     </div>
   );

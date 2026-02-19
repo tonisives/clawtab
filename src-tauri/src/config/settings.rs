@@ -10,8 +10,10 @@ pub struct AppSettings {
     pub default_work_dir: String,
     pub claude_path: String,
     pub preferred_editor: String,
+    pub preferred_terminal: String,
     pub setup_completed: bool,
     pub telegram: Option<TelegramConfig>,
+    pub secrets_backend: String,
 }
 
 impl Default for AppSettings {
@@ -24,8 +26,10 @@ impl Default for AppSettings {
             default_work_dir: format!("{}/workspace/tgs/automation", home),
             claude_path: "claude".to_string(),
             preferred_editor: "nvim".to_string(),
+            preferred_terminal: "auto".to_string(),
             setup_completed: false,
             telegram: None,
+            secrets_backend: "both".to_string(),
         }
     }
 }

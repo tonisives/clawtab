@@ -13,6 +13,7 @@ export interface Job {
   tmux_session: string | null;
   aerospace_workspace: string | null;
   folder_path: string | null;
+  telegram_chat_id: number | null;
 }
 
 export interface AerospaceWorkspace {
@@ -50,8 +51,10 @@ export interface AppSettings {
   default_work_dir: string;
   claude_path: string;
   preferred_editor: string;
+  preferred_terminal: string;
   setup_completed: boolean;
   telegram: TelegramConfig | null;
+  secrets_backend: string;
 }
 
 export interface ToolInfo {
@@ -59,6 +62,10 @@ export interface ToolInfo {
   available: boolean;
   version: string | null;
   path: string | null;
+  category: string;
+  required: boolean;
+  group: string | null;
+  brew_formula: string | null;
 }
 
 export type JobStatus =

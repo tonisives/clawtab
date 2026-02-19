@@ -150,15 +150,33 @@ pub fn open_job_editor(
     let cwdt_md_str = cwdt_md.display().to_string();
 
     match preferred_editor.as_str() {
-        "vscode" | "code" => {
+        "code" => {
             std::process::Command::new("code")
                 .args([&folder_path, "--goto", &cwdt_md_str])
                 .spawn()
                 .map_err(|e| format!("Failed to open VS Code: {}", e))?;
         }
-        _ => {
-            // Default to nvim in terminal
-            let cmd = format!("nvim {}", cwdt_md_str);
+        "codium" => {
+            std::process::Command::new("codium")
+                .args([&folder_path, "--goto", &cwdt_md_str])
+                .spawn()
+                .map_err(|e| format!("Failed to open VSCodium: {}", e))?;
+        }
+        "zed" => {
+            std::process::Command::new("zed")
+                .arg(&cwdt_md_str)
+                .spawn()
+                .map_err(|e| format!("Failed to open Zed: {}", e))?;
+        }
+        "subl" => {
+            std::process::Command::new("subl")
+                .arg(&cwdt_md_str)
+                .spawn()
+                .map_err(|e| format!("Failed to open Sublime Text: {}", e))?;
+        }
+        // Terminal-based editors: nvim, vim, hx, emacs
+        editor => {
+            let cmd = format!("{} {}", editor, cwdt_md_str);
             crate::terminal::open_in_terminal(&cmd)?;
         }
     }

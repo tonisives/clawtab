@@ -1,7 +1,19 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry } from "../types";
+import { open } from "@tauri-apps/plugin-dialog";
+import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry, ToolInfo } from "../types";
 import { CronInput } from "./CronInput";
+
+const EDITOR_LABELS: Record<string, string> = {
+  nvim: "Neovim",
+  vim: "Vim",
+  code: "VS Code",
+  codium: "VSCodium",
+  zed: "Zed",
+  hx: "Helix",
+  subl: "Sublime Text",
+  emacs: "Emacs",
+};
 
 interface Props {
   job: Job | null;
@@ -11,7 +23,7 @@ interface Props {
 
 const emptyJob: Job = {
   name: "",
-  job_type: "binary",
+  job_type: "folder",
   enabled: true,
   path: "",
   args: [],
@@ -22,7 +34,24 @@ const emptyJob: Job = {
   tmux_session: null,
   aerospace_workspace: null,
   folder_path: null,
+  telegram_chat_id: null,
 };
+
+type WizardStep = "folder" | "schedule" | "secrets" | "config";
+
+const STEPS: { id: WizardStep; label: string }[] = [
+  { id: "folder", label: "Folder" },
+  { id: "schedule", label: "Schedule" },
+  { id: "secrets", label: "Secrets" },
+  { id: "config", label: "Config" },
+];
+
+function deriveNameFromPath(folderPath: string): string {
+  const parts = folderPath.replace(/\/+$/, "").split("/");
+  const last = parts[parts.length - 1];
+  if (last === ".cwdt") return parts[parts.length - 2] ?? "";
+  return last ?? "";
+}
 
 export function JobEditor({ job, onSave, onCancel }: Props) {
   const [form, setForm] = useState<Job>(job ?? emptyJob);
@@ -33,24 +62,61 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
       .join("\n"),
   );
 
-  const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[]>([]);
+  const isNew = job === null;
+  const isWizard = isNew && form.job_type === "folder";
+
+  // Wizard state
+  const [currentStep, setCurrentStep] = useState<WizardStep>("folder");
+  const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
+
+  // Lazy-loaded data (loaded when relevant step is reached)
+  const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
   const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
   const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
   const [cwdtPreview, setCwdtPreview] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
+  const [availableEditors, setAvailableEditors] = useState<string[]>(["nvim"]);
+  const [browserSessionExists, setBrowserSessionExists] = useState(false);
+  const [browserAuthUrl, setBrowserAuthUrl] = useState("https://");
 
+  // Load settings and detected editors on mount
   useEffect(() => {
-    invoke<SecretEntry[]>("list_secrets").then(setAvailableSecrets);
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
     });
-    invoke<boolean>("aerospace_available").then((avail) => {
-      setAerospaceAvailable(avail);
-      if (avail) {
-        invoke<AerospaceWorkspace[]>("list_aerospace_workspaces").then(setAerospaceWorkspaces);
-      }
+    invoke<ToolInfo[]>("detect_tools").then((tools) => {
+      const editors = tools
+        .filter((t) => t.group === "editor" && t.available)
+        .map((t) => t.name);
+      if (editors.length > 0) setAvailableEditors(editors);
     });
   }, []);
+
+  // Load secrets when entering secrets step (or on mount for edit mode)
+  useEffect(() => {
+    if (!isWizard || currentStep === "secrets") {
+      if (availableSecrets === null) {
+        invoke<SecretEntry[]>("list_secrets").then(setAvailableSecrets);
+      }
+    }
+  }, [currentStep, isWizard, availableSecrets]);
+
+  // Load aerospace + browser session when entering config step (or on mount for edit mode)
+  useEffect(() => {
+    if (!isWizard || currentStep === "config") {
+      invoke<boolean>("aerospace_available").then((avail) => {
+        setAerospaceAvailable(avail);
+        if (avail) {
+          invoke<AerospaceWorkspace[]>("list_aerospace_workspaces").then(setAerospaceWorkspaces);
+        }
+      });
+      if (form.job_type === "folder" && form.name) {
+        invoke<boolean>("check_browser_session", { jobName: form.name })
+          .then(setBrowserSessionExists)
+          .catch(() => setBrowserSessionExists(false));
+      }
+    }
+  }, [currentStep, isWizard, form.name, form.job_type]);
 
   // Load cwdt.md preview when folder path changes
   useEffect(() => {
@@ -62,8 +128,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
       setCwdtPreview(null);
     }
   }, [form.folder_path, form.job_type]);
-
-  const isNew = job === null;
 
   const toggleSecret = (key: string) => {
     const keys = form.secret_keys.includes(key)
@@ -83,18 +147,68 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
         env[line.slice(0, eqIdx).trim()] = line.slice(eqIdx + 1).trim();
       }
     }
-
-    onSave({
-      ...form,
-      args,
-      env,
-    });
+    onSave({ ...form, args, env });
   };
 
-  return (
-    <div className="settings-section">
-      <div className="section-header">
-        <h2>{isNew ? "New Job" : `Edit: ${form.name}`}</h2>
+  const goNext = () => {
+    if (currentIdx < STEPS.length - 1) {
+      setCurrentStep(STEPS[currentIdx + 1].id);
+    }
+  };
+
+  const goBack = () => {
+    if (currentIdx > 0) {
+      setCurrentStep(STEPS[currentIdx - 1].id);
+    }
+  };
+
+  const pickFolder = async () => {
+    const selected = await open({ directory: true, multiple: false, title: "Choose project folder" });
+    if (selected) {
+      const projectDir = typeof selected === "string" ? selected : selected;
+      // The .cwdt folder lives inside the chosen project directory
+      const cwdtPath = projectDir.replace(/\/+$/, "") + "/.cwdt";
+      const updates: Partial<Job> = { folder_path: cwdtPath };
+      if (isNew && !form.name) {
+        const derived = deriveNameFromPath(cwdtPath);
+        if (derived) updates.name = derived;
+      }
+      setForm({ ...form, ...updates });
+    }
+  };
+
+  const canAdvanceFromFolder = (): boolean => {
+    if (form.job_type === "folder") return !!form.folder_path && !!form.name;
+    return !!form.name;
+  };
+
+  // ---- Shared field renderers ----
+
+  const renderFolderFields = () => (
+    <>
+      <div className="form-group">
+        <label>Folder Path</label>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="text"
+            value={form.folder_path ?? ""}
+            onChange={(e) => {
+              const val = e.target.value || null;
+              const updates: Partial<Job> = { folder_path: val };
+              if (isNew && val && !form.name) {
+                const derived = deriveNameFromPath(val);
+                if (derived) updates.name = derived;
+              }
+              setForm({ ...form, ...updates });
+            }}
+            placeholder="/path/to/project/.cwdt"
+            style={{ flex: 1 }}
+          />
+          <button className="btn btn-sm" onClick={pickFolder}>
+            Browse...
+          </button>
+        </div>
+        <span className="hint">Pick a project folder. A .cwdt/cwdt.md will be created inside it.</span>
       </div>
 
       <div className="form-group">
@@ -106,157 +220,88 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           disabled={!isNew}
           placeholder="my-job"
         />
-      </div>
-
-      <div className="form-group">
-        <label>Type</label>
-        <select
-          value={form.job_type}
-          onChange={(e) =>
-            setForm({ ...form, job_type: e.target.value as JobType })
-          }
-        >
-          <option value="binary">Binary</option>
-          <option value="claude">Claude</option>
-          <option value="folder">Folder (.cwdt)</option>
-        </select>
-      </div>
-
-      {form.job_type === "folder" ? (
-        <>
-          <div className="form-group">
-            <label>Folder Path</label>
-            <input
-              type="text"
-              value={form.folder_path ?? ""}
-              onChange={(e) => setForm({ ...form, folder_path: e.target.value || null })}
-              placeholder="/path/to/project/.cwdt"
-              style={{ maxWidth: "100%" }}
-            />
-            <span className="hint">Path to a folder containing cwdt.md with job directions</span>
-          </div>
-          {form.folder_path && (
-            <div className="form-group">
-              <div className="btn-group" style={{ marginBottom: 8 }}>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => {
-                    invoke("init_cwdt_folder", { folderPath: form.folder_path }).then(() => {
-                      invoke<string>("read_cwdt_entry", { folderPath: form.folder_path }).then(setCwdtPreview);
-                    });
-                  }}
-                >
-                  Init cwdt.md
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => {
-                    invoke("open_job_editor", { folderPath: form.folder_path, editor: preferredEditor });
-                  }}
-                >
-                  Open in {preferredEditor}
-                </button>
-                <select
-                  value={preferredEditor}
-                  onChange={(e) => setPreferredEditor(e.target.value)}
-                  style={{ padding: "2px 6px", fontSize: 12 }}
-                >
-                  <option value="nvim">nvim</option>
-                  <option value="vscode">vscode</option>
-                </select>
-              </div>
-              {cwdtPreview !== null && (
-                <div style={{ border: "1px solid var(--border)", borderRadius: 4, padding: 8, maxHeight: 200, overflowY: "auto" }}>
-                  <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>{cwdtPreview || "(empty)"}</pre>
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="form-group">
-          <label>{form.job_type === "binary" ? "Binary Path" : "Prompt File Path"}</label>
-          <input
-            type="text"
-            value={form.path}
-            onChange={(e) => setForm({ ...form, path: e.target.value })}
-            placeholder={
-              form.job_type === "binary"
-                ? "/path/to/binary"
-                : "x-marketing/prompt-product.md"
-            }
-            style={{ maxWidth: "100%" }}
-          />
-        </div>
-      )}
-
-      {form.job_type === "binary" && (
-        <div className="form-group">
-          <label>Arguments</label>
-          <input
-            type="text"
-            value={argsText}
-            onChange={(e) => setArgsText(e.target.value)}
-            placeholder="arg1 arg2"
-            style={{ maxWidth: "100%" }}
-          />
-          <span className="hint">Space-separated arguments</span>
-        </div>
-      )}
-
-      <CronInput
-        value={form.cron}
-        onChange={(cron) => setForm({ ...form, cron })}
-      />
-
-      <div className="form-group">
-        <label>Secrets (injected as env vars)</label>
-        {availableSecrets.length === 0 ? (
-          <p className="text-secondary">No secrets configured. Add them in the Secrets tab.</p>
-        ) : (
-          <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 4, padding: 8 }}>
-            {availableSecrets.map((s) => (
-              <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={form.secret_keys.includes(s.key)}
-                  onChange={() => toggleSecret(s.key)}
-                />
-                <span>{s.key}</span>
-                <span className="text-secondary" style={{ fontSize: 11 }}>({s.source})</span>
-              </label>
-            ))}
-          </div>
+        {isNew && (
+          <span className="hint">Auto-derived from folder path</span>
         )}
       </div>
 
-      {form.job_type === "binary" && (
+      {form.folder_path && (
         <div className="form-group">
-          <label>Environment Variables</label>
-          <textarea
-            value={envText}
-            onChange={(e) => setEnvText(e.target.value)}
-            placeholder={"KEY=value\nANOTHER=value"}
-            rows={3}
-            style={{ maxWidth: "100%" }}
-          />
-          <span className="hint">One per line: KEY=value</span>
+          <div className="btn-group" style={{ marginBottom: 8 }}>
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                invoke("init_cwdt_folder", { folderPath: form.folder_path }).then(() => {
+                  invoke<string>("read_cwdt_entry", { folderPath: form.folder_path }).then(setCwdtPreview);
+                });
+              }}
+            >
+              Init cwdt.md
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                invoke("open_job_editor", { folderPath: form.folder_path, editor: preferredEditor });
+              }}
+            >
+              Open in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+            </button>
+            <select
+              value={preferredEditor}
+              onChange={(e) => setPreferredEditor(e.target.value)}
+              style={{ padding: "2px 6px", fontSize: 12 }}
+            >
+              {availableEditors.map((e) => (
+                <option key={e} value={e}>
+                  {EDITOR_LABELS[e] ?? e}
+                </option>
+              ))}
+            </select>
+          </div>
+          {cwdtPreview !== null && (
+            <div style={{ border: "1px solid var(--border)", borderRadius: 4, padding: 8, maxHeight: 200, overflowY: "auto" }}>
+              <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>{cwdtPreview || "(empty)"}</pre>
+            </div>
+          )}
         </div>
       )}
+    </>
+  );
 
-      <div className="form-group">
-        <label>Working Directory</label>
-        <input
-          type="text"
-          value={form.work_dir ?? ""}
-          onChange={(e) =>
-            setForm({ ...form, work_dir: e.target.value || null })
-          }
-          placeholder="Leave empty to use default"
-          style={{ maxWidth: "100%" }}
-        />
-      </div>
+  const renderScheduleFields = () => (
+    <CronInput
+      value={form.cron}
+      onChange={(cron) => setForm({ ...form, cron })}
+    />
+  );
 
+  const renderSecretsFields = () => (
+    <div className="form-group">
+      <label>Secrets (injected as env vars)</label>
+      {availableSecrets === null ? (
+        <p className="text-secondary">Loading secrets...</p>
+      ) : availableSecrets.length === 0 ? (
+        <p className="text-secondary">No secrets configured. Add them in the Secrets tab.</p>
+      ) : (
+        <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 4, padding: 8 }}>
+          {availableSecrets.map((s) => (
+            <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.secret_keys.includes(s.key)}
+                onChange={() => toggleSecret(s.key)}
+              />
+              <span>{s.key}</span>
+              <span className="text-secondary" style={{ fontSize: 11 }}>({s.source})</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderConfigFields = () => (
+    <>
       {(form.job_type === "claude" || form.job_type === "folder") && (
         <>
           <div className="form-group">
@@ -292,6 +337,248 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           )}
         </>
       )}
+
+      <div className="form-group">
+        <label>Telegram Chat ID (optional)</label>
+        <input
+          type="text"
+          value={form.telegram_chat_id ?? ""}
+          onChange={(e) => {
+            const val = e.target.value.trim();
+            setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) || null : null });
+          }}
+          placeholder="Leave empty to use global chat IDs"
+        />
+        <span className="hint">Override global telegram destination for this job</span>
+      </div>
+
+      {form.job_type === "folder" && form.name && (
+        <div className="form-group">
+          <label>
+            Browser Session{" "}
+            <span style={{ color: browserSessionExists ? "var(--success)" : "var(--text-secondary)", fontSize: 11 }}>
+              ({browserSessionExists ? "active" : "none"})
+            </span>
+          </label>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="text"
+              value={browserAuthUrl}
+              onChange={(e) => setBrowserAuthUrl(e.target.value)}
+              placeholder="https://x.com"
+              style={{ flex: 1 }}
+            />
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                invoke("launch_browser_auth", { jobName: form.name, url: browserAuthUrl });
+              }}
+            >
+              Launch Auth
+            </button>
+            {browserSessionExists && (
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  invoke("clear_browser_session", { jobName: form.name }).then(() =>
+                    setBrowserSessionExists(false),
+                  );
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <span className="hint">Log in to sites the bot needs. Session persists across runs.</span>
+        </div>
+      )}
+    </>
+  );
+
+  // ---- Wizard mode (new folder jobs) ----
+
+  if (isWizard) {
+    return (
+      <div className="settings-section">
+        <div className="section-header">
+          <h2>New Job</h2>
+        </div>
+
+        <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
+          {STEPS.map((step, idx) => (
+            <div
+              key={step.id}
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                background: idx <= currentIdx ? "var(--accent)" : "var(--border)",
+              }}
+            />
+          ))}
+        </div>
+
+        <p className="text-secondary" style={{ marginBottom: 16 }}>
+          Step {currentIdx + 1} of {STEPS.length}: {STEPS[currentIdx].label}
+        </p>
+
+        {currentStep === "folder" && (
+          <div>
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label>Type</label>
+              <select
+                value={form.job_type}
+                onChange={(e) =>
+                  setForm({ ...form, job_type: e.target.value as JobType })
+                }
+              >
+                <option value="folder">Folder (.cwdt)</option>
+                <option value="claude">Claude</option>
+                <option value="binary">Binary</option>
+              </select>
+            </div>
+            {renderFolderFields()}
+          </div>
+        )}
+
+        {currentStep === "schedule" && renderScheduleFields()}
+        {currentStep === "secrets" && renderSecretsFields()}
+        {currentStep === "config" && renderConfigFields()}
+
+        <div className="btn-group" style={{ marginTop: 24 }}>
+          <button className="btn" onClick={onCancel}>
+            Cancel
+          </button>
+          {currentIdx > 0 && (
+            <button className="btn" onClick={goBack}>
+              Back
+            </button>
+          )}
+          {currentStep === "config" ? (
+            <button
+              className="btn btn-primary"
+              onClick={handleSubmit}
+              disabled={!canAdvanceFromFolder()}
+            >
+              Create
+            </button>
+          ) : (
+            <button
+              className="btn btn-primary"
+              onClick={goNext}
+              disabled={currentStep === "folder" && !canAdvanceFromFolder()}
+            >
+              Next
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- Single-page mode (editing or non-folder new jobs) ----
+
+  return (
+    <div className="settings-section">
+      <div className="section-header">
+        <h2>{isNew ? "New Job" : `Edit: ${form.name}`}</h2>
+      </div>
+
+      {isNew && (
+        <div className="form-group">
+          <label>Type</label>
+          <select
+            value={form.job_type}
+            onChange={(e) =>
+              setForm({ ...form, job_type: e.target.value as JobType })
+            }
+          >
+            <option value="folder">Folder (.cwdt)</option>
+            <option value="claude">Claude</option>
+            <option value="binary">Binary</option>
+          </select>
+        </div>
+      )}
+
+      {form.job_type === "folder" ? (
+        renderFolderFields()
+      ) : (
+        <>
+          <div className="form-group">
+            <label>Name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              disabled={!isNew}
+              placeholder="my-job"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>{form.job_type === "binary" ? "Binary Path" : "Prompt File Path"}</label>
+            <input
+              type="text"
+              value={form.path}
+              onChange={(e) => setForm({ ...form, path: e.target.value })}
+              placeholder={
+                form.job_type === "binary"
+                  ? "/path/to/binary"
+                  : "x-marketing/prompt-product.md"
+              }
+              style={{ maxWidth: "100%" }}
+            />
+          </div>
+
+          {form.job_type === "binary" && (
+            <div className="form-group">
+              <label>Arguments</label>
+              <input
+                type="text"
+                value={argsText}
+                onChange={(e) => setArgsText(e.target.value)}
+                placeholder="arg1 arg2"
+                style={{ maxWidth: "100%" }}
+              />
+              <span className="hint">Space-separated arguments</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {renderScheduleFields()}
+      {renderSecretsFields()}
+
+      {form.job_type === "binary" && (
+        <div className="form-group">
+          <label>Environment Variables</label>
+          <textarea
+            value={envText}
+            onChange={(e) => setEnvText(e.target.value)}
+            placeholder={"KEY=value\nANOTHER=value"}
+            rows={3}
+            style={{ maxWidth: "100%" }}
+          />
+          <span className="hint">One per line: KEY=value</span>
+        </div>
+      )}
+
+      {form.job_type !== "folder" && (
+        <div className="form-group">
+          <label>Working Directory</label>
+          <input
+            type="text"
+            value={form.work_dir ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, work_dir: e.target.value || null })
+            }
+            placeholder="Leave empty to use default"
+            style={{ maxWidth: "100%" }}
+          />
+        </div>
+      )}
+
+      {renderConfigFields()}
 
       <div className="btn-group" style={{ marginTop: 20 }}>
         <button className="btn btn-primary" onClick={handleSubmit}>

@@ -1,4 +1,5 @@
 mod aerospace;
+mod browser;
 mod commands;
 mod config;
 mod cwdt;
@@ -180,6 +181,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::jobs::get_jobs,
@@ -211,11 +213,15 @@ pub fn run() {
             commands::tmux::focus_job_window,
             commands::tmux::open_job_terminal,
             commands::tools::detect_tools,
+            commands::tools::install_tool,
             commands::aerospace::aerospace_available,
             commands::aerospace::list_aerospace_workspaces,
             commands::telegram::get_telegram_config,
             commands::telegram::set_telegram_config,
             commands::telegram::test_telegram,
+            commands::browser::launch_browser_auth,
+            commands::browser::check_browser_session,
+            commands::browser::clear_browser_session,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

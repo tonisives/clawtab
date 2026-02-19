@@ -1,6 +1,122 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { SecretEntry } from "../types";
+
+interface TreeNode {
+  name: string;
+  fullPath: string;
+  children: TreeNode[];
+  isLeaf: boolean;
+}
+
+function buildTree(paths: string[]): TreeNode[] {
+  const root: TreeNode[] = [];
+
+  for (const path of paths) {
+    const segments = path.split("/");
+    let current = root;
+    let accumulated = "";
+
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      accumulated = accumulated ? `${accumulated}/${seg}` : seg;
+      const isLast = i === segments.length - 1;
+
+      let existing = current.find((n) => n.name === seg && n.isLeaf === isLast);
+      if (!existing) {
+        existing = { name: seg, fullPath: accumulated, children: [], isLeaf: isLast };
+        current.push(existing);
+      }
+      current = existing.children;
+    }
+  }
+
+  const sortNodes = (nodes: TreeNode[]): TreeNode[] => {
+    nodes.sort((a, b) => {
+      if (a.isLeaf !== b.isLeaf) return a.isLeaf ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const n of nodes) {
+      if (!n.isLeaf) sortNodes(n.children);
+    }
+    return nodes;
+  };
+
+  return sortNodes(root);
+}
+
+function GopassTreeView({
+  nodes,
+  expanded,
+  toggleFolder,
+  onImport,
+  depth,
+}: {
+  nodes: TreeNode[];
+  expanded: Set<string>;
+  toggleFolder: (path: string) => void;
+  onImport: (path: string) => void;
+  depth: number;
+}) {
+  return (
+    <>
+      {nodes.map((node) => {
+        if (node.isLeaf) {
+          return (
+            <div
+              key={`leaf-${node.fullPath}`}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "4px 0",
+                paddingLeft: depth * 16,
+                borderBottom: "1px solid var(--border)",
+              }}
+            >
+              <code style={{ fontSize: 12 }}>{node.name}</code>
+              <button className="btn btn-primary btn-sm" onClick={() => onImport(node.fullPath)}>
+                Import
+              </button>
+            </div>
+          );
+        }
+
+        const isOpen = expanded.has(node.fullPath);
+        return (
+          <div key={`folder-${node.fullPath}`}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                padding: "4px 0",
+                paddingLeft: depth * 16,
+                borderBottom: "1px solid var(--border)",
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+              onClick={() => toggleFolder(node.fullPath)}
+            >
+              <span style={{ width: 16, fontFamily: "monospace", fontSize: 12, flexShrink: 0 }}>
+                {isOpen ? "v" : ">"}
+              </span>
+              <strong style={{ fontSize: 12 }}>{node.name}/</strong>
+            </div>
+            {isOpen && (
+              <GopassTreeView
+                nodes={node.children}
+                expanded={expanded}
+                toggleFolder={toggleFolder}
+                onImport={onImport}
+                depth={depth + 1}
+              />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
 
 function SourceBadge({ source }: { source: string }) {
   const cls =
@@ -20,6 +136,7 @@ export function SecretsPanel() {
   const [gopassSearch, setGopassSearch] = useState("");
   const [showGopassImport, setShowGopassImport] = useState(false);
   const [gopassLoading, setGopassLoading] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   const loadSecrets = async () => {
     try {
@@ -110,11 +227,44 @@ export function SecretsPanel() {
     ? gopassEntries.filter((e) => e.toLowerCase().includes(gopassSearch.toLowerCase()))
     : gopassEntries;
 
+  const gopassTree = useMemo(() => buildTree(filteredGopassEntries), [filteredGopassEntries]);
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const effectiveExpanded = useMemo(() => {
+    if (!gopassSearch) return expandedFolders;
+    // Auto-expand all folders when searching
+    const all = new Set<string>();
+    for (const entry of filteredGopassEntries) {
+      const segments = entry.split("/");
+      let accumulated = "";
+      for (let i = 0; i < segments.length - 1; i++) {
+        accumulated = accumulated ? `${accumulated}/${segments[i]}` : segments[i];
+        all.add(accumulated);
+      }
+    }
+    return all;
+  }, [gopassSearch, expandedFolders, filteredGopassEntries]);
+
   return (
     <div className="settings-section">
       <div className="section-header">
         <h2>Secrets</h2>
-        {gopassAvailable && (
+      </div>
+      <p className="section-description">
+        Secrets are injected as environment variables into jobs. Keychain secrets are stored locally;
+        gopass secrets are fetched from your gopass store.
+      </p>
+
+      {gopassAvailable && (
+        <div style={{ marginBottom: 12 }}>
           <button
             className="btn btn-sm"
             onClick={handleLoadGopassEntries}
@@ -122,12 +272,8 @@ export function SecretsPanel() {
           >
             {gopassLoading ? "Loading..." : "Import from gopass"}
           </button>
-        )}
-      </div>
-      <p className="section-description">
-        Secrets are injected as environment variables into jobs. Keychain secrets are stored locally;
-        gopass secrets are fetched from your gopass store.
-      </p>
+        </div>
+      )}
 
       {showGopassImport && (
         <div style={{ marginBottom: 20, padding: 12, border: "1px solid var(--border)", borderRadius: 6 }}>
@@ -138,6 +284,7 @@ export function SecretsPanel() {
               onClick={() => {
                 setShowGopassImport(false);
                 setGopassSearch("");
+                setExpandedFolders(new Set());
               }}
             >
               Close
@@ -150,27 +297,17 @@ export function SecretsPanel() {
             placeholder="Filter entries..."
             style={{ width: "100%", marginBottom: 8 }}
           />
-          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
             {filteredGopassEntries.length === 0 ? (
               <p className="text-secondary">No entries found.</p>
             ) : (
-              filteredGopassEntries.map((entry) => (
-                <div
-                  key={entry}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "4px 0",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  <code style={{ fontSize: 12 }}>{entry}</code>
-                  <button className="btn btn-primary btn-sm" onClick={() => handleImportGopass(entry)}>
-                    Import
-                  </button>
-                </div>
-              ))
+              <GopassTreeView
+                nodes={gopassTree}
+                expanded={effectiveExpanded}
+                toggleFolder={toggleFolder}
+                onImport={handleImportGopass}
+                depth={0}
+              />
             )}
           </div>
         </div>

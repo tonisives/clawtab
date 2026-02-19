@@ -45,6 +45,7 @@ pub struct Job {
     pub tmux_session: Option<String>,
     pub aerospace_workspace: Option<String>,
     pub folder_path: Option<String>,
+    pub telegram_chat_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

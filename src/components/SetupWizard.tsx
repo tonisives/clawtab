@@ -1,19 +1,41 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings, ToolInfo } from "../types";
+import { ToolGroupList } from "./ToolGroupList";
 
 interface Props {
   onComplete: () => void;
 }
 
-type Step = "tools" | "paths" | "tmux" | "secrets" | "done";
+type Step = "tools" | "paths" | "terminal" | "editor" | "secrets" | "done";
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "tools", label: "Detect Tools" },
   { id: "paths", label: "Configure Paths" },
-  { id: "tmux", label: "Tmux Session" },
+  { id: "terminal", label: "Terminal" },
+  { id: "editor", label: "Editor" },
   { id: "secrets", label: "Secrets" },
   { id: "done", label: "Done" },
+];
+
+const TERMINAL_OPTIONS = [
+  { value: "ghostty", label: "Ghostty" },
+  { value: "alacritty", label: "Alacritty" },
+  { value: "kitty", label: "Kitty" },
+  { value: "wezterm", label: "WezTerm" },
+  { value: "iterm", label: "iTerm2" },
+  { value: "terminal", label: "Terminal.app" },
+];
+
+const EDITOR_OPTIONS: { value: string; label: string; terminal: boolean }[] = [
+  { value: "nvim", label: "Neovim", terminal: true },
+  { value: "vim", label: "Vim", terminal: true },
+  { value: "code", label: "VS Code", terminal: false },
+  { value: "codium", label: "VSCodium", terminal: false },
+  { value: "zed", label: "Zed", terminal: false },
+  { value: "hx", label: "Helix", terminal: true },
+  { value: "subl", label: "Sublime Text", terminal: false },
+  { value: "emacs", label: "Emacs", terminal: true },
 ];
 
 export function SetupWizard({ onComplete }: Props) {
@@ -23,7 +45,29 @@ export function SetupWizard({ onComplete }: Props) {
   const [claudePath, setClaudePath] = useState("");
   const [workDir, setWorkDir] = useState("");
   const [tmuxSession, setTmuxSession] = useState("");
+  const [preferredTerminal, setPreferredTerminal] = useState("auto");
+  const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [gopassAvailable, setGopassAvailable] = useState(false);
+
+  const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
+  const availableTerminals = TERMINAL_OPTIONS.filter((opt) =>
+    tools.some((t) => t.group === "terminal" && t.available && t.name.toLowerCase().startsWith(opt.value)),
+  );
+  const availableEditors = EDITOR_OPTIONS.filter((opt) =>
+    tools.some((t) => t.group === "editor" && t.available && t.name === opt.value),
+  );
+
+  const loadTools = async () => {
+    const detected = await invoke<ToolInfo[]>("detect_tools");
+    setTools(detected);
+  };
+
+  // Auto-select best available editor when tools are loaded
+  useEffect(() => {
+    if (availableEditors.length > 0 && !availableEditors.some((e) => e.value === preferredEditor)) {
+      setPreferredEditor(availableEditors[0].value);
+    }
+  }, [tools]);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
@@ -31,8 +75,10 @@ export function SetupWizard({ onComplete }: Props) {
       setClaudePath(s.claude_path);
       setWorkDir(s.default_work_dir);
       setTmuxSession(s.default_tmux_session);
+      setPreferredTerminal(s.preferred_terminal);
+      setPreferredEditor(s.preferred_editor);
     });
-    invoke<ToolInfo[]>("detect_tools").then(setTools);
+    loadTools();
     invoke<boolean>("gopass_available").then(setGopassAvailable);
   }, []);
 
@@ -50,6 +96,8 @@ export function SetupWizard({ onComplete }: Props) {
     }
   };
 
+  const editorLabel = EDITOR_OPTIONS.find((e) => e.value === preferredEditor)?.label ?? preferredEditor;
+
   const handleFinish = async () => {
     if (!settings) return;
     const updated: AppSettings = {
@@ -57,6 +105,8 @@ export function SetupWizard({ onComplete }: Props) {
       claude_path: claudePath,
       default_work_dir: workDir,
       default_tmux_session: tmuxSession,
+      preferred_terminal: hasTmux ? settings.preferred_terminal : preferredTerminal,
+      preferred_editor: preferredEditor,
       setup_completed: true,
     };
     try {
@@ -93,32 +143,10 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Detected Tools</h3>
           <p className="section-description">
-            These tools were found on your system. Install any missing tools before proceeding.
+            These tools were found on your system. Install any missing required tools before
+            proceeding.
           </p>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Tool</th>
-                <th>Status</th>
-                <th>Version</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tools.map((tool) => (
-                <tr key={tool.name}>
-                  <td>{tool.name}</td>
-                  <td>
-                    {tool.available ? (
-                      <span className="status-badge status-success">found</span>
-                    ) : (
-                      <span className="status-badge status-failed">missing</span>
-                    )}
-                  </td>
-                  <td className="text-secondary">{tool.version ?? "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <ToolGroupList tools={tools} onRefresh={loadTools} />
         </div>
       )}
 
@@ -149,7 +177,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
       )}
 
-      {currentStep === "tmux" && (
+      {currentStep === "terminal" && hasTmux && (
         <div>
           <h3>Tmux Session</h3>
           <p className="section-description">
@@ -163,6 +191,58 @@ export function SetupWizard({ onComplete }: Props) {
               onChange={(e) => setTmuxSession(e.target.value)}
               placeholder="tgs"
             />
+          </div>
+        </div>
+      )}
+
+      {currentStep === "terminal" && !hasTmux && (
+        <div>
+          <h3>Terminal</h3>
+          <p className="section-description">
+            tmux was not detected. Choose a terminal to use for running Claude and folder jobs.
+          </p>
+          <div className="form-group">
+            <label>Preferred Terminal</label>
+            <select
+              value={preferredTerminal}
+              onChange={(e) => setPreferredTerminal(e.target.value)}
+            >
+              <option value="auto">Auto-detect</option>
+              {availableTerminals.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <span className="hint">
+              Terminal used to launch Claude sessions when tmux is not available
+            </span>
+          </div>
+        </div>
+      )}
+
+      {currentStep === "editor" && (
+        <div>
+          <h3>Editor</h3>
+          <p className="section-description">
+            Choose an editor for editing job files. Terminal editors open in a popup window,
+            GUI editors launch directly.
+          </p>
+          <div className="form-group">
+            <label>Preferred Editor</label>
+            <select
+              value={preferredEditor}
+              onChange={(e) => setPreferredEditor(e.target.value)}
+            >
+              {availableEditors.map((e) => (
+                <option key={e.value} value={e.value}>
+                  {e.label}{e.terminal ? " (terminal)" : ""}
+                </option>
+              ))}
+            </select>
+            <span className="hint">
+              Used when opening job config files from the Jobs tab
+            </span>
           </div>
         </div>
       )}
@@ -190,7 +270,12 @@ export function SetupWizard({ onComplete }: Props) {
           <div style={{ marginTop: 12 }}>
             <p><strong>Claude Path:</strong> {claudePath}</p>
             <p><strong>Work Dir:</strong> {workDir}</p>
-            <p><strong>Tmux Session:</strong> {tmuxSession}</p>
+            {hasTmux ? (
+              <p><strong>Tmux Session:</strong> {tmuxSession}</p>
+            ) : (
+              <p><strong>Terminal:</strong> {preferredTerminal === "auto" ? "Auto-detect" : preferredTerminal}</p>
+            )}
+            <p><strong>Editor:</strong> {editorLabel}</p>
           </div>
         </div>
       )}
