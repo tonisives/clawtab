@@ -146,7 +146,20 @@ export function SetupWizard({ onComplete }: Props) {
             These tools were found on your system. Install any missing required tools before
             proceeding.
           </p>
-          <ToolGroupList tools={tools} onRefresh={loadTools} />
+          <ToolGroupList
+            tools={tools}
+            onRefresh={loadTools}
+            selections={{
+              editor: preferredEditor,
+              terminal: preferredTerminal === "auto" ? "" : preferredTerminal,
+              ai_agent: claudePath,
+            }}
+            onSelect={(group, toolName) => {
+              if (group === "editor") setPreferredEditor(toolName);
+              else if (group === "terminal") setPreferredTerminal(toolName);
+              else if (group === "ai_agent") setClaudePath(toolName);
+            }}
+          />
         </div>
       )}
 

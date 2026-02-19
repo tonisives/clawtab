@@ -6,6 +6,10 @@ interface Props {
   tools: ToolInfo[];
   onRefresh: () => Promise<void>;
   showPath?: boolean;
+  /** Map from group name to selected tool name, e.g. { editor: "nvim", terminal: "ghostty" } */
+  selections?: Record<string, string>;
+  /** Called when user selects a tool within a group */
+  onSelect?: (group: string, toolName: string) => void;
 }
 
 interface ToolGroup {
@@ -17,7 +21,7 @@ interface ToolGroup {
 }
 
 function buildGroups(tools: ToolInfo[]): ToolGroup[] {
-  const categoryOrder = ["Core", "AI Agent", "Terminal", "Editor", "Optional"];
+  const categoryOrder = ["AI Agent", "Terminal", "Editor", "Optional", "Browser"];
   const groups: ToolGroup[] = [];
   const seen = new Set<string>();
 
@@ -25,7 +29,6 @@ function buildGroups(tools: ToolInfo[]): ToolGroup[] {
     const catTools = tools.filter((t) => t.category === cat);
     if (catTools.length === 0) continue;
 
-    // Collect distinct groups within this category
     const groupNames = new Set(catTools.map((t) => t.group).filter(Boolean));
 
     // Ungrouped tools first
@@ -66,7 +69,7 @@ function CategoryHeader({ category }: { category: string }) {
   return (
     <tr>
       <td
-        colSpan={4}
+        colSpan={5}
         style={{
           paddingTop: 16,
           paddingBottom: 6,
@@ -82,19 +85,6 @@ function CategoryHeader({ category }: { category: string }) {
       </td>
     </tr>
   );
-}
-
-function GroupSatisfaction({ group }: { group: ToolGroup }) {
-  if (group.satisfied && !group.required) {
-    return <span className="status-dot running" />;
-  }
-  if (group.satisfied) {
-    return <span className="status-badge status-success">ok</span>;
-  }
-  if (!group.required) {
-    return <span className="status-badge status-idle">optional</span>;
-  }
-  return <span className="status-badge status-failed">missing</span>;
 }
 
 function InstallButton({
@@ -143,10 +133,177 @@ function InstallButton({
   );
 }
 
-export function ToolGroupList({ tools, onRefresh, showPath = false }: Props) {
+function SelectableGroupRows({
+  group,
+  showPath,
+  onRefresh,
+  selectedTool,
+  onSelect,
+}: {
+  group: ToolGroup;
+  showPath: boolean;
+  onRefresh: () => Promise<void>;
+  selectedTool: string | undefined;
+  onSelect: ((group: string, toolName: string) => void) | undefined;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isSelectable = !!onSelect && !!group.groupName;
+  const selected = selectedTool ?? group.tools.find((t) => t.available)?.name;
+
+  const selectedToolInfo = group.tools.find((t) => t.name === selected);
+  const otherTools = group.tools.filter((t) => t.name !== selected);
+  const hasOthers = otherTools.length > 0;
+
+  // For non-selectable groups or single-tool groups, just render flat rows
+  if (!isSelectable || group.tools.length <= 1) {
+    return (
+      <>
+        {group.tools.map((tool) => (
+          <ToolRow
+            key={tool.name}
+            tool={tool}
+            showPath={showPath}
+            onRefresh={onRefresh}
+            indent={false}
+          />
+        ))}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {/* Selected tool row */}
+      {selectedToolInfo && (
+        <tr key={selectedToolInfo.name}>
+          <td>
+            <span className={`status-dot ${selectedToolInfo.available ? "running" : "error"}`} />
+          </td>
+          <td>{selectedToolInfo.name}</td>
+          <td>
+            {selectedToolInfo.version ? (
+              <code>{selectedToolInfo.version}</code>
+            ) : (
+              <span className="text-secondary">--</span>
+            )}
+          </td>
+          {showPath && (
+            <td>
+              {selectedToolInfo.path ? (
+                <code>{selectedToolInfo.path}</code>
+              ) : (
+                <span className="text-secondary">not found</span>
+              )}
+            </td>
+          )}
+          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+            <span className="status-badge status-success" style={{ fontSize: 11 }}>selected</span>
+            {hasOthers && (
+              <button
+                className="btn btn-sm"
+                onClick={() => setExpanded(!expanded)}
+                style={{ marginLeft: 6, padding: "1px 6px", fontSize: 11 }}
+              >
+                {expanded ? "hide" : `+${otherTools.length} more`}
+              </button>
+            )}
+          </td>
+        </tr>
+      )}
+      {/* Expanded other tools */}
+      {expanded && otherTools.map((tool) => (
+        <tr key={tool.name} style={{ opacity: tool.available ? 1 : 0.5 }}>
+          <td>
+            <span className={`status-dot ${tool.available ? "running" : "error"}`} />
+          </td>
+          <td style={{ paddingLeft: 12 }}>{tool.name}</td>
+          <td>
+            {tool.version ? (
+              <code>{tool.version}</code>
+            ) : (
+              <span className="text-secondary">--</span>
+            )}
+          </td>
+          {showPath && (
+            <td>
+              {tool.path ? (
+                <code>{tool.path}</code>
+              ) : (
+                <span className="text-secondary">not found</span>
+              )}
+            </td>
+          )}
+          <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+            {tool.available && isSelectable ? (
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  onSelect!(group.groupName!, tool.name);
+                  setExpanded(false);
+                }}
+                style={{ padding: "1px 6px", fontSize: 11 }}
+              >
+                select
+              </button>
+            ) : (
+              <InstallButton tool={tool} onRefresh={onRefresh} />
+            )}
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function ToolRow({
+  tool,
+  showPath,
+  onRefresh,
+  indent,
+}: {
+  tool: ToolInfo;
+  showPath: boolean;
+  onRefresh: () => Promise<void>;
+  indent: boolean;
+}) {
+  return (
+    <tr>
+      <td>
+        {tool.available ? (
+          <span className="status-dot running" />
+        ) : tool.required ? (
+          <span className="status-badge status-failed">missing</span>
+        ) : (
+          <span className="status-badge status-idle">optional</span>
+        )}
+      </td>
+      <td style={indent ? { paddingLeft: 24 } : undefined}>{tool.name}</td>
+      <td>
+        {tool.version ? (
+          <code>{tool.version}</code>
+        ) : (
+          <span className="text-secondary">--</span>
+        )}
+      </td>
+      {showPath && (
+        <td>
+          {tool.path ? (
+            <code>{tool.path}</code>
+          ) : (
+            <span className="text-secondary">not found</span>
+          )}
+        </td>
+      )}
+      <td>
+        <InstallButton tool={tool} onRefresh={onRefresh} />
+      </td>
+    </tr>
+  );
+}
+
+export function ToolGroupList({ tools, onRefresh, showPath = false, selections, onSelect }: Props) {
   const groups = buildGroups(tools);
 
-  // Track which categories we've already rendered a header for
   let lastCategory = "";
 
   return (
@@ -171,63 +328,18 @@ export function ToolGroupList({ tools, onRefresh, showPath = false }: Props) {
             );
           }
 
-          // If this is a named group, show group header row
-          if (group.groupName && group.tools.length > 1) {
-            rows.push(
-              <tr key={`grp-${group.groupName}`}>
-                <td>
-                  <GroupSatisfaction group={group} />
-                </td>
-                <td
-                  colSpan={showPath ? 3 : 2}
-                  style={{ fontStyle: "italic", color: "var(--text-secondary)", fontSize: 12 }}
-                >
-                  {group.required ? "at least one required" : "optional"}
-                </td>
-                <td></td>
-              </tr>
-            );
-          }
+          const selectedTool = group.groupName ? selections?.[group.groupName] : undefined;
 
-          for (const tool of group.tools) {
-            const indent = group.groupName && group.tools.length > 1;
-            rows.push(
-              <tr key={tool.name}>
-                <td>
-                  {/* For single-tool groups or ungrouped, show status directly */}
-                  {!(group.groupName && group.tools.length > 1) ? (
-                    <GroupSatisfaction
-                      group={{ ...group, satisfied: tool.available, tools: [tool] }}
-                    />
-                  ) : (
-                    <span
-                      className={`status-dot ${tool.available ? "running" : "error"}`}
-                    />
-                  )}
-                </td>
-                <td style={indent ? { paddingLeft: 24 } : undefined}>{tool.name}</td>
-                <td>
-                  {tool.version ? (
-                    <code>{tool.version}</code>
-                  ) : (
-                    <span className="text-secondary">--</span>
-                  )}
-                </td>
-                {showPath && (
-                  <td>
-                    {tool.path ? (
-                      <code>{tool.path}</code>
-                    ) : (
-                      <span className="text-secondary">not found</span>
-                    )}
-                  </td>
-                )}
-                <td>
-                  <InstallButton tool={tool} onRefresh={onRefresh} />
-                </td>
-              </tr>
-            );
-          }
+          rows.push(
+            <SelectableGroupRows
+              key={`grp-${group.groupName ?? group.tools[0]?.name}`}
+              group={group}
+              showPath={showPath}
+              onRefresh={onRefresh}
+              selectedTool={selectedTool}
+              onSelect={onSelect}
+            />
+          );
 
           return rows;
         })}

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ToolInfo } from "../types";
+import type { AppSettings, ToolInfo } from "../types";
 import { ToolGroupList } from "./ToolGroupList";
 
 export function ToolsPanel() {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const loadTools = async () => {
     setLoading(true);
@@ -20,7 +21,35 @@ export function ToolsPanel() {
 
   useEffect(() => {
     loadTools();
+    invoke<AppSettings>("get_settings").then(setSettings);
   }, []);
+
+  const selections: Record<string, string> = settings
+    ? {
+        editor: settings.preferred_editor,
+        terminal: settings.preferred_terminal === "auto" ? "" : settings.preferred_terminal,
+        ai_agent: settings.claude_path,
+      }
+    : {};
+
+  const handleSelect = async (group: string, toolName: string) => {
+    if (!settings) return;
+    let updates: Partial<AppSettings> = {};
+    if (group === "editor") {
+      updates = { preferred_editor: toolName };
+    } else if (group === "terminal") {
+      updates = { preferred_terminal: toolName };
+    } else if (group === "ai_agent") {
+      updates = { claude_path: toolName };
+    }
+    const newSettings = { ...settings, ...updates };
+    setSettings(newSettings);
+    try {
+      await invoke("set_settings", { newSettings });
+    } catch (e) {
+      console.error("Failed to save settings:", e);
+    }
+  };
 
   return (
     <div className="settings-section">
@@ -40,7 +69,13 @@ export function ToolsPanel() {
           <p>Scanning for tools...</p>
         </div>
       ) : (
-        <ToolGroupList tools={tools} onRefresh={loadTools} showPath />
+        <ToolGroupList
+          tools={tools}
+          onRefresh={loadTools}
+          showPath
+          selections={selections}
+          onSelect={handleSelect}
+        />
       )}
     </div>
   );

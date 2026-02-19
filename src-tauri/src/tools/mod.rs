@@ -173,6 +173,24 @@ const TOOLS: &[ToolSpec] = &[
     },
     // Optional
     ToolSpec {
+        name: "tmux",
+        binary: "tmux",
+        version_flag: "-V",
+        category: "Optional",
+        required: false,
+        group: None,
+        brew_formula: Some("tmux"),
+    },
+    ToolSpec {
+        name: "git",
+        binary: "git",
+        version_flag: "--version",
+        category: "Optional",
+        required: false,
+        group: None,
+        brew_formula: Some("git"),
+    },
+    ToolSpec {
         name: "aerospace",
         binary: "aerospace",
         version_flag: "--version",
