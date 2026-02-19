@@ -189,6 +189,13 @@ impl HistoryStore {
         Ok(records)
     }
 
+    pub fn delete_by_id(&self, id: &str) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM runs WHERE id = ?1", params![id])
+            .map_err(|e| format!("Failed to delete run record: {}", e))?;
+        Ok(())
+    }
+
     pub fn clear(&self) -> Result<(), String> {
         self.conn
             .execute("DELETE FROM runs", [])

@@ -442,11 +442,13 @@ fn generate_cwdt_context(job: &Job, settings: &AppSettings) -> String {
     out.push_str("cwdtctl restart <name> # Restart a job\n");
     out.push_str("```\n");
 
-    // Telegram section
-    let has_token_secret = job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN");
+    // Telegram section: show when a chat_id is resolvable and a bot token is available
+    // (either explicitly in secret_keys or from global settings, which is auto-injected at runtime)
+    let has_token = job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN")
+        || settings.telegram.as_ref().map_or(false, |tg| !tg.bot_token.is_empty());
     let chat_id = resolve_telegram_chat_id(job, settings);
 
-    if has_token_secret {
+    if has_token {
         if let Some(cid) = chat_id {
             out.push_str("\n## Telegram\n\n");
             out.push_str("The `TELEGRAM_BOT_TOKEN` env var is available. Send messages with:\n\n");
@@ -457,11 +459,6 @@ fn generate_cwdt_context(job: &Job, settings: &AppSettings) -> String {
             ));
             out.push_str("```\n");
         }
-    } else if chat_id.is_some() {
-        // Telegram is configured for this job but TELEGRAM_BOT_TOKEN not in secrets
-        out.push_str("\n## Telegram\n\n");
-        out.push_str("Telegram notifications are configured for this job, but `TELEGRAM_BOT_TOKEN` is not in this job's secrets.\n");
-        out.push_str("Add `TELEGRAM_BOT_TOKEN` to this job's secrets to enable direct Telegram messaging from within the job.\n");
     }
 
     // Env vars section: only if any secrets configured

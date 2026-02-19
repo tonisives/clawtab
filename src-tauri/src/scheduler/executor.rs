@@ -9,6 +9,14 @@ use crate::config::settings::AppSettings;
 use crate::history::{HistoryStore, RunRecord};
 use crate::secrets::SecretsManager;
 
+use super::monitor::{MonitorParams, TelegramStream};
+
+/// Result from a tmux job: the tmux session and pane ID for monitoring.
+struct TmuxHandle {
+    tmux_session: String,
+    pane_id: String,
+}
+
 pub async fn execute_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
@@ -52,13 +60,14 @@ pub async fn execute_job(
 
     log::info!("[{}] Starting job '{}' ({})", run_id, job.name, trigger);
 
-    let result = match job.job_type {
-        JobType::Binary => execute_binary_job(job, secrets, settings).await,
-        JobType::Claude => execute_claude_job(job, secrets, settings).await,
-        JobType::Folder => execute_folder_job(job, secrets, settings).await,
-    };
-
-    let finished_at = Utc::now().to_rfc3339();
+    let result: Result<(Option<i32>, String, String, Option<TmuxHandle>), String> =
+        match job.job_type {
+            JobType::Binary => execute_binary_job(job, secrets, settings)
+                .await
+                .map(|(code, out, err)| (code, out, err, None)),
+            JobType::Claude => execute_claude_job(job, secrets, settings).await,
+            JobType::Folder => execute_folder_job(job, secrets, settings).await,
+        };
 
     // Get telegram config for notifications
     let telegram_config = {
@@ -67,7 +76,33 @@ pub async fn execute_job(
     };
 
     match result {
-        Ok((exit_code, stdout, stderr)) => {
+        Ok((exit_code, stdout, stderr, tmux_handle)) => {
+            // If we got a tmux handle, spawn the monitor -- it handles status/history/notifications
+            if let Some(handle) = tmux_handle {
+                let telegram = build_telegram_stream(&telegram_config, job.telegram_chat_id);
+                let notify_on_success = telegram_config
+                    .as_ref()
+                    .map(|c| c.notify_on_success)
+                    .unwrap_or(true);
+
+                let params = MonitorParams {
+                    tmux_session: handle.tmux_session,
+                    pane_id: handle.pane_id,
+                    run_id: run_id.clone(),
+                    job_name: job.name.clone(),
+                    slug: job.slug.clone(),
+                    telegram,
+                    history: Arc::clone(history),
+                    job_status: Arc::clone(job_status),
+                    notify_on_success,
+                };
+                tokio::spawn(super::monitor::monitor_pane(params));
+                return;
+            }
+
+            // Non-tmux (binary) job: finalize immediately
+            let finished_at = Utc::now().to_rfc3339();
+
             log::info!(
                 "[{}] Job '{}' finished with exit code {:?}",
                 run_id,
@@ -77,7 +112,6 @@ pub async fn execute_job(
 
             let success = matches!(exit_code, Some(0) | None);
 
-            // Update status based on exit code
             {
                 let mut status = job_status.lock().unwrap();
                 let new_status = if success {
@@ -95,17 +129,20 @@ pub async fn execute_job(
 
             {
                 let h = history.lock().unwrap();
-                if let Err(e) = h.update_finished(&run_id, &finished_at, exit_code, &stdout, &stderr) {
+                if let Err(e) =
+                    h.update_finished(&run_id, &finished_at, exit_code, &stdout, &stderr)
+                {
                     log::error!("Failed to update run record: {}", e);
                 }
             }
 
-            // Send telegram notification (after dropping MutexGuard)
             if let Some(ref tg) = telegram_config {
-                send_job_notification(tg, job.telegram_chat_id, &job.name, exit_code, success).await;
+                send_job_notification(tg, job.telegram_chat_id, &job.name, exit_code, success)
+                    .await;
             }
         }
         Err(e) => {
+            let finished_at = Utc::now().to_rfc3339();
             log::error!("[{}] Job '{}' failed: {}", run_id, job.name, e);
 
             {
@@ -128,12 +165,27 @@ pub async fn execute_job(
                 }
             }
 
-            // Send telegram notification for failure (after dropping MutexGuard)
             if let Some(ref tg) = telegram_config {
                 send_job_notification(tg, job.telegram_chat_id, &job.name, Some(-1), false).await;
             }
         }
     }
+}
+
+/// Build a TelegramStream for the monitor, using per-job chat_id or global chat_ids.
+fn build_telegram_stream(
+    config: &Option<crate::telegram::TelegramConfig>,
+    job_chat_id: Option<i64>,
+) -> Option<TelegramStream> {
+    let config = config.as_ref()?;
+    if !config.is_configured() {
+        return None;
+    }
+    let chat_id = job_chat_id.or_else(|| config.chat_ids.first().copied())?;
+    Some(TelegramStream {
+        bot_token: config.bot_token.clone(),
+        chat_id,
+    })
 }
 
 async fn execute_binary_job(
@@ -197,7 +249,7 @@ async fn execute_claude_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
-) -> Result<(Option<i32>, String, String), String> {
+) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::tmux;
 
     let (tmux_session, work_dir, claude_path) = {
@@ -214,7 +266,7 @@ async fn execute_claude_job(
         (session, wd, cp)
     };
 
-    let export_prefix = build_export_prefix(job, secrets);
+    let export_prefix = build_export_prefix(job, secrets, settings);
 
     let window_name = format!("cm-{}", job.name);
     let prompt_path = &job.path;
@@ -235,22 +287,21 @@ async fn execute_claude_job(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    // Check if window has an active process
-    if tmux::window_exists(&tmux_session, &window_name)
-        && tmux::is_window_busy(&tmux_session, &window_name)
-    {
-        return Err(format!(
-            "Window '{}' still has an active process",
-            window_name
-        ));
-    }
-
     let send_cmd = format!(
         "{}cd {} && {} \"$(cat {})\"",
         export_prefix, work_dir, claude_path, prompt_path
     );
 
-    tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
+    // If window has an active process (e.g. Claude is still running), split a new pane
+    let pane_id = if tmux::is_window_busy(&tmux_session, &window_name) {
+        let pane_id = tmux::split_pane(&tmux_session, &window_name)?;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
+        pane_id
+    } else {
+        tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
+        tmux::get_window_pane_id(&tmux_session, &window_name)?
+    };
 
     // Move to aerospace workspace if configured
     if let Some(ref workspace) = job.aerospace_workspace {
@@ -264,14 +315,18 @@ async fn execute_claude_job(
         }
     }
 
-    Ok((Some(0), String::new(), String::new()))
+    let handle = TmuxHandle {
+        tmux_session,
+        pane_id,
+    };
+    Ok((Some(0), String::new(), String::new(), Some(handle)))
 }
 
 async fn execute_folder_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
-) -> Result<(Option<i32>, String, String), String> {
+) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::cwdt::CwdtFolder;
     use crate::tmux;
 
@@ -290,7 +345,7 @@ async fn execute_folder_job(
     }
 
     let raw_prompt = folder.read_entry_point()?;
-    let prompt_content = format!("@.cwdt/cwdt.md\n\n{}", raw_prompt);
+    let prompt_content = format!("@.cwdt/cwdt.md @.cwdt/job.md\n\n{}", raw_prompt);
 
     // Run from the project root (parent of .cwdt), not the .cwdt dir itself
     let project_root = std::path::Path::new(folder_path)
@@ -309,7 +364,7 @@ async fn execute_folder_job(
         (session, cp)
     };
 
-    let export_prefix = build_export_prefix(job, secrets);
+    let export_prefix = build_export_prefix(job, secrets, settings);
 
     let work_dir = project_root;
     let window_name = format!("cm-{}", job.name);
@@ -327,16 +382,6 @@ async fn execute_folder_job(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
-    // Check if window has an active process
-    if tmux::window_exists(&tmux_session, &window_name)
-        && tmux::is_window_busy(&tmux_session, &window_name)
-    {
-        return Err(format!(
-            "Window '{}' still has an active process",
-            window_name
-        ));
-    }
-
     // Pass the prompt content directly to Claude via stdin-like heredoc
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = format!(
@@ -344,7 +389,16 @@ async fn execute_folder_job(
         export_prefix, work_dir, claude_path, escaped_prompt
     );
 
-    tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
+    // If window has an active process (e.g. Claude is still running), split a new pane
+    let pane_id = if tmux::is_window_busy(&tmux_session, &window_name) {
+        let pane_id = tmux::split_pane(&tmux_session, &window_name)?;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
+        pane_id
+    } else {
+        tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
+        tmux::get_window_pane_id(&tmux_session, &window_name)?
+    };
 
     // Move to aerospace workspace if configured
     if let Some(ref workspace) = job.aerospace_workspace {
@@ -361,24 +415,42 @@ async fn execute_folder_job(
         }
     }
 
-    Ok((Some(0), String::new(), String::new()))
+    let handle = TmuxHandle {
+        tmux_session,
+        pane_id,
+    };
+    Ok((Some(0), String::new(), String::new(), Some(handle)))
 }
 
 /// Build an `export K=V && ` prefix from job's secret_keys.
-/// Returns empty string if no secrets are configured.
-fn build_export_prefix(job: &Job, secrets: &Arc<Mutex<SecretsManager>>) -> String {
-    if job.secret_keys.is_empty() {
-        return String::new();
-    }
-
+/// Also auto-injects TELEGRAM_BOT_TOKEN from global settings when the job
+/// has a telegram_chat_id but doesn't explicitly list the token in secret_keys.
+/// Returns empty string if nothing to export.
+fn build_export_prefix(
+    job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    settings: &Arc<Mutex<AppSettings>>,
+) -> String {
     let sm = secrets.lock().unwrap();
     let mut exports = Vec::new();
 
     for key in &job.secret_keys {
         if let Some(value) = sm.get(key) {
-            // Shell-escape the value by wrapping in single quotes
             let escaped = value.replace('\'', "'\\''");
             exports.push(format!("{}='{}'", key, escaped));
+        }
+    }
+
+    // Auto-inject TELEGRAM_BOT_TOKEN from global settings when job has a chat_id
+    if !job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN") {
+        if job.telegram_chat_id.is_some() {
+            let s = settings.lock().unwrap();
+            if let Some(ref tg) = s.telegram {
+                if !tg.bot_token.is_empty() {
+                    let escaped = tg.bot_token.replace('\'', "'\\''");
+                    exports.push(format!("TELEGRAM_BOT_TOKEN='{}'", escaped));
+                }
+            }
         }
     }
 

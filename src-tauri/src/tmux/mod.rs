@@ -178,10 +178,10 @@ pub fn split_pane(session: &str, window: &str) -> Result<String, String> {
 }
 
 /// Send keys to a specific pane by its ID (e.g. "%42").
-pub fn send_keys_to_pane(session: &str, pane_id: &str, keys: &str) -> Result<(), String> {
-    let target = format!("{}:{}", session, pane_id);
+/// Pane IDs starting with '%' are global tmux targets and used directly.
+pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<(), String> {
     let output = Command::new("tmux")
-        .args(["send-keys", "-t", &target, keys, "Enter"])
+        .args(["send-keys", "-t", pane_id, keys, "Enter"])
         .output()
         .map_err(|e| format!("Failed to send keys to pane: {}", e))?;
 
@@ -193,14 +193,14 @@ pub fn send_keys_to_pane(session: &str, pane_id: &str, keys: &str) -> Result<(),
 }
 
 /// Capture the last N lines from a specific pane.
-pub fn capture_pane(session: &str, pane_id: &str, lines: u32) -> Result<String, String> {
-    let target = format!("{}:{}", session, pane_id);
+/// Pane IDs starting with '%' are global tmux targets and used directly.
+pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String, String> {
     let start = format!("-{}", lines);
     let output = Command::new("tmux")
         .args([
             "capture-pane",
             "-t",
-            &target,
+            pane_id,
             "-p",
             "-S",
             &start,
@@ -217,13 +217,13 @@ pub fn capture_pane(session: &str, pane_id: &str, lines: u32) -> Result<String, 
 }
 
 /// Check if a specific pane has an active (non-shell) process running.
-pub fn is_pane_busy(session: &str, pane_id: &str) -> bool {
-    let target = format!("{}:{}", session, pane_id);
+/// Pane IDs starting with '%' are global tmux targets and used directly.
+pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {
     let output = Command::new("tmux")
         .args([
             "list-panes",
             "-t",
-            &target,
+            pane_id,
             "-F",
             "#{pane_id}:#{pane_current_command}",
         ])
@@ -284,6 +284,42 @@ pub fn list_panes(session: &str, window: &str) -> Result<Vec<PaneInfo>, String> 
             }
         })
         .collect())
+}
+
+/// Get the active pane ID of a window (e.g. "%42").
+pub fn get_window_pane_id(session: &str, window: &str) -> Result<String, String> {
+    let target = format!("{}:{}", session, window);
+    let output = Command::new("tmux")
+        .args(["list-panes", "-t", &target, "-F", "#{pane_id}"])
+        .output()
+        .map_err(|e| format!("Failed to list panes: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .last()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "No pane found".to_string())
+}
+
+/// Capture the entire scrollback from a pane.
+pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
+    let output = Command::new("tmux")
+        .args(["capture-pane", "-t", pane_id, "-p", "-S", "-"])
+        .output()
+        .map_err(|e| format!("Failed to capture pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {

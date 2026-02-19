@@ -470,7 +470,7 @@ function JobRow({
             }}
           >
             <span style={{
-              transform: isExpanded ? "rotate(0deg)" : "rotate(180deg)",
+              transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
               transition: "transform 0.15s",
             }}>
               &#9660;
@@ -487,6 +487,35 @@ function RunsPanel({ jobName }: { jobName: string }) {
 
   useEffect(() => { reload(); }, []);
 
+  const handleDeleteRun = async (runId: string) => {
+    try {
+      await invoke("delete_run", { runId });
+      reload();
+    } catch (e) {
+      console.error("Failed to delete run:", e);
+    }
+  };
+
+  const handleOpenLog = async (runId: string) => {
+    try {
+      await invoke("open_run_log", { runId });
+    } catch (e) {
+      console.error("Failed to open log:", e);
+    }
+  };
+
+  const exitCodeClass = (code: number | null) => {
+    if (code === null) return "running";
+    if (code === 0) return "idle";
+    return "error";
+  };
+
+  const exitCodeLabel = (code: number | null) => {
+    if (code === null) return "running";
+    if (code === 0) return "ok";
+    return `exit ${code}`;
+  };
+
   return (
     <tr>
       <td colSpan={7} style={{ padding: "0 8px 8px 24px", border: "none" }}>
@@ -495,36 +524,59 @@ function RunsPanel({ jobName }: { jobName: string }) {
         ) : runs.length === 0 ? (
           <span className="text-secondary" style={{ fontSize: 12 }}>No run history</span>
         ) : (
-          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+          <table className="data-table" style={{ fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Trigger</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
             <tbody>
-              {runs.map((run) => (
-                <tr key={run.id} style={{ borderBottom: "1px solid var(--border)" }}>
-                  <td style={{ padding: "3px 8px 3px 0", whiteSpace: "nowrap" }}>
-                    {formatTime(run.started_at)}
-                  </td>
-                  <td style={{ padding: "3px 8px" }}>
-                    {run.exit_code === null ? (
-                      <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
-                    ) : run.exit_code === 0 ? (
-                      <span className="status-badge status-success" style={{ fontSize: 11 }}>ok</span>
-                    ) : (
-                      <span className="status-badge status-failed" style={{ fontSize: 11 }}>exit {run.exit_code}</span>
-                    )}
-                  </td>
-                  <td style={{ padding: "3px 8px", color: "var(--text-secondary)" }}>
-                    {run.trigger}
-                  </td>
-                  <td style={{ padding: "3px 0", textAlign: "right" }}>
-                    <button
-                      className="btn btn-sm"
-                      style={{ fontSize: 11, padding: "1px 6px" }}
-                      onClick={() => openRun(jobName, run)}
-                    >
-                      Open
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {runs.map((run) => {
+                const duration = run.finished_at
+                  ? `${((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
+                  : "...";
+
+                return (
+                  <tr key={run.id}>
+                    <td>
+                      <span className={`status-dot ${exitCodeClass(run.exit_code)}`} />
+                      {exitCodeLabel(run.exit_code)}
+                    </td>
+                    <td>{run.trigger}</td>
+                    <td>{formatTime(run.started_at)}</td>
+                    <td>{duration}</td>
+                    <td className="actions">
+                      <button
+                        className="btn btn-sm"
+                        style={{ fontSize: 11, padding: "1px 6px" }}
+                        onClick={() => openRun(jobName, run)}
+                      >
+                        View
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        style={{ fontSize: 11, padding: "1px 6px" }}
+                        onClick={() => handleOpenLog(run.id)}
+                        title="Open log in editor"
+                      >
+                        Logs
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        style={{ fontSize: 11, padding: "1px 6px" }}
+                        onClick={() => handleDeleteRun(run.id)}
+                        title="Delete this run"
+                      >
+                        x
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

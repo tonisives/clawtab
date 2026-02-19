@@ -3,14 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { JobsPanel } from "./JobsPanel";
 import { SecretsPanel } from "./SecretsPanel";
-import { HistoryPanel } from "./HistoryPanel";
 import { GeneralSettings } from "./GeneralSettings";
 import { ToolsPanel } from "./ToolsPanel";
 import { TelegramPanel } from "./TelegramPanel";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
 
-type TabId = "jobs" | "secrets" | "history" | "tools" | "telegram" | "settings";
+type TabId = "jobs" | "secrets" | "tools" | "telegram" | "settings";
 
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
@@ -29,14 +28,6 @@ const tabIcons: Record<TabId, React.ReactNode> = {
       <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7L12 2z" />
       <path d="M12 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
       <path d="M12 11v3" />
-    </svg>
-  ),
-  // clock.arrow.counterclockwise (SF: clock.arrow.circlepath)
-  history: (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-      <path d="M3 3v5h5" />
-      <path d="M12 7v5l4 2" />
     </svg>
   ),
   // wrench.and.screwdriver (SF: wrench.and.screwdriver)
@@ -99,7 +90,6 @@ export function SettingsApp() {
   const tabs: { id: TabId; label: string }[] = [
     { id: "jobs", label: "Jobs" },
     { id: "secrets", label: "Secrets" },
-    { id: "history", label: "History" },
     { id: "tools", label: "Tools" },
     { id: "telegram", label: "Telegram" },
     { id: "settings", label: "Settings" },
@@ -125,7 +115,6 @@ export function SettingsApp() {
           <JobsPanel />
         </div>
         {activeTab === "secrets" && <SecretsPanel />}
-        {activeTab === "history" && <HistoryPanel />}
         <div style={{ display: activeTab === "tools" ? undefined : "none" }}>
           <ToolsPanel />
         </div>
