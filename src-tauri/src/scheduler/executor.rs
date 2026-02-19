@@ -173,6 +173,8 @@ async fn execute_claude_job(
     job: &Job,
     settings: &Arc<Mutex<AppSettings>>,
 ) -> Result<(Option<i32>, String, String), String> {
+    use crate::tmux;
+
     let (tmux_session, work_dir, claude_path) = {
         let s = settings.lock().unwrap();
         let session = job
@@ -190,94 +192,28 @@ async fn execute_claude_job(
     let window_name = format!("cm-{}", job.name);
     let prompt_path = &job.path;
 
-    // Check if tmux session exists
-    let session_check = Command::new("tmux")
-        .args(["has-session", "-t", &tmux_session])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to check tmux session: {}", e))?;
-
-    if !session_check.status.success() {
-        return Err(format!(
-            "tmux session '{}' not found. Create it first: tmux new-session -d -s {}",
-            tmux_session, tmux_session
-        ));
+    if !tmux::is_available() {
+        return Err("tmux is not installed".to_string());
     }
 
-    // Check if window already exists
-    let window_check = Command::new("tmux")
-        .args([
-            "list-windows",
-            "-t",
-            &tmux_session,
-            "-F",
-            "#W",
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to list tmux windows: {}", e))?;
+    // Create session if it doesn't exist
+    if !tmux::session_exists(&tmux_session) {
+        tmux::create_session(&tmux_session)?;
+    }
 
-    let windows_output = String::from_utf8_lossy(&window_check.stdout);
-    let window_exists = windows_output
-        .lines()
-        .any(|w| w.trim() == window_name);
+    // Create window if it doesn't exist
+    if !tmux::window_exists(&tmux_session, &window_name) {
+        tmux::create_window(&tmux_session, &window_name)?;
+        // Wait for window to be ready
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
 
     let send_cmd = format!(
         "cd {} && {} \"$(cat {})\"",
         work_dir, claude_path, prompt_path
     );
 
-    if window_exists {
-        // Send to existing window
-        let output = Command::new("tmux")
-            .args([
-                "send-keys",
-                "-t",
-                &format!("{}:{}", tmux_session, window_name),
-                &send_cmd,
-                "Enter",
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to send keys to tmux: {}", e))?;
+    tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
 
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Ok((output.status.code(), String::new(), stderr))
-    } else {
-        // Create new window
-        let new_window = Command::new("tmux")
-            .args([
-                "new-window",
-                "-t",
-                &tmux_session,
-                "-n",
-                &window_name,
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to create tmux window: {}", e))?;
-
-        if !new_window.status.success() {
-            let stderr = String::from_utf8_lossy(&new_window.stderr);
-            return Err(format!("Failed to create tmux window: {}", stderr));
-        }
-
-        // Wait for window to be ready
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-        let output = Command::new("tmux")
-            .args([
-                "send-keys",
-                "-t",
-                &format!("{}:{}", tmux_session, window_name),
-                &send_cmd,
-                "Enter",
-            ])
-            .output()
-            .await
-            .map_err(|e| format!("Failed to send keys to tmux: {}", e))?;
-
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        Ok((output.status.code(), String::new(), stderr))
-    }
+    Ok((Some(0), String::new(), String::new()))
 }

@@ -24,9 +24,11 @@ export interface RunRecord {
   stderr: string;
 }
 
+export type SecretSource = "keychain" | "gopass";
+
 export interface SecretEntry {
   key: string;
-  has_value: boolean;
+  source: SecretSource;
 }
 
 export interface AppSettings {

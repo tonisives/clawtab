@@ -4,6 +4,8 @@ mod history;
 pub mod ipc;
 mod scheduler;
 mod secrets;
+mod terminal;
+mod tmux;
 mod tools;
 
 use std::collections::HashMap;
@@ -122,12 +124,20 @@ pub fn run() {
             commands::secrets::list_secrets,
             commands::secrets::set_secret,
             commands::secrets::delete_secret,
+            commands::secrets::gopass_available,
+            commands::secrets::list_gopass_store,
+            commands::secrets::import_gopass_secret,
+            commands::secrets::remove_gopass_secret,
             commands::history::get_history,
             commands::history::get_run_detail,
             commands::history::clear_history,
             commands::settings::get_settings,
             commands::settings::set_settings,
             commands::status::get_job_statuses,
+            commands::tmux::list_tmux_sessions,
+            commands::tmux::list_tmux_windows,
+            commands::tmux::focus_job_window,
+            commands::tmux::open_job_terminal,
             commands::tools::detect_tools,
         ])
         .setup(move |app| {

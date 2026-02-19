@@ -1,141 +1,97 @@
-use std::collections::HashMap;
+pub mod gopass;
+pub mod keychain;
 
-const SERVICE_NAME: &str = "com.tgs.clawdtab";
+use serde::Serialize;
+
+use self::gopass::GopassBackend;
+use self::keychain::KeychainBackend;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SecretEntry {
+    pub key: String,
+    pub source: SecretSource,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretSource {
+    Keychain,
+    Gopass,
+}
 
 pub struct SecretsManager {
-    cache: HashMap<String, String>,
+    keychain: KeychainBackend,
+    gopass: GopassBackend,
 }
 
 impl SecretsManager {
     pub fn new() -> Self {
-        let mut mgr = Self {
-            cache: HashMap::new(),
-        };
-        mgr.reload_all();
-        mgr
+        Self {
+            keychain: KeychainBackend::new(),
+            gopass: GopassBackend::new(),
+        }
     }
 
+    /// Get a secret value by key, searching keychain first then gopass
     pub fn get(&self, key: &str) -> Option<&String> {
-        self.cache.get(key)
+        self.keychain.get(key).or_else(|| self.gopass.get(key))
     }
 
-    pub fn list_keys(&self) -> Vec<String> {
-        let mut keys: Vec<String> = self.cache.keys().cloned().collect();
-        keys.sort();
-        keys
-    }
-
-    pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
-        // Delete existing entry first (security CLI errors if it already exists)
-        let _ = std::process::Command::new("security")
-            .args(["delete-generic-password", "-s", SERVICE_NAME, "-a", key])
-            .output();
-
-        let output = std::process::Command::new("security")
-            .args([
-                "add-generic-password",
-                "-s",
-                SERVICE_NAME,
-                "-a",
+    /// List all secret keys with their source
+    pub fn list_entries(&self) -> Vec<SecretEntry> {
+        let mut entries: Vec<SecretEntry> = self
+            .keychain
+            .list_keys()
+            .into_iter()
+            .map(|key| SecretEntry {
                 key,
-                "-w",
-                value,
-                "-U",
-            ])
-            .output()
-            .map_err(|e| format!("Failed to run security command: {}", e))?;
+                source: SecretSource::Keychain,
+            })
+            .collect();
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Keychain error: {}", stderr.trim()));
+        for key in self.gopass.list_keys() {
+            entries.push(SecretEntry {
+                key,
+                source: SecretSource::Gopass,
+            });
         }
 
-        self.cache.insert(key.to_string(), value.to_string());
-        Ok(())
+        entries.sort_by(|a, b| a.key.cmp(&b.key));
+        entries
     }
 
+    /// List just the key names (for backwards compatibility)
+    pub fn list_keys(&self) -> Vec<String> {
+        self.list_entries().into_iter().map(|e| e.key).collect()
+    }
+
+    /// Set a secret in keychain
+    pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {
+        self.keychain.set(key, value)
+    }
+
+    /// Delete a secret from keychain
     pub fn delete(&mut self, key: &str) -> Result<(), String> {
-        let output = std::process::Command::new("security")
-            .args(["delete-generic-password", "-s", SERVICE_NAME, "-a", key])
-            .output()
-            .map_err(|e| format!("Failed to run security command: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Keychain error: {}", stderr.trim()));
-        }
-
-        self.cache.remove(key);
-        Ok(())
+        self.keychain.delete(key)
     }
 
-    fn reload_all(&mut self) {
-        // List all generic passwords for our service name.
-        // We parse `security dump-keychain` output to find our entries.
-        let output = std::process::Command::new("security")
-            .args(["dump-keychain"])
-            .output();
-
-        let output = match output {
-            Ok(o) => o,
-            Err(e) => {
-                log::warn!("Failed to dump keychain: {}", e);
-                return;
-            }
-        };
-
-        let text = String::from_utf8_lossy(&output.stdout);
-        let mut current_is_ours = false;
-        let mut current_account: Option<String> = None;
-
-        for line in text.lines() {
-            let trimmed = line.trim();
-
-            if trimmed.starts_with("keychain:") {
-                // Reset for new entry
-                current_is_ours = false;
-                current_account = None;
-            }
-
-            // Check if this entry belongs to our service
-            if trimmed.contains(&format!("\"svce\"<blob>=\"{}\"", SERVICE_NAME)) {
-                current_is_ours = true;
-            }
-
-            // Extract account name
-            if let Some(rest) = trimmed.strip_prefix("\"acct\"<blob>=") {
-                let acct = rest.trim_matches('"');
-                current_account = Some(acct.to_string());
-            }
-
-            // If we found our service + account, look up the password
-            if current_is_ours {
-                if let Some(ref acct) = current_account {
-                    if let Some(value) = read_keychain_value(acct) {
-                        self.cache.insert(acct.clone(), value);
-                    }
-                    current_is_ours = false;
-                    current_account = None;
-                }
-            }
-        }
+    /// Import a gopass entry into the local gopass cache
+    pub fn import_gopass(&mut self, gopass_path: &str) -> Result<String, String> {
+        self.gopass.import(gopass_path)
     }
-}
 
-fn read_keychain_value(key: &str) -> Option<String> {
-    let output = std::process::Command::new("security")
-        .args(["find-generic-password", "-s", SERVICE_NAME, "-a", key, "-w"])
-        .output()
-        .ok()?;
+    /// Remove a gopass entry from the local cache (does not delete from gopass store)
+    pub fn remove_gopass(&mut self, key: &str) {
+        self.gopass.remove(key);
+    }
 
-    if output.status.success() {
-        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if value.is_empty() {
-            None
-        } else {
-            Some(value)
-        }
-    } else {
-        None
+    /// Check if gopass is available on the system
+    pub fn gopass_available(&self) -> bool {
+        GopassBackend::is_available()
+    }
+
+    /// List all entries in the gopass store
+    pub fn list_gopass_store(&self) -> Result<Vec<String>, String> {
+        GopassBackend::list_entries()
     }
 }

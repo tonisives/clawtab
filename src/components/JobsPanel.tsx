@@ -78,6 +78,19 @@ export function JobsPanel() {
     }
   };
 
+  const handleOpenWindow = async (name: string) => {
+    try {
+      await invoke("focus_job_window", { name });
+    } catch (e) {
+      // If focus fails (window doesn't exist), open a terminal instead
+      try {
+        await invoke("open_job_terminal", { name });
+      } catch (e2) {
+        console.error("Failed to open terminal:", e2);
+      }
+    }
+  };
+
   const handleDelete = async (name: string) => {
     try {
       await invoke("delete_job", { name });
@@ -172,6 +185,14 @@ export function JobsPanel() {
                     >
                       Run
                     </button>
+                    {job.job_type === "claude" && (
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => handleOpenWindow(job.name)}
+                      >
+                        Open
+                      </button>
+                    )}
                     <button
                       className="btn btn-sm"
                       onClick={() => setEditingJob(job)}
