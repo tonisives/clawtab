@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::config::jobs::{Job, JobStatus};
 use crate::config::settings::AppSettings;
-use crate::cwdt::CwdtFolder;
+use crate::cwt::CwtFolder;
 use crate::scheduler;
 use crate::AppState;
 
@@ -31,12 +31,12 @@ pub fn save_job(state: State<AppState>, job: Job) -> Result<(), String> {
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
 
-    // Regenerate all cwdt.md context files (agent + per-job)
+    // Regenerate all cwt.md context files (agent + per-job)
     let settings = state.settings.lock().unwrap().clone();
     let jobs = config.jobs.clone();
     drop(config);
     ensure_agent_dir(&settings, &jobs);
-    regenerate_all_cwdt_contexts(&settings, &jobs);
+    regenerate_all_cwt_contexts(&settings, &jobs);
 
     Ok(())
 }
@@ -227,14 +227,14 @@ pub fn open_job_in_editor(state: State<AppState>, name: String) -> Result<(), St
         .find(|j| j.name == name)
         .ok_or_else(|| format!("Job '{}' not found", name))?;
 
-    // For folder jobs, open the parent of .cwdt; otherwise use work_dir
+    // For folder jobs, open the parent of .cwt; otherwise use work_dir
     let folder = job
         .folder_path
         .as_ref()
         .and_then(|p| {
             let path = std::path::Path::new(p);
-            // If path ends in .cwdt, go up to the project root
-            if path.file_name().map(|n| n == ".cwdt").unwrap_or(false) {
+            // If path ends in .cwt, go up to the project root
+            if path.file_name().map(|n| n == ".cwt").unwrap_or(false) {
                 path.parent().map(|p| p.display().to_string())
             } else {
                 Some(p.clone())
@@ -284,7 +284,7 @@ pub fn open_job_in_editor(state: State<AppState>, name: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn init_cwdt_folder(folder_path: String) -> Result<CwdtFolder, String> {
+pub fn init_cwt_folder(folder_path: String) -> Result<CwtFolder, String> {
     let path = std::path::Path::new(&folder_path);
 
     // Create directory if it doesn't exist
@@ -300,13 +300,13 @@ pub fn init_cwdt_folder(folder_path: String) -> Result<CwdtFolder, String> {
             .map_err(|e| format!("Failed to create job.md: {}", e))?;
     }
 
-    CwdtFolder::from_path(path)
+    CwtFolder::from_path(path)
 }
 
 #[tauri::command]
-pub fn read_cwdt_entry(folder_path: String) -> Result<String, String> {
+pub fn read_cwt_entry(folder_path: String) -> Result<String, String> {
     let path = std::path::Path::new(&folder_path);
-    let folder = CwdtFolder::from_path(path)?;
+    let folder = CwtFolder::from_path(path)?;
     if !folder.has_entry_point {
         return Ok(String::new());
     }
@@ -361,18 +361,18 @@ pub fn generate_agent_claude_md(settings: &AppSettings, jobs: &[Job]) -> String 
     out.push_str("\n## Rules\n\n");
     out.push_str("- Only operate within the allowed directories listed above.\n");
     out.push_str("- Do not modify system files outside these directories.\n");
-    out.push_str("- Use cwdtctl to interact with ClawdTab jobs.\n");
+    out.push_str("- Use cwtctl to interact with ClawdTab jobs.\n");
 
     out.push_str("\n## Job Management CLI\n\n");
-    out.push_str("`cwdtctl` is available for managing ClawdTab jobs:\n\n");
+    out.push_str("`cwtctl` is available for managing ClawdTab jobs:\n\n");
     out.push_str("```\n");
-    out.push_str("cwdtctl ping           # Check if ClawdTab daemon is running\n");
-    out.push_str("cwdtctl list           # List all configured jobs\n");
-    out.push_str("cwdtctl status         # Show status of all jobs\n");
-    out.push_str("cwdtctl run <name>     # Run a job immediately\n");
-    out.push_str("cwdtctl pause <name>   # Pause a running job\n");
-    out.push_str("cwdtctl resume <name>  # Resume a paused job\n");
-    out.push_str("cwdtctl restart <name> # Restart a job\n");
+    out.push_str("cwtctl ping           # Check if ClawdTab daemon is running\n");
+    out.push_str("cwtctl list           # List all configured jobs\n");
+    out.push_str("cwtctl status         # Show status of all jobs\n");
+    out.push_str("cwtctl run <name>     # Run a job immediately\n");
+    out.push_str("cwtctl pause <name>   # Pause a running job\n");
+    out.push_str("cwtctl resume <name>  # Resume a paused job\n");
+    out.push_str("cwtctl restart <name> # Restart a job\n");
     out.push_str("```\n");
 
     out
@@ -393,17 +393,17 @@ pub fn ensure_agent_dir(settings: &AppSettings, jobs: &[Job]) {
     }
 }
 
-/// Regenerate cwdt.md context file for every folder job's .cwdt directory.
-pub fn regenerate_all_cwdt_contexts(settings: &AppSettings, jobs: &[Job]) {
+/// Regenerate cwt.md context file for every folder job's .cwt directory.
+pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
     for job in jobs {
         if job.job_type != crate::config::jobs::JobType::Folder {
             continue;
         }
         if let Some(ref folder_path) = job.folder_path {
-            let content = generate_cwdt_context(job, settings);
-            let path = std::path::Path::new(folder_path).join("cwdt.md");
+            let content = generate_cwt_context(job, settings);
+            let path = std::path::Path::new(folder_path).join("cwt.md");
             if let Err(e) = std::fs::write(&path, content) {
-                log::warn!("Failed to write cwdt.md for '{}': {}", job.name, e);
+                log::warn!("Failed to write cwt.md for '{}': {}", job.name, e);
             }
         }
     }
@@ -418,7 +418,7 @@ pub fn agent_dir_path() -> std::path::PathBuf {
         .join("agent")
 }
 
-fn generate_cwdt_context(job: &Job, settings: &AppSettings) -> String {
+fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     let mut out = String::new();
 
     out.push_str("<!-- Auto-generated by ClawdTab. Regenerated on settings/jobs change. -->\n");
@@ -428,18 +428,18 @@ fn generate_cwdt_context(job: &Job, settings: &AppSettings) -> String {
 
     out.push_str("\n## Rules\n\n");
     out.push_str("- Only edit and look for files in the current directory.\n");
-    out.push_str("- The job directions are in `.cwdt/job.md`.\n");
+    out.push_str("- The job directions are in `.cwt/job.md`.\n");
 
     out.push_str("\n## Job Management CLI\n\n");
-    out.push_str("`cwdtctl` is available for managing ClawdTab jobs:\n\n");
+    out.push_str("`cwtctl` is available for managing ClawdTab jobs:\n\n");
     out.push_str("```\n");
-    out.push_str("cwdtctl ping           # Check if ClawdTab daemon is running\n");
-    out.push_str("cwdtctl list           # List all configured jobs\n");
-    out.push_str("cwdtctl status         # Show status of all jobs\n");
-    out.push_str("cwdtctl run <name>     # Run a job immediately\n");
-    out.push_str("cwdtctl pause <name>   # Pause a running job\n");
-    out.push_str("cwdtctl resume <name>  # Resume a paused job\n");
-    out.push_str("cwdtctl restart <name> # Restart a job\n");
+    out.push_str("cwtctl ping           # Check if ClawdTab daemon is running\n");
+    out.push_str("cwtctl list           # List all configured jobs\n");
+    out.push_str("cwtctl status         # Show status of all jobs\n");
+    out.push_str("cwtctl run <name>     # Run a job immediately\n");
+    out.push_str("cwtctl pause <name>   # Pause a running job\n");
+    out.push_str("cwtctl resume <name>  # Resume a paused job\n");
+    out.push_str("cwtctl restart <name> # Restart a job\n");
     out.push_str("```\n");
 
     // Telegram section: show when a chat_id is resolvable and a bot token is available

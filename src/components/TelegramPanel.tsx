@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { TelegramConfig } from "../types";
 import { TelegramSetup } from "./TelegramSetup";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export function TelegramPanel() {
   const [config, setConfig] = useState<TelegramConfig | null>(null);
@@ -9,6 +10,7 @@ export function TelegramPanel() {
   const [notifySuccess, setNotifySuccess] = useState(true);
   const [notifyFailure, setNotifyFailure] = useState(true);
   const [agentEnabled, setAgentEnabled] = useState(false);
+  const [showConfirmRemove, setShowConfirmRemove] = useState(false);
 
   useEffect(() => {
     invoke<TelegramConfig | null>("get_telegram_config").then((cfg) => {
@@ -140,9 +142,17 @@ export function TelegramPanel() {
           <p className="section-description">
             This removes your bot token and all chat IDs. You will need to set up Telegram again.
           </p>
-          <button className="btn btn-danger" onClick={handleDisable}>
+          <button className="btn btn-danger" onClick={() => setShowConfirmRemove(true)}>
             Remove Telegram Configuration
           </button>
+
+          {showConfirmRemove && (
+            <ConfirmDialog
+              message="Remove all Telegram configuration? This deletes your bot token and all chat IDs. You will need to set up Telegram again."
+              onConfirm={() => { handleDisable(); setShowConfirmRemove(false); }}
+              onCancel={() => setShowConfirmRemove(false)}
+            />
+          )}
         </>
       )}
     </div>

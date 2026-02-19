@@ -27,8 +27,8 @@ graph TB
     end
 
     subgraph Clients["Clients"]
-        CLI["cwdtctl"]
-        TUI["cwdttui"]
+        CLI["cwtctl"]
+        TUI["cwttui"]
     end
 
     React <-->|Tauri IPC| Commands
@@ -149,15 +149,15 @@ src-tauri/src/
     polling.rs              # Long-poll getUpdates loop
     types.rs                # Telegram API types
   tmux/mod.rs               # tmux command wrappers
-  cwdt/mod.rs               # .cwdt folder handling
+  cwt/mod.rs                # .cwt folder handling
   aerospace/mod.rs          # AeroSpace integration
   history/mod.rs            # SQLite history store
   tools/mod.rs              # Tool detection
   terminal/mod.rs           # Terminal emulator integration
   browser/mod.rs            # Browser auth (Playwright, deferred)
   bin/
-    ctl.rs                  # cwdtctl CLI
-    tui.rs                  # cwdttui TUI
+    ctl.rs                  # cwtctl CLI
+    tui.rs                  # cwttui TUI
 
 src/
   settings.tsx              # Frontend entry point

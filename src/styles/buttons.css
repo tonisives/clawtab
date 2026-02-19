@@ -56,4 +56,42 @@
 .btn-group {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.btn-delete-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.btn-delete-icon:hover {
+  color: var(--danger-color);
+  background: var(--danger-bg);
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 20px;
+  width: 320px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }

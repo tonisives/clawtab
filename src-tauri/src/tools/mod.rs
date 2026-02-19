@@ -246,8 +246,8 @@ const TOOLS: &[ToolSpec] = &[
         brew_formula: None,
     },
     ToolSpec {
-        name: "cwdt-browse",
-        binary: "cwdt-browse",
+        name: "cwt-browse",
+        binary: "cwt-browse",
         version_flag: "--help",
         category: "Browser",
         required: false,

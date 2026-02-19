@@ -20,8 +20,8 @@ This produces three binaries:
 | Binary | Purpose |
 |--------|---------|
 | `clawdtab` | GUI app (Tauri window) |
-| `cwdtctl` | CLI for headless control |
-| `cwdttui` | Terminal UI (ratatui) |
+| `cwtctl` | CLI for headless control |
+| `cwttui` | Terminal UI (ratatui) |
 
 ## Setup Wizard
 
@@ -56,16 +56,16 @@ The wizard auto-detects tools and shows version + path for each. Missing tools c
 
 ### Folder job (project-based AI agent)
 
-1. Create a `.cwdt/` directory inside your project root
+1. Create a `.cwt/` directory inside your project root
 2. Add a `job.md` file with your agent instructions
-3. In ClawdTab, set type to **Folder** and point to the `.cwdt/` directory
-4. ClawdTab auto-generates `cwdt.md` (agent context) alongside `job.md`
+3. In ClawdTab, set type to **Folder** and point to the `.cwt/` directory
+4. ClawdTab auto-generates `cwt.md` (agent context) alongside `job.md`
 5. The job runs Claude from the project root with both files as context
 
 ## Running a Job
 
 - **GUI**: Click "Run Now" on any job
-- **CLI**: `cwdtctl run <name>`
+- **CLI**: `cwtctl run <name>`
 - **TUI**: Select job, press `r`
 - **Telegram**: Send `/run <name>` to your bot
 - **Cron**: Automatically triggered based on the job's cron expression
@@ -73,7 +73,7 @@ The wizard auto-detects tools and shows version + path for each. Missing tools c
 ## Checking Status
 
 ```bash
-cwdtctl status
+cwtctl status
 ```
 
 Status values: `idle`, `running`, `success`, `failed`, `paused`.

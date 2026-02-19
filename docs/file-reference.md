@@ -27,7 +27,7 @@
 |---------|--------|
 | `manual` | GUI "Run Now" button |
 | `cron` | Scheduler match |
-| `cli` | cwdtctl or IPC command |
+| `cli` | cwtctl or IPC command |
 | `restart` | Restart command |
 
 ## Detected Tools

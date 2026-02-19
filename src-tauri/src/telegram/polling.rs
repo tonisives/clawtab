@@ -11,7 +11,7 @@ use super::commands::{self, AgentCommand};
 use super::types::{TelegramResponse, Update};
 use super::TelegramConfig;
 
-const AGENT_WINDOW: &str = "cwdt-agent";
+const AGENT_WINDOW: &str = "cwt-agent";
 const AGENT_POLL_INTERVAL_SECS: u64 = 8;
 const AGENT_CAPTURE_LINES: u32 = 80;
 

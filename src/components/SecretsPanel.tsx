@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { SecretEntry } from "../types";
+import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
 
 interface TreeNode {
   name: string;
@@ -130,6 +131,7 @@ export function SecretsPanel() {
   const [newValue, setNewValue] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<{ key: string; source: string } | null>(null);
 
   const [gopassAvailable, setGopassAvailable] = useState(false);
   const [gopassEntries, setGopassEntries] = useState<string[]>([]);
@@ -355,6 +357,7 @@ export function SecretsPanel() {
               <th>Source</th>
               <th>Value</th>
               <th>Actions</th>
+              <th style={{ width: 28 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -413,20 +416,28 @@ export function SecretsPanel() {
                             Update
                           </button>
                         )}
-                        <button
-                          className="btn btn-danger btn-sm"
-                          onClick={() => handleDelete(secret.key, secret.source)}
-                        >
-                          {secret.source === "gopass" ? "Remove" : "Delete"}
-                        </button>
                       </>
                     )}
                   </div>
+                </td>
+                <td style={{ textAlign: "right", padding: "0 8px" }}>
+                  <DeleteButton
+                    onClick={() => setConfirmDeleteKey({ key: secret.key, source: secret.source })}
+                    title={secret.source === "gopass" ? "Remove secret" : "Delete secret"}
+                  />
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      )}
+
+      {confirmDeleteKey && (
+        <ConfirmDialog
+          message={`${confirmDeleteKey.source === "gopass" ? "Remove" : "Delete"} secret "${confirmDeleteKey.key}"? This cannot be undone.`}
+          onConfirm={() => { handleDelete(confirmDeleteKey.key, confirmDeleteKey.source); setConfirmDeleteKey(null); }}
+          onCancel={() => setConfirmDeleteKey(null)}
+        />
       )}
     </div>
   );

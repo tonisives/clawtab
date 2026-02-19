@@ -2,10 +2,10 @@
 
 Both the CLI and TUI communicate with the running ClawdTab GUI app via a Unix socket at `/tmp/clawdtab.sock`. The GUI must be running for either to work.
 
-## CLI: cwdtctl
+## CLI: cwtctl
 
 ```
-cwdtctl <command> [args]
+cwtctl <command> [args]
 ```
 
 | Command | Description |
@@ -20,12 +20,12 @@ cwdtctl <command> [args]
 
 Exit codes: `0` on success, `1` on error (with message on stderr).
 
-## TUI: cwdttui
+## TUI: cwttui
 
 Full-screen terminal UI built with [ratatui](https://ratatui.rs/).
 
 ```bash
-cwdttui
+cwttui
 ```
 
 If ClawdTab is not running, the TUI exits with an error message.

@@ -18,7 +18,7 @@ const EDITOR_LABELS: Record<string, string> = {
 };
 
 const STEP_TIPS: Record<string, string> = {
-  folder: "Choose the project folder where your bot will work. A .cwdt/job.md file will be created with directions for the AI.",
+  folder: "Choose the project folder where your bot will work. A .cwt/job.md file will be created with directions for the AI.",
   schedule: "How often should this job run? Pick a preset, choose specific days, or write a cron expression.",
   secrets: "Select API keys and tokens this job needs. They'll be injected as environment variables when the job runs.",
   config: "Optional settings. Most jobs work fine with defaults.",
@@ -65,7 +65,7 @@ const STEPS: { id: WizardStep; label: string }[] = [
 function deriveNameFromPath(folderPath: string): string {
   const parts = folderPath.replace(/\/+$/, "").split("/");
   const last = parts[parts.length - 1];
-  if (last === ".cwdt") return parts[parts.length - 2] ?? "";
+  if (last === ".cwt") return parts[parts.length - 2] ?? "";
   return last ?? "";
 }
 
@@ -89,7 +89,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
   const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
   const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
-  const [cwdtPreview, setCwdtPreview] = useState<string | null>(null);
+  const [cwtPreview, setCwtPreview] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [availableEditors, setAvailableEditors] = useState<string[]>(["nvim"]);
   const [defaultTmuxSession, setDefaultTmuxSession] = useState("tgs");
@@ -103,7 +103,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [weeklyTime, setWeeklyTime] = useState("09:00");
 
   // job.md edited tracking
-  const [cwdtEdited, setCwdtEdited] = useState(!isNew);
+  const [cwtEdited, setCwtEdited] = useState(!isNew);
 
   // Load settings and detected editors on mount
   useEffect(() => {
@@ -155,34 +155,34 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   }, [currentStep, isWizard]);
 
   // Auto-init job.md and load preview when folder path changes
-  const refreshCwdtPreview = useCallback((folderPath: string) => {
-    invoke<string>("read_cwdt_entry", { folderPath })
+  const refreshCwtPreview = useCallback((folderPath: string) => {
+    invoke<string>("read_cwt_entry", { folderPath })
       .then((content) => {
-        setCwdtPreview(content);
-        setCwdtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
+        setCwtPreview(content);
+        setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
       })
-      .catch(() => setCwdtPreview(null));
+      .catch(() => setCwtPreview(null));
   }, []);
 
   useEffect(() => {
     if (form.job_type === "folder" && form.folder_path) {
       // Auto-init then load preview
-      invoke("init_cwdt_folder", { folderPath: form.folder_path }).then(() => {
-        refreshCwdtPreview(form.folder_path!);
+      invoke("init_cwt_folder", { folderPath: form.folder_path }).then(() => {
+        refreshCwtPreview(form.folder_path!);
       });
     } else {
-      setCwdtPreview(null);
+      setCwtPreview(null);
     }
-  }, [form.folder_path, form.job_type, refreshCwdtPreview]);
+  }, [form.folder_path, form.job_type, refreshCwtPreview]);
 
   // Poll job.md for changes while on folder step (user may be editing in external editor)
   useEffect(() => {
     if (!isWizard || currentStep !== "folder" || !form.folder_path) return;
     const interval = setInterval(() => {
-      refreshCwdtPreview(form.folder_path!);
+      refreshCwtPreview(form.folder_path!);
     }, 2000);
     return () => clearInterval(interval);
-  }, [isWizard, currentStep, form.folder_path, refreshCwdtPreview]);
+  }, [isWizard, currentStep, form.folder_path, refreshCwtPreview]);
 
   const toggleSecret = (key: string) => {
     const keys = form.secret_keys.includes(key)
@@ -221,10 +221,10 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     const selected = await open({ directory: true, multiple: false, title: "Choose project folder" });
     if (selected) {
       const projectDir = typeof selected === "string" ? selected : selected;
-      const cwdtPath = projectDir.replace(/\/+$/, "") + "/.cwdt";
-      const updates: Partial<Job> = { folder_path: cwdtPath };
+      const cwtPath = projectDir.replace(/\/+$/, "") + "/.cwt";
+      const updates: Partial<Job> = { folder_path: cwtPath };
       if (isNew && !form.name) {
-        const derived = deriveNameFromPath(cwdtPath);
+        const derived = deriveNameFromPath(cwtPath);
         if (derived) updates.name = derived;
       }
       setForm({ ...form, ...updates });
@@ -234,7 +234,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const canAdvanceFromFolder = (): boolean => {
     if (form.job_type === "folder") {
       if (!form.folder_path || !form.name) return false;
-      if (isWizard && !cwdtEdited) return false;
+      if (isWizard && !cwtEdited) return false;
       return true;
     }
     return !!form.name;
@@ -280,14 +280,14 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               }
               setForm({ ...form, ...updates });
             }}
-            placeholder="/path/to/project/.cwdt"
+            placeholder="/path/to/project/.cwt"
             style={{ flex: 1 }}
           />
           <button className="btn btn-sm" onClick={pickFolder}>
             Browse...
           </button>
         </div>
-        <span className="hint">Pick a project folder. A .cwdt/job.md will be created inside it.</span>
+        <span className="hint">Pick a project folder. A .cwt/job.md will be created inside it.</span>
       </div>
 
       <div className="form-group">
@@ -335,26 +335,26 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                   invoke("open_job_editor", {
                     folderPath: form.folder_path,
                     editor: preferredEditor,
-                    fileName: "cwdt.md",
+                    fileName: "cwt.md",
                   });
                 }}
               >
-                Edit cwdt.md
+                Edit cwt.md
               </button>
             )}
             <button
               className="btn btn-sm"
-              onClick={() => refreshCwdtPreview(form.folder_path!)}
+              onClick={() => refreshCwtPreview(form.folder_path!)}
             >
               Refresh
             </button>
           </div>
-          {cwdtPreview !== null && (
+          {cwtPreview !== null && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 4, padding: 8, maxHeight: 200, overflowY: "auto" }}>
-              <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>{cwdtPreview || "(empty)"}</pre>
+              <pre style={{ margin: 0, fontSize: 12, whiteSpace: "pre-wrap" }}>{cwtPreview || "(empty)"}</pre>
             </div>
           )}
-          {isWizard && !cwdtEdited && (
+          {isWizard && !cwtEdited && (
             <span className="hint" style={{ color: "var(--warning, #e6a700)" }}>
               Edit job.md before proceeding -- the default template must be changed.
             </span>
@@ -628,7 +628,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                     setForm({ ...form, job_type: e.target.value as JobType })
                   }
                 >
-                  <option value="folder">Folder (.cwdt)</option>
+                  <option value="folder">Folder (.cwt)</option>
                   <option value="claude">Claude</option>
                   <option value="binary">Binary</option>
                 </select>
@@ -690,7 +690,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               setForm({ ...form, job_type: e.target.value as JobType })
             }
           >
-            <option value="folder">Folder (.cwdt)</option>
+            <option value="folder">Folder (.cwt)</option>
             <option value="claude">Claude</option>
             <option value="binary">Binary</option>
           </select>

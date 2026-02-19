@@ -48,7 +48,7 @@ Each job is stored at `~/.config/clawdtab/jobs/<slug>/job.yaml`.
 name: daily-backup               # display name
 job_type: binary                  # binary | claude | folder
 enabled: true
-path: /scripts/backup.sh         # binary path, prompt file, or .cwdt folder
+path: /scripts/backup.sh         # binary path, prompt file, or .cwt folder
 args: ["--full"]                  # command arguments (binary jobs)
 cron: "0 0 * * *"                # standard cron expression
 secret_keys: [AWS_KEY, DB_PASS]  # secrets injected as env vars
@@ -57,7 +57,7 @@ env:                              # static env vars
 work_dir: /home/user/project     # overrides default_work_dir
 tmux_session: main               # overrides default_tmux_session
 aerospace_workspace: "3"         # move tmux window to this workspace
-folder_path: /project/.cwdt      # required for folder jobs
+folder_path: /project/.cwt      # required for folder jobs
 telegram_chat_id: 12345678       # per-job notification routing
 group: default                   # grouping label
 slug: daily-backup               # auto-generated identifier

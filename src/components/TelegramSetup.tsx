@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { TelegramConfig } from "../types";
+import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
 
 interface BotInfo {
   username: string;
@@ -24,6 +25,7 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
   const [chatIds, setChatIds] = useState<number[]>([]);
   const [chatNames, setChatNames] = useState<Record<string, string>>({});
   const [polling, setPolling] = useState(false);
+  const [confirmRemoveChat, setConfirmRemoveChat] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
   const initializedRef = useRef(false);
@@ -346,21 +348,11 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
                     >
                       {testingChat === id ? "Sending..." : "Test"}
                     </button>
-                    <button
-                      onClick={() => removeChatId(id)}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        color: "var(--text-secondary)",
-                        padding: "0 2px",
-                        fontSize: 14,
-                        lineHeight: 1,
-                      }}
-                      title="Remove"
-                    >
-                      x
-                    </button>
+                    <DeleteButton
+                      onClick={() => setConfirmRemoveChat(id)}
+                      title="Remove chat"
+                      size={12}
+                    />
                   </div>
                 </div>
               ))}
@@ -377,6 +369,14 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
           )}
         </div>
       </div>
+
+      {confirmRemoveChat !== null && (
+        <ConfirmDialog
+          message={`Remove chat ${confirmRemoveChat}? You can re-add it by messaging the bot again.`}
+          onConfirm={() => { removeChatId(confirmRemoveChat); setConfirmRemoveChat(null); }}
+          onCancel={() => setConfirmRemoveChat(null)}
+        />
+      )}
     </div>
   );
 }

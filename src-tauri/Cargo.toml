@@ -9,15 +9,15 @@ name = "clawdtab_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "cwdtctl"
+name = "cwtctl"
 path = "src/bin/ctl.rs"
 
 [[bin]]
-name = "cwdttui"
+name = "cwttui"
 path = "src/bin/tui.rs"
 
 [[bin]]
-name = "cwdt-browse"
+name = "cwt-browse"
 path = "src/bin/browse.rs"
 
 [build-dependencies]

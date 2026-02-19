@@ -327,7 +327,7 @@ async fn execute_folder_job(
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
-    use crate::cwdt::CwdtFolder;
+    use crate::cwt::CwtFolder;
     use crate::tmux;
 
     let folder_path = job
@@ -335,7 +335,7 @@ async fn execute_folder_job(
         .as_ref()
         .ok_or("Folder job requires folder_path")?;
 
-    let folder = CwdtFolder::from_path(std::path::Path::new(folder_path))?;
+    let folder = CwtFolder::from_path(std::path::Path::new(folder_path))?;
 
     if !folder.has_entry_point {
         return Err(format!(
@@ -345,9 +345,9 @@ async fn execute_folder_job(
     }
 
     let raw_prompt = folder.read_entry_point()?;
-    let prompt_content = format!("@.cwdt/cwdt.md @.cwdt/job.md\n\n{}", raw_prompt);
+    let prompt_content = format!("@.cwt/cwt.md @.cwt/job.md\n\n{}", raw_prompt);
 
-    // Run from the project root (parent of .cwdt), not the .cwdt dir itself
+    // Run from the project root (parent of .cwt), not the .cwt dir itself
     let project_root = std::path::Path::new(folder_path)
         .parent()
         .ok_or_else(|| format!("Cannot determine project root from {}", folder_path))?

@@ -2,7 +2,7 @@ mod aerospace;
 mod browser;
 mod commands;
 mod config;
-mod cwdt;
+mod cwt;
 mod history;
 pub mod ipc;
 mod scheduler;
@@ -141,12 +141,12 @@ pub fn run() {
         HistoryStore::new().expect("failed to initialize history database"),
     ));
 
-    // Ensure agent + per-job cwdt.md context files are fresh on startup
+    // Ensure agent + per-job cwt.md context files are fresh on startup
     {
         let s = settings.lock().unwrap();
         let j = jobs_config.lock().unwrap();
         commands::jobs::ensure_agent_dir(&s, &j.jobs);
-        commands::jobs::regenerate_all_cwdt_contexts(&s, &j.jobs);
+        commands::jobs::regenerate_all_cwt_contexts(&s, &j.jobs);
     }
 
     let job_status: Arc<Mutex<HashMap<String, JobStatus>>> =
@@ -202,8 +202,8 @@ pub fn run() {
             commands::jobs::restart_job,
             commands::jobs::open_job_editor,
             commands::jobs::open_job_in_editor,
-            commands::jobs::init_cwdt_folder,
-            commands::jobs::read_cwdt_entry,
+            commands::jobs::init_cwt_folder,
+            commands::jobs::read_cwt_entry,
             commands::jobs::derive_job_slug,
             commands::secrets::list_secrets,
             commands::secrets::set_secret,

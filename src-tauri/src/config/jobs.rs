@@ -244,7 +244,7 @@ pub fn derive_slug(input: &str, existing_jobs: &[Job]) -> String {
     let parts: Vec<&str> = cleaned
         .trim_end_matches('/')
         .split('/')
-        .filter(|s| !s.is_empty() && *s != ".cwdt")
+        .filter(|s| !s.is_empty() && *s != ".cwt")
         .collect();
 
     let relevant = if parts.len() >= 2 {

@@ -3,9 +3,9 @@ use std::env;
 use clawdtab_lib::ipc::{self, IpcCommand, IpcResponse};
 
 fn print_usage() {
-    eprintln!("cwdtctl -- CLI for ClawdTab");
+    eprintln!("cwtctl -- CLI for ClawdTab");
     eprintln!();
-    eprintln!("Usage: cwdtctl <command> [args]");
+    eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
     eprintln!("Commands:");
     eprintln!("  ping              Check if ClawdTab is running");

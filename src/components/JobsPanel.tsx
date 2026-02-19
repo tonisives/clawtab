@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
+import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
 
 function StatusBadge({ status }: { status: JobStatus | undefined }) {
   if (!status || status.state === "idle") {
@@ -386,7 +387,7 @@ function JobRow({
 }) {
   const { runs } = useJobRuns(job.name);
   const hasRuns = runs !== null && runs.length > 0;
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   return (
     <tr>
@@ -436,54 +437,54 @@ function JobRow({
           <button className="btn btn-sm" onClick={onEdit}>
             Edit
           </button>
-          {confirmDelete ? (
-            <>
-              <button className="btn btn-danger btn-sm" onClick={() => { onDelete(); setConfirmDelete(false); }}>
-                Confirm
-              </button>
-              <button className="btn btn-sm" onClick={() => setConfirmDelete(false)}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(true)}>
-              Delete
-            </button>
-          )}
         </div>
       </td>
       <td style={{ textAlign: "right", padding: "0 4px" }}>
-        {hasRuns && (
-          <button
-            onClick={onToggleExpand}
-            title="Runs"
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-              padding: "2px 4px",
-              fontSize: 10,
-              lineHeight: 1,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-          >
-            <span style={{
-              transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.15s",
-            }}>
-              &#9660;
-            </span>
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+          {hasRuns && (
+            <button
+              onClick={onToggleExpand}
+              title="Runs"
+              style={{
+                background: "none",
+                border: "none",
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+                padding: "2px 4px",
+                fontSize: 10,
+                lineHeight: 1,
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+            >
+              <span style={{
+                transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.15s",
+              }}>
+                &#9660;
+              </span>
+            </button>
+          )}
+          <DeleteButton
+            onClick={() => setShowConfirm(true)}
+            title="Delete job"
+          />
+        </div>
       </td>
+      {showConfirm && (
+        <ConfirmDialog
+          message={`Delete job "${job.name}"? This cannot be undone.`}
+          onConfirm={() => { onDelete(); setShowConfirm(false); }}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
     </tr>
   );
 }
 
 function RunsPanel({ jobName }: { jobName: string }) {
   const { runs, reload } = useJobRuns(jobName);
+  const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
 
   useEffect(() => { reload(); }, []);
 
@@ -518,20 +519,21 @@ function RunsPanel({ jobName }: { jobName: string }) {
 
   return (
     <tr>
-      <td colSpan={7} style={{ padding: "0 8px 8px 24px", border: "none" }}>
+      <td colSpan={7} style={{ padding: "0 0 8px", border: "none" }}>
         {runs === null ? (
-          <span className="text-secondary" style={{ fontSize: 12 }}>Loading...</span>
+          <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>Loading...</span>
         ) : runs.length === 0 ? (
-          <span className="text-secondary" style={{ fontSize: 12 }}>No run history</span>
+          <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>No run history</span>
         ) : (
-          <table className="data-table" style={{ fontSize: 12 }}>
+          <table className="data-table runs-table" style={{ fontSize: 12 }}>
             <thead>
               <tr>
-                <th>Status</th>
-                <th>Trigger</th>
-                <th>Started</th>
-                <th>Duration</th>
-                <th>Actions</th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Status</th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Trigger</th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Actions</th>
+                <th style={{ width: 28, padding: "4px 8px" }}></th>
               </tr>
             </thead>
             <tbody>
@@ -550,35 +552,43 @@ function RunsPanel({ jobName }: { jobName: string }) {
                     <td>{formatTime(run.started_at)}</td>
                     <td>{duration}</td>
                     <td className="actions">
-                      <button
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: "1px 6px" }}
-                        onClick={() => openRun(jobName, run)}
-                      >
-                        View
-                      </button>
-                      <button
-                        className="btn btn-sm"
-                        style={{ fontSize: 11, padding: "1px 6px" }}
-                        onClick={() => handleOpenLog(run.id)}
-                        title="Open log in editor"
-                      >
-                        Logs
-                      </button>
-                      <button
-                        className="btn btn-danger btn-sm"
-                        style={{ fontSize: 11, padding: "1px 6px" }}
-                        onClick={() => handleDeleteRun(run.id)}
+                      <div className="btn-group">
+                        <button
+                          className="btn btn-sm"
+                          style={{ fontSize: 11, padding: "1px 6px" }}
+                          onClick={() => openRun(jobName, run)}
+                        >
+                          View
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          style={{ fontSize: 11, padding: "1px 6px" }}
+                          onClick={() => handleOpenLog(run.id)}
+                          title="Open log in editor"
+                        >
+                          Logs
+                        </button>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: "right", padding: "0 8px" }}>
+                      <DeleteButton
+                        onClick={() => setConfirmRunId(run.id)}
                         title="Delete this run"
-                      >
-                        x
-                      </button>
+                        size={11}
+                      />
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        )}
+        {confirmRunId && (
+          <ConfirmDialog
+            message="Delete this run record? This cannot be undone."
+            onConfirm={() => { handleDeleteRun(confirmRunId); setConfirmRunId(null); }}
+            onCancel={() => setConfirmRunId(null)}
+          />
         )}
       </td>
     </tr>
