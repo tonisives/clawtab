@@ -12,6 +12,14 @@ body {
   line-height: 1.4;
 }
 
+a {
+  color: #5ac8fa;
+}
+
+a:hover {
+  color: #70d0fc;
+}
+
 .loading {
   display: flex;
   align-items: center;

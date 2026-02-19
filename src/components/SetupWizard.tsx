@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, ToolInfo } from "../types";
+import type { AppSettings, TelegramConfig, ToolInfo } from "../types";
 import { ToolGroupList } from "./ToolGroupList";
+import { TelegramSetup } from "./TelegramSetup";
 
 interface Props {
   onComplete: () => void;
 }
 
-type Step = "tools" | "paths" | "terminal" | "editor" | "secrets" | "done";
+type Step = "tools" | "paths" | "terminal" | "editor" | "secrets" | "telegram" | "done";
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "tools", label: "Detect Tools" },
@@ -15,6 +16,7 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "terminal", label: "Terminal" },
   { id: "editor", label: "Editor" },
   { id: "secrets", label: "Secrets" },
+  { id: "telegram", label: "Telegram" },
   { id: "done", label: "Done" },
 ];
 
@@ -48,8 +50,11 @@ export function SetupWizard({ onComplete }: Props) {
   const [preferredTerminal, setPreferredTerminal] = useState("auto");
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [gopassAvailable, setGopassAvailable] = useState(false);
+  const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
+  const [telegramSkipped, setTelegramSkipped] = useState(false);
 
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
+  const hasTelegram = tools.some((t) => t.name === "Telegram" && t.available);
   const availableTerminals = TERMINAL_OPTIONS.filter((opt) =>
     tools.some((t) => t.group === "terminal" && t.available && t.name.toLowerCase().startsWith(opt.value)),
   );
@@ -97,6 +102,15 @@ export function SetupWizard({ onComplete }: Props) {
   };
 
   const editorLabel = EDITOR_OPTIONS.find((e) => e.value === preferredEditor)?.label ?? preferredEditor;
+
+  const handleTelegramComplete = async (config: TelegramConfig) => {
+    try {
+      await invoke("set_telegram_config", { config });
+      setTelegramConfig(config);
+    } catch (e) {
+      console.error("Failed to save telegram config:", e);
+    }
+  };
 
   const handleFinish = async () => {
     if (!settings) return;
@@ -264,12 +278,66 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Secrets</h3>
           <p className="section-description">
-            Secrets are stored in macOS Keychain and injected as environment variables into jobs.
+            Secrets are managed by gopass or stored in macOS Keychain, and injected as environment
+            variables into jobs.
             {gopassAvailable
-              ? " gopass is available on your system. You can import secrets from gopass in the Secrets tab."
-              : " gopass was not detected. You can add secrets manually in the Secrets tab."}
+              ? " gopass is available on your system. Imported gopass secrets stay in your gopass store and are refreshed on each app startup."
+              : " gopass was not detected. You can add secrets manually to Keychain in the Secrets tab."}
           </p>
           <p>You can configure secrets after setup in the Secrets tab.</p>
+        </div>
+      )}
+
+      {currentStep === "telegram" && (
+        <div>
+          <h3>Telegram Notifications</h3>
+          {telegramConfig ? (
+            <div>
+              <p style={{ color: "var(--success-color)" }}>
+                Telegram configured. Notifications will be sent to chat ID {telegramConfig.chat_ids.join(", ")}.
+              </p>
+              <button
+                className="btn btn-sm"
+                onClick={() => { setTelegramConfig(null); setTelegramSkipped(false); }}
+                style={{ marginTop: 8 }}
+              >
+                Reconfigure
+              </button>
+            </div>
+          ) : telegramSkipped ? (
+            <div>
+              <p className="section-description">
+                Telegram setup skipped. You can configure it later from the Telegram tab.
+              </p>
+              <button
+                className="btn btn-sm"
+                onClick={() => setTelegramSkipped(false)}
+              >
+                Set up now
+              </button>
+            </div>
+          ) : (
+            <div>
+              <p className="section-description">
+                Set up a Telegram bot to receive job notifications and send commands.
+                {!hasTelegram && " Telegram desktop app was not detected -- install it for the best experience."}
+              </p>
+              <TelegramSetup
+                embedded
+                onComplete={(config) => {
+                  handleTelegramComplete(config);
+                  goNext();
+                }}
+              />
+              <button
+                className="btn btn-sm"
+                onClick={() => { setTelegramSkipped(true); goNext(); }}
+                style={{ marginTop: 8 }}
+              >
+                Skip for now
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -289,6 +357,7 @@ export function SetupWizard({ onComplete }: Props) {
               <p><strong>Terminal:</strong> {preferredTerminal === "auto" ? "Auto-detect" : preferredTerminal}</p>
             )}
             <p><strong>Editor:</strong> {editorLabel}</p>
+            <p><strong>Telegram:</strong> {telegramConfig ? "Configured" : "Not configured"}</p>
           </div>
         </div>
       )}
@@ -303,6 +372,8 @@ export function SetupWizard({ onComplete }: Props) {
           <button className="btn btn-primary" onClick={handleFinish}>
             Finish Setup
           </button>
+        ) : currentStep === "telegram" && !telegramConfig && !telegramSkipped ? (
+          null
         ) : (
           <button className="btn btn-primary" onClick={goNext}>
             Next

@@ -222,6 +222,7 @@ pub fn run() {
             commands::telegram::set_telegram_config,
             commands::telegram::test_telegram,
             commands::telegram::validate_bot_token,
+            commands::telegram::reset_poll_offset,
             commands::telegram::poll_telegram_updates,
             commands::browser::launch_browser_auth,
             commands::browser::check_browser_session,

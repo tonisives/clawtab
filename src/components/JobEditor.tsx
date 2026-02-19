@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry, ToolInfo } from "../types";
-import { CronInput, CRON_PRESETS, describeCron } from "./CronInput";
+import { CronInput, describeCron } from "./CronInput";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
 
@@ -28,8 +28,6 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const DAY_CRON_MAP: Record<string, string> = {
   Mon: "1", Tue: "2", Wed: "3", Thu: "4", Fri: "5", Sat: "6", Sun: "0",
 };
-
-type ScheduleMode = "preset" | "weekly" | "cron";
 
 interface Props {
   job: Job | null;
@@ -98,8 +96,8 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [browserAuthUrl, setBrowserAuthUrl] = useState("https://");
 
   // Schedule mode state
-  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("preset");
   const [manualOnly, setManualOnly] = useState(false);
+  const [useWeekly, setUseWeekly] = useState(true);
   const [weeklyDays, setWeeklyDays] = useState<string[]>(["Mon"]);
   const [weeklyTime, setWeeklyTime] = useState("09:00");
 
@@ -355,7 +353,11 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                   if (e.target.checked) {
                     setForm({ ...form, cron: "" });
                   } else {
-                    setForm({ ...form, cron: "0 0 * * *" });
+                    if (useWeekly) {
+                      setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
+                    } else {
+                      setForm({ ...form, cron: "0 0 * * *" });
+                    }
                   }
                 }}
               />
@@ -365,39 +367,20 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
 
           {!manualOnly && (
             <>
-              <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
-                {(["preset", "weekly", "cron"] as ScheduleMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    className={`btn btn-sm ${scheduleMode === mode ? "btn-primary" : ""}`}
-                    onClick={() => setScheduleMode(mode)}
-                    style={{ textTransform: "capitalize" }}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
-
-              {scheduleMode === "preset" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                  {CRON_PRESETS.map((p) => (
-                    <button
-                      key={p.value}
-                      className={`btn btn-sm ${form.cron === p.value ? "btn-primary" : ""}`}
-                      onClick={() => setForm({ ...form, cron: p.value })}
-                      style={{ textAlign: "left" }}
-                    >
-                      {p.label}
-                      <span className="text-secondary" style={{ marginLeft: 8, fontSize: 11, fontFamily: "monospace" }}>
-                        {p.value}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {scheduleMode === "weekly" && (
-                <div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <input
+                    type="radio"
+                    name="schedule-mode"
+                    checked={useWeekly}
+                    onChange={() => {
+                      setUseWeekly(true);
+                      setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
+                    }}
+                  />
+                  Weekly schedule
+                </label>
+                <div style={{ opacity: useWeekly ? 1 : 0.4, pointerEvents: useWeekly ? "auto" : "none", paddingLeft: 24 }}>
                   <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
                     {DAYS.map((day) => (
                       <button
@@ -419,15 +402,31 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                       style={{ maxWidth: 120 }}
                     />
                   </div>
-                  <span className="hint" style={{ marginTop: 4, display: "block" }}>
-                    {describeCron(form.cron)}
-                  </span>
+                  {useWeekly && (
+                    <span className="hint" style={{ marginTop: 4, display: "block" }}>
+                      {describeCron(form.cron)}
+                    </span>
+                  )}
                 </div>
-              )}
+              </div>
 
-              {scheduleMode === "cron" && (
-                <CronInput value={form.cron} onChange={(cron) => setForm({ ...form, cron })} />
-              )}
+              <div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <input
+                    type="radio"
+                    name="schedule-mode"
+                    checked={!useWeekly}
+                    onChange={() => {
+                      setUseWeekly(false);
+                      setForm({ ...form, cron: "0 0 * * *" });
+                    }}
+                  />
+                  Cron expression
+                </label>
+                <div style={{ opacity: !useWeekly ? 1 : 0.4, pointerEvents: !useWeekly ? "auto" : "none", paddingLeft: 24 }}>
+                  <CronInput value={form.cron} onChange={(cron) => setForm({ ...form, cron })} />
+                </div>
+              </div>
             </>
           )}
         </div>

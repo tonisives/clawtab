@@ -259,8 +259,8 @@ export function SecretsPanel() {
         <h2>Secrets</h2>
       </div>
       <p className="section-description">
-        Secrets are injected as environment variables into jobs. Keychain secrets are stored locally;
-        gopass secrets are fetched from your gopass store.
+        Secrets are injected as environment variables into jobs. Keychain secrets are stored in macOS
+        Keychain. Gopass secrets stay in your gopass store and are refreshed on each app startup.
       </p>
 
       {gopassAvailable && (
