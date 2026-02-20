@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings, Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
+import { SamplePicker } from "./SamplePicker";
 import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
 import { GearIcon } from "./icons";
 import { LogViewer } from "./LogViewer";
@@ -88,6 +89,7 @@ export function JobsPanel() {
   const [statuses, setStatuses] = useState<Record<string, JobStatus>>({});
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
@@ -241,6 +243,24 @@ export function JobsPanel() {
     });
   };
 
+  if (showPicker) {
+    return (
+      <SamplePicker
+        onCreated={() => {
+          setShowPicker(false);
+          loadJobs();
+        }}
+        onBlank={() => {
+          setShowPicker(false);
+          setIsCreating(true);
+        }}
+        onCancel={() => {
+          setShowPicker(false);
+        }}
+      />
+    );
+  }
+
   if (editingJob || isCreating) {
     return (
       <>
@@ -322,7 +342,7 @@ export function JobsPanel() {
         <h2>Jobs</h2>
         <button
           className="btn btn-primary btn-sm"
-          onClick={() => setIsCreating(true)}
+          onClick={() => setShowPicker(true)}
         >
           Add Job
         </button>
@@ -333,7 +353,7 @@ export function JobsPanel() {
           <p>No jobs configured yet.</p>
           <button
             className="btn btn-primary"
-            onClick={() => setIsCreating(true)}
+            onClick={() => setShowPicker(true)}
           >
             Create your first job
           </button>

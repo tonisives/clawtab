@@ -17,6 +17,12 @@ const EDITOR_OPTIONS: { value: string; label: string }[] = [
 export function GeneralSettings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [availableEditors, setAvailableEditors] = useState<string[]>([]);
+  const [version, setVersion] = useState<string>("");
+  const [updateStatus, setUpdateStatus] = useState<
+    "idle" | "checking" | "up-to-date" | "installed" | "error"
+  >("idle");
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -28,6 +34,7 @@ export function GeneralSettings() {
         .map((t) => t.name);
       setAvailableEditors(editors);
     });
+    invoke<string>("get_version").then(setVersion);
   }, []);
 
   const update = async (updates: Partial<AppSettings>) => {
@@ -41,6 +48,35 @@ export function GeneralSettings() {
     }
   };
 
+  const checkForUpdate = async () => {
+    setUpdateStatus("checking");
+    try {
+      const result = await invoke<string | null>("check_for_update");
+      setLastChecked(new Date());
+      if (result) {
+        setUpdateVersion(result);
+        setUpdateStatus("installed");
+      } else {
+        setUpdateStatus("up-to-date");
+      }
+    } catch (e) {
+      console.error("Update check failed:", e);
+      setUpdateStatus("error");
+    }
+  };
+
+  const formatLastChecked = (date: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 5) return "just now";
+    if (diffSec < 60) return `${diffSec}s ago`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    return `${diffHr}h ago`;
+  };
+
   if (!settings) {
     return <div className="loading">Loading settings...</div>;
   }
@@ -48,6 +84,67 @@ export function GeneralSettings() {
   return (
     <div className="settings-section">
       <h2>General Settings</h2>
+
+      <div className="field-group">
+        <span className="field-group-title">About</span>
+        <div className="form-group">
+          <label>Version</label>
+          <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
+            {version || "..."}
+          </span>
+        </div>
+        <div className="form-group">
+          <label>Updates</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              className="btn"
+              disabled={updateStatus === "checking"}
+              onClick={checkForUpdate}
+            >
+              {updateStatus === "checking" ? "Checking..." : "Check for updates"}
+            </button>
+            {updateStatus === "up-to-date" && (
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                Up to date
+              </span>
+            )}
+            {updateStatus === "installed" && (
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                v{updateVersion} installed --{" "}
+                <button
+                  className="btn btn-sm"
+                  onClick={() => invoke("restart_app")}
+                  style={{ display: "inline", padding: "2px 8px", fontSize: 11 }}
+                >
+                  Restart
+                </button>
+              </span>
+            )}
+            {updateStatus === "error" && (
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                Check failed
+              </span>
+            )}
+          </div>
+          {lastChecked && (
+            <span className="hint">
+              Last checked: {formatLastChecked(lastChecked)}
+            </span>
+          )}
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.auto_update_enabled}
+              onChange={(e) =>
+                update({ auto_update_enabled: e.target.checked })
+              }
+            />
+            Automatically check for updates
+          </label>
+        </div>
+      </div>
 
       <div className="field-group">
         <span className="field-group-title">Paths</span>
