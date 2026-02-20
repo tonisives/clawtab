@@ -164,6 +164,14 @@ export function JobsPanel() {
     }
   };
 
+  const handleOpen = async (name: string) => {
+    try {
+      await invoke("focus_job_window", { name });
+    } catch (e) {
+      console.error("Failed to open job window:", e);
+    }
+  };
+
   const handleDelete = async (name: string) => {
     try {
       await invoke("delete_job", { name });
@@ -257,6 +265,7 @@ export function JobsPanel() {
         onPause={() => handlePause(job.name)}
         onResume={() => handleResume(job.name)}
         onRestart={() => handleRestart(job.name)}
+        onOpen={() => handleOpen(job.name)}
         onEdit={() => setEditingJob(job)}
         onDelete={() => handleDelete(job.name)}
         onToggleExpand={() => toggleJobExpand(job.name)}
@@ -371,6 +380,7 @@ function JobRow({
   onPause,
   onResume,
   onRestart,
+  onOpen,
   onEdit,
   onDelete,
   onToggleExpand,
@@ -384,6 +394,7 @@ function JobRow({
   onPause: () => void;
   onResume: () => void;
   onRestart: () => void;
+  onOpen: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onToggleExpand: () => void;
@@ -420,9 +431,14 @@ function JobRow({
       <td className="actions">
         <div className="btn-group">
           {state === "running" && (
-            <button className="btn btn-sm" onClick={onPause}>
-              Pause
-            </button>
+            <>
+              <button className="btn btn-sm" onClick={onOpen}>
+                Open
+              </button>
+              <button className="btn btn-sm" onClick={onPause}>
+                Pause
+              </button>
+            </>
           )}
           {state === "paused" && (
             <button className="btn btn-success btn-sm" onClick={onResume}>

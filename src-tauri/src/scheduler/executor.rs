@@ -314,6 +314,9 @@ async fn execute_claude_job(
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
     } else {
+        // Clear previous output before starting a new run
+        let _ = tmux::clear_pane(&tmux_session, &window_name);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
         tmux::get_window_pane_id(&tmux_session, &window_name)?
     };
@@ -422,6 +425,9 @@ async fn execute_folder_job(
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
     } else {
+        // Clear previous output before starting a new run
+        let _ = tmux::clear_pane(&tmux_session, &window_name);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
         tmux::get_window_pane_id(&tmux_session, &window_name)?
     };

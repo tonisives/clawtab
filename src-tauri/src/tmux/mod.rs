@@ -335,6 +335,21 @@ pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Clear the visible screen and scrollback history of a pane.
+pub fn clear_pane(session: &str, window: &str) -> Result<(), String> {
+    let target = format!("{}:{}", session, window);
+    // Send 'clear' to reset the visible screen, then clear the scrollback buffer
+    let _ = Command::new("tmux")
+        .args(["send-keys", "-t", &target, "clear", "Enter"])
+        .output();
+    // Give the clear command a moment to execute
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let _ = Command::new("tmux")
+        .args(["clear-history", "-t", &target])
+        .output();
+    Ok(())
+}
+
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
     // Select the window within the session
