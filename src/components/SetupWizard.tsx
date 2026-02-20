@@ -158,6 +158,7 @@ export function SetupWizard({ onComplete }: Props) {
         folder_path: null,
         job_name: null,
         telegram_chat_id: telegramConfig.chat_ids[0],
+        telegram_log_mode: "off",
         group: "default",
         slug: "",
       };

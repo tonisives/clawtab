@@ -106,6 +106,7 @@ pub async fn execute_job(
                     job_name: job.name.clone(),
                     slug: job.slug.clone(),
                     telegram,
+                    telegram_log_mode: job.telegram_log_mode.clone(),
                     history: Arc::clone(history),
                     job_status: Arc::clone(job_status),
                     notify_on_success,

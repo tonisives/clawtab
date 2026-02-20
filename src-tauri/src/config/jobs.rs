@@ -10,6 +10,20 @@ pub enum JobType {
     Folder,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TelegramLogMode {
+    Off,
+    OnPrompt,
+    Always,
+}
+
+impl Default for TelegramLogMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum JobStatus {
@@ -51,6 +65,8 @@ pub struct Job {
     pub folder_path: Option<String>,
     pub job_name: Option<String>,
     pub telegram_chat_id: Option<i64>,
+    #[serde(default)]
+    pub telegram_log_mode: TelegramLogMode,
     #[serde(default = "default_group")]
     pub group: String,
     #[serde(default)]

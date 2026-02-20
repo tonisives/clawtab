@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 
-use crate::config::jobs::JobStatus;
+use crate::config::jobs::{JobStatus, TelegramLogMode};
 use crate::history::HistoryStore;
 use crate::tmux;
 
@@ -23,6 +23,7 @@ pub struct MonitorParams {
     pub job_name: String,
     pub slug: String,
     pub telegram: Option<TelegramStream>,
+    pub telegram_log_mode: TelegramLogMode,
     pub history: Arc<Mutex<HistoryStore>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub notify_on_success: bool,
@@ -47,6 +48,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Wait for the process to start producing output
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     let mut idle_ticks = 0u32;
+    let mut stale_ticks = 0u32;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
@@ -74,20 +76,44 @@ pub async fn monitor_pane(params: MonitorParams) {
             let new_content = diff_content(&last_content, &trimmed);
             last_content = trimmed;
             idle_ticks = 0;
+            stale_ticks = 0;
 
             if !new_content.is_empty() {
-                if let Some(ref tg) = params.telegram {
-                    let msg = format!("<pre>{}</pre>", html_escape(&new_content));
-                    if let Err(e) =
-                        crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg).await
-                    {
-                        log::error!("[{}] Failed to relay log output: {}", params.run_id, e);
+                if params.telegram_log_mode == TelegramLogMode::Always {
+                    if let Some(ref tg) = params.telegram {
+                        let msg = format!("<pre>{}</pre>", html_escape(&new_content));
+                        if let Err(e) =
+                            crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg).await
+                        {
+                            log::error!("[{}] Failed to relay log output: {}", params.run_id, e);
+                        }
                     }
                 }
             }
         } else {
             let busy = tmux::is_pane_busy(&params.tmux_session, &params.pane_id);
-            if !busy {
+            if busy {
+                // Content unchanged while pane is still busy
+                if params.telegram_log_mode == TelegramLogMode::OnPrompt {
+                    stale_ticks += 1;
+                    if stale_ticks >= 2 && !last_content.is_empty() {
+                        if let Some(ref tg) = params.telegram {
+                            let msg = format!("<pre>{}</pre>", html_escape(&last_content));
+                            if let Err(e) =
+                                crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg)
+                                    .await
+                            {
+                                log::error!(
+                                    "[{}] Failed to send prompt snapshot: {}",
+                                    params.run_id,
+                                    e
+                                );
+                            }
+                        }
+                        stale_ticks = 0;
+                    }
+                }
+            } else {
                 idle_ticks += 1;
                 if idle_ticks >= MAX_IDLE_TICKS {
                     break;

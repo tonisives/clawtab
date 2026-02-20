@@ -1,4 +1,5 @@
 export type JobType = "binary" | "claude" | "folder";
+export type TelegramLogMode = "off" | "on_prompt" | "always";
 
 export interface Job {
   name: string;
@@ -15,6 +16,7 @@ export interface Job {
   folder_path: string | null;
   job_name: string | null;
   telegram_chat_id: number | null;
+  telegram_log_mode: TelegramLogMode;
   group: string;
   slug: string;
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry } from "../types";
+import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry, TelegramLogMode } from "../types";
 import { CronInput, describeCron } from "./CronInput";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
@@ -53,6 +53,7 @@ const emptyJob: Job = {
   folder_path: null,
   job_name: null,
   telegram_chat_id: null,
+  telegram_log_mode: "off",
   group: "default",
   slug: "",
 };
@@ -716,6 +717,23 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
             : "Configure telegram in Settings to add chats"}
         </span>
       </div>
+
+      {form.telegram_chat_id != null && (form.job_type === "claude" || form.job_type === "folder") && (
+        <div className="form-group">
+          <label>Telegram Logs</label>
+          <select
+            value={form.telegram_log_mode}
+            onChange={(e) =>
+              setForm({ ...form, telegram_log_mode: e.target.value as TelegramLogMode })
+            }
+          >
+            <option value="off">Off -- only start/finish</option>
+            <option value="on_prompt">On prompt -- when Claude asks a question</option>
+            <option value="always">Always -- stream all output</option>
+          </select>
+          <span className="hint">Controls whether tmux pane output is streamed to Telegram</span>
+        </div>
+      )}
     </>
   );
 
