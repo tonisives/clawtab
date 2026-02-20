@@ -99,7 +99,7 @@ function GopassTreeView({
               onClick={() => toggleFolder(node.fullPath)}
             >
               <span style={{ width: 16, fontFamily: "monospace", fontSize: 12, flexShrink: 0 }}>
-                {isOpen ? "v" : ">"}
+                {isOpen ? "\u25BC" : "\u25B6"}
               </span>
               <strong style={{ fontSize: 12 }}>{node.name}/</strong>
             </div>

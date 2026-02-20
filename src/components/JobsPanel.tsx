@@ -334,8 +334,8 @@ export function JobsPanel() {
                   width: "100%",
                 }}
               >
-                <span style={{ fontSize: 10, transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.15s" }}>
-                  &#9660;
+                <span style={{ fontFamily: "monospace", fontSize: 10 }}>
+                  {isCollapsed ? "\u25C0" : "\u25BC"}
                 </span>
                 {displayName}
                 <span className="text-secondary" style={{ fontWeight: 400, fontSize: 12 }}>
@@ -464,11 +464,8 @@ function JobRow({
                 alignItems: "center",
               }}
             >
-              <span style={{
-                transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-                transition: "transform 0.15s",
-              }}>
-                &#9660;
+              <span style={{ fontFamily: "monospace" }}>
+                {isExpanded ? "\u25BC" : "\u25C0"}
               </span>
             </button>
           )}

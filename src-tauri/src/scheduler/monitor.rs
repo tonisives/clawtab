@@ -83,7 +83,7 @@ pub async fn monitor_pane(params: MonitorParams) {
         }
     }
 
-    // Capture full scrollback and finalize
+    // Capture full scrollback for history (not sent to Telegram)
     let full_output = tmux::capture_pane_full(&params.pane_id).unwrap_or_default();
     let full_output = full_output.trim().to_string();
 
@@ -158,22 +158,22 @@ fn diff_content(previous: &str, current: &str) -> String {
     let prev_lines: Vec<&str> = previous.lines().collect();
     let curr_lines: Vec<&str> = current.lines().collect();
 
-    let mut best_overlap = 0;
-    let max_check = prev_lines.len().min(curr_lines.len());
-
-    for overlap in 1..=max_check {
-        let prev_tail = &prev_lines[prev_lines.len() - overlap..];
-        let curr_head = &curr_lines[..overlap];
-        if prev_tail == curr_head {
-            best_overlap = overlap;
+    // Try multiple anchor candidates from the end of previous capture.
+    // If the last line is a common/empty string, try earlier lines.
+    for anchor in prev_lines.iter().rev().filter(|l| !l.is_empty()) {
+        if let Some(pos) = curr_lines.iter().rposition(|l| l == anchor) {
+            return if pos + 1 < curr_lines.len() {
+                curr_lines[pos + 1..].join("\n")
+            } else {
+                String::new()
+            };
         }
     }
 
-    if best_overlap > 0 {
-        curr_lines[best_overlap..].join("\n")
-    } else {
-        current.to_string()
-    }
+    // No anchor found -- buffer scrolled completely past the previous capture.
+    // Return empty to avoid re-sending content that likely overlaps with what
+    // was already sent in earlier ticks.
+    String::new()
 }
 
 fn html_escape(s: &str) -> String {

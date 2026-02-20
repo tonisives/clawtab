@@ -484,6 +484,7 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     out.push_str("- Only edit and look for files in the current directory.\n");
     out.push_str(&format!("- The job directions are in `.cwt/{}/job.md`.\n", jn));
     out.push_str("- Shared project context is in `.cwt/cwt.md` (user-managed).\n");
+    out.push_str("- When your task is fully complete and you need no further input, terminate your own process by running: `kill $PPID`\n");
 
     out.push_str("\n## Job Management CLI\n\n");
     out.push_str("`cwtctl` is available for managing ClawTab jobs:\n\n");
