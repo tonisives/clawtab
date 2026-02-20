@@ -52,7 +52,16 @@ async fn run_loop(
                 continue;
             }
 
-            let schedule: Schedule = match job.cron.parse() {
+            // The cron crate expects 6-7 fields (sec min hour dom month dow [year]).
+            // Standard crontab uses 5 fields (min hour dom month dow).
+            // Auto-prepend "0" seconds field if the expression has exactly 5 fields.
+            let cron_expr = if job.cron.split_whitespace().count() == 5 {
+                format!("0 {}", job.cron)
+            } else {
+                job.cron.clone()
+            };
+
+            let schedule: Schedule = match cron_expr.parse() {
                 Ok(s) => s,
                 Err(e) => {
                     log::warn!("Invalid cron expression for job '{}': {}", job.name, e);

@@ -50,6 +50,7 @@ const tabIcons: Record<TabId, React.ReactNode> = {
 
 export function SettingsApp() {
   const [activeTab, setActiveTab] = useState<TabId>("jobs");
+  const [jobsResetKey, setJobsResetKey] = useState(0);
   const [showWizard, setShowWizard] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -98,7 +99,12 @@ export function SettingsApp() {
           <button
             key={tab.id}
             className={`tab ${activeTab === tab.id ? "active" : ""}`}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              if (tab.id === "jobs" && activeTab === "jobs") {
+                setJobsResetKey((k) => k + 1);
+              }
+              setActiveTab(tab.id);
+            }}
           >
             <span className="tab-icon">{tabIcons[tab.id]}</span>
             {tab.label}
@@ -108,7 +114,7 @@ export function SettingsApp() {
 
       <div className="tab-content">
         <div style={{ display: activeTab === "jobs" ? undefined : "none" }}>
-          <JobsPanel />
+          <JobsPanel key={jobsResetKey} />
         </div>
         {activeTab === "secrets" && <SecretsPanel />}
         <div style={{ display: activeTab === "tools" ? undefined : "none" }}>

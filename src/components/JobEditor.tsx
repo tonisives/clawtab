@@ -67,19 +67,15 @@ const STEPS: { id: WizardStep; label: string }[] = [
   { id: "config", label: "Config" },
 ];
 
-function deriveProjectName(folderPath: string): string {
-  const parts = folderPath.replace(/\/+$/, "").split("/");
-  const last = parts[parts.length - 1];
-  if (last === ".cwt") return parts[parts.length - 2] ?? "";
-  return last ?? "";
-}
+const JOB_NAME_MAX_LENGTH = 40;
 
-function deriveJobDisplayName(folderPath: string, jobName: string | null): string {
-  const project = deriveProjectName(folderPath);
-  if (jobName && jobName !== "default") {
-    return `${project}/${jobName}`;
-  }
-  return project;
+function slugifyName(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, JOB_NAME_MAX_LENGTH);
 }
 
 function FieldGroup({ title, children }: { title: string; children: React.ReactNode }) {
@@ -144,7 +140,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
   const [preferredEditor, setPreferredEditor] = useState("nvim");
-  const [defaultTmuxSession, setDefaultTmuxSession] = useState("tgs");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
 
@@ -166,7 +161,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
-      setDefaultTmuxSession(s.default_tmux_session || "tgs");
       if (s.telegram?.chat_ids?.length) {
         const chats = s.telegram.chat_ids.map((id) => ({
           id,
@@ -284,12 +278,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     if (selected) {
       const projectDir = typeof selected === "string" ? selected : selected;
       const cwtPath = projectDir.replace(/\/+$/, "") + "/.cwt";
-      const updates: Partial<Job> = { folder_path: cwtPath };
-      if (isNew && !form.name) {
-        const derived = deriveJobDisplayName(cwtPath, form.job_name);
-        if (derived) updates.name = derived;
-      }
-      setForm({ ...form, ...updates });
+      setForm({ ...form, folder_path: cwtPath });
     }
   };
 
@@ -353,14 +342,9 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                 value={form.folder_path ?? ""}
                 onChange={(e) => {
                   const val = e.target.value || null;
-                  const updates: Partial<Job> = { folder_path: val };
-                  if (isNew && val && !form.name) {
-                    const derived = deriveJobDisplayName(val, form.job_name);
-                    if (derived) updates.name = derived;
-                  }
-                  setForm({ ...form, ...updates });
+                  setForm({ ...form, folder_path: val });
                 }}
-                placeholder="/path/to/project/.cwt"
+                placeholder=""
                 style={{ flex: 1 }}
               />
               <button className="btn btn-sm" onClick={pickFolder}>
@@ -371,36 +355,22 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           </div>
 
           <div className="form-group">
-            <label>Job Name</label>
-            <input
-              type="text"
-              value={form.job_name ?? ""}
-              onChange={(e) => {
-                const val = e.target.value || null;
-                const updates: Partial<Job> = { job_name: val };
-                if (isNew && form.folder_path) {
-                  updates.name = deriveJobDisplayName(form.folder_path, val);
-                }
-                setForm({ ...form, ...updates });
-              }}
-              placeholder="default"
-            />
-            <span className="hint">
-              Subfolder within .cwt/ (e.g., "deploy", "lint"). Leave empty for "default".
-            </span>
-          </div>
-
-          <div className="form-group">
             <label>Name</label>
             <input
               type="text"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              disabled={!isNew}
-              placeholder="my-project/deploy"
+              maxLength={JOB_NAME_MAX_LENGTH}
+              onChange={(e) => {
+                const name = e.target.value;
+                const jobName = slugifyName(name) || null;
+                setForm({ ...form, name, job_name: jobName });
+              }}
+              placeholder=""
             />
-            {isNew && (
-              <span className="hint">Auto-derived from folder path and job name</span>
+            {form.name && (
+              <span className="hint">
+                Folder: .cwt/{slugifyName(form.name) || "default"}/
+              </span>
             )}
           </div>
         </>
@@ -412,8 +382,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               type="text"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              disabled={!isNew}
-              placeholder="my-job"
+              placeholder=""
             />
           </div>
 
@@ -423,11 +392,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               type="text"
               value={form.path}
               onChange={(e) => setForm({ ...form, path: e.target.value })}
-              placeholder={
-                form.job_type === "binary"
-                  ? "/path/to/binary"
-                  : "x-marketing/prompt-product.md"
-              }
+              placeholder=""
               style={{ maxWidth: "100%" }}
             />
           </div>
@@ -439,7 +404,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                 type="text"
                 value={argsText}
                 onChange={(e) => setArgsText(e.target.value)}
-                placeholder="arg1 arg2"
+                placeholder=""
                 style={{ maxWidth: "100%" }}
               />
               <span className="hint">Space-separated arguments</span>
@@ -484,7 +449,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               value={inlineContent}
               onChange={(e) => handleInlineChange(e.target.value)}
               spellCheck={false}
-              placeholder="Describe what the bot should do here."
+              placeholder=""
             />
           ) : (
             <pre className="directions-body">
@@ -625,7 +590,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                 onChange={() => toggleSecret(s.key)}
               />
               <span>{s.key}</span>
-              <span className="text-secondary" style={{ fontSize: 11 }}>({s.source})</span>
             </label>
           ))}
         </div>
@@ -645,7 +609,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               onChange={(e) =>
                 setForm({ ...form, tmux_session: e.target.value || null })
               }
-              placeholder={`Default: ${defaultTmuxSession}`}
+              placeholder=""
             />
           </div>
 
@@ -708,7 +672,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               const val = e.target.value.trim();
               setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) || null : null });
             }}
-            placeholder="No chats configured"
+            placeholder=""
           />
         )}
         <span className="hint">
@@ -745,7 +709,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           type="text"
           value={form.group}
           onChange={(e) => setForm({ ...form, group: e.target.value || "default" })}
-          placeholder="default"
+          placeholder=""
         />
         <span className="hint">Jobs are grouped by this label in the list</span>
       </div>
@@ -756,7 +720,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           <textarea
             value={envText}
             onChange={(e) => setEnvText(e.target.value)}
-            placeholder={"KEY=value\nANOTHER=value"}
+            placeholder=""
             rows={3}
             style={{ maxWidth: "100%" }}
           />
@@ -773,7 +737,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
             onChange={(e) =>
               setForm({ ...form, work_dir: e.target.value || null })
             }
-            placeholder="Leave empty to use default"
+            placeholder=""
             style={{ maxWidth: "100%" }}
           />
         </div>

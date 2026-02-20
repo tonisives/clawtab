@@ -34,16 +34,6 @@ pub fn list_gopass_store(state: State<AppState>) -> Result<Vec<String>, String> 
 }
 
 #[tauri::command]
-pub fn import_gopass_secret(
-    state: State<AppState>,
-    gopass_path: String,
-) -> Result<String, String> {
-    let mut secrets = state.secrets.lock().unwrap();
-    secrets.import_gopass(&gopass_path)
-}
-
-#[tauri::command]
-pub fn remove_gopass_secret(state: State<AppState>, key: String) {
-    let mut secrets = state.secrets.lock().unwrap();
-    secrets.remove_gopass(&key);
+pub fn fetch_gopass_value(gopass_path: String) -> Result<String, String> {
+    crate::secrets::gopass::GopassBackend::fetch_value(&gopass_path)
 }

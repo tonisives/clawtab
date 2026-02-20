@@ -36,7 +36,7 @@ export interface RunRecord {
   stderr: string;
 }
 
-export type SecretSource = "keychain" | "gopass";
+export type SecretSource = "keychain";
 
 export interface SecretEntry {
   key: string;

@@ -184,6 +184,11 @@ export function JobsPanel() {
   const handleSave = async (job: Job) => {
     setSaveError(null);
     try {
+      const renamed = editingJob && job.name !== editingJob.name;
+      if (renamed) {
+        await invoke("delete_job", { name: editingJob.name });
+        job = { ...job, slug: "" };
+      }
       await invoke("save_job", { job });
       await loadJobs();
       setEditingJob(null);
@@ -192,6 +197,23 @@ export function JobsPanel() {
       const msg = typeof e === "string" ? e : String(e);
       setSaveError(msg);
       console.error("Failed to save job:", e);
+    }
+  };
+
+  const handleDuplicate = async (job: Job) => {
+    const existingNames = new Set(jobs.map((j) => j.name));
+    let copyName = `${job.name}-copy`;
+    let i = 2;
+    while (existingNames.has(copyName)) {
+      copyName = `${job.name}-copy-${i}`;
+      i++;
+    }
+    const dup: Job = { ...job, name: copyName, slug: "", enabled: false };
+    try {
+      await invoke("save_job", { job: dup });
+      await loadJobs();
+    } catch (e) {
+      console.error("Failed to duplicate job:", e);
     }
   };
 
@@ -267,6 +289,7 @@ export function JobsPanel() {
         onRestart={() => handleRestart(job.name)}
         onOpen={() => handleOpen(job.name)}
         onEdit={() => setEditingJob(job)}
+        onDuplicate={() => handleDuplicate(job)}
         onDelete={() => handleDelete(job.name)}
         onToggleExpand={() => toggleJobExpand(job.name)}
       />,
@@ -382,6 +405,7 @@ function JobRow({
   onRestart,
   onOpen,
   onEdit,
+  onDuplicate,
   onDelete,
   onToggleExpand,
 }: {
@@ -396,12 +420,26 @@ function JobRow({
   onRestart: () => void;
   onOpen: () => void;
   onEdit: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
   onToggleExpand: () => void;
 }) {
   const { runs } = useJobRuns(job.name);
   const hasRuns = runs !== null && runs.length > 0;
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showMenu]);
 
   return (
     <tr>
@@ -415,11 +453,6 @@ function JobRow({
       </td>
       <td>
         {job.name}
-        {job.job_name && job.job_name !== "default" && (
-          <span className="text-secondary" style={{ fontSize: 11, marginLeft: 4 }}>
-            ({job.job_name})
-          </span>
-        )}
       </td>
       <td>{job.job_type}</td>
       <td>
@@ -464,47 +497,67 @@ function JobRow({
       </td>
       <td style={{ textAlign: "right", padding: "0 4px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
-          <button
-            onClick={onEdit}
-            title="Edit job"
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-              padding: "2px 4px",
-              lineHeight: 1,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-          >
-            <GearIcon size={16} />
-          </button>
-          <DeleteButton
-            onClick={() => setShowConfirm(true)}
-            title="Delete job"
-          />
-          {hasRuns && (
+          <div ref={menuRef} style={{ position: "relative" }}>
             <button
-              onClick={onToggleExpand}
-              title="Runs"
+              onClick={() => setShowMenu((v) => !v)}
+              title="Job actions"
               style={{
                 background: "none",
                 border: "none",
                 color: "var(--text-secondary)",
                 cursor: "pointer",
                 padding: "2px 4px",
-                fontSize: 10,
                 lineHeight: 1,
                 display: "inline-flex",
                 alignItems: "center",
               }}
             >
-              <span style={{ fontFamily: "monospace" }}>
-                {isExpanded ? "\u25BC" : "\u25C0"}
-              </span>
+              <GearIcon size={16} />
             </button>
-          )}
+            {showMenu && (
+              <div className="job-action-menu">
+                <button
+                  className="job-action-menu-item"
+                  onClick={() => { setShowMenu(false); onEdit(); }}
+                >
+                  Edit
+                </button>
+                <button
+                  className="job-action-menu-item"
+                  onClick={() => { setShowMenu(false); onDuplicate(); }}
+                >
+                  Duplicate
+                </button>
+                <button
+                  className="job-action-menu-item job-action-menu-item-danger"
+                  onClick={() => { setShowMenu(false); setShowConfirm(true); }}
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            onClick={hasRuns ? onToggleExpand : undefined}
+            title="Runs"
+            disabled={!hasRuns}
+            style={{
+              background: "none",
+              border: "none",
+              color: hasRuns ? "var(--text-secondary)" : "var(--text-secondary)",
+              opacity: hasRuns ? 1 : 0.3,
+              cursor: hasRuns ? "pointer" : "default",
+              padding: "2px 4px",
+              fontSize: 10,
+              lineHeight: 1,
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontFamily: "monospace" }}>
+              {isExpanded ? "\u25BC" : "\u25C0"}
+            </span>
+          </button>
         </div>
       </td>
       {showConfirm && (

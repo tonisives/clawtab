@@ -13,5 +13,17 @@
 <body>
   <div id="root"></div>
   <script type="module" src="/src/settings.tsx"></script>
+  <script>
+    // Disable text suggestions, autocorrect, autocapitalize on all inputs/textareas
+    const attrs = { autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false' };
+    const observer = new MutationObserver(() => {
+      document.querySelectorAll('input, textarea').forEach(el => {
+        for (const [k, v] of Object.entries(attrs)) {
+          if (el.getAttribute(k) !== v) el.setAttribute(k, v);
+        }
+      });
+    });
+    observer.observe(document.getElementById('root'), { childList: true, subtree: true });
+  </script>
 </body>
 </html>

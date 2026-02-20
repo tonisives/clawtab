@@ -88,19 +88,6 @@ export function GeneralSettings() {
         </div>
 
         <div className="form-group">
-          <label>Secrets Backend</label>
-          <select
-            value={settings.secrets_backend}
-            onChange={(e) => update({ secrets_backend: e.target.value })}
-          >
-            <option value="both">Both (Keychain + gopass)</option>
-            <option value="keychain">Keychain only</option>
-            <option value="gopass">gopass only</option>
-          </select>
-          <span className="hint">Which secret stores to use for injecting environment variables</span>
-        </div>
-
-        <div className="form-group">
           <label>Editor</label>
           <select
             value={settings.preferred_editor}

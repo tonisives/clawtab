@@ -77,6 +77,9 @@ pub async fn monitor_pane(params: MonitorParams) {
     });
 
     let mut stale_ticks = 0u32;
+    // For OnPrompt mode: track the most recent diff so we only send new content
+    // when the pane goes stale, not the entire pane buffer.
+    let mut pending_diff = String::new();
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
@@ -116,14 +119,25 @@ pub async fn monitor_pane(params: MonitorParams) {
                         }
                     }
                 }
+                // Accumulate diffs for OnPrompt: when the pane eventually goes
+                // stale we send only the content that appeared since the last
+                // prompt notification (or since the job started).
+                if params.telegram_log_mode == TelegramLogMode::OnPrompt {
+                    if pending_diff.is_empty() {
+                        pending_diff = new_content;
+                    } else {
+                        pending_diff.push('\n');
+                        pending_diff.push_str(&new_content);
+                    }
+                }
             }
         } else if !process_exited.load(Ordering::Acquire) {
             // Content unchanged while pane is still busy
             if params.telegram_log_mode == TelegramLogMode::OnPrompt {
                 stale_ticks += 1;
-                if stale_ticks >= 2 && !last_content.is_empty() {
+                if stale_ticks >= 2 && !pending_diff.is_empty() {
                     if let Some(ref tg) = params.telegram {
-                        let msg = format!("<pre>{}</pre>", html_escape(&last_content));
+                        let msg = format!("<pre>{}</pre>", html_escape(&pending_diff));
                         if let Err(e) =
                             crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg)
                                 .await
@@ -135,6 +149,7 @@ pub async fn monitor_pane(params: MonitorParams) {
                             );
                         }
                     }
+                    pending_diff.clear();
                     stale_ticks = 0;
                 }
             }

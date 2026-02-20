@@ -119,24 +119,18 @@ function GopassTreeView({
   );
 }
 
-function SourceBadge({ source }: { source: string }) {
-  const cls =
-    source === "keychain" ? "status-badge status-success" : "status-badge status-running";
-  return <span className={cls}>{source}</span>;
-}
-
 export function SecretsPanel() {
   const [secrets, setSecrets] = useState<SecretEntry[]>([]);
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [confirmDeleteKey, setConfirmDeleteKey] = useState<{ key: string; source: string } | null>(null);
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
 
   const [gopassAvailable, setGopassAvailable] = useState(false);
   const [gopassEntries, setGopassEntries] = useState<string[]>([]);
   const [gopassSearch, setGopassSearch] = useState("");
-  const [showGopassImport, setShowGopassImport] = useState(false);
+  const [showGopassPopup, setShowGopassPopup] = useState(false);
   const [gopassLoading, setGopassLoading] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
@@ -187,25 +181,21 @@ export function SecretsPanel() {
     }
   };
 
-  const handleDelete = async (key: string, source: string) => {
+  const handleDelete = async (key: string) => {
     try {
-      if (source === "gopass") {
-        await invoke("remove_gopass_secret", { key });
-      } else {
-        await invoke("delete_secret", { key });
-      }
+      await invoke("delete_secret", { key });
       await loadSecrets();
     } catch (e) {
       console.error("Failed to delete secret:", e);
     }
   };
 
-  const handleLoadGopassEntries = async () => {
+  const handleOpenGopassPopup = async () => {
     setGopassLoading(true);
     try {
       const entries = await invoke<string[]>("list_gopass_store");
       setGopassEntries(entries);
-      setShowGopassImport(true);
+      setShowGopassPopup(true);
     } catch (e) {
       console.error("Failed to list gopass store:", e);
     } finally {
@@ -215,13 +205,12 @@ export function SecretsPanel() {
 
   const handleImportGopass = async (gopassPath: string) => {
     try {
-      const key = await invoke<string>("import_gopass_secret", { gopassPath });
-      setShowGopassImport(false);
+      const value = await invoke<string>("fetch_gopass_value", { gopassPath });
+      setNewValue(value);
+      setShowGopassPopup(false);
       setGopassSearch("");
-      await loadSecrets();
-      console.log(`Imported gopass entry as key: ${key}`);
     } catch (e) {
-      console.error("Failed to import gopass secret:", e);
+      console.error("Failed to fetch gopass secret:", e);
     }
   };
 
@@ -242,7 +231,6 @@ export function SecretsPanel() {
 
   const effectiveExpanded = useMemo(() => {
     if (!gopassSearch) return expandedFolders;
-    // Auto-expand all folders when searching
     const all = new Set<string>();
     for (const entry of filteredGopassEntries) {
       const segments = entry.split("/");
@@ -261,8 +249,8 @@ export function SecretsPanel() {
         <h2>Secrets</h2>
       </div>
       <p className="section-description">
-        Secrets are injected as environment variables into jobs. Keychain secrets are stored in macOS
-        Keychain. Gopass secrets stay in your gopass store and are refreshed on each app startup.
+        Secrets are stored in macOS Keychain and injected as environment variables into jobs.
+        {gopassAvailable && " You can also import secrets from your gopass store."}
       </p>
 
       <div className="field-group">
@@ -280,70 +268,31 @@ export function SecretsPanel() {
           </div>
           <div className="form-group" style={{ flex: 2 }}>
             <label>Value</label>
-            <input
-              type="password"
-              value={newValue}
-              onChange={(e) => setNewValue(e.target.value)}
-              placeholder="secret value"
-              style={{ maxWidth: "100%" }}
-            />
-          </div>
-          <div className="form-group" style={{ flex: "none" }}>
-            <button className="btn btn-primary" onClick={handleAdd}>
-              Add to Keychain
-            </button>
-          </div>
-        </div>
-
-        {gopassAvailable && (
-          <div style={{ marginTop: 8 }}>
-            <button
-              className="btn btn-sm"
-              onClick={handleLoadGopassEntries}
-              disabled={gopassLoading}
-            >
-              {gopassLoading ? "Loading..." : "Import from gopass"}
-            </button>
-          </div>
-        )}
-
-        {showGopassImport && (
-          <div style={{ marginTop: 12, padding: 12, border: "1px solid var(--border)", borderRadius: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <strong>Import from gopass</strong>
-              <button
-                className="btn btn-sm"
-                onClick={() => {
-                  setShowGopassImport(false);
-                  setGopassSearch("");
-                  setExpandedFolders(new Set());
-                }}
-              >
-                Close
-              </button>
-            </div>
-            <input
-              type="text"
-              value={gopassSearch}
-              onChange={(e) => setGopassSearch(e.target.value)}
-              placeholder="Filter entries..."
-              style={{ width: "100%", marginBottom: 8 }}
-            />
-            <div style={{ maxHeight: 300, overflowY: "auto" }}>
-              {filteredGopassEntries.length === 0 ? (
-                <p className="text-secondary">No entries found.</p>
-              ) : (
-                <GopassTreeView
-                  nodes={gopassTree}
-                  expanded={effectiveExpanded}
-                  toggleFolder={toggleFolder}
-                  onImport={handleImportGopass}
-                  depth={0}
-                />
+            <div style={{ display: "flex", gap: 4 }}>
+              <input
+                type="password"
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
+                placeholder="secret value"
+                style={{ maxWidth: "100%", flex: 1 }}
+              />
+              {gopassAvailable && (
+                <button
+                  className="btn btn-sm"
+                  onClick={handleOpenGopassPopup}
+                  disabled={gopassLoading}
+                  title="Import from gopass"
+                  style={{ whiteSpace: "nowrap", alignSelf: "center" }}
+                >
+                  {gopassLoading ? "..." : "gopass"}
+                </button>
               )}
             </div>
           </div>
-        )}
+          <button className="btn btn-primary" onClick={handleAdd} style={{ alignSelf: "flex-end", marginBottom: 19 }}>
+            Add to Keychain
+          </button>
+        </div>
       </div>
 
       {secrets.length === 0 ? (
@@ -355,7 +304,6 @@ export function SecretsPanel() {
           <thead>
             <tr>
               <th>Key</th>
-              <th>Source</th>
               <th>Value</th>
               <th>Actions</th>
               <th style={{ width: 28 }}></th>
@@ -363,15 +311,12 @@ export function SecretsPanel() {
           </thead>
           <tbody>
             {secrets.map((secret) => (
-              <tr key={`${secret.source}-${secret.key}`}>
+              <tr key={secret.key}>
                 <td>
                   <code>{secret.key}</code>
                 </td>
                 <td>
-                  <SourceBadge source={secret.source} />
-                </td>
-                <td>
-                  {editingKey === secret.key && secret.source === "keychain" ? (
+                  {editingKey === secret.key ? (
                     <input
                       type="password"
                       value={editValue}
@@ -386,7 +331,7 @@ export function SecretsPanel() {
                 </td>
                 <td className="actions">
                   <div className="btn-group">
-                    {editingKey === secret.key && secret.source === "keychain" ? (
+                    {editingKey === secret.key ? (
                       <>
                         <button
                           className="btn btn-primary btn-sm"
@@ -405,26 +350,22 @@ export function SecretsPanel() {
                         </button>
                       </>
                     ) : (
-                      <>
-                        {secret.source === "keychain" && (
-                          <button
-                            className="btn btn-sm"
-                            onClick={() => {
-                              setEditingKey(secret.key);
-                              setEditValue("");
-                            }}
-                          >
-                            Update
-                          </button>
-                        )}
-                      </>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => {
+                          setEditingKey(secret.key);
+                          setEditValue("");
+                        }}
+                      >
+                        Update
+                      </button>
                     )}
                   </div>
                 </td>
                 <td style={{ textAlign: "right", padding: "0 8px" }}>
                   <DeleteButton
-                    onClick={() => setConfirmDeleteKey({ key: secret.key, source: secret.source })}
-                    title={secret.source === "gopass" ? "Remove secret" : "Delete secret"}
+                    onClick={() => setConfirmDeleteKey(secret.key)}
+                    title="Delete secret"
                   />
                 </td>
               </tr>
@@ -435,10 +376,60 @@ export function SecretsPanel() {
 
       {confirmDeleteKey && (
         <ConfirmDialog
-          message={`${confirmDeleteKey.source === "gopass" ? "Remove" : "Delete"} secret "${confirmDeleteKey.key}"? This cannot be undone.`}
-          onConfirm={() => { handleDelete(confirmDeleteKey.key, confirmDeleteKey.source); setConfirmDeleteKey(null); }}
+          message={`Delete secret "${confirmDeleteKey}"? This cannot be undone.`}
+          onConfirm={() => { handleDelete(confirmDeleteKey); setConfirmDeleteKey(null); }}
           onCancel={() => setConfirmDeleteKey(null)}
         />
+      )}
+
+      {showGopassPopup && (
+        <div
+          className="confirm-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowGopassPopup(false);
+              setGopassSearch("");
+              setExpandedFolders(new Set());
+            }
+          }}
+        >
+          <div className="confirm-dialog" style={{ width: 480 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <strong style={{ fontSize: 13 }}>Import from gopass</strong>
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setShowGopassPopup(false);
+                  setGopassSearch("");
+                  setExpandedFolders(new Set());
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <input
+              type="text"
+              value={gopassSearch}
+              onChange={(e) => setGopassSearch(e.target.value)}
+              placeholder="Filter entries..."
+              style={{ width: "100%", marginBottom: 8 }}
+              autoFocus
+            />
+            <div style={{ maxHeight: 350, overflowY: "auto" }}>
+              {filteredGopassEntries.length === 0 ? (
+                <p className="text-secondary">No entries found.</p>
+              ) : (
+                <GopassTreeView
+                  nodes={gopassTree}
+                  expanded={effectiveExpanded}
+                  toggleFolder={toggleFolder}
+                  onImport={handleImportGopass}
+                  depth={0}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
