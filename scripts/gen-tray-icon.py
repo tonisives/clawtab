@@ -1,106 +1,94 @@
-"""Generate a macOS tray icon: circle with claw marks cut out.
+"""Generate a macOS tray icon: claw marks extracted from the app icon.
 
+Extracts the actual claw shapes from the app icon so they match exactly.
 For macOS template images: black shapes on transparent background.
 macOS uses the alpha channel as a mask and recolors automatically.
-The circle is filled black, claw marks are cut out (transparent).
-
-Claw shape matches the app icon: two wider halves joined at a narrow
-pinch in the middle, with sharp tips at both ends.
 """
 
-from PIL import Image, ImageDraw
-import math
+from PIL import Image
+import os
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+APP_ICON = os.path.join(PROJECT_ROOT, "src-tauri", "icons", "icon.png")
 
 
-def draw_claw_mark(draw, cx, cy, length, width, angle_deg, pinch=0.7):
-    """Draw a single claw mark matching the app icon style.
+def extract_claws():
+    """Extract claw shapes from app icon as a binary mask.
 
-    The shape has two bulging halves pinched together in the middle,
-    creating the characteristic "scratch" look from the app icon.
-    pinch: ratio of the narrowest point vs full width (0=closed, 1=diamond)
+    The app icon is a white canvas with a purple rounded rect containing
+    white claw marks. We scan well inside the purple rect to avoid
+    picking up the rounded-rect edges or the white background.
     """
-    angle = math.radians(angle_deg)
-    half_len = length / 2
-    half_wid = width / 2
-    pinch_wid = half_wid * pinch
+    app = Image.open(APP_ICON).convert("RGBA")
+    aw, ah = app.size
+    px = app.load()
 
-    dx = math.cos(angle)
-    dy = math.sin(angle)
-    px = -math.sin(angle)
-    py = math.cos(angle)
+    # Find the purple rounded rect bounds
+    purple_min_x, purple_min_y = aw, ah
+    purple_max_x, purple_max_y = 0, 0
+    for y in range(ah):
+        for x in range(aw):
+            r, g, b, a = px[x, y]
+            if a > 128 and b > 120 and r < 150 and g < 150:
+                purple_min_x = min(purple_min_x, x)
+                purple_min_y = min(purple_min_y, y)
+                purple_max_x = max(purple_max_x, x)
+                purple_max_y = max(purple_max_y, y)
 
-    # Octagon-ish shape: sharp tips, bulging halves, subtle pinch at center
-    # Going clockwise from top tip
-    b = 0.55  # bulge position along the length (from center)
-    points = [
-        # Top tip (sharp point)
-        (cx - dx * half_len, cy - dy * half_len),
-        # Upper-right bulge
-        (cx - dx * half_len * b + px * half_wid,
-         cy - dy * half_len * b + py * half_wid),
-        # Middle-right pinch
-        (cx + px * pinch_wid, cy + py * pinch_wid),
-        # Lower-right bulge
-        (cx + dx * half_len * b + px * half_wid,
-         cy + dy * half_len * b + py * half_wid),
-        # Bottom tip (sharp point)
-        (cx + dx * half_len, cy + dy * half_len),
-        # Lower-left bulge
-        (cx + dx * half_len * b - px * half_wid,
-         cy + dy * half_len * b - py * half_wid),
-        # Middle-left pinch
-        (cx - px * pinch_wid, cy - py * pinch_wid),
-        # Upper-left bulge
-        (cx - dx * half_len * b - px * half_wid,
-         cy - dy * half_len * b - py * half_wid),
-    ]
+    # Generous inset to avoid rounded corner artifacts
+    inset = 40
+    scan_x1 = purple_min_x + inset
+    scan_y1 = purple_min_y + inset
+    scan_x2 = purple_max_x - inset
+    scan_y2 = purple_max_y - inset
 
-    draw.polygon(points, fill=(0, 0, 0, 0))
+    # Extract white pixels within the purple region (these are the claws)
+    mask = Image.new("L", (aw, ah), 0)
+    mask_px = mask.load()
+    for y in range(scan_y1, scan_y2):
+        for x in range(scan_x1, scan_x2):
+            r, g, b, a = px[x, y]
+            if a > 128 and r > 230 and g > 230 and b > 230:
+                mask_px[x, y] = 255
+
+    bbox = mask.getbbox()
+    if not bbox:
+        raise RuntimeError("Could not find claws in app icon")
+
+    return mask.crop(bbox)
 
 
 def generate_tray_icon(size=44):
-    """Generate tray icon at given size (44px = 22pt @2x for Retina)."""
+    """Generate tray icon: claw marks as black on transparent."""
+    claw_mask = extract_claws()
+
+    # Scale claws to fill the icon
+    cw, ch = claw_mask.size
+    ratio = min(size / cw, size / ch)
+    new_w = int(cw * ratio)
+    new_h = int(ch * ratio)
+    claw_mask = claw_mask.resize((new_w, new_h), Image.LANCZOS)
+
+    # Create transparent canvas, draw claws as black
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
 
-    # Draw filled circle
-    margin = size * 0.04
-    draw.ellipse(
-        [margin, margin, size - margin - 1, size - margin - 1],
-        fill=(0, 0, 0, 255),
-    )
+    ox = (size - new_w) // 2
+    oy = (size - new_h) // 2
 
-    # Three parallel diagonal claw marks, cut out from the circle
-    # Angle matches the app icon (~-55 degrees, upper-right to lower-left)
-    angle = -55
-
-    center_x = size / 2
-    center_y = size / 2
-
-    spacing = size * 0.21
-
-    perp_angle = math.radians(angle + 90)
-    offset_x = math.cos(perp_angle) * spacing
-    offset_y = math.sin(perp_angle) * spacing
-
-    # Center claw is larger, edge claws are smaller
-    marks = [
-        (-1, size * 0.5, size * 0.12),
-        (0, size * 0.6, size * 0.14),
-        (1, size * 0.5, size * 0.12),
-    ]
-
-    for i, length, width in marks:
-        x = center_x + i * offset_x
-        y = center_y + i * offset_y
-        draw_claw_mark(draw, x, y, length, width, angle)
+    for y in range(new_h):
+        for x in range(new_w):
+            if claw_mask.getpixel((x, y)) > 128:
+                ix, iy = ox + x, oy + y
+                if 0 <= ix < size and 0 <= iy < size:
+                    img.putpixel((ix, iy), (0, 0, 0, 255))
 
     return img
 
 
 if __name__ == "__main__":
     icon = generate_tray_icon(44)
-    icon.save("src-tauri/icons/tray-icon.png")
+    icon.save(os.path.join(PROJECT_ROOT, "src-tauri", "icons", "tray-icon.png"))
     print(f"Saved tray-icon.png ({icon.size[0]}x{icon.size[1]})")
 
     preview = generate_tray_icon(256)

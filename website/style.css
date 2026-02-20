@@ -171,6 +171,28 @@ a:hover {
   border: 1px solid var(--border);
 }
 
+/* --- Hero Video --- */
+
+.hero-video {
+  max-width: 800px;
+  margin: 0 auto;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .hero-video {
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+}
+
+.hero-video video {
+  width: 100%;
+  display: block;
+}
+
 /* --- Features --- */
 
 .section {
@@ -282,15 +304,72 @@ a:hover {
   border-radius: var(--radius-sm);
 }
 
+/* --- Screenshot Grid --- */
+
+.screenshot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.screenshot-item {
+  text-align: center;
+}
+
+.screenshot-frame {
+  display: inline-block;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  max-width: 100%;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  .screenshot-frame {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.screenshot-frame img,
+.screenshot-frame video {
+  width: 100%;
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.screenshot-caption {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 10px;
+}
+
+.screenshot-video {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.screenshot-video .screenshot-frame {
+  width: 100%;
+}
+
 /* --- Install --- */
+
+.install-methods {
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
 
 .install-block {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 32px;
-  max-width: 600px;
-  margin: 0 auto;
 }
 
 .install-block h3 {
@@ -323,6 +402,12 @@ a:hover {
 
 .install-block li::before {
   content: "- ";
+}
+
+.install-prereqs {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
 }
 
 /* --- Footer --- */
@@ -492,7 +577,8 @@ a:hover {
   }
 
   .features-grid,
-  .steps {
+  .steps,
+  .screenshot-grid {
     grid-template-columns: 1fr;
   }
 

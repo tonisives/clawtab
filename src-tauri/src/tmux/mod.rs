@@ -133,26 +133,6 @@ pub fn send_keys(session: &str, window: &str, keys: &str) -> Result<(), String> 
     Ok(())
 }
 
-/// Check if a tmux window has an active (non-shell) process running.
-/// Returns true if the pane's current command is something other than a shell.
-pub fn is_window_busy(session: &str, window: &str) -> bool {
-    let target = format!("{}:{}", session, window);
-    let output = Command::new("tmux")
-        .args(["list-panes", "-t", &target, "-F", "#{pane_current_command}"])
-        .output();
-
-    match output {
-        Ok(o) if o.status.success() => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            stdout.lines().any(|cmd| {
-                let cmd = cmd.trim();
-                !cmd.is_empty() && !matches!(cmd, "bash" | "zsh" | "fish" | "sh" | "dash")
-            })
-        }
-        _ => false,
-    }
-}
-
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct PaneInfo {
@@ -333,21 +313,6 @@ pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-/// Clear the visible screen and scrollback history of a pane.
-pub fn clear_pane(session: &str, window: &str) -> Result<(), String> {
-    let target = format!("{}:{}", session, window);
-    // Send 'clear' to reset the visible screen, then clear the scrollback buffer
-    let _ = Command::new("tmux")
-        .args(["send-keys", "-t", &target, "clear", "Enter"])
-        .output();
-    // Give the clear command a moment to execute
-    std::thread::sleep(std::time::Duration::from_millis(100));
-    let _ = Command::new("tmux")
-        .args(["clear-history", "-t", &target])
-        .output();
-    Ok(())
 }
 
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {

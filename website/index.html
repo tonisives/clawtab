@@ -18,6 +18,7 @@
   <ul class="nav-links">
     <li><a href="#features">Features</a></li>
     <li><a href="#how-it-works">How It Works</a></li>
+    <li><a href="#screenshots">Screenshots</a></li>
     <li><a href="docs.html">Docs</a></li>
     <li><a href="#install">Install</a></li>
   </ul>
@@ -27,9 +28,14 @@
   <img src="assets/app-icon.png" alt="ClawTab" class="hero-icon">
   <h1>Schedule Claude Code agents from your menu bar</h1>
   <p>A macOS app for running automated Claude Code jobs, shell scripts, and project-based AI agents on a cron schedule, all orchestrated through tmux.</p>
-  <div style="display: flex; gap: 12px; justify-content: center;">
-    <a href="#install" class="btn btn-primary">Build from Source</a>
+  <div style="display: flex; gap: 12px; justify-content: center; margin-bottom: 48px;">
+    <a href="#install" class="btn btn-primary">Install</a>
     <a href="docs.html" class="btn btn-secondary">Read the Docs</a>
+  </div>
+  <div class="hero-video">
+    <video autoplay loop muted playsinline>
+      <source src="assets/hero-demo.mp4" type="video/mp4">
+    </video>
   </div>
 </section>
 
@@ -79,6 +85,38 @@
     <div class="step">
       <h3>Monitor Anywhere</h3>
       <p>Watch from the GUI, CLI, TUI, or Telegram. Get notifications on success or failure.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="screenshots">
+  <h2 class="section-title">See It in Action</h2>
+  <div class="screenshot-grid">
+    <div class="screenshot-item">
+      <div class="screenshot-frame">
+        <img src="assets/screenshot-gui.png" alt="ClawTab GUI - Job running with live output">
+      </div>
+      <p class="screenshot-caption">Jobs panel with live output monitoring</p>
+    </div>
+    <div class="screenshot-item">
+      <div class="screenshot-frame">
+        <img src="assets/screenshot-telegram.png" alt="Telegram notifications for job status">
+      </div>
+      <p class="screenshot-caption">Telegram notifications and remote control</p>
+    </div>
+    <div class="screenshot-item">
+      <div class="screenshot-frame">
+        <img src="assets/screenshot-telegram-logs.png" alt="Full Claude Code output relayed to Telegram">
+      </div>
+      <p class="screenshot-caption">Full Claude Code output in Telegram</p>
+    </div>
+  </div>
+  <div class="screenshot-video">
+    <h3 style="text-align: center; margin-bottom: 16px;">Cron job scheduling demo</h3>
+    <div class="screenshot-frame">
+      <video controls muted playsinline preload="metadata">
+        <source src="assets/demo-cron.mp4" type="video/mp4">
+      </video>
     </div>
   </div>
 </section>

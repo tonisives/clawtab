@@ -53,6 +53,7 @@ export function SetupWizard({ onComplete }: Props) {
   const [testJobError, setTestJobError] = useState("");
 
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
+  const hasAiAgent = tools.some((t) => t.group === "ai_agent" && t.available);
   const hasTelegram = tools.some((t) => t.name === "Telegram" && t.available);
   const hasTelegramConfigured = !!(telegramConfig && telegramConfig.chat_ids.length > 0);
   const availableEditors = EDITOR_OPTIONS.filter((opt) =>
@@ -216,8 +217,8 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Detected Tools</h3>
           <p className="section-description">
-            These tools were found on your system. tmux is required -- install it before
-            proceeding.
+            These tools were found on your system. tmux and an AI agent are required --
+            install them before proceeding.
           </p>
           <ToolGroupList
             tools={tools}
@@ -237,6 +238,12 @@ export function SetupWizard({ onComplete }: Props) {
             <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
               tmux is required to continue. Use the install button above or run{" "}
               <code>brew install tmux</code> in your terminal, then click Refresh.
+            </p>
+          )}
+          {!hasAiAgent && tools.length > 0 && (
+            <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
+              An AI agent (Claude or Codex) is required to continue. Install one using the
+              buttons above or locate the binary, then click Refresh.
             </p>
           )}
         </div>
@@ -487,7 +494,7 @@ export function SetupWizard({ onComplete }: Props) {
           null
         ) : currentStep === "telegram" && !telegramConfig?.chat_ids?.length && !telegramSkipped ? (
           null
-        ) : currentStep === "tools" && !hasTmux && tools.length > 0 ? (
+        ) : currentStep === "tools" && (!hasTmux || !hasAiAgent) && tools.length > 0 ? (
           <button className="btn btn-primary" disabled>
             Next
           </button>

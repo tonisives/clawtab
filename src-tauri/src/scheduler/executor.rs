@@ -283,7 +283,7 @@ async fn execute_claude_job(
 
     let env_vars = collect_env_vars(job, secrets, settings);
 
-    let window_name = format!("cwt-{}", job.name);
+    let window_name = project_window_name(job);
     let prompt_path = &job.path;
 
     if !tmux::is_available() {
@@ -295,28 +295,28 @@ async fn execute_claude_job(
         tmux::create_session(&tmux_session)?;
     }
 
-    // Create window if it doesn't exist (with env vars injected via -e flags)
-    if !tmux::window_exists(&tmux_session, &window_name) {
+    // Create window if it doesn't exist; track whether we just created it
+    let window_just_created = if !tmux::window_exists(&tmux_session, &window_name) {
         tmux::create_window(&tmux_session, &window_name, &env_vars)?;
-        // Wait for window to be ready
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
+        true
+    } else {
+        false
+    };
 
     let send_cmd = format!(
         "cd {} && {} \"$(cat {})\"",
         work_dir, claude_path, prompt_path
     );
 
-    // If window has an active process (e.g. Claude is still running), split a new pane
-    let pane_id = if tmux::is_window_busy(&tmux_session, &window_name) {
+    // If the window already existed, always split a new pane (other jobs may occupy it).
+    // If we just created it, use the initial pane.
+    let pane_id = if !window_just_created {
         let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
     } else {
-        // Clear previous output before starting a new run
-        let _ = tmux::clear_pane(&tmux_session, &window_name);
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
         tmux::get_window_pane_id(&tmux_session, &window_name)?
     };
@@ -396,7 +396,7 @@ async fn execute_folder_job(
     let env_vars = collect_env_vars(job, secrets, settings);
 
     let work_dir = project_root;
-    let window_name = format!("cwt-{}", job.name);
+    let window_name = project_window_name(job);
 
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
@@ -406,10 +406,13 @@ async fn execute_folder_job(
         tmux::create_session(&tmux_session)?;
     }
 
-    if !tmux::window_exists(&tmux_session, &window_name) {
+    let window_just_created = if !tmux::window_exists(&tmux_session, &window_name) {
         tmux::create_window(&tmux_session, &window_name, &env_vars)?;
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
+        true
+    } else {
+        false
+    };
 
     // Pass the prompt content directly to Claude via stdin-like heredoc
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
@@ -418,16 +421,14 @@ async fn execute_folder_job(
         work_dir, claude_path, escaped_prompt
     );
 
-    // If window has an active process (e.g. Claude is still running), split a new pane
-    let pane_id = if tmux::is_window_busy(&tmux_session, &window_name) {
+    // If the window already existed, always split a new pane (other jobs may occupy it).
+    // If we just created it, use the initial pane.
+    let pane_id = if !window_just_created {
         let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
     } else {
-        // Clear previous output before starting a new run
-        let _ = tmux::clear_pane(&tmux_session, &window_name);
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
         tmux::get_window_pane_id(&tmux_session, &window_name)?
     };
@@ -484,6 +485,17 @@ fn collect_env_vars(
     }
 
     vars
+}
+
+/// Extract the project prefix from a job's slug to use as the tmux window name.
+/// For slug "myapp/deploy", returns "cwt-myapp".
+/// Falls back to "cwt-{job.name}" if the slug has no '/'.
+fn project_window_name(job: &Job) -> String {
+    let project = match job.slug.split_once('/') {
+        Some((prefix, _)) if !prefix.is_empty() => prefix,
+        _ => &job.name,
+    };
+    format!("cwt-{}", project)
 }
 
 /// Send telegram notification, routing to per-job chat_id if set.
