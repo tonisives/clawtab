@@ -20,7 +20,7 @@ interface ToolGroup {
 }
 
 function buildGroups(tools: ToolInfo[]): ToolGroup[] {
-  const categoryOrder = ["AI Agent", "Terminal", "Editor", "Optional", "Browser"];
+  const categoryOrder = ["Required", "AI Agent", "Terminal", "Editor", "Optional", "Browser"];
   const groups: ToolGroup[] = [];
   const seen = new Set<string>();
 

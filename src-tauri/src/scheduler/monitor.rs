@@ -29,10 +29,23 @@ pub struct MonitorParams {
 }
 
 pub async fn monitor_pane(params: MonitorParams) {
+    // Capture whatever is already in the pane before the job produces output.
+    // This seeds the baseline so we only relay genuinely new content to Telegram,
+    // avoiding re-sending scrollback from previous runs in the same pane.
+    let mut last_content = tmux::capture_pane(
+        &params.tmux_session,
+        &params.pane_id,
+        CAPTURE_LINES,
+    )
+    .unwrap_or_default()
+    .lines()
+    .collect::<Vec<_>>()
+    .join("\n")
+    .trim()
+    .to_string();
+
     // Wait for the process to start producing output
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-    let mut last_content = String::new();
     let mut idle_ticks = 0u32;
 
     loop {

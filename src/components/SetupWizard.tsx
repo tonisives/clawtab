@@ -8,25 +8,16 @@ interface Props {
   onComplete: () => void;
 }
 
-type Step = "tools" | "terminal" | "editor" | "secrets" | "telegram" | "first-job" | "done";
+type Step = "tools" | "tmux" | "editor" | "secrets" | "telegram" | "first-job" | "done";
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "tools", label: "Detect Tools" },
-  { id: "terminal", label: "Terminal" },
+  { id: "tmux", label: "Tmux" },
   { id: "editor", label: "Editor" },
   { id: "secrets", label: "Secrets" },
   { id: "telegram", label: "Telegram" },
   { id: "first-job", label: "Test Job" },
   { id: "done", label: "Done" },
-];
-
-const TERMINAL_OPTIONS = [
-  { value: "ghostty", label: "Ghostty" },
-  { value: "alacritty", label: "Alacritty" },
-  { value: "kitty", label: "Kitty" },
-  { value: "wezterm", label: "WezTerm" },
-  { value: "iterm", label: "iTerm2" },
-  { value: "terminal", label: "Terminal.app" },
 ];
 
 const EDITOR_OPTIONS: { value: string; label: string; terminal: boolean }[] = [
@@ -64,9 +55,6 @@ export function SetupWizard({ onComplete }: Props) {
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
   const hasTelegram = tools.some((t) => t.name === "Telegram" && t.available);
   const hasTelegramConfigured = !!(telegramConfig && telegramConfig.chat_ids.length > 0);
-  const availableTerminals = TERMINAL_OPTIONS.filter((opt) =>
-    tools.some((t) => t.group === "terminal" && t.available && t.name.toLowerCase().startsWith(opt.value)),
-  );
   const availableEditors = EDITOR_OPTIONS.filter((opt) =>
     tools.some((t) => t.group === "editor" && t.available && t.name === opt.value),
   );
@@ -189,7 +177,7 @@ export function SetupWizard({ onComplete }: Props) {
       claude_path: claudePath,
       default_work_dir: workDir,
       default_tmux_session: tmuxSession,
-      preferred_terminal: hasTmux ? settings.preferred_terminal : preferredTerminal,
+      preferred_terminal: settings.preferred_terminal,
       preferred_editor: preferredEditor,
       setup_completed: true,
     };
@@ -227,7 +215,7 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Detected Tools</h3>
           <p className="section-description">
-            These tools were found on your system. Install any missing required tools before
+            These tools were found on your system. tmux is required -- install it before
             proceeding.
           </p>
           <ToolGroupList
@@ -244,10 +232,16 @@ export function SetupWizard({ onComplete }: Props) {
               else if (group === "ai_agent") setClaudePath(toolName);
             }}
           />
+          {!hasTmux && tools.length > 0 && (
+            <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
+              tmux is required to continue. Use the install button above or run{" "}
+              <code>brew install tmux</code> in your terminal, then click Refresh.
+            </p>
+          )}
         </div>
       )}
 
-      {currentStep === "terminal" && hasTmux && (
+      {currentStep === "tmux" && (
         <div>
           <h3>Tmux Session</h3>
           <p className="section-description">
@@ -261,32 +255,6 @@ export function SetupWizard({ onComplete }: Props) {
               onChange={(e) => setTmuxSession(e.target.value)}
               placeholder="tgs"
             />
-          </div>
-        </div>
-      )}
-
-      {currentStep === "terminal" && !hasTmux && (
-        <div>
-          <h3>Terminal</h3>
-          <p className="section-description">
-            tmux was not detected. Choose a terminal to use for running Claude and folder jobs.
-          </p>
-          <div className="form-group">
-            <label>Preferred Terminal</label>
-            <select
-              value={preferredTerminal}
-              onChange={(e) => setPreferredTerminal(e.target.value)}
-            >
-              <option value="auto">Auto-detect</option>
-              {availableTerminals.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <span className="hint">
-              Terminal used to launch Claude sessions when tmux is not available
-            </span>
           </div>
         </div>
       )}
@@ -497,11 +465,7 @@ export function SetupWizard({ onComplete }: Props) {
             or re-run this wizard from Settings.
           </p>
           <div style={{ marginTop: 12 }}>
-            {hasTmux ? (
-              <p><strong>Tmux Session:</strong> {tmuxSession}</p>
-            ) : (
-              <p><strong>Terminal:</strong> {preferredTerminal === "auto" ? "Auto-detect" : preferredTerminal}</p>
-            )}
+            <p><strong>Tmux Session:</strong> {tmuxSession || "(default)"}</p>
             <p><strong>Editor:</strong> {editorLabel}</p>
             <p><strong>Telegram:</strong> {telegramConfig ? "Configured" : "Not configured"}</p>
           </div>
@@ -522,6 +486,10 @@ export function SetupWizard({ onComplete }: Props) {
           null
         ) : currentStep === "telegram" && !telegramConfig?.chat_ids?.length && !telegramSkipped ? (
           null
+        ) : currentStep === "tools" && !hasTmux && tools.length > 0 ? (
+          <button className="btn btn-primary" disabled>
+            Next
+          </button>
         ) : (
           <button className="btn btn-primary" onClick={goNext}>
             Next

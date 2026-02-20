@@ -76,7 +76,7 @@ export interface ToolInfo {
 
 export type JobStatus =
   | { state: "idle" }
-  | { state: "running"; run_id: string; started_at: string }
+  | { state: "running"; run_id: string; started_at: string; pane_id?: string; tmux_session?: string }
   | { state: "success"; last_run: string }
   | { state: "failed"; last_run: string; exit_code: number }
   | { state: "paused" };

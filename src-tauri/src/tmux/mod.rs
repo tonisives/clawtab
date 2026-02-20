@@ -99,9 +99,16 @@ pub fn window_exists(session: &str, window_name: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn create_window(session: &str, name: &str) -> Result<(), String> {
+pub fn create_window(session: &str, name: &str, env_vars: &[(String, String)]) -> Result<(), String> {
+    let mut args = vec!["new-window", "-t", session, "-n", name];
+    let env_pairs: Vec<String> = env_vars.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+    for pair in &env_pairs {
+        args.push("-e");
+        args.push(pair);
+    }
+
     let output = Command::new("tmux")
-        .args(["new-window", "-t", session, "-n", name])
+        .args(&args)
         .output()
         .map_err(|e| format!("Failed to create tmux window: {}", e))?;
 
@@ -155,17 +162,23 @@ pub struct PaneInfo {
 }
 
 /// Split a window to create a new pane, returning the new pane ID (e.g. "%42").
-pub fn split_pane(session: &str, window: &str) -> Result<String, String> {
+pub fn split_pane(session: &str, window: &str, env_vars: &[(String, String)]) -> Result<String, String> {
     let target = format!("{}:{}", session, window);
+    let mut args = vec![
+        "split-window".to_string(),
+        "-t".to_string(),
+        target,
+        "-P".to_string(),
+        "-F".to_string(),
+        "#{pane_id}".to_string(),
+    ];
+    for (k, v) in env_vars {
+        args.push("-e".to_string());
+        args.push(format!("{}={}", k, v));
+    }
+
     let output = Command::new("tmux")
-        .args([
-            "split-window",
-            "-t",
-            &target,
-            "-P",
-            "-F",
-            "#{pane_id}",
-        ])
+        .args(&args)
         .output()
         .map_err(|e| format!("Failed to split pane: {}", e))?;
 

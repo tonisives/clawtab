@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings, Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
@@ -260,6 +260,9 @@ export function JobsPanel() {
         onDelete={() => handleDelete(job.name)}
         onToggleExpand={() => toggleJobExpand(job.name)}
       />,
+      state === "running" && status?.state === "running" && status.pane_id && (
+        <RunningLogs key={`${job.name}-live`} jobName={job.name} />
+      ),
       isExpanded && (
         <RunsPanel key={`${job.name}-runs`} jobName={job.name} />
       ),
@@ -495,6 +498,57 @@ function buildLogContent(run: RunRecord): string {
     content += "--- stderr ---\n" + run.stderr;
   }
   return content || "(no output)";
+}
+
+function RunningLogs({ jobName }: { jobName: string }) {
+  const [logs, setLogs] = useState("");
+  const preRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const result = await invoke<string>("get_running_job_logs", { name: jobName });
+        if (active) setLogs(result);
+      } catch {
+        // Job may have stopped between polls
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
+  }, [jobName]);
+
+  useEffect(() => {
+    if (preRef.current) {
+      preRef.current.scrollTop = preRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  if (!logs) return null;
+
+  return (
+    <tr>
+      <td colSpan={7} style={{ padding: "0 12px 4px", border: "none" }}>
+        <pre ref={preRef} style={{
+          margin: 0,
+          padding: "6px 8px",
+          fontSize: 11,
+          lineHeight: 1.4,
+          background: "var(--bg-secondary, #1a1a1a)",
+          borderRadius: 4,
+          overflowY: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+          height: 100,
+          minHeight: 40,
+          maxHeight: 400,
+          resize: "vertical",
+          color: "var(--text-secondary)",
+        }}>{logs}</pre>
+      </td>
+    </tr>
+  );
 }
 
 function RunsPanel({ jobName }: { jobName: string }) {

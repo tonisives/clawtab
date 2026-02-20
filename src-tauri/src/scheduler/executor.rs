@@ -28,7 +28,7 @@ pub async fn execute_job(
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
 
-    // Mark as running
+    // Mark as running (pane_id filled in later for tmux jobs)
     {
         let mut status = job_status.lock().unwrap();
         status.insert(
@@ -36,6 +36,8 @@ pub async fn execute_job(
             JobStatus::Running {
                 run_id: run_id.clone(),
                 started_at: started_at.clone(),
+                pane_id: None,
+                tmux_session: None,
             },
         );
     }
@@ -77,8 +79,20 @@ pub async fn execute_job(
 
     match result {
         Ok((exit_code, stdout, stderr, tmux_handle)) => {
-            // If we got a tmux handle, spawn the monitor -- it handles status/history/notifications
+            // If we got a tmux handle, update status with pane info and spawn the monitor
             if let Some(handle) = tmux_handle {
+                {
+                    let mut status = job_status.lock().unwrap();
+                    status.insert(
+                        job.name.clone(),
+                        JobStatus::Running {
+                            run_id: run_id.clone(),
+                            started_at: started_at.clone(),
+                            pane_id: Some(handle.pane_id.clone()),
+                            tmux_session: Some(handle.tmux_session.clone()),
+                        },
+                    );
+                }
                 let telegram = build_telegram_stream(&telegram_config, job.telegram_chat_id);
                 let notify_on_success = telegram_config
                     .as_ref()
@@ -266,7 +280,7 @@ async fn execute_claude_job(
         (session, wd, cp)
     };
 
-    let export_prefix = build_export_prefix(job, secrets, settings);
+    let env_vars = collect_env_vars(job, secrets, settings);
 
     let window_name = format!("cwt-{}", job.name);
     let prompt_path = &job.path;
@@ -280,21 +294,21 @@ async fn execute_claude_job(
         tmux::create_session(&tmux_session)?;
     }
 
-    // Create window if it doesn't exist
+    // Create window if it doesn't exist (with env vars injected via -e flags)
     if !tmux::window_exists(&tmux_session, &window_name) {
-        tmux::create_window(&tmux_session, &window_name)?;
+        tmux::create_window(&tmux_session, &window_name, &env_vars)?;
         // Wait for window to be ready
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
     let send_cmd = format!(
-        "{}cd {} && {} \"$(cat {})\"",
-        export_prefix, work_dir, claude_path, prompt_path
+        "cd {} && {} \"$(cat {})\"",
+        work_dir, claude_path, prompt_path
     );
 
     // If window has an active process (e.g. Claude is still running), split a new pane
     let pane_id = if tmux::is_window_busy(&tmux_session, &window_name) {
-        let pane_id = tmux::split_pane(&tmux_session, &window_name)?;
+        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
@@ -375,7 +389,7 @@ async fn execute_folder_job(
         (session, cp)
     };
 
-    let export_prefix = build_export_prefix(job, secrets, settings);
+    let env_vars = collect_env_vars(job, secrets, settings);
 
     let work_dir = project_root;
     let window_name = format!("cwt-{}", job.name);
@@ -389,20 +403,20 @@ async fn execute_folder_job(
     }
 
     if !tmux::window_exists(&tmux_session, &window_name) {
-        tmux::create_window(&tmux_session, &window_name)?;
+        tmux::create_window(&tmux_session, &window_name, &env_vars)?;
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
 
     // Pass the prompt content directly to Claude via stdin-like heredoc
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = format!(
-        "{}cd {} && {} $'{}'",
-        export_prefix, work_dir, claude_path, escaped_prompt
+        "cd {} && {} $'{}'",
+        work_dir, claude_path, escaped_prompt
     );
 
     // If window has an active process (e.g. Claude is still running), split a new pane
     let pane_id = if tmux::is_window_busy(&tmux_session, &window_name) {
-        let pane_id = tmux::split_pane(&tmux_session, &window_name)?;
+        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
@@ -433,22 +447,20 @@ async fn execute_folder_job(
     Ok((Some(0), String::new(), String::new(), Some(handle)))
 }
 
-/// Build an `export K=V && ` prefix from job's secret_keys.
+/// Collect env vars from job's secret_keys as (key, value) pairs.
 /// Also auto-injects TELEGRAM_BOT_TOKEN from global settings when the job
 /// has a telegram_chat_id but doesn't explicitly list the token in secret_keys.
-/// Returns empty string if nothing to export.
-fn build_export_prefix(
+fn collect_env_vars(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
-) -> String {
+) -> Vec<(String, String)> {
     let sm = secrets.lock().unwrap();
-    let mut exports = Vec::new();
+    let mut vars = Vec::new();
 
     for key in &job.secret_keys {
         if let Some(value) = sm.get(key) {
-            let escaped = value.replace('\'', "'\\''");
-            exports.push(format!("{}='{}'", key, escaped));
+            vars.push((key.clone(), value.clone()));
         }
     }
 
@@ -458,18 +470,13 @@ fn build_export_prefix(
             let s = settings.lock().unwrap();
             if let Some(ref tg) = s.telegram {
                 if !tg.bot_token.is_empty() {
-                    let escaped = tg.bot_token.replace('\'', "'\\''");
-                    exports.push(format!("TELEGRAM_BOT_TOKEN='{}'", escaped));
+                    vars.push(("TELEGRAM_BOT_TOKEN".to_string(), tg.bot_token.clone()));
                 }
             }
         }
     }
 
-    if exports.is_empty() {
-        return String::new();
-    }
-
-    format!("export {} && ", exports.join(" "))
+    vars
 }
 
 /// Send telegram notification, routing to per-job chat_id if set.

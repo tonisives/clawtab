@@ -17,6 +17,10 @@ pub enum JobStatus {
     Running {
         run_id: String,
         started_at: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pane_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tmux_session: Option<String>,
     },
     Success {
         last_run: String,

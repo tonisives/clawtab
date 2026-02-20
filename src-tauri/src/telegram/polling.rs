@@ -213,7 +213,7 @@ async fn handle_agent_command(
 
     // Ensure agent window exists
     if !tmux::window_exists(&tmux_session, AGENT_WINDOW) {
-        if let Err(e) = tmux::create_window(&tmux_session, AGENT_WINDOW) {
+        if let Err(e) = tmux::create_window(&tmux_session, AGENT_WINDOW, &[]) {
             return format!("Failed to create agent window: {}", e);
         }
         // Brief delay for window init
@@ -221,7 +221,7 @@ async fn handle_agent_command(
     }
 
     // Split a new pane in the agent window
-    let pane_id = match tmux::split_pane(&tmux_session, AGENT_WINDOW) {
+    let pane_id = match tmux::split_pane(&tmux_session, AGENT_WINDOW, &[]) {
         Ok(id) => id,
         Err(e) => return format!("Failed to split pane: {}", e),
     };

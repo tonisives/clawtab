@@ -223,6 +223,7 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::set_settings,
             commands::status::get_job_statuses,
+            commands::status::get_running_job_logs,
             commands::tmux::list_tmux_sessions,
             commands::tmux::list_tmux_windows,
             commands::tmux::focus_job_window,
