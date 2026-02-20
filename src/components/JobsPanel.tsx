@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings, Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
 import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
+import { GearIcon } from "./icons";
 import { LogViewer } from "./LogViewer";
 
 const EDITOR_LABELS: Record<string, string> = {
@@ -443,13 +444,30 @@ function JobRow({
               Run
             </button>
           )}
-          <button className="btn btn-sm" onClick={onEdit}>
-            Edit
-          </button>
         </div>
       </td>
       <td style={{ textAlign: "right", padding: "0 4px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
+          <button
+            onClick={onEdit}
+            title="Edit job"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              padding: "2px 4px",
+              lineHeight: 1,
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+          >
+            <GearIcon size={16} />
+          </button>
+          <DeleteButton
+            onClick={() => setShowConfirm(true)}
+            title="Delete job"
+          />
           {hasRuns && (
             <button
               onClick={onToggleExpand}
@@ -471,10 +489,6 @@ function JobRow({
               </span>
             </button>
           )}
-          <DeleteButton
-            onClick={() => setShowConfirm(true)}
-            title="Delete job"
-          />
         </div>
       </td>
       {showConfirm && (

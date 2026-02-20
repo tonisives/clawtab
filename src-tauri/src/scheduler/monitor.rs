@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
@@ -7,9 +8,8 @@ use crate::config::jobs::{JobStatus, TelegramLogMode};
 use crate::history::HistoryStore;
 use crate::tmux;
 
-const POLL_INTERVAL_SECS: u64 = 5;
+const POLL_INTERVAL_SECS: u64 = 2;
 const CAPTURE_LINES: u32 = 80;
-const MAX_IDLE_TICKS: u32 = 5;
 
 pub struct TelegramStream {
     pub bot_token: String,
@@ -30,6 +30,19 @@ pub struct MonitorParams {
 }
 
 pub async fn monitor_pane(params: MonitorParams) {
+    // Send "job started" notification for non-Off telegram log modes
+    if params.telegram_log_mode != TelegramLogMode::Off {
+        if let Some(ref tg) = params.telegram {
+            let text = format!(
+                "<b>ClawTab</b>: Job <code>{}</code> started",
+                params.job_name
+            );
+            if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await {
+                log::error!("[{}] Failed to send start notification: {}", params.run_id, e);
+            }
+        }
+    }
+
     // Capture whatever is already in the pane before the job produces output.
     // This seeds the baseline so we only relay genuinely new content to Telegram,
     // avoiding re-sending scrollback from previous runs in the same pane.
@@ -45,9 +58,24 @@ pub async fn monitor_pane(params: MonitorParams) {
     .trim()
     .to_string();
 
-    // Wait for the process to start producing output
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-    let mut idle_ticks = 0u32;
+    // Brief pause to let the process start
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // Spawn a fast background poller that detects process exit within ~200ms
+    let process_exited = Arc::new(AtomicBool::new(false));
+    let exit_flag = Arc::clone(&process_exited);
+    let exit_session = params.tmux_session.clone();
+    let exit_pane = params.pane_id.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            if !tmux::is_pane_busy(&exit_session, &exit_pane) {
+                exit_flag.store(true, Ordering::Release);
+                break;
+            }
+        }
+    });
+
     let mut stale_ticks = 0u32;
 
     loop {
@@ -75,7 +103,6 @@ pub async fn monitor_pane(params: MonitorParams) {
         if trimmed != last_content && !trimmed.is_empty() {
             let new_content = diff_content(&last_content, &trimmed);
             last_content = trimmed;
-            idle_ticks = 0;
             stale_ticks = 0;
 
             if !new_content.is_empty() {
@@ -90,35 +117,32 @@ pub async fn monitor_pane(params: MonitorParams) {
                     }
                 }
             }
-        } else {
-            let busy = tmux::is_pane_busy(&params.tmux_session, &params.pane_id);
-            if busy {
-                // Content unchanged while pane is still busy
-                if params.telegram_log_mode == TelegramLogMode::OnPrompt {
-                    stale_ticks += 1;
-                    if stale_ticks >= 2 && !last_content.is_empty() {
-                        if let Some(ref tg) = params.telegram {
-                            let msg = format!("<pre>{}</pre>", html_escape(&last_content));
-                            if let Err(e) =
-                                crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg)
-                                    .await
-                            {
-                                log::error!(
-                                    "[{}] Failed to send prompt snapshot: {}",
-                                    params.run_id,
-                                    e
-                                );
-                            }
+        } else if !process_exited.load(Ordering::Acquire) {
+            // Content unchanged while pane is still busy
+            if params.telegram_log_mode == TelegramLogMode::OnPrompt {
+                stale_ticks += 1;
+                if stale_ticks >= 2 && !last_content.is_empty() {
+                    if let Some(ref tg) = params.telegram {
+                        let msg = format!("<pre>{}</pre>", html_escape(&last_content));
+                        if let Err(e) =
+                            crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg)
+                                .await
+                        {
+                            log::error!(
+                                "[{}] Failed to send prompt snapshot: {}",
+                                params.run_id,
+                                e
+                            );
                         }
-                        stale_ticks = 0;
                     }
-                }
-            } else {
-                idle_ticks += 1;
-                if idle_ticks >= MAX_IDLE_TICKS {
-                    break;
+                    stale_ticks = 0;
                 }
             }
+        }
+
+        // Break as soon as the fast poller detects the process has exited
+        if process_exited.load(Ordering::Acquire) {
+            break;
         }
     }
 
