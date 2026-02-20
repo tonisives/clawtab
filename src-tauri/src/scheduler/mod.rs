@@ -48,7 +48,7 @@ async fn run_loop(
         };
 
         for job in &jobs {
-            if !job.enabled {
+            if !job.enabled || job.cron.is_empty() {
                 continue;
             }
 

@@ -33,7 +33,7 @@ pub fn focus_job_window(state: State<AppState>, name: String) -> Result<(), Stri
             .clone()
             .unwrap_or_else(|| settings.default_tmux_session.clone());
 
-        (session, format!("cm-{}", job.name))
+        (session, format!("cwt-{}", job.name))
     };
 
     if !tmux::is_available() {

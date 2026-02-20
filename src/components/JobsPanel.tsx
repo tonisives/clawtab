@@ -1,8 +1,20 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { Job, JobStatus, RunRecord } from "../types";
+import type { AppSettings, Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
 import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
+import { LogViewer } from "./LogViewer";
+
+const EDITOR_LABELS: Record<string, string> = {
+  nvim: "Neovim",
+  vim: "Vim",
+  code: "VS Code",
+  codium: "VSCodium",
+  zed: "Zed",
+  hx: "Helix",
+  subl: "Sublime Text",
+  emacs: "Emacs",
+};
 
 function StatusBadge({ status }: { status: JobStatus | undefined }) {
   if (!status || status.state === "idle") {
@@ -69,19 +81,6 @@ function useJobRuns(jobName: string) {
   return { runs, reload: load };
 }
 
-async function openRun(jobName: string, run: RunRecord) {
-  try {
-    await invoke("focus_job_window", { name: jobName });
-    return;
-  } catch {
-    // tmux window doesn't exist, open the log file
-  }
-  try {
-    await invoke("open_run_log", { runId: run.id });
-  } catch (e) {
-    console.error("Failed to open run log:", e);
-  }
-}
 
 export function JobsPanel() {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -486,11 +485,31 @@ function JobRow({
   );
 }
 
+function buildLogContent(run: RunRecord): string {
+  let content = "";
+  if (run.stdout) {
+    content += run.stdout;
+  }
+  if (run.stderr) {
+    if (content) content += "\n";
+    content += "--- stderr ---\n" + run.stderr;
+  }
+  return content || "(no output)";
+}
+
 function RunsPanel({ jobName }: { jobName: string }) {
   const { runs, reload } = useJobRuns(jobName);
   const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [preferredEditor, setPreferredEditor] = useState("nvim");
 
   useEffect(() => { reload(); }, []);
+
+  useEffect(() => {
+    invoke<AppSettings>("get_settings").then((s) => {
+      setPreferredEditor(s.preferred_editor);
+    });
+  }, []);
 
   const handleDeleteRun = async (runId: string) => {
     try {
@@ -545,8 +564,9 @@ function RunsPanel({ jobName }: { jobName: string }) {
                 const duration = run.finished_at
                   ? `${((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
                   : "...";
+                const isLogExpanded = expandedRunId === run.id;
 
-                return (
+                return [
                   <tr key={run.id}>
                     <td>
                       <span className={`status-dot ${exitCodeClass(run.exit_code)}`} />
@@ -560,17 +580,9 @@ function RunsPanel({ jobName }: { jobName: string }) {
                         <button
                           className="btn btn-sm"
                           style={{ fontSize: 11, padding: "1px 6px" }}
-                          onClick={() => openRun(jobName, run)}
+                          onClick={() => setExpandedRunId(isLogExpanded ? null : run.id)}
                         >
-                          View
-                        </button>
-                        <button
-                          className="btn btn-sm"
-                          style={{ fontSize: 11, padding: "1px 6px" }}
-                          onClick={() => handleOpenLog(run.id)}
-                          title="Open log in editor"
-                        >
-                          Logs
+                          Logs {isLogExpanded ? "\u25B2" : "\u25BC"}
                         </button>
                       </div>
                     </td>
@@ -581,8 +593,22 @@ function RunsPanel({ jobName }: { jobName: string }) {
                         size={11}
                       />
                     </td>
-                  </tr>
-                );
+                  </tr>,
+                  isLogExpanded && (
+                    <tr key={`${run.id}-logs`}>
+                      <td colSpan={6} style={{ padding: "0 12px 8px", border: "none" }}>
+                        <LogViewer content={buildLogContent(run)} />
+                        <button
+                          className="btn btn-sm"
+                          style={{ marginTop: 6, fontSize: 11 }}
+                          onClick={() => handleOpenLog(run.id)}
+                        >
+                          Open in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+                        </button>
+                      </td>
+                    </tr>
+                  ),
+                ];
               })}
             </tbody>
           </table>

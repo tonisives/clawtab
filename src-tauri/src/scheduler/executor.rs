@@ -268,7 +268,7 @@ async fn execute_claude_job(
 
     let export_prefix = build_export_prefix(job, secrets, settings);
 
-    let window_name = format!("cm-{}", job.name);
+    let window_name = format!("cwt-{}", job.name);
     let prompt_path = &job.path;
 
     if !tmux::is_available() {
@@ -378,7 +378,7 @@ async fn execute_folder_job(
     let export_prefix = build_export_prefix(job, secrets, settings);
 
     let work_dir = project_root;
-    let window_name = format!("cm-{}", job.name);
+    let window_name = format!("cwt-{}", job.name);
 
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());

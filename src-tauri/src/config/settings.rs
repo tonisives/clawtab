@@ -26,7 +26,7 @@ impl Default for AppSettings {
             .map(|h| h.display().to_string())
             .unwrap_or_default();
         Self {
-            default_tmux_session: "tgs".to_string(),
+            default_tmux_session: "cwt".to_string(),
             default_work_dir: format!("{}/workspace/tgs/automation", home),
             claude_path: "claude".to_string(),
             preferred_editor: "nvim".to_string(),
