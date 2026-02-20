@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings, Job } from "../types";
 import { SAMPLE_TEMPLATES, TEMPLATE_CATEGORIES } from "../data/sampleTemplates";
 import type { SampleTemplate, TemplateVariable } from "../data/sampleTemplates";
 
 interface Props {
+  autoCreateTemplateId?: string;
   onCreated: () => void;
   onBlank: () => void;
   onCancel: () => void;
@@ -19,13 +20,29 @@ function slugifyName(input: string): string {
     .slice(0, 40);
 }
 
-export function SamplePicker({ onCreated, onBlank, onCancel }: Props) {
+export function SamplePicker({ autoCreateTemplateId, onCreated, onBlank, onCancel }: Props) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
   const [configuring, setConfiguring] = useState<SampleTemplate | null>(null);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!autoCreateTemplateId) return;
+    const template = SAMPLE_TEMPLATES.find((t) => t.id === autoCreateTemplateId);
+    if (!template) return;
+    if (template.variables && template.variables.length > 0) {
+      const defaults: Record<string, string> = {};
+      for (const v of template.variables) {
+        defaults[v.key] = "";
+      }
+      setVariableValues(defaults);
+      setConfiguring(template);
+    } else {
+      createJob(template, {});
+    }
+  }, [autoCreateTemplateId]);
 
   const toggleCategory = (id: string, rowSiblingId?: string) => {
     setExpandedCategories((prev) => {

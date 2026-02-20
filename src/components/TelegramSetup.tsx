@@ -248,13 +248,21 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
 
         <div className="form-group">
           <label>Bot Token</label>
-          <input
-            type={botInfo ? "password" : "text"}
-            value={token}
-            onChange={(e) => handleTokenChange(e.target.value)}
-            placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
-            style={{ maxWidth: "100%" }}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type={botInfo ? "password" : "text"}
+              value={token}
+              onChange={(e) => handleTokenChange(e.target.value)}
+              placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+              style={{ maxWidth: "100%", flex: 1 }}
+              disabled={validating}
+            />
+            {validating && (
+              <span className="text-secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                Validating...
+              </span>
+            )}
+          </div>
           {tokenError && (
             <span style={{ color: "var(--danger-color)", fontSize: 12 }}>
               {tokenError}
@@ -262,23 +270,6 @@ export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
           )}
         </div>
       </div>
-
-      {validating && (
-        <div style={{
-          textAlign: "center",
-          padding: "24px 0",
-          margin: "16px 0",
-          border: "1px solid var(--border)",
-          borderRadius: 6,
-        }}>
-          <div className="text-secondary" style={{ fontSize: 14, marginBottom: 4 }}>
-            Validating bot token...
-          </div>
-          <div className="text-secondary" style={{ fontSize: 12 }}>
-            Connecting to Telegram API
-          </div>
-        </div>
-      )}
 
       {/* Step 2: Connect chats */}
       <div style={{ marginTop: 16, ...(!botInfo ? { opacity: 0.4, pointerEvents: "none" as const } : {}) }}>

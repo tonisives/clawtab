@@ -110,7 +110,7 @@
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>X/Twitter Engagement Agent</strong><span>Monitor posts, draft replies, send digest to Telegram</span></div>
-              <span class="use-case-template-cron">0 9 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 9 * * *</span></div>
             </div>
             <pre><code># X/Twitter Engagement Agent
 ## Steps
@@ -118,11 +118,12 @@
 2. Search for posts about [YOUR_TOPIC]
 3. Draft short, authentic reply suggestions
 4. Send digest to Telegram with top 5 posts</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'twitter-engagement')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Reddit Research Agent</strong><span>Browse subreddits, summarize discussions and sentiment</span></div>
-              <span class="use-case-template-cron">0 8 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 8 * * 1</span></div>
             </div>
             <pre><code># Reddit Research Agent
 ## Steps
@@ -130,11 +131,12 @@
 2. Sort by "Hot" and scan the top 20 posts
 3. Read top comments on interesting threads
 4. Compile weekly briefing with themes and sentiment</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'reddit-research')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Competitor Website Monitor</strong><span>Track changes on competitor sites, report new features</span></div>
-              <span class="use-case-template-cron">0 7 * * 1,4</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 7 * * 1,4</span></div>
             </div>
             <pre><code># Competitor Website Monitor
 ## Steps
@@ -142,11 +144,12 @@
 2. Check homepage, pricing, blog, product pages
 3. Compare with previous observations
 4. Document changes and competitive implications</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'competitor-monitor')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>LinkedIn Engagement</strong><span>Find relevant posts, draft thoughtful comments</span></div>
-              <span class="use-case-template-cron">0 10 * * 1,3,5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 10 * * 1,3,5</span></div>
             </div>
             <pre><code># LinkedIn Engagement Agent
 ## Steps
@@ -154,11 +157,12 @@
 2. Search for posts about [YOUR_TOPIC]
 3. Identify 5 high-quality posts from thought leaders
 4. Draft genuine, insightful comments for each</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'linkedin-engagement')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>News Digest</strong><span>Browse news sites, compile daily summary</span></div>
-              <span class="use-case-template-cron">0 7 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 7 * * *</span></div>
             </div>
             <pre><code># Daily News Digest
 ## Steps
@@ -166,11 +170,12 @@
 2. Filter for stories related to [YOUR_TOPIC]
 3. Summarize each: title, source, 2-sentence summary
 4. Send morning briefing to Telegram</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'news-digest')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Product Hunt Monitor</strong><span>Track new launches, report interesting products</span></div>
-              <span class="use-case-template-cron">0 18 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 18 * * *</span></div>
             </div>
             <pre><code># Product Hunt Monitor
 ## Steps
@@ -178,6 +183,7 @@
 2. Review today's top 10 launched products
 3. Note name, tagline, category, upvote count
 4. Identify products relevant to your interests</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'producthunt-monitor')">Use Template</button>
           </div>
         </div>
       </div>
@@ -197,7 +203,7 @@
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>PR Review Agent</strong><span>Review open PRs, suggest improvements and catch issues</span></div>
-              <span class="use-case-template-cron">0 9 * * 1-5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 9 * * 1-5</span></div>
             </div>
             <pre><code># PR Review Agent
 ## Steps
@@ -205,11 +211,12 @@
 2. Read each diff with `gh pr diff`
 3. Check for bugs, security issues, missing tests
 4. Draft review comments and summarize</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'pr-review')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Test Writer</strong><span>Generate tests for uncovered code paths</span></div>
-              <span class="use-case-template-cron">0 14 * * 5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 14 * * 5</span></div>
             </div>
             <pre><code># Test Writer Agent
 ## Steps
@@ -217,11 +224,12 @@
 2. Identify files with low or no coverage
 3. Generate tests: happy paths, edge cases, errors
 4. Follow project's existing test patterns</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'test-writer')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Dependency Auditor</strong><span>Check outdated packages, security advisories</span></div>
-              <span class="use-case-template-cron">0 6 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 6 * * 1</span></div>
             </div>
             <pre><code># Dependency Auditor
 ## Steps
@@ -229,11 +237,12 @@
 2. Run `npm audit` / `cargo audit`
 3. Categorize updates by severity
 4. Note breaking changes in major updates</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'dependency-auditor')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Code Refactoring Agent</strong><span>Find code smells, propose improvements</span></div>
-              <span class="use-case-template-cron">0 10 * * 5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 10 * * 5</span></div>
             </div>
             <pre><code># Code Refactoring Agent
 ## Steps
@@ -241,11 +250,12 @@
 2. Find duplicated code blocks, unused imports
 3. Check for stale TODO/FIXME comments
 4. Propose fixes prioritized by impact</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'code-refactor')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Documentation Updater</strong><span>Scan changes, update docs and READMEs</span></div>
-              <span class="use-case-template-cron">0 16 * * 5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 16 * * 5</span></div>
             </div>
             <pre><code># Documentation Updater
 ## Steps
@@ -253,6 +263,7 @@
 2. Identify changes affecting documented behavior
 3. Update README.md and docs/ accordingly
 4. Check for broken links or outdated examples</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'docs-updater')">Use Template</button>
           </div>
         </div>
       </div>
@@ -274,7 +285,7 @@
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Blog Post Drafter</strong><span>Research and draft blog posts with outlines</span></div>
-              <span class="use-case-template-cron">0 9 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 9 * * 1</span></div>
             </div>
             <pre><code># Blog Post Drafter
 ## Steps
@@ -282,11 +293,12 @@
 2. Find unique angles not covered elsewhere
 3. Create outline with 3 headline options
 4. Draft full post (800-1200 words)</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'blog-drafter')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Social Media Content Planner</strong><span>Generate a week of content ideas with drafts</span></div>
-              <span class="use-case-template-cron">0 9 * * 0</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 9 * * 0</span></div>
             </div>
             <pre><code># Social Media Content Planner
 ## Steps
@@ -294,11 +306,12 @@
 2. Research trending industry topics
 3. Generate 7 post ideas (one per day)
 4. Draft copy for Twitter and LinkedIn</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'social-planner')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>SEO Analyzer</strong><span>Audit pages, suggest search ranking improvements</span></div>
-              <span class="use-case-template-cron">0 6 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 6 * * 1</span></div>
             </div>
             <pre><code># SEO Analyzer
 ## Steps
@@ -306,11 +319,12 @@
 2. Check title tags, meta descriptions, headings
 3. Audit image alt text and internal linking
 4. Compare with top competitor pages</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'seo-analyzer')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Changelog Generator</strong><span>Compile release notes from recent commits</span></div>
-              <span class="use-case-template-cron">0 17 * * 5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 17 * * 5</span></div>
             </div>
             <pre><code># Changelog Generator
 ## Steps
@@ -318,6 +332,7 @@
 2. Get merged PRs: `gh pr list --state merged`
 3. Categorize: features, fixes, improvements
 4. Write human-readable changelog entries</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'changelog-generator')">Use Template</button>
           </div>
         </div>
       </div>
@@ -337,7 +352,7 @@
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Market Research Agent</strong><span>Browse industry sites, compile competitive intelligence</span></div>
-              <span class="use-case-template-cron">0 8 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 8 * * 1</span></div>
             </div>
             <pre><code># Market Research Agent
 ## Steps
@@ -345,11 +360,12 @@
 2. Track new entrants, funding rounds, acquisitions
 3. Monitor technology trends and sentiment
 4. Synthesize into actionable weekly briefing</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'market-research')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Price Tracker</strong><span>Monitor product prices, alert on changes</span></div>
-              <span class="use-case-template-cron">0 6 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 6 * * *</span></div>
             </div>
             <pre><code># Price Tracker
 ## Steps
@@ -357,11 +373,12 @@
 2. Record current prices for [YOUR_PRODUCT]
 3. Compare with previous run's prices
 4. Alert if price dropped more than 5%</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'price-tracker')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Academic Paper Digest</strong><span>Search for papers, create summaries</span></div>
-              <span class="use-case-template-cron">0 8 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 8 * * 1</span></div>
             </div>
             <pre><code># Academic Paper Digest
 ## Steps
@@ -369,11 +386,12 @@
 2. Filter for papers from the last month
 3. Select top 5 most relevant papers
 4. Summarize key contributions for each</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'paper-digest')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Job Market Scanner</strong><span>Track job postings, summarize trends</span></div>
-              <span class="use-case-template-cron">0 7 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 7 * * 1</span></div>
             </div>
             <pre><code># Job Market Scanner
 ## Steps
@@ -381,6 +399,7 @@
 2. Track posting count trends, tech stacks
 3. Note salary ranges and remote ratios
 4. Identify new skills appearing in requirements</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'job-market-scanner')">Use Template</button>
           </div>
         </div>
       </div>
@@ -402,7 +421,7 @@
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Server Health Check</strong><span>Run diagnostics, report status and anomalies</span></div>
-              <span class="use-case-template-cron">0 */4 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 */4 * * *</span></div>
             </div>
             <pre><code># Server Health Check
 ## Steps
@@ -410,11 +429,12 @@
 2. Verify Docker containers and key services
 3. Test DNS resolution and endpoint health
 4. Report status: OK / WARNING / CRITICAL</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'server-health')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Backup Verifier</strong><span>Verify backups exist, are recent, have correct checksums</span></div>
-              <span class="use-case-template-cron">0 5 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 5 * * *</span></div>
             </div>
             <pre><code># Backup Verifier
 ## Steps
@@ -422,11 +442,12 @@
 2. Verify files exist and are recent (&lt;24h)
 3. Check file sizes (not 0 bytes)
 4. Verify checksums if available</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'backup-verifier')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>SSL Certificate Monitor</strong><span>Check cert expiry dates, alert if expiring soon</span></div>
-              <span class="use-case-template-cron">0 6 * * 1</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 6 * * 1</span></div>
             </div>
             <pre><code># SSL Certificate Monitor
 ## Steps
@@ -434,11 +455,12 @@
 2. Parse expiry dates, calculate days remaining
 3. Flag certs expiring within 30 days
 4. Status: OK / WARNING (&lt;30d) / CRITICAL (&lt;7d)</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'ssl-monitor')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Log Analyzer</strong><span>Parse logs, identify errors and anomalies</span></div>
-              <span class="use-case-template-cron">0 8 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 8 * * *</span></div>
             </div>
             <pre><code># Log Analyzer
 ## Steps
@@ -446,6 +468,7 @@
 2. Categorize: errors, warnings, slow operations
 3. Group similar errors together
 4. Identify new errors not seen before</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'log-analyzer')">Use Template</button>
           </div>
         </div>
       </div>
@@ -465,7 +488,7 @@
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>DeFi Yield Monitor</strong><span>Check yield rates across protocols, report via Telegram</span></div>
-              <span class="use-case-template-cron">0 8 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 8 * * *</span></div>
             </div>
             <pre><code># DeFi Yield Monitor
 ## Steps
@@ -473,11 +496,12 @@
 2. Record current rates for tracked assets
 3. Compare with previous run's rates
 4. Flag significant changes (&gt;0.5% APY shift)</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'defi-yield')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Portfolio Tracker</strong><span>Aggregate positions, daily P&L summary</span></div>
-              <span class="use-case-template-cron">0 20 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 20 * * *</span></div>
             </div>
             <pre><code># Portfolio Tracker
 ## Steps
@@ -485,11 +509,12 @@
 2. Calculate position values
 3. Compare with yesterday's values
 4. Generate daily P&amp;L summary with top movers</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'portfolio-tracker')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Stablecoin Rate Checker</strong><span>Monitor rates and peg stability</span></div>
-              <span class="use-case-template-cron">0 */6 * * *</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 */6 * * *</span></div>
             </div>
             <pre><code># Stablecoin Rate Checker
 ## Steps
@@ -497,11 +522,12 @@
 2. Check lending rates across platforms
 3. Flag depegging events (&gt;0.5% deviation)
 4. Note arbitrage opportunities</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'stablecoin-rates')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Airdrop Tracker</strong><span>Track upcoming airdrop eligibility</span></div>
-              <span class="use-case-template-cron">0 9 * * 1,4</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 9 * * 1,4</span></div>
             </div>
             <pre><code># Airdrop Tracker
 ## Steps
@@ -509,6 +535,7 @@
 2. Filter for upcoming confirmed/rumored drops
 3. Check eligibility criteria for each
 4. List required actions for this week</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'airdrop-tracker')">Use Template</button>
           </div>
         </div>
       </div>
@@ -530,7 +557,7 @@
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Email Drafter</strong><span>Review flagged emails, draft responses</span></div>
-              <span class="use-case-template-cron">0 8 * * 1-5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 8 * * 1-5</span></div>
             </div>
             <pre><code># Email Drafter
 ## Steps
@@ -538,11 +565,12 @@
 2. Understand context and what's being asked
 3. Draft professional response, match tone
 4. Save drafts to .cwt/drafts/</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'email-drafter')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Weekly Review Generator</strong><span>Summarize week's work from git and tasks</span></div>
-              <span class="use-case-template-cron">0 17 * * 5</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 17 * * 5</span></div>
             </div>
             <pre><code># Weekly Review Generator
 ## Steps
@@ -550,11 +578,12 @@
 2. Count commits, files changed, lines added
 3. Identify key themes and accomplishments
 4. Generate next week's priorities</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'weekly-review')">Use Template</button>
           </div>
           <div class="use-case-template" onclick="toggleTemplate(event, this)">
             <div class="use-case-template-header">
               <div><strong>Learning Agent</strong><span>Research a topic, compile study notes</span></div>
-              <span class="use-case-template-cron">0 10 * * 6</span>
+              <div class="use-case-template-actions"><span class="use-case-template-cron">0 10 * * 6</span></div>
             </div>
             <pre><code># Learning Agent
 ## Steps
@@ -562,6 +591,7 @@
 2. Organize: core concepts, techniques, pitfalls
 3. Gather community discussions and resources
 4. Create structured study summary</code></pre>
+            <button class="use-case-template-cta" onclick="showTemplatePopup(event, 'learning-agent')">Use Template</button>
           </div>
         </div>
       </div>
@@ -658,6 +688,42 @@ cargo tauri build</code></pre>
     </div>
   </div>
 </section>
+
+<div id="template-popup" class="template-popup-overlay" style="display:none" onclick="hideTemplatePopup()">
+  <div class="template-popup" onclick="event.stopPropagation()">
+    <h3>Use this template</h3>
+    <p class="template-popup-desc">Get started with this automation in ClawTab.</p>
+    <div class="template-popup-options">
+      <a id="template-popup-open" href="#" class="template-popup-option template-popup-open">
+        <strong>Open in ClawTab</strong>
+        <span>Launch the app and create this job</span>
+      </a>
+      <p class="template-popup-section-title">Install ClawTab</p>
+      <a href="https://github.com/tonisives/clawtab" class="template-popup-option" target="_blank">
+        <strong>View on GitHub</strong>
+        <span>Clone the repo and build from source</span>
+      </a>
+      <div class="template-popup-option template-popup-brew">
+        <strong>Install via Homebrew</strong>
+        <code>brew install --cask tonisives/tap/clawtab</code>
+      </div>
+    </div>
+    <button class="template-popup-close" onclick="hideTemplatePopup()">Close</button>
+  </div>
+</div>
+
+<script>
+function showTemplatePopup(event, templateId) {
+  event.stopPropagation();
+  var popup = document.getElementById('template-popup');
+  var openLink = document.getElementById('template-popup-open');
+  openLink.href = 'clawtab://template/' + templateId;
+  popup.style.display = 'flex';
+}
+function hideTemplatePopup() {
+  document.getElementById('template-popup').style.display = 'none';
+}
+</script>
 
 <footer class="footer">
   <p>Built with Tauri, React, and Rust.</p>

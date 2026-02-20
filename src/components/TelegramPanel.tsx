@@ -51,7 +51,29 @@ export function TelegramPanel() {
     }
   };
 
-  if (!loaded) return null;
+  if (!loaded) return (
+    <div className="settings-section">
+      <h2>Telegram</h2>
+      <p className="section-description">
+        Receive job completion notifications and send commands via Telegram bot.
+      </p>
+      <div className="field-group">
+        <span className="field-group-title">Setup</span>
+        <div style={{ opacity: 0.5 }}>
+          <div style={{ marginBottom: 8 }}>
+            <strong style={{ fontSize: 13 }}>1. Create a bot</strong>
+          </div>
+          <div className="form-group">
+            <label>Bot Token</label>
+            <div className="skeleton-line" style={{ height: 34, maxWidth: 400, borderRadius: 6 }} />
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <strong style={{ fontSize: 13 }}>2. Connect chats</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const isConfigured = config && config.chat_ids.length > 0;
 

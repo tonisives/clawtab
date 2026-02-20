@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { JobsPanel } from "./JobsPanel";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
@@ -53,6 +54,7 @@ export function SettingsApp() {
   const [jobsResetKey, setJobsResetKey] = useState(0);
   const [showWizard, setShowWizard] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
@@ -61,6 +63,21 @@ export function SettingsApp() {
       }
       setLoading(false);
     });
+  }, []);
+
+  useEffect(() => {
+    const unlisten = onOpenUrl((urls) => {
+      for (const url of urls) {
+        const match = url.match(/^clawtab:\/\/template\/(.+)/);
+        if (match) {
+          setActiveTab("jobs");
+          setPendingTemplateId(match[1]);
+        }
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   const handleWizardComplete = async () => {
@@ -114,7 +131,11 @@ export function SettingsApp() {
 
       <div className="tab-content">
         <div style={{ display: activeTab === "jobs" ? undefined : "none" }}>
-          <JobsPanel key={jobsResetKey} />
+          <JobsPanel
+            key={jobsResetKey}
+            pendingTemplateId={pendingTemplateId}
+            onTemplateHandled={() => setPendingTemplateId(null)}
+          />
         </div>
         {activeTab === "secrets" && <SecretsPanel />}
         <div style={{ display: activeTab === "tools" ? undefined : "none" }}>

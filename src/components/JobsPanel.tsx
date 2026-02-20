@@ -84,7 +84,12 @@ function useJobRuns(jobName: string) {
 }
 
 
-export function JobsPanel() {
+interface JobsPanelProps {
+  pendingTemplateId?: string | null;
+  onTemplateHandled?: () => void;
+}
+
+export function JobsPanel({ pendingTemplateId, onTemplateHandled }: JobsPanelProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [statuses, setStatuses] = useState<Record<string, JobStatus>>({});
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -120,6 +125,12 @@ export function JobsPanel() {
     const interval = setInterval(loadStatuses, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (pendingTemplateId) {
+      setShowPicker(true);
+    }
+  }, [pendingTemplateId]);
 
   const handleToggle = async (name: string) => {
     try {
@@ -246,16 +257,20 @@ export function JobsPanel() {
   if (showPicker) {
     return (
       <SamplePicker
+        autoCreateTemplateId={pendingTemplateId ?? undefined}
         onCreated={() => {
           setShowPicker(false);
+          onTemplateHandled?.();
           loadJobs();
         }}
         onBlank={() => {
           setShowPicker(false);
+          onTemplateHandled?.();
           setIsCreating(true);
         }}
         onCancel={() => {
           setShowPicker(false);
+          onTemplateHandled?.();
         }}
       />
     );

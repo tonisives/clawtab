@@ -12,6 +12,7 @@
     "core:webview:allow-create-webview-window",
     "core:event:default",
     "opener:default",
-    "dialog:default"
+    "dialog:default",
+    "deep-link:default"
   ]
 }
