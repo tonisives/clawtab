@@ -128,10 +128,33 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
     }
 }
 
-pub fn run() {
+fn init_file_logger() {
+    use std::fs;
+
+    let log_dir = std::path::Path::new("/tmp/clawtab");
+    let _ = fs::create_dir_all(log_dir);
+    let log_path = log_dir.join("engine.log");
+
+    // Truncate on startup so the file doesn't grow forever
+    let file = fs::File::create(&log_path).expect("failed to create engine.log");
+    let file = std::sync::Mutex::new(file);
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_secs()
+        .format(move |_buf, record| {
+            use std::io::Write as _;
+            let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+            let line = format!("{} [{}] {}\n", ts, record.level(), record.args());
+            let mut f = file.lock().unwrap();
+            f.write_all(line.as_bytes()).ok();
+            f.flush().ok();
+            Ok(())
+        })
         .init();
+}
+
+pub fn run() {
+    init_file_logger();
 
     log::info!("clawtab starting");
 
@@ -194,6 +217,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
@@ -226,6 +250,8 @@ pub fn run() {
             commands::history::clear_history,
             commands::settings::get_settings,
             commands::settings::set_settings,
+            commands::settings::write_editor_log,
+            commands::settings::open_logs_folder,
             commands::status::get_job_statuses,
             commands::status::get_running_job_logs,
             commands::tmux::list_tmux_sessions,

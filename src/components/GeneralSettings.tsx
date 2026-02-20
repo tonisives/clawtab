@@ -1,22 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { AppSettings, ToolInfo } from "../types";
-
-const EDITOR_OPTIONS: { value: string; label: string }[] = [
-  { value: "nvim", label: "Neovim" },
-  { value: "vim", label: "Vim" },
-  { value: "code", label: "VS Code" },
-  { value: "codium", label: "VSCodium" },
-  { value: "zed", label: "Zed" },
-  { value: "hx", label: "Helix" },
-  { value: "subl", label: "Sublime Text" },
-  { value: "emacs", label: "Emacs" },
-];
+import type { AppSettings } from "../types";
 
 export function GeneralSettings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [availableEditors, setAvailableEditors] = useState<string[]>([]);
   const [version, setVersion] = useState<string>("");
   const [updateStatus, setUpdateStatus] = useState<
     "idle" | "checking" | "up-to-date" | "installed" | "error"
@@ -28,12 +16,6 @@ export function GeneralSettings() {
     invoke<AppSettings>("get_settings")
       .then(setSettings)
       .catch((e) => console.error("Failed to load settings:", e));
-    invoke<ToolInfo[]>("detect_tools").then((tools) => {
-      const editors = tools
-        .filter((t) => t.group === "editor" && t.available)
-        .map((t) => t.name);
-      setAvailableEditors(editors);
-    });
     invoke<string>("get_version").then(setVersion);
   }, []);
 
@@ -183,21 +165,6 @@ export function GeneralSettings() {
           />
           <span className="hint">Tmux session name for Claude jobs</span>
         </div>
-
-        <div className="form-group">
-          <label>Editor</label>
-          <select
-            value={settings.preferred_editor}
-            onChange={(e) => update({ preferred_editor: e.target.value })}
-          >
-            {EDITOR_OPTIONS.filter((e) => availableEditors.includes(e.value)).map((e) => (
-              <option key={e.value} value={e.value}>
-                {e.label}
-              </option>
-            ))}
-          </select>
-          <span className="hint">Editor used for opening job config files</span>
-        </div>
       </div>
 
       <div className="field-group">
@@ -220,6 +187,18 @@ export function GeneralSettings() {
           >
             Run Setup Wizard
           </button>
+        </div>
+        <div className="form-group">
+          <label>Logs</label>
+          <div>
+            <button
+              className="btn"
+              onClick={() => invoke("open_logs_folder")}
+            >
+              Open Logs Folder
+            </button>
+            <span className="hint">/tmp/clawtab/</span>
+          </div>
         </div>
       </div>
     </div>
