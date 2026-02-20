@@ -1,11 +1,11 @@
 # Configuration
 
-All configuration lives under `~/.config/clawdtab/`.
+All configuration lives under `~/.config/clawtab/`.
 
 ## Directory Layout
 
 ```
-~/.config/clawdtab/
+~/.config/clawtab/
   settings.yaml              # App settings
   history.db                 # SQLite run history
   jobs/
@@ -43,7 +43,7 @@ All fields have defaults. The file is created by the setup wizard or on first se
 
 ## Job Definition (job.yaml)
 
-Each job is stored at `~/.config/clawdtab/jobs/<project-slug>/<job-name>/job.yaml`.
+Each job is stored at `~/.config/clawtab/jobs/<project-slug>/<job-name>/job.yaml`.
 
 ```yaml
 name: myapp/deploy               # display name (project/job)

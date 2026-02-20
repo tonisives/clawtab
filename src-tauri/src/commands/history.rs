@@ -55,7 +55,7 @@ pub fn open_run_log(state: State<AppState>, run_id: String) -> Result<(), String
     }
 
     // Write to a temp file
-    let tmp_dir = std::env::temp_dir().join("clawdtab-logs");
+    let tmp_dir = std::env::temp_dir().join("clawtab-logs");
     std::fs::create_dir_all(&tmp_dir)
         .map_err(|e| format!("Failed to create log dir: {}", e))?;
     let file_path = tmp_dir.join(format!("{}.log", run_id));

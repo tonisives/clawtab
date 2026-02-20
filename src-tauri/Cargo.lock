@@ -527,7 +527,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "clawdtab"
+name = "clawtab"
 version = "0.1.0"
 dependencies = [
  "anyhow",

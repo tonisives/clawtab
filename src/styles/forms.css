@@ -121,7 +121,78 @@ input[type="password"]:disabled,
   border-bottom: 1px solid var(--border-light);
 }
 
-/* Terminal-style preview */
+/* Directions editor / preview */
+.directions-box {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.directions-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.directions-tab {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.directions-tab:hover {
+  color: var(--text-primary);
+}
+
+.directions-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-color);
+}
+
+.directions-body {
+  padding: 10px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.directions-editor {
+  display: block;
+  width: 100%;
+  max-width: 100% !important;
+  min-height: 225px;
+  max-height: 400px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre;
+  tab-size: 2;
+  box-sizing: border-box;
+}
+
+.directions-editor:focus {
+  box-shadow: none;
+}
+
+/* Terminal-style preview (used in TelegramPanel commands) */
 .terminal-preview {
   background: #1e1e1e;
   border: 1px solid #333;
@@ -139,32 +210,6 @@ input[type="password"]:disabled,
   font-size: 11px;
   color: #888;
   font-family: monospace;
-}
-
-.terminal-tabs {
-  display: flex;
-  gap: 0;
-}
-
-.terminal-tab {
-  padding: 4px 10px;
-  font-size: 11px;
-  font-family: monospace;
-  color: #888;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.15s, border-color 0.15s;
-}
-
-.terminal-tab:hover {
-  color: #ccc;
-}
-
-.terminal-tab.active {
-  color: #d4d4d4;
-  border-bottom-color: var(--accent-color);
 }
 
 .terminal-body {

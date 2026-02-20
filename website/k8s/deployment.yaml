@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clawtab-web
+  namespace: clawtab
+  labels:
+    app: clawtab-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clawtab-web
+  template:
+    metadata:
+      labels:
+        app: clawtab-web
+    spec:
+      containers:
+        - name: clawtab-web
+          image: registry.tonisives.com/clawtab-web
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clawtab-web
+  namespace: clawtab
+spec:
+  selector:
+    app: clawtab-web
+  ports:
+    - port: 80
+      targetPort: 80

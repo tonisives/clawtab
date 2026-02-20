@@ -49,7 +49,7 @@ pub fn parse_command(text: &str) -> Option<AgentCommand> {
 
 pub fn format_help() -> String {
     [
-        "<b>ClawdTab Agent</b>",
+        "<b>ClawTab Agent</b>",
         "",
         "/jobs - List all configured jobs",
         "/status - Show job statuses",

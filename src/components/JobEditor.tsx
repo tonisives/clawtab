@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry, ToolInfo } from "../types";
+import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry } from "../types";
 import { CronInput, describeCron } from "./CronInput";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
@@ -27,6 +27,9 @@ const STEP_TIPS: Record<string, string> = {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const DAY_CRON_MAP: Record<string, string> = {
   Mon: "1", Tue: "2", Wed: "3", Thu: "4", Fri: "5", Sat: "6", Sun: "0",
+};
+const CRON_DAY_MAP: Record<string, string> = {
+  "0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed", "4": "Thu", "5": "Fri", "6": "Sat",
 };
 
 interface Props {
@@ -87,6 +90,36 @@ function FieldGroup({ title, children }: { title: string; children: React.ReactN
   );
 }
 
+/** Parse a cron expression into weekly picker state, or return null if not parseable as weekly. */
+function parseCronToWeekly(cron: string): { days: string[]; time: string } | null {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [min, hour, dom, mon, dow] = parts;
+  if (dom !== "*" || mon !== "*") return null;
+  if (dow === "*") {
+    // daily -- all days
+    if (hour === "*" || min === "*") return null;
+    const h = parseInt(hour, 10);
+    const m = parseInt(min, 10);
+    if (isNaN(h) || isNaN(m)) return null;
+    return {
+      days: [...DAYS],
+      time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+    };
+  }
+  // Specific days
+  const h = parseInt(hour, 10);
+  const m = parseInt(min, 10);
+  if (isNaN(h) || isNaN(m)) return null;
+  const dayNums = dow.split(",");
+  const dayNames = dayNums.map((d) => CRON_DAY_MAP[d.trim()]).filter(Boolean);
+  if (dayNames.length === 0) return null;
+  return {
+    days: dayNames,
+    time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+  };
+}
+
 export function JobEditor({ job, onSave, onCancel }: Props) {
   const [form, setForm] = useState<Job>(job ?? emptyJob);
   const [argsText, setArgsText] = useState(form.args.join(" "));
@@ -107,20 +140,23 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
   const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
   const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
-  const [cwtPreview, setCwtPreview] = useState<string | null>(null);
   const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
   const [preferredEditor, setPreferredEditor] = useState("nvim");
-  const [availableEditors, setAvailableEditors] = useState<string[]>(["nvim"]);
   const [defaultTmuxSession, setDefaultTmuxSession] = useState("tgs");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
 
-  // Schedule mode state
-  const [manualOnly, setManualOnly] = useState(false);
-  const [useWeekly, setUseWeekly] = useState(true);
-  const [weeklyDays, setWeeklyDays] = useState<string[]>(["Mon"]);
-  const [weeklyTime, setWeeklyTime] = useState("09:00");
+  // Inline editor state
+  const [inlineContent, setInlineContent] = useState("");
+  const [inlineLoaded, setInlineLoaded] = useState(false);
+
+  // Schedule mode state -- initialize from existing cron
+  const initWeekly = !isNew ? parseCronToWeekly(form.cron) : null;
+  const [manualOnly, setManualOnly] = useState(!isNew ? form.cron === "" : false);
+  const [useWeekly, setUseWeekly] = useState(!isNew ? (form.cron === "" || initWeekly !== null) : true);
+  const [weeklyDays, setWeeklyDays] = useState<string[]>(initWeekly?.days ?? ["Mon"]);
+  const [weeklyTime, setWeeklyTime] = useState(initWeekly?.time ?? "09:00");
 
   // job.md edited tracking
   const [cwtEdited, setCwtEdited] = useState(!isNew);
@@ -140,12 +176,6 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           setForm((prev) => ({ ...prev, telegram_chat_id: chats[0].id }));
         }
       }
-    });
-    invoke<ToolInfo[]>("detect_tools").then((tools) => {
-      const editors = tools
-        .filter((t) => t.group === "editor" && t.available)
-        .map((t) => t.name);
-      if (editors.length > 0) setAvailableEditors(editors);
     });
   }, []);
 
@@ -178,14 +208,17 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const refreshCwtPreview = useCallback((folderPath: string, jn: string | null) => {
     invoke<string>("read_cwt_entry", { folderPath, jobName: jn ?? "default" })
       .then((content) => {
-        setCwtPreview(content);
         setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
+        if (!inlineLoaded) {
+          setInlineContent(content);
+          setInlineLoaded(true);
+        }
       })
-      .catch(() => setCwtPreview(null));
+      .catch(() => {});
     invoke<string>("read_cwt_context", { folderPath, jobName: jn ?? "default" })
       .then(setCwtContextPreview)
       .catch(() => setCwtContextPreview(null));
-  }, []);
+  }, [inlineLoaded]);
 
   useEffect(() => {
     if (form.job_type === "folder" && form.folder_path) {
@@ -195,19 +228,22 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
         refreshCwtPreview(form.folder_path!, form.job_name);
       });
     } else {
-      setCwtPreview(null);
       setCwtContextPreview(null);
     }
   }, [form.folder_path, form.job_type, form.job_name, refreshCwtPreview]);
 
-  // Poll job.md for changes while on folder step (user may be editing in external editor)
-  useEffect(() => {
-    if (!isWizard || currentStep !== "folder" || !form.folder_path) return;
-    const interval = setInterval(() => {
-      refreshCwtPreview(form.folder_path!, form.job_name);
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [isWizard, currentStep, form.folder_path, form.job_name, refreshCwtPreview]);
+  // Save inline content immediately on each change
+  const handleInlineChange = (content: string) => {
+    setInlineContent(content);
+    setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
+    if (form.folder_path) {
+      invoke("write_cwt_entry", {
+        folderPath: form.folder_path,
+        jobName: form.job_name ?? "default",
+        content,
+      }).catch(() => {});
+    }
+  };
 
   const toggleSecret = (key: string) => {
     const keys = form.secret_keys.includes(key)
@@ -417,192 +453,159 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     if (form.job_type !== "folder" || !form.folder_path) return null;
 
     const showTabs = !isNew;
-    const activePreview = previewFile === "cwt.md" ? cwtContextPreview : cwtPreview;
 
     return (
-      <>
-        <div className="form-group">
-          <div className="btn-group" style={{ marginBottom: 8 }}>
-            <button
-              className="btn btn-sm"
-              onClick={() => {
-                invoke("open_job_editor", {
-                  folderPath: form.folder_path,
-                  editor: preferredEditor,
-                  jobName: form.job_name ?? "default",
-                }).then(() => {
-                  // Will be picked up by polling
-                });
-              }}
-            >
-              Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-            </button>
-            <select
-              value={preferredEditor}
-              onChange={(e) => setPreferredEditor(e.target.value)}
-              style={{ padding: "2px 6px", fontSize: 12 }}
-            >
-              {availableEditors.map((e) => (
-                <option key={e} value={e}>
-                  {EDITOR_LABELS[e] ?? e}
-                </option>
-              ))}
-            </select>
-            {showTabs && (
+      <div className="form-group">
+        <div className="directions-box">
+          {showTabs ? (
+            <div className="directions-tabs">
               <button
-                className="btn btn-sm"
-                onClick={() => {
-                  invoke("open_job_editor", {
-                    folderPath: form.folder_path,
-                    editor: preferredEditor,
-                    fileName: "cwt.md",
-                    jobName: form.job_name ?? "default",
-                  });
-                }}
+                className={`directions-tab ${previewFile === "job.md" ? "active" : ""}`}
+                onClick={() => setPreviewFile("job.md")}
               >
-                Edit cwt.md
+                job.md
               </button>
-            )}
-            <button
-              className="btn btn-sm"
-              onClick={() => refreshCwtPreview(form.folder_path!, form.job_name)}
-            >
-              Refresh
-            </button>
-          </div>
-          {(cwtPreview !== null || cwtContextPreview !== null) && (
-            <div className="terminal-preview">
-              <div className="terminal-header">
-                {showTabs ? (
-                  <div className="terminal-tabs">
-                    <button
-                      className={`terminal-tab ${previewFile === "job.md" ? "active" : ""}`}
-                      onClick={() => setPreviewFile("job.md")}
-                    >
-                      job.md
-                    </button>
-                    <button
-                      className={`terminal-tab ${previewFile === "cwt.md" ? "active" : ""}`}
-                      onClick={() => setPreviewFile("cwt.md")}
-                    >
-                      cwt.md
-                    </button>
-                  </div>
-                ) : (
-                  <span>job.md</span>
-                )}
-              </div>
-              <pre className="terminal-body">{activePreview || "(empty)"}</pre>
+              <button
+                className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
+                onClick={() => setPreviewFile("cwt.md")}
+              >
+                cwt.md
+              </button>
+            </div>
+          ) : (
+            <div className="directions-tabs">
+              <span className="directions-tab active">job.md</span>
             </div>
           )}
-          {isWizard && !cwtEdited && (
-            <span className="hint" style={{ color: "var(--warning-color)" }}>
-              Edit job.md before proceeding -- the default template must be changed.
-            </span>
+          {previewFile === "job.md" ? (
+            <textarea
+              className="directions-editor"
+              value={inlineContent}
+              onChange={(e) => handleInlineChange(e.target.value)}
+              spellCheck={false}
+              placeholder="Describe what the bot should do here."
+            />
+          ) : (
+            <pre className="directions-body">
+              {cwtContextPreview || "(empty)"}
+            </pre>
           )}
         </div>
-      </>
+
+        <button
+          className="btn btn-sm"
+          style={{ marginTop: 8 }}
+          onClick={() => {
+            invoke("open_job_editor", {
+              folderPath: form.folder_path,
+              editor: preferredEditor,
+              jobName: form.job_name ?? "default",
+              fileName: previewFile,
+            });
+          }}
+        >
+          Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+        </button>
+
+        {isWizard && !cwtEdited && (
+          <span className="hint" style={{ color: "var(--warning-color)" }}>
+            Edit job.md before proceeding -- the default template must be changed.
+          </span>
+        )}
+      </div>
     );
   };
 
-  const renderScheduleFields = () => {
-    if (isWizard) {
-      return (
-        <div className="form-group">
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+  const renderScheduleFields = () => (
+    <div className="form-group">
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+          <input
+            type="checkbox"
+            checked={manualOnly}
+            onChange={(e) => {
+              setManualOnly(e.target.checked);
+              if (e.target.checked) {
+                setForm({ ...form, cron: "" });
+              } else {
+                if (useWeekly) {
+                  setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
+                } else {
+                  setForm({ ...form, cron: "0 0 * * *" });
+                }
+              }
+            }}
+          />
+          Manual only (no automatic schedule)
+        </label>
+      </div>
+
+      {!manualOnly && (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <input
-                type="checkbox"
-                checked={manualOnly}
-                onChange={(e) => {
-                  setManualOnly(e.target.checked);
-                  if (e.target.checked) {
-                    setForm({ ...form, cron: "" });
-                  } else {
-                    if (useWeekly) {
-                      setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
-                    } else {
-                      setForm({ ...form, cron: "0 0 * * *" });
-                    }
-                  }
+                type="radio"
+                name="schedule-mode"
+                checked={useWeekly}
+                onChange={() => {
+                  setUseWeekly(true);
+                  setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
                 }}
               />
-              Manual only (no automatic schedule)
+              Daily schedule
             </label>
+            <div style={{ opacity: useWeekly ? 1 : 0.4, pointerEvents: useWeekly ? "auto" : "none", paddingLeft: 24 }}>
+              <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
+                {DAYS.map((day) => (
+                  <button
+                    key={day}
+                    className={`btn btn-sm ${weeklyDays.includes(day) ? "btn-primary" : ""}`}
+                    onClick={() => toggleWeeklyDay(day)}
+                    style={{ minWidth: 44 }}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <label style={{ margin: 0, fontSize: 13 }}>Time:</label>
+                <input
+                  type="time"
+                  value={weeklyTime}
+                  onChange={(e) => setWeeklyTimeValue(e.target.value)}
+                  style={{ maxWidth: 120 }}
+                />
+              </div>
+              {useWeekly && (
+                <span className="hint" style={{ marginTop: 4, display: "block" }}>
+                  {describeCron(form.cron)}
+                </span>
+              )}
+            </div>
           </div>
 
-          {!manualOnly && (
-            <>
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <input
-                    type="radio"
-                    name="schedule-mode"
-                    checked={useWeekly}
-                    onChange={() => {
-                      setUseWeekly(true);
-                      setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
-                    }}
-                  />
-                  Daily schedule
-                </label>
-                <div style={{ opacity: useWeekly ? 1 : 0.4, pointerEvents: useWeekly ? "auto" : "none", paddingLeft: 24 }}>
-                  <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
-                    {DAYS.map((day) => (
-                      <button
-                        key={day}
-                        className={`btn btn-sm ${weeklyDays.includes(day) ? "btn-primary" : ""}`}
-                        onClick={() => toggleWeeklyDay(day)}
-                        style={{ minWidth: 44 }}
-                      >
-                        {day}
-                      </button>
-                    ))}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <label style={{ margin: 0, fontSize: 13 }}>Time:</label>
-                    <input
-                      type="time"
-                      value={weeklyTime}
-                      onChange={(e) => setWeeklyTimeValue(e.target.value)}
-                      style={{ maxWidth: 120 }}
-                    />
-                  </div>
-                  {useWeekly && (
-                    <span className="hint" style={{ marginTop: 4, display: "block" }}>
-                      {describeCron(form.cron)}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                  <input
-                    type="radio"
-                    name="schedule-mode"
-                    checked={!useWeekly}
-                    onChange={() => {
-                      setUseWeekly(false);
-                      setForm({ ...form, cron: "0 0 * * *" });
-                    }}
-                  />
-                  Cron expression
-                </label>
-                <div style={{ opacity: !useWeekly ? 1 : 0.4, pointerEvents: !useWeekly ? "auto" : "none", paddingLeft: 24 }}>
-                  <CronInput value={form.cron} onChange={(cron) => setForm({ ...form, cron })} />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <CronInput value={form.cron} onChange={(cron) => setForm({ ...form, cron })} />
-    );
-  };
+          <div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <input
+                type="radio"
+                name="schedule-mode"
+                checked={!useWeekly}
+                onChange={() => {
+                  setUseWeekly(false);
+                  setForm({ ...form, cron: "0 0 * * *" });
+                }}
+              />
+              Cron expression
+            </label>
+            <div style={{ opacity: !useWeekly ? 1 : 0.4, pointerEvents: !useWeekly ? "auto" : "none", paddingLeft: 24 }}>
+              <CronInput value={form.cron} onChange={(cron) => setForm({ ...form, cron })} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   const renderSecretsFields = () => (
     <div className="form-group">
@@ -769,33 +772,37 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           <h2>New Job</h2>
         </div>
 
-        <div style={{ maxWidth: 520, margin: "0 auto" }}>
-          <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
-            {STEPS.map((step, idx) => (
-              <div
-                key={step.id}
-                style={{
-                  flex: 1,
-                  height: 4,
-                  borderRadius: 2,
-                  background: idx <= currentIdx ? "var(--accent)" : "var(--border)",
-                }}
-              />
-            ))}
-          </div>
+        <div>
+          <div style={{ maxWidth: 520, margin: "0 auto" }}>
+            <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
+              {STEPS.map((step, idx) => (
+                <div
+                  key={step.id}
+                  style={{
+                    flex: 1,
+                    height: 4,
+                    borderRadius: 2,
+                    background: idx <= currentIdx ? "var(--accent)" : "var(--border)",
+                  }}
+                />
+              ))}
+            </div>
 
-          <p className="text-secondary" style={{ marginBottom: 4 }}>
-            Step {currentIdx + 1} of {STEPS.length}: {STEPS[currentIdx].label}
-          </p>
-          <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16 }}>
-            {STEP_TIPS[currentStep]}
-          </p>
+            <p className="text-secondary" style={{ marginBottom: 4 }}>
+              Step {currentIdx + 1} of {STEPS.length}: {STEPS[currentIdx].label}
+            </p>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 16 }}>
+              {STEP_TIPS[currentStep]}
+            </p>
+          </div>
 
           {currentStep === "folder" && (
             <>
-              <FieldGroup title="Identity">
-                {renderIdentityFields()}
-              </FieldGroup>
+              <div style={{ maxWidth: 520, margin: "0 auto" }}>
+                <FieldGroup title="Identity">
+                  {renderIdentityFields()}
+                </FieldGroup>
+              </div>
               {form.folder_path && (
                 <FieldGroup title="Directions">
                   {renderDirectionsFields()}
@@ -804,55 +811,57 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
             </>
           )}
 
-          {currentStep === "schedule" && (
-            <FieldGroup title="Schedule">
-              {renderScheduleFields()}
-            </FieldGroup>
-          )}
-
-          {currentStep === "secrets" && (
-            <FieldGroup title="Secrets">
-              {renderSecretsFields()}
-            </FieldGroup>
-          )}
-
-          {currentStep === "config" && (
-            <>
-              <FieldGroup title="Config">
-                {renderConfigFields()}
+          <div style={{ maxWidth: 520, margin: "0 auto" }}>
+            {currentStep === "schedule" && (
+              <FieldGroup title="Schedule">
+                {renderScheduleFields()}
               </FieldGroup>
-              <FieldGroup title="Runtime">
-                {renderRuntimeFields()}
-              </FieldGroup>
-            </>
-          )}
+            )}
 
-          <div className="btn-group" style={{ marginTop: 24 }}>
-            <button className="btn" onClick={onCancel}>
-              Cancel
-            </button>
-            {currentIdx > 0 && (
-              <button className="btn" onClick={goBack}>
-                Back
-              </button>
+            {currentStep === "secrets" && (
+              <FieldGroup title="Secrets">
+                {renderSecretsFields()}
+              </FieldGroup>
             )}
-            {currentStep === "config" ? (
-              <button
-                className="btn btn-primary"
-                onClick={handleSubmit}
-                disabled={!canAdvanceFromFolder()}
-              >
-                Create
-              </button>
-            ) : (
-              <button
-                className="btn btn-primary"
-                onClick={goNext}
-                disabled={currentStep === "folder" && !canAdvanceFromFolder()}
-              >
-                Next
-              </button>
+
+            {currentStep === "config" && (
+              <>
+                <FieldGroup title="Config">
+                  {renderConfigFields()}
+                </FieldGroup>
+                <FieldGroup title="Runtime">
+                  {renderRuntimeFields()}
+                </FieldGroup>
+              </>
             )}
+
+            <div className="btn-group" style={{ marginTop: 24 }}>
+              <button className="btn" onClick={onCancel}>
+                Cancel
+              </button>
+              {currentIdx > 0 && (
+                <button className="btn" onClick={goBack}>
+                  Back
+                </button>
+              )}
+              {currentStep === "config" ? (
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSubmit}
+                  disabled={!canAdvanceFromFolder()}
+                >
+                  Create
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  onClick={goNext}
+                  disabled={currentStep === "folder" && !canAdvanceFromFolder()}
+                >
+                  Next
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

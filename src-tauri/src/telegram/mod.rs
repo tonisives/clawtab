@@ -123,7 +123,7 @@ pub async fn notify_job_result(
         .unwrap_or_default();
 
     let text = format!(
-        "<b>ClawdTab</b>: Job <code>{}</code> {}{}",
+        "<b>ClawTab</b>: Job <code>{}</code> {}{}",
         job_name, status, code_str
     );
 
@@ -132,7 +132,7 @@ pub async fn notify_job_result(
 
 /// Test the bot connection by sending a test message
 pub async fn test_connection(bot_token: &str, chat_id: i64) -> Result<(), String> {
-    send_message(bot_token, chat_id, "ClawdTab test message - connection successful.").await
+    send_message(bot_token, chat_id, "ClawTab test message - connection successful.").await
 }
 
 fn split_message(text: &str) -> Vec<String> {

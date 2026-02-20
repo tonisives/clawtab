@@ -127,7 +127,7 @@ export function GeneralSettings() {
             onClick={() => {
               new WebviewWindow("setup-wizard", {
                 url: "/settings.html?setup",
-                title: "ClawdTab Setup",
+                title: "ClawTab Setup",
                 width: 640,
                 height: 520,
                 center: true,

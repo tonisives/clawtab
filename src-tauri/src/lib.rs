@@ -132,7 +132,7 @@ pub fn run() {
         .format_timestamp_secs()
         .init();
 
-    log::info!("clawdtab starting");
+    log::info!("clawtab starting");
 
     let settings = Arc::new(Mutex::new(AppSettings::load()));
     let jobs_config = Arc::new(Mutex::new(JobsConfig::load()));
@@ -204,6 +204,7 @@ pub fn run() {
             commands::jobs::open_job_in_editor,
             commands::jobs::init_cwt_folder,
             commands::jobs::read_cwt_entry,
+            commands::jobs::write_cwt_entry,
             commands::jobs::read_cwt_context,
             commands::jobs::derive_job_slug,
             commands::secrets::list_secrets,
@@ -312,7 +313,7 @@ pub fn run() {
                 telegram::polling::start_polling(telegram_agent_state).await;
             });
 
-            log::info!("clawdtab setup complete");
+            log::info!("clawtab setup complete");
             Ok(())
         })
         .run(tauri::generate_context!())

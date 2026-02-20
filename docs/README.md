@@ -1,6 +1,6 @@
-# ClawdTab Documentation
+# ClawTab Documentation
 
-ClawdTab is a macOS desktop app for scheduling and managing automated jobs -- shell scripts, Claude Code prompts, and project-based AI agents -- all orchestrated through tmux.
+ClawTab is a macOS desktop app for scheduling and managing automated jobs -- shell scripts, Claude Code prompts, and project-based AI agents -- all orchestrated through tmux.
 
 ## Table of Contents
 

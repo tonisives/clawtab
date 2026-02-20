@@ -1,11 +1,11 @@
 [package]
-name = "clawdtab"
+name = "clawtab"
 version = "0.1.0"
 edition = "2021"
-default-run = "clawdtab"
+default-run = "clawtab"
 
 [lib]
-name = "clawdtab_lib"
+name = "clawtab_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]

@@ -1,14 +1,14 @@
 use std::env;
 
-use clawdtab_lib::ipc::{self, IpcCommand, IpcResponse};
+use clawtab_lib::ipc::{self, IpcCommand, IpcResponse};
 
 fn print_usage() {
-    eprintln!("cwtctl -- CLI for ClawdTab");
+    eprintln!("cwtctl -- CLI for ClawTab");
     eprintln!();
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
     eprintln!("Commands:");
-    eprintln!("  ping              Check if ClawdTab is running");
+    eprintln!("  ping              Check if ClawTab is running");
     eprintln!("  list | ls         List all jobs");
     eprintln!("  run <name>        Run a job by name");
     eprintln!("  pause <name>      Pause a running job");

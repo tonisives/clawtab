@@ -122,7 +122,7 @@ src-tauri/src/
   main.rs                   # Entry point
   ipc.rs                    # Unix socket server/client
   config/
-    mod.rs                  # Config dir: ~/.config/clawdtab/
+    mod.rs                  # Config dir: ~/.config/clawtab/
     jobs.rs                 # Job schema, folder-based storage, slug generation
     settings.rs             # AppSettings schema + persistence
   commands/
@@ -178,7 +178,7 @@ src/
 
 ## History
 
-SQLite database at `~/.config/clawdtab/history.db`.
+SQLite database at `~/.config/clawtab/history.db`.
 
 ```sql
 CREATE TABLE runs (

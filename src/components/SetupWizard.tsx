@@ -160,7 +160,7 @@ export function SetupWizard({ onComplete }: Props) {
         job_type: "binary",
         enabled: true,
         path: "echo",
-        args: ["ClawdTab setup complete -- telegram notifications are working."],
+        args: ["ClawTab setup complete -- telegram notifications are working."],
         cron: "",
         secret_keys: [],
         env: {},
@@ -203,7 +203,7 @@ export function SetupWizard({ onComplete }: Props) {
 
   return (
     <div className="settings-section" style={{ maxWidth: 600, margin: "0 auto" }}>
-      <h2>ClawdTab Setup</h2>
+      <h2>ClawTab Setup</h2>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
         {visibleSteps.map((step, idx) => (
@@ -493,7 +493,7 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Setup Complete</h3>
           <p className="section-description">
-            ClawdTab is ready to use. You can create your first job from the Jobs tab,
+            ClawTab is ready to use. You can create your first job from the Jobs tab,
             or re-run this wizard from Settings.
           </p>
           <div style={{ marginTop: 12 }}>

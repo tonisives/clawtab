@@ -116,7 +116,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     if let Some(ref tg) = params.telegram {
         if params.notify_on_success {
             let text = format!(
-                "<b>ClawdTab</b>: Job <code>{}</code> completed",
+                "<b>ClawTab</b>: Job <code>{}</code> completed",
                 params.job_name
             );
             if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await

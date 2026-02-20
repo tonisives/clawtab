@@ -4,7 +4,7 @@ pub mod applescript;
 use std::path::PathBuf;
 
 /// Get the browser session directory for a job.
-/// Sessions are stored at `~/.config/clawdtab/browser-sessions/<job_name>/`.
+/// Sessions are stored at `~/.config/clawtab/browser-sessions/<job_name>/`.
 pub fn session_dir(job_name: &str) -> PathBuf {
     crate::config::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))

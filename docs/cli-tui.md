@@ -1,6 +1,6 @@
 # CLI & TUI
 
-Both the CLI and TUI communicate with the running ClawdTab GUI app via a Unix socket at `/tmp/clawdtab.sock`. The GUI must be running for either to work.
+Both the CLI and TUI communicate with the running ClawTab GUI app via a Unix socket at `/tmp/clawtab.sock`. The GUI must be running for either to work.
 
 ## CLI: cwtctl
 
@@ -10,7 +10,7 @@ cwtctl <command> [args]
 
 | Command | Description |
 |---------|-------------|
-| `ping` | Check if ClawdTab is running |
+| `ping` | Check if ClawTab is running |
 | `list` / `ls` | List all job names |
 | `run <name>` | Run a job |
 | `pause <name>` | Pause a running job |
@@ -28,12 +28,12 @@ Full-screen terminal UI built with [ratatui](https://ratatui.rs/).
 cwttui
 ```
 
-If ClawdTab is not running, the TUI exits with an error message.
+If ClawTab is not running, the TUI exits with an error message.
 
 ### Layout
 
 ```
-┌─ ClawdTab ──────────────────────┐
+┌─ ClawTab ──────────────────────┐
 │ > -- daily-backup               │
 │   >> deploy-staging             │
 │   ok review-prs                 │
@@ -105,5 +105,5 @@ The socket uses JSON-RPC over Unix domain socket, newline-delimited.
 ### Raw Usage
 
 ```bash
-echo '"Ping"' | nc -U /tmp/clawdtab.sock
+echo '"Ping"' | nc -U /tmp/clawtab.sock
 ```

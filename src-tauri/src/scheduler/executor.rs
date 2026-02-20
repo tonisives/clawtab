@@ -497,7 +497,7 @@ async fn send_job_notification(
         .unwrap_or_default();
 
     let text = format!(
-        "<b>ClawdTab</b>: Job <code>{}</code> {}{}",
+        "<b>ClawTab</b>: Job <code>{}</code> {}{}",
         job_name, status, code_str
     );
 

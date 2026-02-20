@@ -1,14 +1,14 @@
 # Telegram Integration
 
-ClawdTab can send job notifications and accept commands through a Telegram bot.
+ClawTab can send job notifications and accept commands through a Telegram bot.
 
 ## Setup
 
 1. Create a bot via [@BotFather](https://t.me/BotFather) and get the bot token
-2. In ClawdTab, go to the Telegram panel
-3. Enter the bot token -- ClawdTab validates it and shows the bot username
+2. In ClawTab, go to the Telegram panel
+3. Enter the bot token -- ClawTab validates it and shows the bot username
 4. Send any message to your bot from Telegram
-5. ClawdTab detects your chat ID via polling and adds it to the allowlist
+5. ClawTab detects your chat ID via polling and adds it to the allowlist
 6. Test the connection
 
 ### Configuration
@@ -29,8 +29,8 @@ telegram:
 Job completion notifications are sent automatically:
 
 ```
-ClawdTab: Job daily-backup completed
-ClawdTab: Job deploy failed (exit 1)
+ClawTab: Job daily-backup completed
+ClawTab: Job deploy failed (exit 1)
 ```
 
 Controlled by `notify_on_success` and `notify_on_failure` flags.
@@ -45,7 +45,7 @@ For tmux jobs (Claude/Folder), the monitor captures pane output every 5 seconds 
 
 ## Agent Mode
 
-When `agent_enabled: true`, ClawdTab polls for incoming messages (8-second interval, 30-second long-poll timeout) and responds to slash commands.
+When `agent_enabled: true`, ClawTab polls for incoming messages (8-second interval, 30-second long-poll timeout) and responds to slash commands.
 
 Only messages from authorized `chat_ids` are processed.
 

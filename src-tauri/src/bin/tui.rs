@@ -8,7 +8,7 @@ use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-use clawdtab_lib::ipc::{self, IpcCommand, IpcResponse};
+use clawtab_lib::ipc::{self, IpcCommand, IpcResponse};
 
 struct App {
     jobs: Vec<String>,
@@ -68,7 +68,7 @@ async fn main() {
     match ipc::send_command(IpcCommand::Ping).await {
         Ok(IpcResponse::Pong) => {}
         _ => {
-            eprintln!("ClawdTab is not running. Start the GUI app first.");
+            eprintln!("ClawTab is not running. Start the GUI app first.");
             std::process::exit(1);
         }
     }
@@ -204,7 +204,7 @@ async fn handle_key(app: &mut App, key: KeyCode) {
             // Open GUI settings
             let _ = ipc::send_command(IpcCommand::OpenSettings).await;
             let _ = std::process::Command::new("open")
-                .args(["-a", "ClawdTab"])
+                .args(["-a", "ClawTab"])
                 .spawn();
             app.message = Some("Opening settings...".to_string());
         }
@@ -264,7 +264,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" ClawdTab "),
+                .title(" ClawTab "),
         )
         .highlight_style(Style::default().bg(Color::DarkGray).bold())
         .highlight_symbol("> ");

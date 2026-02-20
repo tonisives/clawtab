@@ -4,15 +4,15 @@
 
 | Path | Purpose |
 |------|---------|
-| `~/.config/clawdtab/settings.yaml` | App settings |
-| `~/.config/clawdtab/history.db` | SQLite run history (30-day retention) |
-| `~/.config/clawdtab/jobs/` | Job definitions directory |
-| `~/.config/clawdtab/jobs/<project>/<job-name>/job.yaml` | Individual job config |
-| `~/.config/clawdtab/jobs/<project>/<job-name>/logs/<run-id>.log` | Tmux job output log |
+| `~/.config/clawtab/settings.yaml` | App settings |
+| `~/.config/clawtab/history.db` | SQLite run history (30-day retention) |
+| `~/.config/clawtab/jobs/` | Job definitions directory |
+| `~/.config/clawtab/jobs/<project>/<job-name>/job.yaml` | Individual job config |
+| `~/.config/clawtab/jobs/<project>/<job-name>/logs/<run-id>.log` | Tmux job output log |
 | `<project>/.cwt/cwt.md` | User-written shared context for all jobs in a project |
 | `<project>/.cwt/<job-name>/job.md` | Job-specific prompt/instructions |
 | `<project>/.cwt/<job-name>/cwt.md` | Auto-generated per-job context |
-| `/tmp/clawdtab.sock` | IPC Unix socket |
+| `/tmp/clawtab.sock` | IPC Unix socket |
 
 ## Job Status Values
 
@@ -49,4 +49,4 @@ Job tmux windows follow the pattern `cm-<job-name>` within the configured sessio
 
 Example: job "daily-backup" creates window `tgs:cm-daily-backup`.
 
-If a window's pane has an active process when a new run starts, ClawdTab splits a new pane in the same window instead of waiting.
+If a window's pane has an active process when a new run starts, ClawTab splits a new pane in the same window instead of waiting.
