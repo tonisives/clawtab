@@ -1,0 +1,360 @@
+name: Release
+
+on:
+  release:
+    types:
+      - created
+  workflow_dispatch:
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.target_commitish || 'main' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Update version if release starts with 'v'
+        shell: bash
+        run: |
+          TAG_NAME="${{ github.ref_name }}"
+          echo "Release tag: $TAG_NAME"
+
+          if [[ "$TAG_NAME" =~ ^v ]]; then
+            VERSION="${TAG_NAME:1}"
+            echo "Updating version to: $VERSION"
+
+            pnpm version --no-git-tag-version "$VERSION"
+
+            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+
+            sed -i "s/^version = .*/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
+            cd src-tauri && cargo update --workspace && cd ..
+
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+            git commit -m "chore: bump version to $VERSION"
+            git push
+          fi
+
+  build:
+    needs: update-version
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+            arch: 'aarch64'
+          - platform: 'macos-latest'
+            args: '--target x86_64-apple-darwin'
+            arch: 'x64'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.target_commitish || 'main' }}
+
+      - name: Pull latest (includes version bump)
+        run: git pull origin ${{ github.event.release.target_commitish || 'main' }}
+
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Build Tauri app
+        run: pnpm tauri build ${{ matrix.args }}
+        env:
+          CI: true
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Upload unsigned app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-bundle-${{ matrix.arch }}
+          path: |
+            src-tauri/target/*/release/bundle/macos/*.app
+          retention-days: 1
+
+      - name: Upload tar.gz for updater signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-unsigned-${{ matrix.arch }}
+          path: |
+            src-tauri/target/*/release/bundle/macos/*.app.tar.gz
+          retention-days: 1
+
+  sign-updater:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: 'aarch64'
+          - arch: 'x64'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download unsigned tar.gz
+        uses: actions/download-artifact@v4
+        with:
+          name: updater-unsigned-${{ matrix.arch }}
+          path: updater
+
+      - name: Sign updater artifact
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          TAR_GZ=$(find updater -name "*.app.tar.gz" | head -1)
+          echo "Signing: $TAR_GZ"
+          npx --yes @tauri-apps/cli@latest signer sign "$TAR_GZ" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          ls -la updater/
+
+      - name: Upload updater artifacts to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAR_GZ=$(find updater -name "*.app.tar.gz" | head -1)
+          SIG=$(find updater -name "*.app.tar.gz.sig" | head -1)
+
+          if [ -n "$TAR_GZ" ]; then
+            cp "$TAR_GZ" "clawtab_${{ matrix.arch }}.app.tar.gz"
+            gh release upload "${{ github.ref_name }}" "clawtab_${{ matrix.arch }}.app.tar.gz" --clobber --repo "${{ github.repository }}"
+          fi
+
+          if [ -n "$SIG" ]; then
+            cp "$SIG" "clawtab_${{ matrix.arch }}.app.tar.gz.sig"
+            gh release upload "${{ github.ref_name }}" "clawtab_${{ matrix.arch }}.app.tar.gz.sig" --clobber --repo "${{ github.repository }}"
+          fi
+
+  sign:
+    needs: build
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: 'aarch64'
+            target: 'aarch64-apple-darwin'
+          - arch: 'x64'
+            target: 'x86_64-apple-darwin'
+
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download unsigned app bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: app-bundle-${{ matrix.arch }}
+          path: bundle
+
+      - name: Find app bundle
+        id: find-app
+        run: |
+          APP_PATH=$(find bundle -name "*.app" -type d | head -1)
+          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
+          echo "Found app at: $APP_PATH"
+
+      - name: Fix executable permissions
+        run: |
+          chmod +x "${{ steps.find-app.outputs.app_path }}/Contents/MacOS/"*
+
+      - name: Import Code-Signing Certificates
+        uses: Apple-Actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Sign the app
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          echo "Signing app at: ${{ steps.find-app.outputs.app_path }}"
+          codesign --deep --force --options runtime \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            "${{ steps.find-app.outputs.app_path }}"
+
+          echo "Verifying signature..."
+          codesign --verify --deep --strict "${{ steps.find-app.outputs.app_path }}"
+
+      - name: Notarize the app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          ditto -c -k --keepParent "${{ steps.find-app.outputs.app_path }}" app.zip
+
+          xcrun notarytool submit app.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          xcrun stapler staple "${{ steps.find-app.outputs.app_path }}"
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+
+          create-dmg \
+            --volname "ClawTab" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 425 178 \
+            --icon "ClawTab.app" 175 178 \
+            "clawtab_${{ matrix.arch }}.dmg" \
+            "${{ steps.find-app.outputs.app_path }}"
+
+      - name: Sign DMG
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          codesign --force --sign "$APPLE_SIGNING_IDENTITY" "clawtab_${{ matrix.arch }}.dmg"
+
+      - name: Upload DMG to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" "clawtab_${{ matrix.arch }}.dmg" --clobber --repo "${{ github.repository }}"
+
+  generate-latest-json:
+    needs: [sign, sign-updater]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download signatures
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/clawtab_aarch64.app.tar.gz.sig" -o sig-arm.txt
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/clawtab_x64.app.tar.gz.sig" -o sig-intel.txt
+
+          echo "SIG_ARM=$(cat sig-arm.txt)" >> $GITHUB_ENV
+          echo "SIG_INTEL=$(cat sig-intel.txt)" >> $GITHUB_ENV
+
+      - name: Create latest.json
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION_NUM="${VERSION#v}"
+
+          cat > latest.json << EOF
+          {
+            "version": "${VERSION_NUM}",
+            "notes": "See release notes at https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "darwin-aarch64": {
+                "signature": "${SIG_ARM}",
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/clawtab_aarch64.app.tar.gz"
+              },
+              "darwin-x86_64": {
+                "signature": "${SIG_INTEL}",
+                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/clawtab_x64.app.tar.gz"
+              }
+            }
+          }
+          EOF
+
+          cat latest.json
+
+      - name: Upload latest.json to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" latest.json --clobber --repo "${{ github.repository }}"
+
+  update-homebrew:
+    needs: [sign, generate-latest-json]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download release artifacts and calculate checksums
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/clawtab_aarch64.dmg" -o dmg-arm.dmg
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/clawtab_x64.dmg" -o dmg-intel.dmg
+
+          echo "SHA256_DMG_ARM=$(sha256sum dmg-arm.dmg | cut -d' ' -f1)" >> $GITHUB_ENV
+          echo "SHA256_DMG_INTEL=$(sha256sum dmg-intel.dmg | cut -d' ' -f1)" >> $GITHUB_ENV
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: tonisives/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update cask
+        run: |
+          cd homebrew-tap
+
+          awk -v arm="$SHA256_DMG_ARM" -v intel="$SHA256_DMG_INTEL" '
+            /^cask/ { in_cask=1 }
+            /sha256.*:no_check/ && in_cask {
+              print "  sha256 arm: \"" arm "\", intel: \"" intel "\""
+              next
+            }
+            /sha256 arm:/ && in_cask {
+              print "  sha256 arm: \"" arm "\", intel: \"" intel "\""
+              next
+            }
+            { print }
+          ' Casks/clawtab.rb > Casks/clawtab.rb.tmp && mv Casks/clawtab.rb.tmp Casks/clawtab.rb
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/clawtab.rb
+          git diff --staged --quiet || git commit -m "Update clawtab to ${{ github.ref_name }}"
+          git push

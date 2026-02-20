@@ -304,26 +304,47 @@ a:hover {
   border-radius: var(--radius-sm);
 }
 
-/* --- Screenshot Grid --- */
+/* --- Gallery --- */
 
-.screenshot-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  margin-bottom: 40px;
+.gallery {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
-.screenshot-item {
+.gallery-main {
+  flex: 1;
+  min-width: 0;
   text-align: center;
 }
 
+.gallery-arrow {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.gallery-arrow:hover {
+  background: var(--border);
+}
+
 .screenshot-frame {
-  display: inline-block;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px;
-  max-width: 100%;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
 }
 
@@ -341,18 +362,32 @@ a:hover {
 }
 
 .screenshot-caption {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
-.screenshot-video {
-  max-width: 700px;
-  margin: 0 auto;
+.gallery-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 20px;
 }
 
-.screenshot-video .screenshot-frame {
-  width: 100%;
+.gallery-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s;
+}
+
+.gallery-dot.active {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* --- Install --- */
@@ -577,9 +612,14 @@ a:hover {
   }
 
   .features-grid,
-  .steps,
-  .screenshot-grid {
+  .steps {
     grid-template-columns: 1fr;
+  }
+
+  .gallery-arrow {
+    width: 36px;
+    height: 36px;
+    font-size: 20px;
   }
 
   .docs-layout {

@@ -315,6 +315,20 @@ pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Kill a specific pane by its ID (e.g. "%42").
+pub fn kill_pane(pane_id: &str) -> Result<(), String> {
+    let output = Command::new("tmux")
+        .args(["kill-pane", "-t", pane_id])
+        .output()
+        .map_err(|e| format!("Failed to kill pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
     // Select the window within the session

@@ -168,6 +168,11 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Save log file to disk
     save_log_file(&params.slug, &params.run_id, &full_output);
 
+    // Close the tmux pane now that output has been captured
+    if let Err(e) = tmux::kill_pane(&params.pane_id) {
+        log::warn!("[{}] Failed to kill pane {}: {}", params.run_id, params.pane_id, e);
+    }
+
     let finished_at = Utc::now().to_rfc3339();
 
     // Update history with captured output

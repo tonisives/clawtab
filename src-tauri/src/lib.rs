@@ -11,6 +11,7 @@ pub mod telegram;
 mod terminal;
 mod tmux;
 mod tools;
+mod updater;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -178,6 +179,9 @@ pub fn run() {
     let settings_for_scheduler = Arc::clone(&settings);
     let job_status_for_scheduler = Arc::clone(&job_status);
 
+    // Clones for update checker
+    let settings_for_updater = Arc::clone(&settings);
+
     // Clones for telegram agent
     let telegram_agent_state = telegram::polling::AgentState {
         settings: Arc::clone(&settings),
@@ -190,6 +194,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::jobs::get_jobs,
@@ -243,6 +248,9 @@ pub fn run() {
             commands::browser::check_browser_session,
             commands::browser::clear_browser_session,
             commands::browser::check_playwright_installed,
+            commands::updater::get_version,
+            commands::updater::check_for_update,
+            commands::updater::restart_app,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -312,6 +320,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 telegram::polling::start_polling(telegram_agent_state).await;
             });
+
+            // Start auto-update checker
+            updater::start_update_checker(app.handle().clone(), settings_for_updater);
 
             log::info!("clawtab setup complete");
             Ok(())

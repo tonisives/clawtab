@@ -91,35 +91,47 @@
 
 <section class="section" id="screenshots">
   <h2 class="section-title">See It in Action</h2>
-  <div class="screenshot-grid">
-    <div class="screenshot-item">
+  <div class="gallery">
+    <button class="gallery-arrow gallery-arrow-left" onclick="galleryPrev()" aria-label="Previous">&lsaquo;</button>
+    <div class="gallery-main">
       <div class="screenshot-frame">
-        <img src="assets/screenshot-gui.png" alt="ClawTab GUI - Job running with live output">
+        <img id="gallery-img" src="assets/screenshot-gui.png" alt="">
       </div>
-      <p class="screenshot-caption">Jobs panel with live output monitoring</p>
+      <p class="screenshot-caption" id="gallery-caption">Jobs panel with live output monitoring</p>
     </div>
-    <div class="screenshot-item">
-      <div class="screenshot-frame">
-        <img src="assets/screenshot-telegram.png" alt="Telegram notifications for job status">
-      </div>
-      <p class="screenshot-caption">Telegram notifications and remote control</p>
-    </div>
-    <div class="screenshot-item">
-      <div class="screenshot-frame">
-        <img src="assets/screenshot-telegram-logs.png" alt="Full Claude Code output relayed to Telegram">
-      </div>
-      <p class="screenshot-caption">Full Claude Code output in Telegram</p>
-    </div>
+    <button class="gallery-arrow gallery-arrow-right" onclick="galleryNext()" aria-label="Next">&rsaquo;</button>
   </div>
-  <div class="screenshot-video">
-    <h3 style="text-align: center; margin-bottom: 16px;">Cron job scheduling demo</h3>
-    <div class="screenshot-frame">
-      <video controls muted playsinline preload="metadata">
-        <source src="assets/demo-cron.mp4" type="video/mp4">
-      </video>
-    </div>
-  </div>
+  <div class="gallery-dots" id="gallery-dots"></div>
 </section>
+
+<script>
+  const gallerySlides = [
+    { src: 'assets/screenshot-gui.png', caption: 'Jobs panel with live output monitoring' },
+    { src: 'assets/screenshot-telegram.png', caption: 'Telegram notifications and remote control' },
+    { src: 'assets/screenshot-telegram-logs.png', caption: 'Full Claude Code output in Telegram' },
+  ];
+  let galleryIdx = 0;
+  const galleryImg = document.getElementById('gallery-img');
+  const galleryCap = document.getElementById('gallery-caption');
+  const dotsContainer = document.getElementById('gallery-dots');
+
+  gallerySlides.forEach((_, i) => {
+    const dot = document.createElement('button');
+    dot.className = 'gallery-dot' + (i === 0 ? ' active' : '');
+    dot.onclick = () => galleryGo(i);
+    dotsContainer.appendChild(dot);
+  });
+
+  function galleryGo(i) {
+    galleryIdx = i;
+    galleryImg.src = gallerySlides[i].src;
+    galleryImg.alt = gallerySlides[i].caption;
+    galleryCap.textContent = gallerySlides[i].caption;
+    dotsContainer.querySelectorAll('.gallery-dot').forEach((d, j) => d.classList.toggle('active', j === i));
+  }
+  function galleryNext() { galleryGo((galleryIdx + 1) % gallerySlides.length); }
+  function galleryPrev() { galleryGo((galleryIdx - 1 + gallerySlides.length) % gallerySlides.length); }
+</script>
 
 <section class="section" id="install">
   <h2 class="section-title">Install</h2>
