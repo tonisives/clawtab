@@ -20,6 +20,7 @@ spec:
           image: registry.tonisives.com/clawtab-web
           ports:
             - containerPort: 80
+              protocol: TCP
           resources:
             requests:
               cpu: 10m
@@ -27,15 +28,36 @@ spec:
             limits:
               cpu: 100m
               memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+      imagePullSecrets:
+        - name: tonisives-registry-secret
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: clawtab-web
   namespace: clawtab
+  labels:
+    app: clawtab-web
 spec:
+  type: ClusterIP
   selector:
     app: clawtab-web
   ports:
     - port: 80
       targetPort: 80
+      protocol: TCP
+      name: http

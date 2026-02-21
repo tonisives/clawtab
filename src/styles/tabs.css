@@ -41,6 +41,24 @@
   align-items: center;
 }
 
+.claw-icon-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease;
+  opacity: 0.6;
+}
+
+.claw-icon-btn:hover {
+  opacity: 1;
+}
+
 .tab-content {
   background: var(--bg-secondary);
   padding: 20px;

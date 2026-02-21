@@ -1,15 +1,49 @@
-apiVersion: skaffold/v4beta11
+apiVersion: skaffold/v4beta13
 kind: Config
 metadata:
   name: clawtab-web
 build:
+  tagPolicy:
+    customTemplate:
+      template: "d{{.DATE}}-{{.SHA}}"
+      components:
+        - name: DATE
+          dateTime:
+            format: "2006-01-02-1504"
+            timezone: "Local"
+        - name: SHA
+          gitCommit:
+            variant: AbbrevCommitSha
   artifacts:
     - image: registry.tonisives.com/clawtab-web
       context: ..
       docker:
         dockerfile: website/Dockerfile
+        buildArgs:
+          PLATFORM: linux/amd64
+        cacheFrom:
+          - registry.tonisives.com/clawtab-web
+manifests:
+  rawYaml:
+    - k8s/deployment.yaml
+    - k8s/ingress.yaml
 deploy:
+  kubeContext: tgs
   kubectl:
-    manifests:
-      - k8s/*.yaml
     defaultNamespace: clawtab
+    hooks:
+      after:
+        - host:
+            command:
+              [
+                "sh",
+                "-c",
+                "TAG=clawtab-$(date +%Y%m%d-%H%M%S) && git tag -f $TAG && git push origin $TAG -f",
+              ]
+        - host:
+            command:
+              [
+                "sh",
+                "-c",
+                "curl -s -X POST 'https://api.cloudflare.com/client/v4/zones/b8bb20667d7691b3f2364260f6852edf/purge_cache' -H 'Authorization: Bearer '$(gopass show -o tgs/CLOUDFLARE_CACHE_PURGE_TOKEN) -H 'Content-Type: application/json' --data '{\"purge_everything\":true}'",
+              ]

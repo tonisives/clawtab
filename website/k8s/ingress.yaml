@@ -7,12 +7,13 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
 spec:
+  ingressClassName: traefik
   tls:
     - hosts:
-        - clawtab.tonis.dev
-      secretName: clawtab-tls
+        - clawtab.cc
+      secretName: clawtab-cc-tls
   rules:
-    - host: clawtab.tonis.dev
+    - host: clawtab.cc
       http:
         paths:
           - path: /
