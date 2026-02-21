@@ -883,6 +883,14 @@ a:hover {
   margin-bottom: 4px;
 }
 
+.docs-content img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 8px 0 16px;
+}
+
 .docs-content blockquote {
   border-left: 3px solid var(--accent);
   padding-left: 16px;

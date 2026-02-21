@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-const SERVICE_NAME: &str = "com.tgs.clawtab";
+const SERVICE_NAME: &str = "cc.clawtab";
 
 pub struct KeychainBackend {
     cache: HashMap<String, String>,

@@ -4,7 +4,7 @@ ClawTab stores all secrets in macOS Keychain and injects them as environment var
 
 ## Storage
 
-All secrets are stored in macOS Keychain under the service name `com.tgs.clawtab`. This provides OS-level secure credential storage with per-application isolation.
+All secrets are stored in macOS Keychain under the service name `cc.clawtab`. This provides OS-level secure credential storage with per-application isolation.
 
 If gopass is available on the system, you can import entries from your gopass store directly into Keychain via the "gopass" button next to the Value field in the Secrets panel.
 
