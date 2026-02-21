@@ -185,6 +185,33 @@ pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<()
     Ok(())
 }
 
+/// Send text to a TUI pane (like Claude Code) that uses vim-style input.
+/// Types the text literally, then presses Enter to submit.
+pub fn send_keys_to_tui_pane(pane_id: &str, text: &str) -> Result<(), String> {
+    // Send text literally (prevents tmux from interpreting special keys)
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", pane_id, "-l", text])
+        .output()
+        .map_err(|e| format!("Failed to send text to pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    // Press Enter to submit
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", pane_id, "Enter"])
+        .output()
+        .map_err(|e| format!("Failed to send Enter to pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 /// Capture the last N lines from a specific pane.
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String, String> {

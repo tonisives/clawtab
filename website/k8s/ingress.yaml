@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: clawtab-web
+  name: clawtab-frontend
   namespace: clawtab
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -20,6 +20,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: clawtab-web
+                name: clawtab-frontend
                 port:
                   number: 80

@@ -65,7 +65,10 @@ pub async fn send_message(
     chat_id: i64,
     text: &str,
 ) -> Result<(), String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     // Split into chunks if the message is too long
     let chunks = split_message(text);
@@ -140,6 +143,43 @@ pub async fn notify_job_result(
 /// Test the bot connection by sending a test message
 pub async fn test_connection(bot_token: &str, chat_id: i64) -> Result<(), String> {
     send_message(bot_token, chat_id, "ClawTab test message - connection successful.").await
+}
+
+/// Check if the bot has group privacy mode disabled (can_read_all_group_messages).
+/// Returns true if the bot can read all group messages, false if privacy mode is on.
+pub async fn can_read_group_messages(bot_token: &str) -> bool {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .ok();
+    let client = match client {
+        Some(c) => c,
+        None => return true, // Assume OK if client fails
+    };
+
+    let url = format!("https://api.telegram.org/bot{}/getMe", bot_token);
+    let resp = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(_) => return true,
+    };
+
+    #[derive(serde::Deserialize)]
+    struct BotInfo {
+        can_read_all_group_messages: Option<bool>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Response {
+        ok: bool,
+        result: Option<BotInfo>,
+    }
+
+    match resp.json::<Response>().await {
+        Ok(r) if r.ok => r
+            .result
+            .and_then(|b| b.can_read_all_group_messages)
+            .unwrap_or(true),
+        _ => true,
+    }
 }
 
 fn split_message(text: &str) -> Vec<String> {

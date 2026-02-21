@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: clawtab-web
+  name: clawtab-frontend
   namespace: clawtab
   labels:
-    app: clawtab-web
+    app: clawtab-frontend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: clawtab-web
+      app: clawtab-frontend
   template:
     metadata:
       labels:
-        app: clawtab-web
+        app: clawtab-frontend
     spec:
       containers:
-        - name: clawtab-web
-          image: registry.tonisives.com/clawtab-web
+        - name: clawtab-frontend
+          image: registry.tonisives.com/clawtab-frontend
           ports:
             - containerPort: 80
               protocol: TCP
@@ -48,14 +48,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: clawtab-web
+  name: clawtab-frontend
   namespace: clawtab
   labels:
-    app: clawtab-web
+    app: clawtab-frontend
 spec:
   type: ClusterIP
   selector:
-    app: clawtab-web
+    app: clawtab-frontend
   ports:
     - port: 80
       targetPort: 80

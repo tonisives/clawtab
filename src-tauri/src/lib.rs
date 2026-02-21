@@ -347,7 +347,9 @@ pub fn run() {
 
             // Start telegram agent polling
             tauri::async_runtime::spawn(async move {
+                log::info!("Telegram polling task spawned");
                 telegram::polling::start_polling(telegram_agent_state).await;
+                log::error!("Telegram polling loop exited unexpectedly");
             });
 
             // Start auto-update checker

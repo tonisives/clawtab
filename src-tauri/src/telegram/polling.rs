@@ -11,6 +11,19 @@ use super::commands::{self, AgentCommand};
 use super::types::{TelegramResponse, Update};
 use super::{ActiveAgent, TelegramConfig};
 
+fn lock_or_log<'a, T>(
+    mutex: &'a Mutex<T>,
+    name: &str,
+) -> Option<std::sync::MutexGuard<'a, T>> {
+    match mutex.lock() {
+        Ok(guard) => Some(guard),
+        Err(e) => {
+            log::error!("Mutex '{}' poisoned: {}", name, e);
+            None
+        }
+    }
+}
+
 pub struct AgentState {
     pub settings: Arc<Mutex<AppSettings>>,
     pub jobs_config: Arc<Mutex<JobsConfig>>,
@@ -25,11 +38,36 @@ pub async fn start_polling(state: AgentState) {
 
     log::info!("Telegram agent polling started");
 
+    // Short initial poll to cancel any lingering long-poll from a previous instance
+    // and to prime the offset with any pending updates.
+    {
+        let config = lock_or_log(&state.settings, "settings")
+            .and_then(|s| s.telegram.clone());
+        if let Some(c) = config {
+            if c.agent_enabled && c.is_configured() {
+                match get_updates(&c.bot_token, None, 0).await {
+                    Ok(updates) => {
+                        if let Some(last) = updates.last() {
+                            offset = Some(last.update_id + 1);
+                        }
+                    }
+                    Err(_) => {
+                        // Retry once after a short delay (clears 409 conflict)
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        if let Ok(updates) = get_updates(&c.bot_token, None, 0).await {
+                            if let Some(last) = updates.last() {
+                                offset = Some(last.update_id + 1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     loop {
-        let config = {
-            let s = state.settings.lock().unwrap();
-            s.telegram.clone()
-        };
+        let config = lock_or_log(&state.settings, "settings")
+            .and_then(|s| s.telegram.clone());
 
         let config = match config {
             Some(c) if c.agent_enabled && c.is_configured() => c,
@@ -48,7 +86,8 @@ pub async fn start_polling(state: AgentState) {
         // Clean up stale active_agents whose panes no longer exist
         cleanup_stale_agents(&state.active_agents, &config).await;
 
-        match get_updates(&config.bot_token, offset).await {
+        log::debug!("Polling getUpdates (offset={:?})", offset);
+        match get_updates(&config.bot_token, offset, 30).await {
             Ok(updates) => {
                 for update in updates {
                     offset = Some(update.update_id + 1);
@@ -71,6 +110,9 @@ pub async fn start_polling(state: AgentState) {
                             );
                             let response =
                                 handle_message(text, &config, &state, message.chat.id).await;
+                            if let Some(ref reply) = response {
+                                log::info!("Sending reply: {}", &reply[..reply.len().min(100)]);
+                            }
                             if let Some(reply) = response {
                                 if let Err(e) = super::send_message(
                                     &config.bot_token,
@@ -100,35 +142,34 @@ async fn cleanup_stale_agents(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     config: &TelegramConfig,
 ) {
-    let stale: Vec<i64> = {
-        let agents = active_agents.lock().unwrap();
-        agents
+    let stale: Vec<i64> = match lock_or_log(active_agents, "active_agents") {
+        Some(agents) => agents
             .iter()
             .filter(|(_, agent)| !tmux::is_pane_busy(&agent.tmux_session, &agent.pane_id))
             .map(|(&chat_id, _)| chat_id)
-            .collect()
+            .collect(),
+        None => return,
     };
 
     for chat_id in stale {
-        {
-            active_agents.lock().unwrap().remove(&chat_id);
+        if let Some(mut agents) = lock_or_log(active_agents, "active_agents") {
+            agents.remove(&chat_id);
         }
-        let _ = super::send_message(
-            &config.bot_token,
-            chat_id,
-            "Agent session ended.",
-        )
-        .await;
+        let _ = super::send_message(&config.bot_token, chat_id, "Agent session ended.").await;
         log::info!("Cleaned up stale agent session for chat {}", chat_id);
     }
 }
 
-async fn get_updates(bot_token: &str, offset: Option<i64>) -> Result<Vec<Update>, String> {
+async fn get_updates(
+    bot_token: &str,
+    offset: Option<i64>,
+    timeout_secs: u64,
+) -> Result<Vec<Update>, String> {
     let client = reqwest::Client::new();
     let url = format!("https://api.telegram.org/bot{}/getUpdates", bot_token);
 
     let mut params = serde_json::json!({
-        "timeout": 30,
+        "timeout": timeout_secs,
         "allowed_updates": ["message"],
     });
 
@@ -139,7 +180,7 @@ async fn get_updates(bot_token: &str, offset: Option<i64>) -> Result<Vec<Update>
     let resp = client
         .post(&url)
         .json(&params)
-        .timeout(std::time::Duration::from_secs(35))
+        .timeout(std::time::Duration::from_secs(timeout_secs + 5))
         .send()
         .await
         .map_err(|e| format!("Telegram request failed: {}", e))?;
@@ -165,21 +206,24 @@ async fn handle_message(
 ) -> Option<String> {
     // Try parsing as a command first
     if let Some(cmd) = commands::parse_command(text) {
+        log::info!("Parsed Telegram command: {:?}", cmd);
         return Some(match cmd {
             AgentCommand::Help => commands::format_help(),
             AgentCommand::Jobs => {
-                let jobs: Vec<Job> = state.jobs_config.lock().unwrap().jobs.clone();
+                let jobs: Vec<Job> = lock_or_log(&state.jobs_config, "jobs_config")
+                    .map(|c| c.jobs.clone())
+                    .unwrap_or_default();
                 commands::format_jobs(&jobs)
             }
             AgentCommand::Status => {
-                let statuses = state.job_status.lock().unwrap().clone();
+                let statuses = lock_or_log(&state.job_status, "job_status")
+                    .map(|s| s.clone())
+                    .unwrap_or_default();
                 commands::format_status(&statuses)
             }
             AgentCommand::Run(name) => {
-                let job = {
-                    let config = state.jobs_config.lock().unwrap();
-                    config.jobs.iter().find(|j| j.name == name).cloned()
-                };
+                let job = lock_or_log(&state.jobs_config, "jobs_config")
+                    .and_then(|c| c.jobs.iter().find(|j| j.name == name).cloned());
                 match job {
                     Some(job) => {
                         let secrets = Arc::clone(&state.secrets);
@@ -198,23 +242,27 @@ async fn handle_message(
                 }
             }
             AgentCommand::Pause(name) => {
-                let mut status = state.job_status.lock().unwrap();
-                match status.get(&name) {
-                    Some(JobStatus::Running { .. }) => {
-                        status.insert(name.clone(), JobStatus::Paused);
-                        format!("Paused job <code>{}</code>", name)
-                    }
-                    _ => format!("Job <code>{}</code> is not running", name),
+                match lock_or_log(&state.job_status, "job_status") {
+                    Some(mut status) => match status.get(&name) {
+                        Some(JobStatus::Running { .. }) => {
+                            status.insert(name.clone(), JobStatus::Paused);
+                            format!("Paused job <code>{}</code>", name)
+                        }
+                        _ => format!("Job <code>{}</code> is not running", name),
+                    },
+                    None => "Internal error".to_string(),
                 }
             }
             AgentCommand::Resume(name) => {
-                let mut status = state.job_status.lock().unwrap();
-                match status.get(&name) {
-                    Some(JobStatus::Paused) => {
-                        status.insert(name.clone(), JobStatus::Idle);
-                        format!("Resumed job <code>{}</code>", name)
-                    }
-                    _ => format!("Job <code>{}</code> is not paused", name),
+                match lock_or_log(&state.job_status, "job_status") {
+                    Some(mut status) => match status.get(&name) {
+                        Some(JobStatus::Paused) => {
+                            status.insert(name.clone(), JobStatus::Idle);
+                            format!("Resumed job <code>{}</code>", name)
+                        }
+                        _ => format!("Job <code>{}</code> is not paused", name),
+                    },
+                    None => "Internal error".to_string(),
                 }
             }
             AgentCommand::Agent(prompt) => {
@@ -239,16 +287,20 @@ async fn handle_agent_command(
 ) -> String {
     // Reject if there's already an active session for this chat
     {
-        let agents = state.active_agents.lock().unwrap();
-        if agents.contains_key(&chat_id) {
-            return "An agent session is already active. Use /exit to end it first.".to_string();
+        if let Some(agents) = lock_or_log(&state.active_agents, "active_agents") {
+            if agents.contains_key(&chat_id) {
+                return "An agent session is already active. Use /exit to end it first."
+                    .to_string();
+            }
         }
     }
 
-    let (settings, jobs) = {
-        let s = state.settings.lock().unwrap();
-        let j = state.jobs_config.lock().unwrap();
-        (s.clone(), j.jobs.clone())
+    let (settings, jobs) = match (
+        lock_or_log(&state.settings, "settings"),
+        lock_or_log(&state.jobs_config, "jobs_config"),
+    ) {
+        (Some(s), Some(j)) => (s.clone(), j.jobs.clone()),
+        _ => return "Internal error: failed to read config".to_string(),
     };
 
     let job = match crate::commands::jobs::build_agent_job(prompt, Some(chat_id), &settings, &jobs)
@@ -272,9 +324,13 @@ async fn handle_agent_command(
     // Wait for the executor to populate the pane_id in job_status
     let active_agents = Arc::clone(&state.active_agents);
     let job_status = Arc::clone(&state.job_status);
+    let mut found_agent: Option<ActiveAgent> = None;
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        let status = job_status.lock().unwrap();
+        let status = match lock_or_log(&job_status, "job_status") {
+            Some(s) => s,
+            None => continue,
+        };
         if let Some(JobStatus::Running {
             pane_id: Some(ref pane_id),
             tmux_session: Some(ref session),
@@ -282,25 +338,49 @@ async fn handle_agent_command(
             ..
         }) = status.get("agent")
         {
-            let agent = ActiveAgent {
+            log::info!("Agent pane found: {} in session {}", pane_id, session);
+            found_agent = Some(ActiveAgent {
                 pane_id: pane_id.clone(),
                 tmux_session: session.clone(),
                 run_id: rid.clone(),
-            };
-            active_agents.lock().unwrap().insert(chat_id, agent);
-            return "Agent session started. Send messages to interact, /exit to end.".to_string();
+            });
+            break;
         }
     }
 
-    "Agent started (could not track pane -- session may not support follow-up messages).".to_string()
+    let agent = match found_agent {
+        Some(a) => a,
+        None => {
+            log::warn!("Agent pane not found in job_status after 6s wait");
+            return "Agent started (could not track pane -- session may not support follow-up messages).".to_string();
+        }
+    };
+
+    if let Some(mut agents) = lock_or_log(&active_agents, "active_agents") {
+        agents.insert(chat_id, agent);
+    }
+
+    // Check if privacy mode blocks follow-up messages in groups
+    let bot_token = lock_or_log(&state.settings, "settings")
+        .and_then(|s| s.telegram.as_ref().map(|t| t.bot_token.clone()));
+    if let Some(ref token) = bot_token {
+        if !super::can_read_group_messages(token).await {
+            return concat!(
+                "Agent session started, but the bot has Group Privacy mode enabled. ",
+                "Follow-up messages in group chats will NOT be delivered to the agent.\n\n",
+                "To fix: open @BotFather, send /mybots, select your bot, ",
+                "go to Bot Settings > Group Privacy > Turn Off."
+            ).to_string();
+        }
+    }
+
+    "Agent session started. Send messages to interact, /exit to end.".to_string()
 }
 
 /// Handle /exit or /quit: kill the agent pane and clean up.
 fn handle_exit_command(state: &AgentState, chat_id: i64) -> String {
-    let agent = {
-        let mut agents = state.active_agents.lock().unwrap();
-        agents.remove(&chat_id)
-    };
+    let agent = lock_or_log(&state.active_agents, "active_agents")
+        .and_then(|mut agents| agents.remove(&chat_id));
 
     match agent {
         Some(agent) => {
@@ -321,10 +401,9 @@ async fn relay_to_agent(
     state: &AgentState,
     chat_id: i64,
 ) -> Option<String> {
-    let agent = {
-        let agents = state.active_agents.lock().unwrap();
-        agents.get(&chat_id).map(|a| (a.pane_id.clone(), a.tmux_session.clone()))
-    };
+    let agent = lock_or_log(&state.active_agents, "active_agents")?
+        .get(&chat_id)
+        .map(|a| (a.pane_id.clone(), a.tmux_session.clone()));
 
     let (pane_id, tmux_session) = match agent {
         Some(a) => a,
@@ -334,18 +413,26 @@ async fn relay_to_agent(
     // Check if the pane is still alive
     if !tmux::is_pane_busy(&tmux_session, &pane_id) {
         log::info!("Agent pane {} no longer busy, cleaning up", pane_id);
-        state.active_agents.lock().unwrap().remove(&chat_id);
+        if let Some(mut agents) = lock_or_log(&state.active_agents, "active_agents") {
+            agents.remove(&chat_id);
+        }
         return Some("Agent session has ended.".to_string());
     }
 
-    log::info!("Relaying message to agent pane {}: {}", pane_id, &text[..text.len().min(100)]);
+    log::info!(
+        "Relaying message to agent pane {}: {}",
+        pane_id,
+        &text[..text.len().min(100)]
+    );
 
-    // Send the text to the pane as input
-    match tmux::send_keys_to_pane(&tmux_session, &pane_id, text) {
+    // Send the text to the pane as input (uses TUI-aware send for Claude Code)
+    match tmux::send_keys_to_tui_pane(&pane_id, text) {
         Ok(()) => None, // Monitor will relay the response
         Err(e) => {
             log::error!("Failed to relay message to agent pane {}: {}", pane_id, e);
-            state.active_agents.lock().unwrap().remove(&chat_id);
+            if let Some(mut agents) = lock_or_log(&state.active_agents, "active_agents") {
+                agents.remove(&chat_id);
+            }
             Some("Failed to send message to agent. Session ended.".to_string())
         }
     }
