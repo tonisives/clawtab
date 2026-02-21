@@ -108,6 +108,21 @@ a:hover {
   text-decoration: none;
 }
 
+.nav-docs {
+  margin-left: auto;
+  padding-left: 24px;
+  border-left: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.15s;
+}
+
+.nav-docs:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
 /* --- Hero --- */
 
 .hero {

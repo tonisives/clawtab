@@ -5,15 +5,10 @@ use crate::config::jobs::{Job, JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
 use crate::secrets::SecretsManager;
-use crate::tmux;
 
 use super::commands::{self, AgentCommand};
 use super::types::{TelegramResponse, Update};
 use super::TelegramConfig;
-
-const AGENT_WINDOW: &str = "cwt-agent";
-const AGENT_POLL_INTERVAL_SECS: u64 = 8;
-const AGENT_CAPTURE_LINES: u32 = 80;
 
 pub struct AgentState {
     pub settings: Arc<Mutex<AppSettings>>,
@@ -188,167 +183,29 @@ async fn handle_message(
     })
 }
 
-/// Handle /agent command: spawn a new tmux pane running claude, relay output to telegram.
+/// Handle /agent command: build a synthetic agent Job and run it through execute_job.
 async fn handle_agent_command(
     prompt: &str,
-    config: &TelegramConfig,
+    _config: &TelegramConfig,
     state: &AgentState,
     chat_id: i64,
 ) -> String {
-    let (tmux_session, claude_path) = {
-        let s = state.settings.lock().unwrap();
-        (s.default_tmux_session.clone(), s.claude_path.clone())
+    let job = match crate::commands::jobs::build_agent_job(prompt, Some(chat_id)) {
+        Ok(j) => j,
+        Err(e) => return format!("Failed to build agent job: {}", e),
     };
 
-    if !tmux::is_available() {
-        return "tmux is not available".to_string();
-    }
-
-    // Ensure session exists
-    if !tmux::session_exists(&tmux_session) {
-        if let Err(e) = tmux::create_session(&tmux_session) {
-            return format!("Failed to create tmux session: {}", e);
-        }
-    }
-
-    // Ensure agent window exists
-    if !tmux::window_exists(&tmux_session, AGENT_WINDOW) {
-        if let Err(e) = tmux::create_window(&tmux_session, AGENT_WINDOW, &[]) {
-            return format!("Failed to create agent window: {}", e);
-        }
-        // Brief delay for window init
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-
-    // Split a new pane in the agent window
-    let pane_id = match tmux::split_pane(&tmux_session, AGENT_WINDOW, &[]) {
-        Ok(id) => id,
-        Err(e) => return format!("Failed to split pane: {}", e),
-    };
-
-    // Brief delay for pane init
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-
-    // Build the claude command
-    let agent_dir = crate::commands::jobs::agent_dir_path();
-    let escaped_prompt = prompt.replace('\'', "'\\''");
-    let cmd = format!(
-        "cd {} && {} -p '{}'",
-        agent_dir.display(),
-        claude_path,
-        escaped_prompt,
-    );
-
-    if let Err(e) = tmux::send_keys_to_pane(&tmux_session, &pane_id, &cmd) {
-        return format!("Failed to send command to pane: {}", e);
-    }
-
-    // Spawn background task to poll output and relay to telegram
-    let bot_token = config.bot_token.clone();
-    let session = tmux_session.clone();
-    let pane = pane_id.clone();
+    let secrets = Arc::clone(&state.secrets);
+    let history = Arc::clone(&state.history);
+    let settings = Arc::clone(&state.settings);
+    let job_status = Arc::clone(&state.job_status);
 
     tokio::spawn(async move {
-        relay_agent_output(&bot_token, chat_id, &session, &pane).await;
+        crate::scheduler::executor::execute_job(
+            &job, &secrets, &history, &settings, &job_status, "telegram",
+        )
+        .await;
     });
 
-    format!("Agent started in pane <code>{}</code>", pane_id)
-}
-
-/// Poll tmux pane output and send new content to telegram chat.
-async fn relay_agent_output(bot_token: &str, chat_id: i64, session: &str, pane_id: &str) {
-    // Wait a bit for the process to start producing output
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
-    let mut last_content = String::new();
-    let mut idle_ticks = 0u32;
-    let max_idle_ticks = 5; // Stop after ~40s of no changes once process exits
-
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(AGENT_POLL_INTERVAL_SECS)).await;
-
-        let capture = match tmux::capture_pane(session, pane_id, AGENT_CAPTURE_LINES) {
-            Ok(c) => c,
-            Err(e) => {
-                log::warn!("Failed to capture agent pane {}: {}", pane_id, e);
-                // Pane probably closed
-                break;
-            }
-        };
-
-        // Trim trailing whitespace from each line and remove empty trailing lines
-        let trimmed: String = capture
-            .lines()
-            .collect::<Vec<_>>()
-            .join("\n")
-            .trim()
-            .to_string();
-
-        if trimmed != last_content && !trimmed.is_empty() {
-            // Find new content by diffing
-            let new_content = diff_content(&last_content, &trimmed);
-            last_content = trimmed;
-            idle_ticks = 0;
-
-            if !new_content.is_empty() {
-                let msg = format!("<pre>{}</pre>", html_escape(&new_content));
-                if let Err(e) = super::send_message(bot_token, chat_id, &msg).await {
-                    log::error!("Failed to relay agent output: {}", e);
-                }
-            }
-        } else {
-            // Check if process is still running
-            let busy = tmux::is_pane_busy(session, pane_id);
-            if !busy {
-                idle_ticks += 1;
-                if idle_ticks >= max_idle_ticks {
-                    // Send final message
-                    if let Err(e) =
-                        super::send_message(bot_token, chat_id, "Agent finished.").await
-                    {
-                        log::error!("Failed to send agent completion: {}", e);
-                    }
-                    break;
-                }
-            }
-        }
-    }
-}
-
-/// Compute new lines that appear in `current` but not in `previous`.
-fn diff_content(previous: &str, current: &str) -> String {
-    if previous.is_empty() {
-        return current.to_string();
-    }
-
-    // Find the common prefix by lines
-    let prev_lines: Vec<&str> = previous.lines().collect();
-    let curr_lines: Vec<&str> = current.lines().collect();
-
-    // Find how many lines from the end of prev match the start of curr
-    // (tmux capture is a sliding window, so old lines scroll off)
-    let mut best_overlap = 0;
-    let max_check = prev_lines.len().min(curr_lines.len());
-
-    for overlap in 1..=max_check {
-        let prev_tail = &prev_lines[prev_lines.len() - overlap..];
-        let curr_head = &curr_lines[..overlap];
-        if prev_tail == curr_head {
-            best_overlap = overlap;
-        }
-    }
-
-    if best_overlap > 0 {
-        curr_lines[best_overlap..].join("\n")
-    } else {
-        // No overlap found, send everything (content scrolled past)
-        current.to_string()
-    }
-}
-
-/// Escape HTML special characters for telegram messages.
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+    "Agent started".to_string()
 }

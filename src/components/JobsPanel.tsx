@@ -424,7 +424,112 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled }: JobsPanelPro
           );
         })
       )}
+
+      <AgentSection statuses={statuses} />
     </div>
+  );
+}
+
+function AgentSection({ statuses }: { statuses: Record<string, JobStatus> }) {
+  const [prompt, setPrompt] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [showRuns, setShowRuns] = useState(false);
+  const { runs, reload } = useJobRuns("agent");
+
+  const agentStatus = statuses["agent"];
+  const isRunning = agentStatus?.state === "running";
+  const hasRuns = runs !== null && runs.length > 0;
+
+  const handleRun = async () => {
+    if (!prompt.trim()) return;
+    setSubmitting(true);
+    try {
+      await invoke("run_agent", { prompt: prompt.trim() });
+      setPrompt("");
+    } catch (e) {
+      console.error("Failed to run agent:", e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleRun();
+    }
+  };
+
+  useEffect(() => {
+    if (!isRunning && submitting) {
+      reload();
+    }
+  }, [isRunning]);
+
+  return (
+    <div style={{ marginTop: 24, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>Agent</h3>
+        {agentStatus && <StatusBadge status={agentStatus} />}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <input
+          type="text"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Enter a prompt for the agent..."
+          disabled={submitting}
+          style={{
+            flex: 1,
+            padding: "6px 10px",
+            fontSize: 13,
+            background: "var(--bg-secondary, #1a1a1a)",
+            border: "1px solid var(--border)",
+            borderRadius: 4,
+            color: "var(--text)",
+          }}
+        />
+        <button
+          className="btn btn-success btn-sm"
+          onClick={handleRun}
+          disabled={submitting || !prompt.trim()}
+        >
+          Run
+        </button>
+      </div>
+
+      {isRunning && agentStatus?.state === "running" && agentStatus.pane_id && (
+        <RunningLogs jobName="agent" />
+      )}
+
+      {hasRuns && (
+        <button
+          className="btn btn-sm"
+          style={{ fontSize: 11, marginTop: 4 }}
+          onClick={() => { setShowRuns((v) => !v); if (!showRuns) reload(); }}
+        >
+          {showRuns ? "Hide" : "Show"} run history ({runs?.length ?? 0})
+        </button>
+      )}
+
+      {showRuns && hasRuns && (
+        <div style={{ marginTop: 8 }}>
+          <AgentRunsPanel />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentRunsPanel() {
+  return (
+    <table className="data-table" style={{ width: "100%" }}>
+      <tbody>
+        <RunsPanel jobName="agent" />
+      </tbody>
+    </table>
   );
 }
 

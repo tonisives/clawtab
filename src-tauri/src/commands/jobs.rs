@@ -529,6 +529,56 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     out
 }
 
+/// Build a synthetic `Job` for running Claude as an ad-hoc agent.
+/// Writes the prompt to `~/.config/clawtab/agent/.agent-prompt.md` and returns
+/// a Job that can be passed to `execute_job`.
+pub fn build_agent_job(prompt: &str, chat_id: Option<i64>) -> Result<Job, String> {
+    let agent_dir = agent_dir_path();
+    std::fs::create_dir_all(&agent_dir)
+        .map_err(|e| format!("Failed to create agent dir: {}", e))?;
+
+    let prompt_path = agent_dir.join(".agent-prompt.md");
+    std::fs::write(&prompt_path, prompt)
+        .map_err(|e| format!("Failed to write agent prompt: {}", e))?;
+
+    Ok(Job {
+        name: "agent".to_string(),
+        job_type: crate::config::jobs::JobType::Claude,
+        enabled: true,
+        path: prompt_path.display().to_string(),
+        args: Vec::new(),
+        cron: String::new(),
+        secret_keys: Vec::new(),
+        env: std::collections::HashMap::new(),
+        work_dir: Some(agent_dir.display().to_string()),
+        tmux_session: None,
+        aerospace_workspace: None,
+        folder_path: None,
+        job_name: Some("default".to_string()),
+        telegram_chat_id: chat_id,
+        telegram_log_mode: crate::config::jobs::TelegramLogMode::Always,
+        group: "agent".to_string(),
+        slug: "agent/default".to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(), String> {
+    let job = build_agent_job(&prompt, None)?;
+
+    let secrets = Arc::clone(&state.secrets);
+    let history = Arc::clone(&state.history);
+    let settings = Arc::clone(&state.settings);
+    let job_status = Arc::clone(&state.job_status);
+
+    tauri::async_runtime::spawn(async move {
+        scheduler::executor::execute_job(&job, &secrets, &history, &settings, &job_status, "manual")
+            .await;
+    });
+
+    Ok(())
+}
+
 fn resolve_telegram_chat_id(job: &Job, settings: &AppSettings) -> Option<i64> {
     // Per-job chat_id takes priority
     if let Some(cid) = job.telegram_chat_id {
