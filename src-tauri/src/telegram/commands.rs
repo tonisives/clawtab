@@ -10,6 +10,7 @@ pub enum AgentCommand {
     Pause(String),
     Resume(String),
     Agent(String),
+    AgentExit,
     Unknown(String),
 }
 
@@ -43,6 +44,7 @@ pub fn parse_command(text: &str) -> Option<AgentCommand> {
             Some(prompt) if !prompt.is_empty() => AgentCommand::Agent(prompt),
             _ => AgentCommand::Unknown("/agent requires a prompt".to_string()),
         },
+        "/exit" | "/quit" => AgentCommand::AgentExit,
         _ => AgentCommand::Unknown(format!("Unknown command: {}", cmd)),
     })
 }
@@ -56,8 +58,11 @@ pub fn format_help() -> String {
         "/run &lt;name&gt; - Run a job",
         "/pause &lt;name&gt; - Pause a running job",
         "/resume &lt;name&gt; - Resume a paused job",
-        "/agent &lt;prompt&gt; - Run Claude Code with a prompt",
+        "/agent &lt;prompt&gt; - Start interactive Claude Code session",
+        "/exit - End active agent session",
         "/help - Show this help",
+        "",
+        "While an agent session is active, non-command messages are forwarded to it as follow-up prompts.",
     ]
     .join("\n")
 }

@@ -8,6 +8,13 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+/// Tracks an active interactive agent session for a Telegram chat.
+pub struct ActiveAgent {
+    pub pane_id: String,
+    pub tmux_session: String,
+    pub run_id: String,
+}
+
 const MAX_MESSAGE_LEN: usize = 4096;
 
 /// When true, the agent poller yields to the setup poller so they don't compete
