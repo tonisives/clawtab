@@ -57,6 +57,7 @@ export function SettingsApp() {
   const [showWizard, setShowWizard] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  const [createJobKey, setCreateJobKey] = useState(0);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
@@ -115,6 +116,16 @@ export function SettingsApp() {
   return (
     <div className="settings-container">
       <div className="tabs">
+        <button
+          className="add-job-btn"
+          onClick={() => {
+            setActiveTab("jobs");
+            setCreateJobKey((k) => k + 1);
+          }}
+          title="New blank job"
+        >
+          <span style={{ position: 'relative', top: -1 }}>+</span>
+        </button>
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -145,6 +156,7 @@ export function SettingsApp() {
             key={jobsResetKey}
             pendingTemplateId={pendingTemplateId}
             onTemplateHandled={() => setPendingTemplateId(null)}
+            createJobKey={createJobKey}
           />
         </div>
         {activeTab === "secrets" && <SecretsPanel />}

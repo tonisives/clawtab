@@ -67,10 +67,10 @@ export let HScrollWrapper = ({
   let wrapperStyle = maxWidth ? { maxWidth, margin: "0 auto" } : undefined
 
   return (
-    <div className="overflow-hidden" style={wrapperStyle}>
+    <div style={wrapperStyle}>
       <div className="relative flex items-center gap-4">
         {showArrows && <ScrollArrow direction="left" onClick={handlePrev} />}
-        <div ref={trackRef} className="flex-1 min-w-0 overflow-x-auto snap-x snap-mandatory hscroll-track">
+        <div ref={trackRef} className="grow w-0 overflow-x-auto snap-x snap-mandatory hscroll-track">
           {children}
         </div>
         {showArrows && <ScrollArrow direction="right" onClick={handleNext} />}

@@ -7,7 +7,7 @@ import type { SampleTemplate, TemplateVariable } from "../data/sampleTemplates";
 interface Props {
   autoCreateTemplateId?: string;
   onCreated: () => void;
-  onBlank: () => void;
+  onBlank?: () => void;
   onCancel: () => void;
 }
 
@@ -20,7 +20,7 @@ function slugifyName(input: string): string {
     .slice(0, 40);
 }
 
-export function SamplePicker({ autoCreateTemplateId, onCreated, onBlank, onCancel }: Props) {
+export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Props) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
   const [configuring, setConfiguring] = useState<SampleTemplate | null>(null);
@@ -293,6 +293,9 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onBlank, onCance
     <div className="settings-section">
       <div className="section-header">
         <h2>New Job</h2>
+        <button className="btn btn-sm" onClick={onCancel} style={{ marginLeft: "auto" }}>
+          Cancel
+        </button>
       </div>
 
       {error && (
@@ -359,14 +362,6 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onBlank, onCance
         ))}
       </div>
 
-      <div className="btn-group" style={{ marginTop: 20 }}>
-        <button className="btn" onClick={onBlank}>
-          Blank Job
-        </button>
-        <button className="btn" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
 
       {configuring && (
         <ConfigModal

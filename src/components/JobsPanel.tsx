@@ -87,9 +87,10 @@ function useJobRuns(jobName: string) {
 interface JobsPanelProps {
   pendingTemplateId?: string | null;
   onTemplateHandled?: () => void;
+  createJobKey?: number;
 }
 
-export function JobsPanel({ pendingTemplateId, onTemplateHandled }: JobsPanelProps) {
+export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }: JobsPanelProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [statuses, setStatuses] = useState<Record<string, JobStatus>>({});
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -131,6 +132,12 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled }: JobsPanelPro
       setShowPicker(true);
     }
   }, [pendingTemplateId]);
+
+  useEffect(() => {
+    if (createJobKey && createJobKey > 0) {
+      setShowPicker(true);
+    }
+  }, [createJobKey]);
 
   const handleToggle = async (name: string) => {
     try {
@@ -356,14 +363,6 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled }: JobsPanelPro
       <div className="section-header">
         <h2>Jobs</h2>
         <div className="btn-group">
-          <button
-            className="btn btn-sm"
-            onClick={() => setIsCreating(true)}
-            title="Blank job"
-            style={{ padding: "2px 8px", fontSize: 16, lineHeight: 1 }}
-          >
-            +
-          </button>
           <button
             className="btn btn-primary btn-sm"
             onClick={() => setShowPicker(true)}

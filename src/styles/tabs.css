@@ -5,6 +5,7 @@
   right: 0;
   z-index: 100;
   display: flex;
+  align-items: flex-end;
   gap: 2px;
   background: var(--bg-tertiary);
   padding: 8px 12px 0;
@@ -41,8 +42,37 @@
   align-items: center;
 }
 
+.add-job-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #5c6bc0;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+  margin-right: 8px;
+  transition: opacity 0.15s ease;
+  padding: 0;
+}
+
+.add-job-btn:hover {
+  opacity: 0.8;
+}
+
+.add-job-btn:active {
+  opacity: 0.65;
+}
+
 .claw-icon-btn {
   margin-left: auto;
+  align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;

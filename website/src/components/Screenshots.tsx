@@ -4,7 +4,7 @@ import { HScrollWrapper } from "./HScrollWrapper"
 export let Screenshots = () => (
   <Section id="screenshots" title="See It in Action">
     <HScrollWrapper showArrows maxWidth="800px" itemCount={screenshots.length} itemsPerView={1}>
-      <div className="flex items-center snap-x snap-mandatory">
+      <div className="flex items-center">
         {screenshots.map((s) => (
           <ScreenshotSlide key={s.src} src={s.src} caption={s.caption} />
         ))}
