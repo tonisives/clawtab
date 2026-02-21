@@ -41,7 +41,6 @@ export function SetupWizard({ onComplete }: Props) {
 
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
   const hasAiAgent = tools.some((t) => t.category === "AI Agent" && t.available);
-  const hasClaude = tools.some((t) => t.name === "claude" && t.available);
   const hasTerminal = tools.some((t) => t.category === "Terminal" && t.available);
   const hasEditor = tools.some((t) => t.category === "Editor" && t.available);
   const requiredTools = tools.filter((t) => REQUIRED_CATEGORIES.has(t.category));
@@ -242,7 +241,12 @@ export function SetupWizard({ onComplete }: Props) {
 
       {currentStep === "tools" && (
         <div>
-          <h3>Required Tools</h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <h3 style={{ margin: 0 }}>Tools</h3>
+            <button className="btn btn-sm" onClick={loadTools}>
+              Rescan
+            </button>
+          </div>
           <p className="section-description">
             These tools are needed to run ClawTab. You can change tool paths later in Settings.
           </p>
