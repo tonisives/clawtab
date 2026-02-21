@@ -91,7 +91,7 @@ pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(),
     let active_agents = Arc::clone(&state.active_agents);
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job_with_agents(
+        scheduler::executor::execute_job(
             &job,
             &secrets,
             &history,
@@ -149,7 +149,7 @@ pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(),
     let active_agents = Arc::clone(&state.active_agents);
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job_with_agents(
+        scheduler::executor::execute_job(
             &job,
             &secrets,
             &history,
@@ -858,7 +858,7 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(),
     let active_agents = Arc::clone(&state.active_agents);
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job_with_agents(
+        scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
         )
         .await;

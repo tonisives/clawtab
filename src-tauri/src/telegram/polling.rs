@@ -230,9 +230,11 @@ async fn handle_message(
                         let history = Arc::clone(&state.history);
                         let settings = Arc::clone(&state.settings);
                         let job_status = Arc::clone(&state.job_status);
+                        let active_agents = Arc::clone(&state.active_agents);
                         tokio::spawn(async move {
                             crate::scheduler::executor::execute_job(
                                 &job, &secrets, &history, &settings, &job_status, "telegram",
+                                &active_agents,
                             )
                             .await;
                         });
@@ -314,50 +316,32 @@ async fn handle_agent_command(
     let settings_arc = Arc::clone(&state.settings);
     let job_status = Arc::clone(&state.job_status);
 
+    let active_agents = Arc::clone(&state.active_agents);
+    let active_agents_for_exec = Arc::clone(&state.active_agents);
+
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "telegram",
+            &active_agents_for_exec,
         )
         .await;
     });
 
-    // Wait for the executor to populate the pane_id in job_status
-    let active_agents = Arc::clone(&state.active_agents);
-    let job_status = Arc::clone(&state.job_status);
-    let mut found_agent: Option<ActiveAgent> = None;
+    // Wait for execute_job to populate active_agents
+    let mut found = false;
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        let status = match lock_or_log(&job_status, "job_status") {
-            Some(s) => s,
-            None => continue,
-        };
-        if let Some(JobStatus::Running {
-            pane_id: Some(ref pane_id),
-            tmux_session: Some(ref session),
-            run_id: ref rid,
-            ..
-        }) = status.get("agent")
-        {
-            log::info!("Agent pane found: {} in session {}", pane_id, session);
-            found_agent = Some(ActiveAgent {
-                pane_id: pane_id.clone(),
-                tmux_session: session.clone(),
-                run_id: rid.clone(),
-            });
-            break;
+        if let Some(agents) = lock_or_log(&active_agents, "active_agents") {
+            if agents.contains_key(&chat_id) {
+                found = true;
+                break;
+            }
         }
     }
 
-    let agent = match found_agent {
-        Some(a) => a,
-        None => {
-            log::warn!("Agent pane not found in job_status after 6s wait");
-            return "Agent started (could not track pane -- session may not support follow-up messages).".to_string();
-        }
-    };
-
-    if let Some(mut agents) = lock_or_log(&active_agents, "active_agents") {
-        agents.insert(chat_id, agent);
+    if !found {
+        log::warn!("Agent pane not found in active_agents after 6s wait");
+        return "Agent started (could not track pane -- session may not support follow-up messages).".to_string();
     }
 
     // Check if privacy mode blocks follow-up messages in groups

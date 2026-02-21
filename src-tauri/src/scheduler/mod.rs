@@ -11,6 +11,7 @@ use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
 use crate::secrets::SecretsManager;
+use crate::telegram::ActiveAgent;
 
 pub struct SchedulerHandle {
     _handle: tauri::async_runtime::JoinHandle<()>,
@@ -22,9 +23,10 @@ pub fn start(
     history: Arc<Mutex<HistoryStore>>,
     settings: Arc<Mutex<AppSettings>>,
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
+    active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
 ) -> SchedulerHandle {
     let handle = tauri::async_runtime::spawn(async move {
-        run_loop(jobs_config, secrets, history, settings, job_status).await;
+        run_loop(jobs_config, secrets, history, settings, job_status, active_agents).await;
     });
     SchedulerHandle { _handle: handle }
 }
@@ -35,6 +37,7 @@ async fn run_loop(
     history: Arc<Mutex<HistoryStore>>,
     settings: Arc<Mutex<AppSettings>>,
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
+    active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
 ) {
     let mut last_check = Utc::now();
 
@@ -83,9 +86,11 @@ async fn run_loop(
                 let history = Arc::clone(&history);
                 let settings = Arc::clone(&settings);
                 let job_status = Arc::clone(&job_status);
+                let active_agents = Arc::clone(&active_agents);
                 tauri::async_runtime::spawn(async move {
                     executor::execute_job(
                         &job, &secrets, &history, &settings, &job_status, "cron",
+                        &active_agents,
                     )
                     .await;
                 });

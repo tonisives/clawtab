@@ -1,24 +1,67 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { Section } from "./Section"
+import { HScrollWrapper } from "./HScrollWrapper"
 import { useCases, type UseCase, type Template } from "../data/useCases"
 
 type UseCasesProps = {
   onUseTemplate: (templateId: string) => void
 }
 
-export let UseCases = ({ onUseTemplate }: UseCasesProps) => (
-  <Section
-    id="use-cases"
-    title="What Can You Automate?"
-    subtitle="Pre-built templates for common automation tasks. One click to create."
-  >
-    <div className="flex flex-col gap-4">
-      {useCases.map((row, ri) => (
-        <UseCaseRow key={ri} cases={row} onUseTemplate={onUseTemplate} />
-      ))}
+export let UseCases = ({ onUseTemplate }: UseCasesProps) => {
+  let allCases = useMemo(() => useCases.flat(), [])
+
+  return (
+    <Section
+      id="use-cases"
+      title="What Can You Automate?"
+      subtitle="Pre-built templates for common automation tasks. One click to create."
+    >
+      {/* Mobile: single horizontal scroll with pips */}
+      <MobileUseCases cases={allCases} onUseTemplate={onUseTemplate} />
+      {/* Desktop: rows */}
+      <div className="hidden md:flex flex-col gap-4">
+        {useCases.map((row, ri) => (
+          <UseCaseRow key={ri} cases={row} onUseTemplate={onUseTemplate} />
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+let MobileUseCases = ({
+  cases,
+  onUseTemplate,
+}: {
+  cases: UseCase[]
+  onUseTemplate: (id: string) => void
+}) => {
+  let [expandedIdx, setExpandedIdx] = useState<number | null>(null)
+
+  let toggle = useCallback((idx: number) => {
+    setExpandedIdx((prev) => (prev === idx ? null : idx))
+  }, [])
+
+  return (
+    <div className="md:hidden">
+      <HScrollWrapper itemCount={cases.length} itemsPerView={1}>
+        <div className="flex gap-4">
+          {cases.map((uc, i) => (
+            <UseCaseCard
+              key={uc.title}
+              useCase={uc}
+              index={i}
+              isExpanded={expandedIdx === i}
+              isCollapsed={false}
+              onToggle={toggle}
+              onUseTemplate={onUseTemplate}
+              mobile
+            />
+          ))}
+        </div>
+      </HScrollWrapper>
     </div>
-  </Section>
-)
+  )
+}
 
 let UseCaseRow = ({
   cases,
@@ -37,7 +80,7 @@ let UseCaseRow = ({
   )
 
   return (
-    <div className="use-case-row flex flex-wrap gap-4 items-start">
+    <div className="use-case-row flex gap-4 items-start flex-wrap">
       {cases.map((uc, i) => {
         let isExpanded = expandedIdx === i
         return (
@@ -62,6 +105,7 @@ let UseCaseCard = ({
   isExpanded,
   onToggle,
   onUseTemplate,
+  mobile,
 }: {
   useCase: UseCase
   index: number
@@ -69,6 +113,7 @@ let UseCaseCard = ({
   isCollapsed: boolean
   onToggle: (idx: number) => void
   onUseTemplate: (id: string) => void
+  mobile?: boolean
 }) => {
   let handleToggle = useCallback(() => {
     onToggle(index)
@@ -80,7 +125,7 @@ let UseCaseCard = ({
 
   return (
     <div
-      className={`use-case-card flex-1 min-w-0 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--color-accent)] ${
+      className={`use-case-card ${mobile ? "w-72 shrink-0 snap-center" : "flex-1 min-w-0"} bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--color-accent)] ${
         isExpanded ? "border-[var(--color-accent)]" : ""
       }`}
       onClick={handleToggle}

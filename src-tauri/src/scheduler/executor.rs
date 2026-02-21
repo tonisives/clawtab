@@ -25,39 +25,7 @@ pub async fn execute_job(
     settings: &Arc<Mutex<AppSettings>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     trigger: &str,
-) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, None).await;
-}
-
-pub async fn execute_job_with_agents(
-    job: &Job,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    trigger: &str,
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-) {
-    execute_job_inner(
-        job,
-        secrets,
-        history,
-        settings,
-        job_status,
-        trigger,
-        Some(active_agents),
-    )
-    .await;
-}
-
-async fn execute_job_inner(
-    job: &Job,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    trigger: &str,
-    active_agents: Option<&Arc<Mutex<HashMap<i64, ActiveAgent>>>>,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
@@ -128,7 +96,7 @@ async fn execute_job_inner(
                     );
                 }
                 // Register in active_agents so Telegram replies can be relayed
-                if let Some(agents) = active_agents {
+                {
                     let chat_id = job
                         .telegram_chat_id
                         .or_else(|| {
@@ -137,7 +105,7 @@ async fn execute_job_inner(
                                 .and_then(|c| c.chat_ids.first().copied())
                         });
                     if let Some(chat_id) = chat_id {
-                        if let Ok(mut map) = agents.lock() {
+                        if let Ok(mut map) = active_agents.lock() {
                             log::info!(
                                 "Registering active agent for chat_id={} pane={}",
                                 chat_id,

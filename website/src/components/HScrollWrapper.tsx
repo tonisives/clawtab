@@ -67,7 +67,7 @@ export let HScrollWrapper = ({
   let wrapperStyle = maxWidth ? { maxWidth, margin: "0 auto" } : undefined
 
   return (
-    <div style={wrapperStyle}>
+    <div className="max-w-full overflow-hidden" style={wrapperStyle}>
       <div className="relative flex items-center gap-4">
         {showArrows && <ScrollArrow direction="left" onClick={handlePrev} />}
         <div ref={trackRef} className="flex-1 min-w-0 overflow-x-auto snap-x snap-mandatory hscroll-track">
@@ -129,8 +129,12 @@ let ScrollArrow = ({
   <button
     onClick={onClick}
     aria-label={direction === "left" ? "Previous" : "Next"}
-    className="shrink-0 w-12 h-12 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text)] text-2xl cursor-pointer flex items-center justify-center transition-colors hover:bg-[var(--color-border)] z-[2]"
+    className="hidden md:flex shrink-0 w-12 h-12 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text)] cursor-pointer items-center justify-center transition-colors hover:bg-[var(--color-border)] z-[2]"
   >
-    {direction === "left" ? "\u2039" : "\u203A"}
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {direction === "left"
+        ? <polyline points="13,4 7,10 13,16" />
+        : <polyline points="7,4 13,10 7,16" />}
+    </svg>
   </button>
 )

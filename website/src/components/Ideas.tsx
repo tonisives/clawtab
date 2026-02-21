@@ -72,13 +72,14 @@ let TSKR_API = "https://svc.trend-seeker.app/api/ideas?limit=50&sortBy=newest"
 let signalInfo = (idea: Idea): SignalInfo => {
   let score = 0
   let ev = idea.evidence_strength
-  if (ev && typeof ev.volume !== "undefined") {
-    let vol = ev.volume || 0
-    let urg = ev.urgency || 0
-    let spec = ev.specificity || 0
-    score = (vol + urg + spec) / 3
-  } else if (idea.validation_score != null) {
-    score = idea.validation_score || 0
+  if (ev && typeof ev.volume === "number") {
+    let vol = Number.isFinite(ev.volume) ? ev.volume : 0
+    let urg = Number.isFinite(ev.urgency) ? ev.urgency : 0
+    let spec = Number.isFinite(ev.specificity) ? ev.specificity : 0
+    let sum = vol + urg + spec
+    score = Number.isFinite(sum) ? sum / 3 : 0
+  } else if (idea.validation_score != null && Number.isFinite(idea.validation_score)) {
+    score = idea.validation_score
   }
   if (score >= 0.95) return { label: "Hot Signal", color: "#ef5350", pct: score }
   if (score >= 0.9) return { label: "Strong", color: "#ff9800", pct: score }
@@ -109,7 +110,7 @@ let IdeaCard = ({ idea }: { idea: Idea }) => {
       href={`https://www.trend-seeker.app/ideas/${idea.business_idea_id}`}
       target="_blank"
       rel="noreferrer"
-      className="idea-card flex-[0_0_calc((100%_-_40px)/3)] max-md:flex-[0_0_calc(100%_-_20px)] snap-center relative bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden flex flex-col no-underline text-[var(--color-text)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
+      className="idea-card flex-[0_0_calc((100%_-_40px)/3)] max-md:flex-[0_0_280px] snap-center relative bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden flex flex-col no-underline text-[var(--color-text)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_8px_24px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_8px_24px_rgba(0,0,0,0.3)]"
       style={{ "--signal-color": sig.color } as React.CSSProperties}
     >
       <div className="h-[3px] w-full shrink-0" style={{ background: sig.color }} />
@@ -155,23 +156,26 @@ let IdeaCardBody = ({
   </div>
 )
 
-let SignalMeter = ({ sig }: { sig: SignalInfo }) => (
-  <div className="mt-auto">
-    <div className="flex justify-between items-center mb-1.5 text-xs text-[var(--color-text-secondary)]">
-      <span>Signal Strength</span>
-      <span style={{ color: sig.color, fontWeight: 600 }}>{Math.round(sig.pct * 100)}%</span>
+let SignalMeter = ({ sig }: { sig: SignalInfo }) => {
+  let pct = Number.isFinite(sig.pct) ? Math.round(sig.pct * 100) : 0
+  return (
+    <div className="mt-auto">
+      <div className="flex justify-between items-center mb-1.5 text-xs text-[var(--color-text-secondary)]">
+        <span>Signal Strength</span>
+        <span style={{ color: sig.color, fontWeight: 600 }}>{pct}%</span>
+      </div>
+      <div className="h-1 rounded-sm overflow-hidden bg-[rgba(0,0,0,0.06)] dark:bg-[rgba(255,255,255,0.08)]">
+        <div
+          className="h-full rounded-sm transition-[width] duration-500"
+          style={{ width: pct + "%", background: sig.color }}
+        />
+      </div>
     </div>
-    <div className="h-1 rounded-sm overflow-hidden bg-[rgba(0,0,0,0.06)] dark:bg-[rgba(255,255,255,0.08)]">
-      <div
-        className="h-full rounded-sm transition-[width] duration-500"
-        style={{ width: sig.pct * 100 + "%", background: sig.color }}
-      />
-    </div>
-  </div>
-)
+  )
+}
 
 let SkeletonCard = () => (
-  <div className="idea-card flex-[0_0_calc((100%_-_40px)/3)] max-md:flex-[0_0_calc(100%_-_20px)] snap-center relative bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden min-h-[280px]">
+  <div className="idea-card flex-[0_0_calc((100%_-_40px)/3)] max-md:flex-[0_0_280px] snap-center relative bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden min-h-[280px]">
     <div className="shimmer w-full h-full" />
   </div>
 )

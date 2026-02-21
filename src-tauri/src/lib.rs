@@ -56,6 +56,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                     let history = Arc::clone(&state.history);
                     let settings = Arc::clone(&state.settings);
                     let job_status = Arc::clone(&state.job_status);
+                    let active_agents = Arc::clone(&state.active_agents);
                     tauri::async_runtime::spawn(async move {
                         scheduler::executor::execute_job(
                             &job,
@@ -64,6 +65,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &settings,
                             &job_status,
                             "cli",
+                            &active_agents,
                         )
                         .await;
                     });
@@ -102,6 +104,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                     let history = Arc::clone(&state.history);
                     let settings = Arc::clone(&state.settings);
                     let job_status = Arc::clone(&state.job_status);
+                    let active_agents = Arc::clone(&state.active_agents);
                     tauri::async_runtime::spawn(async move {
                         scheduler::executor::execute_job(
                             &job,
@@ -110,6 +113,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &settings,
                             &job_status,
                             "restart",
+                            &active_agents,
                         )
                         .await;
                     });
@@ -206,6 +210,7 @@ pub fn run() {
     let history_for_scheduler = Arc::clone(&history);
     let settings_for_scheduler = Arc::clone(&settings);
     let job_status_for_scheduler = Arc::clone(&job_status);
+    let active_agents_for_scheduler = Arc::clone(&active_agents);
 
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
@@ -344,6 +349,7 @@ pub fn run() {
                 history_for_scheduler,
                 settings_for_scheduler,
                 job_status_for_scheduler,
+                active_agents_for_scheduler,
             );
             {
                 let state: tauri::State<AppState> = app.state();
