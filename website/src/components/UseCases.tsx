@@ -37,17 +37,16 @@ let UseCaseRow = ({
   )
 
   return (
-    <div className="use-case-row flex flex-wrap gap-4">
+    <div className="use-case-row flex flex-wrap gap-4 items-start">
       {cases.map((uc, i) => {
         let isExpanded = expandedIdx === i
-        let isCollapsed = expandedIdx !== null && !isExpanded
         return (
           <UseCaseCard
             key={uc.title}
             useCase={uc}
             index={i}
             isExpanded={isExpanded}
-            isCollapsed={isCollapsed}
+            isCollapsed={false}
             onToggle={toggle}
             onUseTemplate={onUseTemplate}
           />
@@ -61,7 +60,6 @@ let UseCaseCard = ({
   useCase,
   index,
   isExpanded,
-  isCollapsed,
   onToggle,
   onUseTemplate,
 }: {
@@ -82,23 +80,17 @@ let UseCaseCard = ({
 
   return (
     <div
-      className={`use-case-card bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--color-accent)] ${
-        isExpanded
-          ? "w-full"
-          : isCollapsed
-            ? "flex-1 min-w-[200px]"
-            : "flex-1 min-w-0"
+      className={`use-case-card flex-1 min-w-0 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--color-accent)] ${
+        isExpanded ? "border-[var(--color-accent)]" : ""
       }`}
       onClick={handleToggle}
     >
-      {!isCollapsed && (
-        <img
-          src={useCase.image}
-          alt={useCase.title}
-          loading="lazy"
-          className="w-full h-40 object-cover block border-b border-[var(--color-border)]"
-        />
-      )}
+      <img
+        src={useCase.image}
+        alt={useCase.title}
+        loading="lazy"
+        className="w-full h-40 object-cover block border-b border-[var(--color-border)]"
+      />
       <UseCaseHeader useCase={useCase} />
       <div
         className={`use-case-body-grid border-t border-[var(--color-border)] px-6 ${isExpanded ? "expanded" : ""}`}
@@ -170,21 +162,21 @@ let TemplateItem = ({
           </span>
         </div>
       </div>
-      {expanded && (
-        <>
+      <div className={`template-item-body ${expanded ? "expanded" : ""}`}>
+        <div className="overflow-hidden">
           <pre className="mt-2 mb-0">
             <code className="template-code expanded block bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg p-3 font-mono text-[11px] leading-relaxed text-[var(--color-text-secondary)] whitespace-pre-wrap">
               {template.code}
             </code>
           </pre>
           <button
-            className="self-start mt-2 px-4 py-1.5 text-xs font-semibold text-white bg-[var(--color-accent)] border-none rounded-lg cursor-pointer transition-colors hover:bg-[var(--color-accent-hover)]"
+            className="self-start mt-2 mb-1 px-4 py-1.5 text-xs font-semibold text-white bg-[var(--color-accent)] border-none rounded-lg cursor-pointer transition-colors hover:bg-[var(--color-accent-hover)]"
             onClick={handleUseTemplate}
           >
             Use Template
           </button>
-        </>
-      )}
+        </div>
+      </div>
     </div>
   )
 }

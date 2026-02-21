@@ -88,15 +88,17 @@ pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(),
     let history = Arc::clone(&state.history);
     let settings = Arc::clone(&state.settings);
     let job_status = Arc::clone(&state.job_status);
+    let active_agents = Arc::clone(&state.active_agents);
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job(
+        scheduler::executor::execute_job_with_agents(
             &job,
             &secrets,
             &history,
             &settings,
             &job_status,
             "manual",
+            &active_agents,
         )
         .await;
     });
@@ -144,15 +146,17 @@ pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(),
     let history = Arc::clone(&state.history);
     let settings = Arc::clone(&state.settings);
     let job_status = Arc::clone(&state.job_status);
+    let active_agents = Arc::clone(&state.active_agents);
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job(
+        scheduler::executor::execute_job_with_agents(
             &job,
             &secrets,
             &history,
             &settings,
             &job_status,
             "restart",
+            &active_agents,
         )
         .await;
     });
@@ -302,6 +306,9 @@ pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<
             .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
+    // Write browse.sh into the .cwt/ root (shared across all jobs)
+    write_browse_sh(cwt_root);
+
     // Lazy migration: move .cwt/job.md -> .cwt/default/job.md if needed
     crate::config::jobs::migrate_cwt_root(cwt_root);
 
@@ -320,6 +327,57 @@ pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<
     }
 
     CwtFolder::from_path_with_job(cwt_root, job_name)
+}
+
+/// Write the browse.sh Safari helper script into a .cwt/ root directory.
+fn write_browse_sh(cwt_root: &std::path::Path) {
+    let browse_sh = cwt_root.join("browse.sh");
+    if browse_sh.exists() {
+        return;
+    }
+    let script = r#"#!/bin/bash
+# ClawTab Safari Browser Helper
+# Usage: ./browse.sh <command> [args...]
+#   open <url>       -- Open URL in Safari
+#   read             -- Get text content of active Safari tab
+#   url              -- Get URL of active Safari tab
+#   js <javascript>  -- Execute JavaScript in active Safari tab
+
+set -euo pipefail
+
+case "${1:-}" in
+  open)
+    open -a Safari "${2:?URL required}"
+    sleep 2
+    ;;
+  read)
+    osascript -e 'tell application "Safari" to return source of front document' \
+      | sed 's/<[^>]*>//g' | sed '/^$/d' | head -200
+    ;;
+  url)
+    osascript -e 'tell application "Safari" to return URL of front document'
+    ;;
+  js)
+    osascript -e "tell application \"Safari\" to do JavaScript \"${2:?JS required}\" in front document"
+    ;;
+  *)
+    echo "Usage: $0 {open|read|url|js} [args...]"
+    exit 1
+    ;;
+esac
+"#;
+    if let Err(e) = std::fs::write(&browse_sh, script) {
+        log::warn!("Failed to write browse.sh: {}", e);
+        return;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        if let Err(e) = std::fs::set_permissions(&browse_sh, perms) {
+            log::warn!("Failed to chmod browse.sh: {}", e);
+        }
+    }
 }
 
 #[tauri::command]
@@ -502,6 +560,9 @@ fn write_claude_settings(dir: &std::path::Path) {
                 "Bash(sed *)",
                 "Bash(awk *)",
                 "Bash(chmod *)",
+                "Bash(.cwt/browse.sh *)",
+                "Bash(./browse.sh *)",
+                "Bash(osascript *)",
                 "Bash(echo *)",
                 "Bash(printf *)",
                 "Bash(test *)",
@@ -707,6 +768,21 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
         }
     }
 
+    // Web Browsing section
+    if let Some(ref folder_path) = job.folder_path {
+        let browse_sh = std::path::Path::new(folder_path).join("browse.sh");
+        if browse_sh.exists() {
+            out.push_str("\n## Web Browsing\n\n");
+            out.push_str("A `browse.sh` helper script is available in the .cwt/ root for Safari automation.\n");
+            out.push_str("Only a single Accessibility permission prompt is needed for the terminal.\n\n");
+            out.push_str("Usage:\n");
+            out.push_str("- `.cwt/browse.sh open <url>` -- Open URL in Safari\n");
+            out.push_str("- `.cwt/browse.sh read` -- Get text content of active Safari tab\n");
+            out.push_str("- `.cwt/browse.sh url` -- Get URL of active Safari tab\n");
+            out.push_str("- `.cwt/browse.sh js <javascript>` -- Execute JavaScript in active Safari tab\n");
+        }
+    }
+
     // Env vars section: only if any secrets configured
     if !job.secret_keys.is_empty() {
         out.push_str("\n## Environment Variables\n\n");
@@ -779,10 +855,13 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(),
     let history = Arc::clone(&state.history);
     let settings_arc = Arc::clone(&state.settings);
     let job_status = Arc::clone(&state.job_status);
+    let active_agents = Arc::clone(&state.active_agents);
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job(&job, &secrets, &history, &settings_arc, &job_status, "manual")
-            .await;
+        scheduler::executor::execute_job_with_agents(
+            &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
+        )
+        .await;
     });
 
     Ok(())

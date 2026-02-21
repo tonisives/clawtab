@@ -201,9 +201,29 @@
     color: var(--color-text-secondary);
     margin-bottom: 12px;
   }
+
+  /* Template item expand transition (same pattern as use-case-body-grid) */
+  .template-item-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.3s ease;
+  }
+  .template-item-body.expanded {
+    grid-template-rows: 1fr;
+  }
+
+  /* Hero background slow zoom */
+  .hero-bg-zoom {
+    animation: hero-zoom 30s ease-in-out infinite alternate;
+  }
 }
 
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+@keyframes hero-zoom {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.15); }
 }

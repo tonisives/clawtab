@@ -355,12 +355,22 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled }: JobsPanelPro
     <div className="settings-section">
       <div className="section-header">
         <h2>Jobs</h2>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={() => setShowPicker(true)}
-        >
-          Add Job
-        </button>
+        <div className="btn-group">
+          <button
+            className="btn btn-sm"
+            onClick={() => setIsCreating(true)}
+            title="Blank job"
+            style={{ padding: "2px 8px", fontSize: 16, lineHeight: 1 }}
+          >
+            +
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowPicker(true)}
+          >
+            Add Job
+          </button>
+        </div>
       </div>
 
       {jobs.length === 0 ? (

@@ -4,152 +4,98 @@ import type { AppSettings, Job, TelegramConfig, ToolInfo } from "../types";
 import { ToolGroupList } from "./ToolGroupList";
 import { TelegramSetup } from "./TelegramSetup";
 
-interface Props {
+type Props = {
   onComplete: () => void;
-}
+};
 
-type Step = "tools" | "tmux" | "editor" | "secrets" | "telegram" | "first-job" | "done";
+type Step = "welcome" | "tools" | "telegram" | "hello-world" | "web-browse" | "done";
 
 const STEPS: { id: Step; label: string }[] = [
-  { id: "tools", label: "Detect Tools" },
-  { id: "tmux", label: "Tmux" },
-  { id: "editor", label: "Editor" },
-  { id: "secrets", label: "Secrets" },
+  { id: "welcome", label: "Welcome" },
+  { id: "tools", label: "Tools" },
   { id: "telegram", label: "Telegram" },
-  { id: "first-job", label: "Test Job" },
+  { id: "hello-world", label: "Hello World" },
+  { id: "web-browse", label: "Web Browse" },
   { id: "done", label: "Done" },
 ];
 
-const EDITOR_OPTIONS: { value: string; label: string; terminal: boolean }[] = [
-  { value: "nvim", label: "Neovim", terminal: true },
-  { value: "vim", label: "Vim", terminal: true },
-  { value: "code", label: "VS Code", terminal: false },
-  { value: "codium", label: "VSCodium", terminal: false },
-  { value: "zed", label: "Zed", terminal: false },
-  { value: "hx", label: "Helix", terminal: true },
-  { value: "subl", label: "Sublime Text", terminal: false },
-  { value: "emacs", label: "Emacs", terminal: true },
-];
+const REQUIRED_CATEGORIES = new Set(["Required", "Terminal", "Browser"]);
 
 export function SetupWizard({ onComplete }: Props) {
-  const [currentStep, setCurrentStep] = useState<Step>("tools");
+  const [currentStep, setCurrentStep] = useState<Step>("welcome");
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [claudePath, setClaudePath] = useState("");
-  const [workDir, setWorkDir] = useState("");
-  const [tmuxSession, setTmuxSession] = useState("");
   const [preferredTerminal, setPreferredTerminal] = useState("auto");
-  const [preferredEditor, setPreferredEditor] = useState("nvim");
-  const [gopassAvailable, setGopassAvailable] = useState(false);
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
   const [telegramLoaded, setTelegramLoaded] = useState(false);
-  const [telegramSkipped, setTelegramSkipped] = useState(false);
-  const [notifySuccess, setNotifySuccess] = useState(true);
-  const [notifyFailure, setNotifyFailure] = useState(true);
-  const [agentEnabled, setAgentEnabled] = useState(true);
 
-  // First-job step state
-  const [testJobStatus, setTestJobStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
-  const [testJobError, setTestJobError] = useState("");
+  // Hello World job state
+  const [helloStatus, setHelloStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
+  const [helloError, setHelloError] = useState("");
+
+  // Web Browse job state
+  const [browseStatus, setBrowseStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
+  const [browseError, setBrowseError] = useState("");
 
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
-  const hasAiAgent = tools.some((t) => t.group === "ai_agent" && t.available);
-  const hasTelegram = tools.some((t) => t.name === "Telegram" && t.available);
-  const hasTelegramConfigured = !!(telegramConfig && telegramConfig.chat_ids.length > 0);
-  const availableEditors = EDITOR_OPTIONS.filter((opt) =>
-    tools.some((t) => t.group === "editor" && t.available && t.name === opt.value),
-  );
+  const hasClaude = tools.some((t) => t.name === "claude" && t.available);
+  const requiredTools = tools.filter((t) => REQUIRED_CATEGORIES.has(t.category));
 
-  // Filter steps: skip first-job if telegram is not configured
-  const visibleSteps = STEPS.filter((s) => {
-    if (s.id === "first-job" && !hasTelegramConfigured) return false;
-    return true;
-  });
+  const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
 
   const loadTools = async () => {
     const detected = await invoke<ToolInfo[]>("detect_tools");
     setTools(detected);
   };
 
-  // Auto-select best available editor when tools are loaded
-  useEffect(() => {
-    if (availableEditors.length > 0 && !availableEditors.some((e) => e.value === preferredEditor)) {
-      setPreferredEditor(availableEditors[0].value);
-    }
-  }, [tools]);
-
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setSettings(s);
       setClaudePath(s.claude_path);
-      setWorkDir(s.default_work_dir);
-      setTmuxSession(s.default_tmux_session);
       setPreferredTerminal(s.preferred_terminal);
-      setPreferredEditor(s.preferred_editor);
     });
     loadTools();
-    invoke<boolean>("gopass_available").then(setGopassAvailable);
     invoke<TelegramConfig | null>("get_telegram_config").then((cfg) => {
       if (cfg) {
         setTelegramConfig(cfg);
-        setNotifySuccess(cfg.notify_on_success);
-        setNotifyFailure(cfg.notify_on_failure);
-        setAgentEnabled(cfg.agent_enabled);
       }
       setTelegramLoaded(true);
     });
   }, []);
 
-  const currentIdx = visibleSteps.findIndex((s) => s.id === currentStep);
-
   const goNext = () => {
-    if (currentIdx < visibleSteps.length - 1) {
-      setCurrentStep(visibleSteps[currentIdx + 1].id);
+    if (currentIdx < STEPS.length - 1) {
+      setCurrentStep(STEPS[currentIdx + 1].id);
     }
   };
 
   const goBack = () => {
     if (currentIdx > 0) {
-      setCurrentStep(visibleSteps[currentIdx - 1].id);
+      setCurrentStep(STEPS[currentIdx - 1].id);
     }
   };
-
-  const editorLabel = EDITOR_OPTIONS.find((e) => e.value === preferredEditor)?.label ?? preferredEditor;
 
   const handleTelegramComplete = async (config: TelegramConfig) => {
     try {
       await invoke("set_telegram_config", { config });
       setTelegramConfig(config);
-      setNotifySuccess(config.notify_on_success);
-      setNotifyFailure(config.notify_on_failure);
-      setAgentEnabled(config.agent_enabled);
     } catch (e) {
       console.error("Failed to save telegram config:", e);
     }
   };
 
-  const saveTelegramSettings = async (overrides: Partial<TelegramConfig>) => {
-    if (!telegramConfig) return;
-    const updated: TelegramConfig = { ...telegramConfig, ...overrides };
-    try {
-      await invoke("set_telegram_config", { config: updated });
-      setTelegramConfig(updated);
-    } catch (e) {
-      console.error("Failed to save telegram config:", e);
-    }
-  };
-
-  const handleCreateTestJob = async () => {
+  const handleCreateHelloWorld = async () => {
     if (!telegramConfig || telegramConfig.chat_ids.length === 0) return;
-    setTestJobStatus("creating");
-    setTestJobError("");
+    setHelloStatus("creating");
+    setHelloError("");
     try {
-      const testJob: Job = {
-        name: "telegram-test",
+      const job: Job = {
+        name: "hello-world",
         job_type: "binary",
         enabled: true,
         path: "echo",
-        args: ["ClawTab setup complete -- telegram notifications are working."],
+        args: ["Hello World from ClawTab"],
         cron: "",
         secret_keys: [],
         env: {},
@@ -163,12 +109,63 @@ export function SetupWizard({ onComplete }: Props) {
         group: "default",
         slug: "",
       };
-      await invoke("save_job", { job: testJob });
-      await invoke("run_job_now", { name: "telegram-test" });
-      setTestJobStatus("success");
+      await invoke("save_job", { job });
+      await invoke("run_job_now", { name: "hello-world" });
+      setHelloStatus("success");
     } catch (e) {
-      setTestJobStatus("error");
-      setTestJobError(String(e));
+      setHelloStatus("error");
+      setHelloError(String(e));
+    }
+  };
+
+  const handleCreateWebBrowse = async () => {
+    if (!telegramConfig || telegramConfig.chat_ids.length === 0 || !settings) return;
+    setBrowseStatus("creating");
+    setBrowseError("");
+    try {
+      const workDir = settings.default_work_dir || "~";
+      const folderPath = workDir.replace(/\/+$/, "") + "/.cwt";
+      const jobName = "reddit-news";
+
+      await invoke("init_cwt_folder", { folderPath, jobName });
+
+      const jobMd = [
+        "# Reddit News",
+        "",
+        "1. Open Reddit news using the browse helper: `.cwt/browse.sh open https://www.reddit.com/r/news/`",
+        "2. Read the page content: `.cwt/browse.sh read`",
+        "3. Find the latest top news post title and URL from the page content.",
+        "4. Send the result to Telegram with the post title and link.",
+      ].join("\n");
+
+      await invoke("write_cwt_entry", { folderPath, jobName, content: jobMd });
+
+      const chatId = telegramConfig.chat_ids[0];
+      const job: Job = {
+        name: "Reddit News",
+        job_type: "folder",
+        enabled: true,
+        path: "",
+        args: [],
+        cron: "",
+        secret_keys: [],
+        env: {},
+        work_dir: null,
+        tmux_session: null,
+        aerospace_workspace: null,
+        folder_path: folderPath,
+        job_name: jobName,
+        telegram_chat_id: chatId,
+        telegram_log_mode: "off",
+        group: "default",
+        slug: "",
+      };
+      await invoke("save_job", { job });
+      await invoke("run_job_now", { name: "Reddit News" });
+      setBrowseStatus("success");
+    } catch (e) {
+      setBrowseStatus("error");
+      setBrowseError(String(e));
     }
   };
 
@@ -177,10 +174,7 @@ export function SetupWizard({ onComplete }: Props) {
     const updated: AppSettings = {
       ...settings,
       claude_path: claudePath,
-      default_work_dir: workDir,
-      default_tmux_session: tmuxSession,
       preferred_terminal: settings.preferred_terminal,
-      preferred_editor: preferredEditor,
       setup_completed: true,
     };
     try {
@@ -191,12 +185,23 @@ export function SetupWizard({ onComplete }: Props) {
     }
   };
 
+  const toolsReady = hasTmux && hasClaude;
+  const telegramReady = !!(telegramConfig && telegramConfig.chat_ids.length > 0);
+
+  const canAdvance = (): boolean => {
+    if (currentStep === "tools") return toolsReady;
+    if (currentStep === "telegram") return telegramReady;
+    if (currentStep === "hello-world") return helloStatus === "success";
+    if (currentStep === "web-browse") return browseStatus === "success";
+    return true;
+  };
+
   return (
     <div className="settings-section" style={{ maxWidth: 600, margin: "0 auto" }}>
       <h2>ClawTab Setup</h2>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
-        {visibleSteps.map((step, idx) => (
+        {STEPS.map((step, idx) => (
           <div
             key={step.id}
             style={{
@@ -210,208 +215,83 @@ export function SetupWizard({ onComplete }: Props) {
       </div>
 
       <p className="text-secondary" style={{ marginBottom: 16 }}>
-        Step {currentIdx + 1} of {visibleSteps.length}: {visibleSteps[currentIdx].label}
+        Step {currentIdx + 1} of {STEPS.length}: {STEPS[currentIdx].label}
       </p>
+
+      {currentStep === "welcome" && (
+        <div>
+          <h3>Welcome to ClawTab</h3>
+          <p className="section-description">
+            We'll set up Telegram and create your first two Claude Code jobs.
+            This takes about 5 minutes.
+          </p>
+          <div style={{ marginTop: 16, fontSize: 13, lineHeight: 1.8, color: "var(--text-secondary)" }}>
+            <p style={{ margin: "0 0 4px" }}>1. Check that required tools are installed</p>
+            <p style={{ margin: "0 0 4px" }}>2. Connect your Telegram bot</p>
+            <p style={{ margin: "0 0 4px" }}>3. Create and run a Hello World job</p>
+            <p style={{ margin: "0 0 4px" }}>4. Create and run a web browsing job</p>
+          </div>
+        </div>
+      )}
 
       {currentStep === "tools" && (
         <div>
-          <h3>Detected Tools</h3>
+          <h3>Required Tools</h3>
           <p className="section-description">
-            These tools were found on your system. tmux and an AI agent are required --
-            install them before proceeding.
+            These tools are needed to run ClawTab. You can change tool paths later in Settings.
           </p>
           <ToolGroupList
-            tools={tools}
+            tools={requiredTools}
             onRefresh={loadTools}
             selections={{
-              editor: preferredEditor,
               terminal: preferredTerminal === "auto" ? "" : preferredTerminal,
-              ai_agent: claudePath,
             }}
             onSelect={(group, toolName) => {
-              if (group === "editor") setPreferredEditor(toolName);
-              else if (group === "terminal") setPreferredTerminal(toolName);
-              else if (group === "ai_agent") setClaudePath(toolName);
+              if (group === "terminal") setPreferredTerminal(toolName);
             }}
           />
           {!hasTmux && tools.length > 0 && (
             <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
-              tmux is required to continue. Use the install button above or run{" "}
-              <code>brew install tmux</code> in your terminal, then click Refresh.
+              tmux is required. Run <code>brew install tmux</code> then click Refresh.
             </p>
           )}
-          {!hasAiAgent && tools.length > 0 && (
+          {!hasClaude && tools.length > 0 && (
             <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
-              An AI agent (Claude or Codex) is required to continue. Install one using the
-              buttons above or locate the binary, then click Refresh.
+              Claude Code is required. Install it then click Refresh.
             </p>
           )}
-        </div>
-      )}
-
-      {currentStep === "tmux" && (
-        <div>
-          <h3>Tmux Session</h3>
-          <p className="section-description">
-            Claude and folder jobs run inside tmux windows. Choose a default session name.
-          </p>
-          <div className="form-group">
-            <label>Default Tmux Session</label>
-            <input
-              type="text"
-              value={tmuxSession}
-              onChange={(e) => setTmuxSession(e.target.value)}
-              placeholder="tgs"
-            />
-          </div>
-        </div>
-      )}
-
-      {currentStep === "editor" && (
-        <div>
-          <h3>Editor</h3>
-          <p className="section-description">
-            Choose an editor for editing job files. Terminal editors open in a popup window,
-            GUI editors launch directly.
-          </p>
-          <div className="form-group">
-            <label>Preferred Editor</label>
-            <select
-              value={preferredEditor}
-              onChange={(e) => setPreferredEditor(e.target.value)}
-            >
-              {availableEditors.map((e) => (
-                <option key={e.value} value={e.value}>
-                  {e.label}{e.terminal ? " (terminal)" : ""}
-                </option>
-              ))}
-            </select>
-            <span className="hint">
-              Used when opening job config files from the Jobs tab
-            </span>
-          </div>
-        </div>
-      )}
-
-      {currentStep === "secrets" && (
-        <div>
-          <h3>Secrets</h3>
-          <p className="section-description">
-            Secrets are managed by gopass or stored in macOS Keychain, and injected as environment
-            variables into jobs.
-            {gopassAvailable
-              ? " gopass is available on your system. Imported gopass secrets stay in your gopass store and are refreshed on each app startup."
-              : " gopass was not detected. You can add secrets manually to Keychain in the Secrets tab."}
-          </p>
-          <p>You can configure secrets after setup in the Secrets tab.</p>
         </div>
       )}
 
       {currentStep === "telegram" && telegramLoaded && (
         <div>
-          <h3>Telegram Notifications</h3>
-          {telegramSkipped ? (
-            <div>
-              <p className="section-description">
-                Telegram setup skipped. You can configure it later from the Telegram tab.
-              </p>
-              <button
-                className="btn btn-sm"
-                onClick={() => setTelegramSkipped(false)}
-              >
-                Set up now
-              </button>
-            </div>
-          ) : (
-            <div>
-              <p className="section-description">
-                Set up a Telegram bot to receive job notifications and send commands.
-                {!hasTelegram && " Telegram desktop app was not detected -- install it for the best experience."}
-              </p>
-              <TelegramSetup
-                embedded
-                initialConfig={telegramConfig}
-                onComplete={(config) => {
-                  handleTelegramComplete(config);
-                }}
-              />
-
-              {telegramConfig && telegramConfig.chat_ids.length > 0 && (
-                <>
-                  <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "16px 0" }} />
-                  <h4>Notifications</h4>
-                  <div className="form-group">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={notifySuccess}
-                        onChange={(e) => {
-                          setNotifySuccess(e.target.checked);
-                          saveTelegramSettings({ notify_on_success: e.target.checked });
-                        }}
-                      />{" "}
-                      Notify on job success
-                    </label>
-                  </div>
-                  <div className="form-group">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={notifyFailure}
-                        onChange={(e) => {
-                          setNotifyFailure(e.target.checked);
-                          saveTelegramSettings({ notify_on_failure: e.target.checked });
-                        }}
-                      />{" "}
-                      Notify on job failure
-                    </label>
-                  </div>
-
-                  <h4>Agent Mode</h4>
-                  <div className="form-group">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={agentEnabled}
-                        onChange={(e) => {
-                          setAgentEnabled(e.target.checked);
-                          saveTelegramSettings({ agent_enabled: e.target.checked });
-                        }}
-                      />{" "}
-                      Enable agent mode
-                    </label>
-                  </div>
-                </>
-              )}
-
-              {!telegramConfig && (
-                <button
-                  className="btn btn-sm"
-                  onClick={() => { setTelegramSkipped(true); goNext(); }}
-                  style={{ marginTop: 8 }}
-                >
-                  Skip for now
-                </button>
-              )}
-            </div>
-          )}
+          <h3>Telegram Setup</h3>
+          <p className="section-description">
+            Set up a Telegram bot to receive job notifications and send commands.
+            This is required for the tutorial jobs.
+          </p>
+          <TelegramSetup
+            embedded
+            initialConfig={telegramConfig}
+            onComplete={handleTelegramComplete}
+          />
         </div>
       )}
 
-      {currentStep === "first-job" && (
+      {currentStep === "hello-world" && (
         <div>
-          <h3>Test Job</h3>
+          <h3>Hello World Job</h3>
           <p className="section-description">
-            Create a test job to verify Telegram notifications are working.
-            This creates a simple "telegram-test" job that sends a message to your configured chat.
+            Your first job -- a simple echo command that sends a message to Telegram.
+            This verifies everything is wired up correctly.
           </p>
 
           <div className="field-group" style={{ marginTop: 16 }}>
-            <span className="field-group-title">Pre-filled test job</span>
+            <span className="field-group-title">Pre-filled job</span>
             <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> telegram-test</p>
+              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> hello-world</p>
               <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Binary (echo)</p>
-              <p style={{ margin: "0 0 4px" }}><strong>Schedule:</strong> Manual only</p>
+              <p style={{ margin: "0 0 4px" }}><strong>Command:</strong> echo "Hello World from ClawTab"</p>
               <p style={{ margin: "0 0 4px" }}>
                 <strong>Telegram:</strong>{" "}
                 {telegramConfig?.chat_ids[0] ?? "none"}
@@ -420,45 +300,89 @@ export function SetupWizard({ onComplete }: Props) {
           </div>
 
           <div style={{ marginTop: 16 }}>
-            {testJobStatus === "idle" && (
-              <div className="btn-group">
-                <button className="btn btn-primary" onClick={handleCreateTestJob}>
-                  Create & Run
-                </button>
-                <button className="btn" onClick={goNext}>
-                  Skip
-                </button>
-              </div>
+            {helloStatus === "idle" && (
+              <button className="btn btn-primary" onClick={handleCreateHelloWorld}>
+                Create & Run
+              </button>
             )}
 
-            {testJobStatus === "creating" && (
-              <p className="text-secondary">Creating and running test job...</p>
+            {helloStatus === "creating" && (
+              <p className="text-secondary">Creating and running job...</p>
             )}
 
-            {testJobStatus === "success" && (
-              <div>
-                <p style={{ color: "var(--success-color)" }}>
-                  Test job created and triggered. Check your Telegram for a message.
-                </p>
-                <button className="btn btn-primary" onClick={goNext} style={{ marginTop: 8 }}>
-                  Continue
-                </button>
-              </div>
+            {helloStatus === "success" && (
+              <p style={{ color: "var(--success-color)" }}>
+                Job created and running. Check your Telegram for a message.
+              </p>
             )}
 
-            {testJobStatus === "error" && (
+            {helloStatus === "error" && (
               <div>
                 <p style={{ color: "var(--danger-color)" }}>
-                  Failed: {testJobError}
+                  Failed: {helloError}
                 </p>
-                <div className="btn-group" style={{ marginTop: 8 }}>
-                  <button className="btn" onClick={handleCreateTestJob}>
-                    Retry
-                  </button>
-                  <button className="btn" onClick={goNext}>
-                    Skip
-                  </button>
-                </div>
+                <button className="btn" onClick={handleCreateHelloWorld} style={{ marginTop: 8 }}>
+                  Retry
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {currentStep === "web-browse" && (
+        <div>
+          <h3>Web Browse Job</h3>
+          <p className="section-description">
+            Your first real AI job -- Claude will open Safari, read Reddit's front page,
+            and send you the latest news via Telegram.
+          </p>
+
+          <div className="field-group" style={{ marginTop: 16 }}>
+            <span className="field-group-title">Pre-filled job</span>
+            <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> Reddit News</p>
+              <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Folder (Claude Code)</p>
+              <p style={{ margin: "0 0 4px" }}>
+                <strong>Directory:</strong>{" "}
+                {(settings?.default_work_dir || "~").replace(/\/+$/, "")}/.cwt/reddit-news/
+              </p>
+              <p style={{ margin: "0 0 4px" }}>
+                <strong>Telegram:</strong>{" "}
+                {telegramConfig?.chat_ids[0] ?? "none"}
+              </p>
+            </div>
+          </div>
+
+          <p className="text-secondary" style={{ fontSize: 12, marginTop: 12 }}>
+            Note: Safari may ask for Accessibility permission on the first run.
+          </p>
+
+          <div style={{ marginTop: 16 }}>
+            {browseStatus === "idle" && (
+              <button className="btn btn-primary" onClick={handleCreateWebBrowse}>
+                Create & Run
+              </button>
+            )}
+
+            {browseStatus === "creating" && (
+              <p className="text-secondary">Creating folder and running job...</p>
+            )}
+
+            {browseStatus === "success" && (
+              <p style={{ color: "var(--success-color)" }}>
+                Job created and running. Claude is browsing Reddit -- check Telegram for results.
+              </p>
+            )}
+
+            {browseStatus === "error" && (
+              <div>
+                <p style={{ color: "var(--danger-color)" }}>
+                  Failed: {browseError}
+                </p>
+                <button className="btn" onClick={handleCreateWebBrowse} style={{ marginTop: 8 }}>
+                  Retry
+                </button>
               </div>
             )}
           </div>
@@ -469,13 +393,12 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Setup Complete</h3>
           <p className="section-description">
-            ClawTab is ready to use. You can create your first job from the Jobs tab,
-            or re-run this wizard from Settings.
+            ClawTab is ready. Your two tutorial jobs are in the Jobs tab -- you can
+            edit, schedule, or create new ones from there.
           </p>
-          <div style={{ marginTop: 12 }}>
-            <p><strong>Tmux Session:</strong> {tmuxSession || "(default)"}</p>
-            <p><strong>Editor:</strong> {editorLabel}</p>
-            <p><strong>Telegram:</strong> {telegramConfig ? "Configured" : "Not configured"}</p>
+          <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6 }}>
+            <p style={{ margin: "0 0 4px" }}><strong>Telegram:</strong> Connected</p>
+            <p style={{ margin: "0 0 4px" }}><strong>Jobs created:</strong> hello-world, Reddit News</p>
           </div>
         </div>
       )}
@@ -488,18 +411,20 @@ export function SetupWizard({ onComplete }: Props) {
         )}
         {currentStep === "done" ? (
           <button className="btn btn-primary" onClick={handleFinish}>
-            Finish Setup
+            Go to Jobs
           </button>
-        ) : currentStep === "first-job" ? (
-          null
-        ) : currentStep === "telegram" && !telegramConfig?.chat_ids?.length && !telegramSkipped ? (
-          null
-        ) : currentStep === "tools" && (!hasTmux || !hasAiAgent) && tools.length > 0 ? (
-          <button className="btn btn-primary" disabled>
-            Next
-          </button>
+        ) : currentStep === "hello-world" || currentStep === "web-browse" ? (
+          canAdvance() ? (
+            <button className="btn btn-primary" onClick={goNext}>
+              Next
+            </button>
+          ) : null
         ) : (
-          <button className="btn btn-primary" onClick={goNext}>
+          <button
+            className="btn btn-primary"
+            onClick={goNext}
+            disabled={!canAdvance()}
+          >
             Next
           </button>
         )}

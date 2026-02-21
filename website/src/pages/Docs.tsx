@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 
+let CONTENT_ID = "docs-content"
+
 let scriptsReady: Promise<void> | null = null
 
 function ensureScripts(): Promise<void> {
@@ -87,21 +89,26 @@ export let Docs = () => {
     (file: string, hash: string) => {
       setActiveDoc(file)
       window.history.replaceState(null, "", "#" + hash)
-      window.scrollTo(0, 0)
+      let el = document.getElementById(CONTENT_ID)
+      if (el) {
+        let navHeight = 56
+        let top = el.getBoundingClientRect().top + window.scrollY - navHeight
+        window.scrollTo({ top, behavior: "instant" })
+      }
     },
     [],
   )
 
   return (
     <div className="max-w-[1080px] mx-auto px-6">
-      <div className="py-6">
+      <div className="w-full h-40 overflow-hidden rounded-xl mb-6 mt-4 flex items-center">
         <img
           src="/assets/docs-hero.png"
           alt="ClawTab Documentation"
-          className="w-full max-w-[600px] mx-auto block rounded-xl"
+          className="w-full block object-cover object-center"
         />
       </div>
-      <div className="grid grid-cols-[220px_1fr] gap-8 pb-8 min-h-[calc(100vh-56px)] max-md:grid-cols-1">
+      <div id={CONTENT_ID} className="grid grid-cols-[220px_1fr] gap-8 pb-8 min-h-[calc(100vh-56px)] max-md:grid-cols-1">
         <Sidebar docPages={docPages} activeDoc={activeDoc} onNav={handleNav} />
         <main
           ref={mainRef}

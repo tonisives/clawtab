@@ -28,7 +28,6 @@ export function ToolsPanel() {
     ? {
         editor: settings.preferred_editor,
         terminal: settings.preferred_terminal === "auto" ? "" : settings.preferred_terminal,
-        ai_agent: settings.claude_path,
       }
     : {};
 
@@ -39,8 +38,6 @@ export function ToolsPanel() {
       updates = { preferred_editor: toolName };
     } else if (group === "terminal") {
       updates = { preferred_terminal: toolName };
-    } else if (group === "ai_agent") {
-      updates = { claude_path: toolName };
     }
     const newSettings = { ...settings, ...updates };
     setSettings(newSettings);

@@ -35,6 +35,7 @@ pub struct AppState {
     pub history: Arc<Mutex<HistoryStore>>,
     pub scheduler: Arc<Mutex<Option<SchedulerHandle>>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
+    pub active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -175,6 +176,8 @@ pub fn run() {
 
     let job_status: Arc<Mutex<HashMap<String, JobStatus>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -183,6 +186,7 @@ pub fn run() {
         history: Arc::clone(&history),
         scheduler: Arc::new(Mutex::new(None)),
         job_status: Arc::clone(&job_status),
+        active_agents: Arc::clone(&active_agents),
     };
 
     // Clones for IPC handler
@@ -193,6 +197,7 @@ pub fn run() {
         history: Arc::clone(&history),
         scheduler: Arc::clone(&app_state.scheduler),
         job_status: Arc::clone(&job_status),
+        active_agents: Arc::clone(&active_agents),
     };
 
     // Clones for scheduler
@@ -212,7 +217,7 @@ pub fn run() {
         secrets: Arc::clone(&secrets),
         history: Arc::clone(&history),
         job_status: Arc::clone(&job_status),
-        active_agents: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        active_agents: Arc::clone(&active_agents),
     };
 
     tauri::Builder::default()

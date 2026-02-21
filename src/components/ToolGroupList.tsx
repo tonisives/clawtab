@@ -20,7 +20,7 @@ interface ToolGroup {
 }
 
 function buildGroups(tools: ToolInfo[]): ToolGroup[] {
-  const categoryOrder = ["Required", "AI Agent", "Terminal", "Editor", "Optional", "Browser"];
+  const categoryOrder = ["Required", "Terminal", "Editor", "Optional", "Browser"];
   const groups: ToolGroup[] = [];
   const seen = new Set<string>();
 
@@ -49,12 +49,16 @@ function buildGroups(tools: ToolInfo[]): ToolGroup[] {
       if (seen.has(key)) continue;
       seen.add(key);
       const groupTools = catTools.filter((t) => t.group === gn);
+      // Only show tools the user has installed for selection groups
+      const hideUnavailable = cat === "Terminal" || cat === "Editor";
+      const visibleTools = hideUnavailable ? groupTools.filter((t) => t.available) : groupTools;
+      if (visibleTools.length === 0) continue;
       groups.push({
         category: cat,
         groupName: gn!,
-        required: groupTools[0]?.required ?? false,
-        tools: groupTools,
-        satisfied: groupTools.some((t) => t.available),
+        required: visibleTools[0]?.required ?? false,
+        tools: visibleTools,
+        satisfied: visibleTools.some((t) => t.available),
       });
     }
   }

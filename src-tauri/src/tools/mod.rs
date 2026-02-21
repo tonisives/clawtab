@@ -172,7 +172,7 @@ const TOOLS: &[ToolSpec] = &[
         group: Some("editor"),
         brew_formula: Some("emacs"),
     },
-    // Optional
+    // Required
     ToolSpec {
         name: "tmux",
         binary: "tmux",
@@ -182,67 +182,14 @@ const TOOLS: &[ToolSpec] = &[
         group: None,
         brew_formula: Some("tmux"),
     },
+    // Browser
     ToolSpec {
-        name: "git",
-        binary: "git",
-        version_flag: "--version",
-        category: "Optional",
-        required: false,
-        group: None,
-        brew_formula: Some("git"),
-    },
-    ToolSpec {
-        name: "aerospace",
-        binary: "aerospace",
-        version_flag: "--version",
-        category: "Optional",
-        required: false,
-        group: None,
-        brew_formula: Some("nikitabobko/tap/aerospace"),
-    },
-    ToolSpec {
-        name: "gopass",
-        binary: "gopass",
-        version_flag: "--version",
-        category: "Optional",
-        required: false,
-        group: None,
-        brew_formula: Some("gopass"),
-    },
-    ToolSpec {
-        name: "node",
-        binary: "node",
-        version_flag: "--version",
-        category: "Optional",
-        required: false,
-        group: None,
-        brew_formula: Some("node"),
-    },
-    ToolSpec {
-        name: "python3",
-        binary: "python3",
-        version_flag: "--version",
-        category: "Optional",
-        required: false,
-        group: None,
-        brew_formula: Some("python3"),
-    },
-    ToolSpec {
-        name: "docker",
-        binary: "docker",
-        version_flag: "--version",
-        category: "Optional",
-        required: false,
-        group: None,
-        brew_formula: Some("--cask docker"),
-    },
-    ToolSpec {
-        name: "playwright",
-        binary: "npx",
-        version_flag: "playwright --version",
-        category: "Optional",
-        required: false,
-        group: None,
+        name: "Safari",
+        binary: "Safari",
+        version_flag: "",
+        category: "Browser",
+        required: true,
+        group: Some("browser"),
         brew_formula: None,
     },
     // Messaging
@@ -300,17 +247,10 @@ fn resolve_binary(spec: &ToolSpec, custom_paths: &HashMap<String, String>) -> Op
 }
 
 fn get_version_from(binary_path: &str, spec: &ToolSpec) -> Option<String> {
-    let output = if spec.name == "playwright" {
-        Command::new(binary_path)
-            .args(spec.version_flag.split_whitespace())
-            .output()
-            .ok()?
-    } else {
-        Command::new(binary_path)
-            .arg(spec.version_flag)
-            .output()
-            .ok()?
-    };
+    let output = Command::new(binary_path)
+        .arg(spec.version_flag)
+        .output()
+        .ok()?;
 
     if output.status.success() {
         let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -381,6 +321,20 @@ fn detect_tool(spec: &ToolSpec, custom_paths: &HashMap<String, String>) -> ToolI
             available: true,
             version: Some("built-in".to_string()),
             path: Some("/System/Applications/Utilities/Terminal.app".to_string()),
+            category: spec.category.to_string(),
+            required: spec.required,
+            group: spec.group.map(|s| s.to_string()),
+            brew_formula: spec.brew_formula.map(|s| s.to_string()),
+        };
+    }
+
+    // Safari is always available on macOS
+    if spec.name == "Safari" {
+        return ToolInfo {
+            name: "Safari".to_string(),
+            available: true,
+            version: Some("built-in".to_string()),
+            path: Some("/Applications/Safari.app".to_string()),
             category: spec.category.to_string(),
             required: spec.required,
             group: spec.group.map(|s| s.to_string()),

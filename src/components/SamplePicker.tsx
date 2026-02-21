@@ -28,6 +28,19 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onBlank, onCance
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Quick-create folder job form state
+  const [quickFolderPath, setQuickFolderPath] = useState("");
+  const [quickJobName, setQuickJobName] = useState("");
+  const [quickJobMd, setQuickJobMd] = useState("");
+  const [quickCreating, setQuickCreating] = useState(false);
+
+  useEffect(() => {
+    invoke<AppSettings>("get_settings").then((s) => {
+      const workDir = s.default_work_dir || "~";
+      setQuickFolderPath(workDir.replace(/\/+$/, "") + "/.cwt");
+    });
+  }, []);
+
   useEffect(() => {
     if (!autoCreateTemplateId) return;
     const template = SAMPLE_TEMPLATES.find((t) => t.id === autoCreateTemplateId);
@@ -160,6 +173,46 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onBlank, onCance
     }
   };
 
+  const handleQuickCreate = async () => {
+    if (!quickJobName.trim() || !quickFolderPath.trim()) return;
+    setQuickCreating(true);
+    setError(null);
+    try {
+      const jobName = slugifyName(quickJobName);
+      await invoke("init_cwt_folder", { folderPath: quickFolderPath, jobName });
+      if (quickJobMd.trim()) {
+        await invoke("write_cwt_entry", { folderPath: quickFolderPath, jobName, content: quickJobMd });
+      }
+
+      const job: Job = {
+        name: quickJobName.trim(),
+        job_type: "folder",
+        enabled: true,
+        path: "",
+        args: [],
+        cron: "",
+        secret_keys: [],
+        env: {},
+        work_dir: null,
+        tmux_session: null,
+        aerospace_workspace: null,
+        folder_path: quickFolderPath,
+        job_name: jobName,
+        telegram_chat_id: null,
+        telegram_log_mode: "off",
+        group: "default",
+        slug: "",
+      };
+      await invoke("save_job", { job });
+      onCreated();
+    } catch (e) {
+      const msg = typeof e === "string" ? e : String(e);
+      setError(msg);
+    } finally {
+      setQuickCreating(false);
+    }
+  };
+
   const templatesByCategory = TEMPLATE_CATEGORIES.map((cat) => ({
     ...cat,
     templates: SAMPLE_TEMPLATES.filter((t) => t.category === cat.id),
@@ -248,8 +301,52 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onBlank, onCance
         </div>
       )}
 
+      <div className="field-group" style={{ marginBottom: 20 }}>
+        <span className="field-group-title">Quick create (folder job)</span>
+        <div className="form-group">
+          <label>Job name</label>
+          <input
+            type="text"
+            value={quickJobName}
+            onChange={(e) => setQuickJobName(e.target.value)}
+            placeholder="my-job"
+          />
+        </div>
+        <div className="form-group">
+          <label>.cwt folder path</label>
+          <input
+            type="text"
+            value={quickFolderPath}
+            onChange={(e) => setQuickFolderPath(e.target.value)}
+            placeholder="~/projects/.cwt"
+          />
+        </div>
+        <div className="form-group">
+          <label>Prompt (job.md)</label>
+          <textarea
+            value={quickJobMd}
+            onChange={(e) => setQuickJobMd(e.target.value)}
+            placeholder="Describe what the bot should do..."
+            rows={4}
+            style={{
+              width: "100%",
+              resize: "vertical",
+              fontFamily: "monospace",
+              fontSize: 12,
+            }}
+          />
+        </div>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={handleQuickCreate}
+          disabled={quickCreating || !quickJobName.trim() || !quickFolderPath.trim()}
+        >
+          {quickCreating ? "Creating..." : "Create Job"}
+        </button>
+      </div>
+
       <p className="text-secondary" style={{ marginBottom: 16, fontSize: 13 }}>
-        Start from a template or create a blank job.
+        Or start from a template:
       </p>
 
       <div className="sample-grid-cards">
