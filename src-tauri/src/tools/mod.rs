@@ -32,16 +32,7 @@ const TOOLS: &[ToolSpec] = &[
         version_flag: "--version",
         category: "AI Agent",
         required: true,
-        group: Some("ai_agent"),
-        brew_formula: None,
-    },
-    ToolSpec {
-        name: "codex",
-        binary: "codex",
-        version_flag: "--version",
-        category: "AI Agent",
-        required: true,
-        group: Some("ai_agent"),
+        group: None,
         brew_formula: None,
     },
     // Terminal

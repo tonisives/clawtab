@@ -70,7 +70,7 @@ export let HScrollWrapper = ({
     <div style={wrapperStyle}>
       <div className="relative">
         {showArrows && <ScrollArrow direction="left" onClick={handlePrev} className="hidden md:flex absolute left-0 top-1/2 -translate-x-14 -translate-y-1/2" />}
-        <div ref={trackRef} className="overflow-x-auto snap-x snap-mandatory hscroll-track">
+        <div ref={trackRef} className="overflow-x-auto snap-x snap-mandatory hscroll-track" style={{ maxWidth: "calc(100vw - 48px)" }}>
           {children}
         </div>
         {showArrows && <ScrollArrow direction="right" onClick={handleNext} className="hidden md:flex absolute right-0 top-1/2 translate-x-14 -translate-y-1/2" />}
