@@ -8,7 +8,7 @@ graph TB
         React["React 19 Frontend"]
     end
 
-    subgraph Backend["Rust Backend"]
+    subgraph Core["Rust Core"]
         Commands["Tauri Commands"]
         Scheduler["Cron Scheduler"]
         Executor["Job Executor"]
@@ -23,7 +23,6 @@ graph TB
         Keychain["macOS Keychain"]
         Gopass["gopass"]
         TgAPI["Telegram Bot API"]
-        SQLite["SQLite (history.db)"]
     end
 
     subgraph Clients["Clients"]
@@ -36,11 +35,8 @@ graph TB
     Scheduler -->|30s poll| Executor
     Executor --> Tmux
     Executor --> Claude
-    Executor -->|binary jobs| SQLite
-    Monitor -->|5s poll| Tmux
-    Monitor --> SQLite
+    Monitor -->|2s poll| Tmux
     Monitor --> TgAPI
-    Commands --> SQLite
     Commands --> Keychain
     Commands --> Gopass
     TgPoller -->|8s poll| TgAPI
@@ -56,8 +52,7 @@ graph TB
 |-------|-----------|
 | Desktop framework | Tauri 2 |
 | Frontend | React 19, TypeScript, Vite 7 |
-| Backend | Rust, Tokio |
-| Database | SQLite (rusqlite) |
+| Core | Rust, Tokio |
 | Serialization | serde_yml (config), serde_json (IPC) |
 | Cron parsing | `cron` crate |
 | HTTP client | reqwest (Telegram API) |
@@ -85,31 +80,29 @@ MutexGuards are always dropped before any `.await` to satisfy Rust's `Send` boun
 sequenceDiagram
     participant Trigger as Trigger (GUI/CLI/Cron/Telegram)
     participant Executor
-    participant History as SQLite
     participant Tmux
     participant Monitor
     participant Telegram as Telegram API
 
     Trigger->>Executor: execute_job(job, trigger)
-    Executor->>History: Insert RunRecord (status: Running)
+    Executor->>Executor: Insert RunRecord (status: Running)
 
     alt Binary Job
         Executor->>Executor: Spawn child process
         Executor->>Executor: Wait for exit
-        Executor->>History: Update (exit_code, stdout, stderr)
         Executor->>Telegram: Send completion notification
     else Claude/Folder Job
         Executor->>Tmux: Create window/pane
-        Executor->>Tmux: send-keys (export ... && cd ... && claude ...)
+        Executor->>Tmux: send-keys (cd ... && claude ...)
         Executor->>Monitor: Spawn monitor task
-        loop Every 5 seconds
+        loop Every 2 seconds
             Monitor->>Tmux: capture-pane (last 80 lines)
             Monitor->>Monitor: Diff against previous
             Monitor->>Telegram: Relay new output
         end
-        Note over Monitor: 5 idle ticks = done
+        Note over Monitor: Process exit detected (200ms poll)
         Monitor->>Tmux: Capture full scrollback
-        Monitor->>History: Update (output, finished_at)
+        Monitor->>Tmux: Kill pane
         Monitor->>Telegram: Send completion notification
     end
 ```
@@ -151,10 +144,9 @@ src-tauri/src/
   tmux/mod.rs               # tmux command wrappers
   cwt/mod.rs                # .cwt folder handling
   aerospace/mod.rs          # AeroSpace integration
-  history/mod.rs            # SQLite history store
+  history/mod.rs            # Run history store
   tools/mod.rs              # Tool detection
   terminal/mod.rs           # Terminal emulator integration
-  browser/mod.rs            # Browser auth (Playwright, deferred)
   bin/
     ctl.rs                  # cwtctl CLI
     tui.rs                  # cwttui TUI
@@ -175,27 +167,6 @@ src/
     CronInput.tsx            # Cron expression editor
     LogViewer.tsx            # Run log display
 ```
-
-## History
-
-SQLite database at `~/.config/clawtab/history.db`.
-
-```sql
-CREATE TABLE runs (
-    id TEXT PRIMARY KEY,          -- UUID v4
-    job_name TEXT NOT NULL,
-    started_at TEXT NOT NULL,     -- RFC 3339
-    finished_at TEXT,
-    exit_code INTEGER,
-    trigger_type TEXT NOT NULL,   -- "manual" | "cron" | "cli" | "restart"
-    stdout TEXT NOT NULL DEFAULT '',
-    stderr TEXT NOT NULL DEFAULT ''
-);
-```
-
-- Entries older than 30 days are auto-pruned on startup
-- Last 100 entries returned by default
-- Per-job queries return last 10 runs
 
 ## Build Constraints
 

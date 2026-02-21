@@ -8,6 +8,7 @@
   <link rel="icon" type="image/png" href="assets/favicon.png">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
 </head>
 <body>
 
@@ -46,6 +47,8 @@
 </footer>
 
 <script>
+  mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
   const content = document.getElementById('docs-content');
   const links = document.querySelectorAll('#sidebar-nav a');
   const RAW_BASE = 'https://raw.githubusercontent.com/tonisives/clawdtab/main/docs/';
@@ -61,6 +64,17 @@
       if (!resp.ok) throw new Error(resp.statusText);
       const md = await resp.text();
       content.innerHTML = marked.parse(md);
+      // Convert mermaid code blocks to elements mermaid.js can render
+      content.querySelectorAll('code.language-mermaid').forEach(el => {
+        const pre = el.parentElement;
+        const div = document.createElement('pre');
+        div.className = 'mermaid';
+        div.textContent = el.textContent;
+        pre.replaceWith(div);
+      });
+      await mermaid.run({ nodes: content.querySelectorAll('.mermaid') });
+      content.scrollTo(0, 0);
+      window.scrollTo(0, 0);
     } catch (e) {
       content.innerHTML = '<p>Failed to load ' + filename + ': ' + e.message + '</p>';
     }

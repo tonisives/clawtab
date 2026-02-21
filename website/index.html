@@ -22,6 +22,7 @@
     <li><a href="#screenshots">Screenshots</a></li>
     <li><a href="docs.html">Docs</a></li>
     <li><a href="#install">Install</a></li>
+    <li><a href="#ideas">Ideas</a></li>
   </ul>
 </nav>
 
@@ -688,6 +689,142 @@ cargo tauri build</code></pre>
     </div>
   </div>
 </section>
+
+<section class="section" id="ideas">
+  <h2 class="section-title">Looking for business ideas?</h2>
+  <p class="section-subtitle">Trending opportunities discovered by TrendSeeker -- validate demand before you build.</p>
+  <div class="ideas-scroll-wrapper">
+    <button class="ideas-arrow ideas-arrow-left" onclick="ideasScrollLeft()" aria-label="Previous">&lsaquo;</button>
+    <div class="ideas-gallery" id="ideas-gallery">
+      <div class="idea-card idea-card-skeleton">
+        <div class="idea-card-shimmer"></div>
+      </div>
+      <div class="idea-card idea-card-skeleton">
+        <div class="idea-card-shimmer"></div>
+      </div>
+      <div class="idea-card idea-card-skeleton">
+        <div class="idea-card-shimmer"></div>
+      </div>
+    </div>
+    <button class="ideas-arrow ideas-arrow-right" onclick="ideasScrollRight()" aria-label="Next">&rsaquo;</button>
+  </div>
+  <div style="text-align: center; margin-top: 32px;">
+    <a href="https://www.trend-seeker.app" target="_blank" class="btn btn-primary">Open TrendSeeker</a>
+  </div>
+</section>
+
+<script>
+(function() {
+  var TSKR_API = 'https://svc.trend-seeker.app/api/ideas?limit=50&sortBy=newest';
+  var gallery = document.getElementById('ideas-gallery');
+
+  function signalInfo(idea) {
+    var ev = idea.evidence_strength;
+    var score = 0;
+    if (ev && typeof ev.volume !== 'undefined') {
+      var vol = parseFloat(ev.volume) || 0;
+      var urg = parseFloat(ev.urgency) || 0;
+      var spec = parseFloat(ev.specificity) || 0;
+      score = (vol + urg + spec) / 3;
+    } else if (idea.validation_score != null) {
+      score = parseFloat(idea.validation_score) || 0;
+    }
+    if (score >= 0.95) return { label: 'Hot Signal', color: '#ef5350', pct: score };
+    if (score >= 0.9) return { label: 'Strong', color: '#ff9800', pct: score };
+    if (score >= 0.8) return { label: 'Emerging', color: '#66bb6a', pct: score };
+    return { label: 'New', color: '#5c6bc0', pct: score };
+  }
+
+  function relDate(d) {
+    var ms = Date.now() - new Date(d).getTime();
+    var days = Math.floor(ms / 86400000);
+    if (days < 1) return 'today';
+    if (days < 7) return days + 'd ago';
+    if (days < 30) return Math.floor(days / 7) + 'w ago';
+    return Math.floor(days / 30) + 'mo ago';
+  }
+
+  function renderCard(idea) {
+    var sig = signalInfo(idea);
+    var quote = '';
+    if (idea.representative_posts && idea.representative_posts.length > 0) {
+      quote = idea.representative_posts[0].quote;
+      if (quote.length > 80) quote = quote.slice(0, 77) + '...';
+    }
+    var postCount = idea.post_count || 0;
+
+    var card = document.createElement('a');
+    card.className = 'idea-card';
+    card.href = 'https://www.trend-seeker.app/ideas/' + idea.business_idea_id;
+    card.target = '_blank';
+    card.style.setProperty('--signal-color', sig.color);
+
+    card.innerHTML =
+      '<div class="idea-card-signal-bar" style="background:' + sig.color + '"></div>' +
+      '<div class="idea-card-body">' +
+        '<span class="idea-card-badge" style="background:' + sig.color + '15;color:' + sig.color + '">' + sig.label + '</span>' +
+        '<h3 class="idea-card-title">' + idea.title + '</h3>' +
+        '<p class="idea-card-tagline">' + idea.tagline + '</p>' +
+        (quote ? '<div class="idea-card-quote">"' + quote + '"</div>' : '') +
+        '<div class="idea-card-meter">' +
+          '<div class="idea-card-meter-row">' +
+            '<span>Signal Strength</span>' +
+            '<span style="color:' + sig.color + ';font-weight:600">' + Math.round(sig.pct * 100) + '%</span>' +
+          '</div>' +
+          '<div class="idea-card-meter-track"><div class="idea-card-meter-fill" style="width:' + (sig.pct * 100) + '%;background:' + sig.color + '"></div></div>' +
+        '</div>' +
+        '<div class="idea-card-footer">' +
+          '<span>' + postCount + ' signal' + (postCount !== 1 ? 's' : '') + '</span>' +
+          '<span>' + relDate(idea.created_at) + '</span>' +
+        '</div>' +
+      '</div>';
+
+    return card;
+  }
+
+  fetch(TSKR_API)
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (!res.success || !res.data || !res.data.length) return;
+      var top = res.data
+        .filter(function(i) { return (i.post_count || 0) >= 10; })
+        .sort(function(a, b) { return (b.post_count || 0) - (a.post_count || 0); })
+        .slice(0, 9);
+      if (!top.length) return;
+      gallery.innerHTML = '';
+      top.forEach(function(idea) {
+        gallery.appendChild(renderCard(idea));
+      });
+    })
+    .catch(function() {
+      // silently fail, keep skeleton
+    });
+})();
+
+function ideasScrollLeft() {
+  var g = document.getElementById('ideas-gallery');
+  var cardW = g.querySelector('.idea-card');
+  if (!cardW) return;
+  var step = cardW.offsetWidth + 20;
+  if (g.scrollLeft <= 1) {
+    g.scrollTo({ left: g.scrollWidth, behavior: 'smooth' });
+  } else {
+    g.scrollBy({ left: -step * 3, behavior: 'smooth' });
+  }
+}
+
+function ideasScrollRight() {
+  var g = document.getElementById('ideas-gallery');
+  var cardW = g.querySelector('.idea-card');
+  if (!cardW) return;
+  var step = cardW.offsetWidth + 20;
+  if (g.scrollLeft + g.clientWidth >= g.scrollWidth - 1) {
+    g.scrollTo({ left: 0, behavior: 'smooth' });
+  } else {
+    g.scrollBy({ left: step * 3, behavior: 'smooth' });
+  }
+}
+</script>
 
 <div id="template-popup" class="template-popup-overlay" style="display:none" onclick="hideTemplatePopup()">
   <div class="template-popup" onclick="event.stopPropagation()">

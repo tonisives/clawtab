@@ -16,7 +16,7 @@ build:
             variant: AbbrevCommitSha
   artifacts:
     - image: registry.tonisives.com/clawtab-web
-      context: ..
+      context: .
       docker:
         dockerfile: website/Dockerfile
         buildArgs:
@@ -25,8 +25,8 @@ build:
           - registry.tonisives.com/clawtab-web
 manifests:
   rawYaml:
-    - k8s/deployment.yaml
-    - k8s/ingress.yaml
+    - website/k8s/deployment.yaml
+    - website/k8s/ingress.yaml
 deploy:
   kubeContext: tgs
   kubectl:

@@ -20,7 +20,7 @@ cwtctl <command> [args]
 
 Exit codes: `0` on success, `1` on error (with message on stderr).
 
-## TUI: cwttui
+## TUI: cwttui `beta`
 
 Full-screen terminal UI built with [ratatui](https://ratatui.rs/).
 

@@ -5,7 +5,7 @@
 | Path | Purpose |
 |------|---------|
 | `~/.config/clawtab/settings.yaml` | App settings |
-| `~/.config/clawtab/history.db` | SQLite run history (30-day retention) |
+| `~/.config/clawtab/history.db` | Run history (30-day retention) |
 | `~/.config/clawtab/jobs/` | Job definitions directory |
 | `~/.config/clawtab/jobs/<project>/<job-name>/job.yaml` | Individual job config |
 | `~/.config/clawtab/jobs/<project>/<job-name>/logs/<run-id>.log` | Tmux job output log |
@@ -45,8 +45,8 @@ The setup wizard and Tools panel detect:
 
 ## Tmux Naming
 
-Job tmux windows follow the pattern `cm-<job-name>` within the configured session (default: `tgs`).
+Job tmux windows follow the pattern `cwt-<project>` within the configured session (default: `cwt`). The project name is derived from the slug prefix (the part before `/`).
 
-Example: job "daily-backup" creates window `tgs:cm-daily-backup`.
+Example: a job with slug `myapp/deploy` creates window `cwt:cwt-myapp`.
 
-If a window's pane has an active process when a new run starts, ClawTab splits a new pane in the same window instead of waiting.
+If the window already exists when a new run starts, ClawTab splits a new pane in the same window instead of creating a new one.

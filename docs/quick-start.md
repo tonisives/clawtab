@@ -52,7 +52,7 @@ The wizard auto-detects tools and shows version + path for each. Missing tools c
 1. Set type to **Claude**
 2. Set path to a text file containing your prompt
 3. The prompt file content is passed to `claude` via `$(cat /path/to/prompt.txt)`
-4. Runs inside a tmux window named `cm-<job-name>`
+4. Runs inside a tmux window named `cwt-<project>`
 
 ### Folder job (project-based AI agent)
 

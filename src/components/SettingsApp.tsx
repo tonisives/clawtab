@@ -134,7 +134,7 @@ export function SettingsApp() {
           onClick={() => openUrl("https://clawtab.cc")}
           title="Open ClawTab website"
         >
-          <img src={clawIcon} alt="ClawTab" width={20} height={20} style={{ borderRadius: 4 }} />
+          <img src={clawIcon} alt="ClawTab" width={28} height={28} style={{ borderRadius: 6 }} />
         </button>
       </div>
 

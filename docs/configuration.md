@@ -7,7 +7,7 @@ All configuration lives under `~/.config/clawtab/`.
 ```
 ~/.config/clawtab/
   settings.yaml              # App settings
-  history.db                 # SQLite run history
+  history.db                 # Run history
   jobs/
     <project-slug>/          # grouped by project
       <job-name>/

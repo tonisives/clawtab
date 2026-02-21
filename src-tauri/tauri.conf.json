@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhGQzVDQzg5QUYxRTU2REMKUldUY1ZoNnZpY3pGajhHc1hJKzN2YmtpRm03ZkpzQjJwL0xFdjl4ODNxbFhyUG9PUHE1T1dwd3gK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJEMDU4NTgyMTIzRkQ3MjMKUldRajF6OFNnb1VGTFFYSkl0RnR2SkRWTXE3YXpvUWNtaXhCUDBFcWliM0MyNThxVGMwZ1FwejQK",
       "endpoints": ["https://github.com/tonisives/clawtab/releases/latest/download/latest.json"]
     },
     "deep-link": {
