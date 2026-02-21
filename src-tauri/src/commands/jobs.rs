@@ -468,57 +468,150 @@ fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Opt
     out
 }
 
-/// Ensure the agent directory and .cwt/ structure exist with current config.
-pub fn ensure_agent_dir(settings: &AppSettings, jobs: &[Job]) {
-    let agent_dir = agent_dir_path();
-    let cwt_default = agent_dir.join(".cwt").join("default");
-    if let Err(e) = std::fs::create_dir_all(&cwt_default) {
-        log::warn!("Failed to create agent .cwt dir: {}", e);
+/// Write `.claude/settings.local.json` in the given directory with default
+/// permissions for automated Claude Code jobs (curl, cwtctl, kill, etc.).
+fn write_claude_settings(dir: &std::path::Path) {
+    let claude_dir = dir.join(".claude");
+    if let Err(e) = std::fs::create_dir_all(&claude_dir) {
+        log::warn!("Failed to create .claude dir in {}: {}", dir.display(), e);
         return;
     }
 
-    // Write auto-generated context to .cwt/default/cwt.md (always overwritten)
-    let context = generate_agent_cwt_context(settings, jobs, None);
-    let cwt_md_path = cwt_default.join("cwt.md");
-    if let Err(e) = std::fs::write(&cwt_md_path, context) {
-        log::warn!("Failed to write agent .cwt/default/cwt.md: {}", e);
+    let settings = serde_json::json!({
+        "permissions": {
+            "allow": [
+                "Bash(curl *)",
+                "Bash(cwtctl *)",
+                "Bash(cwtctl)",
+                "Bash(kill *)",
+                "Bash(cat *)",
+                "Bash(ls *)",
+                "Bash(find *)",
+                "Bash(grep *)",
+                "Bash(rg *)",
+                "Bash(git *)",
+                "Bash(mkdir *)",
+                "Bash(cp *)",
+                "Bash(mv *)",
+                "Bash(head *)",
+                "Bash(tail *)",
+                "Bash(wc *)",
+                "Bash(sort *)",
+                "Bash(uniq *)",
+                "Bash(jq *)",
+                "Bash(sed *)",
+                "Bash(awk *)",
+                "Bash(chmod *)",
+                "Bash(echo *)",
+                "Bash(printf *)",
+                "Bash(test *)",
+                "Bash(touch *)",
+                "Bash(date *)",
+                "Bash(env *)",
+                "Bash(which *)",
+                "Bash(pwd)",
+                "Bash(cd *)",
+                "Read(**)",
+                "Edit(**)",
+                "Write(**)",
+            ]
+        }
+    });
+
+    let path = claude_dir.join("settings.local.json");
+    match serde_json::to_string_pretty(&settings) {
+        Ok(json) => {
+            if let Err(e) = std::fs::write(&path, json) {
+                log::warn!("Failed to write {}: {}", path.display(), e);
+            }
+        }
+        Err(e) => log::warn!("Failed to serialize claude settings: {}", e),
+    }
+}
+
+/// Ensure the agent directory exists with current config.
+/// Writes `cwt.md` (auto-generated) directly in the agent dir.
+pub fn ensure_agent_dir(settings: &AppSettings, jobs: &[Job]) {
+    let agent_dir = agent_dir_path();
+    if let Err(e) = std::fs::create_dir_all(&agent_dir) {
+        log::warn!("Failed to create agent dir: {}", e);
+        return;
     }
 
-    // Create shared .cwt/cwt.md only if it doesn't exist (user-managed)
-    let shared_cwt = agent_dir.join(".cwt").join("cwt.md");
-    if !shared_cwt.exists() {
-        let template = "# Agent Instructions\n\n\
-            Add your custom persistent instructions for the Telegram agent here.\n\
-            This file is NOT overwritten by ClawTab.\n";
-        if let Err(e) = std::fs::write(&shared_cwt, template) {
-            log::warn!("Failed to create agent .cwt/cwt.md: {}", e);
+    // Write auto-generated context to cwt.md (always overwritten)
+    let context = generate_agent_cwt_context(settings, jobs, None);
+    let cwt_md_path = agent_dir.join("cwt.md");
+    if let Err(e) = std::fs::write(&cwt_md_path, context) {
+        log::warn!("Failed to write agent cwt.md: {}", e);
+    }
+
+    // Write Claude Code permissions
+    write_claude_settings(&agent_dir);
+
+    // Clean up old files from previous formats
+    for old in &["CLAUDE.md"] {
+        let p = agent_dir.join(old);
+        if p.is_file() {
+            let _ = std::fs::remove_file(&p);
         }
     }
-
-    // Clean up old CLAUDE.md if it exists (migration from old format)
-    let old_claude_md = agent_dir.join("CLAUDE.md");
-    if old_claude_md.exists() {
-        let _ = std::fs::remove_file(&old_claude_md);
+    // Clean up old .cwt/ nested structure
+    let old_cwt = agent_dir.join(".cwt");
+    if old_cwt.is_dir() {
+        let _ = std::fs::remove_dir_all(&old_cwt);
     }
 }
 
 /// Regenerate cwt.md context file for every folder job's .cwt/{job_name}/ directory.
+/// Also writes `.claude/settings.local.json` in each project root / work_dir.
 pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
+    let mut settings_written: Vec<std::path::PathBuf> = Vec::new();
+
     for job in jobs {
-        if job.job_type != crate::config::jobs::JobType::Folder {
-            continue;
+        match job.job_type {
+            crate::config::jobs::JobType::Folder => {
+                if let Some(ref folder_path) = job.folder_path {
+                    let jn = job.job_name.as_deref().unwrap_or("default");
+                    let content = generate_cwt_context(job, settings);
+                    let cwt_root = std::path::Path::new(folder_path);
+                    let job_dir = cwt_root.join(jn);
+                    if !job_dir.exists() {
+                        let _ = std::fs::create_dir_all(&job_dir);
+                    }
+                    let path = job_dir.join("cwt.md");
+                    if let Err(e) = std::fs::write(&path, content) {
+                        log::warn!("Failed to write cwt.md for '{}': {}", job.name, e);
+                    }
+
+                    // Write Claude Code permissions in the project root (parent of .cwt)
+                    if let Some(project_root) = cwt_root.parent() {
+                        let pr = project_root.to_path_buf();
+                        if !settings_written.contains(&pr) {
+                            write_claude_settings(project_root);
+                            settings_written.push(pr);
+                        }
+                    }
+                }
+            }
+            crate::config::jobs::JobType::Claude => {
+                // Claude jobs run from work_dir; write permissions there
+                if let Some(ref wd) = job.work_dir {
+                    let dir = std::path::PathBuf::from(wd);
+                    if !settings_written.contains(&dir) {
+                        write_claude_settings(&dir);
+                        settings_written.push(dir);
+                    }
+                }
+            }
+            _ => {}
         }
-        if let Some(ref folder_path) = job.folder_path {
-            let jn = job.job_name.as_deref().unwrap_or("default");
-            let content = generate_cwt_context(job, settings);
-            let job_dir = std::path::Path::new(folder_path).join(jn);
-            if !job_dir.exists() {
-                let _ = std::fs::create_dir_all(&job_dir);
-            }
-            let path = job_dir.join("cwt.md");
-            if let Err(e) = std::fs::write(&path, content) {
-                log::warn!("Failed to write cwt.md for '{}': {}", job.name, e);
-            }
+    }
+
+    // Also write to default_work_dir if set
+    if !settings.default_work_dir.is_empty() {
+        let dir = std::path::PathBuf::from(&settings.default_work_dir);
+        if !settings_written.contains(&dir) && dir.is_dir() {
+            write_claude_settings(&dir);
         }
     }
 }
@@ -600,27 +693,17 @@ pub fn build_agent_job(
     jobs: &[Job],
 ) -> Result<Job, String> {
     let agent_dir = agent_dir_path();
-    let cwt_default = agent_dir.join(".cwt").join("default");
-    std::fs::create_dir_all(&cwt_default)
-        .map_err(|e| format!("Failed to create agent .cwt dir: {}", e))?;
+    std::fs::create_dir_all(&agent_dir)
+        .map_err(|e| format!("Failed to create agent dir: {}", e))?;
 
     // Regenerate the auto-generated context with the specific chat_id
     let context = generate_agent_cwt_context(settings, jobs, chat_id);
-    let cwt_md_path = cwt_default.join("cwt.md");
-    std::fs::write(&cwt_md_path, context)
+    let cwt_md_path = agent_dir.join("cwt.md");
+    std::fs::write(&cwt_md_path, &context)
         .map_err(|e| format!("Failed to write agent cwt.md: {}", e))?;
 
-    // Create shared .cwt/cwt.md if not present
-    let shared_cwt = agent_dir.join(".cwt").join("cwt.md");
-    if !shared_cwt.exists() {
-        let template = "# Agent Instructions\n\n\
-            Add your custom persistent instructions for the Telegram agent here.\n\
-            This file is NOT overwritten by ClawTab.\n";
-        let _ = std::fs::write(&shared_cwt, template);
-    }
-
-    // Build the enriched prompt: @.cwt references + user prompt
-    let enriched = format!("@.cwt/cwt.md @.cwt/default/cwt.md\n\n{}", prompt);
+    // Build the enriched prompt: absolute @cwt.md reference + user prompt
+    let enriched = format!("@{}\n\n{}", cwt_md_path.display(), prompt);
 
     let prompt_path = agent_dir.join(".agent-prompt.md");
     std::fs::write(&prompt_path, &enriched)

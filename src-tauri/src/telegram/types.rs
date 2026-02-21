@@ -4,6 +4,7 @@ use serde::Deserialize;
 pub struct TelegramResponse<T> {
     pub ok: bool,
     pub result: Option<T>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

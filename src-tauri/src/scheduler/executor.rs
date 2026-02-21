@@ -471,15 +471,26 @@ fn collect_env_vars(
     let sm = secrets.lock().unwrap();
     let mut vars = Vec::new();
 
-    for key in &job.secret_keys {
-        if let Some(value) = sm.get(key) {
-            vars.push((key.clone(), value.clone()));
+    let is_agent = job.name == "agent";
+
+    if is_agent {
+        // Agent jobs get ALL secrets injected
+        for key in sm.list_keys() {
+            if let Some(value) = sm.get(&key) {
+                vars.push((key, value.clone()));
+            }
+        }
+    } else {
+        for key in &job.secret_keys {
+            if let Some(value) = sm.get(key) {
+                vars.push((key.clone(), value.clone()));
+            }
         }
     }
 
     // Auto-inject TELEGRAM_BOT_TOKEN from global settings when job has a chat_id
-    if !job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN") {
-        if job.telegram_chat_id.is_some() {
+    if !vars.iter().any(|(k, _)| k == "TELEGRAM_BOT_TOKEN") {
+        if job.telegram_chat_id.is_some() || is_agent {
             let s = settings.lock().unwrap();
             if let Some(ref tg) = s.telegram {
                 if !tg.bot_token.is_empty() {

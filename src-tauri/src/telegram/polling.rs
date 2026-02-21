@@ -23,6 +23,8 @@ pub struct AgentState {
 pub async fn start_polling(state: AgentState) {
     let mut offset: Option<i64> = None;
 
+    log::info!("Telegram agent polling started");
+
     loop {
         let config = {
             let s = state.settings.lock().unwrap();
@@ -32,7 +34,6 @@ pub async fn start_polling(state: AgentState) {
         let config = match config {
             Some(c) if c.agent_enabled && c.is_configured() => c,
             _ => {
-                // Agent not enabled or not configured, check again later
                 tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 continue;
             }
@@ -63,6 +64,11 @@ pub async fn start_polling(state: AgentState) {
                         }
 
                         if let Some(ref text) = message.text {
+                            log::info!(
+                                "Telegram message from {}: {}",
+                                message.chat.id,
+                                &text[..text.len().min(100)]
+                            );
                             let response =
                                 handle_message(text, &config, &state, message.chat.id).await;
                             if let Some(reply) = response {
@@ -144,7 +150,8 @@ async fn get_updates(bot_token: &str, offset: Option<i64>) -> Result<Vec<Update>
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     if !body.ok {
-        return Err("Telegram API returned not ok".to_string());
+        let desc = body.description.unwrap_or_else(|| "unknown error".to_string());
+        return Err(format!("Telegram API error: {}", desc));
     }
 
     Ok(body.result.unwrap_or_default())
@@ -326,10 +333,12 @@ async fn relay_to_agent(
 
     // Check if the pane is still alive
     if !tmux::is_pane_busy(&tmux_session, &pane_id) {
-        // Pane died -- clean up
+        log::info!("Agent pane {} no longer busy, cleaning up", pane_id);
         state.active_agents.lock().unwrap().remove(&chat_id);
         return Some("Agent session has ended.".to_string());
     }
+
+    log::info!("Relaying message to agent pane {}: {}", pane_id, &text[..text.len().min(100)]);
 
     // Send the text to the pane as input
     match tmux::send_keys_to_pane(&tmux_session, &pane_id, text) {

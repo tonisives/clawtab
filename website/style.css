@@ -1276,6 +1276,14 @@ a:hover {
 /* --- Responsive --- */
 
 @media (max-width: 768px) {
+  html, body {
+    overflow-x: hidden;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
   .hero h1 {
     font-size: 32px;
   }
@@ -1303,6 +1311,14 @@ a:hover {
     flex-direction: column;
   }
 
+  .use-case-row:has(.expanded) .use-case-card:not(.expanded) {
+    flex: 0 0 auto;
+    opacity: 1;
+    overflow: hidden;
+    border-width: 1px;
+    pointer-events: auto;
+  }
+
   .gallery-arrow {
     width: 36px;
     height: 36px;
@@ -1316,10 +1332,6 @@ a:hover {
   .docs-sidebar {
     position: static;
     max-height: none;
-  }
-
-  .nav-links {
-    gap: 16px;
   }
 }
 
@@ -1338,13 +1350,5 @@ a:hover {
 
   .nav {
     padding: 0 16px;
-  }
-
-  .nav-links {
-    gap: 12px;
-  }
-
-  .nav-links a {
-    font-size: 13px;
   }
 }

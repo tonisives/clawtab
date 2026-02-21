@@ -1,7 +1,7 @@
 apiVersion: skaffold/v4beta13
 kind: Config
 metadata:
-  name: clawtab-web
+  name: clawtab-frontend
 build:
   tagPolicy:
     customTemplate:
@@ -15,14 +15,14 @@ build:
           gitCommit:
             variant: AbbrevCommitSha
   artifacts:
-    - image: registry.tonisives.com/clawtab-web
+    - image: registry.tonisives.com/clawtab-frontend
       context: .
       docker:
         dockerfile: website/Dockerfile
         buildArgs:
           PLATFORM: linux/amd64
         cacheFrom:
-          - registry.tonisives.com/clawtab-web
+          - registry.tonisives.com/clawtab-frontend
 manifests:
   rawYaml:
     - website/k8s/deployment.yaml
@@ -45,5 +45,5 @@ deploy:
               [
                 "sh",
                 "-c",
-                "curl -s -X POST 'https://api.cloudflare.com/client/v4/zones/b8bb20667d7691b3f2364260f6852edf/purge_cache' -H 'Authorization: Bearer '$(gopass show -o tgs/CLOUDFLARE_CACHE_PURGE_TOKEN) -H 'Content-Type: application/json' --data '{\"purge_everything\":true}'",
+                'curl -s -X POST ''https://api.cloudflare.com/client/v4/zones/b8bb20667d7691b3f2364260f6852edf/purge_cache'' -H ''Authorization: Bearer ''$(gopass show -o tgs/CLOUDFLARE_CACHE_PURGE_TOKEN) -H ''Content-Type: application/json'' --data ''{"purge_everything":true}''',
               ]
