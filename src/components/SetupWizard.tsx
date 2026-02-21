@@ -19,7 +19,7 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "done", label: "Done" },
 ];
 
-const REQUIRED_CATEGORIES = new Set(["Required", "Terminal", "Browser"]);
+const REQUIRED_CATEGORIES = new Set(["AI Agent", "Required", "Terminal", "Editor", "Browser"]);
 
 export function SetupWizard({ onComplete }: Props) {
   const [currentStep, setCurrentStep] = useState<Step>("welcome");
@@ -27,6 +27,7 @@ export function SetupWizard({ onComplete }: Props) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [claudePath, setClaudePath] = useState("");
   const [preferredTerminal, setPreferredTerminal] = useState("auto");
+  const [preferredEditor, setPreferredEditor] = useState("");
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
   const [telegramLoaded, setTelegramLoaded] = useState(false);
 
@@ -39,7 +40,10 @@ export function SetupWizard({ onComplete }: Props) {
   const [browseError, setBrowseError] = useState("");
 
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
+  const hasAiAgent = tools.some((t) => t.category === "AI Agent" && t.available);
   const hasClaude = tools.some((t) => t.name === "claude" && t.available);
+  const hasTerminal = tools.some((t) => t.category === "Terminal" && t.available);
+  const hasEditor = tools.some((t) => t.category === "Editor" && t.available);
   const requiredTools = tools.filter((t) => REQUIRED_CATEGORIES.has(t.category));
 
   const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
@@ -54,6 +58,7 @@ export function SetupWizard({ onComplete }: Props) {
       setSettings(s);
       setClaudePath(s.claude_path);
       setPreferredTerminal(s.preferred_terminal);
+      setPreferredEditor(s.preferred_editor);
     });
     loadTools();
     invoke<TelegramConfig | null>("get_telegram_config").then((cfg) => {
@@ -174,7 +179,8 @@ export function SetupWizard({ onComplete }: Props) {
     const updated: AppSettings = {
       ...settings,
       claude_path: claudePath,
-      preferred_terminal: settings.preferred_terminal,
+      preferred_terminal: preferredTerminal,
+      preferred_editor: preferredEditor,
       setup_completed: true,
     };
     try {
@@ -185,7 +191,7 @@ export function SetupWizard({ onComplete }: Props) {
     }
   };
 
-  const toolsReady = hasTmux && hasClaude;
+  const toolsReady = hasTmux && hasAiAgent && hasTerminal && hasEditor;
   const telegramReady = !!(telegramConfig && telegramConfig.chat_ids.length > 0);
 
   const canAdvance = (): boolean => {
@@ -245,19 +251,31 @@ export function SetupWizard({ onComplete }: Props) {
             onRefresh={loadTools}
             selections={{
               terminal: preferredTerminal === "auto" ? "" : preferredTerminal,
+              editor: preferredEditor,
             }}
             onSelect={(group, toolName) => {
               if (group === "terminal") setPreferredTerminal(toolName);
+              if (group === "editor") setPreferredEditor(toolName);
             }}
           />
-          {!hasTmux && tools.length > 0 && (
+          {!hasAiAgent && tools.length > 0 && (
             <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
-              tmux is required. Run <code>brew install tmux</code> then click Refresh.
+              Claude Code is required. Run <code>npm install -g @anthropic-ai/claude-code</code> then click Rescan.
             </p>
           )}
-          {!hasClaude && tools.length > 0 && (
+          {!hasTmux && tools.length > 0 && (
             <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
-              Claude Code is required. Install it then click Refresh.
+              tmux is required. Run <code>brew install tmux</code> then click Rescan.
+            </p>
+          )}
+          {!hasTerminal && tools.length > 0 && (
+            <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
+              A terminal emulator is required.
+            </p>
+          )}
+          {!hasEditor && tools.length > 0 && (
+            <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
+              A code editor is required.
             </p>
           )}
         </div>
