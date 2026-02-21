@@ -21,12 +21,10 @@
     background: var(--color-bg);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
-    overflow-x: hidden;
   }
 
   body {
     min-height: 100vh;
-    overflow-x: hidden;
   }
 
   a {

@@ -57,16 +57,12 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
     }
   }, [autoCreateTemplateId]);
 
-  const toggleCategory = (id: string, rowSiblingId?: string) => {
+  const toggleCategory = (id: string) => {
     setExpandedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        if (rowSiblingId) next.delete(rowSiblingId);
-        next.add(id);
+      if (prev.has(id)) {
+        return new Set();
       }
-      return next;
+      return new Set([id]);
     });
   };
 
@@ -224,7 +220,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
     rows.push(templatesByCategory.slice(i, i + 2));
   }
 
-  const renderCard = (cat: typeof templatesByCategory[number], siblingId?: string) => {
+  const renderCard = (cat: typeof templatesByCategory[number]) => {
     const isExpanded = expandedCategories.has(cat.id);
 
     return (
@@ -232,7 +228,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
         key={cat.id}
         className={`sample-card-v2${isExpanded ? " expanded" : ""}`}
       >
-        <div className="sample-card-v2-top" onClick={() => toggleCategory(cat.id, siblingId)}>
+        <div className="sample-card-v2-top" onClick={() => toggleCategory(cat.id)}>
           <img
             className="sample-card-v2-hero"
             src={cat.image}
@@ -355,8 +351,8 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
       <div className="sample-grid-cards">
         {rows.map((row, i) => (
           <div key={i} className="sample-grid-row">
-            {row.map((cat, j) =>
-              renderCard(cat, row[j === 0 ? 1 : 0]?.id)
+            {row.map((cat) =>
+              renderCard(cat)
             )}
           </div>
         ))}

@@ -15,9 +15,22 @@ export let HScrollWrapper = ({
   itemCount,
   itemsPerView = 1,
 }: HScrollWrapperProps) => {
+  let wrapperRef = useRef<HTMLDivElement>(null)
   let trackRef = useRef<HTMLDivElement>(null)
   let [activeIdx, setActiveIdx] = useState(0)
+  let [trackWidth, setTrackWidth] = useState<number | undefined>(undefined)
   let totalPages = Math.max(1, Math.ceil(itemCount / itemsPerView))
+
+  useEffect(() => {
+    let el = wrapperRef.current
+    if (!el) return
+    let ro = new ResizeObserver((entries) => {
+      let w = entries[0]?.contentRect.width
+      if (w) setTrackWidth(w)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   let updateActiveIdx = useCallback(() => {
     let track = trackRef.current
@@ -67,13 +80,17 @@ export let HScrollWrapper = ({
   let wrapperStyle = maxWidth ? { maxWidth, margin: "0 auto" } : undefined
 
   return (
-    <div style={wrapperStyle}>
-      <div className="relative flex items-center gap-4">
-        {showArrows && <ScrollArrow direction="left" onClick={handlePrev} />}
-        <div ref={trackRef} className="grow w-0 overflow-x-auto snap-x snap-mandatory hscroll-track">
+    <div ref={wrapperRef} style={wrapperStyle}>
+      <div className="relative">
+        {showArrows && <ScrollArrow direction="left" onClick={handlePrev} className="hidden md:flex absolute left-0 top-1/2 -translate-x-14 -translate-y-1/2" />}
+        <div
+          ref={trackRef}
+          className="overflow-x-auto snap-x snap-mandatory hscroll-track"
+          style={trackWidth ? { maxWidth: trackWidth } : undefined}
+        >
           {children}
         </div>
-        {showArrows && <ScrollArrow direction="right" onClick={handleNext} />}
+        {showArrows && <ScrollArrow direction="right" onClick={handleNext} className="hidden md:flex absolute right-0 top-1/2 translate-x-14 -translate-y-1/2" />}
       </div>
       {totalPages > 1 && <Pips total={totalPages} active={activeIdx} onSelect={scrollToPage} />}
     </div>
@@ -122,14 +139,16 @@ let PipButton = ({
 let ScrollArrow = ({
   direction,
   onClick,
+  className = "",
 }: {
   direction: "left" | "right"
   onClick: () => void
+  className?: string
 }) => (
   <button
     onClick={onClick}
     aria-label={direction === "left" ? "Previous" : "Next"}
-    className="hidden md:flex shrink-0 w-12 h-12 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text)] cursor-pointer items-center justify-center transition-colors hover:bg-[var(--color-border)] z-[2]"
+    className={`w-12 h-12 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text)] cursor-pointer items-center justify-center transition-colors hover:bg-[var(--color-border)] z-[2] ${className}`}
   >
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       {direction === "left"
