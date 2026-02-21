@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://clawtab.com">Website</a> &middot;
-  <a href="https://clawtab.com/docs">Documentation</a>
+  <a href="https://clawtab.cc">Website</a> &middot;
+  <a href="./docs/">Documentation</a>
 </p>
 
 ---
@@ -58,7 +58,7 @@ Produces three binaries: `clawtab` (GUI), `cwtctl` (CLI), `cwttui` (TUI).
 
 ## Documentation
 
-Full docs are available at [clawtab.com/docs](https://clawtab.com/docs) or in the [docs/](./docs/) folder.
+Full docs are available in the [docs/](./docs/) folder or at [clawtab.cc](https://clawtab.cc).
 
 ## License
 
