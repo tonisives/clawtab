@@ -90,6 +90,12 @@ a:hover {
   border-radius: 6px;
 }
 
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .nav-links {
   display: flex;
   gap: 24px;
@@ -109,16 +115,17 @@ a:hover {
 }
 
 .nav-docs {
-  margin-left: auto;
-  padding-left: 24px;
-  border-left: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-size: 14px;
+  color: var(--text);
+  font-size: 13px;
   font-weight: 500;
-  transition: color 0.15s;
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--border);
+  transition: background 0.15s, color 0.15s;
 }
 
 .nav-docs:hover {
+  background: color-mix(in srgb, var(--border) 80%, var(--text) 20%);
   color: var(--text);
   text-decoration: none;
 }
@@ -245,6 +252,18 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 28px 24px;
+}
+
+.feature-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
 }
 
 .feature-card h3 {
@@ -653,6 +672,31 @@ a:hover {
   padding: 32px;
 }
 
+.install-block-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.install-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.install-block-header h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 0;
+}
+
 .install-block h3 {
   font-size: 17px;
   font-weight: 600;
@@ -844,6 +888,15 @@ a:hover {
   padding-left: 16px;
   color: var(--text-secondary);
   margin-bottom: 12px;
+}
+
+.docs-content .mermaid {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin-bottom: 16px;
+  overflow-x: auto;
 }
 
 /* --- Template Popup --- */

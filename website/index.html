@@ -15,15 +15,17 @@
     <img src="assets/app-icon.png" alt="ClawTab">
     ClawTab
   </a>
-  <ul class="nav-links">
-    <li><a href="#features">Features</a></li>
-    <li><a href="#how-it-works">How It Works</a></li>
-    <li><a href="#use-cases">Use Cases</a></li>
-    <li><a href="#screenshots">Screenshots</a></li>
-    <li><a href="#install">Install</a></li>
-    <li><a href="#ideas">Ideas</a></li>
-  </ul>
-  <a href="docs.html" class="nav-docs">Docs</a>
+  <div class="nav-right">
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#use-cases">Use Cases</a></li>
+      <li><a href="#screenshots">Screenshots</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#ideas">Ideas</a></li>
+    </ul>
+    <a href="docs.html" class="nav-docs">Docs</a>
+  </div>
 </nav>
 
 <section class="hero">
@@ -46,26 +48,44 @@
   <p class="section-subtitle">Everything you need to automate Claude Code and shell jobs on macOS.</p>
   <div class="features-grid">
     <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 7.5A1.5 1.5 0 0 1 7.5 6h3A1.5 1.5 0 0 1 12 7.5v3A1.5 1.5 0 0 1 10.5 12h-3A1.5 1.5 0 0 1 6 10.5v-3Zm0 10A1.5 1.5 0 0 1 7.5 16h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 6 20.5v-3Zm10-10A1.5 1.5 0 0 1 17.5 6h3A1.5 1.5 0 0 1 22 7.5v3a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 16 10.5v-3Zm0 10a1.5 1.5 0 0 1 1.5-1.5h3a1.5 1.5 0 0 1 1.5 1.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a1.5 1.5 0 0 1-1.5-1.5v-3Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
       <h3>Three Job Types</h3>
       <p>Run shell scripts (binary), Claude Code prompts, or project-based folder agents with .cwt directories.</p>
     </div>
     <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="4" y="6" width="20" height="16" rx="2.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 12l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 18h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
       <h3>Tmux Execution</h3>
       <p>Jobs run inside tmux windows. Output is captured, monitored, and logged. Pane splitting for concurrent runs.</p>
     </div>
     <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="9.5" stroke="currentColor" stroke-width="1.5"/><path d="M14 8v6l4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
       <h3>Cron Scheduling</h3>
       <p>Standard cron expressions with a 30-second polling loop. Run on schedule, manually, or via CLI.</p>
     </div>
     <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="6" y="10" width="16" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M10 10V8a4 4 0 1 1 8 0v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="14" cy="16" r="1.5" fill="currentColor"/><path d="M14 17.5V19" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
       <h3>Secrets Management</h3>
       <p>Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.</p>
     </div>
     <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M22 5L12.5 19l-3-4L3 22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 3l-5.5 2L22 5l-2 5.5L25 3Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/></svg>
+      </div>
       <h3>Telegram Integration</h3>
       <p>Real-time output relay, completion notifications, and an agent mode for remote job control via bot commands.</p>
     </div>
     <div class="feature-card">
+      <div class="feature-icon">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect x="3" y="5" width="10" height="18" rx="2" stroke="currentColor" stroke-width="1.5"/><rect x="15" y="5" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M17 19h6m-3-3v6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </div>
       <h3>Three Interfaces</h3>
       <p>GUI menu bar app, cwtctl CLI, and cwttui terminal UI. All connected via IPC socket.</p>
     </div>
@@ -666,11 +686,21 @@ function toggleTemplate(event, template) {
   <p class="section-subtitle">Install via Homebrew or build from source.</p>
   <div class="install-methods">
     <div class="install-block">
-      <h3>Homebrew</h3>
+      <div class="install-block-header">
+        <div class="install-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 16s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 22V16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Homebrew</h3>
+      </div>
       <pre><code>brew install --cask tonisives/tap/clawtab</code></pre>
     </div>
     <div class="install-block">
-      <h3>Build from Source</h3>
+      <div class="install-block-header">
+        <div class="install-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3v6m0 0l3-3m-3 3L9 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 12H5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 12l1.5 3h5L16 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Build from Source</h3>
+      </div>
       <p class="install-prereqs">Requires macOS 10.15+, <a href="https://rustup.rs/">Rust</a>, <a href="https://nodejs.org/">Node.js</a>, and <a href="https://pnpm.io/">pnpm</a>.</p>
       <pre><code>git clone https://github.com/tonisives/clawdtab.git
 cd clawdtab
@@ -681,7 +711,12 @@ cargo tauri build</code></pre>
       </p>
     </div>
     <div class="install-block">
-      <h3>Runtime Dependencies</h3>
+      <div class="install-block-header">
+        <div class="install-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v6m12-4v4m0 0H3m18 0v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7.5" cy="13" r="1" fill="currentColor"/><circle cx="12" cy="13" r="1" fill="currentColor"/></svg>
+        </div>
+        <h3>Runtime Dependencies</h3>
+      </div>
       <ul>
         <li>tmux (for Claude Code and folder jobs)</li>
         <li>Claude Code CLI (for AI jobs)</li>

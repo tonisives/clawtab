@@ -17,10 +17,12 @@
     <img src="assets/app-icon.png" alt="ClawTab">
     ClawTab
   </a>
-  <ul class="nav-links">
-    <li><a href="/">Home</a></li>
-  </ul>
-  <a href="docs.html" class="nav-docs">Docs</a>
+  <div class="nav-right">
+    <ul class="nav-links">
+      <li><a href="/">Home</a></li>
+    </ul>
+    <a href="docs.html" class="nav-docs">Docs</a>
+  </div>
 </nav>
 
 <div class="docs-layout">
@@ -47,7 +49,8 @@
 </footer>
 
 <script>
-  mermaid.initialize({ startOnLoad: false, theme: 'default' });
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({ startOnLoad: false, theme: prefersDark ? 'dark' : 'default' });
 
   const content = document.getElementById('docs-content');
   const links = document.querySelectorAll('#sidebar-nav a');

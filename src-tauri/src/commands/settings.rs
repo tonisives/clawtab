@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::config::settings::AppSettings;
 use crate::AppState;
@@ -56,6 +56,19 @@ pub fn write_editor_log(lines: Vec<String>) -> Result<(), String> {
             .map_err(|e| format!("Failed to write editor.log: {}", e))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("settings") {
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        let _ = window.show();
+        let _ = window.set_focus();
+        Ok(())
+    } else {
+        Err("Settings window not found".to_string())
+    }
 }
 
 #[tauri::command]

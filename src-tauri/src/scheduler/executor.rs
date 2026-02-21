@@ -286,6 +286,10 @@ async fn execute_claude_job(
     let window_name = project_window_name(job);
     let prompt_path = &job.path;
 
+    // Read prompt file content so we can pass it inline (preserves @ references)
+    let prompt_content = std::fs::read_to_string(prompt_path)
+        .map_err(|e| format!("Failed to read prompt file {}: {}", prompt_path, e))?;
+
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
@@ -304,9 +308,10 @@ async fn execute_claude_job(
         false
     };
 
+    let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = format!(
-        "cd {} && {} \"$(cat {})\"",
-        work_dir, claude_path, prompt_path
+        "cd {} && {} $'{}'",
+        work_dir, claude_path, escaped_prompt
     );
 
     // If the window already existed, always split a new pane (other jobs may occupy it).

@@ -212,6 +212,7 @@ pub fn run() {
         secrets: Arc::clone(&secrets),
         history: Arc::clone(&history),
         job_status: Arc::clone(&job_status),
+        active_agents: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     tauri::Builder::default()
@@ -252,6 +253,7 @@ pub fn run() {
             commands::settings::get_settings,
             commands::settings::set_settings,
             commands::settings::write_editor_log,
+            commands::settings::show_settings_window,
             commands::settings::open_logs_folder,
             commands::status::get_job_statuses,
             commands::status::get_running_job_logs,

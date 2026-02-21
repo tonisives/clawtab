@@ -72,6 +72,7 @@ export function SettingsApp() {
       for (const url of urls) {
         const match = url.match(/^clawtab:\/\/template\/(.+)/);
         if (match) {
+          invoke("show_settings_window");
           setActiveTab("jobs");
           setPendingTemplateId(match[1]);
         }
