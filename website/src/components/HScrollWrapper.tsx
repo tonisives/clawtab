@@ -1,41 +1,121 @@
-import { useRef } from "react"
+import { useRef, useState, useEffect, useCallback } from "react"
 
 type HScrollWrapperProps = {
   children: React.ReactNode
   showArrows?: boolean
+  maxWidth?: string
+  itemCount: number
+  itemsPerView?: number
 }
 
-export let HScrollWrapper = ({ children, showArrows = false }: HScrollWrapperProps) => {
+export let HScrollWrapper = ({
+  children,
+  showArrows = false,
+  maxWidth,
+  itemCount,
+  itemsPerView = 1,
+}: HScrollWrapperProps) => {
   let trackRef = useRef<HTMLDivElement>(null)
+  let [activeIdx, setActiveIdx] = useState(0)
+  let totalPages = Math.max(1, Math.ceil(itemCount / itemsPerView))
 
-  let scroll = (dir: number) => {
+  let updateActiveIdx = useCallback(() => {
     let track = trackRef.current
     if (!track) return
-    let cards = Array.from(
-      track.querySelectorAll<HTMLElement>(".use-case-card, .idea-card, .gallery-slide"),
-    ).filter((c) => c.offsetWidth > 0)
-    let card = cards[0]
-    if (!card) return
-    let gap = parseFloat(getComputedStyle(track).gap) || 20
-    let step = card.offsetWidth + gap
-    let count = window.innerWidth <= 768 ? 1 : 3
-    let delta = step * count * dir
-
-    if (dir > 0 && track.scrollLeft + track.clientWidth >= track.scrollWidth - 1) {
-      track.scrollTo({ left: 0, behavior: "smooth" })
-    } else if (dir < 0 && track.scrollLeft <= 1) {
-      track.scrollTo({ left: track.scrollWidth, behavior: "smooth" })
-    } else {
-      track.scrollBy({ left: delta, behavior: "smooth" })
+    let scrollLeft = track.scrollLeft
+    let scrollWidth = track.scrollWidth - track.clientWidth
+    if (scrollWidth <= 0) {
+      setActiveIdx(0)
+      return
     }
-  }
+    let ratio = scrollLeft / scrollWidth
+    let page = Math.round(ratio * (totalPages - 1))
+    setActiveIdx(page)
+  }, [totalPages])
+
+  useEffect(() => {
+    let track = trackRef.current
+    if (!track) return
+    track.addEventListener("scroll", updateActiveIdx, { passive: true })
+    return () => track.removeEventListener("scroll", updateActiveIdx)
+  }, [updateActiveIdx])
+
+  let scrollToPage = useCallback(
+    (page: number) => {
+      let track = trackRef.current
+      if (!track) return
+      let scrollWidth = track.scrollWidth - track.clientWidth
+      let target = (page / (totalPages - 1)) * scrollWidth
+      track.scrollTo({ left: target, behavior: "smooth" })
+    },
+    [totalPages],
+  )
+
+  let scroll = useCallback(
+    (dir: number) => {
+      let next = activeIdx + dir
+      if (next >= totalPages) next = 0
+      else if (next < 0) next = totalPages - 1
+      scrollToPage(next)
+    },
+    [activeIdx, totalPages, scrollToPage],
+  )
+
+  let handlePrev = useCallback(() => scroll(-1), [scroll])
+  let handleNext = useCallback(() => scroll(1), [scroll])
+
+  let wrapperStyle = maxWidth ? { maxWidth, margin: "0 auto" } : undefined
 
   return (
-    <div className="relative flex items-center gap-3">
-      {showArrows && <ScrollArrow direction="left" onClick={() => scroll(-1)} />}
-      <div ref={trackRef}>{children}</div>
-      {showArrows && <ScrollArrow direction="right" onClick={() => scroll(1)} />}
+    <div style={wrapperStyle}>
+      <div className="relative flex items-center gap-4">
+        {showArrows && <ScrollArrow direction="left" onClick={handlePrev} />}
+        <div ref={trackRef} className="flex-1 min-w-0 overflow-x-auto snap-x snap-mandatory hscroll-track">
+          {children}
+        </div>
+        {showArrows && <ScrollArrow direction="right" onClick={handleNext} />}
+      </div>
+      {totalPages > 1 && <Pips total={totalPages} active={activeIdx} onSelect={scrollToPage} />}
     </div>
+  )
+}
+
+let Pips = ({
+  total,
+  active,
+  onSelect,
+}: {
+  total: number
+  active: number
+  onSelect: (idx: number) => void
+}) => (
+  <div className="flex justify-center gap-2 mt-5">
+    {Array.from({ length: total }, (_, i) => (
+      <PipButton key={i} index={i} isActive={i === active} onSelect={onSelect} />
+    ))}
+  </div>
+)
+
+let PipButton = ({
+  index,
+  isActive,
+  onSelect,
+}: {
+  index: number
+  isActive: boolean
+  onSelect: (idx: number) => void
+}) => {
+  let handleClick = useCallback(() => onSelect(index), [onSelect, index])
+  return (
+    <button
+      onClick={handleClick}
+      aria-label={`Page ${index + 1}`}
+      className={`w-2.5 h-2.5 rounded-full border cursor-pointer p-0 transition-colors ${
+        isActive
+          ? "bg-[var(--color-accent)] border-[var(--color-accent)]"
+          : "bg-[var(--color-bg-secondary)] border-[var(--color-border)] hover:bg-[var(--color-border)]"
+      }`}
+    />
   )
 }
 
@@ -49,7 +129,7 @@ let ScrollArrow = ({
   <button
     onClick={onClick}
     aria-label={direction === "left" ? "Previous" : "Next"}
-    className="shrink-0 w-11 h-11 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text)] text-[22px] cursor-pointer flex items-center justify-center transition-colors hover:bg-[var(--color-border)] z-[2]"
+    className="shrink-0 w-12 h-12 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-secondary)] text-[var(--color-text)] text-2xl cursor-pointer flex items-center justify-center transition-colors hover:bg-[var(--color-border)] z-[2]"
   >
     {direction === "left" ? "\u2039" : "\u203A"}
   </button>

@@ -38,14 +38,16 @@ export let Ideas = () => {
       .finally(() => setLoading(false))
   }, [])
 
+  let count = loading ? 3 : ideas.length
+
   return (
     <Section
       id="ideas"
       title="Looking for business ideas?"
       subtitle="Trending opportunities discovered by TrendSeeker -- validate demand before you build."
     >
-      <HScrollWrapper showArrows>
-        <div className="flex gap-5 overflow-x-auto snap-x snap-mandatory flex-1 min-w-0 hscroll-track">
+      <HScrollWrapper showArrows itemCount={count} itemsPerView={3}>
+        <div className="flex gap-5">
           {loading
             ? [0, 1, 2].map((i) => <SkeletonCard key={i} />)
             : ideas.map((idea) => <IdeaCard key={idea.business_idea_id} idea={idea} />)}

@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react"
 import { Section } from "./Section"
 import { useCases, type UseCase, type Template } from "../data/useCases"
-import { HScrollWrapper } from "./HScrollWrapper"
 
 type UseCasesProps = {
   onUseTemplate: (templateId: string) => void
@@ -13,13 +12,11 @@ export let UseCases = ({ onUseTemplate }: UseCasesProps) => (
     title="What Can You Automate?"
     subtitle="Pre-built templates for common automation tasks. One click to create."
   >
-    <HScrollWrapper>
-      <div className="flex flex-col gap-4 flex-1 min-w-0 hscroll-track max-md:flex-row max-md:overflow-x-auto max-md:scroll-snap-type-x max-md:pb-1">
-        {useCases.map((row, ri) => (
-          <UseCaseRow key={ri} cases={row} onUseTemplate={onUseTemplate} />
-        ))}
-      </div>
-    </HScrollWrapper>
+    <div className="flex flex-col gap-4">
+      {useCases.map((row, ri) => (
+        <UseCaseRow key={ri} cases={row} onUseTemplate={onUseTemplate} />
+      ))}
+    </div>
   </Section>
 )
 
@@ -41,7 +38,7 @@ let UseCaseRow = ({
 
   return (
     <div
-      className="use-case-row flex max-md:contents"
+      className="use-case-row flex gap-4 max-md:flex-col"
       style={{ gap: expandedIdx !== null ? 0 : 16 }}
     >
       {cases.map((uc, i) => {
@@ -88,9 +85,9 @@ let UseCaseCard = ({
 
   return (
     <div
-      className={`use-case-card bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--color-accent)] max-md:flex-[0_0_280px] max-md:min-w-[280px] max-md:scroll-snap-align-center ${
+      className={`use-case-card bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--color-accent)] ${
         isExpanded ? "flex-[1_0_0] min-w-0" : "flex-[1_1_0] min-w-0"
-      } ${isHidden ? "max-md:!flex-[0_0_280px] max-md:!opacity-100 max-md:!border-[1px] max-md:!pointer-events-auto !flex-[0_0_0] !opacity-0 !overflow-hidden !border-0 !pointer-events-none" : ""}`}
+      } ${isHidden ? "!flex-[0_0_0] !opacity-0 !overflow-hidden !border-0 !pointer-events-none max-md:!hidden" : ""}`}
       onClick={handleToggle}
     >
       <img

@@ -53,14 +53,6 @@ a:hover {
   }
 }
 
-/* Counter step animation */
-.step-counter {
-  counter-increment: step;
-}
-.step-counter::before {
-  content: counter(step);
-}
-
 /* Horizontal scroll track */
 .hscroll-track {
   scrollbar-width: none;

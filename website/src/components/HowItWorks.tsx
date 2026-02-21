@@ -6,9 +6,9 @@ export let HowItWorks = () => (
     title="How It Works"
     subtitle="Define jobs, schedule them, monitor from anywhere."
   >
-    <div className="grid grid-cols-3 gap-8 max-md:grid-cols-1" style={{ counterReset: "step" }}>
-      {steps.map((s) => (
-        <Step key={s.title} title={s.title} desc={s.desc} />
+    <div className="grid grid-cols-3 gap-8 max-md:grid-cols-1">
+      {steps.map((s, i) => (
+        <Step key={s.title} num={i + 1} title={s.title} desc={s.desc} />
       ))}
     </div>
   </Section>
@@ -29,9 +29,11 @@ let steps = [
   },
 ]
 
-let Step = ({ title, desc }: { title: string; desc: string }) => (
-  <div className="text-center step-counter">
-    <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-accent)] text-white text-lg font-bold mb-4 before:content-[counter(step)]" />
+let Step = ({ num, title, desc }: { num: number; title: string; desc: string }) => (
+  <div className="text-center">
+    <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[var(--color-accent)] text-white text-lg font-bold mb-4">
+      {num}
+    </div>
     <h3 className="text-[17px] font-semibold mb-2">{title}</h3>
     <p className="text-sm text-[var(--color-text-secondary)]">{desc}</p>
   </div>
