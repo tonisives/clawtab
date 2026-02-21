@@ -15,22 +15,9 @@ export let HScrollWrapper = ({
   itemCount,
   itemsPerView = 1,
 }: HScrollWrapperProps) => {
-  let wrapperRef = useRef<HTMLDivElement>(null)
   let trackRef = useRef<HTMLDivElement>(null)
   let [activeIdx, setActiveIdx] = useState(0)
-  let [trackWidth, setTrackWidth] = useState<number | undefined>(undefined)
   let totalPages = Math.max(1, Math.ceil(itemCount / itemsPerView))
-
-  useEffect(() => {
-    let el = wrapperRef.current
-    if (!el) return
-    let ro = new ResizeObserver((entries) => {
-      let w = entries[0]?.contentRect.width
-      if (w) setTrackWidth(w)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
 
   let updateActiveIdx = useCallback(() => {
     let track = trackRef.current
@@ -80,14 +67,10 @@ export let HScrollWrapper = ({
   let wrapperStyle = maxWidth ? { maxWidth, margin: "0 auto" } : undefined
 
   return (
-    <div ref={wrapperRef} style={wrapperStyle}>
+    <div style={wrapperStyle}>
       <div className="relative">
         {showArrows && <ScrollArrow direction="left" onClick={handlePrev} className="hidden md:flex absolute left-0 top-1/2 -translate-x-14 -translate-y-1/2" />}
-        <div
-          ref={trackRef}
-          className="overflow-x-auto snap-x snap-mandatory hscroll-track"
-          style={trackWidth ? { maxWidth: trackWidth } : undefined}
-        >
+        <div ref={trackRef} className="overflow-x-auto snap-x snap-mandatory hscroll-track">
           {children}
         </div>
         {showArrows && <ScrollArrow direction="right" onClick={handleNext} className="hidden md:flex absolute right-0 top-1/2 translate-x-14 -translate-y-1/2" />}

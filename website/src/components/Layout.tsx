@@ -6,7 +6,7 @@ export let Layout = () => {
   let isHome = location.pathname === "/"
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col overflow-x-hidden">
       <Nav isHome={isHome} />
       <Outlet />
       <Footer />
