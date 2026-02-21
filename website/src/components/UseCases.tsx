@@ -37,20 +37,17 @@ let UseCaseRow = ({
   )
 
   return (
-    <div
-      className="use-case-row flex gap-4 max-md:flex-col"
-      style={{ gap: expandedIdx !== null ? 0 : 16 }}
-    >
+    <div className="use-case-row flex flex-wrap gap-4">
       {cases.map((uc, i) => {
         let isExpanded = expandedIdx === i
-        let isHidden = expandedIdx !== null && !isExpanded
+        let isCollapsed = expandedIdx !== null && !isExpanded
         return (
           <UseCaseCard
             key={uc.title}
             useCase={uc}
             index={i}
             isExpanded={isExpanded}
-            isHidden={isHidden}
+            isCollapsed={isCollapsed}
             onToggle={toggle}
             onUseTemplate={onUseTemplate}
           />
@@ -64,14 +61,14 @@ let UseCaseCard = ({
   useCase,
   index,
   isExpanded,
-  isHidden,
+  isCollapsed,
   onToggle,
   onUseTemplate,
 }: {
   useCase: UseCase
   index: number
   isExpanded: boolean
-  isHidden: boolean
+  isCollapsed: boolean
   onToggle: (idx: number) => void
   onUseTemplate: (id: string) => void
 }) => {
@@ -86,16 +83,22 @@ let UseCaseCard = ({
   return (
     <div
       className={`use-case-card bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl overflow-hidden cursor-pointer hover:border-[var(--color-accent)] ${
-        isExpanded ? "flex-[1_0_0] min-w-0" : "flex-[1_1_0] min-w-0"
-      } ${isHidden ? "!flex-[0_0_0] !opacity-0 !overflow-hidden !border-0 !pointer-events-none max-md:!hidden" : ""}`}
+        isExpanded
+          ? "w-full"
+          : isCollapsed
+            ? "flex-1 min-w-[200px]"
+            : "flex-1 min-w-0"
+      }`}
       onClick={handleToggle}
     >
-      <img
-        src={useCase.image}
-        alt={useCase.title}
-        loading="lazy"
-        className="w-full h-40 object-cover block border-b border-[var(--color-border)]"
-      />
+      {!isCollapsed && (
+        <img
+          src={useCase.image}
+          alt={useCase.title}
+          loading="lazy"
+          className="w-full h-40 object-cover block border-b border-[var(--color-border)]"
+        />
+      )}
       <UseCaseHeader useCase={useCase} />
       <div
         className={`use-case-body-grid border-t border-[var(--color-border)] px-6 ${isExpanded ? "expanded" : ""}`}

@@ -26,7 +26,6 @@ build:
 manifests:
   rawYaml:
     - website/k8s/deployment.yaml
-    - website/k8s/ingress.yaml
 deploy:
   kubeContext: tgs
   kubectl:

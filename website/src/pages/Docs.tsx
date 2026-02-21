@@ -1,4 +1,46 @@
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
+
+let scriptsReady: Promise<void> | null = null
+
+function ensureScripts(): Promise<void> {
+  if (scriptsReady) return scriptsReady
+  scriptsReady = new Promise((resolve) => {
+    let loaded = 0
+    let check = () => { if (++loaded === 2) resolve() }
+
+    let markedScript = document.createElement("script")
+    markedScript.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js"
+    markedScript.onload = check
+    document.head.appendChild(markedScript)
+
+    let mermaidScript = document.createElement("script")
+    mermaidScript.src = "https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"
+    mermaidScript.onload = () => {
+      let w = window as any
+      w.mermaid.initialize({ startOnLoad: false, theme: "dark" })
+      check()
+    }
+    document.head.appendChild(mermaidScript)
+  })
+  return scriptsReady
+}
+
+async function renderMermaid(container: HTMLElement) {
+  let w = window as any
+  if (!w.mermaid) return
+  let blocks = container.querySelectorAll("code.language-mermaid")
+  for (let i = 0; i < blocks.length; i++) {
+    let code = blocks[i] as HTMLElement
+    let pre = code.parentElement
+    if (!pre || pre.tagName !== "PRE") continue
+    let id = `mermaid-${Date.now()}-${i}`
+    let { svg } = await w.mermaid.render(id, code.textContent || "")
+    let div = document.createElement("div")
+    div.className = "mermaid"
+    div.innerHTML = svg
+    pre.replaceWith(div)
+  }
+}
 
 export let Docs = () => {
   let [activeDoc, setActiveDoc] = useState(() => {
@@ -7,41 +49,39 @@ export let Docs = () => {
     return found ? found.file : docPages[0].file
   })
   let [content, setContent] = useState("Loading documentation...")
-  let [loaded, setLoaded] = useState(false)
+  let [ready, setReady] = useState(false)
+  let mainRef = useRef<HTMLElement>(null)
 
   let loadDoc = useCallback(async (filename: string) => {
     try {
-      let resp = await fetch("/docs/" + filename)
-      if (!resp.ok) {
-        resp = await fetch(RAW_BASE + filename)
-      }
+      let resp = await fetch(RAW_BASE + filename)
       if (!resp.ok) throw new Error(resp.statusText)
       let md = await resp.text()
-      let w = window as unknown as { marked?: { parse: (md: string) => string } }
+      let w = window as any
       if (w.marked) {
         setContent(w.marked.parse(md))
       } else {
         setContent(`<pre>${md}</pre>`)
       }
-      setLoaded(true)
     } catch (e) {
       setContent(`<p>Failed to load ${filename}: ${(e as Error).message}</p>`)
     }
   }, [])
 
   useEffect(() => {
-    let script = document.createElement("script")
-    script.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js"
-    script.onload = () => loadDoc(activeDoc)
-    document.head.appendChild(script)
-    return () => {
-      document.head.removeChild(script)
-    }
+    ensureScripts().then(() => {
+      setReady(true)
+      loadDoc(activeDoc)
+    })
   }, [])
 
   useEffect(() => {
-    if (loaded) loadDoc(activeDoc)
-  }, [activeDoc, loaded, loadDoc])
+    if (ready) loadDoc(activeDoc)
+  }, [activeDoc, ready, loadDoc])
+
+  useEffect(() => {
+    if (mainRef.current) renderMermaid(mainRef.current)
+  }, [content])
 
   let handleNav = useCallback(
     (file: string, hash: string) => {
@@ -53,12 +93,22 @@ export let Docs = () => {
   )
 
   return (
-    <div className="grid grid-cols-[220px_1fr] gap-8 max-w-[1080px] mx-auto px-6 py-8 min-h-[calc(100vh-56px)] max-md:grid-cols-1">
-      <Sidebar docPages={docPages} activeDoc={activeDoc} onNav={handleNav} />
-      <main
-        className="min-w-0 docs-content"
-        dangerouslySetInnerHTML={{ __html: content }}
-      />
+    <div className="max-w-[1080px] mx-auto px-6">
+      <div className="py-6">
+        <img
+          src="/assets/docs-hero.png"
+          alt="ClawTab Documentation"
+          className="w-full max-w-[600px] mx-auto block rounded-xl"
+        />
+      </div>
+      <div className="grid grid-cols-[220px_1fr] gap-8 pb-8 min-h-[calc(100vh-56px)] max-md:grid-cols-1">
+        <Sidebar docPages={docPages} activeDoc={activeDoc} onNav={handleNav} />
+        <main
+          ref={mainRef}
+          className="min-w-0 docs-content"
+          dangerouslySetInnerHTML={{ __html: content }}
+        />
+      </div>
     </div>
   )
 }

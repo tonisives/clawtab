@@ -1,5 +1,10 @@
 export let Hero = () => (
-  <section className="text-center pt-20 pb-16 px-6 max-w-[1080px] mx-auto">
+  <section className="relative text-center pt-20 pb-16 px-6 max-w-[1080px] mx-auto overflow-hidden">
+    <div
+      className="absolute inset-0 bg-center bg-cover bg-no-repeat opacity-[0.07] dark:opacity-[0.05] pointer-events-none"
+      style={{ backgroundImage: "url(/assets/hero-bg.png)" }}
+    />
+    <div className="relative">
     <img
       src="/assets/app-icon.png"
       alt="ClawTab"
@@ -30,6 +35,7 @@ export let Hero = () => (
       <video autoPlay loop muted playsInline className="w-full block">
         <source src="/assets/hero-demo.mp4" type="video/mp4" />
       </video>
+    </div>
     </div>
   </section>
 )
