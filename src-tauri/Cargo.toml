@@ -16,10 +16,6 @@ path = "src/bin/ctl.rs"
 name = "cwttui"
 path = "src/bin/tui.rs"
 
-[[bin]]
-name = "cwt-browse"
-path = "src/bin/browse.rs"
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

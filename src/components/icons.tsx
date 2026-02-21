@@ -77,19 +77,6 @@ export function ClockIcon({ size = 18 }: IconProps) {
   );
 }
 
-export function ClawIcon({ size = 20 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 128 128">
-      <rect width="128" height="128" rx="28" fill="#636B8A" />
-      <g fill="white">
-        <path d="M38 98 C38 98 42 80 48 62 C52 48 55 36 55 32 C55 28 52 28 50 32 C46 40 40 62 36 80 C34 90 38 98 38 98Z" />
-        <path d="M55 98 C55 98 59 78 64 58 C68 42 70 30 70 26 C70 22 67 22 65 26 C61 36 56 58 52 78 C50 88 55 98 55 98Z" />
-        <path d="M72 98 C72 98 76 78 82 58 C86 42 88 30 88 26 C88 22 85 22 83 26 C79 36 74 58 70 78 C68 88 72 98 72 98Z" />
-      </g>
-    </svg>
-  );
-}
-
 export const CATEGORY_ICONS: Record<string, React.FC<IconProps>> = {
   globe: GlobeIcon,
   code: CodeIcon,

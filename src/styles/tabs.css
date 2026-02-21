@@ -52,11 +52,10 @@
   padding: 4px;
   border-radius: 4px;
   transition: opacity 0.15s ease;
-  opacity: 0.6;
 }
 
 .claw-icon-btn:hover {
-  opacity: 1;
+  opacity: 0.7;
 }
 
 .tab-content {

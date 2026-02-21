@@ -10,7 +10,8 @@ import { TelegramPanel } from "./TelegramPanel";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { GearIcon, ClawIcon } from "./icons";
+import { GearIcon } from "./icons";
+import clawIcon from "../assets/icon.png";
 
 type TabId = "jobs" | "secrets" | "tools" | "telegram" | "settings";
 
@@ -133,7 +134,7 @@ export function SettingsApp() {
           onClick={() => openUrl("https://clawtab.cc")}
           title="Open ClawTab website"
         >
-          <ClawIcon size={18} />
+          <img src={clawIcon} alt="ClawTab" width={20} height={20} style={{ borderRadius: 4 }} />
         </button>
       </div>
 

@@ -87,13 +87,3 @@ Standard 5-field cron format: `minute hour day month weekday`
 | `30 */2 * * *` | Every 2 hours at :30 |
 
 The scheduler polls every 30 seconds and checks if any scheduled time falls within the last polling window.
-
-## Legacy Migration
-
-Two migration paths run automatically on startup:
-
-1. **jobs.yaml** -- If a `jobs.yaml` file exists (flat list format), it is migrated to folder-based storage. The original is backed up as `jobs.yaml.bak`.
-
-2. **Flat slug dirs** -- If `jobs/<flat-slug>/job.yaml` exists (old single-level format), it is migrated to `jobs/<project-slug>/<job-name>/job.yaml`. Jobs without a `job_name` get `"default"`. Logs are moved along with the job.
-
-3. **.cwt root migration** -- If `.cwt/job.md` exists at the project level (old single-job format), it is lazily moved to `.cwt/default/job.md` on first access.

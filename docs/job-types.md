@@ -27,11 +27,13 @@ path: /prompts/review-pr.txt
 Execution command sent to tmux:
 
 ```bash
-export SECRET_KEY='value' && cd /work/dir && claude "$(cat /prompts/review-pr.txt)"
+cd /work/dir && claude "$(cat /prompts/review-pr.txt)"
 ```
 
-- Creates tmux window `cm-<job-name>` in the configured session
-- If the window already has an active process, splits a new pane instead
+Secrets are injected as tmux environment variables via `-e KEY=VALUE` flags on window/pane creation, not as shell `export` prefixes.
+
+- Creates tmux window `cwt-<project>` in the configured session (project is derived from the slug prefix, e.g. slug `myapp/review` produces window `cwt-myapp`)
+- If the window already exists, splits a new pane instead
 - Output monitored asynchronously (see [Monitoring](#tmux-monitoring))
 
 ## Folder
@@ -72,8 +74,10 @@ If `job_name` is not set, it defaults to `"default"`, placing files at `.cwt/def
 Execution command sent to tmux:
 
 ```bash
-export SECRET_KEY='value' && cd /projects/myapp && claude $'@.cwt/cwt.md @.cwt/deploy/cwt.md @.cwt/deploy/job.md\n\n<job.md content>'
+cd /projects/myapp && claude $'@.cwt/cwt.md @.cwt/deploy/cwt.md @.cwt/deploy/job.md\n\n<job.md content>'
 ```
+
+Secrets are injected as tmux environment variables (same as Claude jobs).
 
 The job runs from the project root (parent of `.cwt/`), not from inside `.cwt/`.
 
@@ -82,20 +86,23 @@ The job runs from the project root (parent of `.cwt/`), not from inside `.cwt/`.
 Claude and Folder jobs are monitored asynchronously after launch:
 
 ```
-3s wait (process startup)
+1s wait (process startup)
   |
   v
-Poll pane every 5s
-  ├── Capture last 80 lines
-  ├── Diff against previous capture
-  ├── Relay new output to Telegram (if configured)
-  └── Track idle ticks (no change + no active process)
+Two concurrent loops:
+  1. Fast exit poller (every 200ms)
+     └── Checks if pane process has exited (shell prompt returned)
+  2. Content poller (every 2s)
+     ├── Capture last 80 lines
+     ├── Diff against previous capture
+     └── Relay new output to Telegram (if configured)
   |
   v
-5 idle ticks = job complete
+Process exit detected:
   ├── Capture full scrollback
   ├── Save to ~/.config/clawtab/jobs/<slug>/logs/<run-id>.log
   ├── Update history record
+  ├── Kill the tmux pane
   ├── Set status to Success
   └── Send completion notification
 ```
@@ -123,7 +130,7 @@ All job types inject environment variables in this order:
 3. Secrets from `secret_keys` (keychain lookup, then gopass fallback)
 4. `TELEGRAM_BOT_TOKEN` auto-injected if job has `telegram_chat_id` set
 
-For tmux jobs (Claude/Folder), secrets are injected via an `export K=V && ...` prefix prepended to the command. Values are shell-escaped.
+For tmux jobs (Claude/Folder), secrets are injected via tmux's `-e KEY=VALUE` flags when creating windows or splitting panes. This sets them as environment variables in the shell without exposing them in the command string.
 
 ## Aerospace Integration
 

@@ -245,15 +245,6 @@ const TOOLS: &[ToolSpec] = &[
         group: None,
         brew_formula: None,
     },
-    ToolSpec {
-        name: "cwt-browse",
-        binary: "cwt-browse",
-        version_flag: "--help",
-        category: "Browser",
-        required: false,
-        group: None,
-        brew_formula: None,
-    },
     // Messaging
     ToolSpec {
         name: "Telegram",
