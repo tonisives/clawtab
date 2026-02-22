@@ -18,10 +18,8 @@ const EDITOR_LABELS: Record<string, string> = {
 };
 
 const STEP_TIPS: Record<string, string> = {
-  folder: "Choose the project folder and name the job. A .cwt/{job-name}/job.md file will be created with directions for the AI.",
-  schedule: "How often should this job run? Pick a preset, choose specific days, or write a cron expression.",
-  secrets: "Select API keys and tokens this job needs. They'll be injected as environment variables when the job runs.",
-  config: "Optional settings. Most jobs work fine with defaults.",
+  identity: "Choose the project folder, name the job, and write its directions.",
+  settings: "Configure schedule, secrets, and notifications. Expand sections as needed.",
 };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -59,13 +57,11 @@ const emptyJob: Job = {
   slug: "",
 };
 
-type WizardStep = "folder" | "schedule" | "secrets" | "config";
+type WizardStep = "identity" | "settings";
 
 const STEPS: { id: WizardStep; label: string }[] = [
-  { id: "folder", label: "Folder" },
-  { id: "schedule", label: "Schedule" },
-  { id: "secrets", label: "Secrets" },
-  { id: "config", label: "Config" },
+  { id: "identity", label: "Identity & Directions" },
+  { id: "settings", label: "Settings" },
 ];
 
 const JOB_NAME_MAX_LENGTH = 40;
@@ -84,6 +80,24 @@ function FieldGroup({ title, children }: { title: string; children: React.ReactN
     <div className="field-group">
       <span className="field-group-title">{title}</span>
       {children}
+    </div>
+  );
+}
+
+function CollapsibleFieldGroup({ title, expanded, onToggle, children }: { title: string; expanded: boolean; onToggle: () => void; children: React.ReactNode }) {
+  return (
+    <div className="field-group">
+      <span
+        className="field-group-title"
+        style={{ cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 6 }}
+        onClick={onToggle}
+      >
+        <span style={{ fontSize: 10, transform: expanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s", display: "inline-block" }}>
+          &#9660;
+        </span>
+        {title}
+      </span>
+      {expanded && children}
     </div>
   );
 }
@@ -131,7 +145,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const isWizard = isNew && form.job_type === "folder";
 
   // Wizard state
-  const [currentStep, setCurrentStep] = useState<WizardStep>("folder");
+  const [currentStep, setCurrentStep] = useState<WizardStep>("identity");
   const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
 
   // Lazy-loaded data
@@ -143,6 +157,12 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
+
+  // Wizard step 2 collapsible sections
+  const [scheduleExpanded, setScheduleExpanded] = useState(true);
+  const [secretsExpanded, setSecretsExpanded] = useState(false);
+  const [telegramExpanded, setTelegramExpanded] = useState(false);
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
   // Inline editor state
   const [inlineContent, setInlineContent] = useState("");
@@ -167,6 +187,9 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
         const workDir = (s.default_work_dir || "~").replace(/\/+$/, "");
         setForm((prev) => ({ ...prev, folder_path: workDir + "/.cwt" }));
       }
+      if (isNew && s.default_tmux_session) {
+        setForm((prev) => ({ ...prev, tmux_session: s.default_tmux_session }));
+      }
       if (s.telegram?.chat_ids?.length) {
         const chats = s.telegram.chat_ids.map((id) => ({
           id,
@@ -180,18 +203,18 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     });
   }, []);
 
-  // Load secrets when entering secrets step (or on mount for edit mode)
+  // Load secrets when entering settings step (or on mount for edit mode)
   useEffect(() => {
-    if (!isWizard || currentStep === "secrets") {
+    if (!isWizard || currentStep === "settings") {
       if (availableSecrets === null) {
         invoke<SecretEntry[]>("list_secrets").then(setAvailableSecrets);
       }
     }
   }, [currentStep, isWizard, availableSecrets]);
 
-  // Load aerospace when entering config step (or on mount for edit mode)
+  // Load aerospace when entering settings step (or on mount for edit mode)
   useEffect(() => {
-    if (!isWizard || currentStep === "config") {
+    if (!isWizard || currentStep === "settings") {
       invoke<boolean>("aerospace_available")
         .then((avail) => {
           setAerospaceAvailable(avail);
@@ -284,7 +307,8 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     if (selected) {
       const projectDir = typeof selected === "string" ? selected : selected;
       const cwtPath = projectDir.replace(/\/+$/, "") + "/.cwt";
-      setForm({ ...form, folder_path: cwtPath });
+      const folderName = projectDir.replace(/\/+$/, "").split("/").pop() || "default";
+      setForm({ ...form, folder_path: cwtPath, group: folderName });
     }
   };
 
@@ -424,31 +448,23 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const renderDirectionsFields = () => {
     if (form.job_type !== "folder" || !form.folder_path) return null;
 
-    const showTabs = !isNew;
-
     return (
       <div className="form-group">
         <div className="directions-box">
-          {showTabs ? (
-            <div className="directions-tabs">
-              <button
-                className={`directions-tab ${previewFile === "job.md" ? "active" : ""}`}
-                onClick={() => setPreviewFile("job.md")}
-              >
-                job.md
-              </button>
-              <button
-                className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
-                onClick={() => setPreviewFile("cwt.md")}
-              >
-                cwt.md
-              </button>
-            </div>
-          ) : (
-            <div className="directions-tabs">
-              <span className="directions-tab active">job.md</span>
-            </div>
-          )}
+          <div className="directions-tabs">
+            <button
+              className={`directions-tab ${previewFile === "job.md" ? "active" : ""}`}
+              onClick={() => setPreviewFile("job.md")}
+            >
+              job.md
+            </button>
+            <button
+              className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
+              onClick={() => setPreviewFile("cwt.md")}
+            >
+              cwt.md
+            </button>
+          </div>
           {previewFile === "job.md" ? (
             <textarea
               className="directions-editor"
@@ -764,13 +780,131 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     </>
   );
 
+  // ---- Wizard-only field renderers (split from runtime/config for collapsible sections) ----
+
+  const renderTelegramFields = () => (
+    <>
+      <div className="form-group">
+        <label>Telegram Chat</label>
+        {telegramChats.length > 0 ? (
+          <select
+            value={form.telegram_chat_id ?? ""}
+            onChange={(e) => {
+              const val = e.target.value;
+              setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) : null });
+            }}
+          >
+            <option value="">None</option>
+            {telegramChats.map((chat) => (
+              <option key={chat.id} value={chat.id}>
+                {chat.name ? `${chat.name} (${chat.id})` : String(chat.id)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={form.telegram_chat_id ?? ""}
+            onChange={(e) => {
+              const val = e.target.value.trim();
+              setForm({ ...form, telegram_chat_id: val ? parseInt(val, 10) || null : null });
+            }}
+            placeholder=""
+          />
+        )}
+        <span className="hint">
+          {telegramChats.length > 0
+            ? "Select which chat receives notifications for this job"
+            : "Configure telegram in Settings to add chats"}
+        </span>
+      </div>
+
+      {form.telegram_chat_id != null && (
+        <div className="form-group">
+          <label>Notifications</label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "4px 0" }}>
+            {([
+              { key: "start" as const, label: "Job started", hint: "Notify when the job begins" },
+              { key: "working" as const, label: "Working timer", hint: "Live elapsed time counter" },
+              { key: "logs" as const, label: "Log output", hint: "Stream pane output while running" },
+              { key: "finish" as const, label: "Job finished", hint: "Final snapshot and completion message" },
+            ] as const).map(({ key, label, hint }) => (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.telegram_notify[key]}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      telegram_notify: { ...form.telegram_notify, [key]: e.target.checked },
+                    })
+                  }
+                  style={{ margin: 0 }}
+                />
+                <span>{label}</span>
+                <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>{hint}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  const renderAdvancedFields = () => (
+    <>
+      <div className="form-group">
+        <label>Tmux Session</label>
+        <input
+          type="text"
+          value={form.tmux_session ?? ""}
+          onChange={(e) =>
+            setForm({ ...form, tmux_session: e.target.value || null })
+          }
+          placeholder=""
+        />
+      </div>
+
+      <div className="form-group">
+        <label>Group</label>
+        <input
+          type="text"
+          value={form.group}
+          onChange={(e) => setForm({ ...form, group: e.target.value || "default" })}
+          placeholder=""
+        />
+        <span className="hint">Jobs are grouped by this label in the list</span>
+      </div>
+
+      {aerospaceAvailable && (
+        <div className="form-group">
+          <label>Aerospace Workspace</label>
+          <select
+            value={form.aerospace_workspace ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, aerospace_workspace: e.target.value || null })
+            }
+          >
+            <option value="">None</option>
+            {aerospaceWorkspaces.map((ws) => (
+              <option key={ws.name} value={ws.name}>
+                {ws.name}
+              </option>
+            ))}
+          </select>
+          <span className="hint">Move tmux window to this workspace after creation</span>
+        </div>
+      )}
+    </>
+  );
+
   // ---- Wizard mode (new folder jobs) ----
 
   if (isWizard) {
     return (
       <div className="settings-section">
         <div className="section-header">
-          <h2>New Job</h2>
+          <h2>Add Job</h2>
         </div>
 
         <div>
@@ -797,7 +931,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
             </p>
           </div>
 
-          {currentStep === "folder" && (
+          {currentStep === "identity" && (
             <>
               <div style={{ maxWidth: 520, margin: "0 auto" }}>
                 <FieldGroup title="Identity">
@@ -813,26 +947,23 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           )}
 
           <div style={{ maxWidth: 520, margin: "0 auto" }}>
-            {currentStep === "schedule" && (
-              <FieldGroup title="Schedule">
-                {renderScheduleFields()}
-              </FieldGroup>
-            )}
-
-            {currentStep === "secrets" && (
-              <FieldGroup title="Secrets">
-                {renderSecretsFields()}
-              </FieldGroup>
-            )}
-
-            {currentStep === "config" && (
+            {currentStep === "settings" && (
               <>
-                <FieldGroup title="Config">
-                  {renderConfigFields()}
-                </FieldGroup>
-                <FieldGroup title="Runtime">
-                  {renderRuntimeFields()}
-                </FieldGroup>
+                <CollapsibleFieldGroup title="Schedule" expanded={scheduleExpanded} onToggle={() => setScheduleExpanded(!scheduleExpanded)}>
+                  {renderScheduleFields()}
+                </CollapsibleFieldGroup>
+
+                <CollapsibleFieldGroup title="Secrets" expanded={secretsExpanded} onToggle={() => setSecretsExpanded(!secretsExpanded)}>
+                  {renderSecretsFields()}
+                </CollapsibleFieldGroup>
+
+                <CollapsibleFieldGroup title="Telegram" expanded={telegramExpanded} onToggle={() => setTelegramExpanded(!telegramExpanded)}>
+                  {renderTelegramFields()}
+                </CollapsibleFieldGroup>
+
+                <CollapsibleFieldGroup title="Advanced" expanded={advancedExpanded} onToggle={() => setAdvancedExpanded(!advancedExpanded)}>
+                  {renderAdvancedFields()}
+                </CollapsibleFieldGroup>
               </>
             )}
 
@@ -845,7 +976,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                   Back
                 </button>
               )}
-              {currentStep === "config" ? (
+              {currentStep === "settings" ? (
                 <button
                   className="btn btn-primary"
                   onClick={handleSubmit}
@@ -857,7 +988,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
                 <button
                   className="btn btn-primary"
                   onClick={goNext}
-                  disabled={currentStep === "folder" && !canAdvanceFromFolder()}
+                  disabled={currentStep === "identity" && !canAdvanceFromFolder()}
                 >
                   Next
                 </button>
@@ -893,7 +1024,7 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </button>
-          <h2>{isNew ? "New Job" : `Edit: ${form.name}`}</h2>
+          <h2>{isNew ? "Add Job" : `Edit: ${form.name}`}</h2>
         </div>
         <button className="btn btn-primary btn-sm" onClick={handleSubmit}>
           {isNew ? "Create" : "Save"}

@@ -129,7 +129,7 @@ export function SettingsApp() {
             setActiveTab("jobs");
             setCreateJobKey((k) => k + 1);
           }}
-          title="New blank job"
+          title="Add job"
         >
           <span style={{ position: 'relative', top: -1 }}>+</span>
         </button>

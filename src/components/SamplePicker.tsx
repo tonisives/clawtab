@@ -309,7 +309,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
-        <h2>New Job</h2>
+        <h2>Add Job</h2>
       </div>
 
       {error && (
