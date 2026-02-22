@@ -1,3 +1,5 @@
+![ClawTab Documentation](./docs-hero.png)
+
 # ClawTab Documentation
 
 ClawTab is a macOS desktop app for scheduling and managing automated jobs -- shell scripts, Claude Code prompts, and project-based AI agents -- all orchestrated through tmux.

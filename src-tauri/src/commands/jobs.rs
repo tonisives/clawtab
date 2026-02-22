@@ -20,11 +20,17 @@ pub fn save_job(state: State<AppState>, job: Job) -> Result<(), String> {
     // Derive slug if not set
     let mut job = job;
     if job.slug.is_empty() {
-        job.slug = crate::config::jobs::derive_slug(
-            &job.folder_path.as_deref().unwrap_or(&job.name),
-            job.job_name.as_deref(),
-            &config.jobs,
-        );
+        // If a job with the same name already exists, reuse its slug
+        // to update in place instead of creating a duplicate.
+        if let Some(existing) = config.jobs.iter().find(|j| j.name == job.name) {
+            job.slug = existing.slug.clone();
+        } else {
+            job.slug = crate::config::jobs::derive_slug(
+                &job.folder_path.as_deref().unwrap_or(&job.name),
+                job.job_name.as_deref(),
+                &config.jobs,
+            );
+        }
     }
 
     config.save_job(&job)?;

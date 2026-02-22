@@ -324,6 +324,82 @@ pub async fn send_chat_action(
     Ok(())
 }
 
+/// Answer a callback query (dismiss the loading spinner on the button).
+pub async fn answer_callback_query(
+    bot_token: &str,
+    callback_query_id: &str,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let url = format!(
+        "https://api.telegram.org/bot{}/answerCallbackQuery",
+        bot_token
+    );
+
+    client
+        .post(&url)
+        .json(&serde_json::json!({
+            "callback_query_id": callback_query_id,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Telegram answerCallbackQuery failed: {}", e))?;
+
+    Ok(())
+}
+
+/// Send a message with an inline keyboard. Each button sends its `callback_data`
+/// as the text of the user's reply (via callback query handling in the poller).
+/// `buttons` is a list of (label, callback_data) pairs, laid out one per row.
+pub async fn send_message_with_inline_keyboard(
+    bot_token: &str,
+    chat_id: i64,
+    text: &str,
+    buttons: &[(String, String)],
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
+
+    // Build inline keyboard: one button per row
+    let keyboard: Vec<Vec<serde_json::Value>> = buttons
+        .iter()
+        .map(|(label, data)| {
+            vec![serde_json::json!({
+                "text": label,
+                "callback_data": data,
+            })]
+        })
+        .collect();
+
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "reply_markup": {
+                "inline_keyboard": keyboard,
+            },
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Telegram request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Telegram sendMessage with keyboard error: {}", body));
+    }
+
+    Ok(())
+}
+
 fn split_message(text: &str) -> Vec<String> {
     if text.len() <= MAX_MESSAGE_LEN {
         return vec![text.to_string()];

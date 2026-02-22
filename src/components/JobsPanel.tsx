@@ -143,6 +143,9 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   const [showAgentPrompt, setShowAgentPrompt] = useState(false);
+  const [jobSelectMode, setJobSelectMode] = useState(false);
+  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [confirmBulkDeleteJobs, setConfirmBulkDeleteJobs] = useState(false);
 
   const loadJobs = async () => {
     try {
@@ -308,6 +311,38 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     }
   };
 
+  const toggleJobSelected = (name: string) => {
+    setSelectedJobs((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllJobs = () => {
+    if (selectedJobs.size === jobs.length) {
+      setSelectedJobs(new Set());
+    } else {
+      setSelectedJobs(new Set(jobs.map((j) => j.name)));
+    }
+  };
+
+  const handleBulkDeleteJobs = async () => {
+    for (const name of selectedJobs) {
+      try {
+        await invoke("delete_job", { name });
+      } catch (e) {
+        console.error("Failed to delete job:", name, e);
+      }
+    }
+    setSelectedJobs(new Set());
+    await loadJobs();
+  };
+
   const toggleGroup = (group: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
@@ -408,11 +443,14 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
 
     return [
       <JobRow
-        key={job.name}
+        key={job.slug}
         job={job}
         state={state}
         status={status}
         isExpanded={isExpanded}
+        selectMode={jobSelectMode}
+        isSelected={selectedJobs.has(job.name)}
+        onToggleSelected={() => toggleJobSelected(job.name)}
         onToggleEnabled={() => handleToggle(job.name)}
         onRun={() => handleRunNow(job.name)}
         onPause={() => handlePause(job.name)}
@@ -425,10 +463,10 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
         onToggleExpand={() => toggleJobExpand(job.name)}
       />,
       state === "running" && status?.state === "running" && status.pane_id && (
-        <RunningLogs key={`${job.name}-live`} jobName={job.name} />
+        <RunningLogs key={`${job.slug}-live`} jobName={job.name} />
       ),
       isExpanded && (
-        <RunsPanel key={`${job.name}-runs`} jobName={job.name} jobState={state} />
+        <RunsPanel key={`${job.slug}-runs`} jobName={job.name} jobState={state} />
       ),
     ];
   };
@@ -436,6 +474,17 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const tableHead = (
     <thead>
       <tr>
+        {jobSelectMode && (
+          <th style={{ width: 24, padding: "8px 4px" }}>
+            <input
+              type="checkbox"
+              checked={jobs.length > 0 && selectedJobs.size === jobs.length}
+              onChange={toggleSelectAllJobs}
+              title="Select all"
+              style={{ margin: 0 }}
+            />
+          </th>
+        )}
         <th className="col-expand"></th>
         <th className="col-toggle" title="Enabled"></th>
         <th className="col-name">Name</th>
@@ -453,6 +502,21 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
       <div className="section-header">
         <h2>Jobs</h2>
         <div className="btn-group">
+          {jobs.length > 0 && (
+            <button
+              className={`btn btn-sm${jobSelectMode ? " btn-primary" : ""}`}
+              onClick={() => {
+                if (jobSelectMode) {
+                  setJobSelectMode(false);
+                  setSelectedJobs(new Set());
+                } else {
+                  setJobSelectMode(true);
+                }
+              }}
+            >
+              {jobSelectMode ? "Done" : "Select"}
+            </button>
+          )}
           <button
             className="btn btn-primary btn-sm"
             onClick={() => setShowPicker(true)}
@@ -461,6 +525,27 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           </button>
         </div>
       </div>
+
+      {jobSelectMode && selectedJobs.size > 0 && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "4px 12px",
+          marginBottom: 8,
+          fontSize: 12,
+          color: "var(--text-secondary)",
+        }}>
+          <span>{selectedJobs.size} selected</span>
+          <button
+            className="btn btn-sm"
+            style={{ fontSize: 11, color: "var(--danger-color)" }}
+            onClick={() => setConfirmBulkDeleteJobs(true)}
+          >
+            Delete selected
+          </button>
+        </div>
+      )}
 
       {jobs.length === 0 && !sortedGroups.includes("agent") && (
         <div className="empty-state">
@@ -493,6 +578,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
               collapsedGroups={collapsedGroups}
               expandedJobs={expandedJobs}
               tableHead={tableHead}
+              jobSelectMode={jobSelectMode}
               renderJobRows={renderJobRows}
               onToggleGroup={() => toggleGroup(group)}
               onToggleJobExpand={toggleJobExpand}
@@ -502,6 +588,14 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           ))}
         </SortableContext>
       </DndContext>
+
+      {confirmBulkDeleteJobs && (
+        <ConfirmDialog
+          message={`Delete ${selectedJobs.size} job${selectedJobs.size === 1 ? "" : "s"}? This cannot be undone.`}
+          onConfirm={() => { handleBulkDeleteJobs(); setConfirmBulkDeleteJobs(false); }}
+          onCancel={() => setConfirmBulkDeleteJobs(false)}
+        />
+      )}
 
       {showAgentPrompt && (
         <AgentPromptModal
@@ -847,6 +941,9 @@ function JobRow({
   state,
   status,
   isExpanded,
+  selectMode,
+  isSelected,
+  onToggleSelected,
   onToggleEnabled,
   onRun,
   onPause,
@@ -862,6 +959,9 @@ function JobRow({
   state: string;
   status: JobStatus | undefined;
   isExpanded: boolean;
+  selectMode: boolean;
+  isSelected: boolean;
+  onToggleSelected: () => void;
   onToggleEnabled: () => void;
   onRun: () => void;
   onPause: () => void;
@@ -892,6 +992,16 @@ function JobRow({
 
   return (
     <tr className={isExpanded ? "row-expanded" : undefined}>
+      {selectMode && (
+        <td style={{ width: 24, padding: "8px 4px" }}>
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggleSelected}
+            style={{ margin: 0 }}
+          />
+        </td>
+      )}
       <td className="col-expand">
         <button
           onClick={hasRuns ? onToggleExpand : undefined}
@@ -1079,6 +1189,7 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
   const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
+  const [selectMode, setSelectMode] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
 
@@ -1167,7 +1278,7 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
           <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>No run history</span>
         ) : (
           <>
-            {hasSelection && (
+            {selectMode && (
               <div style={{
                 display: "flex",
                 alignItems: "center",
@@ -1176,13 +1287,24 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
                 fontSize: 12,
                 color: "var(--text-secondary)",
               }}>
-                <span>{selectedRuns.size} selected</span>
+                {hasSelection && (
+                  <>
+                    <span>{selectedRuns.size} selected</span>
+                    <button
+                      className="btn btn-sm"
+                      style={{ fontSize: 11, color: "var(--danger-color)" }}
+                      onClick={() => setConfirmBulkDelete(true)}
+                    >
+                      Delete selected
+                    </button>
+                  </>
+                )}
                 <button
                   className="btn btn-sm"
-                  style={{ fontSize: 11, color: "var(--danger-color)" }}
-                  onClick={() => setConfirmBulkDelete(true)}
+                  style={{ fontSize: 11, marginLeft: "auto" }}
+                  onClick={() => { setSelectMode(false); setSelectedRuns(new Set()); }}
                 >
-                  Delete selected
+                  Done
                 </button>
               </div>
             )}
@@ -1195,15 +1317,27 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
                   <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
                   <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
                   <th style={{ fontSize: 10, padding: "4px 8px", width: 28 }}></th>
-                  <th style={{ width: 24, padding: "4px" }}>
-                    <input
-                      type="checkbox"
-                      checked={runs.length > 0 && selectedRuns.size === runs.length}
-                      onChange={toggleSelectAll}
-                      title="Select all"
-                      style={{ margin: 0 }}
-                    />
-                  </th>
+                  {selectMode ? (
+                    <th style={{ width: 24, padding: "4px" }}>
+                      <input
+                        type="checkbox"
+                        checked={runs.length > 0 && selectedRuns.size === runs.length}
+                        onChange={toggleSelectAll}
+                        title="Select all"
+                        style={{ margin: 0 }}
+                      />
+                    </th>
+                  ) : (
+                    <th style={{ width: 50, padding: "4px", textAlign: "right" }}>
+                      <button
+                        className="btn btn-sm"
+                        style={{ fontSize: 10, padding: "1px 6px" }}
+                        onClick={() => setSelectMode(true)}
+                      >
+                        Select
+                      </button>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1240,14 +1374,16 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
                           size={11}
                         />
                       </td>
-                      <td style={{ width: 24, padding: "4px" }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedRuns.has(run.id)}
-                          onChange={() => toggleRunSelected(run.id)}
-                          style={{ margin: 0 }}
-                        />
-                      </td>
+                      {selectMode && (
+                        <td style={{ width: 24, padding: "4px" }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedRuns.has(run.id)}
+                            onChange={() => toggleRunSelected(run.id)}
+                            style={{ margin: 0 }}
+                          />
+                        </td>
+                      )}
                     </tr>,
                     isLogExpanded && (
                       <tr key={`${run.id}-logs`}>

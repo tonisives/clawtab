@@ -11,6 +11,15 @@ pub struct TelegramResponse<T> {
 pub struct Update {
     pub update_id: i64,
     pub message: Option<Message>,
+    pub callback_query: Option<CallbackQuery>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CallbackQuery {
+    pub id: String,
+    pub from: User,
+    pub message: Option<Message>,
+    pub data: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

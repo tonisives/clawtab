@@ -43,8 +43,15 @@ fn strip_option_marker(s: &str) -> &str {
     t
 }
 
+/// A detected numbered-choice prompt with its question and individual options.
+struct DetectedPrompt {
+    question: String,
+    /// Options with their full text (e.g. "1. Yes", "2. No").
+    options: Vec<String>,
+}
+
 /// Detect numbered-choice prompts (e.g. Claude Code permission dialogs) in pane content.
-/// Returns a formatted message if a prompt with 2+ numbered options is found.
+/// Returns structured prompt data if a prompt with 2+ numbered options is found.
 ///
 /// Handles two layouts:
 /// 1. Options on separate lines:
@@ -59,7 +66,7 @@ fn strip_option_marker(s: &str) -> &str {
 ///    Do you want to proceed?
 ///    > 1. Yes 2. No
 ///    ```
-fn detect_numbered_prompt(content: &str) -> Option<String> {
+fn detect_numbered_prompt(content: &str) -> Option<DetectedPrompt> {
     let lines: Vec<&str> = content.lines().collect();
     let start = if lines.len() > 20 { lines.len() - 20 } else { 0 };
     let tail = &lines[start..];
@@ -161,18 +168,7 @@ fn detect_numbered_prompt(content: &str) -> Option<String> {
         String::new()
     };
 
-    let mut msg = String::new();
-    if !question.is_empty() {
-        msg.push_str(&question);
-        msg.push('\n');
-    }
-    for opt in &options {
-        msg.push_str(opt);
-        msg.push('\n');
-    }
-    msg.push_str("\nReply with a number to choose.");
-
-    Some(msg)
+    Some(DetectedPrompt { question, options })
 }
 
 fn hash_string(s: &str) -> u64 {
@@ -258,6 +254,12 @@ pub async fn monitor_pane(params: MonitorParams) {
     let mut pending_diff = String::new();
     // Track last prompt hash to avoid re-sending the same numbered prompt
     let mut last_prompt_hash: Option<u64> = None;
+    // Track how many ticks since the last substantial content change.
+    // "Substantial" means at least one diff line with 5+ non-whitespace chars,
+    // filtering out spinner/animation updates that constantly change the pane.
+    let mut idle_ticks = 0u32;
+    const IDLE_SEND_THRESHOLD: u32 = 5; // 5 ticks * 2s = 10 seconds
+    const MAX_IDLE_LOG_LINES: usize = 10;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
@@ -282,15 +284,44 @@ pub async fn monitor_pane(params: MonitorParams) {
 
         let trimmed: String = capture.lines().collect::<Vec<_>>().join("\n").trim().to_string();
 
-        // Detect numbered-choice prompts and forward to Telegram
+        // Detect numbered-choice prompts and forward to Telegram with inline buttons
         if let Some(ref tg) = params.telegram {
-            if let Some(prompt_text) = detect_numbered_prompt(&trimmed) {
-                let h = hash_string(&prompt_text);
+            if let Some(prompt) = detect_numbered_prompt(&trimmed) {
+                // Hash question + options together for dedup
+                let hash_input = format!("{}|{}", prompt.question, prompt.options.join("|"));
+                let h = hash_string(&hash_input);
                 if last_prompt_hash != Some(h) {
                     last_prompt_hash = Some(h);
-                    if let Err(e) =
-                        crate::telegram::send_message(&tg.bot_token, tg.chat_id, &prompt_text)
-                            .await
+
+                    // Build message text: show the question
+                    let msg_text = if prompt.question.is_empty() {
+                        "Choose an option:".to_string()
+                    } else {
+                        prompt.question.clone()
+                    };
+
+                    // Build inline keyboard buttons from options.
+                    // Each option like "1. Yes" becomes button with label "1. Yes"
+                    // and callback_data = just the number.
+                    let buttons: Vec<(String, String)> = prompt
+                        .options
+                        .iter()
+                        .map(|opt| {
+                            let number = opt
+                                .chars()
+                                .take_while(|c| c.is_ascii_digit())
+                                .collect::<String>();
+                            (opt.clone(), number)
+                        })
+                        .collect();
+
+                    if let Err(e) = crate::telegram::send_message_with_inline_keyboard(
+                        &tg.bot_token,
+                        tg.chat_id,
+                        &msg_text,
+                        &buttons,
+                    )
+                    .await
                     {
                         log::error!(
                             "[{}] Failed to send numbered prompt: {}",
@@ -299,6 +330,9 @@ pub async fn monitor_pane(params: MonitorParams) {
                         );
                     }
                 }
+            } else {
+                // No prompt detected -- reset hash so a future identical prompt gets sent
+                last_prompt_hash = None;
             }
         }
 
@@ -331,6 +365,18 @@ pub async fn monitor_pane(params: MonitorParams) {
             last_content = trimmed;
             stale_ticks = 0;
 
+            // Check if the diff is "substantial" (not just spinner/animation noise).
+            // A line with 5+ non-whitespace chars is considered meaningful.
+            let is_substantial = new_content.lines().any(|line| {
+                line.chars().filter(|c| !c.is_whitespace()).count() >= 5
+            });
+
+            if is_substantial {
+                idle_ticks = 0;
+            } else {
+                idle_ticks += 1;
+            }
+
             if !new_content.is_empty() {
                 if params.telegram_log_mode == TelegramLogMode::Always {
                     if let Some(ref tg) = params.telegram {
@@ -356,6 +402,7 @@ pub async fn monitor_pane(params: MonitorParams) {
             }
         } else if !process_exited.load(Ordering::Acquire) {
             // Content unchanged while pane is still busy
+            idle_ticks += 1;
             if params.telegram_log_mode == TelegramLogMode::OnPrompt {
                 stale_ticks += 1;
                 if stale_ticks >= 2 && !pending_diff.is_empty() {
@@ -374,8 +421,36 @@ pub async fn monitor_pane(params: MonitorParams) {
                     }
                     pending_diff.clear();
                     stale_ticks = 0;
+                    idle_ticks = 0;
                 }
             }
+        }
+
+        // If idle for 10s with accumulated logs, send the last N lines
+        if params.telegram_log_mode == TelegramLogMode::OnPrompt
+            && idle_ticks >= IDLE_SEND_THRESHOLD
+            && !pending_diff.is_empty()
+        {
+            if let Some(ref tg) = params.telegram {
+                let tail_lines: Vec<&str> = pending_diff.lines().collect();
+                let start = tail_lines.len().saturating_sub(MAX_IDLE_LOG_LINES);
+                let snippet = tail_lines[start..].join("\n");
+                if !snippet.trim().is_empty() {
+                    let msg = format!("<pre>{}</pre>", html_escape(&snippet));
+                    if let Err(e) =
+                        crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg).await
+                    {
+                        log::error!(
+                            "[{}] Failed to send idle log snapshot: {}",
+                            params.run_id,
+                            e
+                        );
+                    }
+                }
+            }
+            pending_diff.clear();
+            idle_ticks = 0;
+            stale_ticks = 0;
         }
 
         // Break as soon as the fast poller detects the process has exited

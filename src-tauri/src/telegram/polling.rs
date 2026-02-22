@@ -126,6 +126,39 @@ pub async fn start_polling(state: AgentState) {
                             }
                         }
                     }
+
+                    // Handle inline keyboard button presses
+                    if let Some(ref cq) = update.callback_query {
+                        let _ = super::answer_callback_query(&config.bot_token, &cq.id).await;
+
+                        if let Some(ref data) = cq.data {
+                            // Determine the chat_id from the original message
+                            let chat_id = cq.message.as_ref().map(|m| m.chat.id);
+                            if let Some(chat_id) = chat_id {
+                                if config.chat_ids.contains(&chat_id) {
+                                    log::info!(
+                                        "Callback query from chat {}: {}",
+                                        chat_id,
+                                        data
+                                    );
+                                    // Treat callback data as a regular message to the agent
+                                    let response =
+                                        handle_message(data, &config, &state, chat_id).await;
+                                    if let Some(reply) = response {
+                                        if let Err(e) = super::send_message(
+                                            &config.bot_token,
+                                            chat_id,
+                                            &reply,
+                                        )
+                                        .await
+                                        {
+                                            log::error!("Failed to send callback reply: {}", e);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Err(e) => {
@@ -170,7 +203,7 @@ async fn get_updates(
 
     let mut params = serde_json::json!({
         "timeout": timeout_secs,
-        "allowed_updates": ["message"],
+        "allowed_updates": ["message", "callback_query"],
     });
 
     if let Some(off) = offset {
