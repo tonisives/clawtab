@@ -109,6 +109,12 @@ pub fn delete_run(state: State<AppState>, run_id: String) -> Result<(), String> 
 }
 
 #[tauri::command]
+pub fn delete_runs(state: State<AppState>, run_ids: Vec<String>) -> Result<(), String> {
+    let history = state.history.lock().unwrap();
+    history.delete_by_ids(&run_ids)
+}
+
+#[tauri::command]
 pub fn clear_history(state: State<AppState>) -> Result<(), String> {
     let history = state.history.lock().unwrap();
     history.clear()

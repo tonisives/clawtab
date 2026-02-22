@@ -176,8 +176,9 @@ export function GeneralSettings() {
           <button
             className="btn"
             onClick={() => {
+              const base = window.location.origin;
               new WebviewWindow("setup-wizard", {
-                url: "/settings.html?setup",
+                url: `${base}/settings.html?setup`,
                 title: "ClawTab Setup",
                 width: 640,
                 height: 520,

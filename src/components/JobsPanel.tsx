@@ -1077,6 +1077,8 @@ function RunningLogs({ jobName }: { jobName: string }) {
 function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string }) {
   const { runs, reload } = useJobRuns(jobName);
   const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
 
@@ -1097,11 +1099,42 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
     }
   };
 
+  const handleDeleteSelected = async () => {
+    try {
+      await invoke("delete_runs", { runIds: Array.from(selectedRuns) });
+      setSelectedRuns(new Set());
+      reload();
+    } catch (e) {
+      console.error("Failed to delete runs:", e);
+    }
+  };
+
   const handleOpenLog = async (runId: string) => {
     try {
       await invoke("open_run_log", { runId });
     } catch (e) {
       console.error("Failed to open log:", e);
+    }
+  };
+
+  const toggleRunSelected = (runId: string) => {
+    setSelectedRuns((prev) => {
+      const next = new Set(prev);
+      if (next.has(runId)) {
+        next.delete(runId);
+      } else {
+        next.add(runId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!runs) return;
+    if (selectedRuns.size === runs.length) {
+      setSelectedRuns(new Set());
+    } else {
+      setSelectedRuns(new Set(runs.map((r) => r.id)));
     }
   };
 
@@ -1123,6 +1156,8 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
     return `exit ${run.exit_code}`;
   };
 
+  const hasSelection = selectedRuns.size > 0;
+
   return (
     <tr>
       <td colSpan={8} style={{ padding: "0 0 8px", border: "none" }}>
@@ -1131,76 +1166,121 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
         ) : runs.length === 0 ? (
           <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>No run history</span>
         ) : (
-          <table className="data-table runs-table" style={{ fontSize: 12 }}>
-            <thead>
-              <tr>
-                <th className="col-run-expand"></th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>Status</th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>Trigger</th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
-                <th style={{ fontSize: 10, padding: "4px 8px", width: 28 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => {
-                const duration = run.finished_at
-                  ? `${((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
-                  : "...";
-                const isLogExpanded = expandedRunId === run.id;
+          <>
+            {hasSelection && (
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "4px 12px",
+                fontSize: 12,
+                color: "var(--text-secondary)",
+              }}>
+                <span>{selectedRuns.size} selected</span>
+                <button
+                  className="btn btn-sm"
+                  style={{ fontSize: 11, color: "var(--danger-color)" }}
+                  onClick={() => setConfirmBulkDelete(true)}
+                >
+                  Delete selected
+                </button>
+              </div>
+            )}
+            <table className="data-table runs-table" style={{ fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th className="col-run-expand"></th>
+                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Status</th>
+                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Trigger</th>
+                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
+                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
+                  <th style={{ fontSize: 10, padding: "4px 8px", width: 28 }}></th>
+                  <th style={{ width: 24, padding: "4px" }}>
+                    <input
+                      type="checkbox"
+                      checked={runs.length > 0 && selectedRuns.size === runs.length}
+                      onChange={toggleSelectAll}
+                      title="Select all"
+                      style={{ margin: 0 }}
+                    />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => {
+                  const duration = run.finished_at
+                    ? `${((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
+                    : "...";
+                  const isLogExpanded = expandedRunId === run.id;
 
-                return [
-                  <tr key={run.id} className={isLogExpanded ? "row-expanded" : undefined}>
-                    <td className="col-run-expand">
-                      <button
-                        className="expand-btn"
-                        onClick={() => setExpandedRunId(isLogExpanded ? null : run.id)}
-                        title="Logs"
-                      >
-                        <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-                          {isLogExpanded ? "\u25BC" : "\u25B6"}
-                        </span>
-                      </button>
-                    </td>
-                    <td>
-                      <span className={`status-dot ${exitCodeClass(run)}`} />
-                      {exitCodeLabel(run)}
-                    </td>
-                    <td>{run.trigger}</td>
-                    <td>{formatTime(run.started_at)}</td>
-                    <td>{duration}</td>
-                    <td style={{ textAlign: "right", padding: "0 8px" }}>
-                      <DeleteButton
-                        onClick={() => setConfirmRunId(run.id)}
-                        title="Delete this run"
-                        size={11}
-                      />
-                    </td>
-                  </tr>,
-                  isLogExpanded && (
-                    <tr key={`${run.id}-logs`}>
-                      <td colSpan={6} style={{ padding: "0 12px 8px", border: "none" }}>
-                        <LogViewer content={buildLogContent(run)} />
+                  return [
+                    <tr key={run.id} className={isLogExpanded ? "row-expanded" : undefined}>
+                      <td className="col-run-expand">
                         <button
-                          className="btn btn-sm"
-                          style={{ marginTop: 6, fontSize: 11 }}
-                          onClick={() => handleOpenLog(run.id)}
+                          className="expand-btn"
+                          onClick={() => setExpandedRunId(isLogExpanded ? null : run.id)}
+                          title="Logs"
                         >
-                          Open in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+                          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+                            {isLogExpanded ? "\u25BC" : "\u25B6"}
+                          </span>
                         </button>
                       </td>
-                    </tr>
-                  ),
-                ];
-              })}
-            </tbody>
-          </table>
+                      <td>
+                        <span className={`status-dot ${exitCodeClass(run)}`} />
+                        {exitCodeLabel(run)}
+                      </td>
+                      <td>{run.trigger}</td>
+                      <td>{formatTime(run.started_at)}</td>
+                      <td>{duration}</td>
+                      <td style={{ textAlign: "right", padding: "0 8px" }}>
+                        <DeleteButton
+                          onClick={() => setConfirmRunId(run.id)}
+                          title="Delete this run"
+                          size={11}
+                        />
+                      </td>
+                      <td style={{ width: 24, padding: "4px" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedRuns.has(run.id)}
+                          onChange={() => toggleRunSelected(run.id)}
+                          style={{ margin: 0 }}
+                        />
+                      </td>
+                    </tr>,
+                    isLogExpanded && (
+                      <tr key={`${run.id}-logs`}>
+                        <td colSpan={7} style={{ padding: "0 12px 8px", border: "none" }}>
+                          <LogViewer content={buildLogContent(run)} />
+                          <button
+                            className="btn btn-sm"
+                            style={{ marginTop: 6, fontSize: 11 }}
+                            onClick={() => handleOpenLog(run.id)}
+                          >
+                            Open in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+                          </button>
+                        </td>
+                      </tr>
+                    ),
+                  ];
+                })}
+              </tbody>
+            </table>
+          </>
         )}
         {confirmRunId && (
           <ConfirmDialog
             message="Delete this run record? This cannot be undone."
             onConfirm={() => { handleDeleteRun(confirmRunId); setConfirmRunId(null); }}
             onCancel={() => setConfirmRunId(null)}
+          />
+        )}
+        {confirmBulkDelete && (
+          <ConfirmDialog
+            message={`Delete ${selectedRuns.size} run record${selectedRuns.size === 1 ? "" : "s"}? This cannot be undone.`}
+            onConfirm={() => { handleDeleteSelected(); setConfirmBulkDelete(false); }}
+            onCancel={() => setConfirmBulkDelete(false)}
           />
         )}
       </td>

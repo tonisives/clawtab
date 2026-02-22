@@ -182,6 +182,148 @@ pub async fn can_read_group_messages(bot_token: &str) -> bool {
     }
 }
 
+/// Send a message and return its message_id for later editing/deletion.
+pub async fn send_message_returning_id(
+    bot_token: &str,
+    chat_id: i64,
+    text: &str,
+) -> Result<i64, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let url = format!("https://api.telegram.org/bot{}/sendMessage", bot_token);
+
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Telegram request failed: {}", e))?;
+
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    parsed["result"]["message_id"]
+        .as_i64()
+        .ok_or_else(|| format!("No message_id in response: {}", body))
+}
+
+/// Edit an existing message's text.
+pub async fn edit_message_text(
+    bot_token: &str,
+    chat_id: i64,
+    message_id: i64,
+    text: &str,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let url = format!(
+        "https://api.telegram.org/bot{}/editMessageText",
+        bot_token
+    );
+
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Telegram editMessageText failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Telegram editMessageText error: {}", body));
+    }
+
+    Ok(())
+}
+
+/// Delete a message by ID.
+pub async fn delete_message(
+    bot_token: &str,
+    chat_id: i64,
+    message_id: i64,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let url = format!(
+        "https://api.telegram.org/bot{}/deleteMessage",
+        bot_token
+    );
+
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "chat_id": chat_id,
+            "message_id": message_id,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Telegram deleteMessage failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Telegram deleteMessage error: {}", body));
+    }
+
+    Ok(())
+}
+
+/// Send a chat action (e.g. "typing") to show activity indicator.
+pub async fn send_chat_action(
+    bot_token: &str,
+    chat_id: i64,
+    action: &str,
+) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let url = format!(
+        "https://api.telegram.org/bot{}/sendChatAction",
+        bot_token
+    );
+
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({
+            "chat_id": chat_id,
+            "action": action,
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Telegram sendChatAction failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Telegram sendChatAction error: {}", body));
+    }
+
+    Ok(())
+}
+
 fn split_message(text: &str) -> Vec<String> {
     if text.len() <= MAX_MESSAGE_LEN {
         return vec![text.to_string()];

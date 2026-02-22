@@ -329,25 +329,37 @@ pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<
     CwtFolder::from_path_with_job(cwt_root, job_name)
 }
 
+/// Current version of browse.sh. Bump when the script content changes
+/// so existing installations get the updated version.
+const BROWSE_SH_VERSION: &str = "v2";
+
 /// Write the browse.sh Safari helper script into a .cwt/ root directory.
+/// Always overwrites if the version marker differs from BROWSE_SH_VERSION.
 fn write_browse_sh(cwt_root: &std::path::Path) {
     let browse_sh = cwt_root.join("browse.sh");
     if browse_sh.exists() {
-        return;
+        if let Ok(existing) = std::fs::read_to_string(&browse_sh) {
+            if existing.contains(&format!("# version: {}", BROWSE_SH_VERSION)) {
+                return;
+            }
+        }
     }
-    let script = r#"#!/bin/bash
+    let script = format!(
+        r#"#!/bin/bash
 # ClawTab Safari Browser Helper
+# version: {}
 # Usage: ./browse.sh <command> [args...]
 #   open <url>       -- Open URL in Safari
 #   read             -- Get text content of active Safari tab
 #   url              -- Get URL of active Safari tab
 #   js <javascript>  -- Execute JavaScript in active Safari tab
+#   jsfile <path>    -- Execute JavaScript from a file in active Safari tab
 
 set -euo pipefail
 
-case "${1:-}" in
+case "${{1:-}}" in
   open)
-    open -a Safari "${2:?URL required}"
+    open -a Safari "${{2:?URL required}}"
     sleep 2
     ;;
   read)
@@ -358,14 +370,20 @@ case "${1:-}" in
     osascript -e 'tell application "Safari" to return URL of front document'
     ;;
   js)
-    osascript -e "tell application \"Safari\" to do JavaScript \"${2:?JS required}\" in front document"
+    osascript -e "tell application \"Safari\" to do JavaScript \"${{2:?JS required}}\" in front document"
+    ;;
+  jsfile)
+    JS_CODE=$(cat "${{2:?File path required}}" | tr '\n' ' ' | sed 's/"/\\"/g')
+    osascript -e "tell application \"Safari\" to do JavaScript \"$JS_CODE\" in front document"
     ;;
   *)
-    echo "Usage: $0 {open|read|url|js} [args...]"
+    echo "Usage: $0 {{open|read|url|js|jsfile}} [args...]"
     exit 1
     ;;
 esac
-"#;
+"#,
+        BROWSE_SH_VERSION
+    );
     if let Err(e) = std::fs::write(&browse_sh, script) {
         log::warn!("Failed to write browse.sh: {}", e);
         return;
@@ -376,6 +394,55 @@ esac
         let perms = std::fs::Permissions::from_mode(0o755);
         if let Err(e) = std::fs::set_permissions(&browse_sh, perms) {
             log::warn!("Failed to chmod browse.sh: {}", e);
+        }
+    }
+}
+
+/// Current version of send.sh. Bump when the script content changes.
+const SEND_SH_VERSION: &str = "v1";
+
+/// Write the send.sh Telegram helper script into a .cwt/ root directory.
+/// Always overwrites if the version marker differs from SEND_SH_VERSION.
+fn write_send_sh(cwt_root: &std::path::Path, chat_id: i64) {
+    let send_sh = cwt_root.join("send.sh");
+    if send_sh.exists() {
+        if let Ok(existing) = std::fs::read_to_string(&send_sh) {
+            if existing.contains(&format!("# version: {}", SEND_SH_VERSION))
+                && existing.contains(&format!("CHAT_ID={}", chat_id))
+            {
+                return;
+            }
+        }
+    }
+    let script = format!(
+        r#"#!/bin/bash
+# ClawTab Telegram Send Helper
+# version: {}
+# Usage: ./send.sh <message>
+#   Sends an HTML-formatted message to the configured Telegram chat.
+
+set -euo pipefail
+
+CHAT_ID={}
+MESSAGE="${{1:?Message required}}"
+
+curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg chat_id "$CHAT_ID" --arg text "$MESSAGE" \
+    '{{chat_id: ($chat_id | tonumber), text: $text, parse_mode: "HTML"}}')"
+"#,
+        SEND_SH_VERSION, chat_id
+    );
+    if let Err(e) = std::fs::write(&send_sh, script) {
+        log::warn!("Failed to write send.sh: {}", e);
+        return;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        if let Err(e) = std::fs::set_permissions(&send_sh, perms) {
+            log::warn!("Failed to chmod send.sh: {}", e);
         }
     }
 }
@@ -562,6 +629,8 @@ fn write_claude_settings(dir: &std::path::Path) {
                 "Bash(chmod *)",
                 "Bash(.cwt/browse.sh *)",
                 "Bash(./browse.sh *)",
+                "Bash(.cwt/send.sh *)",
+                "Bash(./send.sh *)",
                 "Bash(osascript *)",
                 "Bash(echo *)",
                 "Bash(printf *)",
@@ -680,6 +749,13 @@ pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
                         log::warn!("Failed to write cwt.md for '{}': {}", job.name, e);
                     }
 
+                    // Write helper scripts into .cwt/ root
+                    write_browse_sh(cwt_root);
+                    let chat_id = resolve_telegram_chat_id(job, settings);
+                    if let Some(cid) = chat_id {
+                        write_send_sh(cwt_root, cid);
+                    }
+
                     // Write Claude Code permissions in the project root (parent of .cwt)
                     if let Some(project_root) = cwt_root.parent() {
                         let pr = project_root.to_path_buf();
@@ -756,14 +832,12 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     let chat_id = resolve_telegram_chat_id(job, settings);
 
     if has_token {
-        if let Some(cid) = chat_id {
+        if let Some(_cid) = chat_id {
             out.push_str("\n## Telegram\n\n");
-            out.push_str("The `TELEGRAM_BOT_TOKEN` env var is available. Send messages with:\n\n");
+            out.push_str("A `send.sh` helper script is available in the .cwt/ root.\n");
+            out.push_str("Always use this script instead of raw curl commands.\n\n");
             out.push_str("```bash\n");
-            out.push_str(&format!(
-                "curl -s -X POST \"https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{{\"chat_id\": {}, \"text\": \"Your message\", \"parse_mode\": \"HTML\"}}'\n",
-                cid
-            ));
+            out.push_str(".cwt/send.sh \"<b>Title</b>\\n\\nMessage body\"\n");
             out.push_str("```\n");
         }
     }
@@ -774,12 +848,18 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
         if browse_sh.exists() {
             out.push_str("\n## Web Browsing\n\n");
             out.push_str("A `browse.sh` helper script is available in the .cwt/ root for Safari automation.\n");
-            out.push_str("Only a single Accessibility permission prompt is needed for the terminal.\n\n");
+            out.push_str("Always use these helper scripts instead of running osascript or curl directly.\n\n");
             out.push_str("Usage:\n");
             out.push_str("- `.cwt/browse.sh open <url>` -- Open URL in Safari\n");
             out.push_str("- `.cwt/browse.sh read` -- Get text content of active Safari tab\n");
             out.push_str("- `.cwt/browse.sh url` -- Get URL of active Safari tab\n");
-            out.push_str("- `.cwt/browse.sh js <javascript>` -- Execute JavaScript in active Safari tab\n");
+            out.push_str("- `.cwt/browse.sh js <javascript>` -- Execute short inline JavaScript in active Safari tab\n");
+            out.push_str("- `.cwt/browse.sh jsfile <path>` -- Execute JavaScript from a file (use for complex extraction)\n\n");
+            out.push_str("For complex JavaScript extraction, write a `.js` file and use `jsfile`:\n\n");
+            out.push_str("```bash\n");
+            out.push_str("# Write extraction logic to a file, then run it\n");
+            out.push_str(".cwt/browse.sh jsfile .cwt/my-job/extract.js\n");
+            out.push_str("```\n");
         }
     }
 
@@ -836,7 +916,7 @@ pub fn build_agent_job(
         folder_path: None,
         job_name: Some("default".to_string()),
         telegram_chat_id: chat_id,
-        telegram_log_mode: crate::config::jobs::TelegramLogMode::Off,
+        telegram_log_mode: crate::config::jobs::TelegramLogMode::OnPrompt,
         group: "agent".to_string(),
         slug: "agent/default".to_string(),
     })

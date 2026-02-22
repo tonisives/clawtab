@@ -36,11 +36,48 @@ import "./settings.css";
   });
 })();
 
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("React crash:", error.message);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 24, fontFamily: "system-ui" }}>
+          <h3>Something went wrong</h3>
+          <pre style={{ marginTop: 8, fontSize: 12, whiteSpace: "pre-wrap" }}>
+            {this.state.error.message}
+          </pre>
+          <button
+            style={{ marginTop: 16 }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Truncate editor.log on startup
 invoke("write_editor_log", { lines: ["--- editor session start ---"] }).catch(() => {});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <SettingsApp />
+    <ErrorBoundary>
+      <SettingsApp />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

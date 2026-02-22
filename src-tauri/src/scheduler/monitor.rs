@@ -1,4 +1,6 @@
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -29,8 +31,167 @@ pub struct MonitorParams {
     pub notify_on_success: bool,
 }
 
+/// Strip leading cursor/arrow markers from an option line.
+/// Claude Code uses '>' or U+276F (❯) as selection indicators.
+fn strip_option_marker(s: &str) -> &str {
+    let t = s.trim();
+    for prefix in &[">", "\u{276F}"] {
+        if let Some(rest) = t.strip_prefix(prefix) {
+            return rest.trim_start();
+        }
+    }
+    t
+}
+
+/// Detect numbered-choice prompts (e.g. Claude Code permission dialogs) in pane content.
+/// Returns a formatted message if a prompt with 2+ numbered options is found.
+///
+/// Handles two layouts:
+/// 1. Options on separate lines:
+///    ```text
+///    Do you want to make this edit?
+///    > 1. Yes
+///      2. No
+///      3. Yes, allow all edits during this session
+///    ```
+/// 2. Options on a single line (compact Claude Code style):
+///    ```text
+///    Do you want to proceed?
+///    > 1. Yes 2. No
+///    ```
+fn detect_numbered_prompt(content: &str) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    let start = if lines.len() > 20 { lines.len() - 20 } else { 0 };
+    let tail = &lines[start..];
+
+    // Check if a line starts with an option pattern `[marker] N. text`
+    let line_starts_with_option = |line: &str| -> bool {
+        let trimmed = strip_option_marker(line);
+        let mut chars = trimmed.chars();
+        match chars.next() {
+            Some(c) if c.is_ascii_digit() => {}
+            _ => return false,
+        }
+        let rest: String = chars.collect();
+        rest.starts_with(". ") && rest.len() > 2
+    };
+
+    // Extract individual options from a line that may contain multiple options.
+    // e.g. "> 1. Yes 2. No" -> ["1. Yes", "2. No"]
+    // e.g. "1. Yes, allow all edits during this session (shift+tab)" -> single option
+    let extract_options = |line: &str| -> Vec<String> {
+        let trimmed = strip_option_marker(line);
+
+        // Find all positions where ` N. ` starts a new option (space + digit(s) + ". ")
+        // The first option starts at position 0 (no leading space).
+        let mut option_starts: Vec<usize> = Vec::new();
+
+        // Check if the string itself starts with an option
+        if trimmed.starts_with(|c: char| c.is_ascii_digit()) {
+            let digit_end = trimmed.find(|c: char| !c.is_ascii_digit()).unwrap_or(trimmed.len());
+            if trimmed[digit_end..].starts_with(". ") {
+                option_starts.push(0);
+            }
+        }
+
+        // Find subsequent options: ` N. ` pattern
+        let bytes = trimmed.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b' ' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+                let after = &trimmed[i + 1..];
+                let digit_end = after.find(|c: char| !c.is_ascii_digit()).unwrap_or(after.len());
+                if digit_end > 0 && after[digit_end..].starts_with(". ") {
+                    option_starts.push(i + 1);
+                    i += 1 + digit_end + 2; // skip past "N. "
+                    continue;
+                }
+            }
+            i += 1;
+        }
+
+        if option_starts.is_empty() {
+            return Vec::new();
+        }
+
+        let mut options = Vec::new();
+        for (idx, &start) in option_starts.iter().enumerate() {
+            let end = if idx + 1 < option_starts.len() {
+                // End just before the space preceding the next option
+                option_starts[idx + 1] - 1
+            } else {
+                trimmed.len()
+            };
+            options.push(trimmed[start..end].trim().to_string());
+        }
+        options
+    };
+
+    // Find the first line that contains option(s)
+    let first_opt_line = tail.iter().position(|l| line_starts_with_option(l))?;
+
+    // Collect all consecutive option lines
+    let mut last_opt_line = first_opt_line;
+    for i in (first_opt_line + 1)..tail.len() {
+        if line_starts_with_option(tail[i]) {
+            last_opt_line = i;
+        } else {
+            break;
+        }
+    }
+
+    // Gather all options from these lines
+    let mut options: Vec<String> = Vec::new();
+    for i in first_opt_line..=last_opt_line {
+        options.extend(extract_options(tail[i]));
+    }
+
+    if options.len() < 2 {
+        return None;
+    }
+
+    // Question line is the non-empty line immediately before the first option
+    let question = if first_opt_line > 0 {
+        let mut q_idx = first_opt_line - 1;
+        while q_idx > 0 && tail[q_idx].trim().is_empty() {
+            q_idx -= 1;
+        }
+        tail[q_idx].trim().to_string()
+    } else {
+        String::new()
+    };
+
+    let mut msg = String::new();
+    if !question.is_empty() {
+        msg.push_str(&question);
+        msg.push('\n');
+    }
+    for opt in &options {
+        msg.push_str(opt);
+        msg.push('\n');
+    }
+    msg.push_str("\nReply with a number to choose.");
+
+    Some(msg)
+}
+
+fn hash_string(s: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn format_elapsed(secs: u64) -> String {
+    let mins = secs / 60;
+    let s = secs % 60;
+    format!("{}:{:02}", mins, s)
+}
+
 pub async fn monitor_pane(params: MonitorParams) {
-    // Send "job started" notification for non-Off telegram log modes
+    // Send "job started" notification and working status message for non-Off modes
+    let mut working_message_id: Option<i64> = None;
+    let started_at = std::time::Instant::now();
+
     if params.telegram_log_mode != TelegramLogMode::Off {
         if let Some(ref tg) = params.telegram {
             let text = format!(
@@ -39,6 +200,20 @@ pub async fn monitor_pane(params: MonitorParams) {
             );
             if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await {
                 log::error!("[{}] Failed to send start notification: {}", params.run_id, e);
+            }
+
+            // Send initial working status message
+            match crate::telegram::send_message_returning_id(
+                &tg.bot_token,
+                tg.chat_id,
+                "Working... 0:00",
+            )
+            .await
+            {
+                Ok(mid) => working_message_id = Some(mid),
+                Err(e) => {
+                    log::error!("[{}] Failed to send working message: {}", params.run_id, e);
+                }
             }
         }
     }
@@ -77,12 +252,16 @@ pub async fn monitor_pane(params: MonitorParams) {
     });
 
     let mut stale_ticks = 0u32;
+    let mut tick_counter = 0u32;
     // For OnPrompt mode: track the most recent diff so we only send new content
     // when the pane goes stale, not the entire pane buffer.
     let mut pending_diff = String::new();
+    // Track last prompt hash to avoid re-sending the same numbered prompt
+    let mut last_prompt_hash: Option<u64> = None;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
+        tick_counter += 1;
 
         let capture = match tmux::capture_pane(
             &params.tmux_session,
@@ -102,6 +281,50 @@ pub async fn monitor_pane(params: MonitorParams) {
         };
 
         let trimmed: String = capture.lines().collect::<Vec<_>>().join("\n").trim().to_string();
+
+        // Detect numbered-choice prompts and forward to Telegram
+        if let Some(ref tg) = params.telegram {
+            if let Some(prompt_text) = detect_numbered_prompt(&trimmed) {
+                let h = hash_string(&prompt_text);
+                if last_prompt_hash != Some(h) {
+                    last_prompt_hash = Some(h);
+                    if let Err(e) =
+                        crate::telegram::send_message(&tg.bot_token, tg.chat_id, &prompt_text)
+                            .await
+                    {
+                        log::error!(
+                            "[{}] Failed to send numbered prompt: {}",
+                            params.run_id,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        // Update working message and typing indicator every ~4 ticks (8 seconds)
+        if tick_counter % 4 == 0 {
+            if let Some(ref tg) = params.telegram {
+                let elapsed = started_at.elapsed().as_secs();
+                let working_text = format!("Working... {}", format_elapsed(elapsed));
+
+                if let Some(mid) = working_message_id {
+                    if let Err(e) = crate::telegram::edit_message_text(
+                        &tg.bot_token,
+                        tg.chat_id,
+                        mid,
+                        &working_text,
+                    )
+                    .await
+                    {
+                        log::warn!("[{}] Failed to update working message: {}", params.run_id, e);
+                    }
+                }
+
+                let _ =
+                    crate::telegram::send_chat_action(&tg.bot_token, tg.chat_id, "typing").await;
+            }
+        }
 
         if trimmed != last_content && !trimmed.is_empty() {
             let new_content = diff_content(&last_content, &trimmed);
@@ -158,6 +381,17 @@ pub async fn monitor_pane(params: MonitorParams) {
         // Break as soon as the fast poller detects the process has exited
         if process_exited.load(Ordering::Acquire) {
             break;
+        }
+    }
+
+    // Delete the working message now that the job is done
+    if let Some(ref tg) = params.telegram {
+        if let Some(mid) = working_message_id {
+            if let Err(e) =
+                crate::telegram::delete_message(&tg.bot_token, tg.chat_id, mid).await
+            {
+                log::warn!("[{}] Failed to delete working message: {}", params.run_id, e);
+            }
         }
     }
 

@@ -270,7 +270,7 @@ async fn handle_message(
             AgentCommand::Agent(prompt) => {
                 handle_agent_command(&prompt, config, state, chat_id).await
             }
-            AgentCommand::AgentExit => handle_exit_command(state, chat_id),
+            AgentCommand::AgentExit => handle_exit_command(state, chat_id).await,
             AgentCommand::Unknown(msg) => msg,
         });
     }
@@ -361,13 +361,20 @@ async fn handle_agent_command(
     "Agent session started. Send messages to interact, /exit to end.".to_string()
 }
 
-/// Handle /exit or /quit: kill the agent pane and clean up.
-fn handle_exit_command(state: &AgentState, chat_id: i64) -> String {
+/// Handle /exit or /quit: send /exit to Claude Code, then kill the pane.
+async fn handle_exit_command(state: &AgentState, chat_id: i64) -> String {
     let agent = lock_or_log(&state.active_agents, "active_agents")
         .and_then(|mut agents| agents.remove(&chat_id));
 
     match agent {
         Some(agent) => {
+            // Send /exit to Claude Code for graceful shutdown
+            if let Err(e) = tmux::send_keys_to_tui_pane(&agent.pane_id, "/exit") {
+                log::warn!("Failed to send /exit to agent pane {}: {}", agent.pane_id, e);
+            }
+            // Brief wait for Claude Code to process the exit
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            // Force-kill the pane
             if let Err(e) = tmux::kill_pane(&agent.pane_id) {
                 log::warn!("Failed to kill agent pane {}: {}", agent.pane_id, e);
             }

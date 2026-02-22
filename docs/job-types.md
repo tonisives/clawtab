@@ -52,10 +52,12 @@ job_name: deploy    # subfolder name within .cwt/
 myproject/
   .cwt/
     cwt.md              # user-written shared context for all jobs in this project
-    helper.sh           # optional shared scripts
+    browse.sh           # auto-generated Safari automation helper
+    send.sh             # auto-generated Telegram send helper (if Telegram configured)
     deploy/
       job.md            # job-specific prompt (you write this)
       cwt.md            # auto-generated per-job context
+      extract.js        # optional JS for browse.sh jsfile
     lint/
       job.md
       cwt.md

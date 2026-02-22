@@ -60,27 +60,34 @@ export function SettingsApp() {
   const [createJobKey, setCreateJobKey] = useState(0);
 
   useEffect(() => {
-    invoke<AppSettings>("get_settings").then((s) => {
-      if (!s.setup_completed && !isSetupWindow) {
-        setShowWizard(true);
-      }
-      setLoading(false);
-    });
+    invoke<AppSettings>("get_settings")
+      .then((s) => {
+        if (!s.setup_completed && !isSetupWindow) {
+          setShowWizard(true);
+        }
+      })
+      .catch((e) => console.error("Failed to load settings:", e))
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
-    const unlisten = onOpenUrl((urls) => {
-      for (const url of urls) {
-        const match = url.match(/^clawtab:\/\/template\/(.+)/);
-        if (match) {
-          invoke("show_settings_window");
-          setActiveTab("jobs");
-          setPendingTemplateId(match[1]);
+    let unlisten: ReturnType<typeof onOpenUrl> | null = null;
+    try {
+      unlisten = onOpenUrl((urls) => {
+        for (const url of urls) {
+          const match = url.match(/^clawtab:\/\/template\/(.+)/);
+          if (match) {
+            invoke("show_settings_window");
+            setActiveTab("jobs");
+            setPendingTemplateId(match[1]);
+          }
         }
-      }
-    });
+      });
+    } catch (e) {
+      console.error("Failed to register deep-link handler:", e);
+    }
     return () => {
-      unlisten.then((fn) => fn());
+      unlisten?.then((fn) => fn());
     };
   }, []);
 

@@ -196,6 +196,20 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub fn delete_by_ids(&self, ids: &[String]) -> Result<(), String> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{}", i)).collect();
+        let sql = format!("DELETE FROM runs WHERE id IN ({})", placeholders.join(", "));
+        let params: Vec<&dyn rusqlite::ToSql> =
+            ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        self.conn
+            .execute(&sql, params.as_slice())
+            .map_err(|e| format!("Failed to delete run records: {}", e))?;
+        Ok(())
+    }
+
     pub fn clear(&self) -> Result<(), String> {
         self.conn
             .execute("DELETE FROM runs", [])
