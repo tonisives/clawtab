@@ -17,9 +17,9 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { AppSettings, Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
+import { describeCron } from "./CronInput";
 import { SamplePicker } from "./SamplePicker";
 import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
-import { GearIcon } from "./icons";
 import { LogViewer } from "./LogViewer";
 
 const EDITOR_LABELS: Record<string, string> = {
@@ -140,17 +140,22 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [showPicker, setShowPicker] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   const [showAgentPrompt, setShowAgentPrompt] = useState(false);
   const [jobSelectMode, setJobSelectMode] = useState(false);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [confirmBulkDeleteJobs, setConfirmBulkDeleteJobs] = useState(false);
+  const [viewingJob, setViewingJob] = useState<Job | null>(null);
+  const [viewingAgent, setViewingAgent] = useState(false);
 
   const loadJobs = async () => {
     try {
       const loaded = await invoke<Job[]>("get_jobs");
       setJobs(loaded);
+      setViewingJob((prev) => {
+        if (!prev) return null;
+        return loaded.find((j) => j.name === prev.name) ?? null;
+      });
     } catch (e) {
       console.error("Failed to load jobs:", e);
     }
@@ -278,6 +283,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const handleSave = async (job: Job) => {
     setSaveError(null);
     try {
+      const wasEditing = editingJob;
       const renamed = editingJob && job.name !== editingJob.name;
       if (renamed) {
         await invoke("delete_job", { name: editingJob.name });
@@ -287,6 +293,9 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
       await loadJobs();
       setEditingJob(null);
       setIsCreating(false);
+      if (wasEditing) {
+        setViewingJob(job);
+      }
     } catch (e) {
       const msg = typeof e === "string" ? e : String(e);
       setSaveError(msg);
@@ -356,25 +365,14 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     });
   };
 
-  const toggleJobExpand = (name: string) => {
-    setExpandedJobs((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
-      return next;
-    });
-  };
 
-  // Scroll tab-content to top when switching to editor/picker views
+  // Scroll tab-content to top when switching to editor/picker/detail views
   useEffect(() => {
-    if (editingJob || isCreating || showPicker) {
+    if (editingJob || isCreating || showPicker || viewingJob || viewingAgent) {
       const tabContent = document.querySelector(".tab-content");
       if (tabContent) tabContent.scrollTop = 0;
     }
-  }, [editingJob, isCreating, showPicker]);
+  }, [editingJob, isCreating, showPicker, viewingJob, viewingAgent]);
 
   if (showPicker) {
     return (
@@ -419,6 +417,55 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     );
   }
 
+  if (viewingAgent) {
+    const agentStatus = statuses["agent"];
+    const agentState = agentStatus?.state ?? "idle";
+    return (
+      <>
+        <AgentDetailView
+          status={agentStatus}
+          state={agentState}
+          onBack={() => setViewingAgent(false)}
+          onRun={() => setShowAgentPrompt(true)}
+          onOpen={() => handleOpen("agent")}
+        />
+        {showAgentPrompt && (
+          <AgentPromptModal
+            onRun={async (prompt) => {
+              try {
+                await invoke("run_agent", { prompt });
+                setShowAgentPrompt(false);
+                setTimeout(loadStatuses, 500);
+              } catch (e) {
+                console.error("Failed to run agent:", e);
+              }
+            }}
+            onCancel={() => setShowAgentPrompt(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  if (viewingJob) {
+    return (
+      <JobDetailView
+        job={viewingJob}
+        status={statuses[viewingJob.name]}
+        onBack={() => setViewingJob(null)}
+        onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
+        onRun={() => handleRunNow(viewingJob.name)}
+        onPause={() => handlePause(viewingJob.name)}
+        onResume={() => handleResume(viewingJob.name)}
+        onRestart={() => handleRestart(viewingJob.name)}
+        onOpen={() => handleOpen(viewingJob.name)}
+        onToggle={() => handleToggle(viewingJob.name)}
+        onDuplicate={() => handleDuplicate(viewingJob)}
+        onDelete={() => { handleDelete(viewingJob.name); setViewingJob(null); }}
+      />
+    );
+  }
+
   const grouped = groupJobs(jobs);
   const allGroupNames = new Set(grouped.keys());
   allGroupNames.add("agent");
@@ -440,36 +487,20 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const renderJobRows = (job: Job) => {
     const status = statuses[job.name];
     const state = status?.state ?? "idle";
-    const isExpanded = expandedJobs.has(job.name);
 
-    return [
+    return (
       <JobRow
         key={job.slug}
         job={job}
         state={state}
         status={status}
-        isExpanded={isExpanded}
         selectMode={jobSelectMode}
         isSelected={selectedJobs.has(job.name)}
         onToggleSelected={() => toggleJobSelected(job.name)}
         onToggleEnabled={() => handleToggle(job.name)}
-        onRun={() => handleRunNow(job.name)}
-        onPause={() => handlePause(job.name)}
-        onResume={() => handleResume(job.name)}
-        onRestart={() => handleRestart(job.name)}
-        onOpen={() => handleOpen(job.name)}
-        onEdit={() => setEditingJob(job)}
-        onDuplicate={() => handleDuplicate(job)}
-        onDelete={() => handleDelete(job.name)}
-        onToggleExpand={() => toggleJobExpand(job.name)}
-      />,
-      state === "running" && status?.state === "running" && status.pane_id && (
-        <RunningLogs key={`${job.slug}-live`} jobName={job.name} />
-      ),
-      isExpanded && (
-        <RunsPanel key={`${job.slug}-runs`} jobName={job.name} jobState={state} />
-      ),
-    ];
+        onClick={() => setViewingJob(job)}
+      />
+    );
   };
 
   const tableHead = (
@@ -486,14 +517,12 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
             />
           </th>
         )}
-        <th className="col-expand"></th>
         <th className="col-toggle" title="Enabled"></th>
         <th className="col-name">Name</th>
         <th className="col-type">Type</th>
         <th className="col-cron">Cron</th>
         <th className="col-status">Status</th>
         <th className="col-actions"></th>
-        <th className="col-gear"></th>
       </tr>
     </thead>
   );
@@ -541,7 +570,6 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
               grouped={grouped}
               statuses={statuses}
               collapsedGroups={collapsedGroups}
-              expandedJobs={expandedJobs}
               tableHead={tableHead}
               jobSelectMode={jobSelectMode}
               selectedJobCount={selectedJobs.size}
@@ -556,9 +584,9 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
               onDeleteSelected={() => setConfirmBulkDeleteJobs(true)}
               renderJobRows={renderJobRows}
               onToggleGroup={() => toggleGroup(group)}
-              onToggleJobExpand={toggleJobExpand}
               onShowAgentPrompt={() => setShowAgentPrompt(true)}
               onOpenAgent={() => handleOpen("agent")}
+              onViewAgent={() => setViewingAgent(true)}
             />
           ))}
         </SortableContext>
@@ -612,7 +640,6 @@ function SortableGroup({
   grouped,
   statuses,
   collapsedGroups,
-  expandedJobs,
   tableHead,
   jobSelectMode,
   selectedJobCount,
@@ -620,26 +647,25 @@ function SortableGroup({
   onDeleteSelected,
   renderJobRows,
   onToggleGroup,
-  onToggleJobExpand,
   onShowAgentPrompt,
   onOpenAgent,
+  onViewAgent,
 }: {
   id: string;
   group: string;
   grouped: Map<string, Job[]>;
   statuses: Record<string, JobStatus>;
   collapsedGroups: Set<string>;
-  expandedJobs: Set<string>;
   tableHead: React.ReactNode;
   jobSelectMode: boolean;
   selectedJobCount: number;
   onToggleSelectMode: () => void;
   onDeleteSelected: () => void;
-  renderJobRows: (job: Job) => React.ReactNode[];
+  renderJobRows: (job: Job) => React.ReactNode;
   onToggleGroup: () => void;
-  onToggleJobExpand: (name: string) => void;
   onShowAgentPrompt: () => void;
   onOpenAgent: () => void;
+  onViewAgent: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -656,7 +682,6 @@ function SortableGroup({
   if (group === "agent") {
     const agentStatus = statuses["agent"];
     const agentState = agentStatus?.state ?? "idle";
-    const isAgentExpanded = expandedJobs.has("agent");
 
     return (
       <div ref={setNodeRef} style={style} className="field-group">
@@ -668,7 +693,6 @@ function SortableGroup({
           dragAttributes={attributes}
           dragListeners={listeners}
         />
-        {/* Agent group has no select mode */}
         {!isCollapsed && (
           <table className="data-table">
             {tableHead}
@@ -676,18 +700,11 @@ function SortableGroup({
               <AgentRow
                 status={agentStatus}
                 state={agentState}
-                isExpanded={isAgentExpanded}
                 selectMode={jobSelectMode}
                 onRun={onShowAgentPrompt}
                 onOpen={onOpenAgent}
-                onToggleExpand={() => onToggleJobExpand("agent")}
+                onClick={onViewAgent}
               />
-              {agentState === "running" && agentStatus?.state === "running" && agentStatus.pane_id && (
-                <RunningLogs jobName="agent" />
-              )}
-              {isAgentExpanded && (
-                <RunsPanel jobName="agent" jobState={agentState} />
-              )}
             </tbody>
           </table>
         )}
@@ -718,7 +735,7 @@ function SortableGroup({
         <table className="data-table">
           {tableHead}
           <tbody>
-            {groupJobList.flatMap(renderJobRows)}
+            {groupJobList.map(renderJobRows)}
           </tbody>
         </table>
       )}
@@ -815,39 +832,27 @@ function GroupHeader({
 function AgentRow({
   status,
   state,
-  isExpanded,
   selectMode,
   onRun,
   onOpen,
-  onToggleExpand,
+  onClick,
 }: {
   status: JobStatus | undefined;
   state: string;
-  isExpanded: boolean;
   selectMode: boolean;
   onRun: () => void;
   onOpen: () => void;
-  onToggleExpand: () => void;
+  onClick: () => void;
 }) {
-  const { runs } = useJobRuns("agent");
-  const hasRuns = runs !== null && runs.length > 0;
+  const handleRowClick = (e: React.MouseEvent<HTMLTableRowElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, .toggle-switch, .btn")) return;
+    onClick();
+  };
 
   return (
-    <tr className={isExpanded ? "row-expanded" : undefined}>
+    <tr onClick={handleRowClick} style={{ cursor: "pointer" }}>
       {selectMode && <td style={{ width: 24, padding: "8px 4px" }} />}
-      <td className="col-expand">
-        <button
-          onClick={hasRuns ? onToggleExpand : undefined}
-          title="Runs"
-          disabled={!hasRuns}
-          className="expand-btn"
-          style={{ opacity: hasRuns ? 1 : 0.3 }}
-        >
-          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-            {isExpanded ? "\u25BC" : "\u25B6"}
-          </span>
-        </button>
-      </td>
       <td className="col-toggle">
         <input
           type="checkbox"
@@ -878,25 +883,6 @@ function AgentRow({
             </button>
           )}
         </div>
-      </td>
-      <td className="col-gear">
-        <button
-          title="Settings (not available for agent)"
-          disabled
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-secondary)",
-            opacity: 0.3,
-            cursor: "not-allowed",
-            padding: "2px 4px",
-            lineHeight: 1,
-            display: "inline-flex",
-            alignItems: "center",
-          }}
-        >
-          <GearIcon size={16} />
-        </button>
       </td>
     </tr>
   );
@@ -959,62 +945,340 @@ function AgentPromptModal({
   );
 }
 
-function JobRow({
+function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div style={{ display: "flex", gap: 12, padding: "4px 0", fontSize: 13 }}>
+      <span style={{ color: "var(--text-secondary)", minWidth: 120, flexShrink: 0 }}>{label}</span>
+      {mono ? <code style={{ flex: 1 }}>{value}</code> : <span style={{ flex: 1 }}>{value}</span>}
+    </div>
+  );
+}
+
+function JobDetailView({
   job,
-  state,
   status,
-  isExpanded,
-  selectMode,
-  isSelected,
-  onToggleSelected,
-  onToggleEnabled,
+  onBack,
+  onEdit,
   onRun,
   onPause,
   onResume,
   onRestart,
   onOpen,
-  onEdit,
+  onToggle,
   onDuplicate,
   onDelete,
-  onToggleExpand,
 }: {
   job: Job;
-  state: string;
   status: JobStatus | undefined;
-  isExpanded: boolean;
-  selectMode: boolean;
-  isSelected: boolean;
-  onToggleSelected: () => void;
-  onToggleEnabled: () => void;
+  onBack: () => void;
+  onEdit: () => void;
   onRun: () => void;
   onPause: () => void;
   onResume: () => void;
   onRestart: () => void;
   onOpen: () => void;
-  onEdit: () => void;
+  onToggle: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onToggleExpand: () => void;
 }) {
-  const { runs } = useJobRuns(job.name);
-  const hasRuns = runs !== null && runs.length > 0;
+  const state = status?.state ?? "idle";
   const [showConfirm, setShowConfirm] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showMenu) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showMenu]);
+  const [runsCollapsed, setRunsCollapsed] = useState(false);
 
   return (
-    <tr className={isExpanded ? "row-expanded" : undefined}>
+    <div className="settings-section">
+      <div className="section-header" style={{ justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={onBack}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-secondary)",
+              padding: "2px 4px",
+              lineHeight: 1,
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+            title="Back to jobs"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <h2>{job.name}</h2>
+          <StatusBadge status={status} />
+        </div>
+        <div className="btn-group">
+          {state === "running" && (
+            <>
+              <button className="btn btn-sm" onClick={onOpen}>Open</button>
+              <button className="btn btn-sm" onClick={onPause}>Pause</button>
+            </>
+          )}
+          {state === "paused" && (
+            <button className="btn btn-primary btn-sm" onClick={onResume}>Resume</button>
+          )}
+          {state === "failed" && (
+            <button className="btn btn-primary btn-sm" onClick={onRestart}>Restart</button>
+          )}
+          {state === "success" && (
+            <button className="btn btn-primary btn-sm" onClick={onRun}>Run Again</button>
+          )}
+          {(state === "idle" || !status) && (
+            <button className="btn btn-primary btn-sm" onClick={onRun}>Run</button>
+          )}
+          <button className="btn btn-sm" onClick={onEdit}>Edit</button>
+        </div>
+      </div>
+
+      {state === "running" && status?.state === "running" && status.pane_id && (
+        <div className="field-group">
+          <span className="field-group-title">Live Output</span>
+          <RunningLogsContent jobName={job.name} />
+        </div>
+      )}
+
+      <div className="field-group">
+        <button
+          onClick={() => setRunsCollapsed((v) => !v)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            padding: 0,
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            width: "100%",
+          }}
+          className="field-group-title"
+        >
+          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+            {runsCollapsed ? "\u25B6" : "\u25BC"}
+          </span>
+          Runs
+        </button>
+        {!runsCollapsed && (
+          <RunsPanelContent jobName={job.name} jobState={state} />
+        )}
+      </div>
+
+      <div className="field-group">
+        <span className="field-group-title">Configuration</span>
+        <DetailRow label="Type" value={job.job_type} />
+        <DetailRow label="Enabled" value={job.enabled ? "Yes" : "No"} />
+        {job.cron ? (
+          <>
+            <DetailRow label="Schedule" value={describeCron(job.cron)} />
+            <DetailRow label="Cron" value={job.cron} mono />
+          </>
+        ) : (
+          <DetailRow label="Schedule" value="Manual" />
+        )}
+        {job.group && job.group !== "default" && (
+          <DetailRow label="Group" value={job.group} />
+        )}
+        {job.job_type === "folder" && job.folder_path && (
+          <DetailRow label="Folder" value={job.folder_path} mono />
+        )}
+        {job.job_type === "binary" && (
+          <DetailRow label="Path" value={job.path} mono />
+        )}
+        {job.args.length > 0 && (
+          <DetailRow label="Args" value={job.args.join(" ")} mono />
+        )}
+        {job.work_dir && (
+          <DetailRow label="Work dir" value={job.work_dir} mono />
+        )}
+      </div>
+
+      {(job.tmux_session || job.aerospace_workspace || job.telegram_chat_id) && (
+        <div className="field-group">
+          <span className="field-group-title">Runtime</span>
+          {job.tmux_session && (
+            <DetailRow label="Tmux session" value={job.tmux_session} mono />
+          )}
+          {job.aerospace_workspace && (
+            <DetailRow label="Aerospace workspace" value={job.aerospace_workspace} />
+          )}
+          {job.telegram_chat_id && (
+            <>
+              <DetailRow label="Telegram chat" value={String(job.telegram_chat_id)} mono />
+              <DetailRow label="Telegram logs" value={job.telegram_log_mode} />
+            </>
+          )}
+        </div>
+      )}
+
+      {job.secret_keys.length > 0 && (
+        <div className="field-group">
+          <span className="field-group-title">Secrets</span>
+          {job.secret_keys.map((key) => (
+            <DetailRow key={key} label={key} value="(set)" mono />
+          ))}
+        </div>
+      )}
+
+      <div className="field-group">
+        <span className="field-group-title">Danger Zone</span>
+        <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
+          <button className="btn btn-sm" onClick={onToggle}>
+            {job.enabled ? "Disable" : "Enable"}
+          </button>
+          <button className="btn btn-sm" onClick={onDuplicate}>Duplicate</button>
+          <button
+            className="btn btn-sm"
+            style={{ color: "var(--danger-color)" }}
+            onClick={() => setShowConfirm(true)}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+
+      {showConfirm && (
+        <ConfirmDialog
+          message={`Delete job "${job.name}"? This cannot be undone.`}
+          onConfirm={() => { onDelete(); setShowConfirm(false); }}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AgentDetailView({
+  status,
+  state,
+  onBack,
+  onRun,
+  onOpen,
+}: {
+  status: JobStatus | undefined;
+  state: string;
+  onBack: () => void;
+  onRun: () => void;
+  onOpen: () => void;
+}) {
+  const [runsCollapsed, setRunsCollapsed] = useState(false);
+
+  return (
+    <div className="settings-section">
+      <div className="section-header" style={{ justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            onClick={onBack}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-secondary)",
+              padding: "2px 4px",
+              lineHeight: 1,
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+            title="Back to jobs"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <h2>agent</h2>
+          <StatusBadge status={status} />
+        </div>
+        <div className="btn-group">
+          {state === "running" && (
+            <button className="btn btn-sm" onClick={onOpen}>Open</button>
+          )}
+          {(state === "idle" || !status || state === "success" || state === "failed") && (
+            <button className="btn btn-primary btn-sm" onClick={onRun}>
+              {state === "success" ? "Run Again" : "Run"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {state === "running" && status?.state === "running" && status.pane_id && (
+        <div className="field-group">
+          <span className="field-group-title">Live Output</span>
+          <RunningLogsContent jobName="agent" />
+        </div>
+      )}
+
+      <div className="field-group">
+        <button
+          onClick={() => setRunsCollapsed((v) => !v)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            padding: 0,
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            width: "100%",
+          }}
+          className="field-group-title"
+        >
+          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+            {runsCollapsed ? "\u25B6" : "\u25BC"}
+          </span>
+          Runs
+        </button>
+        {!runsCollapsed && (
+          <RunsPanelContent jobName="agent" jobState={state} />
+        )}
+      </div>
+
+      <div className="field-group">
+        <span className="field-group-title">Configuration</span>
+        <DetailRow label="Type" value="claude" />
+        <DetailRow label="Schedule" value="Manual" />
+      </div>
+    </div>
+  );
+}
+
+function JobRow({
+  job,
+  state,
+  status,
+  selectMode,
+  isSelected,
+  onToggleSelected,
+  onToggleEnabled,
+  onClick,
+}: {
+  job: Job;
+  state: string;
+  status: JobStatus | undefined;
+  selectMode: boolean;
+  isSelected: boolean;
+  onToggleSelected: () => void;
+  onToggleEnabled: () => void;
+  onClick: () => void;
+}) {
+  const handleRowClick = (e: React.MouseEvent<HTMLTableRowElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("button, input, .toggle-switch, .btn, .gear-icon, .job-action-menu")) return;
+    onClick();
+  };
+
+  return (
+    <tr onClick={handleRowClick} style={{ cursor: "pointer" }}>
       {selectMode && (
         <td style={{ width: 24, padding: "8px 4px" }}>
           <input
@@ -1025,19 +1289,6 @@ function JobRow({
           />
         </td>
       )}
-      <td className="col-expand">
-        <button
-          onClick={hasRuns ? onToggleExpand : undefined}
-          title="Runs"
-          disabled={!hasRuns}
-          className="expand-btn"
-          style={{ opacity: hasRuns ? 1 : 0.3 }}
-        >
-          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-            {isExpanded ? "\u25BC" : "\u25B6"}
-          </span>
-        </button>
-      </td>
       <td className="col-toggle">
         <input
           type="checkbox"
@@ -1060,86 +1311,13 @@ function JobRow({
       <td className="col-actions actions">
         <div className="btn-group">
           {state === "running" && (
-            <>
-              <button className="btn btn-sm" onClick={onOpen}>
-                Open
-              </button>
-              <button className="btn btn-sm" onClick={onPause}>
-                Pause
-              </button>
-            </>
+            <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
           )}
           {state === "paused" && (
-            <button className="btn btn-primary btn-sm" onClick={onResume}>
-              Resume
-            </button>
-          )}
-          {state === "failed" && (
-            <button className="btn btn-primary btn-sm" onClick={onRestart}>
-              Restart
-            </button>
-          )}
-          {state === "success" && (
-            <button className="btn btn-primary btn-sm" onClick={onRun}>
-              Run Again
-            </button>
-          )}
-          {(state === "idle" || !status) && (
-            <button className="btn btn-primary btn-sm" onClick={onRun}>
-              Run
-            </button>
+            <span className="status-badge status-paused" style={{ fontSize: 11 }}>paused</span>
           )}
         </div>
       </td>
-      <td className="col-gear">
-        <div ref={menuRef} style={{ position: "relative" }}>
-          <button
-            onClick={() => setShowMenu((v) => !v)}
-            title="Settings"
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-              padding: "2px 4px",
-              lineHeight: 1,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-          >
-            <GearIcon size={16} />
-          </button>
-          {showMenu && (
-            <div className="job-action-menu">
-              <button
-                className="job-action-menu-item"
-                onClick={() => { setShowMenu(false); onEdit(); }}
-              >
-                Edit
-              </button>
-              <button
-                className="job-action-menu-item"
-                onClick={() => { setShowMenu(false); onDuplicate(); }}
-              >
-                Duplicate
-              </button>
-              <button
-                className="job-action-menu-item job-action-menu-item-danger"
-                onClick={() => { setShowMenu(false); setShowConfirm(true); }}
-              >
-                Delete
-              </button>
-            </div>
-          )}
-        </div>
-      </td>
-      {showConfirm && (
-        <ConfirmDialog
-          message={`Delete job "${job.name}"? This cannot be undone.`}
-          onConfirm={() => { onDelete(); setShowConfirm(false); }}
-          onCancel={() => setShowConfirm(false)}
-        />
-      )}
     </tr>
   );
 }
@@ -1156,7 +1334,7 @@ function buildLogContent(run: RunRecord): string {
   return content || "(no output)";
 }
 
-function RunningLogs({ jobName }: { jobName: string }) {
+function RunningLogsContent({ jobName }: { jobName: string }) {
   const [logs, setLogs] = useState("");
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -1184,30 +1362,27 @@ function RunningLogs({ jobName }: { jobName: string }) {
   if (!logs) return null;
 
   return (
-    <tr>
-      <td colSpan={8} style={{ padding: "0 12px 4px", border: "none" }}>
-        <pre ref={preRef} style={{
-          margin: 0,
-          padding: "6px 8px",
-          fontSize: 11,
-          lineHeight: 1.4,
-          background: "var(--bg-secondary, #1a1a1a)",
-          borderRadius: 4,
-          overflowY: "auto",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          height: 100,
-          minHeight: 40,
-          maxHeight: 400,
-          resize: "vertical",
-          color: "var(--text-secondary)",
-        }}>{logs}</pre>
-      </td>
-    </tr>
+    <pre ref={preRef} style={{
+      margin: 0,
+      padding: "6px 8px",
+      fontSize: 11,
+      lineHeight: 1.4,
+      background: "var(--bg-secondary, #1a1a1a)",
+      borderRadius: 4,
+      overflowY: "auto",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-all",
+      height: 100,
+      minHeight: 40,
+      maxHeight: 400,
+      resize: "vertical",
+      color: "var(--text-secondary)",
+    }}>{logs}</pre>
   );
 }
 
-function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string }) {
+
+function RunsPanelContent({ jobName, jobState }: { jobName: string; jobState: string }) {
   const { runs, reload } = useJobRuns(jobName);
   const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
@@ -1294,152 +1469,151 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
   const hasSelection = selectedRuns.size > 0;
 
   return (
-    <tr>
-      <td colSpan={8} style={{ padding: "0 0 8px", border: "none" }}>
-        {runs === null ? (
-          <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>Loading...</span>
-        ) : runs.length === 0 ? (
-          <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>No run history</span>
-        ) : (
-          <>
-            {selectMode && hasSelection && (
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "4px 12px",
-                fontSize: 12,
-                color: "var(--text-secondary)",
-              }}>
-                <span>{selectedRuns.size} selected</span>
-                <button
-                  className="btn btn-sm"
-                  style={{ fontSize: 11, color: "var(--danger-color)" }}
-                  onClick={() => setConfirmBulkDelete(true)}
-                >
-                  Delete selected
-                </button>
-                <button
-                  className="btn btn-sm"
-                  style={{ fontSize: 11, marginLeft: "auto" }}
-                  onClick={() => { setSelectMode(false); setSelectedRuns(new Set()); }}
-                >
-                  Done
-                </button>
-              </div>
-            )}
-            <table className="data-table runs-table" style={{ fontSize: 12 }}>
-              <thead>
-                <tr>
-                  <th className="col-run-expand"></th>
-                  <th style={{ fontSize: 10, padding: "4px 12px" }}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      Status
-                      {selectMode ? (
-                        <input
-                          type="checkbox"
-                          checked={runs.length > 0 && selectedRuns.size === runs.length}
-                          onChange={toggleSelectAll}
-                          title="Select all"
-                          style={{ margin: 0 }}
-                        />
-                      ) : (
+    <div>
+      {runs === null ? (
+        <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>Loading...</span>
+      ) : runs.length === 0 ? (
+        <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>No run history</span>
+      ) : (
+        <>
+          {selectMode && hasSelection && (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "4px 12px",
+              fontSize: 12,
+              color: "var(--text-secondary)",
+            }}>
+              <span>{selectedRuns.size} selected</span>
+              <button
+                className="btn btn-sm"
+                style={{ fontSize: 11, color: "var(--danger-color)" }}
+                onClick={() => setConfirmBulkDelete(true)}
+              >
+                Delete selected
+              </button>
+              <button
+                className="btn btn-sm"
+                style={{ fontSize: 11, marginLeft: "auto" }}
+                onClick={() => { setSelectMode(false); setSelectedRuns(new Set()); }}
+              >
+                Done
+              </button>
+            </div>
+          )}
+          <table className="data-table runs-table" style={{ fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th className="col-run-expand"></th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    Status
+                    {selectMode ? (
+                      <input
+                        type="checkbox"
+                        checked={runs.length > 0 && selectedRuns.size === runs.length}
+                        onChange={toggleSelectAll}
+                        title="Select all"
+                        style={{ margin: 0 }}
+                      />
+                    ) : (
+                      <button
+                        className="btn btn-sm"
+                        style={{ fontSize: 10, padding: "1px 6px" }}
+                        onClick={() => setSelectMode(true)}
+                      >
+                        Select
+                      </button>
+                    )}
+                  </span>
+                </th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Trigger</th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
+                <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
+                <th style={{ fontSize: 10, padding: "4px 8px", width: 28 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => {
+                const duration = run.finished_at
+                  ? `${((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
+                  : "...";
+                const isLogExpanded = expandedRunId === run.id;
+
+                return [
+                  <tr key={run.id} className={isLogExpanded ? "row-expanded" : undefined}>
+                    <td className="col-run-expand">
+                      <button
+                        className="expand-btn"
+                        onClick={() => setExpandedRunId(isLogExpanded ? null : run.id)}
+                        title="Logs"
+                      >
+                        <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+                          {isLogExpanded ? "\u25BC" : "\u25B6"}
+                        </span>
+                      </button>
+                    </td>
+                    <td>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        {selectMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedRuns.has(run.id)}
+                            onChange={() => toggleRunSelected(run.id)}
+                            style={{ margin: 0 }}
+                          />
+                        )}
+                        <span className={`status-dot ${exitCodeClass(run)}`} />
+                        {exitCodeLabel(run)}
+                      </span>
+                    </td>
+                    <td>{run.trigger}</td>
+                    <td>{formatTime(run.started_at)}</td>
+                    <td>{duration}</td>
+                    <td style={{ textAlign: "right", padding: "0 8px" }}>
+                      <DeleteButton
+                        onClick={() => setConfirmRunId(run.id)}
+                        title="Delete this run"
+                        size={11}
+                      />
+                    </td>
+                  </tr>,
+                  isLogExpanded && (
+                    <tr key={`${run.id}-logs`}>
+                      <td colSpan={6} style={{ padding: "0 12px 8px", border: "none" }}>
+                        <LogViewer content={buildLogContent(run)} />
                         <button
                           className="btn btn-sm"
-                          style={{ fontSize: 10, padding: "1px 6px" }}
-                          onClick={() => setSelectMode(true)}
+                          style={{ marginTop: 6, fontSize: 11 }}
+                          onClick={() => handleOpenLog(run.id)}
                         >
-                          Select
-                        </button>
-                      )}
-                    </span>
-                  </th>
-                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Trigger</th>
-                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
-                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
-                  <th style={{ fontSize: 10, padding: "4px 8px", width: 28 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((run) => {
-                  const duration = run.finished_at
-                    ? `${((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
-                    : "...";
-                  const isLogExpanded = expandedRunId === run.id;
-
-                  return [
-                    <tr key={run.id} className={isLogExpanded ? "row-expanded" : undefined}>
-                      <td className="col-run-expand">
-                        <button
-                          className="expand-btn"
-                          onClick={() => setExpandedRunId(isLogExpanded ? null : run.id)}
-                          title="Logs"
-                        >
-                          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-                            {isLogExpanded ? "\u25BC" : "\u25B6"}
-                          </span>
+                          Open in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
                         </button>
                       </td>
-                      <td>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          {selectMode && (
-                            <input
-                              type="checkbox"
-                              checked={selectedRuns.has(run.id)}
-                              onChange={() => toggleRunSelected(run.id)}
-                              style={{ margin: 0 }}
-                            />
-                          )}
-                          <span className={`status-dot ${exitCodeClass(run)}`} />
-                          {exitCodeLabel(run)}
-                        </span>
-                      </td>
-                      <td>{run.trigger}</td>
-                      <td>{formatTime(run.started_at)}</td>
-                      <td>{duration}</td>
-                      <td style={{ textAlign: "right", padding: "0 8px" }}>
-                        <DeleteButton
-                          onClick={() => setConfirmRunId(run.id)}
-                          title="Delete this run"
-                          size={11}
-                        />
-                      </td>
-                    </tr>,
-                    isLogExpanded && (
-                      <tr key={`${run.id}-logs`}>
-                        <td colSpan={6} style={{ padding: "0 12px 8px", border: "none" }}>
-                          <LogViewer content={buildLogContent(run)} />
-                          <button
-                            className="btn btn-sm"
-                            style={{ marginTop: 6, fontSize: 11 }}
-                            onClick={() => handleOpenLog(run.id)}
-                          >
-                            Open in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-                          </button>
-                        </td>
-                      </tr>
-                    ),
-                  ];
-                })}
-              </tbody>
-            </table>
-          </>
-        )}
-        {confirmRunId && (
-          <ConfirmDialog
-            message="Delete this run record? This cannot be undone."
-            onConfirm={() => { handleDeleteRun(confirmRunId); setConfirmRunId(null); }}
-            onCancel={() => setConfirmRunId(null)}
-          />
-        )}
-        {confirmBulkDelete && (
-          <ConfirmDialog
-            message={`Delete ${selectedRuns.size} run record${selectedRuns.size === 1 ? "" : "s"}? This cannot be undone.`}
-            onConfirm={() => { handleDeleteSelected(); setConfirmBulkDelete(false); }}
-            onCancel={() => setConfirmBulkDelete(false)}
-          />
-        )}
-      </td>
-    </tr>
+                    </tr>
+                  ),
+                ];
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
+      {confirmRunId && (
+        <ConfirmDialog
+          message="Delete this run record? This cannot be undone."
+          onConfirm={() => { handleDeleteRun(confirmRunId); setConfirmRunId(null); }}
+          onCancel={() => setConfirmRunId(null)}
+        />
+      )}
+      {confirmBulkDelete && (
+        <ConfirmDialog
+          message={`Delete ${selectedRuns.size} run record${selectedRuns.size === 1 ? "" : "s"}? This cannot be undone.`}
+          onConfirm={() => { handleDeleteSelected(); setConfirmBulkDelete(false); }}
+          onCancel={() => setConfirmBulkDelete(false)}
+        />
+      )}
+    </div>
   );
 }
+

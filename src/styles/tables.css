@@ -2,7 +2,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .data-table th,
@@ -18,11 +18,11 @@
 /* Job table column widths */
 .col-expand { width: 28px; padding: 8px 4px 8px 8px !important; vertical-align: middle; }
 .col-toggle { width: 48px; padding: 8px 4px !important; vertical-align: middle; }
-.col-name { width: auto; min-width: 80px; }
+.col-name { width: 100%; min-width: 80px; }
 .col-type { width: 70px; }
 .col-cron { width: 110px; }
 .col-status { width: 80px; }
-.col-actions { width: 100px; }
+.col-actions { width: 100px; text-align: right !important; }
 .col-gear { width: 32px; padding: 8px 4px !important; overflow: visible !important; }
 
 /* Tools table */
