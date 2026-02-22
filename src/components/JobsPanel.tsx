@@ -340,6 +340,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
       }
     }
     setSelectedJobs(new Set());
+    setJobSelectMode(false);
     await loadJobs();
   };
 
@@ -502,21 +503,6 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
       <div className="section-header">
         <h2>Jobs</h2>
         <div className="btn-group">
-          {jobs.length > 0 && (
-            <button
-              className={`btn btn-sm${jobSelectMode ? " btn-primary" : ""}`}
-              onClick={() => {
-                if (jobSelectMode) {
-                  setJobSelectMode(false);
-                  setSelectedJobs(new Set());
-                } else {
-                  setJobSelectMode(true);
-                }
-              }}
-            >
-              {jobSelectMode ? "Done" : "Select"}
-            </button>
-          )}
           <button
             className="btn btn-primary btn-sm"
             onClick={() => setShowPicker(true)}
@@ -525,27 +511,6 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           </button>
         </div>
       </div>
-
-      {jobSelectMode && selectedJobs.size > 0 && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "4px 12px",
-          marginBottom: 8,
-          fontSize: 12,
-          color: "var(--text-secondary)",
-        }}>
-          <span>{selectedJobs.size} selected</span>
-          <button
-            className="btn btn-sm"
-            style={{ fontSize: 11, color: "var(--danger-color)" }}
-            onClick={() => setConfirmBulkDeleteJobs(true)}
-          >
-            Delete selected
-          </button>
-        </div>
-      )}
 
       {jobs.length === 0 && !sortedGroups.includes("agent") && (
         <div className="empty-state">
@@ -579,6 +544,16 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
               expandedJobs={expandedJobs}
               tableHead={tableHead}
               jobSelectMode={jobSelectMode}
+              selectedJobCount={selectedJobs.size}
+              onToggleSelectMode={() => {
+                if (jobSelectMode) {
+                  setJobSelectMode(false);
+                  setSelectedJobs(new Set());
+                } else {
+                  setJobSelectMode(true);
+                }
+              }}
+              onDeleteSelected={() => setConfirmBulkDeleteJobs(true)}
               renderJobRows={renderJobRows}
               onToggleGroup={() => toggleGroup(group)}
               onToggleJobExpand={toggleJobExpand}
@@ -640,6 +615,9 @@ function SortableGroup({
   expandedJobs,
   tableHead,
   jobSelectMode,
+  selectedJobCount,
+  onToggleSelectMode,
+  onDeleteSelected,
   renderJobRows,
   onToggleGroup,
   onToggleJobExpand,
@@ -654,6 +632,9 @@ function SortableGroup({
   expandedJobs: Set<string>;
   tableHead: React.ReactNode;
   jobSelectMode: boolean;
+  selectedJobCount: number;
+  onToggleSelectMode: () => void;
+  onDeleteSelected: () => void;
   renderJobRows: (job: Job) => React.ReactNode[];
   onToggleGroup: () => void;
   onToggleJobExpand: (name: string) => void;
@@ -687,6 +668,7 @@ function SortableGroup({
           dragAttributes={attributes}
           dragListeners={listeners}
         />
+        {/* Agent group has no select mode */}
         {!isCollapsed && (
           <table className="data-table">
             {tableHead}
@@ -727,6 +709,10 @@ function SortableGroup({
         onToggle={onToggleGroup}
         dragAttributes={attributes}
         dragListeners={listeners}
+        selectMode={jobSelectMode}
+        selectedCount={selectedJobCount}
+        onToggleSelectMode={onToggleSelectMode}
+        onDeleteSelected={onDeleteSelected}
       />
       {!isCollapsed && (
         <table className="data-table">
@@ -747,6 +733,10 @@ function GroupHeader({
   onToggle,
   dragAttributes,
   dragListeners,
+  selectMode,
+  selectedCount,
+  onToggleSelectMode,
+  onDeleteSelected,
 }: {
   displayName: string;
   count: number | null;
@@ -754,6 +744,10 @@ function GroupHeader({
   onToggle: () => void;
   dragAttributes: ReturnType<typeof useSortable>["attributes"];
   dragListeners: ReturnType<typeof useSortable>["listeners"];
+  selectMode?: boolean;
+  selectedCount?: number;
+  onToggleSelectMode?: () => void;
+  onDeleteSelected?: () => void;
 }) {
   return (
     <div
@@ -788,6 +782,29 @@ function GroupHeader({
           </span>
         )}
       </button>
+      {selectMode && (selectedCount ?? 0) > 0 && onDeleteSelected && (
+        <>
+          <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+            {selectedCount} sel
+          </span>
+          <button
+            className="btn btn-sm"
+            style={{ fontSize: 10, padding: "1px 6px", color: "var(--danger-color)" }}
+            onClick={onDeleteSelected}
+          >
+            Delete
+          </button>
+        </>
+      )}
+      {onToggleSelectMode && (
+        <button
+          className="btn btn-sm"
+          style={{ fontSize: 10, padding: "1px 6px" }}
+          onClick={onToggleSelectMode}
+        >
+          {selectMode ? "Done" : "Select"}
+        </button>
+      )}
       <div {...dragAttributes} {...dragListeners}>
         <DragGrip />
       </div>
@@ -1220,6 +1237,7 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
     try {
       await invoke("delete_runs", { runIds: Array.from(selectedRuns) });
       setSelectedRuns(new Set());
+      setSelectMode(false);
       reload();
     } catch (e) {
       console.error("Failed to delete runs:", e);
@@ -1284,7 +1302,7 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
           <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>No run history</span>
         ) : (
           <>
-            {selectMode && (
+            {selectMode && hasSelection && (
               <div style={{
                 display: "flex",
                 alignItems: "center",
@@ -1293,18 +1311,14 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
                 fontSize: 12,
                 color: "var(--text-secondary)",
               }}>
-                {hasSelection && (
-                  <>
-                    <span>{selectedRuns.size} selected</span>
-                    <button
-                      className="btn btn-sm"
-                      style={{ fontSize: 11, color: "var(--danger-color)" }}
-                      onClick={() => setConfirmBulkDelete(true)}
-                    >
-                      Delete selected
-                    </button>
-                  </>
-                )}
+                <span>{selectedRuns.size} selected</span>
+                <button
+                  className="btn btn-sm"
+                  style={{ fontSize: 11, color: "var(--danger-color)" }}
+                  onClick={() => setConfirmBulkDelete(true)}
+                >
+                  Delete selected
+                </button>
                 <button
                   className="btn btn-sm"
                   style={{ fontSize: 11, marginLeft: "auto" }}
@@ -1318,32 +1332,32 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
               <thead>
                 <tr>
                   <th className="col-run-expand"></th>
-                  <th style={{ fontSize: 10, padding: "4px 12px" }}>Status</th>
+                  <th style={{ fontSize: 10, padding: "4px 12px" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      Status
+                      {selectMode ? (
+                        <input
+                          type="checkbox"
+                          checked={runs.length > 0 && selectedRuns.size === runs.length}
+                          onChange={toggleSelectAll}
+                          title="Select all"
+                          style={{ margin: 0 }}
+                        />
+                      ) : (
+                        <button
+                          className="btn btn-sm"
+                          style={{ fontSize: 10, padding: "1px 6px" }}
+                          onClick={() => setSelectMode(true)}
+                        >
+                          Select
+                        </button>
+                      )}
+                    </span>
+                  </th>
                   <th style={{ fontSize: 10, padding: "4px 12px" }}>Trigger</th>
                   <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
                   <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
                   <th style={{ fontSize: 10, padding: "4px 8px", width: 28 }}></th>
-                  {selectMode ? (
-                    <th style={{ width: 24, padding: "4px" }}>
-                      <input
-                        type="checkbox"
-                        checked={runs.length > 0 && selectedRuns.size === runs.length}
-                        onChange={toggleSelectAll}
-                        title="Select all"
-                        style={{ margin: 0 }}
-                      />
-                    </th>
-                  ) : (
-                    <th style={{ width: 50, padding: "4px", textAlign: "right" }}>
-                      <button
-                        className="btn btn-sm"
-                        style={{ fontSize: 10, padding: "1px 6px" }}
-                        onClick={() => setSelectMode(true)}
-                      >
-                        Select
-                      </button>
-                    </th>
-                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1367,8 +1381,18 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
                         </button>
                       </td>
                       <td>
-                        <span className={`status-dot ${exitCodeClass(run)}`} />
-                        {exitCodeLabel(run)}
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          {selectMode && (
+                            <input
+                              type="checkbox"
+                              checked={selectedRuns.has(run.id)}
+                              onChange={() => toggleRunSelected(run.id)}
+                              style={{ margin: 0 }}
+                            />
+                          )}
+                          <span className={`status-dot ${exitCodeClass(run)}`} />
+                          {exitCodeLabel(run)}
+                        </span>
                       </td>
                       <td>{run.trigger}</td>
                       <td>{formatTime(run.started_at)}</td>
@@ -1380,20 +1404,10 @@ function RunsPanel({ jobName, jobState }: { jobName: string; jobState: string })
                           size={11}
                         />
                       </td>
-                      {selectMode && (
-                        <td style={{ width: 24, padding: "4px" }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedRuns.has(run.id)}
-                            onChange={() => toggleRunSelected(run.id)}
-                            style={{ margin: 0 }}
-                          />
-                        </td>
-                      )}
                     </tr>,
                     isLogExpanded && (
                       <tr key={`${run.id}-logs`}>
-                        <td colSpan={7} style={{ padding: "0 12px 8px", border: "none" }}>
+                        <td colSpan={6} style={{ padding: "0 12px 8px", border: "none" }}>
                           <LogViewer content={buildLogContent(run)} />
                           <button
                             className="btn btn-sm"
