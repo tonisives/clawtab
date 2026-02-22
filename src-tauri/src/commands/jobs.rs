@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::config::jobs::{Job, JobStatus};
 use crate::config::settings::AppSettings;
@@ -14,7 +14,7 @@ pub fn get_jobs(state: State<AppState>) -> Vec<Job> {
 }
 
 #[tauri::command]
-pub fn save_job(state: State<AppState>, job: Job) -> Result<(), String> {
+pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
 
     // Derive slug if not set
@@ -45,11 +45,13 @@ pub fn save_job(state: State<AppState>, job: Job) -> Result<(), String> {
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
 
+    let _ = app.emit("jobs-changed", ());
+
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_job(state: State<AppState>, name: String) -> Result<(), String> {
+pub fn delete_job(app: tauri::AppHandle, state: State<AppState>, name: String) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
 
     let slug = config
@@ -63,6 +65,9 @@ pub fn delete_job(state: State<AppState>, name: String) -> Result<(), String> {
 
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
+
+    let _ = app.emit("jobs-changed", ());
+
     Ok(())
 }
 

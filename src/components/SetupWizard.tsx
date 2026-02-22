@@ -130,16 +130,16 @@ export function SetupWizard({ onComplete }: Props) {
     try {
       const workDir = settings.default_work_dir || "~";
       const folderPath = workDir.replace(/\/+$/, "") + "/.cwt";
-      const jobName = "reddit-news";
+      const jobName = "hacker-news";
 
       await invoke("init_cwt_folder", { folderPath, jobName });
 
       const jobMd = [
-        "# Reddit News",
+        "# Hacker News",
         "",
-        "1. Use the WebFetch tool to fetch https://www.reddit.com/r/news/ and extract the top news headlines.",
-        "2. Pick the top 3 most interesting news stories from the page.",
-        "3. For each story, include the title and a one-sentence summary.",
+        "1. Use the WebFetch tool to fetch https://news.ycombinator.com/ and extract the top stories.",
+        "2. Pick the top 5 most interesting stories from the front page.",
+        "3. For each story, include the title, points, and comment count.",
         "4. Send the results to Telegram.",
       ].join("\n");
 
@@ -147,7 +147,7 @@ export function SetupWizard({ onComplete }: Props) {
 
       const chatId = telegramConfig.chat_ids[0];
       const job: Job = {
-        name: "Reddit News",
+        name: "Hacker News",
         job_type: "folder",
         enabled: true,
         path: "",
@@ -167,7 +167,7 @@ export function SetupWizard({ onComplete }: Props) {
         slug: "",
       };
       await invoke("save_job", { job });
-      await invoke("run_job_now", { name: "Reddit News" });
+      await invoke("run_job_now", { name: "Hacker News" });
       setBrowseStatus("success");
     } catch (e) {
       setBrowseStatus("error");
@@ -373,18 +373,18 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Web Browse Job</h3>
           <p className="section-description">
-            Your first real AI job -- Claude will fetch Reddit's front page,
-            and send you the latest news via Telegram.
+            Your first real AI job -- Claude will fetch the Hacker News front page
+            and send you the top stories via Telegram.
           </p>
 
           <div className="field-group" style={{ marginTop: 16 }}>
             <span className="field-group-title">Pre-filled job</span>
             <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> Reddit News</p>
+              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> Hacker News</p>
               <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Folder (Claude Code)</p>
               <p style={{ margin: "0 0 4px" }}>
                 <strong>Directory:</strong>{" "}
-                {(settings?.default_work_dir || "~").replace(/\/+$/, "")}/.cwt/reddit-news/
+                {(settings?.default_work_dir || "~").replace(/\/+$/, "")}/.cwt/hacker-news/
               </p>
               <p style={{ margin: "0 0 4px" }}>
                 <strong>Telegram:</strong>{" "}
@@ -411,16 +411,16 @@ export function SetupWizard({ onComplete }: Props) {
             {browseStatus === "success" && (
               <div>
                 <p style={{ color: "var(--success-color)" }}>
-                  Job created and running. Claude is browsing Reddit -- check Telegram for results.
+                  Job created and running. Claude is fetching Hacker News -- check Telegram for results.
                 </p>
                 <button
                   className="btn btn-sm"
                   style={{ marginTop: 8 }}
                   onClick={async () => {
                     try {
-                      await invoke("run_job_now", { name: "Reddit News" });
+                      await invoke("run_job_now", { name: "Hacker News" });
                     } catch (e) {
-                      console.error("Failed to re-run Reddit News:", e);
+                      console.error("Failed to re-run Hacker News:", e);
                     }
                   }}
                 >
@@ -452,7 +452,7 @@ export function SetupWizard({ onComplete }: Props) {
           </p>
           <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6 }}>
             <p style={{ margin: "0 0 4px" }}><strong>Telegram:</strong> Connected</p>
-            <p style={{ margin: "0 0 4px" }}><strong>Jobs created:</strong> hello-world, Reddit News</p>
+            <p style={{ margin: "0 0 4px" }}><strong>Jobs created:</strong> hello-world, Hacker News</p>
           </div>
         </div>
       )}

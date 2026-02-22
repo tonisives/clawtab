@@ -53,7 +53,7 @@ export const SAMPLE_TEMPLATES: SampleTemplate[] = [
 Monitor X/Twitter for posts about [YOUR_TOPIC] and compile an engagement digest.
 
 ## Steps
-1. Use WebFetch to browse x.com/search
+1. Open Safari and navigate to x.com/search
 2. Search for posts about [YOUR_TOPIC] from the last 24 hours
 3. For each relevant post:
    - Note the author, content, and engagement metrics
@@ -87,7 +87,7 @@ For each post:
 Research r/[YOUR_SUBREDDIT] for trending discussions and summarize key insights.
 
 ## Steps
-1. Use WebFetch to browse reddit.com/r/[YOUR_SUBREDDIT]
+1. Open Safari and navigate to reddit.com/r/[YOUR_SUBREDDIT]
 2. Sort by "Hot" and scan the top 20 posts
 3. For interesting threads, read top comments
 4. Identify recurring themes, complaints, and feature requests
@@ -118,7 +118,7 @@ Research r/[YOUR_SUBREDDIT] for trending discussions and summarize key insights.
 Check [YOUR_WEBSITE] for changes since last run and report findings.
 
 ## Steps
-1. Use WebFetch to browse [YOUR_WEBSITE]
+1. Open Safari and navigate to [YOUR_WEBSITE]
 2. Check the following pages:
    - Homepage (hero text, pricing, CTAs)
    - Pricing page (plan changes, new tiers)
@@ -151,7 +151,7 @@ Check [YOUR_WEBSITE] for changes since last run and report findings.
 Find relevant LinkedIn posts about [YOUR_TOPIC] and draft thoughtful comments.
 
 ## Steps
-1. Use WebFetch to browse linkedin.com/feed
+1. Open Safari and navigate to linkedin.com/feed
 2. Search for posts about [YOUR_TOPIC]
 3. Identify 5 high-quality posts from thought leaders
 4. Draft genuine, insightful comments for each (not generic praise)
@@ -183,7 +183,7 @@ For each post:
 Compile a morning briefing of [YOUR_TOPIC] news from multiple sources.
 
 ## Steps
-1. Use WebFetch to check these sources:
+1. Open Safari and check these sources:
    - Hacker News (news.ycombinator.com) - top stories
    - TechCrunch / Ars Technica - headlines
    - Relevant industry blogs
@@ -217,7 +217,7 @@ Top story deep-dive: (3-4 sentences on the most important story)
 Review today's Product Hunt launches and identify interesting products.
 
 ## Steps
-1. Use WebFetch to browse producthunt.com
+1. Open Safari and navigate to producthunt.com
 2. Review today's top 10 launched products
 3. For each product note: name, tagline, category, upvote count
 4. Identify products relevant to [YOUR_INTEREST]
@@ -481,7 +481,7 @@ For each day (Mon-Sun):
 Audit [YOUR_WEBSITE] for SEO improvements.
 
 ## Steps
-1. Use WebFetch to browse [YOUR_WEBSITE]
+1. Open Safari and navigate to [YOUR_WEBSITE]
 2. Check each page for:
    - Title tag (length, keyword inclusion)
    - Meta description (length, compelling copy)
@@ -591,7 +591,7 @@ Compile weekly intelligence on [YOUR_MARKET].
 Monitor prices for [YOUR_PRODUCT] and alert on significant changes.
 
 ## Steps
-1. Use WebFetch to check pricing on these sources:
+1. Open Safari and check pricing on these sources:
    - Primary retailer / official site
    - Amazon or relevant marketplace
    - Alternative sellers
@@ -625,7 +625,7 @@ Monitor prices for [YOUR_PRODUCT] and alert on significant changes.
 Find and summarize recent research papers about [YOUR_TOPIC].
 
 ## Steps
-1. Use WebFetch to search on:
+1. Open Safari and search on:
    - arxiv.org (cs/AI sections)
    - Google Scholar
    - Semantic Scholar
@@ -661,7 +661,7 @@ For each paper:
 Analyze job postings for [YOUR_FIELD] and identify trends.
 
 ## Steps
-1. Use WebFetch to check:
+1. Open Safari and check:
    - LinkedIn Jobs for [YOUR_FIELD]
    - Hacker News "Who is Hiring" threads
    - Relevant job boards
@@ -842,7 +842,7 @@ Analyze recent application logs for errors and patterns.
 Check current DeFi yield rates and report significant changes.
 
 ## Steps
-1. Use WebFetch to check yield rates on:
+1. Open Safari and check yield rates on:
    - DeFiLlama yields page
    - Major protocols (Aave, Compound, Lido, etc.)
 2. Record current rates for [YOUR_ASSETS]
@@ -944,7 +944,7 @@ Monitor stablecoin peg stability and lending rates.
 Track upcoming crypto airdrops and eligibility requirements.
 
 ## Steps
-1. Use WebFetch to check airdrop aggregator sites
+1. Open Safari and check airdrop aggregator sites
 2. Filter for upcoming airdrops with confirmed or rumored dates
 3. Check eligibility criteria for each
 4. Note required actions (bridging, swaps, governance participation)
@@ -1052,7 +1052,7 @@ Generate a comprehensive weekly review of accomplishments.
 Research [YOUR_TOPIC] and compile structured learning notes.
 
 ## Steps
-1. Use WebFetch to research [YOUR_TOPIC]:
+1. Open Safari and research [YOUR_TOPIC]:
    - Official documentation
    - Tutorial sites and guides
    - Community discussions (Stack Overflow, Reddit)

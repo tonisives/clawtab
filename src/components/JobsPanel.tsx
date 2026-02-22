@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   DndContext,
   closestCenter,
@@ -198,7 +199,13 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     loadStatuses();
     loadSettings();
     const interval = setInterval(loadStatuses, 5000);
-    return () => clearInterval(interval);
+    const unlistenPromise = listen("jobs-changed", () => {
+      loadJobs();
+    });
+    return () => {
+      clearInterval(interval);
+      unlistenPromise.then((fn) => fn());
+    };
   }, []);
 
   useEffect(() => {
