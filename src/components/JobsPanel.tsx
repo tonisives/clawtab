@@ -639,6 +639,7 @@ function SortableGroup({
   collapsedGroups,
   expandedJobs,
   tableHead,
+  jobSelectMode,
   renderJobRows,
   onToggleGroup,
   onToggleJobExpand,
@@ -652,6 +653,7 @@ function SortableGroup({
   collapsedGroups: Set<string>;
   expandedJobs: Set<string>;
   tableHead: React.ReactNode;
+  jobSelectMode: boolean;
   renderJobRows: (job: Job) => React.ReactNode[];
   onToggleGroup: () => void;
   onToggleJobExpand: (name: string) => void;
@@ -693,6 +695,7 @@ function SortableGroup({
                 status={agentStatus}
                 state={agentState}
                 isExpanded={isAgentExpanded}
+                selectMode={jobSelectMode}
                 onRun={onShowAgentPrompt}
                 onOpen={onOpenAgent}
                 onToggleExpand={() => onToggleJobExpand("agent")}
@@ -796,6 +799,7 @@ function AgentRow({
   status,
   state,
   isExpanded,
+  selectMode,
   onRun,
   onOpen,
   onToggleExpand,
@@ -803,6 +807,7 @@ function AgentRow({
   status: JobStatus | undefined;
   state: string;
   isExpanded: boolean;
+  selectMode: boolean;
   onRun: () => void;
   onOpen: () => void;
   onToggleExpand: () => void;
@@ -812,6 +817,7 @@ function AgentRow({
 
   return (
     <tr className={isExpanded ? "row-expanded" : undefined}>
+      {selectMode && <td style={{ width: 24, padding: "8px 4px" }} />}
       <td className="col-expand">
         <button
           onClick={hasRuns ? onToggleExpand : undefined}
