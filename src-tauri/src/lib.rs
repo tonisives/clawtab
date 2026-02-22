@@ -1,5 +1,6 @@
 mod aerospace;
 mod browser;
+mod claude_usage;
 mod commands;
 mod config;
 mod cwt;
@@ -17,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     Manager,
 };
 
@@ -292,6 +293,7 @@ pub fn run() {
             commands::updater::get_version,
             commands::updater::check_for_update,
             commands::updater::restart_app,
+            commands::claude_usage::get_claude_usage,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -299,8 +301,20 @@ pub fn run() {
 
             let settings_item =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let session_item =
+                MenuItem::with_id(app, "usage_session", "Session: --%", false, None::<&str>)?;
+            let week_item =
+                MenuItem::with_id(app, "usage_week", "Week: --%", false, None::<&str>)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
+            let menu = Menu::with_items(
+                app,
+                &[&settings_item, &sep1, &session_item, &week_item, &sep2, &quit_item],
+            )?;
+
+            let session_handle = session_item.clone();
+            let week_handle = week_item.clone();
 
             if let Some(tray) = app.tray_by_id("main") {
                 tray.set_menu(Some(menu))?;
@@ -319,6 +333,32 @@ pub fn run() {
                     _ => {}
                 });
             }
+
+            // Background task: refresh Claude usage stats every 5 minutes
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match claude_usage::fetch_usage().await {
+                        Ok(usage) => {
+                            let session_text = match usage.five_hour {
+                                Some(b) => format!("Session: {:.0}%", b.utilization),
+                                None => "Session: n/a".to_string(),
+                            };
+                            let week_text = match usage.seven_day {
+                                Some(b) => format!("Week: {:.0}%", b.utilization),
+                                None => "Week: n/a".to_string(),
+                            };
+                            let _ = session_handle.set_text(session_text);
+                            let _ = week_handle.set_text(week_text);
+                        }
+                        Err(e) => {
+                            log::warn!("Claude usage fetch failed: {}", e);
+                            let _ = session_handle.set_text("Session: n/a");
+                            let _ = week_handle.set_text("Week: n/a");
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
+                }
+            });
 
             // Hide settings window on close instead of quitting
             if let Some(settings_window) = app.get_webview_window("settings") {

@@ -1,5 +1,6 @@
 pub mod aerospace;
 pub mod browser;
+pub mod claude_usage;
 pub mod history;
 pub mod jobs;
 pub mod secrets;

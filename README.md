@@ -24,6 +24,10 @@
 - **Telegram Integration** -- Real-time output relay, completion notifications, and an agent mode for remote job control via bot commands.
 - **Three Interfaces** -- GUI menu bar app, `cwtctl` CLI, and `cwttui` terminal UI. All connected via IPC socket.
 
+<p align="center">
+  <img src="docs/promo.gif" alt="ClawTab demo" width="600" />
+</p>
+
 ## How It Works
 
 1. **Define Jobs** -- Create jobs in the GUI: shell scripts, Claude Code prompts, or project folders with `.cwt` instructions.
