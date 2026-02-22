@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="website/public/assets/github-banner.png" alt="ClawTab" width="600" />
+  <img src="docs/github-banner.png" alt="ClawTab" width="600" />
 </p>
 
 <h3 align="center">Schedule Claude Code agents from your menu bar</h3>
