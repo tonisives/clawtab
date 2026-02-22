@@ -1,0 +1,98 @@
+.tabs {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  background: var(--bg-tertiary);
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.tab:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.tab-icon {
+  display: flex;
+  align-items: center;
+}
+
+.add-job-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: center;
+  margin-right: 8px;
+  transition: opacity 0.15s ease;
+  padding: 0;
+}
+
+.add-job-btn:hover {
+  opacity: 0.8;
+}
+
+.add-job-btn:active {
+  opacity: 0.65;
+}
+
+.claw-icon-btn {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: opacity 0.15s ease;
+}
+
+.claw-icon-btn:hover {
+  opacity: 0.7;
+}
+
+.tab-content {
+  background: var(--bg-secondary);
+  padding: 20px;
+  margin-top: 42px;
+  height: calc(100vh - 42px);
+  overflow-y: auto;
+  overflow-x: auto;
+}

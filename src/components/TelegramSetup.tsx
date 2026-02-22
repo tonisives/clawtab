@@ -1,0 +1,373 @@
+import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import type { TelegramConfig } from "../types";
+import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
+
+interface BotInfo {
+  username: string;
+  id: number;
+}
+
+interface Props {
+  onComplete: (config: TelegramConfig) => void;
+  /** Hide the outer border/heading when embedded in the setup wizard */
+  embedded?: boolean;
+  /** Pre-populate from an existing config */
+  initialConfig?: TelegramConfig | null;
+}
+
+export function TelegramSetup({ onComplete, embedded, initialConfig }: Props) {
+  const [token, setToken] = useState("");
+  const [botInfo, setBotInfo] = useState<BotInfo | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [chatIds, setChatIds] = useState<number[]>([]);
+  const [chatNames, setChatNames] = useState<Record<string, string>>({});
+  const [polling, setPolling] = useState(false);
+  const [confirmRemoveChat, setConfirmRemoveChat] = useState<number | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
+  const initializedRef = useRef(false);
+  const tokenRef = useRef(token);
+  tokenRef.current = token;
+  const chatNamesRef = useRef(chatNames);
+  chatNamesRef.current = chatNames;
+  const completedRef = useRef(false);
+
+  // Resume from existing config
+  useEffect(() => {
+    if (initializedRef.current || !initialConfig) return;
+    initializedRef.current = true;
+    const t = initialConfig.bot_token;
+    setToken(t);
+    tokenRef.current = t;
+    if (initialConfig.chat_names) {
+      setChatNames(initialConfig.chat_names);
+      chatNamesRef.current = initialConfig.chat_names;
+    }
+    if (initialConfig.chat_ids.length > 0) {
+      setChatIds(initialConfig.chat_ids);
+      completedRef.current = true;
+    }
+    if (t) {
+      (async () => {
+        setValidating(true);
+        setTokenError(null);
+        try {
+          const info = await invoke<BotInfo>("validate_bot_token", { botToken: t });
+          setBotInfo(info);
+          if (initialConfig.chat_ids.length === 0) {
+            startPolling();
+          }
+        } catch (e) {
+          setTokenError(String(e));
+        } finally {
+          setValidating(false);
+        }
+      })();
+    }
+  }, [initialConfig]);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      invoke("stop_setup_polling").catch(() => {});
+    };
+  }, []);
+
+  // Auto-call onComplete when setup is ready
+  useEffect(() => {
+    if (botInfo && chatIds.length > 0 && !completedRef.current) {
+      completedRef.current = true;
+      onComplete({
+        bot_token: token,
+        chat_ids: chatIds,
+        chat_names: chatNames,
+        notify_on_success: true,
+        notify_on_failure: true,
+        agent_enabled: true,
+      });
+    }
+  }, [botInfo, chatIds, token, chatNames, onComplete]);
+
+  const buildConfig = (botToken: string, ids: number[], names: Record<string, string>): TelegramConfig => ({
+    bot_token: botToken,
+    chat_ids: ids,
+    chat_names: names,
+    notify_on_success: true,
+    notify_on_failure: true,
+    agent_enabled: true,
+  });
+
+  const saveConfig = async (botToken: string, ids: number[], names?: Record<string, string>) => {
+    const config = buildConfig(botToken, ids, names ?? chatNamesRef.current);
+    try {
+      await invoke("set_telegram_config", { config });
+    } catch (e) {
+      console.error("Failed to save telegram config:", e);
+    }
+  };
+
+  const validateToken = async (t: string) => {
+    if (!t || !t.includes(":")) {
+      setBotInfo(null);
+      setTokenError(null);
+      return;
+    }
+    setValidating(true);
+    setTokenError(null);
+    try {
+      const info = await invoke<BotInfo>("validate_bot_token", { botToken: t });
+      setBotInfo(info);
+      setTokenError(null);
+      await saveConfig(t, chatIds);
+      startPolling();
+    } catch (e) {
+      setBotInfo(null);
+      setTokenError(String(e));
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleTokenChange = (value: string) => {
+    setToken(value);
+    if (value.includes(":") && value.length > 20) {
+      validateToken(value);
+    } else {
+      setBotInfo(null);
+      setTokenError(null);
+    }
+  };
+
+  const startPolling = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollCountRef.current = 0;
+    setPolling(true);
+    invoke("reset_poll_offset").catch(() => {});
+
+    pollRef.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > 10) {
+        if (pollRef.current) clearInterval(pollRef.current);
+        setPolling(false);
+        invoke("stop_setup_polling").catch(() => {});
+        return;
+      }
+      const currentToken = tokenRef.current;
+      try {
+        const id = await invoke<number | null>("poll_telegram_updates", { botToken: currentToken });
+        if (id !== null) {
+          setChatIds((prev) => {
+            if (prev.includes(id)) return prev;
+            const updated = [...prev, id];
+            saveConfig(currentToken, updated);
+            invoke("test_telegram", { botToken: currentToken, chatId: id }).catch(() => {});
+            return updated;
+          });
+          pollCountRef.current = 0;
+        }
+      } catch {
+        // Ignore poll errors
+      }
+    }, 3000);
+  };
+
+  const removeChatId = (id: number) => {
+    const updated = chatIds.filter((c) => c !== id);
+    setChatIds(updated);
+    const updatedNames = { ...chatNames };
+    delete updatedNames[String(id)];
+    setChatNames(updatedNames);
+    saveConfig(token, updated, updatedNames);
+    if (updated.length === 0) {
+      completedRef.current = false;
+    }
+  };
+
+  const updateChatName = (id: number, name: string) => {
+    const updatedNames = { ...chatNames, [String(id)]: name };
+    if (!name) delete updatedNames[String(id)];
+    setChatNames(updatedNames);
+    chatNamesRef.current = updatedNames;
+    saveConfig(token, chatIds, updatedNames);
+  };
+
+  const [testingChat, setTestingChat] = useState<number | null>(null);
+  const testChat = async (chatId: number) => {
+    setTestingChat(chatId);
+    try {
+      await invoke("test_telegram", { botToken: token, chatId });
+    } catch {
+      // ignore
+    } finally {
+      setTestingChat(null);
+    }
+  };
+
+  const containerStyle = embedded
+    ? {}
+    : { border: "1px solid var(--border)", borderRadius: 6, padding: 16, marginBottom: 20 };
+
+  const stepDone = (done: boolean) => ({
+    opacity: done ? 0.6 : 1,
+  });
+
+  return (
+    <div style={containerStyle}>
+      {!embedded && <h3 style={{ marginTop: 0 }}>Telegram Setup</h3>}
+
+      {/* Step 1: Bot Token */}
+      <div style={stepDone(!!botInfo)}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <strong style={{ fontSize: 13 }}>
+            {botInfo ? "1. Bot created" : "1. Create a bot"}
+          </strong>
+          {botInfo && (
+            <span style={{ color: "var(--success-color)", fontSize: 12 }}>
+              @{botInfo.username}
+            </span>
+          )}
+        </div>
+
+        {!botInfo && (
+          <div>
+            <p className="section-description" style={{ marginTop: 0 }}>
+              Open @BotFather in Telegram, send <code>/newbot</code>, follow the prompts, then paste the token below.
+            </p>
+            <button
+              className="btn btn-sm"
+              onClick={() => openUrl("https://t.me/BotFather")}
+              style={{ marginBottom: 12 }}
+            >
+              Open @BotFather
+            </button>
+          </div>
+        )}
+
+        <div className="form-group">
+          <label>Bot Token</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type={botInfo ? "password" : "text"}
+              value={token}
+              onChange={(e) => handleTokenChange(e.target.value)}
+              placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ"
+              style={{ maxWidth: "100%", flex: 1 }}
+              disabled={validating}
+            />
+            {validating && (
+              <span className="text-secondary" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                Validating...
+              </span>
+            )}
+          </div>
+          {tokenError && (
+            <span style={{ color: "var(--danger-color)", fontSize: 12 }}>
+              {tokenError}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Step 2: Connect chats */}
+      <div style={{ marginTop: 16, ...(!botInfo ? { opacity: 0.4, pointerEvents: "none" as const } : {}) }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <strong style={{ fontSize: 13 }}>2. Connect chats</strong>
+          {chatIds.length > 0 && (
+            <span style={{ color: "var(--success-color)", fontSize: 12 }}>
+              {chatIds.length} connected
+            </span>
+          )}
+        </div>
+
+        <p className="section-description" style={{ marginTop: 0 }}>
+          Send <code>/start</code> to your bot for personal chat, or add the bot to a group.
+        </p>
+
+        {botInfo && (
+          <button
+            className="btn btn-sm"
+            onClick={() => openUrl(`https://t.me/${botInfo.username}`)}
+            style={{ marginBottom: 12 }}
+          >
+            Open @{botInfo.username}
+          </button>
+        )}
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <label style={{ fontSize: 12, margin: 0 }}>Connected chats:</label>
+            <button
+              className="btn btn-sm"
+              onClick={startPolling}
+              disabled={polling}
+              style={{ fontSize: 11, padding: "1px 8px" }}
+            >
+              {polling ? "Listening..." : "Refresh"}
+            </button>
+          </div>
+          {chatIds.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+              {chatIds.map((id, idx) => (
+                <div key={id}>
+                  {idx > 0 && (
+                    <hr style={{ border: "none", borderTop: "1px solid var(--border)", margin: "6px 0" }} />
+                  )}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "4px 0",
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={chatNames[String(id)] ?? ""}
+                      onChange={(e) => updateChatName(id, e.target.value)}
+                      placeholder="Name this chat..."
+                      style={{ width: "18ch" }}
+                    />
+                    <code style={{ fontSize: 12, whiteSpace: "nowrap" }}>{id}</code>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => testChat(id)}
+                      disabled={testingChat === id}
+                      style={{ fontSize: 11, padding: "1px 8px", whiteSpace: "nowrap" }}
+                    >
+                      {testingChat === id ? "Sending..." : "Test"}
+                    </button>
+                    <DeleteButton
+                      onClick={() => setConfirmRemoveChat(id)}
+                      title="Remove chat"
+                      size={12}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="text-secondary" style={{ fontSize: 12 }}>
+              None detected yet.
+            </span>
+          )}
+          {polling && (
+            <p className="text-secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+              Send <code>/start</code> to your bot or add it to a group...
+            </p>
+          )}
+        </div>
+      </div>
+
+      {confirmRemoveChat !== null && (
+        <ConfirmDialog
+          message={`Remove chat ${confirmRemoveChat}? You can re-add it by messaging the bot again.`}
+          onConfirm={() => { removeChatId(confirmRemoveChat); setConfirmRemoveChat(null); }}
+          onCancel={() => setConfirmRemoveChat(null)}
+        />
+      )}
+    </div>
+  );
+}

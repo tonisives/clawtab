@@ -1,0 +1,49 @@
+[package]
+name = "clawtab"
+version = "0.0.2"
+edition = "2021"
+default-run = "clawtab"
+
+[lib]
+name = "clawtab_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "cwtctl"
+path = "src/bin/ctl.rs"
+
+[[bin]]
+name = "cwttui"
+path = "src/bin/tui.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-deep-link = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yml = "0.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process"] }
+cron = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", features = ["json"] }
+ratatui = "0.29"
+crossterm = "0.28"
+
+[lints.rust]
+warnings = "deny"
+unused = "deny"
+
+[profile.release]
+panic = "abort"
