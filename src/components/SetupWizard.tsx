@@ -109,7 +109,8 @@ export function SetupWizard({ onComplete }: Props) {
         folder_path: null,
         job_name: "default",
         telegram_chat_id: telegramConfig.chat_ids[0],
-        telegram_log_mode: "off",
+        telegram_log_mode: "on_prompt",
+        telegram_notify: { start: true, working: true, logs: true, finish: true },
         group: "tutorial",
         slug: "",
       };
@@ -136,10 +137,10 @@ export function SetupWizard({ onComplete }: Props) {
       const jobMd = [
         "# Reddit News",
         "",
-        "1. Open Reddit news using the browse helper: `.cwt/browse.sh open https://www.reddit.com/r/news/`",
-        "2. Read the page content: `.cwt/browse.sh read`",
-        "3. Find the latest top news post title and URL from the page content.",
-        "4. Send the result to Telegram with the post title and link.",
+        "1. Use the WebFetch tool to fetch https://www.reddit.com/r/news/ and extract the top news headlines.",
+        "2. Pick the top 3 most interesting news stories from the page.",
+        "3. For each story, include the title and a one-sentence summary.",
+        "4. Send the results to Telegram.",
       ].join("\n");
 
       await invoke("write_cwt_entry", { folderPath, jobName, content: jobMd });
@@ -160,7 +161,8 @@ export function SetupWizard({ onComplete }: Props) {
         folder_path: folderPath,
         job_name: jobName,
         telegram_chat_id: chatId,
-        telegram_log_mode: "off",
+        telegram_log_mode: "on_prompt",
+        telegram_notify: { start: true, working: true, logs: true, finish: true },
         group: "tutorial",
         slug: "",
       };
@@ -371,7 +373,7 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Web Browse Job</h3>
           <p className="section-description">
-            Your first real AI job -- Claude will open Safari, read Reddit's front page,
+            Your first real AI job -- Claude will fetch Reddit's front page,
             and send you the latest news via Telegram.
           </p>
 
@@ -392,7 +394,7 @@ export function SetupWizard({ onComplete }: Props) {
           </div>
 
           <p className="text-secondary" style={{ fontSize: 12, marginTop: 12 }}>
-            Note: Safari may ask for Accessibility permission on the first run.
+            Claude Code will use its built-in web browsing to fetch the page.
           </p>
 
           <div style={{ marginTop: 16 }}>

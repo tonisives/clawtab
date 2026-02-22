@@ -239,6 +239,7 @@ pub fn run() {
             commands::jobs::run_job_now,
             commands::jobs::pause_job,
             commands::jobs::resume_job,
+            commands::jobs::stop_job,
             commands::jobs::restart_job,
             commands::jobs::run_agent,
             commands::jobs::open_job_editor,

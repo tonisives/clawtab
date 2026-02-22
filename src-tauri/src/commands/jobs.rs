@@ -137,6 +137,23 @@ pub fn resume_job(state: State<AppState>, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn stop_job(state: State<AppState>, name: String) -> Result<(), String> {
+    let mut status = state.job_status.lock().unwrap();
+    match status.get(&name).cloned() {
+        Some(JobStatus::Running { pane_id: Some(pane_id), .. }) => {
+            let _ = crate::tmux::kill_pane(&pane_id);
+            status.insert(name, JobStatus::Idle);
+            Ok(())
+        }
+        Some(JobStatus::Running { .. }) | Some(JobStatus::Paused) => {
+            status.insert(name, JobStatus::Idle);
+            Ok(())
+        }
+        _ => Err("Job is not running".to_string()),
+    }
+}
+
+#[tauri::command]
 pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(), String> {
     let job = {
         let config = state.jobs_config.lock().unwrap();
@@ -923,6 +940,7 @@ pub fn build_agent_job(
         job_name: Some("default".to_string()),
         telegram_chat_id: chat_id,
         telegram_log_mode: crate::config::jobs::TelegramLogMode::OnPrompt,
+        telegram_notify: crate::config::jobs::TelegramNotify::default(),
         group: "agent".to_string(),
         slug: "agent/default".to_string(),
     })

@@ -117,6 +117,7 @@ pub async fn execute_job(
                                     pane_id: handle.pane_id.clone(),
                                     tmux_session: handle.tmux_session.clone(),
                                     run_id: run_id.clone(),
+                                    job_name: job.name.clone(),
                                 },
                             );
                         }
@@ -136,7 +137,7 @@ pub async fn execute_job(
                     job_name: job.name.clone(),
                     slug: job.slug.clone(),
                     telegram,
-                    telegram_log_mode: job.telegram_log_mode.clone(),
+                    telegram_notify: job.telegram_notify.clone(),
                     history: Arc::clone(history),
                     job_status: Arc::clone(job_status),
                     notify_on_success,

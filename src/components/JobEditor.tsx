@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry, TelegramLogMode } from "../types";
+import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry } from "../types";
 import { CronInput, describeCron } from "./CronInput";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
@@ -53,7 +53,8 @@ const emptyJob: Job = {
   folder_path: null,
   job_name: null,
   telegram_chat_id: null,
-  telegram_log_mode: "off",
+  telegram_log_mode: "on_prompt",
+  telegram_notify: { start: true, working: true, logs: true, finish: true },
   group: "default",
   slug: "",
 };
@@ -161,6 +162,11 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
+      // Auto-set folder_path for new wizard jobs to default_work_dir/.cwt
+      if (isWizard && !form.folder_path) {
+        const workDir = (s.default_work_dir || "~").replace(/\/+$/, "");
+        setForm((prev) => ({ ...prev, folder_path: workDir + "/.cwt" }));
+      }
       if (s.telegram?.chat_ids?.length) {
         const chats = s.telegram.chat_ids.map((id) => ({
           id,
@@ -684,18 +690,31 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
 
       {form.telegram_chat_id != null && (form.job_type === "claude" || form.job_type === "folder") && (
         <div className="form-group">
-          <label>Telegram Logs</label>
-          <select
-            value={form.telegram_log_mode}
-            onChange={(e) =>
-              setForm({ ...form, telegram_log_mode: e.target.value as TelegramLogMode })
-            }
-          >
-            <option value="off">Off -- only start/finish</option>
-            <option value="on_prompt">On prompt -- when Claude asks a question</option>
-            <option value="always">Always -- stream all output</option>
-          </select>
-          <span className="hint">Controls whether tmux pane output is streamed to Telegram</span>
+          <label>Telegram Notifications</label>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "4px 0" }}>
+            {([
+              { key: "start" as const, label: "Job started", hint: "Notify when the job begins" },
+              { key: "working" as const, label: "Working timer", hint: "Live elapsed time counter" },
+              { key: "logs" as const, label: "Log output", hint: "Stream pane output while running" },
+              { key: "finish" as const, label: "Job finished", hint: "Final snapshot and completion message" },
+            ] as const).map(({ key, label, hint }) => (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.telegram_notify[key]}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      telegram_notify: { ...form.telegram_notify, [key]: e.target.checked },
+                    })
+                  }
+                  style={{ margin: 0 }}
+                />
+                <span>{label}</span>
+                <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>{hint}</span>
+              </label>
+            ))}
+          </div>
         </div>
       )}
     </>

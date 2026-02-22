@@ -13,6 +13,7 @@ pub struct ActiveAgent {
     pub pane_id: String,
     pub tmux_session: String,
     pub run_id: String,
+    pub job_name: String,
 }
 
 const MAX_MESSAGE_LEN: usize = 4096;

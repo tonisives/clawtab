@@ -20,7 +20,35 @@ pub enum TelegramLogMode {
 
 impl Default for TelegramLogMode {
     fn default() -> Self {
-        Self::Off
+        Self::OnPrompt
+    }
+}
+
+/// Per-job notification flags controlling what gets sent to Telegram.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TelegramNotify {
+    #[serde(default = "bool_true")]
+    pub start: bool,
+    #[serde(default = "bool_true")]
+    pub working: bool,
+    #[serde(default = "bool_true")]
+    pub logs: bool,
+    #[serde(default = "bool_true")]
+    pub finish: bool,
+}
+
+fn bool_true() -> bool {
+    true
+}
+
+impl Default for TelegramNotify {
+    fn default() -> Self {
+        Self {
+            start: true,
+            working: true,
+            logs: true,
+            finish: true,
+        }
     }
 }
 
@@ -67,6 +95,8 @@ pub struct Job {
     pub telegram_chat_id: Option<i64>,
     #[serde(default)]
     pub telegram_log_mode: TelegramLogMode,
+    #[serde(default)]
+    pub telegram_notify: TelegramNotify,
     #[serde(default = "default_group")]
     pub group: String,
     #[serde(default)]

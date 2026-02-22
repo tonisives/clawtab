@@ -170,26 +170,30 @@ pub async fn start_polling(state: AgentState) {
 }
 
 /// Remove active_agents entries whose tmux panes no longer exist.
-/// Sends an "Agent session ended" notification for each stale entry.
+/// Sends a session-ended notification for each stale entry.
 async fn cleanup_stale_agents(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     config: &TelegramConfig,
 ) {
-    let stale: Vec<i64> = match lock_or_log(active_agents, "active_agents") {
+    let stale: Vec<(i64, String)> = match lock_or_log(active_agents, "active_agents") {
         Some(agents) => agents
             .iter()
             .filter(|(_, agent)| !tmux::is_pane_busy(&agent.tmux_session, &agent.pane_id))
-            .map(|(&chat_id, _)| chat_id)
+            .map(|(&chat_id, agent)| (chat_id, agent.job_name.clone()))
             .collect(),
         None => return,
     };
 
-    for chat_id in stale {
+    for (chat_id, job_name) in stale {
         if let Some(mut agents) = lock_or_log(active_agents, "active_agents") {
             agents.remove(&chat_id);
         }
-        let _ = super::send_message(&config.bot_token, chat_id, "Agent session ended.").await;
-        log::info!("Cleaned up stale agent session for chat {}", chat_id);
+        let msg = format!(
+            "<b>ClawTab</b>: Job <code>{}</code> session ended.",
+            job_name
+        );
+        let _ = super::send_message(&config.bot_token, chat_id, &msg).await;
+        log::info!("Cleaned up stale session for job '{}' chat {}", job_name, chat_id);
     }
 }
 
@@ -411,7 +415,7 @@ async fn handle_exit_command(state: &AgentState, chat_id: i64) -> String {
             if let Err(e) = tmux::kill_pane(&agent.pane_id) {
                 log::warn!("Failed to kill agent pane {}: {}", agent.pane_id, e);
             }
-            "Agent session ended.".to_string()
+            "Session ended.".to_string()
         }
         None => "No active agent session.".to_string(),
     }

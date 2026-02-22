@@ -131,7 +131,8 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
           folder_path: folderPath,
           job_name: jobName,
           telegram_chat_id: null,
-          telegram_log_mode: "off",
+          telegram_log_mode: "on_prompt",
+          telegram_notify: { start: true, working: true, logs: true, finish: true },
           group: template.group,
           slug: "",
         };
@@ -152,7 +153,8 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
           folder_path: null,
           job_name: null,
           telegram_chat_id: null,
-          telegram_log_mode: "off",
+          telegram_log_mode: "on_prompt",
+          telegram_notify: { start: true, working: true, logs: true, finish: true },
           group: template.group,
           slug: "",
         };
@@ -195,7 +197,8 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
         folder_path: quickFolderPath,
         job_name: jobName,
         telegram_chat_id: null,
-        telegram_log_mode: "off",
+        telegram_log_mode: "on_prompt",
+        telegram_notify: { start: true, working: true, logs: true, finish: true },
         group: "default",
         slug: "",
       };

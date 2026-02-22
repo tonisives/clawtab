@@ -254,6 +254,15 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     }
   };
 
+  const handleStop = async (name: string) => {
+    try {
+      await invoke("stop_job", { name });
+      setTimeout(loadStatuses, 500);
+    } catch (e) {
+      console.error("Failed to stop job:", e);
+    }
+  };
+
   const handleRestart = async (name: string) => {
     try {
       await invoke("restart_job", { name });
@@ -427,6 +436,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           state={agentState}
           onBack={() => setViewingAgent(false)}
           onRun={() => setShowAgentPrompt(true)}
+          onStop={() => handleStop("agent")}
           onOpen={() => handleOpen("agent")}
         />
         {showAgentPrompt && (
@@ -455,6 +465,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
         onBack={() => setViewingJob(null)}
         onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
         onRun={() => handleRunNow(viewingJob.name)}
+        onStop={() => handleStop(viewingJob.name)}
         onPause={() => handlePause(viewingJob.name)}
         onResume={() => handleResume(viewingJob.name)}
         onRestart={() => handleRestart(viewingJob.name)}
@@ -960,6 +971,7 @@ function JobDetailView({
   onBack,
   onEdit,
   onRun,
+  onStop,
   onPause,
   onResume,
   onRestart,
@@ -973,6 +985,7 @@ function JobDetailView({
   onBack: () => void;
   onEdit: () => void;
   onRun: () => void;
+  onStop: () => void;
   onPause: () => void;
   onResume: () => void;
   onRestart: () => void;
@@ -1015,10 +1028,14 @@ function JobDetailView({
             <>
               <button className="btn btn-sm" onClick={onOpen}>Open</button>
               <button className="btn btn-sm" onClick={onPause}>Pause</button>
+              <button className="btn btn-sm" style={{ color: "var(--danger-color)" }} onClick={onStop}>Stop</button>
             </>
           )}
           {state === "paused" && (
-            <button className="btn btn-primary btn-sm" onClick={onResume}>Resume</button>
+            <>
+              <button className="btn btn-primary btn-sm" onClick={onResume}>Resume</button>
+              <button className="btn btn-sm" style={{ color: "var(--danger-color)" }} onClick={onStop}>Stop</button>
+            </>
           )}
           {state === "failed" && (
             <button className="btn btn-primary btn-sm" onClick={onRestart}>Restart</button>
@@ -1111,7 +1128,17 @@ function JobDetailView({
           {job.telegram_chat_id && (
             <>
               <DetailRow label="Telegram chat" value={String(job.telegram_chat_id)} mono />
-              <DetailRow label="Telegram logs" value={job.telegram_log_mode} />
+              <DetailRow
+                label="Notifications"
+                value={
+                  [
+                    job.telegram_notify.start && "start",
+                    job.telegram_notify.working && "working",
+                    job.telegram_notify.logs && "logs",
+                    job.telegram_notify.finish && "finish",
+                  ].filter(Boolean).join(", ") || "none"
+                }
+              />
             </>
           )}
         </div>
@@ -1159,12 +1186,14 @@ function AgentDetailView({
   state,
   onBack,
   onRun,
+  onStop,
   onOpen,
 }: {
   status: JobStatus | undefined;
   state: string;
   onBack: () => void;
   onRun: () => void;
+  onStop: () => void;
   onOpen: () => void;
 }) {
   const [runsCollapsed, setRunsCollapsed] = useState(false);
@@ -1196,7 +1225,10 @@ function AgentDetailView({
         </div>
         <div className="btn-group">
           {state === "running" && (
-            <button className="btn btn-sm" onClick={onOpen}>Open</button>
+            <>
+              <button className="btn btn-sm" onClick={onOpen}>Open</button>
+              <button className="btn btn-sm" style={{ color: "var(--danger-color)" }} onClick={onStop}>Stop</button>
+            </>
           )}
           {(state === "idle" || !status || state === "success" || state === "failed") && (
             <button className="btn btn-primary btn-sm" onClick={onRun}>
