@@ -10,6 +10,8 @@ If gopass is available on the system, you can import entries from your gopass st
 
 ## Managing Secrets
 
+![Manage secrets](assets/manage-secrets.png)
+
 ### Via GUI (Secrets Panel)
 
 - **Add**: Enter key + value, stored in Keychain

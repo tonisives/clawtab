@@ -38,6 +38,8 @@ The wizard auto-detects tools and shows version + path for each. Missing tools c
 
 ## Creating Your First Job
 
+![Create a new job](assets/create-new-job.png)
+
 ### Binary job (run a script)
 
 1. Open the Jobs panel

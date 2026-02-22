@@ -68,7 +68,7 @@ For tmux jobs (Claude/Folder), the monitor captures pane output every 2 seconds 
 | `always` | Every new output chunk is sent immediately |
 | `on_prompt` | Output is buffered and sent when the pane goes idle (waiting for user input) |
 
-![Real-time log relay to Telegram](assets/screenshot-telegram-logs.png)
+![Real-time log relay to Telegram](assets/logs-in-telegram.png)
 
 ## Agent Mode
 
