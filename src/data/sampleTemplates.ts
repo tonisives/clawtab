@@ -1,4 +1,11 @@
 import type { JobType } from "../types";
+import webBrowsingImg from "./use-cases/web-browsing.png";
+import codeDevImg from "./use-cases/code-dev.png";
+import contentMarketingImg from "./use-cases/content-marketing.png";
+import dataResearchImg from "./use-cases/data-research.png";
+import devopsImg from "./use-cases/devops.png";
+import financeImg from "./use-cases/finance.png";
+import productivityImg from "./use-cases/productivity.png";
 
 export interface TemplateVariable {
   key: string;
@@ -20,13 +27,13 @@ export interface SampleTemplate {
 }
 
 export const TEMPLATE_CATEGORIES = [
-  { id: "web-browsing", name: "Web Browsing & Social Media", icon: "globe", image: "/use-cases/web-browsing.png" },
-  { id: "code-dev", name: "Code & Development", icon: "code", image: "/use-cases/code-dev.png" },
-  { id: "content-marketing", name: "Content & Marketing", icon: "pen", image: "/use-cases/content-marketing.png" },
-  { id: "data-research", name: "Data & Research", icon: "chart", image: "/use-cases/data-research.png" },
-  { id: "devops", name: "DevOps & Monitoring", icon: "server", image: "/use-cases/devops.png" },
-  { id: "finance", name: "Finance & Crypto", icon: "dollar", image: "/use-cases/finance.png" },
-  { id: "productivity", name: "Personal Productivity", icon: "clock", image: "/use-cases/productivity.png" },
+  { id: "web-browsing", name: "Web Browsing & Social Media", icon: "globe", image: webBrowsingImg },
+  { id: "code-dev", name: "Code & Development", icon: "code", image: codeDevImg },
+  { id: "content-marketing", name: "Content & Marketing", icon: "pen", image: contentMarketingImg },
+  { id: "data-research", name: "Data & Research", icon: "chart", image: dataResearchImg },
+  { id: "devops", name: "DevOps & Monitoring", icon: "server", image: devopsImg },
+  { id: "finance", name: "Finance & Crypto", icon: "dollar", image: financeImg },
+  { id: "productivity", name: "Personal Productivity", icon: "clock", image: productivityImg },
 ] as const;
 
 export const SAMPLE_TEMPLATES: SampleTemplate[] = [
