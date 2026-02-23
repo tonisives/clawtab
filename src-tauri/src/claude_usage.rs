@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
@@ -5,6 +6,37 @@ use std::process::Command;
 pub struct UsageBucket {
     pub utilization: f64,
     pub resets_at: Option<String>,
+}
+
+impl UsageBucket {
+    pub fn resets_in_human(&self) -> Option<String> {
+        let raw = self.resets_at.as_ref()?;
+        let target = raw.parse::<DateTime<Utc>>().ok()?;
+        let delta = target - Utc::now();
+        if delta.num_seconds() <= 0 {
+            return Some("now".to_string());
+        }
+        let hours = delta.num_hours();
+        let minutes = delta.num_minutes();
+        if hours >= 24 {
+            let days = hours / 24;
+            let rem_hours = hours % 24;
+            if rem_hours == 0 {
+                Some(format!("in {}d", days))
+            } else {
+                Some(format!("in {}d {}h", days, rem_hours))
+            }
+        } else if hours >= 1 {
+            let rem_min = minutes % 60;
+            if rem_min == 0 {
+                Some(format!("in {}h", hours))
+            } else {
+                Some(format!("in {}h {}m", hours, rem_min))
+            }
+        } else {
+            Some(format!("in {}m", minutes.max(1)))
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

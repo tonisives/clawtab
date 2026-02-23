@@ -340,11 +340,17 @@ pub fn run() {
                     match claude_usage::fetch_usage().await {
                         Ok(usage) => {
                             let session_text = match usage.five_hour {
-                                Some(b) => format!("Session: {:.0}%", b.utilization),
+                                Some(ref b) => match b.resets_in_human() {
+                                    Some(t) => format!("Session: {:.0}% (resets {})", b.utilization, t),
+                                    None => format!("Session: {:.0}%", b.utilization),
+                                },
                                 None => "Session: n/a".to_string(),
                             };
                             let week_text = match usage.seven_day {
-                                Some(b) => format!("Week: {:.0}%", b.utilization),
+                                Some(ref b) => match b.resets_in_human() {
+                                    Some(t) => format!("Week: {:.0}% (resets {})", b.utilization, t),
+                                    None => format!("Week: {:.0}%", b.utilization),
+                                },
                                 None => "Week: n/a".to_string(),
                             };
                             let _ = session_handle.set_text(session_text);
