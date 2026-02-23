@@ -6,6 +6,7 @@ mod config;
 mod cwt;
 mod history;
 pub mod ipc;
+mod relay;
 mod scheduler;
 mod secrets;
 pub mod telegram;
@@ -37,6 +38,7 @@ pub struct AppState {
     pub scheduler: Arc<Mutex<Option<SchedulerHandle>>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
+    pub relay: Arc<Mutex<Option<relay::RelayHandle>>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -58,6 +60,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                     let settings = Arc::clone(&state.settings);
                     let job_status = Arc::clone(&state.job_status);
                     let active_agents = Arc::clone(&state.active_agents);
+                    let relay = Arc::clone(&state.relay);
                     tauri::async_runtime::spawn(async move {
                         scheduler::executor::execute_job(
                             &job,
@@ -67,6 +70,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &job_status,
                             "cli",
                             &active_agents,
+                            &relay,
                         )
                         .await;
                     });
@@ -106,6 +110,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                     let settings = Arc::clone(&state.settings);
                     let job_status = Arc::clone(&state.job_status);
                     let active_agents = Arc::clone(&state.active_agents);
+                    let relay = Arc::clone(&state.relay);
                     tauri::async_runtime::spawn(async move {
                         scheduler::executor::execute_job(
                             &job,
@@ -115,6 +120,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &job_status,
                             "restart",
                             &active_agents,
+                            &relay,
                         )
                         .await;
                     });
@@ -183,6 +189,7 @@ pub fn run() {
         Arc::new(Mutex::new(HashMap::new()));
     let active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>> =
         Arc::new(Mutex::new(HashMap::new()));
+    let relay_handle: Arc<Mutex<Option<relay::RelayHandle>>> = Arc::new(Mutex::new(None));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -192,6 +199,7 @@ pub fn run() {
         scheduler: Arc::new(Mutex::new(None)),
         job_status: Arc::clone(&job_status),
         active_agents: Arc::clone(&active_agents),
+        relay: Arc::clone(&relay_handle),
     };
 
     // Clones for IPC handler
@@ -203,6 +211,7 @@ pub fn run() {
         scheduler: Arc::clone(&app_state.scheduler),
         job_status: Arc::clone(&job_status),
         active_agents: Arc::clone(&active_agents),
+        relay: Arc::clone(&relay_handle),
     };
 
     // Clones for scheduler
@@ -212,6 +221,7 @@ pub fn run() {
     let settings_for_scheduler = Arc::clone(&settings);
     let job_status_for_scheduler = Arc::clone(&job_status);
     let active_agents_for_scheduler = Arc::clone(&active_agents);
+    let relay_for_scheduler = Arc::clone(&relay_handle);
 
     // Clones for reattach
     let jobs_for_reattach = Arc::clone(&jobs_config);
@@ -219,6 +229,16 @@ pub fn run() {
     let job_status_for_reattach = Arc::clone(&job_status);
     let history_for_reattach = Arc::clone(&history);
     let active_agents_for_reattach = Arc::clone(&active_agents);
+    let relay_for_reattach = Arc::clone(&relay_handle);
+
+    // Clones for relay
+    let relay_for_setup = Arc::clone(&relay_handle);
+    let settings_for_relay = Arc::clone(&settings);
+    let jobs_for_relay = Arc::clone(&jobs_config);
+    let job_status_for_relay = Arc::clone(&job_status);
+    let secrets_for_relay = Arc::clone(&secrets);
+    let history_for_relay = Arc::clone(&history);
+    let active_agents_for_relay = Arc::clone(&active_agents);
 
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
@@ -231,6 +251,7 @@ pub fn run() {
         history: Arc::clone(&history),
         job_status: Arc::clone(&job_status),
         active_agents: Arc::clone(&active_agents),
+        relay: Arc::clone(&relay_handle),
     };
 
     tauri::Builder::default()
@@ -307,6 +328,13 @@ pub fn run() {
             commands::updater::check_for_update,
             commands::updater::restart_app,
             commands::claude_usage::get_claude_usage,
+            commands::relay::get_relay_settings,
+            commands::relay::set_relay_settings,
+            commands::relay::get_relay_status,
+            commands::relay::relay_login,
+            commands::relay::relay_pair_device,
+            commands::relay::relay_disconnect,
+            commands::relay::relay_connect,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -411,6 +439,7 @@ pub fn run() {
                 settings_for_scheduler,
                 job_status_for_scheduler,
                 active_agents_for_scheduler,
+                relay_for_scheduler,
             );
             {
                 let state: tauri::State<AppState> = app.state();
@@ -425,8 +454,37 @@ pub fn run() {
                     &job_status_for_reattach,
                     &history_for_reattach,
                     &active_agents_for_reattach,
+                    &relay_for_reattach,
                 );
             });
+
+            // Start relay connection if configured
+            {
+                let relay_settings = settings_for_relay.lock().unwrap().relay.clone();
+                if let Some(rs) = relay_settings {
+                    if rs.enabled && !rs.server_url.is_empty() && !rs.device_token.is_empty() {
+                        let ws_url = if rs.server_url.starts_with("http") {
+                            rs.server_url.replacen("http", "ws", 1) + "/ws"
+                        } else {
+                            rs.server_url.clone()
+                        };
+                        tauri::async_runtime::spawn(async move {
+                            relay::connect_loop(
+                                ws_url,
+                                rs.device_token,
+                                relay_for_setup,
+                                jobs_for_relay,
+                                job_status_for_relay,
+                                secrets_for_relay,
+                                history_for_relay,
+                                settings_for_relay,
+                                active_agents_for_relay,
+                            )
+                            .await;
+                        });
+                    }
+                }
+            }
 
             // Start telegram agent polling
             tauri::async_runtime::spawn(async move {

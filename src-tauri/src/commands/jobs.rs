@@ -45,6 +45,13 @@ pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Resu
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
 
+    // Push updated jobs to relay
+    crate::relay::push_full_state_if_connected(
+        &state.relay,
+        &state.jobs_config,
+        &state.job_status,
+    );
+
     let _ = app.emit("jobs-changed", ());
 
     Ok(())
@@ -65,6 +72,14 @@ pub fn delete_job(app: tauri::AppHandle, state: State<AppState>, name: String) -
 
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
+    drop(config);
+
+    // Push updated jobs to relay
+    crate::relay::push_full_state_if_connected(
+        &state.relay,
+        &state.jobs_config,
+        &state.job_status,
+    );
 
     let _ = app.emit("jobs-changed", ());
 
@@ -100,6 +115,7 @@ pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(),
     let settings = Arc::clone(&state.settings);
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
+    let relay = Arc::clone(&state.relay);
 
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
@@ -110,6 +126,7 @@ pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(),
             &job_status,
             "manual",
             &active_agents,
+            &relay,
         )
         .await;
     });
@@ -175,6 +192,7 @@ pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(),
     let settings = Arc::clone(&state.settings);
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
+    let relay = Arc::clone(&state.relay);
 
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
@@ -185,6 +203,7 @@ pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(),
             &job_status,
             "restart",
             &active_agents,
+            &relay,
         )
         .await;
     });
@@ -966,10 +985,12 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(),
     let settings_arc = Arc::clone(&state.settings);
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
+    let relay = Arc::clone(&state.relay);
 
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
+            &relay,
         )
         .await;
     });

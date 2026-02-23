@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::config::jobs::{Job, JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
+use crate::relay::RelayHandle;
 use crate::secrets::SecretsManager;
 use crate::tmux;
 
@@ -31,6 +32,7 @@ pub struct AgentState {
     pub history: Arc<Mutex<HistoryStore>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    pub relay: Arc<Mutex<Option<RelayHandle>>>,
 }
 
 pub async fn start_polling(state: AgentState) {
@@ -268,10 +270,11 @@ async fn handle_message(
                         let settings = Arc::clone(&state.settings);
                         let job_status = Arc::clone(&state.job_status);
                         let active_agents = Arc::clone(&state.active_agents);
+                        let relay = Arc::clone(&state.relay);
                         tokio::spawn(async move {
                             crate::scheduler::executor::execute_job(
                                 &job, &secrets, &history, &settings, &job_status, "telegram",
-                                &active_agents,
+                                &active_agents, &relay,
                             )
                             .await;
                         });
@@ -355,11 +358,12 @@ async fn handle_agent_command(
 
     let active_agents = Arc::clone(&state.active_agents);
     let active_agents_for_exec = Arc::clone(&state.active_agents);
+    let relay = Arc::clone(&state.relay);
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "telegram",
-            &active_agents_for_exec,
+            &active_agents_for_exec, &relay,
         )
         .await;
     });

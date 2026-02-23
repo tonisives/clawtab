@@ -7,6 +7,7 @@ use tokio::process::Command;
 use crate::config::jobs::{Job, JobStatus, JobType};
 use crate::config::settings::AppSettings;
 use crate::history::{HistoryStore, RunRecord};
+use crate::relay::RelayHandle;
 use crate::secrets::SecretsManager;
 use crate::telegram::ActiveAgent;
 
@@ -26,22 +27,23 @@ pub async fn execute_job(
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     trigger: &str,
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
 
     // Mark as running (pane_id filled in later for tmux jobs)
     {
+        let new_status = JobStatus::Running {
+            run_id: run_id.clone(),
+            started_at: started_at.clone(),
+            pane_id: None,
+            tmux_session: None,
+        };
         let mut status = job_status.lock().unwrap();
-        status.insert(
-            job.name.clone(),
-            JobStatus::Running {
-                run_id: run_id.clone(),
-                started_at: started_at.clone(),
-                pane_id: None,
-                tmux_session: None,
-            },
-        );
+        status.insert(job.name.clone(), new_status.clone());
+        drop(status);
+        crate::relay::push_status_update(relay, &job.name, &new_status);
     }
 
     let record = RunRecord {
@@ -84,16 +86,16 @@ pub async fn execute_job(
             // If we got a tmux handle, update status with pane info and spawn the monitor
             if let Some(handle) = tmux_handle {
                 {
+                    let new_status = JobStatus::Running {
+                        run_id: run_id.clone(),
+                        started_at: started_at.clone(),
+                        pane_id: Some(handle.pane_id.clone()),
+                        tmux_session: Some(handle.tmux_session.clone()),
+                    };
                     let mut status = job_status.lock().unwrap();
-                    status.insert(
-                        job.name.clone(),
-                        JobStatus::Running {
-                            run_id: run_id.clone(),
-                            started_at: started_at.clone(),
-                            pane_id: Some(handle.pane_id.clone()),
-                            tmux_session: Some(handle.tmux_session.clone()),
-                        },
-                    );
+                    status.insert(job.name.clone(), new_status.clone());
+                    drop(status);
+                    crate::relay::push_status_update(relay, &job.name, &new_status);
                 }
                 // Register in active_agents so Telegram replies can be relayed
                 {
@@ -141,6 +143,7 @@ pub async fn execute_job(
                     history: Arc::clone(history),
                     job_status: Arc::clone(job_status),
                     notify_on_success,
+                    relay: Arc::clone(relay),
                 };
                 tokio::spawn(super::monitor::monitor_pane(params));
                 return;
@@ -159,7 +162,6 @@ pub async fn execute_job(
             let success = matches!(exit_code, Some(0) | None);
 
             {
-                let mut status = job_status.lock().unwrap();
                 let new_status = if success {
                     JobStatus::Success {
                         last_run: finished_at.clone(),
@@ -170,7 +172,10 @@ pub async fn execute_job(
                         exit_code: exit_code.unwrap_or(-1),
                     }
                 };
-                status.insert(job.name.clone(), new_status);
+                let mut status = job_status.lock().unwrap();
+                status.insert(job.name.clone(), new_status.clone());
+                drop(status);
+                crate::relay::push_status_update(relay, &job.name, &new_status);
             }
 
             {
@@ -192,14 +197,14 @@ pub async fn execute_job(
             log::error!("[{}] Job '{}' failed: {}", run_id, job.name, e);
 
             {
+                let new_status = JobStatus::Failed {
+                    last_run: finished_at.clone(),
+                    exit_code: -1,
+                };
                 let mut status = job_status.lock().unwrap();
-                status.insert(
-                    job.name.clone(),
-                    JobStatus::Failed {
-                        last_run: finished_at.clone(),
-                        exit_code: -1,
-                    },
-                );
+                status.insert(job.name.clone(), new_status.clone());
+                drop(status);
+                crate::relay::push_status_update(relay, &job.name, &new_status);
             }
 
             {

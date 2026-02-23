@@ -6,6 +6,7 @@ use chrono::Utc;
 
 use crate::config::jobs::{JobStatus, TelegramNotify};
 use crate::history::HistoryStore;
+use crate::relay::RelayHandle;
 use crate::tmux;
 
 const POLL_INTERVAL_SECS: u64 = 2;
@@ -27,6 +28,7 @@ pub struct MonitorParams {
     pub history: Arc<Mutex<HistoryStore>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub notify_on_success: bool,
+    pub relay: Arc<Mutex<Option<RelayHandle>>>,
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -177,6 +179,11 @@ pub async fn monitor_pane(params: MonitorParams) {
                 idle_ticks += 1;
             }
 
+            // Push log diffs to relay
+            if !new_content.is_empty() {
+                crate::relay::push_log_chunk(&params.relay, &params.job_name, &new_content);
+            }
+
             if notify.logs && !new_content.is_empty() {
                 if pending_diff.is_empty() {
                     pending_diff = new_content;
@@ -316,13 +323,13 @@ pub async fn monitor_pane(params: MonitorParams) {
 
     // Update job status to Success
     {
+        let new_status = JobStatus::Success {
+            last_run: finished_at,
+        };
         let mut status = params.job_status.lock().unwrap();
-        status.insert(
-            params.job_name.clone(),
-            JobStatus::Success {
-                last_run: finished_at,
-            },
-        );
+        status.insert(params.job_name.clone(), new_status.clone());
+        drop(status);
+        crate::relay::push_status_update(&params.relay, &params.job_name, &new_status);
     }
 
     // Send completion notification

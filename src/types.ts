@@ -61,6 +61,14 @@ export interface TelegramConfig {
   agent_enabled: boolean;
 }
 
+export interface RelaySettings {
+  enabled: boolean;
+  server_url: string;
+  device_token: string;
+  device_id: string;
+  device_name: string;
+}
+
 export interface AppSettings {
   default_tmux_session: string;
   default_work_dir: string;
@@ -74,6 +82,7 @@ export interface AppSettings {
   auto_update_enabled: boolean;
   tool_paths: Record<string, string>;
   group_order: string[];
+  relay: RelaySettings | null;
 }
 
 export interface ToolInfo {

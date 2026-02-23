@@ -7,13 +7,14 @@ import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
 import { TelegramPanel } from "./TelegramPanel";
+import { RelayPanel } from "./RelayPanel";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "secrets" | "skills" | "telegram" | "settings";
+type TabId = "jobs" | "secrets" | "skills" | "telegram" | "remote" | "settings";
 
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
@@ -45,6 +46,15 @@ const tabIcons: Record<TabId, React.ReactNode> = {
     <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
       <path d="M22 2L11 13" />
       <path d="M22 2L15 22l-4-9-9-4 20-7z" />
+    </svg>
+  ),
+  // antenna.radiowaves.left.and.right (SF: remote access)
+  remote: (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+      <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+      <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+      <line x1="12" x2="12.01" y1="20" y2="20" />
     </svg>
   ),
   // gearshape (SF: gearshape)
@@ -117,6 +127,7 @@ export function SettingsApp() {
     { id: "secrets", label: "Secrets" },
     { id: "skills", label: "Skills" },
     { id: "telegram", label: "Telegram" },
+    { id: "remote", label: "Remote" },
     { id: "settings", label: "Settings" },
   ];
 
@@ -169,6 +180,7 @@ export function SettingsApp() {
         {activeTab === "secrets" && <SecretsPanel />}
         {activeTab === "skills" && <SkillsPanel />}
         {activeTab === "telegram" && <TelegramPanel />}
+        {activeTab === "remote" && <RelayPanel />}
         {activeTab === "settings" && <GeneralSettings />}
       </div>
     </div>

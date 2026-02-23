@@ -4,6 +4,19 @@ use std::path::PathBuf;
 
 use crate::telegram::TelegramConfig;
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RelaySettings {
+    pub enabled: bool,
+    #[serde(default)]
+    pub server_url: String,
+    #[serde(default)]
+    pub device_token: String,
+    #[serde(default)]
+    pub device_id: String,
+    #[serde(default)]
+    pub device_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -21,6 +34,8 @@ pub struct AppSettings {
     pub tool_paths: HashMap<String, String>,
     /// Ordered list of job group names for display ordering
     pub group_order: Vec<String>,
+    /// Remote relay server settings
+    pub relay: Option<RelaySettings>,
 }
 
 impl Default for AppSettings {
@@ -41,6 +56,7 @@ impl Default for AppSettings {
             auto_update_enabled: true,
             tool_paths: HashMap::new(),
             group_order: Vec::new(),
+            relay: None,
         }
     }
 }

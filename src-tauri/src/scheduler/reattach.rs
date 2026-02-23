@@ -6,6 +6,7 @@ use chrono::Utc;
 use crate::config::jobs::{Job, JobStatus, JobType, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
+use crate::relay::RelayHandle;
 use crate::telegram;
 use crate::tmux;
 
@@ -19,6 +20,7 @@ pub fn reattach_running_jobs(
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     history: &Arc<Mutex<HistoryStore>>,
     active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
 ) {
     if !tmux::is_available() {
         return;
@@ -209,6 +211,7 @@ pub fn reattach_running_jobs(
                 history: Arc::clone(history),
                 job_status: Arc::clone(job_status),
                 notify_on_success,
+                relay: Arc::clone(relay),
             };
             tokio::spawn(super::monitor::monitor_pane(params));
 
