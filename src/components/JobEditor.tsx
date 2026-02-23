@@ -37,6 +37,7 @@ interface Props {
   onSave: (job: Job) => void;
   onCancel: () => void;
   onPickTemplate?: (templateId: string) => void;
+  defaultGroup?: string;
 }
 
 const emptyJob: Job = {
@@ -136,8 +137,8 @@ function parseCronToWeekly(cron: string): { days: string[]; time: string } | nul
   };
 }
 
-export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
-  const [form, setForm] = useState<Job>(job ?? emptyJob);
+export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup }: Props) {
+  const [form, setForm] = useState<Job>(job ?? (defaultGroup ? { ...emptyJob, group: defaultGroup } : emptyJob));
   const [argsText, setArgsText] = useState(form.args.join(" "));
   const [envText, setEnvText] = useState(
     Object.entries(form.env)

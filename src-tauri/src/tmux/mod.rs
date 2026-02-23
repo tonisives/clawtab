@@ -269,6 +269,45 @@ pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {
     }
 }
 
+/// List all panes in a session with their window names and current commands.
+pub fn list_session_panes(session: &str) -> Result<Vec<(String, PaneInfo)>, String> {
+    let output = Command::new("tmux")
+        .args([
+            "list-panes",
+            "-t",
+            session,
+            "-s",
+            "-F",
+            "#{window_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_active}",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to list panes: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(4, '\t').collect();
+            if parts.len() >= 4 {
+                Some((
+                    parts[0].to_string(),
+                    PaneInfo {
+                        pane_id: parts[1].to_string(),
+                        current_command: parts[2].to_string(),
+                        active: parts[3] == "1",
+                    },
+                ))
+            } else {
+                None
+            }
+        })
+        .collect())
+}
+
 /// List all panes in a window.
 #[allow(dead_code)]
 pub fn list_panes(session: &str, window: &str) -> Result<Vec<PaneInfo>, String> {

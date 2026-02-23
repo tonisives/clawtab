@@ -1,5 +1,6 @@
 pub mod executor;
 pub mod monitor;
+pub mod reattach;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

@@ -88,8 +88,12 @@ pub fn open_in_terminal(cmd: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Open a tmux session in the user's terminal, attaching to it
-pub fn open_tmux_in_terminal(session: &str) -> Result<(), String> {
-    let cmd = format!("tmux attach-session -t {}", session);
+/// Open a new terminal window attached to a tmux session, selecting the given window.
+/// Uses a grouped session so the new client has independent window focus.
+pub fn open_tmux_in_terminal(session: &str, window: &str) -> Result<(), String> {
+    let cmd = format!(
+        "tmux new-session -t {} \\; select-window -t {}",
+        session, window
+    );
     open_in_terminal(&cmd)
 }

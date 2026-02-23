@@ -20,20 +20,30 @@ pub fn list_tmux_windows(session: String) -> Result<Vec<tmux::TmuxWindow>, Strin
 #[tauri::command]
 pub fn focus_job_window(state: State<AppState>, name: String) -> Result<(), String> {
     let (tmux_session, window_name) = {
-        let config = state.jobs_config.lock().unwrap();
-        let job = config
-            .jobs
-            .iter()
-            .find(|j| j.name == name)
-            .ok_or_else(|| format!("Job not found: {}", name))?;
-
         let settings = state.settings.lock().unwrap();
-        let session = job
-            .tmux_session
-            .clone()
-            .unwrap_or_else(|| settings.default_tmux_session.clone());
 
-        (session, format!("cwt-{}", job.name))
+        if name == "agent" {
+            let session = settings.default_tmux_session.clone();
+            (session, "cwt-agent".to_string())
+        } else {
+            let config = state.jobs_config.lock().unwrap();
+            let job = config
+                .jobs
+                .iter()
+                .find(|j| j.name == name)
+                .ok_or_else(|| format!("Job not found: {}", name))?;
+
+            let session = job
+                .tmux_session
+                .clone()
+                .unwrap_or_else(|| settings.default_tmux_session.clone());
+
+            let project = match job.slug.split_once('/') {
+                Some((prefix, _)) if !prefix.is_empty() => prefix.to_string(),
+                _ => job.name.clone(),
+            };
+            (session, format!("cwt-{}", project))
+        }
     };
 
     if !tmux::is_available() {
@@ -47,10 +57,7 @@ pub fn focus_job_window(state: State<AppState>, name: String) -> Result<(), Stri
         ));
     }
 
-    tmux::focus_window(&tmux_session, &window_name)?;
-
-    // Open a terminal attached to the session so the user can see it
-    terminal::open_tmux_in_terminal(&tmux_session)
+    terminal::open_tmux_in_terminal(&tmux_session, &window_name)
 }
 
 #[tauri::command]

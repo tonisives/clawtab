@@ -150,6 +150,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [confirmBulkDeleteJobs, setConfirmBulkDeleteJobs] = useState(false);
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
+  const [createForGroup, setCreateForGroup] = useState<string | null>(null);
 
   const loadJobs = async () => {
     try {
@@ -409,13 +410,16 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
             }
             setEditingJob(null);
             setIsCreating(false);
+            setCreateForGroup(null);
             setSaveError(null);
           }}
           onPickTemplate={(templateId) => {
             setIsCreating(false);
+            setCreateForGroup(null);
             setPickerTemplateId(templateId);
             setShowPicker(true);
           }}
+          defaultGroup={createForGroup ?? undefined}
         />
       </>
     );
@@ -593,33 +597,38 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           items={sortedGroups}
           strategy={verticalListSortingStrategy}
         >
-          {sortedGroups.map((group) => (
-            <SortableGroup
-              key={group}
-              id={group}
-              group={group}
-              grouped={grouped}
-              statuses={statuses}
-              collapsedGroups={collapsedGroups}
-              tableHead={tableHead}
-              jobSelectMode={jobSelectMode}
-              selectedJobCount={selectedJobs.size}
-              onToggleSelectMode={() => {
-                if (jobSelectMode) {
-                  setJobSelectMode(false);
-                  setSelectedJobs(new Set());
-                } else {
-                  setJobSelectMode(true);
-                }
-              }}
-              onDeleteSelected={() => setConfirmBulkDeleteJobs(true)}
-              renderJobRows={renderJobRows}
-              onToggleGroup={() => toggleGroup(group)}
-              onShowAgentPrompt={() => setShowAgentPrompt(true)}
-              onOpenAgent={() => handleOpen("agent")}
-              onViewAgent={() => setViewingAgent(true)}
-            />
-          ))}
+          {sortedGroups.map((group) => {
+            const groupJobs = grouped.get(group) ?? [];
+            const isFolderGroup = group !== "agent" && group !== "default" && groupJobs.length > 0 && groupJobs.every((j) => j.job_type === "folder");
+            return (
+              <SortableGroup
+                key={group}
+                id={group}
+                group={group}
+                grouped={grouped}
+                statuses={statuses}
+                collapsedGroups={collapsedGroups}
+                tableHead={tableHead}
+                jobSelectMode={jobSelectMode}
+                selectedJobCount={selectedJobs.size}
+                onToggleSelectMode={() => {
+                  if (jobSelectMode) {
+                    setJobSelectMode(false);
+                    setSelectedJobs(new Set());
+                  } else {
+                    setJobSelectMode(true);
+                  }
+                }}
+                onDeleteSelected={() => setConfirmBulkDeleteJobs(true)}
+                renderJobRows={renderJobRows}
+                onToggleGroup={() => toggleGroup(group)}
+                onShowAgentPrompt={() => setShowAgentPrompt(true)}
+                onOpenAgent={() => handleOpen("agent")}
+                onViewAgent={() => setViewingAgent(true)}
+                onAddJob={isFolderGroup ? () => { setCreateForGroup(group); setIsCreating(true); } : undefined}
+              />
+            );
+          })}
         </SortableContext>
       </DndContext>
 
@@ -681,6 +690,7 @@ function SortableGroup({
   onShowAgentPrompt,
   onOpenAgent,
   onViewAgent,
+  onAddJob,
 }: {
   id: string;
   group: string;
@@ -697,6 +707,7 @@ function SortableGroup({
   onShowAgentPrompt: () => void;
   onOpenAgent: () => void;
   onViewAgent: () => void;
+  onAddJob?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
@@ -761,6 +772,7 @@ function SortableGroup({
         selectedCount={selectedJobCount}
         onToggleSelectMode={onToggleSelectMode}
         onDeleteSelected={onDeleteSelected}
+        onAddJob={onAddJob}
       />
       {!isCollapsed && (
         <table className="data-table">
@@ -785,6 +797,7 @@ function GroupHeader({
   selectedCount,
   onToggleSelectMode,
   onDeleteSelected,
+  onAddJob,
 }: {
   displayName: string;
   count: number | null;
@@ -796,6 +809,7 @@ function GroupHeader({
   selectedCount?: number;
   onToggleSelectMode?: () => void;
   onDeleteSelected?: () => void;
+  onAddJob?: () => void;
 }) {
   return (
     <div
@@ -843,6 +857,16 @@ function GroupHeader({
             Delete
           </button>
         </>
+      )}
+      {onAddJob && (
+        <button
+          className="btn btn-sm"
+          style={{ fontSize: 10, padding: "1px 6px" }}
+          onClick={onAddJob}
+          title="Add job to this group"
+        >
+          + Add
+        </button>
       )}
       {onToggleSelectMode && (
         <button

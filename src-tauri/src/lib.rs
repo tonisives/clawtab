@@ -213,6 +213,13 @@ pub fn run() {
     let job_status_for_scheduler = Arc::clone(&job_status);
     let active_agents_for_scheduler = Arc::clone(&active_agents);
 
+    // Clones for reattach
+    let jobs_for_reattach = Arc::clone(&jobs_config);
+    let settings_for_reattach = Arc::clone(&settings);
+    let job_status_for_reattach = Arc::clone(&job_status);
+    let history_for_reattach = Arc::clone(&history);
+    let active_agents_for_reattach = Arc::clone(&active_agents);
+
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
 
@@ -409,6 +416,17 @@ pub fn run() {
                 let state: tauri::State<AppState> = app.state();
                 *state.scheduler.lock().unwrap() = Some(handle);
             }
+
+            // Reattach jobs still running in tmux from previous session
+            tauri::async_runtime::spawn(async move {
+                scheduler::reattach::reattach_running_jobs(
+                    &jobs_for_reattach,
+                    &settings_for_reattach,
+                    &job_status_for_reattach,
+                    &history_for_reattach,
+                    &active_agents_for_reattach,
+                );
+            });
 
             // Start telegram agent polling
             tauri::async_runtime::spawn(async move {
