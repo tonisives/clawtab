@@ -209,6 +209,11 @@ input[type="password"]:disabled,
   box-shadow: none;
 }
 
+.directions-editor.drag-over {
+  border-color: var(--accent-color) !important;
+  background: color-mix(in srgb, var(--accent-color) 6%, transparent);
+}
+
 /* Terminal-style preview (used in TelegramPanel commands) */
 .terminal-preview {
   background: #1e1e1e;

@@ -403,6 +403,9 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           job={editingJob}
           onSave={handleSave}
           onCancel={() => {
+            if (editingJob) {
+              setViewingJob(editingJob);
+            }
             setEditingJob(null);
             setIsCreating(false);
             setSaveError(null);
@@ -1013,29 +1016,65 @@ function JobDetailView({
   const state = status?.state ?? "idle";
   const [showConfirm, setShowConfirm] = useState(false);
   const [runsCollapsed, setRunsCollapsed] = useState(false);
+  const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
+  const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
+  const [inlineContent, setInlineContent] = useState("");
+  const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
+  const [preferredEditor, setPreferredEditor] = useState("nvim");
+
+  useEffect(() => {
+    invoke<AppSettings>("get_settings").then((s) => {
+      setPreferredEditor(s.preferred_editor);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (job.job_type === "folder" && job.folder_path) {
+      const jn = job.job_name ?? "default";
+      invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
+        .then(setInlineContent)
+        .catch(() => {});
+      invoke<string>("read_cwt_context", { folderPath: job.folder_path, jobName: jn })
+        .then(setCwtContextPreview)
+        .catch(() => setCwtContextPreview(null));
+    }
+  }, [job]);
+
+  const [savedContent, setSavedContent] = useState("");
+  const dirty = inlineContent !== savedContent;
+
+  useEffect(() => {
+    if (job.job_type === "folder" && job.folder_path) {
+      const jn = job.job_name ?? "default";
+      invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
+        .then((content) => { setSavedContent(content); })
+        .catch(() => {});
+    }
+  }, [job]);
+
+  const handleSaveDirections = () => {
+    if (job.folder_path) {
+      invoke("write_cwt_entry", {
+        folderPath: job.folder_path,
+        jobName: job.job_name ?? "default",
+        content: inlineContent,
+      }).then(() => {
+        setSavedContent(inlineContent);
+      }).catch(() => {});
+    }
+  };
 
   return (
     <div className="settings-section">
       <div className="section-header" style={{ justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={onBack}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-secondary)",
-              padding: "2px 4px",
-              lineHeight: 1,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-            title="Back to jobs"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
+        <div
+          onClick={onBack}
+          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+          title="Back to jobs"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
           <h2>{job.name}</h2>
           <StatusBadge status={status} />
         </div>
@@ -1102,6 +1141,88 @@ function JobDetailView({
           <RunsPanelContent jobName={job.name} jobState={state} />
         )}
       </div>
+
+      {job.job_type === "folder" && job.folder_path && (
+        <div className="field-group">
+          <button
+            onClick={() => setDirectionsCollapsed((v) => !v)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-secondary)",
+              cursor: "pointer",
+              padding: 0,
+              fontSize: 11,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              width: "100%",
+            }}
+            className="field-group-title"
+          >
+            <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+              {directionsCollapsed ? "\u25B6" : "\u25BC"}
+            </span>
+            Directions
+          </button>
+          {!directionsCollapsed && (
+            <div style={{ marginTop: 8 }}>
+              <div className="directions-box">
+                <div className="directions-tabs">
+                  <button
+                    className={`directions-tab ${previewFile === "job.md" ? "active" : ""}`}
+                    onClick={() => setPreviewFile("job.md")}
+                  >
+                    job.md
+                  </button>
+                  <button
+                    className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
+                    onClick={() => setPreviewFile("cwt.md")}
+                  >
+                    cwt.md
+                  </button>
+                </div>
+                {previewFile === "job.md" ? (
+                  <textarea
+                    className="directions-editor"
+                    value={inlineContent}
+                    onChange={(e) => setInlineContent(e.target.value)}
+                    spellCheck={false}
+                    placeholder=""
+                  />
+                ) : (
+                  <pre className="directions-body">
+                    {cwtContextPreview || "(no cwt.md)"}
+                  </pre>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                {dirty && (
+                  <button className="btn btn-primary btn-sm" onClick={handleSaveDirections}>
+                    Save
+                  </button>
+                )}
+                <button
+                  className="btn btn-sm"
+                  onClick={() => {
+                    invoke("open_job_editor", {
+                      folderPath: job.folder_path,
+                      editor: preferredEditor,
+                      jobName: job.job_name ?? "default",
+                      fileName: previewFile,
+                    });
+                  }}
+                >
+                  Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="field-group">
         <span className="field-group-title">Configuration</span>
@@ -1217,25 +1338,14 @@ function AgentDetailView({
   return (
     <div className="settings-section">
       <div className="section-header" style={{ justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={onBack}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-secondary)",
-              padding: "2px 4px",
-              lineHeight: 1,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-            title="Back to jobs"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
+        <div
+          onClick={onBack}
+          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+          title="Back to jobs"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
           <h2>agent</h2>
           <StatusBadge status={status} />
         </div>

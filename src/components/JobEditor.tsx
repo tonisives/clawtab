@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry } from "../types";
 import { CronInput, describeCron } from "./CronInput";
@@ -550,6 +551,42 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
     return lines.join("\n");
   };
 
+  const [dragOver, setDragOver] = useState(false);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const inlineContentRef = useRef(inlineContent);
+  inlineContentRef.current = inlineContent;
+
+  const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i;
+
+  useEffect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+      const el = editorRef.current;
+      if (!el || previewFile !== "job.md") return;
+      const p = event.payload;
+
+      if (p.type === "over" || p.type === "drop") {
+        const rect = el.getBoundingClientRect();
+        const { x, y } = p.position;
+        const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+        if (p.type === "over") {
+          setDragOver(inside);
+        } else if (inside) {
+          setDragOver(false);
+          const images = p.paths.filter((path: string) => IMAGE_RE.test(path));
+          if (images.length === 0) return;
+          const cursor = el.selectionStart ?? inlineContentRef.current.length;
+          const insert = images.join("\n") + "\n";
+          const updated = inlineContentRef.current.slice(0, cursor) + insert + inlineContentRef.current.slice(cursor);
+          handleInlineChange(updated);
+        }
+      } else {
+        setDragOver(false);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [previewFile]);
+
   const renderDirectionsFields = () => {
     if (form.job_type !== "folder" || !form.folder_path) return null;
 
@@ -572,7 +609,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
           </div>
           {previewFile === "job.md" ? (
             <textarea
-              className="directions-editor"
+              ref={editorRef}
+              className={`directions-editor${dragOver ? " drag-over" : ""}`}
               value={inlineContent}
               onChange={(e) => handleInlineChange(e.target.value)}
               spellCheck={false}
@@ -585,20 +623,24 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
           )}
         </div>
 
-        <button
-          className="btn btn-sm"
-          style={{ marginTop: 8 }}
-          onClick={() => {
-            invoke("open_job_editor", {
-              folderPath: form.folder_path,
-              editor: preferredEditor,
-              jobName: form.job_name ?? "default",
-              fileName: previewFile,
-            });
-          }}
-        >
-          Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+          <button
+            className="btn btn-sm"
+            onClick={() => {
+              invoke("open_job_editor", {
+                folderPath: form.folder_path,
+                editor: preferredEditor,
+                jobName: form.job_name ?? "default",
+                fileName: previewFile,
+              });
+            }}
+          >
+            Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+          </button>
+          <span className="hint" style={{ margin: 0 }}>
+            Drag images here to include them as visual context
+          </span>
+        </div>
 
         {isWizard && !cwtEdited && (
           <span className="hint" style={{ color: "var(--warning-color)" }}>
@@ -1198,25 +1240,14 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
   return (
     <div className="settings-section">
       <div className="section-header" style={{ justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            onClick={onCancel}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-secondary)",
-              padding: "2px 4px",
-              lineHeight: 1,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-            title="Back to jobs"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
+        <div
+          onClick={onCancel}
+          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+          title={isNew ? "Back to jobs" : "Back to job"}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
           <h2>{isNew ? "Add Job" : `Edit: ${form.name}`}</h2>
         </div>
         <button className="btn btn-primary btn-sm" onClick={handleSubmit}>
