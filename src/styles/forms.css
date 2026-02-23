@@ -169,6 +169,7 @@ input[type="password"]:disabled,
   height: 350px;
   min-height: 225px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -189,6 +190,7 @@ input[type="password"]:disabled,
   height: 350px;
   min-height: 225px;
   max-height: 600px;
+  overscroll-behavior: contain;
   padding: 10px 12px;
   background: transparent;
   border: 1px solid var(--border-color) !important;

@@ -232,6 +232,7 @@
   line-height: 1.5;
   max-height: 400px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text-primary);

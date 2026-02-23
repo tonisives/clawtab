@@ -800,7 +800,7 @@ function GroupHeader({
   return (
     <div
       className="field-group-title"
-      style={{ display: "flex", alignItems: "center", gap: 6 }}
+      style={{ display: "flex", alignItems: "center", gap: 6, ...(isCollapsed ? { borderBottom: "none", marginBottom: 0, paddingBottom: 0 } : {}) }}
     >
       <button
         onClick={onToggle}
@@ -1034,6 +1034,17 @@ function JobDetailView({
   const savedContentRef = useRef(savedContent);
   savedContentRef.current = savedContent;
 
+  const reloadDirections = () => {
+    if (job.job_type !== "folder" || !job.folder_path) return;
+    const jn = job.job_name ?? "default";
+    invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
+      .then((content) => {
+        setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
+        setSavedContent(content);
+      })
+      .catch(() => {});
+  };
+
   useEffect(() => {
     if (job.job_type === "folder" && job.folder_path) {
       const jn = job.job_name ?? "default";
@@ -1049,17 +1060,15 @@ function JobDetailView({
     }
   }, [job]);
 
+  // Poll for external file changes every 2s
   useEffect(() => {
-    const onFocus = () => {
-      if (job.job_type !== "folder" || !job.folder_path) return;
-      const jn = job.job_name ?? "default";
-      invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
-        .then((content) => {
-          setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
-          setSavedContent(content);
-        })
-        .catch(() => {});
-    };
+    if (job.job_type !== "folder" || !job.folder_path) return;
+    const interval = setInterval(reloadDirections, 2000);
+    return () => clearInterval(interval);
+  }, [job]);
+
+  useEffect(() => {
+    const onFocus = () => reloadDirections();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [job]);
@@ -1516,14 +1525,6 @@ function JobRow({
         <StatusBadge status={status} />
       </td>
       <td className="col-actions actions">
-        <div className="btn-group">
-          {state === "running" && (
-            <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
-          )}
-          {state === "paused" && (
-            <span className="status-badge status-paused" style={{ fontSize: 11 }}>paused</span>
-          )}
-        </div>
       </td>
     </tr>
   );
@@ -1604,11 +1605,12 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
           overflowY: "auto",
           whiteSpace: "pre-wrap",
           wordBreak: "break-all",
-          height: 100,
+          height: 400,
           minHeight: 40,
           maxHeight: 400,
           resize: "vertical",
           color: "var(--text-secondary)",
+          overscrollBehavior: "contain",
         }}>{logs}</pre>
       )}
       <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
