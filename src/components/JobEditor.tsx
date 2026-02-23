@@ -623,24 +623,20 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
           )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
-          <button
-            className="btn btn-sm"
-            onClick={() => {
-              invoke("open_job_editor", {
-                folderPath: form.folder_path,
-                editor: preferredEditor,
-                jobName: form.job_name ?? "default",
-                fileName: previewFile,
-              });
-            }}
-          >
-            Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-          </button>
-          <span className="hint" style={{ margin: 0 }}>
-            Drag images here to include them as visual context
-          </span>
-        </div>
+        <button
+          className="btn btn-sm"
+          style={{ marginTop: 8 }}
+          onClick={() => {
+            invoke("open_job_editor", {
+              folderPath: form.folder_path,
+              editor: preferredEditor,
+              jobName: form.job_name ?? "default",
+              fileName: previewFile,
+            });
+          }}
+        >
+          Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+        </button>
 
         {isWizard && !cwtEdited && (
           <span className="hint" style={{ color: "var(--warning-color)" }}>

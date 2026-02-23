@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   DndContext,
   closestCenter,
@@ -909,7 +910,7 @@ function AgentRow({
           )}
           {(state === "idle" || !status || state === "success" || state === "failed") && (
             <button className="btn btn-primary btn-sm" onClick={onRun}>
-              {state === "success" ? "Run Again" : "Run"}
+              Run
             </button>
           )}
         </div>
@@ -1028,11 +1029,19 @@ function JobDetailView({
     });
   }, []);
 
+  const [savedContent, setSavedContent] = useState("");
+  const dirty = inlineContent !== savedContent;
+  const savedContentRef = useRef(savedContent);
+  savedContentRef.current = savedContent;
+
   useEffect(() => {
     if (job.job_type === "folder" && job.folder_path) {
       const jn = job.job_name ?? "default";
       invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
-        .then(setInlineContent)
+        .then((content) => {
+          setInlineContent(content);
+          setSavedContent(content);
+        })
         .catch(() => {});
       invoke<string>("read_cwt_context", { folderPath: job.folder_path, jobName: jn })
         .then(setCwtContextPreview)
@@ -1040,17 +1049,56 @@ function JobDetailView({
     }
   }, [job]);
 
-  const [savedContent, setSavedContent] = useState("");
-  const dirty = inlineContent !== savedContent;
-
   useEffect(() => {
-    if (job.job_type === "folder" && job.folder_path) {
+    const onFocus = () => {
+      if (job.job_type !== "folder" || !job.folder_path) return;
       const jn = job.job_name ?? "default";
       invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
-        .then((content) => { setSavedContent(content); })
+        .then((content) => {
+          setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
+          setSavedContent(content);
+        })
         .catch(() => {});
-    }
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [job]);
+
+  const [dragOver, setDragOver] = useState(false);
+  const detailEditorRef = useRef<HTMLTextAreaElement>(null);
+  const inlineContentRef = useRef(inlineContent);
+  inlineContentRef.current = inlineContent;
+
+  const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i;
+
+  useEffect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+      const el = detailEditorRef.current;
+      if (!el || previewFile !== "job.md") return;
+      const p = event.payload;
+
+      if (p.type === "over" || p.type === "drop") {
+        const rect = el.getBoundingClientRect();
+        const { x, y } = p.position;
+        const inside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+        if (p.type === "over") {
+          setDragOver(inside);
+        } else if (inside) {
+          setDragOver(false);
+          const images = p.paths.filter((path: string) => IMAGE_RE.test(path));
+          if (images.length === 0) return;
+          const cursor = el.selectionStart ?? inlineContentRef.current.length;
+          const insert = images.join("\n") + "\n";
+          const updated = inlineContentRef.current.slice(0, cursor) + insert + inlineContentRef.current.slice(cursor);
+          setInlineContent(updated);
+        }
+      } else {
+        setDragOver(false);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [previewFile]);
 
   const handleSaveDirections = () => {
     if (job.folder_path) {
@@ -1187,7 +1235,8 @@ function JobDetailView({
                 </div>
                 {previewFile === "job.md" ? (
                   <textarea
-                    className="directions-editor"
+                    ref={detailEditorRef}
+                    className={`directions-editor${dragOver ? " drag-over" : ""}`}
                     value={inlineContent}
                     onChange={(e) => setInlineContent(e.target.value)}
                     spellCheck={false}
@@ -1358,7 +1407,7 @@ function AgentDetailView({
           )}
           {(state === "idle" || !status || state === "success" || state === "failed") && (
             <button className="btn btn-primary btn-sm" onClick={onRun}>
-              {state === "success" ? "Run Again" : "Run"}
+              Run
             </button>
           )}
         </div>
@@ -1494,7 +1543,10 @@ function buildLogContent(run: RunRecord): string {
 
 function RunningLogsContent({ jobName }: { jobName: string }) {
   const [logs, setLogs] = useState("");
+  const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
   const preRef = useRef<HTMLPreElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -1517,25 +1569,75 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
     }
   }, [logs]);
 
-  if (!logs) return null;
+  const handleSend = async () => {
+    const text = inputText.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await invoke("send_job_input", { name: jobName, text });
+      setInputText("");
+      inputRef.current?.focus();
+    } catch (e) {
+      console.error("Failed to send input:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
   return (
-    <pre ref={preRef} style={{
-      margin: 0,
-      padding: "6px 8px",
-      fontSize: 11,
-      lineHeight: 1.4,
-      background: "var(--bg-secondary, #1a1a1a)",
-      borderRadius: 4,
-      overflowY: "auto",
-      whiteSpace: "pre-wrap",
-      wordBreak: "break-all",
-      height: 100,
-      minHeight: 40,
-      maxHeight: 400,
-      resize: "vertical",
-      color: "var(--text-secondary)",
-    }}>{logs}</pre>
+    <div>
+      {logs && (
+        <pre ref={preRef} style={{
+          margin: 0,
+          padding: "6px 8px",
+          fontSize: 11,
+          lineHeight: 1.4,
+          background: "var(--bg-secondary, #1a1a1a)",
+          borderRadius: 4,
+          overflowY: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+          height: 100,
+          minHeight: 40,
+          maxHeight: 400,
+          resize: "vertical",
+          color: "var(--text-secondary)",
+        }}>{logs}</pre>
+      )}
+      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+        <textarea
+          ref={inputRef}
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Send input to job..."
+          rows={1}
+          style={{
+            flex: 1,
+            resize: "none",
+            fontSize: 12,
+            padding: "6px 8px",
+            minHeight: 32,
+            maxHeight: 120,
+          }}
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={handleSend}
+          disabled={!inputText.trim() || sending}
+          style={{ alignSelf: "flex-end" }}
+        >
+          Send
+        </button>
+      </div>
+    </div>
   );
 }
 
