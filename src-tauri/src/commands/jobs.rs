@@ -948,6 +948,7 @@ pub fn build_agent_job(
         telegram_notify: crate::config::jobs::TelegramNotify::default(),
         group: "agent".to_string(),
         slug: "agent/default".to_string(),
+        skill_paths: Vec::new(),
     })
 }
 

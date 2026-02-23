@@ -113,6 +113,7 @@ export function SetupWizard({ onComplete }: Props) {
         telegram_notify: { start: true, working: true, logs: true, finish: true },
         group: "tutorial",
         slug: "",
+        skill_paths: [],
       };
       await invoke("save_job", { job });
       await invoke("run_job_now", { name: "hello-world" });
@@ -165,6 +166,7 @@ export function SetupWizard({ onComplete }: Props) {
         telegram_notify: { start: true, working: true, logs: true, finish: true },
         group: "tutorial",
         slug: "",
+        skill_paths: [],
       };
       await invoke("save_job", { job });
       await invoke("run_job_now", { name: "Hacker News" });

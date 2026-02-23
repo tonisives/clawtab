@@ -27,6 +27,7 @@ export interface Job {
   telegram_notify: TelegramNotify;
   group: string;
   slug: string;
+  skill_paths: string[];
 }
 
 export interface AerospaceWorkspace {

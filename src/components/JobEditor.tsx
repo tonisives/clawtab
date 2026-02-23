@@ -57,6 +57,7 @@ const emptyJob: Job = {
   telegram_notify: { start: true, working: true, logs: true, finish: true },
   group: "default",
   slug: "",
+  skill_paths: [],
 };
 
 type WizardStep = "identity" | "settings";
@@ -151,6 +152,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
   const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
 
   // Lazy-loaded data
+  const [availableSkills, setAvailableSkills] = useState<{ name: string }[] | null>(null);
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
   const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
   const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
@@ -166,6 +168,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
   // Wizard step 2 collapsible sections
   const [scheduleExpanded, setScheduleExpanded] = useState(true);
   const [secretsExpanded, setSecretsExpanded] = useState(false);
+  const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [telegramExpanded, setTelegramExpanded] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
 
@@ -218,14 +221,17 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
     });
   }, []);
 
-  // Load secrets when entering settings step (or on mount for edit mode)
+  // Load secrets and skills when entering settings step (or on mount for edit mode)
   useEffect(() => {
     if (!isWizard || currentStep === "settings") {
       if (availableSecrets === null) {
         invoke<SecretEntry[]>("list_secrets").then(setAvailableSecrets);
       }
+      if (availableSkills === null) {
+        invoke<{ name: string }[]>("list_skills").then(setAvailableSkills).catch(() => setAvailableSkills([]));
+      }
     }
-  }, [currentStep, isWizard, availableSecrets]);
+  }, [currentStep, isWizard, availableSecrets, availableSkills]);
 
   // Load aerospace when entering settings step (or on mount for edit mode)
   useEffect(() => {
@@ -289,6 +295,14 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
       ? form.secret_keys.filter((k) => k !== key)
       : [...form.secret_keys, key];
     setForm({ ...form, secret_keys: keys });
+  };
+
+  const toggleSkill = (name: string) => {
+    const path = `~/.claude/skills/${name}/SKILL.md`;
+    const paths = form.skill_paths.includes(path)
+      ? form.skill_paths.filter((p) => p !== path)
+      : [...form.skill_paths, path];
+    setForm({ ...form, skill_paths: paths });
   };
 
   const handleSubmit = () => {
@@ -710,6 +724,36 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
     </div>
   );
 
+  const renderSkillsFields = () => (
+    <div className="form-group">
+      <label>Skills (included as @references in Claude prompt)</label>
+      {availableSkills === null ? (
+        <p className="text-secondary">Loading skills...</p>
+      ) : availableSkills.length === 0 ? (
+        <p className="text-secondary">No skills found. Create them in the Skills tab.</p>
+      ) : (
+        <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 4, padding: 8 }}>
+          {availableSkills.map((s) => {
+            const path = `~/.claude/skills/${s.name}/SKILL.md`;
+            return (
+              <label key={s.name} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.skill_paths.includes(path)}
+                  onChange={() => toggleSkill(s.name)}
+                />
+                <span>{s.name}</span>
+                <span style={{ fontSize: 11, color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                  @~/.claude/skills/{s.name}/SKILL.md
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   const renderRuntimeFields = () => (
     <>
       {(form.job_type === "claude" || form.job_type === "folder") && (
@@ -1052,6 +1096,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
                 {renderSecretsFields()}
               </CollapsibleFieldGroup>
 
+              <CollapsibleFieldGroup title="Skills" expanded={skillsExpanded} onToggle={() => setSkillsExpanded(!skillsExpanded)}>
+                {renderSkillsFields()}
+              </CollapsibleFieldGroup>
+
               <CollapsibleFieldGroup title="Telegram" expanded={telegramExpanded} onToggle={() => setTelegramExpanded(!telegramExpanded)}>
                 {renderTelegramFields()}
               </CollapsibleFieldGroup>
@@ -1192,6 +1240,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
 
       <FieldGroup title="Secrets">
         {renderSecretsFields()}
+      </FieldGroup>
+
+      <FieldGroup title="Skills">
+        {renderSkillsFields()}
       </FieldGroup>
 
       <FieldGroup title="Config">

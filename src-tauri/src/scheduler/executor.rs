@@ -318,8 +318,21 @@ async fn execute_claude_job(
     let prompt_path = &job.path;
 
     // Read prompt file content so we can pass it inline (preserves @ references)
-    let prompt_content = std::fs::read_to_string(prompt_path)
+    let raw_prompt = std::fs::read_to_string(prompt_path)
         .map_err(|e| format!("Failed to read prompt file {}: {}", prompt_path, e))?;
+
+    // Prepend skill @ references if any
+    let prompt_content = if job.skill_paths.is_empty() {
+        raw_prompt
+    } else {
+        let skill_refs = job
+            .skill_paths
+            .iter()
+            .map(|p| format!("@{}", p))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{}\n\n{}", skill_refs, raw_prompt)
+    };
 
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
@@ -406,10 +419,21 @@ async fn execute_folder_job(
 
     let raw_prompt = folder.read_entry_point()?;
 
-    // Build prompt: shared context, then per-job context, then per-job instructions
+    // Build prompt: shared context, then per-job context, then skills, then per-job instructions
+    let skill_refs = job
+        .skill_paths
+        .iter()
+        .map(|p| format!("@{}", p))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let skill_part = if skill_refs.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", skill_refs)
+    };
     let prompt_content = format!(
-        "@.cwt/cwt.md @.cwt/{}/cwt.md @.cwt/{}/job.md\n\n{}",
-        job_name, job_name, raw_prompt
+        "@.cwt/cwt.md @.cwt/{}/cwt.md @.cwt/{}/job.md{}\n\n{}",
+        job_name, job_name, skill_part, raw_prompt
     );
 
     // Run from the project root (parent of .cwt), not the .cwt dir itself

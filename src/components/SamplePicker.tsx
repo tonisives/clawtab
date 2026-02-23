@@ -135,6 +135,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
           telegram_notify: { start: true, working: true, logs: true, finish: true },
           group: template.group,
           slug: "",
+          skill_paths: [],
         };
         await invoke("save_job", { job });
       } else {
@@ -157,6 +158,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
           telegram_notify: { start: true, working: true, logs: true, finish: true },
           group: template.group,
           slug: "",
+          skill_paths: [],
         };
         await invoke("save_job", { job });
       }
@@ -201,6 +203,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
         telegram_notify: { start: true, working: true, logs: true, finish: true },
         group: "default",
         slug: "",
+        skill_paths: [],
       };
       await invoke("save_job", { job });
       onCreated();
