@@ -38,6 +38,7 @@ interface Props {
   onCancel: () => void;
   onPickTemplate?: (templateId: string) => void;
   defaultGroup?: string;
+  defaultFolderPath?: string;
 }
 
 const emptyJob: Job = {
@@ -137,8 +138,12 @@ function parseCronToWeekly(cron: string): { days: string[]; time: string } | nul
   };
 }
 
-export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup }: Props) {
-  const [form, setForm] = useState<Job>(job ?? (defaultGroup ? { ...emptyJob, group: defaultGroup } : emptyJob));
+export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup, defaultFolderPath }: Props) {
+  const [form, setForm] = useState<Job>(job ?? {
+    ...emptyJob,
+    ...(defaultGroup ? { group: defaultGroup } : {}),
+    ...(defaultFolderPath ? { folder_path: defaultFolderPath } : {}),
+  });
   const [argsText, setArgsText] = useState(form.args.join(" "));
   const [envText, setEnvText] = useState(
     Object.entries(form.env)

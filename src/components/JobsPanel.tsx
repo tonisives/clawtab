@@ -150,7 +150,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [confirmBulkDeleteJobs, setConfirmBulkDeleteJobs] = useState(false);
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
-  const [createForGroup, setCreateForGroup] = useState<string | null>(null);
+  const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
 
   const loadJobs = async () => {
     try {
@@ -419,7 +419,8 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
             setPickerTemplateId(templateId);
             setShowPicker(true);
           }}
-          defaultGroup={createForGroup ?? undefined}
+          defaultGroup={createForGroup?.group}
+          defaultFolderPath={createForGroup?.folderPath ?? undefined}
         />
       </>
     );
@@ -625,7 +626,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
                 onShowAgentPrompt={() => setShowAgentPrompt(true)}
                 onOpenAgent={() => handleOpen("agent")}
                 onViewAgent={() => setViewingAgent(true)}
-                onAddJob={isFolderGroup ? () => { setCreateForGroup(group); setIsCreating(true); } : undefined}
+                onAddJob={isFolderGroup ? () => { setCreateForGroup({ group, folderPath: groupJobs[0]?.folder_path ?? null }); setIsCreating(true); } : undefined}
               />
             );
           })}
@@ -860,12 +861,12 @@ function GroupHeader({
       )}
       {onAddJob && (
         <button
-          className="btn btn-sm"
-          style={{ fontSize: 10, padding: "1px 6px" }}
+          className="add-job-btn"
+          style={{ width: 20, height: 20, fontSize: 16, marginRight: 0 }}
           onClick={onAddJob}
           title="Add job to this group"
         >
-          + Add
+          <span style={{ position: "relative", top: -1 }}>+</span>
         </button>
       )}
       {onToggleSelectMode && (
