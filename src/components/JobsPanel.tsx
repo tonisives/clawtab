@@ -522,13 +522,11 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
 
   const renderJobRows = (job: Job) => {
     const status = statuses[job.name];
-    const state = status?.state ?? "idle";
 
     return (
       <JobRow
         key={job.slug}
         job={job}
-        state={state}
         status={status}
         selectMode={jobSelectMode}
         isSelected={selectedJobs.has(job.name)}
@@ -1495,7 +1493,6 @@ function AgentDetailView({
 
 function JobRow({
   job,
-  state,
   status,
   selectMode,
   isSelected,
@@ -1504,7 +1501,6 @@ function JobRow({
   onClick,
 }: {
   job: Job;
-  state: string;
   status: JobStatus | undefined;
   selectMode: boolean;
   isSelected: boolean;
