@@ -1546,7 +1546,7 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const preRef = useRef<HTMLPreElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -1611,28 +1611,20 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
           color: "var(--text-secondary)",
         }}>{logs}</pre>
       )}
-      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-        <textarea
+      <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+        <input
           ref={inputRef}
+          type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Send input to job..."
-          rows={1}
-          style={{
-            flex: 1,
-            resize: "none",
-            fontSize: 12,
-            padding: "6px 8px",
-            minHeight: 32,
-            maxHeight: 120,
-          }}
+          style={{ flex: 1 }}
         />
         <button
           className="btn btn-primary btn-sm"
           onClick={handleSend}
           disabled={!inputText.trim() || sending}
-          style={{ alignSelf: "flex-end" }}
         >
           Send
         </button>
