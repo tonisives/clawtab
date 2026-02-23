@@ -918,25 +918,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
   if (isWizard) {
     return (
       <div className="settings-section">
-        <div className="section-header">
-          <button
-            onClick={onCancel}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--text-secondary)",
-              padding: "2px 4px",
-              lineHeight: 1,
-              display: "inline-flex",
-              alignItems: "center",
-            }}
-            title="Back to jobs"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </button>
+        <div className="section-header" onClick={onCancel} style={{ cursor: "pointer" }} title="Back to jobs">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
           <h2>Add Job</h2>
         </div>
 
