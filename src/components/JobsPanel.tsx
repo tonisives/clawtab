@@ -139,6 +139,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
+  const [pickerTemplateId, setPickerTemplateId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
@@ -216,7 +217,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
 
   useEffect(() => {
     if (createJobKey && createJobKey > 0) {
-      setShowPicker(true);
+      setIsCreating(true);
     }
   }, [createJobKey]);
 
@@ -390,28 +391,6 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     }
   }, [editingJob, isCreating, showPicker, viewingJob, viewingAgent]);
 
-  if (showPicker) {
-    return (
-      <SamplePicker
-        autoCreateTemplateId={pendingTemplateId ?? undefined}
-        onCreated={() => {
-          setShowPicker(false);
-          onTemplateHandled?.();
-          loadJobs();
-        }}
-        onBlank={() => {
-          setShowPicker(false);
-          onTemplateHandled?.();
-          setIsCreating(true);
-        }}
-        onCancel={() => {
-          setShowPicker(false);
-          onTemplateHandled?.();
-        }}
-      />
-    );
-  }
-
   if (editingJob || isCreating) {
     return (
       <>
@@ -428,8 +407,38 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
             setIsCreating(false);
             setSaveError(null);
           }}
+          onPickTemplate={(templateId) => {
+            setIsCreating(false);
+            setPickerTemplateId(templateId);
+            setShowPicker(true);
+          }}
         />
       </>
+    );
+  }
+
+  if (showPicker) {
+    return (
+      <SamplePicker
+        autoCreateTemplateId={pickerTemplateId ?? pendingTemplateId ?? undefined}
+        onCreated={() => {
+          setShowPicker(false);
+          setPickerTemplateId(null);
+          onTemplateHandled?.();
+          loadJobs();
+        }}
+        onBlank={() => {
+          setShowPicker(false);
+          setPickerTemplateId(null);
+          onTemplateHandled?.();
+          setIsCreating(true);
+        }}
+        onCancel={() => {
+          setShowPicker(false);
+          setPickerTemplateId(null);
+          onTemplateHandled?.();
+        }}
+      />
     );
   }
 
@@ -552,7 +561,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
         <div className="btn-group">
           <button
             className="btn btn-primary btn-sm"
-            onClick={() => setShowPicker(true)}
+            onClick={() => setIsCreating(true)}
           >
             Add Job
           </button>
@@ -564,7 +573,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           <p>No jobs configured yet.</p>
           <button
             className="btn btn-primary"
-            onClick={() => setShowPicker(true)}
+            onClick={() => setIsCreating(true)}
           >
             Create your first job
           </button>

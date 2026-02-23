@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AerospaceWorkspace, AppSettings, Job, JobType, SecretEntry } from "../types";
 import { CronInput, describeCron } from "./CronInput";
+import { SAMPLE_TEMPLATES, TEMPLATE_CATEGORIES } from "../data/sampleTemplates";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
 
@@ -34,6 +35,7 @@ interface Props {
   job: Job | null;
   onSave: (job: Job) => void;
   onCancel: () => void;
+  onPickTemplate?: (templateId: string) => void;
 }
 
 const emptyJob: Job = {
@@ -132,7 +134,7 @@ function parseCronToWeekly(cron: string): { days: string[]; time: string } | nul
   };
 }
 
-export function JobEditor({ job, onSave, onCancel }: Props) {
+export function JobEditor({ job, onSave, onCancel, onPickTemplate }: Props) {
   const [form, setForm] = useState<Job>(job ?? emptyJob);
   const [argsText, setArgsText] = useState(form.args.join(" "));
   const [envText, setEnvText] = useState(
@@ -158,6 +160,9 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
 
+  // Template categories for wizard
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+
   // Wizard step 2 collapsible sections
   const [scheduleExpanded, setScheduleExpanded] = useState(true);
   const [secretsExpanded, setSecretsExpanded] = useState(false);
@@ -177,6 +182,16 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
 
   // job.md edited tracking
   const [cwtEdited, setCwtEdited] = useState(!isNew);
+
+  // Template grid data
+  const templatesByCategory = TEMPLATE_CATEGORIES.map((cat) => ({
+    ...cat,
+    templates: SAMPLE_TEMPLATES.filter((t) => t.category === cat.id),
+  }));
+  const templateRows: (typeof templatesByCategory)[] = [];
+  for (let i = 0; i < templatesByCategory.length; i += 2) {
+    templateRows.push(templatesByCategory.slice(i, i + 2));
+  }
 
   // Load settings and detected editors on mount
   useEffect(() => {
@@ -904,11 +919,29 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
     return (
       <div className="settings-section">
         <div className="section-header">
+          <button
+            onClick={onCancel}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-secondary)",
+              padding: "2px 4px",
+              lineHeight: 1,
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+            title="Back to jobs"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
           <h2>Add Job</h2>
         </div>
 
         <div>
-          <div style={{ maxWidth: 520, margin: "0 auto" }}>
+          <div className="wizard-center">
             <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
               {STEPS.map((step, idx) => (
                 <div
@@ -932,69 +965,120 @@ export function JobEditor({ job, onSave, onCancel }: Props) {
           </div>
 
           {currentStep === "identity" && (
-            <>
-              <div style={{ maxWidth: 520, margin: "0 auto" }}>
+            <div className="wizard-identity-row">
+              <div className="wizard-identity-col">
                 <FieldGroup title="Identity">
                   {renderIdentityFields()}
                 </FieldGroup>
               </div>
               {form.folder_path && (
-                <FieldGroup title="Directions">
-                  {renderDirectionsFields()}
-                </FieldGroup>
-              )}
-            </>
-          )}
-
-          <div style={{ maxWidth: 520, margin: "0 auto" }}>
-            {currentStep === "settings" && (
-              <>
-                <CollapsibleFieldGroup title="Schedule" expanded={scheduleExpanded} onToggle={() => setScheduleExpanded(!scheduleExpanded)}>
-                  {renderScheduleFields()}
-                </CollapsibleFieldGroup>
-
-                <CollapsibleFieldGroup title="Secrets" expanded={secretsExpanded} onToggle={() => setSecretsExpanded(!secretsExpanded)}>
-                  {renderSecretsFields()}
-                </CollapsibleFieldGroup>
-
-                <CollapsibleFieldGroup title="Telegram" expanded={telegramExpanded} onToggle={() => setTelegramExpanded(!telegramExpanded)}>
-                  {renderTelegramFields()}
-                </CollapsibleFieldGroup>
-
-                <CollapsibleFieldGroup title="Advanced" expanded={advancedExpanded} onToggle={() => setAdvancedExpanded(!advancedExpanded)}>
-                  {renderAdvancedFields()}
-                </CollapsibleFieldGroup>
-              </>
-            )}
-
-            <div className="btn-group" style={{ marginTop: 24 }}>
-              <button className="btn" onClick={onCancel}>
-                Cancel
-              </button>
-              {currentIdx > 0 && (
-                <button className="btn" onClick={goBack}>
-                  Back
-                </button>
-              )}
-              {currentStep === "settings" ? (
-                <button
-                  className="btn btn-primary"
-                  onClick={handleSubmit}
-                  disabled={!canAdvanceFromFolder()}
-                >
-                  Create
-                </button>
-              ) : (
-                <button
-                  className="btn btn-primary"
-                  onClick={goNext}
-                  disabled={currentStep === "identity" && !canAdvanceFromFolder()}
-                >
-                  Next
-                </button>
+                <div className="wizard-directions-col">
+                  <FieldGroup title="Directions">
+                    {renderDirectionsFields()}
+                  </FieldGroup>
+                </div>
               )}
             </div>
+          )}
+
+          {currentStep === "settings" && (
+            <div className="wizard-center">
+              <CollapsibleFieldGroup title="Schedule" expanded={scheduleExpanded} onToggle={() => setScheduleExpanded(!scheduleExpanded)}>
+                {renderScheduleFields()}
+              </CollapsibleFieldGroup>
+
+              <CollapsibleFieldGroup title="Secrets" expanded={secretsExpanded} onToggle={() => setSecretsExpanded(!secretsExpanded)}>
+                {renderSecretsFields()}
+              </CollapsibleFieldGroup>
+
+              <CollapsibleFieldGroup title="Telegram" expanded={telegramExpanded} onToggle={() => setTelegramExpanded(!telegramExpanded)}>
+                {renderTelegramFields()}
+              </CollapsibleFieldGroup>
+
+              <CollapsibleFieldGroup title="Advanced" expanded={advancedExpanded} onToggle={() => setAdvancedExpanded(!advancedExpanded)}>
+                {renderAdvancedFields()}
+              </CollapsibleFieldGroup>
+            </div>
+          )}
+
+          <div className="btn-group" style={{ marginTop: 24, justifyContent: "center" }}>
+            <button className="btn" onClick={onCancel}>
+              Cancel
+            </button>
+            {currentIdx > 0 && (
+              <button className="btn" onClick={goBack}>
+                Back
+              </button>
+            )}
+            {currentStep === "settings" ? (
+              <button
+                className="btn btn-primary"
+                onClick={handleSubmit}
+                disabled={!canAdvanceFromFolder()}
+              >
+                Create
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary"
+                onClick={goNext}
+                disabled={currentStep === "identity" && !canAdvanceFromFolder()}
+              >
+                Next
+              </button>
+            )}
           </div>
+
+          {currentStep === "identity" && onPickTemplate && (
+            <div>
+              <p className="text-secondary" style={{ marginTop: 32, marginBottom: 16, fontSize: 13, textAlign: "center" }}>
+                Or start from a template:
+              </p>
+              <div className="sample-grid-cards">
+                {templateRows.map((row, i) => (
+                  <div key={i} className="sample-grid-row">
+                    {row.map((cat) => (
+                      <div
+                        key={cat.id}
+                        className={`sample-card-v2${expandedCategory === cat.id ? " expanded" : ""}`}
+                      >
+                        <div className="sample-card-v2-top" onClick={() => setExpandedCategory(expandedCategory === cat.id ? null : cat.id)}>
+                          <img className="sample-card-v2-hero" src={cat.image} alt={cat.name} />
+                          <div className="sample-card-v2-header">
+                            <div><h3>{cat.name}</h3></div>
+                            <span className="sample-card-v2-badge">{cat.templates.length} templates</span>
+                          </div>
+                        </div>
+                        <div className="sample-card-v2-body">
+                          <div className="sample-card-v2-templates">
+                            {cat.templates.map((template) => (
+                              <div key={template.id} className="sample-template-row">
+                                <div className="sample-template-row-header">
+                                  <div className="sample-template-row-info">
+                                    <strong>{template.name}</strong>
+                                    <span>{template.description}</span>
+                                  </div>
+                                  <div className="sample-template-row-actions">
+                                    <code className="sample-template-row-cron">{template.cron || "manual"}</code>
+                                    <button
+                                      className="btn btn-primary btn-sm"
+                                      onClick={(e) => { e.stopPropagation(); onPickTemplate(template.id); }}
+                                    >
+                                      Create
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
