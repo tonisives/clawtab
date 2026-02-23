@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { AppSettings } from "../types";
+import { ToolsPanel } from "./ToolsPanel";
 
 export function GeneralSettings() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [showToolsModal, setShowToolsModal] = useState(false);
+  const toolsOverlayRef = useRef<HTMLDivElement>(null);
   const [version, setVersion] = useState<string>("");
   const [updateStatus, setUpdateStatus] = useState<
     "idle" | "checking" | "up-to-date" | "installed" | "error"
@@ -190,6 +193,18 @@ export function GeneralSettings() {
           </button>
         </div>
         <div className="form-group">
+          <label>Tools</label>
+          <div>
+            <button
+              className="btn"
+              onClick={() => setShowToolsModal(true)}
+            >
+              Manage Tools
+            </button>
+            <span className="hint">Detect and configure CLI tools</span>
+          </div>
+        </div>
+        <div className="form-group">
           <label>Logs</label>
           <div>
             <button
@@ -202,6 +217,29 @@ export function GeneralSettings() {
           </div>
         </div>
       </div>
+
+      {showToolsModal && (
+        <div
+          ref={toolsOverlayRef}
+          className="tools-modal-overlay"
+          onClick={(e) => {
+            if (e.target === toolsOverlayRef.current) setShowToolsModal(false);
+          }}
+        >
+          <div className="tools-modal">
+            <div className="tools-modal-header">
+              <h3>Tools</h3>
+              <button
+                className="btn btn-sm"
+                onClick={() => setShowToolsModal(false)}
+              >
+                Close
+              </button>
+            </div>
+            <ToolsPanel />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

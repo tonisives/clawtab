@@ -5,6 +5,7 @@ pub mod history;
 pub mod jobs;
 pub mod secrets;
 pub mod settings;
+pub mod skills;
 pub mod status;
 pub mod telegram;
 pub mod tmux;

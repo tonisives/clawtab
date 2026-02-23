@@ -5,7 +5,7 @@ import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { JobsPanel } from "./JobsPanel";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
-import { ToolsPanel } from "./ToolsPanel";
+import { SkillsPanel } from "./SkillsPanel";
 import { TelegramPanel } from "./TelegramPanel";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
@@ -13,7 +13,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "secrets" | "tools" | "telegram" | "settings";
+type TabId = "jobs" | "secrets" | "skills" | "telegram" | "settings";
 
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
@@ -34,10 +34,10 @@ const tabIcons: Record<TabId, React.ReactNode> = {
       <path d="M12 11v3" />
     </svg>
   ),
-  // wrench.and.screwdriver (SF: wrench.and.screwdriver)
-  tools: (
+  // book (SF: book)
+  skills: (
     <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
     </svg>
   ),
   // paperplane (SF: paperplane)
@@ -115,7 +115,7 @@ export function SettingsApp() {
   const tabs: { id: TabId; label: string }[] = [
     { id: "jobs", label: "Jobs" },
     { id: "secrets", label: "Secrets" },
-    { id: "tools", label: "Tools" },
+    { id: "skills", label: "Skills" },
     { id: "telegram", label: "Telegram" },
     { id: "settings", label: "Settings" },
   ];
@@ -167,9 +167,7 @@ export function SettingsApp() {
           />
         </div>
         {activeTab === "secrets" && <SecretsPanel />}
-        <div style={{ display: activeTab === "tools" ? undefined : "none" }}>
-          <ToolsPanel />
-        </div>
+        {activeTab === "skills" && <SkillsPanel />}
         {activeTab === "telegram" && <TelegramPanel />}
         {activeTab === "settings" && <GeneralSettings />}
       </div>
