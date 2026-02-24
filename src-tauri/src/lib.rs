@@ -39,6 +39,7 @@ pub struct AppState {
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     pub relay: Arc<Mutex<Option<relay::RelayHandle>>>,
+    pub relay_sub_required: Arc<Mutex<bool>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -190,6 +191,7 @@ pub fn run() {
     let active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let relay_handle: Arc<Mutex<Option<relay::RelayHandle>>> = Arc::new(Mutex::new(None));
+    let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -200,6 +202,7 @@ pub fn run() {
         job_status: Arc::clone(&job_status),
         active_agents: Arc::clone(&active_agents),
         relay: Arc::clone(&relay_handle),
+        relay_sub_required: Arc::clone(&relay_sub_required),
     };
 
     // Clones for IPC handler
@@ -212,6 +215,7 @@ pub fn run() {
         job_status: Arc::clone(&job_status),
         active_agents: Arc::clone(&active_agents),
         relay: Arc::clone(&relay_handle),
+        relay_sub_required: Arc::clone(&relay_sub_required),
     };
 
     // Clones for scheduler
@@ -233,6 +237,7 @@ pub fn run() {
 
     // Clones for relay
     let relay_for_setup = Arc::clone(&relay_handle);
+    let relay_sub_for_setup = Arc::clone(&relay_sub_required);
     let settings_for_relay = Arc::clone(&settings);
     let jobs_for_relay = Arc::clone(&jobs_config);
     let job_status_for_relay = Arc::clone(&job_status);
@@ -336,6 +341,8 @@ pub fn run() {
             commands::relay::relay_pair_device,
             commands::relay::relay_disconnect,
             commands::relay::relay_connect,
+            commands::relay::relay_save_tokens,
+            commands::relay::relay_check_subscription,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -479,11 +486,14 @@ pub fn run() {
                         } else {
                             rs.server_url.clone()
                         };
+                        let server_url_for_sub = rs.server_url.clone();
                         tauri::async_runtime::spawn(async move {
                             relay::connect_loop(
                                 ws_url,
                                 device_token,
+                                server_url_for_sub,
                                 relay_for_setup,
+                                relay_sub_for_setup,
                                 jobs_for_relay,
                                 job_status_for_relay,
                                 secrets_for_relay,

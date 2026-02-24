@@ -7,11 +7,14 @@ use crate::config::settings::RelaySettings;
 use crate::AppState;
 
 const KEYCHAIN_DEVICE_TOKEN_KEY: &str = "relay_device_token";
+const KEYCHAIN_ACCESS_TOKEN_KEY: &str = "relay_access_token";
+const KEYCHAIN_REFRESH_TOKEN_KEY: &str = "relay_refresh_token";
 
 #[derive(Serialize)]
 pub struct RelayStatus {
     pub enabled: bool,
     pub connected: bool,
+    pub subscription_required: bool,
     pub server_url: String,
     pub device_name: String,
 }
@@ -52,9 +55,11 @@ pub fn get_relay_status(state: State<AppState>) -> RelayStatus {
     let settings = state.settings.lock().unwrap();
     let relay = settings.relay.clone().unwrap_or_default();
     let connected = state.relay.lock().map(|g| g.is_some()).unwrap_or(false);
+    let subscription_required = *state.relay_sub_required.lock().unwrap_or_else(|e| e.into_inner());
     RelayStatus {
         enabled: relay.enabled,
         connected,
+        subscription_required,
         server_url: relay.server_url,
         device_name: relay.device_name,
     }
@@ -176,6 +181,8 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
         return Err("Relay server URL not configured".to_string());
     }
 
+    let server_url = rs.server_url.clone();
+
     // Read device_token from yaml, fall back to keychain
     let device_token = if rs.device_token.is_empty() {
         drop(settings);
@@ -202,7 +209,11 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
     };
     drop(settings);
 
+    // Clear subscription-required flag on manual connect
+    *state.relay_sub_required.lock().unwrap() = false;
+
     let relay = Arc::clone(&state.relay);
+    let relay_sub = Arc::clone(&state.relay_sub_required);
     let jobs_config = Arc::clone(&state.jobs_config);
     let job_status = Arc::clone(&state.job_status);
     let secrets = Arc::clone(&state.secrets);
@@ -214,7 +225,9 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
         crate::relay::connect_loop(
             ws_url,
             device_token,
+            server_url,
             relay,
+            relay_sub,
             jobs_config,
             job_status,
             secrets,
@@ -226,4 +239,70 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn relay_save_tokens(
+    state: State<AppState>,
+    access_token: String,
+    refresh_token: String,
+) -> Result<(), String> {
+    let mut secrets = state.secrets.lock().unwrap();
+    secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &access_token)?;
+    secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &refresh_token)?;
+    Ok(())
+}
+
+#[derive(Serialize)]
+pub struct SubscriptionCheckResult {
+    pub subscribed: bool,
+}
+
+#[tauri::command]
+pub async fn relay_check_subscription(
+    state: State<'_, AppState>,
+) -> Result<SubscriptionCheckResult, String> {
+    let server_url = {
+        let settings = state.settings.lock().unwrap();
+        settings
+            .relay
+            .as_ref()
+            .map(|r| r.server_url.clone())
+            .unwrap_or_default()
+    };
+    if server_url.is_empty() {
+        return Err("No relay server configured".to_string());
+    }
+
+    let (access_token, refresh_token_val) = {
+        let secrets = state.secrets.lock().unwrap();
+        (
+            secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).cloned().unwrap_or_default(),
+            secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY).cloned().unwrap_or_default(),
+        )
+    };
+    if access_token.is_empty() {
+        return Err("No access token stored".to_string());
+    }
+
+    let result = crate::relay::check_subscription_http(
+        &server_url,
+        &access_token,
+        &refresh_token_val,
+    )
+    .await;
+
+    match result {
+        Ok((subscribed, new_access, new_refresh)) => {
+            // Save refreshed tokens if we got new ones
+            if let (Some(at), Some(rt)) = (new_access, new_refresh) {
+                let mut secrets = state.secrets.lock().unwrap();
+                let _ = secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &at);
+                let _ = secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &rt);
+            }
+            *state.relay_sub_required.lock().unwrap() = !subscribed;
+            Ok(SubscriptionCheckResult { subscribed })
+        }
+        Err(e) => Err(e),
+    }
 }

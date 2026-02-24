@@ -17,6 +17,7 @@ interface RelaySettings {
 interface RelayStatus {
   enabled: boolean;
   connected: boolean;
+  subscription_required: boolean;
   server_url: string;
   device_name: string;
 }
@@ -33,10 +34,11 @@ interface PairDeviceResponse {
 
 interface RelayPanelProps {
   externalAccessToken?: string | null;
+  externalRefreshToken?: string | null;
   onExternalTokenConsumed?: () => void;
 }
 
-export function RelayPanel({ externalAccessToken, onExternalTokenConsumed }: RelayPanelProps) {
+export function RelayPanel({ externalAccessToken, externalRefreshToken, onExternalTokenConsumed }: RelayPanelProps) {
   const [settings, setSettings] = useState<RelaySettings | null>(null);
   const [status, setStatus] = useState<RelayStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -76,6 +78,12 @@ export function RelayPanel({ externalAccessToken, onExternalTokenConsumed }: Rel
     if (externalAccessToken) {
       setAccessToken(externalAccessToken);
       setLoginError(null);
+      if (externalRefreshToken) {
+        invoke("relay_save_tokens", {
+          accessToken: externalAccessToken,
+          refreshToken: externalRefreshToken,
+        }).catch((e) => console.error("Failed to save tokens:", e));
+      }
       onExternalTokenConsumed?.();
     }
   }, [externalAccessToken]);
@@ -98,6 +106,10 @@ export function RelayPanel({ externalAccessToken, onExternalTokenConsumed }: Rel
     try {
       const resp = await invoke<LoginResponse>("relay_login", {
         req: { server_url: serverUrl, email, password },
+      });
+      await invoke("relay_save_tokens", {
+        accessToken: resp.access_token,
+        refreshToken: resp.refresh_token,
       });
       setAccessToken(resp.access_token);
       setPassword("");
@@ -384,12 +396,20 @@ export function RelayPanel({ externalAccessToken, onExternalTokenConsumed }: Rel
                     width: 8,
                     height: 8,
                     borderRadius: "50%",
-                    background: status?.connected ? "var(--success-color)" : "var(--text-secondary)",
+                    background: status?.connected
+                      ? "var(--success-color)"
+                      : status?.subscription_required
+                        ? "#d97706"
+                        : "var(--text-secondary)",
                     display: "inline-block",
                   }}
                 />
-                <span style={{ fontSize: 13 }}>
-                  {status?.connected ? "Connected" : "Disconnected"}
+                <span style={{ fontSize: 13, color: status?.subscription_required ? "#d97706" : undefined }}>
+                  {status?.connected
+                    ? "Connected"
+                    : status?.subscription_required
+                      ? "Subscription required"
+                      : "Disconnected"}
                 </span>
               </div>
             </div>

@@ -69,6 +69,7 @@ export function SettingsApp() {
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   const [createJobKey, setCreateJobKey] = useState(0);
   const [authCallbackToken, setAuthCallbackToken] = useState<string | null>(null);
+  const [authCallbackRefreshToken, setAuthCallbackRefreshToken] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -97,11 +98,15 @@ export function SettingsApp() {
         const queryString = url.split("?")[1] ?? "";
         const params = new URLSearchParams(queryString);
         const accessToken = params.get("access_token");
+        const refreshTokenVal = params.get("refresh_token");
         const error = params.get("error");
         console.log("auth callback:", { accessToken: !!accessToken, error });
         setActiveTab("remote");
         if (accessToken) {
           setAuthCallbackToken(accessToken);
+          if (refreshTokenVal) {
+            setAuthCallbackRefreshToken(refreshTokenVal);
+          }
         } else if (error) {
           console.error("Google auth callback error:", error);
         }
@@ -206,7 +211,8 @@ export function SettingsApp() {
         {activeTab === "remote" && (
           <RelayPanel
             externalAccessToken={authCallbackToken}
-            onExternalTokenConsumed={() => setAuthCallbackToken(null)}
+            externalRefreshToken={authCallbackRefreshToken}
+            onExternalTokenConsumed={() => { setAuthCallbackToken(null); setAuthCallbackRefreshToken(null); }}
           />
         )}
         {activeTab === "settings" && <GeneralSettings />}

@@ -102,11 +102,85 @@ pub fn push_log_chunk(relay: &Arc<Mutex<Option<RelayHandle>>>, job_name: &str, c
     }
 }
 
+/// Check subscription status via HTTP. Returns (subscribed, Option<new_access_token>, Option<new_refresh_token>).
+pub async fn check_subscription_http(
+    server_url: &str,
+    access_token: &str,
+    refresh_token: &str,
+) -> Result<(bool, Option<String>, Option<String>), String> {
+    let client = reqwest::Client::new();
+    let url = format!("{}/subscription/status", server_url.trim_end_matches('/'));
+
+    let resp = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", access_token))
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    if resp.status().as_u16() == 401 && !refresh_token.is_empty() {
+        // Try refresh
+        let refresh_url = format!("{}/auth/refresh", server_url.trim_end_matches('/'));
+        let refresh_resp = client
+            .post(&refresh_url)
+            .json(&serde_json::json!({ "refresh_token": refresh_token }))
+            .send()
+            .await
+            .map_err(|e| format!("Refresh failed: {}", e))?;
+
+        if !refresh_resp.status().is_success() {
+            return Err("Token refresh failed".to_string());
+        }
+
+        let body: serde_json::Value = refresh_resp
+            .json()
+            .await
+            .map_err(|e| format!("Invalid refresh response: {}", e))?;
+
+        let new_access = body["access_token"].as_str().unwrap_or_default().to_string();
+        let new_refresh = body["refresh_token"].as_str().unwrap_or_default().to_string();
+
+        // Retry subscription check with new token
+        let retry_resp = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", new_access))
+            .send()
+            .await
+            .map_err(|e| format!("Retry request failed: {}", e))?;
+
+        if !retry_resp.status().is_success() {
+            return Err(format!("Subscription check failed: {}", retry_resp.status()));
+        }
+
+        let sub: serde_json::Value = retry_resp
+            .json()
+            .await
+            .map_err(|e| format!("Invalid response: {}", e))?;
+
+        let subscribed = sub["subscribed"].as_bool().unwrap_or(false);
+        return Ok((subscribed, Some(new_access), Some(new_refresh)));
+    }
+
+    if !resp.status().is_success() {
+        return Err(format!("Subscription check failed: {}", resp.status()));
+    }
+
+    let sub: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Invalid response: {}", e))?;
+
+    let subscribed = sub["subscribed"].as_bool().unwrap_or(false);
+    Ok((subscribed, None, None))
+}
+
 /// Start the relay connection loop. Runs forever with reconnection.
 pub async fn connect_loop(
-    server_url: String,
+    ws_url: String,
     device_token: String,
+    server_url: String,
     relay: Arc<Mutex<Option<RelayHandle>>>,
+    relay_sub_required: Arc<Mutex<bool>>,
     jobs_config: Arc<Mutex<JobsConfig>>,
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     secrets: Arc<Mutex<SecretsManager>>,
@@ -118,13 +192,46 @@ pub async fn connect_loop(
     let max_backoff = Duration::from_secs(60);
 
     loop {
-        log::info!("Relay: connecting to {}", server_url);
+        // Check subscription before attempting WS connect
+        let (access_token, refresh_token_val) = {
+            let s = secrets.lock().unwrap();
+            (
+                s.get("relay_access_token").cloned().unwrap_or_default(),
+                s.get("relay_refresh_token").cloned().unwrap_or_default(),
+            )
+        };
 
-        let ws_url = format!("{}?device_token={}", server_url, device_token);
-        match tokio_tungstenite::connect_async(&ws_url).await {
+        if !access_token.is_empty() {
+            match check_subscription_http(&server_url, &access_token, &refresh_token_val).await {
+                Ok((subscribed, new_access, new_refresh)) => {
+                    // Save refreshed tokens
+                    if let (Some(at), Some(rt)) = (new_access, new_refresh) {
+                        let mut s = secrets.lock().unwrap();
+                        let _ = s.set("relay_access_token", &at);
+                        let _ = s.set("relay_refresh_token", &rt);
+                    }
+                    if !subscribed {
+                        log::info!("Relay: subscription required, not connecting");
+                        *relay_sub_required.lock().unwrap() = true;
+                        return;
+                    }
+                    // Subscribed - clear flag and proceed
+                    *relay_sub_required.lock().unwrap() = false;
+                }
+                Err(e) => {
+                    log::warn!("Relay: subscription check failed: {}, proceeding with WS", e);
+                }
+            }
+        }
+
+        log::info!("Relay: connecting to {}", ws_url);
+
+        let full_ws_url = format!("{}?device_token={}", ws_url, device_token);
+        match tokio_tungstenite::connect_async(&full_ws_url).await {
             Ok((ws_stream, _)) => {
                 log::info!("Relay: connected");
                 backoff = Duration::from_secs(1);
+                *relay_sub_required.lock().unwrap() = false;
 
                 let (ws_sink, ws_stream) = ws_stream.split();
                 let (tx, rx) = mpsc::unbounded_channel::<String>();
