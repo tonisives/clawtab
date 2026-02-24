@@ -44,6 +44,7 @@ clawtab-protocol = { path = "../../protocol" }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 tokio-util = "0.7"
+gethostname = "1"
 
 [lints.rust]
 warnings = "deny"

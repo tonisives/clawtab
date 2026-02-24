@@ -6,6 +6,8 @@ use tauri::State;
 use crate::config::settings::RelaySettings;
 use crate::AppState;
 
+const KEYCHAIN_DEVICE_TOKEN_KEY: &str = "relay_device_token";
+
 #[derive(Serialize)]
 pub struct RelayStatus {
     pub enabled: bool,
@@ -16,13 +18,32 @@ pub struct RelayStatus {
 
 #[tauri::command]
 pub fn get_relay_settings(state: State<AppState>) -> Option<RelaySettings> {
-    state.settings.lock().unwrap().relay.clone()
+    let mut relay = state.settings.lock().unwrap().relay.clone();
+    // Populate device_token from keychain if yaml field is empty
+    if let Some(ref mut rs) = relay {
+        if rs.device_token.is_empty() {
+            if let Some(token) = state.secrets.lock().unwrap().get(KEYCHAIN_DEVICE_TOKEN_KEY) {
+                rs.device_token = token.clone();
+            }
+        }
+    }
+    relay
 }
 
 #[tauri::command]
 pub fn set_relay_settings(state: State<AppState>, settings: RelaySettings) -> Result<(), String> {
+    let device_token = settings.device_token.clone();
+
+    // Store device_token in keychain, save empty string in yaml
+    if !device_token.is_empty() {
+        state.secrets.lock().unwrap().set(KEYCHAIN_DEVICE_TOKEN_KEY, &device_token)?;
+    }
+
     let mut s = state.settings.lock().unwrap();
-    s.relay = Some(settings);
+    s.relay = Some(RelaySettings {
+        device_token: String::new(),
+        ..settings
+    });
     s.save()
 }
 
@@ -151,16 +172,34 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
         .relay
         .as_ref()
         .ok_or("No relay settings configured")?;
-    if rs.server_url.is_empty() || rs.device_token.is_empty() {
-        return Err("Relay server URL or device token not configured".to_string());
+    if rs.server_url.is_empty() {
+        return Err("Relay server URL not configured".to_string());
     }
 
+    // Read device_token from yaml, fall back to keychain
+    let device_token = if rs.device_token.is_empty() {
+        drop(settings);
+        state.secrets.lock().unwrap()
+            .get(KEYCHAIN_DEVICE_TOKEN_KEY)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        let token = rs.device_token.clone();
+        drop(settings);
+        token
+    };
+
+    if device_token.is_empty() {
+        return Err("Device token not configured".to_string());
+    }
+
+    let settings = state.settings.lock().unwrap();
+    let rs = settings.relay.as_ref().unwrap();
     let ws_url = if rs.server_url.starts_with("http") {
         rs.server_url.replacen("http", "ws", 1) + "/ws"
     } else {
         rs.server_url.clone()
     };
-    let device_token = rs.device_token.clone();
     drop(settings);
 
     let relay = Arc::clone(&state.relay);

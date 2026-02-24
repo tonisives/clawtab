@@ -144,7 +144,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [saveError, setSaveError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
-  const [showAgentPrompt, setShowAgentPrompt] = useState(false);
+  const [agentPrompt, setAgentPrompt] = useState("");
   const [jobSelectMode, setJobSelectMode] = useState(false);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [confirmBulkDeleteJobs, setConfirmBulkDeleteJobs] = useState(false);
@@ -455,30 +455,21 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     const agentStatus = statuses["agent"];
     const agentState = agentStatus?.state ?? "idle";
     return (
-      <>
-        <AgentDetailView
-          status={agentStatus}
-          state={agentState}
-          onBack={() => setViewingAgent(false)}
-          onRun={() => setShowAgentPrompt(true)}
-          onStop={() => handleStop("agent")}
-          onOpen={() => handleOpen("agent")}
-        />
-        {showAgentPrompt && (
-          <AgentPromptModal
-            onRun={async (prompt) => {
-              try {
-                await invoke("run_agent", { prompt });
-                setShowAgentPrompt(false);
-                setTimeout(loadStatuses, 500);
-              } catch (e) {
-                console.error("Failed to run agent:", e);
-              }
-            }}
-            onCancel={() => setShowAgentPrompt(false)}
-          />
-        )}
-      </>
+      <AgentDetailView
+        status={agentStatus}
+        state={agentState}
+        onBack={() => setViewingAgent(false)}
+        onRun={async (prompt) => {
+          try {
+            await invoke("run_agent", { prompt });
+            setTimeout(loadStatuses, 500);
+          } catch (e) {
+            console.error("Failed to run agent:", e);
+          }
+        }}
+        onStop={() => handleStop("agent")}
+        onOpen={() => handleOpen("agent")}
+      />
     );
   }
 
@@ -621,7 +612,17 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
                 onDeleteSelected={() => setConfirmBulkDeleteJobs(true)}
                 renderJobRows={renderJobRows}
                 onToggleGroup={() => toggleGroup(group)}
-                onShowAgentPrompt={() => setShowAgentPrompt(true)}
+                agentPrompt={agentPrompt}
+                onAgentPromptChange={setAgentPrompt}
+                onRunAgent={async (prompt) => {
+                  try {
+                    await invoke("run_agent", { prompt });
+                    setAgentPrompt("");
+                    setTimeout(loadStatuses, 500);
+                  } catch (e) {
+                    console.error("Failed to run agent:", e);
+                  }
+                }}
                 onOpenAgent={() => handleOpen("agent")}
                 onViewAgent={() => setViewingAgent(true)}
                 onAddJob={isFolderGroup ? () => { setCreateForGroup({ group, folderPath: groupJobs[0]?.folder_path ?? null }); setIsCreating(true); } : undefined}
@@ -639,20 +640,6 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
         />
       )}
 
-      {showAgentPrompt && (
-        <AgentPromptModal
-          onRun={async (prompt) => {
-            try {
-              await invoke("run_agent", { prompt });
-              setShowAgentPrompt(false);
-              setTimeout(loadStatuses, 500);
-            } catch (e) {
-              console.error("Failed to run agent:", e);
-            }
-          }}
-          onCancel={() => setShowAgentPrompt(false)}
-        />
-      )}
     </div>
   );
 }
@@ -686,7 +673,9 @@ function SortableGroup({
   onDeleteSelected,
   renderJobRows,
   onToggleGroup,
-  onShowAgentPrompt,
+  agentPrompt,
+  onAgentPromptChange,
+  onRunAgent,
   onOpenAgent,
   onViewAgent,
   onAddJob,
@@ -703,7 +692,9 @@ function SortableGroup({
   onDeleteSelected: () => void;
   renderJobRows: (job: Job) => React.ReactNode;
   onToggleGroup: () => void;
-  onShowAgentPrompt: () => void;
+  agentPrompt: string;
+  onAgentPromptChange: (value: string) => void;
+  onRunAgent: (prompt: string) => void;
   onOpenAgent: () => void;
   onViewAgent: () => void;
   onAddJob?: () => void;
@@ -735,19 +726,43 @@ function SortableGroup({
           dragListeners={listeners}
         />
         {!isCollapsed && (
-          <table className="data-table">
-            {tableHead}
-            <tbody>
-              <AgentRow
-                status={agentStatus}
-                state={agentState}
-                selectMode={jobSelectMode}
-                onRun={onShowAgentPrompt}
-                onOpen={onOpenAgent}
-                onClick={onViewAgent}
-              />
-            </tbody>
-          </table>
+          <>
+            <table className="data-table">
+              {tableHead}
+              <tbody>
+                <AgentRow
+                  status={agentStatus}
+                  state={agentState}
+                  selectMode={jobSelectMode}
+                  onOpen={onOpenAgent}
+                  onClick={onViewAgent}
+                />
+              </tbody>
+            </table>
+            {(agentState === "idle" || !agentStatus || agentState === "success" || agentState === "failed") && (
+              <div style={{ display: "flex", gap: 6, padding: "8px 0 4px" }}>
+                <input
+                  type="text"
+                  value={agentPrompt}
+                  onChange={(e) => onAgentPromptChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && agentPrompt.trim()) {
+                      onRunAgent(agentPrompt.trim());
+                    }
+                  }}
+                  placeholder="Enter a prompt for the agent..."
+                  style={{ flex: 1, fontSize: 12 }}
+                />
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => { if (agentPrompt.trim()) onRunAgent(agentPrompt.trim()); }}
+                  disabled={!agentPrompt.trim()}
+                >
+                  Run
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     );
@@ -887,14 +902,12 @@ function AgentRow({
   status,
   state,
   selectMode,
-  onRun,
   onOpen,
   onClick,
 }: {
   status: JobStatus | undefined;
   state: string;
   selectMode: boolean;
-  onRun: () => void;
   onOpen: () => void;
   onClick: () => void;
 }) {
@@ -931,71 +944,9 @@ function AgentRow({
               Open
             </button>
           )}
-          {(state === "idle" || !status || state === "success" || state === "failed") && (
-            <button className="btn btn-primary btn-sm" onClick={onRun}>
-              Run
-            </button>
-          )}
         </div>
       </td>
     </tr>
-  );
-}
-
-function AgentPromptModal({
-  onRun,
-  onCancel,
-}: {
-  onRun: (prompt: string) => void;
-  onCancel: () => void;
-}) {
-  const [prompt, setPrompt] = useState("");
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (prompt.trim()) onRun(prompt.trim());
-    }
-    if (e.key === "Escape") {
-      onCancel();
-    }
-  };
-
-  return (
-    <div className="sample-modal-overlay" onClick={onCancel}>
-      <div className="sample-modal" onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginBottom: 12 }}>Run Agent</h3>
-        <div className="form-group" style={{ marginBottom: 12 }}>
-          <label>Prompt</label>
-          <textarea
-            ref={inputRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Enter a prompt for the agent..."
-            rows={4}
-            style={{ maxWidth: "100%" }}
-          />
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button className="btn btn-sm" onClick={onCancel}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => { if (prompt.trim()) onRun(prompt.trim()); }}
-            disabled={!prompt.trim()}
-          >
-            Run
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1410,11 +1361,12 @@ function AgentDetailView({
   status: JobStatus | undefined;
   state: string;
   onBack: () => void;
-  onRun: () => void;
+  onRun: (prompt: string) => void;
   onStop: () => void;
   onOpen: () => void;
 }) {
   const [runsCollapsed, setRunsCollapsed] = useState(false);
+  const [prompt, setPrompt] = useState("");
 
   return (
     <div className="settings-section">
@@ -1437,13 +1389,33 @@ function AgentDetailView({
               <button className="btn btn-sm" style={{ color: "var(--danger-color)" }} onClick={onStop}>Stop</button>
             </>
           )}
-          {(state === "idle" || !status || state === "success" || state === "failed") && (
-            <button className="btn btn-primary btn-sm" onClick={onRun}>
-              Run
-            </button>
-          )}
         </div>
       </div>
+
+      {(state === "idle" || !status || state === "success" || state === "failed") && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && prompt.trim()) {
+                onRun(prompt.trim());
+                setPrompt("");
+              }
+            }}
+            placeholder="Enter a prompt for the agent..."
+            style={{ flex: 1, fontSize: 12 }}
+          />
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => { if (prompt.trim()) { onRun(prompt.trim()); setPrompt(""); } }}
+            disabled={!prompt.trim()}
+          >
+            Run
+          </button>
+        </div>
+      )}
 
       {state === "running" && status?.state === "running" && status.pane_id && (
         <div className="field-group">

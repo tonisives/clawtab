@@ -295,6 +295,7 @@ pub fn run() {
             commands::settings::set_settings,
             commands::settings::write_editor_log,
             commands::settings::show_settings_window,
+            commands::settings::get_hostname,
             commands::settings::open_logs_folder,
             commands::status::get_job_statuses,
             commands::status::get_running_job_logs,
@@ -462,7 +463,17 @@ pub fn run() {
             {
                 let relay_settings = settings_for_relay.lock().unwrap().relay.clone();
                 if let Some(rs) = relay_settings {
-                    if rs.enabled && !rs.server_url.is_empty() && !rs.device_token.is_empty() {
+                    // Read device_token from yaml, fall back to keychain
+                    let device_token = if rs.device_token.is_empty() {
+                        secrets_for_relay.lock().unwrap()
+                            .get("relay_device_token")
+                            .cloned()
+                            .unwrap_or_default()
+                    } else {
+                        rs.device_token.clone()
+                    };
+
+                    if rs.enabled && !rs.server_url.is_empty() && !device_token.is_empty() {
                         let ws_url = if rs.server_url.starts_with("http") {
                             rs.server_url.replacen("http", "ws", 1) + "/ws"
                         } else {
@@ -471,7 +482,7 @@ pub fn run() {
                         tauri::async_runtime::spawn(async move {
                             relay::connect_loop(
                                 ws_url,
-                                rs.device_token,
+                                device_token,
                                 relay_for_setup,
                                 jobs_for_relay,
                                 job_status_for_relay,

@@ -68,6 +68,7 @@ export function SettingsApp() {
   const [loading, setLoading] = useState(true);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   const [createJobKey, setCreateJobKey] = useState(0);
+  const [authCallbackToken, setAuthCallbackToken] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -80,18 +81,40 @@ export function SettingsApp() {
       .finally(() => setLoading(false));
   }, []);
 
+  const handleDeepLinks = (urls: string[]) => {
+    for (const url of urls) {
+      console.log("deep-link received:", url);
+      invoke("show_settings_window");
+
+      const templateMatch = url.match(/^clawtab:\/\/template\/(.+)/);
+      if (templateMatch) {
+        setActiveTab("jobs");
+        setPendingTemplateId(templateMatch[1]);
+        continue;
+      }
+
+      if (url.includes("auth/callback")) {
+        const queryString = url.split("?")[1] ?? "";
+        const params = new URLSearchParams(queryString);
+        const accessToken = params.get("access_token");
+        const error = params.get("error");
+        console.log("auth callback:", { accessToken: !!accessToken, error });
+        setActiveTab("remote");
+        if (accessToken) {
+          setAuthCallbackToken(accessToken);
+        } else if (error) {
+          console.error("Google auth callback error:", error);
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     let unlisten: ReturnType<typeof onOpenUrl> | null = null;
     try {
       unlisten = onOpenUrl((urls) => {
-        for (const url of urls) {
-          const match = url.match(/^clawtab:\/\/template\/(.+)/);
-          if (match) {
-            invoke("show_settings_window");
-            setActiveTab("jobs");
-            setPendingTemplateId(match[1]);
-          }
-        }
+        console.log("onOpenUrl fired:", urls);
+        handleDeepLinks(urls);
       });
     } catch (e) {
       console.error("Failed to register deep-link handler:", e);
@@ -180,7 +203,12 @@ export function SettingsApp() {
         {activeTab === "secrets" && <SecretsPanel />}
         {activeTab === "skills" && <SkillsPanel />}
         {activeTab === "telegram" && <TelegramPanel />}
-        {activeTab === "remote" && <RelayPanel />}
+        {activeTab === "remote" && (
+          <RelayPanel
+            externalAccessToken={authCallbackToken}
+            onExternalTokenConsumed={() => setAuthCallbackToken(null)}
+          />
+        )}
         {activeTab === "settings" && <GeneralSettings />}
       </div>
     </div>

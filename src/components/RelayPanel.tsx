@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConfirmDialog } from "./ConfirmDialog";
+
+const GOOGLE_CLIENT_ID =
+  "186596496380-dp282va1mvdhrr2q7qrlbgmn3ak2mq07.apps.googleusercontent.com";
 
 interface RelaySettings {
   enabled: boolean;
@@ -27,7 +31,12 @@ interface PairDeviceResponse {
   device_token: string;
 }
 
-export function RelayPanel() {
+interface RelayPanelProps {
+  externalAccessToken?: string | null;
+  onExternalTokenConsumed?: () => void;
+}
+
+export function RelayPanel({ externalAccessToken, onExternalTokenConsumed }: RelayPanelProps) {
   const [settings, setSettings] = useState<RelaySettings | null>(null);
   const [status, setStatus] = useState<RelayStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -48,16 +57,28 @@ export function RelayPanel() {
     Promise.all([
       invoke<RelaySettings | null>("get_relay_settings"),
       invoke<RelayStatus>("get_relay_status"),
-    ]).then(([s, st]) => {
+      invoke<string>("get_hostname"),
+    ]).then(([s, st, hostname]) => {
       setSettings(s);
       setStatus(st);
       if (s) {
         setServerUrl(s.server_url || "https://relay.clawtab.cc");
         setDeviceName(s.device_name || "");
+      } else {
+        setDeviceName(hostname || "");
       }
       setLoaded(true);
     });
   }, []);
+
+  // Accept access token from deep link callback
+  useEffect(() => {
+    if (externalAccessToken) {
+      setAccessToken(externalAccessToken);
+      setLoginError(null);
+      onExternalTokenConsumed?.();
+    }
+  }, [externalAccessToken]);
 
   // Poll connection status
   useEffect(() => {
@@ -85,6 +106,21 @@ export function RelayPanel() {
     } finally {
       setLoggingIn(false);
     }
+  };
+
+  const handleGoogleSignIn = async () => {
+    const state = btoa("clawtab");
+    const redirectUri = `${serverUrl}/auth/google/callback`;
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "openid email profile",
+      state,
+      access_type: "offline",
+      prompt: "consent",
+    });
+    await openUrl(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
   };
 
   const handlePairDevice = async () => {
@@ -250,6 +286,51 @@ export function RelayPanel() {
                 >
                   {loggingIn ? "Logging in..." : "Log in"}
                 </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "12px 0", maxWidth: 400 }}>
+                  <div style={{ flex: 1, height: 1, background: "var(--border-color)" }} />
+                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>or</span>
+                  <div style={{ flex: 1, height: 1, background: "var(--border-color)" }} />
+                </div>
+
+                <button
+                  className="btn"
+                  onClick={handleGoogleSignIn}
+                  disabled={loggingIn}
+                  style={{ width: "100%", maxWidth: 400, boxSizing: "border-box" }}
+                >
+                  Sign in with Google
+                </button>
+
+                {location.port && (
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label>Paste access token (dev)</label>
+                    <div style={{ display: "flex", gap: 8, maxWidth: 400 }}>
+                      <input
+                        id="dev-token-input"
+                        type="text"
+                        placeholder="access_token from callback URL"
+                        style={{ flex: 1 }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const val = (e.target as HTMLInputElement).value.trim();
+                            if (val) setAccessToken(val);
+                          }
+                        }}
+                      />
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                          const el = document.getElementById("dev-token-input") as HTMLInputElement;
+                          const val = el?.value.trim();
+                          if (val) setAccessToken(val);
+                        }}
+                      >
+                        OK
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

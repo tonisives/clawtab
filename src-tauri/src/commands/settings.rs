@@ -72,6 +72,14 @@ pub fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn get_hostname() -> String {
+    gethostname::gethostname()
+        .to_string_lossy()
+        .trim_end_matches(".local")
+        .to_string()
+}
+
+#[tauri::command]
 pub fn open_logs_folder() -> Result<(), String> {
     let dir = Path::new(LOG_DIR);
     let _ = fs::create_dir_all(dir);
