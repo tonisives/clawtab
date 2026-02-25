@@ -14,9 +14,13 @@ ClawTab is a macOS desktop app for scheduling and managing automated jobs -- she
 3. [Job Types](./job-types.md) -- Binary, Claude, and Folder jobs
 4. [Secrets](./secrets.md) -- Keychain and gopass integration
 5. [Telegram](./telegram.md) -- Notifications and agent mode
-6. [Remote Access](./remote.md) -- Control jobs from your phone via relay server
-7. [CLI & TUI](./cli-tui.md) -- Command-line and terminal UI
+6. [CLI & TUI](./cli-tui.md) -- Command-line and terminal UI
+
+### Remote Access
+7. [Remote Access](./remote.md) -- Control jobs from your phone via relay server
+8. [Self-Hosted Deployment](./deploy.md) -- Run your own relay, PostgreSQL, and frontend
 
 ### Reference
-8. [Architecture](./architecture.md) -- System design, execution flow, IPC
-9. [File Reference](./file-reference.md) -- Config paths, schemas, log locations
+9. [Architecture](./architecture.md) -- System design, execution flow, IPC
+10. [Project Layout](./project-layout.md) -- Repository structure (relay, mobile, protocol)
+11. [File Reference](./file-reference.md) -- Config paths, schemas, log locations

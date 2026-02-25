@@ -5,6 +5,7 @@ import { useAuthStore } from "../store/auth";
 import { useJobsStore } from "../store/jobs";
 import { useWsStore } from "../store/ws";
 import { dispatchLogChunk } from "./useLogs";
+import { resolveRequest } from "../lib/useRequestMap";
 import type { ClientMessage, IncomingMessage } from "../types/messages";
 
 let globalWs: WebSocket | null = null;
@@ -114,6 +115,9 @@ export function useWebSocket() {
         case "desktop_status":
           setDesktopStatus(msg.device_id, msg.device_name, msg.online);
           break;
+        case "run_history":
+          resolveRequest(msg.id, msg.runs);
+          break;
         case "error":
           if (msg.code === "UNAUTHORIZED") {
             refreshToken().then((ok) => {
@@ -122,6 +126,10 @@ export function useWebSocket() {
           }
           break;
         default:
+          // Try resolving as a pending request (ack messages etc.)
+          if ("id" in msg && msg.id) {
+            resolveRequest(msg.id, msg);
+          }
           break;
       }
     };
