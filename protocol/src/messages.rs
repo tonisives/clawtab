@@ -69,6 +69,16 @@ pub enum ClientMessage {
         id: String,
         run_id: String,
     },
+    GetDetectedProcessLogs {
+        id: String,
+        tmux_session: String,
+        pane_id: String,
+    },
+    SendDetectedProcessInput {
+        id: String,
+        pane_id: String,
+        text: String,
+    },
 }
 
 /// Messages sent by the desktop app to the relay server.
@@ -166,6 +176,16 @@ pub enum DesktopMessage {
         id: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         detail: Option<RunDetail>,
+    },
+    /// Response to get_detected_process_logs
+    DetectedProcessLogs {
+        id: String,
+        logs: String,
+    },
+    /// Ack for send_detected_process_input
+    SendDetectedProcessInputAck {
+        id: String,
+        success: bool,
     },
 }
 

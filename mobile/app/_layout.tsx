@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Slot } from "expo-router";
+import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useAuthStore } from "../src/store/auth";
@@ -29,21 +29,20 @@ export default function RootLayout() {
     );
   }
 
+  const content = (
+    <View style={styles.root}>
+      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style="light" />
+    </View>
+  );
+
   if (!isAuthenticated) {
-    return (
-      <View style={styles.root}>
-        <Slot />
-        <StatusBar style="light" />
-      </View>
-    );
+    return content;
   }
 
   return (
     <WebSocketProvider>
-      <View style={styles.root}>
-        <Slot />
-        <StatusBar style="light" />
-      </View>
+      {content}
     </WebSocketProvider>
   );
 }

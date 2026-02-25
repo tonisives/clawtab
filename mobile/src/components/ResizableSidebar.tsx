@@ -9,7 +9,6 @@ type IoniconsName = keyof typeof Ionicons.glyphMap;
 
 const NAV_ITEMS = [
   { route: "/(tabs)", label: "Jobs", icon: "briefcase-outline" as IoniconsName, iconFocused: "briefcase" as IoniconsName },
-  { route: "/(tabs)/agent", label: "Agent", icon: "flash-outline" as IoniconsName, iconFocused: "flash" as IoniconsName },
   { route: "/(tabs)/devices", label: "Devices", icon: "laptop-outline" as IoniconsName, iconFocused: "laptop" as IoniconsName },
   { route: "/(tabs)/settings", label: "Settings", icon: "settings-outline" as IoniconsName, iconFocused: "settings" as IoniconsName },
 ];

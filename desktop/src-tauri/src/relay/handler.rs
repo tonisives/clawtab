@@ -163,6 +163,20 @@ pub async fn handle_incoming(
             let detail = get_run_detail_full(&run_id, history);
             Some(DesktopMessage::RunDetailResponse { id, detail })
         }
+
+        ClientMessage::GetDetectedProcessLogs { id, tmux_session, pane_id } => {
+            let logs = crate::tmux::capture_pane(&tmux_session, &pane_id, 200)
+                .unwrap_or_default();
+            Some(DesktopMessage::DetectedProcessLogs { id, logs })
+        }
+
+        ClientMessage::SendDetectedProcessInput { id, pane_id, text } => {
+            let result = crate::tmux::send_keys_to_tui_pane(&pane_id, &text);
+            Some(DesktopMessage::SendDetectedProcessInputAck {
+                id,
+                success: result.is_ok(),
+            })
+        }
     };
 
     match response {

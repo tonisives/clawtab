@@ -23,7 +23,9 @@ export type ClientMessage =
       group?: string;
     }
   | { type: "detect_processes"; id: string }
-  | { type: "get_run_detail"; id: string; run_id: string };
+  | { type: "get_run_detail"; id: string; run_id: string }
+  | { type: "get_detected_process_logs"; id: string; tmux_session: string; pane_id: string }
+  | { type: "send_detected_process_input"; id: string; pane_id: string; text: string };
 
 // Messages received from the relay (desktop responses forwarded through)
 export type DesktopMessage =
@@ -50,7 +52,9 @@ export type DesktopMessage =
   | { type: "run_agent_ack"; id: string; success: boolean; job_name?: string }
   | { type: "create_job_ack"; id: string; success: boolean; error?: string }
   | { type: "detected_processes"; id: string; processes: ClaudeProcess[] }
-  | { type: "run_detail_response"; id: string; detail?: RunDetail };
+  | { type: "run_detail_response"; id: string; detail?: RunDetail }
+  | { type: "detected_process_logs"; id: string; logs: string }
+  | { type: "send_detected_process_input_ack"; id: string; success: boolean };
 
 // Messages from the relay server itself
 export type ServerMessage =

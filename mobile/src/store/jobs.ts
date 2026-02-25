@@ -7,6 +7,7 @@ interface JobsState {
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
   detectedProcesses: ClaudeProcess[];
+  loaded: boolean;
 
   setJobs: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   updateStatus: (name: string, status: JobStatus) => void;
@@ -17,8 +18,9 @@ export const useJobsStore = create<JobsState>((set) => ({
   jobs: [],
   statuses: {},
   detectedProcesses: [],
+  loaded: false,
 
-  setJobs: (jobs, statuses) => set({ jobs, statuses }),
+  setJobs: (jobs, statuses) => set({ jobs, statuses, loaded: true }),
 
   updateStatus: (name, status) =>
     set((state) => ({

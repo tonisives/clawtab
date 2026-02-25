@@ -23,11 +23,14 @@ if (Platform.OS !== "web") {
   const mod = require("@react-native-google-signin/google-signin");
   GoogleSignin = mod.GoogleSignin;
   isSuccessResponse = mod.isSuccessResponse;
-  GoogleSignin.configure({
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
-    offlineAccess: true,
-  });
+  if (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS) {
+    GoogleSignin.configure({
+      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
+      ...(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
+        ? { webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB, offlineAccess: true }
+        : {}),
+    });
+  }
 }
 
 WebBrowser.maybeCompleteAuthSession();

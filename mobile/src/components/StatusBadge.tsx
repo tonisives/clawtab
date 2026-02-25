@@ -7,7 +7,7 @@ import { radius, spacing } from "../theme/spacing";
 function statusStyle(status: JobStatus): { color: string; bg: string } {
   switch (status.state) {
     case "idle":
-      return { color: colors.statusIdle, bg: "rgba(152, 152, 157, 0.12)" };
+      return { color: colors.statusIdle, bg: "transparent" };
     case "running":
       return { color: colors.statusRunning, bg: colors.accentBg };
     case "success":

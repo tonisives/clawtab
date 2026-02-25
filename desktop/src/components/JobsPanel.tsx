@@ -556,7 +556,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     saveGroupOrder(newOrder);
   };
 
-  const renderJobRowsWithInput = (job: Job) => {
+  const renderJobRowsWithInput = (job: Job, index: number) => {
     const status = statuses[job.name];
     const isRunning = status?.state === "running" && status.pane_id;
 
@@ -568,6 +568,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
         selectMode={jobSelectMode}
         isSelected={selectedJobs.has(job.name)}
         isRunning={!!isRunning}
+        odd={index % 2 === 1}
         onToggleSelected={() => toggleJobSelected(job.name)}
         onToggleEnabled={() => handleToggle(job.name)}
         onClick={() => setViewingJob(job)}
@@ -750,7 +751,7 @@ function SortableGroup({
   detectedProcesses: ClaudeProcess[];
   onToggleSelectMode: () => void;
   onDeleteSelected: () => void;
-  renderJobRows: (job: Job) => React.ReactNode;
+  renderJobRows: (job: Job, index: number) => React.ReactNode;
   onToggleGroup: () => void;
   agentPrompt: string;
   onAgentPromptChange: (value: string) => void;
@@ -853,7 +854,7 @@ function SortableGroup({
         <table className="data-table">
           {tableHead}
           <tbody>
-            {groupJobList.map(renderJobRows)}
+            {groupJobList.map((job, idx) => renderJobRows(job, idx))}
             {detectedProcesses.map((proc) => (
               <DetectedProcessRow key={proc.pane_id} process={proc} selectMode={jobSelectMode} />
             ))}
@@ -946,7 +947,7 @@ function GroupHeader({
           <span style={{ position: "relative", top: -1 }}>+</span>
         </button>
       )}
-      {onToggleSelectMode && (
+      {onToggleSelectMode && !isCollapsed && (
         <button
           className="btn btn-sm"
           style={{ fontSize: 10, padding: "1px 6px" }}
@@ -1015,16 +1016,19 @@ function AgentRow({
 }
 
 function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; selectMode: boolean }) {
-  const displayName = process.cwd.split("/").filter(Boolean).slice(-1)[0] || process.cwd;
+  const displayName = shortenPath(process.cwd);
   const [expanded, setExpanded] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [logs, setLogs] = useState(process.log_lines);
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const preRef = useRef<HTMLPreElement>(null);
+  const fullscreenPreRef = useRef<HTMLPreElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fullscreenInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!expanded) return;
+    if (!expanded && !fullscreen) return;
     let active = true;
     const poll = async () => {
       try {
@@ -1040,7 +1044,7 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
     poll();
     const interval = setInterval(poll, 3000);
     return () => { active = false; clearInterval(interval); };
-  }, [expanded, process.pane_id, process.tmux_session]);
+  }, [expanded, fullscreen, process.pane_id, process.tmux_session]);
 
   useEffect(() => {
     if (expanded && preRef.current) {
@@ -1049,7 +1053,13 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
         el.scrollTop = el.scrollHeight;
       });
     }
-  }, [logs, expanded]);
+    if (fullscreen && fullscreenPreRef.current) {
+      const el = fullscreenPreRef.current;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, [logs, expanded, fullscreen]);
 
   const handleOpen = async () => {
     try {
@@ -1116,8 +1126,27 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
             <button
               className="btn btn-sm"
               onClick={(e) => { e.stopPropagation(); handleOpen(); }}
+              title="Open in terminal"
+              style={{ padding: "2px 6px", lineHeight: 1 }}
             >
-              Open
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={(e) => { e.stopPropagation(); setFullscreen(true); setExpanded(false); }}
+              title="Full screen"
+              style={{ padding: "2px 6px", lineHeight: 1 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
             </button>
           </div>
         </td>
@@ -1190,7 +1219,178 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
           </td>
         </tr>
       )}
+      {fullscreen && (
+        <tr style={{ display: "none" }}>
+          <td>
+            <FullscreenTerminal
+              title={displayName}
+              logs={logs}
+              preRef={fullscreenPreRef}
+              inputRef={fullscreenInputRef}
+              inputText={inputText}
+              sending={sending}
+              options={options}
+              onInputChange={setInputText}
+              onSend={handleSend}
+              onOptionClick={handleOptionClick}
+              onOpen={handleOpen}
+              onClose={() => setFullscreen(false)}
+            />
+          </td>
+        </tr>
+      )}
     </>
+  );
+}
+
+function FullscreenTerminal({
+  title,
+  logs,
+  preRef,
+  inputRef,
+  inputText,
+  sending,
+  options,
+  onInputChange,
+  onSend,
+  onOptionClick,
+  onOpen,
+  onClose,
+}: {
+  title: string;
+  logs: string;
+  preRef: React.RefObject<HTMLPreElement | null>;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputText: string;
+  sending: boolean;
+  options: { number: string; label: string }[];
+  onInputChange: (v: string) => void;
+  onSend: () => void;
+  onOptionClick: (num: string) => void;
+  onOpen: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <div style={{
+      position: "fixed",
+      inset: 0,
+      zIndex: 9999,
+      background: "var(--bg-primary, #0a0a0a)",
+      display: "flex",
+      flexDirection: "column",
+    }}>
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 12px",
+        borderBottom: "1px solid var(--border-color, #333)",
+        flexShrink: 0,
+      }}>
+        <button
+          className="btn btn-sm"
+          onClick={onClose}
+          style={{ padding: "2px 8px" }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="4 14 10 14 10 20" />
+            <polyline points="20 10 14 10 14 4" />
+            <line x1="14" y1="10" x2="21" y2="3" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </svg>
+        </button>
+        <code style={{ fontSize: 12, color: "var(--text-secondary)", flex: 1 }}>{title}</code>
+        <span className="status-badge status-running" style={{ fontSize: 10 }}>running</span>
+        <button
+          className="btn btn-sm"
+          onClick={onOpen}
+          title="Open in terminal"
+          style={{ padding: "2px 8px" }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+        </button>
+      </div>
+      <pre ref={preRef} style={{
+        flex: 1,
+        margin: 0,
+        padding: "8px 12px",
+        fontSize: 12,
+        lineHeight: 1.4,
+        overflowY: "auto",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+        color: "var(--text-secondary)",
+        overscrollBehavior: "contain",
+      }}>{logs}</pre>
+      {options.length > 0 && (
+        <div style={{
+          display: "flex",
+          gap: 4,
+          padding: "6px 12px",
+          flexWrap: "wrap",
+          borderTop: "1px solid var(--border-color, #333)",
+          flexShrink: 0,
+        }}>
+          {options.map((opt) => (
+            <button
+              key={opt.number}
+              className="btn btn-sm"
+              style={{
+                fontSize: 11,
+                padding: "2px 8px",
+                border: "1px solid var(--accent-color, #6366f1)",
+                color: "var(--accent-color, #6366f1)",
+              }}
+              onClick={() => onOptionClick(opt.number)}
+              disabled={sending}
+              title={opt.label}
+            >
+              {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{
+        display: "flex",
+        gap: 6,
+        padding: "8px 12px",
+        borderTop: "1px solid var(--border-color, #333)",
+        flexShrink: 0,
+      }}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputText}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+          placeholder="Send input..."
+          style={{ flex: 1, fontSize: 13 }}
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={onSend}
+          disabled={!inputText.trim() || sending}
+        >
+          Send
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1781,6 +1981,7 @@ function JobRow({
   status,
   selectMode,
   isSelected,
+  odd,
   onToggleSelected,
   onToggleEnabled,
   onClick,
@@ -1789,6 +1990,7 @@ function JobRow({
   status: JobStatus | undefined;
   selectMode: boolean;
   isSelected: boolean;
+  odd?: boolean;
   onToggleSelected: () => void;
   onToggleEnabled: () => void;
   onClick: () => void;
@@ -1800,7 +2002,7 @@ function JobRow({
   };
 
   return (
-    <tr onClick={handleRowClick} style={{ cursor: "pointer" }}>
+    <tr onClick={handleRowClick} style={{ cursor: "pointer", ...(odd ? { background: "rgba(255,255,255,0.02)" } : {}) }}>
       {selectMode && (
         <td style={{ width: 24, padding: "8px 4px" }}>
           <input
@@ -1842,6 +2044,7 @@ function JobRowWithInput({
   selectMode,
   isSelected,
   isRunning,
+  odd,
   onToggleSelected,
   onToggleEnabled,
   onClick,
@@ -1851,6 +2054,7 @@ function JobRowWithInput({
   selectMode: boolean;
   isSelected: boolean;
   isRunning: boolean;
+  odd?: boolean;
   onToggleSelected: () => void;
   onToggleEnabled: () => void;
   onClick: () => void;
@@ -1864,6 +2068,7 @@ function JobRowWithInput({
         status={status}
         selectMode={selectMode}
         isSelected={isSelected}
+        odd={odd}
         onToggleSelected={onToggleSelected}
         onToggleEnabled={onToggleEnabled}
         onClick={onClick}

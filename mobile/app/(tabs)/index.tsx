@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, View, Text, TextInput, Pressable, StyleSheet, RefreshControl, ScrollView } from "react-native";
+import { FlatList, View, Text, TextInput, Pressable, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions } from "react-native";
 import { useJobsStore } from "../../src/store/jobs";
 import { useWsStore } from "../../src/store/ws";
 import { JobCard } from "../../src/components/JobCard";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
+import { registerRequest } from "../../src/lib/useRequestMap";
 import { useLogs } from "../../src/hooks/useLogs";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import * as api from "../../src/api/client";
@@ -27,13 +28,30 @@ export default function JobsScreen() {
   const jobs = useJobsStore((s) => s.jobs);
   const statuses = useJobsStore((s) => s.statuses);
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses);
+  const loaded = useJobsStore((s) => s.loaded);
   const connected = useWsStore((s) => s.connected);
   const subscriptionRequired = useWsStore((s) => s.subscriptionRequired);
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const [subLoading, setSubLoading] = useState(false);
   const [agentPrompt, setAgentPrompt] = useState("");
   const [agentSending, setAgentSending] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { isWide } = useResponsive();
+
+  const toggleGroup = useCallback((group: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  }, []);
+
+  const flatListRef = useRef<FlatList>(null);
+
+  const scrollToIndex = useCallback((idx: number) => {
+    flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 });
+  }, []);
 
   const handleRefresh = useCallback(() => {
     const send = getWsSend();
@@ -97,7 +115,7 @@ export default function JobsScreen() {
   type ListItem =
     | { kind: "agent" }
     | { kind: "header"; group: string }
-    | { kind: "job"; job: RemoteJob }
+    | { kind: "job"; job: RemoteJob; idx: number }
     | { kind: "process"; process: ClaudeProcess };
 
   const items: ListItem[] = [];
@@ -110,21 +128,27 @@ export default function JobsScreen() {
   const hasMultipleGroups = grouped.size > 1 || unmatchedProcesses.length > 0;
 
   for (const [group, groupJobs] of grouped) {
+    const displayGroup = group === "default" ? "General" : group;
     if (hasMultipleGroups || items.length > 1) {
-      items.push({ kind: "header", group: group === "default" ? "General" : group });
+      items.push({ kind: "header", group: displayGroup });
     }
-    for (const job of groupJobs) {
-      items.push({ kind: "job", job });
-    }
-    for (const proc of matchedProcessesByGroup.get(group) ?? []) {
-      items.push({ kind: "process", process: proc });
+    if (!collapsedGroups.has(displayGroup)) {
+      let jobIdx = 0;
+      for (const job of groupJobs) {
+        items.push({ kind: "job", job, idx: jobIdx++ });
+      }
+      for (const proc of matchedProcessesByGroup.get(group) ?? []) {
+        items.push({ kind: "process", process: proc });
+      }
     }
   }
 
   if (unmatchedProcesses.length > 0) {
     items.push({ kind: "header", group: "Detected" });
-    for (const proc of unmatchedProcesses) {
-      items.push({ kind: "process", process: proc });
+    if (!collapsedGroups.has("Detected")) {
+      for (const proc of unmatchedProcesses) {
+        items.push({ kind: "process", process: proc });
+      }
     }
   }
 
@@ -157,6 +181,13 @@ export default function JobsScreen() {
           </View>
         )}
 
+        {connected && !loaded && !subscriptionRequired && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.loadingText}>Loading jobs...</Text>
+          </View>
+        )}
+
         {subscriptionRequired ? (
           <View style={[styles.demoList, { pointerEvents: "none" as const }]}>
             {DEMO_JOBS.map((d, i) => (
@@ -178,11 +209,12 @@ export default function JobsScreen() {
           </View>
         ) : (
           <FlatList
+            ref={flatListRef}
             data={items}
             keyExtractor={(item) =>
               item.kind === "agent" ? "agent" : item.kind === "header" ? `h_${item.group}` : item.kind === "process" ? `p_${item.process.pane_id}` : `j_${item.job.name}`
             }
-            renderItem={({ item }) => {
+            renderItem={({ item, index }) => {
               if (item.kind === "agent") {
                 return (
                   <View style={styles.agentSection}>
@@ -215,8 +247,17 @@ export default function JobsScreen() {
                 );
               }
               if (item.kind === "header") {
+                const isCollapsed = collapsedGroups.has(item.group);
                 return (
-                  <Text style={styles.groupHeader}>{item.group}</Text>
+                  <Pressable
+                    onPress={() => toggleGroup(item.group)}
+                    style={styles.groupHeaderRow}
+                  >
+                    <Text style={styles.groupHeaderArrow}>
+                      {isCollapsed ? "\u25B6" : "\u25BC"}
+                    </Text>
+                    <Text style={styles.groupHeader}>{item.group}</Text>
+                  </Pressable>
                 );
               }
               if (item.kind === "process") {
@@ -224,10 +265,10 @@ export default function JobsScreen() {
               }
               const status = statuses[item.job.name] ?? IDLE_STATUS;
               return (
-                <View>
+                <View style={item.idx % 2 === 1 ? { opacity: 0.85 } : undefined}>
                   <JobCard job={item.job} status={status} />
                   {status.state === "running" && (
-                    <InlineJobReply jobName={item.job.name} />
+                    <InlineJobReply jobName={item.job.name} onScrollTo={() => scrollToIndex(index)} />
                   )}
                 </View>
               );
@@ -241,6 +282,11 @@ export default function JobsScreen() {
                 tintColor={colors.accent}
               />
             }
+            onScrollToIndexFailed={(info) => {
+              setTimeout(() => {
+                flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
+              }, 200);
+            }}
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>No jobs</Text>
@@ -270,9 +316,11 @@ function parseNumberedOptions(text: string): { number: string; label: string }[]
   return options;
 }
 
-function InlineJobReply({ jobName }: { jobName: string }) {
+function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?: () => void }) {
   const [text, setText] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const { logs } = useLogs(jobName);
+  const options = parseNumberedOptions(logs);
 
   const handleSend = (input: string) => {
     const send = getWsSend();
@@ -282,12 +330,35 @@ function InlineJobReply({ jobName }: { jobName: string }) {
     }
   };
 
+  const handleToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && onScrollTo) {
+      setTimeout(onScrollTo, 100);
+    }
+  };
+
   return (
     <View style={styles.inlineReply}>
       {expanded && <InlineJobLogs jobName={jobName} onSend={handleSend} />}
-      <Pressable onPress={() => setExpanded((v) => !v)} style={styles.inlineReplyToggle}>
+      <Pressable onPress={handleToggle} style={styles.inlineReplyToggle}>
         <Text style={styles.inlineReplyToggleText}>{expanded ? "Hide logs" : "Show logs & reply"}</Text>
       </Pressable>
+      {!expanded && options.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
+          {options.map((opt) => (
+            <Pressable
+              key={opt.number}
+              style={styles.optionBtn}
+              onPress={() => handleSend(opt.number)}
+            >
+              <Text style={styles.optionBtnText}>
+                {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
       {!expanded && (
         <View style={styles.inlineReplyInput}>
           <TextInput
@@ -315,7 +386,11 @@ function InlineJobReply({ jobName }: { jobName: string }) {
 function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: string) => void }) {
   const { logs } = useLogs(jobName);
   const [text, setText] = useState("");
+  const [logsExpanded, setLogsExpanded] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  const screenH = Dimensions.get("window").height;
+  const logHeight = logsExpanded ? screenH * 0.6 : Math.round(screenH / 3);
 
   const options = parseNumberedOptions(logs);
 
@@ -334,9 +409,14 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
   return (
     <View>
       {logs ? (
-        <ScrollView ref={scrollRef} style={styles.inlineReplyLogs} nestedScrollEnabled>
-          <Text style={styles.inlineReplyLogsText} selectable>{logs}</Text>
-        </ScrollView>
+        <View>
+          <ScrollView ref={scrollRef} style={[styles.inlineReplyLogs, { maxHeight: logHeight }]} nestedScrollEnabled>
+            <Text style={styles.inlineReplyLogsText} selectable>{logs}</Text>
+          </ScrollView>
+          <Pressable onPress={() => setLogsExpanded((v) => !v)} style={styles.logsExpandToggle}>
+            <Text style={styles.logsExpandToggleText}>{logsExpanded ? "Collapse" : "Expand"}</Text>
+          </Pressable>
+        </View>
       ) : null}
       {options.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
@@ -377,37 +457,161 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
 
 function ProcessCard({ process }: { process: ClaudeProcess }) {
   const [expanded, setExpanded] = useState(false);
-  const displayName = process.cwd.split("/").filter(Boolean).slice(-1)[0] || process.cwd;
+  const [fullscreen, setFullscreen] = useState(false);
+  const displayName = process.cwd.replace(/^\/Users\/[^/]+/, "~");
 
   return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.processCard,
-        pressed && styles.processCardPressed,
-      ]}
-      onPress={() => setExpanded((v) => !v)}
-    >
-      <View style={styles.processRow}>
-        <View style={[styles.processTypeIcon]}>
-          <Text style={styles.processTypeIconText}>C</Text>
-        </View>
-        <View style={styles.processInfo}>
-          <Text style={styles.processName} numberOfLines={1}>{displayName}</Text>
-          <View style={styles.processMeta}>
-            <Text style={styles.processMetaText}>v{process.version}</Text>
-            <Text style={styles.processMetaText}>detected</Text>
+    <>
+      <Pressable
+        style={({ pressed }) => [
+          styles.processCard,
+          pressed && styles.processCardPressed,
+        ]}
+        onPress={() => setExpanded((v) => !v)}
+      >
+        <View style={styles.processRow}>
+          <View style={[styles.processTypeIcon]}>
+            <Text style={styles.processTypeIconText}>C</Text>
+          </View>
+          <View style={styles.processInfo}>
+            <Text style={styles.processName} numberOfLines={1}>{displayName}</Text>
+            <View style={styles.processMeta}>
+              <Text style={styles.processMetaText}>v{process.version}</Text>
+              <Text style={styles.processMetaText}>detected</Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={() => setFullscreen(true)}
+            style={styles.processZoomBtn}
+            hitSlop={8}
+          >
+            <Text style={styles.processZoomText}>{'\u2197\u2199'}</Text>
+          </Pressable>
+          <View style={styles.processRunningBadge}>
+            <Text style={styles.processRunningText}>running</Text>
           </View>
         </View>
-        <View style={styles.processRunningBadge}>
-          <Text style={styles.processRunningText}>running</Text>
+        {expanded && process.log_lines ? (
+          <View style={styles.processLogs}>
+            <Text style={styles.processLogsText} selectable>{process.log_lines}</Text>
+          </View>
+        ) : null}
+      </Pressable>
+      {fullscreen && (
+        <FullscreenProcessTerminal
+          process={process}
+          displayName={displayName}
+          onClose={() => setFullscreen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function FullscreenProcessTerminal({
+  process,
+  displayName,
+  onClose,
+}: {
+  process: ClaudeProcess;
+  displayName: string;
+  onClose: () => void;
+}) {
+  const [logs, setLogs] = useState(process.log_lines);
+  const [inputText, setInputText] = useState("");
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      const send = getWsSend();
+      if (!send) return;
+      const id = nextId();
+      send({ type: "get_detected_process_logs", id, tmux_session: process.tmux_session, pane_id: process.pane_id });
+      const resp = await registerRequest<{ logs?: string }>(id);
+      if (active && resp.logs != null) setLogs(resp.logs);
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
+  }, [process.pane_id, process.tmux_session]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: false });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [logs]);
+
+  const options = parseNumberedOptions(logs);
+
+  const handleSend = (text: string) => {
+    const send = getWsSend();
+    if (send && text.trim()) {
+      send({ type: "send_detected_process_input", id: nextId(), pane_id: process.pane_id, text: text.trim() });
+      setInputText("");
+    }
+  };
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="fullScreen">
+      <View style={styles.fsContainer}>
+        <View style={styles.fsHeader}>
+          <Pressable onPress={onClose} style={styles.fsCloseBtn}>
+            <Text style={styles.fsCloseBtnText}>Close</Text>
+          </Pressable>
+          <Text style={styles.fsTitle} numberOfLines={1}>{displayName}</Text>
+          <View style={styles.processRunningBadge}>
+            <Text style={styles.processRunningText}>running</Text>
+          </View>
+        </View>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.fsLogs}
+          contentContainerStyle={styles.fsLogsContent}
+        >
+          <Text style={styles.fsLogsText} selectable>{logs}</Text>
+        </ScrollView>
+        {options.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.fsOptionBar}
+            contentContainerStyle={styles.fsOptionBarContent}
+          >
+            {options.map((opt) => (
+              <Pressable
+                key={opt.number}
+                style={styles.optionBtn}
+                onPress={() => handleSend(opt.number)}
+              >
+                <Text style={styles.optionBtnText}>
+                  {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+        <View style={styles.fsInputRow}>
+          <TextInput
+            style={styles.fsTextInput}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Send input..."
+            placeholderTextColor={colors.textMuted}
+            returnKeyType="send"
+            onSubmitEditing={() => handleSend(inputText)}
+          />
+          <Pressable
+            style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]}
+            onPress={() => handleSend(inputText)}
+            disabled={!inputText.trim()}
+          >
+            <Text style={styles.fsSendBtnText}>Send</Text>
+          </Pressable>
         </View>
       </View>
-      {expanded && process.log_lines ? (
-        <View style={styles.processLogs}>
-          <Text style={styles.processLogsText} selectable>{process.log_lines}</Text>
-        </View>
-      ) : null}
-    </Pressable>
+    </Modal>
   );
 }
 
@@ -415,6 +619,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: 60,
+  },
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: 13,
   },
   banner: {
     backgroundColor: colors.surface,
@@ -473,14 +688,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xl,
   },
+  groupHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  groupHeaderArrow: {
+    fontFamily: "monospace",
+    fontSize: 9,
+    color: colors.textSecondary,
+  },
   groupHeader: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
   },
   empty: {
     flex: 1,
@@ -630,12 +855,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   inlineReplyLogs: {
-    maxHeight: 150,
     backgroundColor: "#000",
     borderRadius: radius.sm,
     margin: spacing.sm,
     marginBottom: 0,
     padding: spacing.sm,
+  },
+  logsExpandToggle: {
+    alignSelf: "center",
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+  },
+  logsExpandToggleText: {
+    color: colors.textMuted,
+    fontSize: 10,
   },
   inlineReplyLogsText: {
     color: colors.textSecondary,
@@ -745,5 +978,99 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "500",
     letterSpacing: 0.3,
+  },
+  processZoomBtn: {
+    padding: 4,
+  },
+  processZoomText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontFamily: "monospace",
+  },
+  fsContainer: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  fsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: 54,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  fsCloseBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+  },
+  fsCloseBtnText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  fsTitle: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    fontFamily: "monospace",
+  },
+  fsLogs: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  fsLogsContent: {
+    padding: spacing.md,
+  },
+  fsLogsText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontFamily: "monospace",
+    lineHeight: 18,
+  },
+  fsOptionBar: {
+    maxHeight: 40,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  fsOptionBarContent: {
+    gap: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    alignItems: "center",
+  },
+  fsInputRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+    paddingBottom: 34,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    alignItems: "center",
+  },
+  fsTextInput: {
+    flex: 1,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    color: colors.text,
+    fontSize: 13,
+  },
+  fsSendBtn: {
+    height: 36,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fsSendBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
   },
 });
