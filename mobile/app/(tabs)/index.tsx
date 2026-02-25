@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, View, Text, TextInput, Pressable, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions } from "react-native";
+import { FlatList, View, Text, TextInput, Pressable, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions, findNodeHandle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useJobsStore } from "../../src/store/jobs";
 import { useWsStore } from "../../src/store/ws";
@@ -49,15 +49,19 @@ export default function JobsScreen() {
   }, []);
 
   const flatListRef = useRef<FlatList>(null);
-  const itemOffsets = useRef<Map<number, number>>(new Map());
+  const cellRefs = useRef<Map<number, View>>(new Map());
 
-  const scrollToIndex = useCallback((idx: number) => {
-    const offset = itemOffsets.current.get(idx);
-    if (offset != null) {
-      flatListRef.current?.scrollToOffset({ offset, animated: true });
-    } else {
-      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 });
-    }
+  const scrollToCell = useCallback((idx: number) => {
+    const cellView = cellRefs.current.get(idx);
+    const listNode = findNodeHandle(flatListRef.current);
+    if (!cellView || !listNode) return;
+    cellView.measureLayout(
+      listNode as any,
+      (_x, y) => {
+        flatListRef.current?.scrollToOffset({ offset: y, animated: true });
+      },
+      () => {},
+    );
   }, []);
 
   const handleRefresh = useCallback(() => {
@@ -219,37 +223,46 @@ export default function JobsScreen() {
               item.kind === "agent" ? "agent" : item.kind === "header" ? `h_${item.group}` : item.kind === "process" ? `p_${item.process.pane_id}` : `j_${item.job.name}`
             }
             renderItem={({ item, index }) => {
+              const refCb = (v: View | null) => { if (v) cellRefs.current.set(index, v); else cellRefs.current.delete(index); };
               if (item.kind === "agent") {
                 return (
-                  <AgentSection
-                    agentStatus={agentStatus}
-                    canRunAgent={canRunAgent}
-                    agentPrompt={agentPrompt}
-                    setAgentPrompt={setAgentPrompt}
-                    agentSending={agentSending}
-                    handleRunAgent={handleRunAgent}
-                    onScrollTo={() => scrollToIndex(index)}
-                  />
+                  <View ref={refCb}>
+                    <AgentSection
+                      agentStatus={agentStatus}
+                      canRunAgent={canRunAgent}
+                      agentPrompt={agentPrompt}
+                      setAgentPrompt={setAgentPrompt}
+                      agentSending={agentSending}
+                      handleRunAgent={handleRunAgent}
+                      onScrollTo={() => scrollToCell(index)}
+                    />
+                  </View>
                 );
               }
               if (item.kind === "header") {
                 const isCollapsed = collapsedGroups.has(item.group);
                 return (
-                  <Pressable onPress={() => toggleGroup(item.group)} style={styles.groupHeaderRow}>
-                    <Text style={styles.groupHeaderArrow}>{isCollapsed ? "\u25B6" : "\u25BC"}</Text>
-                    <Text style={styles.groupHeader}>{item.group}</Text>
-                  </Pressable>
+                  <View ref={refCb}>
+                    <Pressable onPress={() => toggleGroup(item.group)} style={styles.groupHeaderRow}>
+                      <Text style={styles.groupHeaderArrow}>{isCollapsed ? "\u25B6" : "\u25BC"}</Text>
+                      <Text style={styles.groupHeader}>{item.group}</Text>
+                    </Pressable>
+                  </View>
                 );
               }
               if (item.kind === "process") {
-                return <ProcessCard process={item.process} />;
+                return (
+                  <View ref={refCb}>
+                    <ProcessCard process={item.process} />
+                  </View>
+                );
               }
               const status = statuses[item.job.name] ?? IDLE_STATUS;
               return (
-                <View style={item.idx % 2 === 1 ? { opacity: 0.85 } : undefined}>
+                <View ref={refCb} style={item.idx % 2 === 1 ? { opacity: 0.85 } : undefined}>
                   <JobCard job={item.job} status={status} />
                   {status.state === "running" && (
-                    <InlineJobReply jobName={item.job.name} onScrollTo={() => scrollToIndex(index)} />
+                    <InlineJobReply jobName={item.job.name} onScrollTo={() => scrollToCell(index)} />
                   )}
                 </View>
               );
@@ -257,11 +270,7 @@ export default function JobsScreen() {
             contentContainerStyle={[styles.list, isWide && styles.listWide]}
             ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
             refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.accent} />}
-            onScrollToIndexFailed={(info) => {
-              setTimeout(() => {
-                flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
-              }, 200);
-            }}
+            onScrollToIndexFailed={() => {}}
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>No jobs</Text>
@@ -303,7 +312,7 @@ function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?:
   const handleToggle = () => {
     const next = !expanded;
     setExpanded(next);
-    if (next && onScrollTo) setTimeout(onScrollTo, 100);
+    if (next && onScrollTo) setTimeout(onScrollTo, 300);
   };
 
   return (
