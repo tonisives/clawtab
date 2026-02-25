@@ -33,6 +33,20 @@ pub enum JobStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeProcess {
+    pub pane_id: String,
+    pub cwd: String,
+    pub version: String,
+    pub tmux_session: String,
+    pub window_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_job: Option<String>,
+    pub log_lines: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
     pub id: String,
     pub job_name: String,
@@ -42,4 +56,18 @@ pub struct RunRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
     pub trigger: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunDetail {
+    pub id: String,
+    pub job_name: String,
+    pub started_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    pub trigger: String,
+    pub stdout: String,
+    pub stderr: String,
 }

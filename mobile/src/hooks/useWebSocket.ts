@@ -83,8 +83,8 @@ export function useWebSocket() {
       setSubscriptionRequired(false);
       backoffRef.current = 1000;
 
-      const id = nextId();
-      ws.send(JSON.stringify({ type: "list_jobs", id }));
+      ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
+      ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
     };
 
     ws.onmessage = (event) => {
@@ -111,6 +111,9 @@ export function useWebSocket() {
           break;
         case "log_chunk":
           dispatchLogChunk(msg.name, msg.content);
+          break;
+        case "detected_processes":
+          useJobsStore.getState().setDetectedProcesses(msg.processes);
           break;
         case "desktop_status":
           setDesktopStatus(msg.device_id, msg.device_name, msg.online);
@@ -217,9 +220,17 @@ export function useWebSocket() {
       }
     });
 
+    // Poll detected processes every 10s
+    const processInterval = setInterval(() => {
+      if (globalSend) {
+        globalSend({ type: "detect_processes", id: nextId() });
+      }
+    }, 10000);
+
     return () => {
       mountedRef.current = false;
       sub.remove();
+      clearInterval(processInterval);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (globalWs) {
         globalWs.close();

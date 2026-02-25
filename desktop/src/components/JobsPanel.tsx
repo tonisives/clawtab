@@ -17,12 +17,30 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { AppSettings, Job, JobStatus, RunRecord } from "../types";
+import type { AppSettings, ClaudeProcess, Job, JobStatus, RunRecord } from "../types";
 import { JobEditor } from "./JobEditor";
 import { describeCron } from "./CronInput";
 import { SamplePicker } from "./SamplePicker";
 import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
 import { LogViewer } from "./LogViewer";
+
+function shortenPath(path: string | null | undefined): string {
+  if (!path) return "";
+  const home = path.replace(/^\/Users\/[^/]+/, "~");
+  return home;
+}
+
+function parseNumberedOptions(text: string): { number: string; label: string }[] {
+  const lines = text.split("\n").slice(-20);
+  const options: { number: string; label: string }[] = [];
+  for (const line of lines) {
+    const match = line.match(/^[\s>›»❯▸▶]*(\d+)\.\s+(.+)/);
+    if (match) {
+      options.push({ number: match[1], label: match[2].trim() });
+    }
+  }
+  return options;
+}
 
 const EDITOR_LABELS: Record<string, string> = {
   nvim: "Neovim",
@@ -151,6 +169,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
+  const [claudeProcesses, setClaudeProcesses] = useState<ClaudeProcess[]>([]);
 
   const loadJobs = async () => {
     try {
@@ -173,6 +192,15 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
       setStatuses(loaded);
     } catch (e) {
       console.error("Failed to load statuses:", e);
+    }
+  };
+
+  const loadProcesses = async () => {
+    try {
+      const loaded = await invoke<ClaudeProcess[]>("detect_claude_processes");
+      setClaudeProcesses(loaded);
+    } catch (e) {
+      console.error("Failed to detect claude processes:", e);
     }
   };
 
@@ -200,8 +228,12 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   useEffect(() => {
     loadJobs();
     loadStatuses();
+    loadProcesses();
     loadSettings();
-    const interval = setInterval(loadStatuses, 5000);
+    const interval = setInterval(() => {
+      loadStatuses();
+      loadProcesses();
+    }, 5000);
     const unlistenPromise = listen("jobs-changed", () => {
       loadJobs();
     });
@@ -497,6 +529,19 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const allGroupNames = new Set(grouped.keys());
   allGroupNames.add("agent");
 
+  // Group detected processes by their matched group
+  const matchedProcessesByGroup = new Map<string, ClaudeProcess[]>();
+  const unmatchedProcesses: ClaudeProcess[] = [];
+  for (const proc of claudeProcesses) {
+    if (proc.matched_group) {
+      const list = matchedProcessesByGroup.get(proc.matched_group) ?? [];
+      list.push(proc);
+      matchedProcessesByGroup.set(proc.matched_group, list);
+    } else {
+      unmatchedProcesses.push(proc);
+    }
+  }
+
   const sortedGroups = sortGroupNames(Array.from(allGroupNames), groupOrder);
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -511,16 +556,18 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
     saveGroupOrder(newOrder);
   };
 
-  const renderJobRows = (job: Job) => {
+  const renderJobRowsWithInput = (job: Job) => {
     const status = statuses[job.name];
+    const isRunning = status?.state === "running" && status.pane_id;
 
     return (
-      <JobRow
+      <JobRowWithInput
         key={job.slug}
         job={job}
         status={status}
         selectMode={jobSelectMode}
         isSelected={selectedJobs.has(job.name)}
+        isRunning={!!isRunning}
         onToggleSelected={() => toggleJobSelected(job.name)}
         onToggleEnabled={() => handleToggle(job.name)}
         onClick={() => setViewingJob(job)}
@@ -601,6 +648,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
                 tableHead={tableHead}
                 jobSelectMode={jobSelectMode}
                 selectedJobCount={selectedJobs.size}
+                detectedProcesses={matchedProcessesByGroup.get(group) ?? []}
                 onToggleSelectMode={() => {
                   if (jobSelectMode) {
                     setJobSelectMode(false);
@@ -610,7 +658,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
                   }
                 }}
                 onDeleteSelected={() => setConfirmBulkDeleteJobs(true)}
-                renderJobRows={renderJobRows}
+                renderJobRows={renderJobRowsWithInput}
                 onToggleGroup={() => toggleGroup(group)}
                 agentPrompt={agentPrompt}
                 onAgentPromptChange={setAgentPrompt}
@@ -631,6 +679,16 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           })}
         </SortableContext>
       </DndContext>
+
+      {unmatchedProcesses.length > 0 && (
+        <DetectedProcessesGroup
+          processes={unmatchedProcesses}
+          isCollapsed={collapsedGroups.has("_detected")}
+          onToggle={() => toggleGroup("_detected")}
+          tableHead={tableHead}
+          jobSelectMode={jobSelectMode}
+        />
+      )}
 
       {confirmBulkDeleteJobs && (
         <ConfirmDialog
@@ -669,6 +727,7 @@ function SortableGroup({
   tableHead,
   jobSelectMode,
   selectedJobCount,
+  detectedProcesses,
   onToggleSelectMode,
   onDeleteSelected,
   renderJobRows,
@@ -688,6 +747,7 @@ function SortableGroup({
   tableHead: React.ReactNode;
   jobSelectMode: boolean;
   selectedJobCount: number;
+  detectedProcesses: ClaudeProcess[];
   onToggleSelectMode: () => void;
   onDeleteSelected: () => void;
   renderJobRows: (job: Job) => React.ReactNode;
@@ -769,15 +829,16 @@ function SortableGroup({
   }
 
   const groupJobList = grouped.get(group) ?? [];
-  if (groupJobList.length === 0) return null;
+  if (groupJobList.length === 0 && detectedProcesses.length === 0) return null;
 
   const displayName = group === "default" ? "General" : group;
+  const totalCount = groupJobList.length + detectedProcesses.length;
 
   return (
     <div ref={setNodeRef} style={style} className="field-group">
       <GroupHeader
         displayName={displayName}
-        count={groupJobList.length}
+        count={totalCount}
         isCollapsed={isCollapsed}
         onToggle={onToggleGroup}
         dragAttributes={attributes}
@@ -793,6 +854,9 @@ function SortableGroup({
           {tableHead}
           <tbody>
             {groupJobList.map(renderJobRows)}
+            {detectedProcesses.map((proc) => (
+              <DetectedProcessRow key={proc.pane_id} process={proc} selectMode={jobSelectMode} />
+            ))}
           </tbody>
         </table>
       )}
@@ -947,6 +1011,246 @@ function AgentRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; selectMode: boolean }) {
+  const displayName = process.cwd.split("/").filter(Boolean).slice(-1)[0] || process.cwd;
+  const [expanded, setExpanded] = useState(false);
+  const [logs, setLogs] = useState(process.log_lines);
+  const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!expanded) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const result = await invoke<string>("get_detected_process_logs", {
+          tmuxSession: process.tmux_session,
+          paneId: process.pane_id,
+        });
+        if (active) setLogs(result);
+      } catch {
+        // Process may have stopped
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
+  }, [expanded, process.pane_id, process.tmux_session]);
+
+  useEffect(() => {
+    if (expanded && preRef.current) {
+      const el = preRef.current;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, [logs, expanded]);
+
+  const handleOpen = async () => {
+    try {
+      await invoke("focus_detected_process", {
+        tmuxSession: process.tmux_session,
+        windowName: process.window_name,
+      });
+    } catch (e) {
+      console.error("Failed to open detected process:", e);
+    }
+  };
+
+  const handleSend = async () => {
+    const text = inputText.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await invoke("send_detected_process_input", { paneId: process.pane_id, text });
+      setInputText("");
+      inputRef.current?.focus();
+    } catch (e) {
+      console.error("Failed to send input:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleOptionClick = async (num: string) => {
+    setSending(true);
+    try {
+      await invoke("send_detected_process_input", { paneId: process.pane_id, text: num });
+      inputRef.current?.focus();
+    } catch (e) {
+      console.error("Failed to send input:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const options = parseNumberedOptions(logs);
+
+  return (
+    <>
+      <tr
+        style={{ opacity: 0.7, fontStyle: "italic", cursor: "pointer" }}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {selectMode && <td style={{ width: 24, padding: "8px 4px" }} />}
+        <td className="col-toggle" />
+        <td className="col-name" title={process.cwd}>
+          {displayName}
+        </td>
+        <td className="col-type">
+          <code style={{ fontSize: 11 }}>{process.version}</code>
+        </td>
+        <td className="col-cron">
+          <code>detected</code>
+        </td>
+        <td className="col-status">
+          <span className="status-badge status-running">running</span>
+        </td>
+        <td className="col-actions actions">
+          <div className="btn-group">
+            <button
+              className="btn btn-sm"
+              onClick={(e) => { e.stopPropagation(); handleOpen(); }}
+            >
+              Open
+            </button>
+          </div>
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={selectMode ? 8 : 7} style={{ padding: 0 }}>
+            <div style={{ padding: "4px 12px 8px" }}>
+              {logs && (
+                <pre ref={preRef} style={{
+                  margin: 0,
+                  padding: "4px 6px",
+                  fontSize: 10,
+                  lineHeight: 1.3,
+                  background: "var(--bg-secondary, #1a1a1a)",
+                  borderRadius: 4,
+                  overflowY: "auto",
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-all",
+                  height: 120,
+                  minHeight: 40,
+                  maxHeight: 300,
+                  resize: "vertical",
+                  color: "var(--text-secondary)",
+                  overscrollBehavior: "contain",
+                }}>{logs}</pre>
+              )}
+              {options.length > 0 && (
+                <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
+                  {options.map((opt) => (
+                    <button
+                      key={opt.number}
+                      className="btn btn-sm"
+                      style={{
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        border: "1px solid var(--accent-color, #6366f1)",
+                        color: "var(--accent-color, #6366f1)",
+                      }}
+                      onClick={() => handleOptionClick(opt.number)}
+                      disabled={sending}
+                      title={opt.label}
+                    >
+                      {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  placeholder="Send input..."
+                  style={{ flex: 1, fontSize: 11 }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ fontSize: 11, padding: "2px 8px" }}
+                  onClick={(e) => { e.stopPropagation(); handleSend(); }}
+                  disabled={!inputText.trim() || sending}
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function DetectedProcessesGroup({
+  processes,
+  isCollapsed,
+  onToggle,
+  tableHead,
+  jobSelectMode,
+}: {
+  processes: ClaudeProcess[];
+  isCollapsed: boolean;
+  onToggle: () => void;
+  tableHead: React.ReactNode;
+  jobSelectMode: boolean;
+}) {
+  return (
+    <div className="field-group">
+      <div
+        className="field-group-title"
+        style={{ display: "flex", alignItems: "center", gap: 6, ...(isCollapsed ? { borderBottom: "none", marginBottom: 0, paddingBottom: 0 } : {}) }}
+      >
+        <button
+          onClick={onToggle}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            padding: 0,
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flex: 1,
+          }}
+        >
+          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+            {isCollapsed ? "\u25B6" : "\u25BC"}
+          </span>
+          Detected
+          <span style={{ fontWeight: 400, fontSize: 10, opacity: 0.7 }}>
+            ({processes.length})
+          </span>
+        </button>
+      </div>
+      {!isCollapsed && (
+        <table className="data-table">
+          {tableHead}
+          <tbody>
+            {processes.map((proc) => (
+              <DetectedProcessRow key={proc.pane_id} process={proc} selectMode={jobSelectMode} />
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
@@ -1106,8 +1410,17 @@ function JobDetailView({
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
             <path d="M15 18l-6-6 6-6" />
           </svg>
-          <h2>{job.name}</h2>
-          <StatusBadge status={status} />
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h2>{job.name}</h2>
+              <StatusBadge status={status} />
+            </div>
+            {(job.folder_path || job.work_dir || job.path) && (
+              <code style={{ fontSize: 11, color: "var(--text-secondary)", display: "block", marginTop: 2 }}>
+                {shortenPath(job.folder_path?.replace(/\/\.cwt$/, "") || job.work_dir || job.path)}
+              </code>
+            )}
+          </div>
         </div>
         <div className="btn-group">
           {state === "running" && (
@@ -1523,6 +1836,194 @@ function JobRow({
   );
 }
 
+function JobRowWithInput({
+  job,
+  status,
+  selectMode,
+  isSelected,
+  isRunning,
+  onToggleSelected,
+  onToggleEnabled,
+  onClick,
+}: {
+  job: Job;
+  status: JobStatus | undefined;
+  selectMode: boolean;
+  isSelected: boolean;
+  isRunning: boolean;
+  onToggleSelected: () => void;
+  onToggleEnabled: () => void;
+  onClick: () => void;
+}) {
+  const [showInput, setShowInput] = useState(false);
+
+  return (
+    <>
+      <JobRow
+        job={job}
+        status={status}
+        selectMode={selectMode}
+        isSelected={isSelected}
+        onToggleSelected={onToggleSelected}
+        onToggleEnabled={onToggleEnabled}
+        onClick={onClick}
+      />
+      {isRunning && (
+        <tr>
+          <td colSpan={selectMode ? 8 : 7} style={{ padding: 0, border: "none" }}>
+            {!showInput ? (
+              <div style={{ padding: "2px 12px 4px" }}>
+                <button
+                  className="btn btn-sm"
+                  style={{ fontSize: 10, padding: "1px 8px", opacity: 0.7 }}
+                  onClick={() => setShowInput(true)}
+                >
+                  Reply
+                </button>
+              </div>
+            ) : (
+              <InlineJobInput jobName={job.name} onCollapse={() => setShowInput(false)} />
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function InlineJobInput({ jobName, onCollapse }: { jobName: string; onCollapse: () => void }) {
+  const [logs, setLogs] = useState("");
+  const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const preRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const result = await invoke<string>("get_running_job_logs", { name: jobName });
+        if (active) setLogs(result);
+      } catch {
+        // Job may have stopped
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
+  }, [jobName]);
+
+  useEffect(() => {
+    if (preRef.current) {
+      const el = preRef.current;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+  }, [logs]);
+
+  const options = parseNumberedOptions(logs);
+
+  const handleSend = async () => {
+    const text = inputText.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      await invoke("send_job_input", { name: jobName, text });
+      setInputText("");
+      inputRef.current?.focus();
+    } catch (e) {
+      console.error("Failed to send input:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleOptionClick = async (num: string) => {
+    setSending(true);
+    try {
+      await invoke("send_job_input", { name: jobName, text: num });
+      inputRef.current?.focus();
+    } catch (e) {
+      console.error("Failed to send input:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: "4px 12px 8px" }}>
+      {logs && (
+        <pre ref={preRef} style={{
+          margin: 0,
+          padding: "4px 6px",
+          fontSize: 10,
+          lineHeight: 1.3,
+          background: "var(--bg-secondary, #1a1a1a)",
+          borderRadius: 4,
+          overflowY: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+          height: 120,
+          minHeight: 40,
+          maxHeight: 300,
+          resize: "vertical",
+          color: "var(--text-secondary)",
+          overscrollBehavior: "contain",
+        }}>{logs}</pre>
+      )}
+      {options.length > 0 && (
+        <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
+          {options.map((opt) => (
+            <button
+              key={opt.number}
+              className="btn btn-sm"
+              style={{
+                fontSize: 10,
+                padding: "1px 6px",
+                border: "1px solid var(--accent-color, #6366f1)",
+                color: "var(--accent-color, #6366f1)",
+              }}
+              onClick={() => handleOptionClick(opt.number)}
+              disabled={sending}
+              title={opt.label}
+            >
+              {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+          placeholder="Send input..."
+          style={{ flex: 1, fontSize: 11 }}
+          autoFocus
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          style={{ fontSize: 11, padding: "2px 8px" }}
+          onClick={handleSend}
+          disabled={!inputText.trim() || sending}
+        >
+          Send
+        </button>
+        <button
+          className="btn btn-sm"
+          style={{ fontSize: 10, padding: "2px 6px", opacity: 0.6 }}
+          onClick={onCollapse}
+        >
+          Hide
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function buildLogContent(run: RunRecord): string {
   let content = "";
   if (run.stdout) {
@@ -1559,7 +2060,10 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
 
   useEffect(() => {
     if (preRef.current) {
-      preRef.current.scrollTop = preRef.current.scrollHeight;
+      const el = preRef.current;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
     }
   }, [logs]);
 
@@ -1585,6 +2089,20 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
     }
   };
 
+  const options = parseNumberedOptions(logs);
+
+  const handleOptionClick = async (num: string) => {
+    setSending(true);
+    try {
+      await invoke("send_job_input", { name: jobName, text: num });
+      inputRef.current?.focus();
+    } catch (e) {
+      console.error("Failed to send input:", e);
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div>
       {logs && (
@@ -1605,6 +2123,27 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
           color: "var(--text-secondary)",
           overscrollBehavior: "contain",
         }}>{logs}</pre>
+      )}
+      {options.length > 0 && (
+        <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+          {options.map((opt) => (
+            <button
+              key={opt.number}
+              className="btn btn-sm"
+              style={{
+                fontSize: 11,
+                padding: "2px 8px",
+                border: "1px solid var(--accent-color, #6366f1)",
+                color: "var(--accent-color, #6366f1)",
+              }}
+              onClick={() => handleOptionClick(opt.number)}
+              disabled={sending}
+              title={opt.label}
+            >
+              {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
+            </button>
+          ))}
+        </div>
       )}
       <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
         <input

@@ -21,7 +21,7 @@ pub fn get_running_job_logs(state: State<AppState>, name: String) -> Result<Stri
             tmux_session: Some(session),
             ..
         } => {
-            let capture = crate::tmux::capture_pane(session, pane_id, 30)?;
+            let capture = crate::tmux::capture_pane(session, pane_id, 200)?;
             Ok(capture.trim().to_string())
         }
         JobStatus::Running { .. } => Ok(String::new()),

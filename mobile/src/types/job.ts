@@ -24,3 +24,25 @@ export interface RunRecord {
   exit_code?: number;
   trigger: string;
 }
+
+export interface RunDetail {
+  id: string;
+  job_name: string;
+  started_at: string;
+  finished_at?: string;
+  exit_code?: number;
+  trigger: string;
+  stdout: string;
+  stderr: string;
+}
+
+export interface ClaudeProcess {
+  pane_id: string;
+  cwd: string;
+  version: string;
+  tmux_session: string;
+  window_name: string;
+  matched_group: string | null;
+  matched_job: string | null;
+  log_lines: string;
+}

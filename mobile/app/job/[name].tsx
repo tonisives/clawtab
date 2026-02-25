@@ -1,7 +1,8 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { useJob, useJobStatus } from "../../src/store/jobs";
+import { useRuns, useRunsStore } from "../../src/store/runs";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { LogViewer } from "../../src/components/LogViewer";
 import { MessageInput } from "../../src/components/MessageInput";
@@ -9,28 +10,44 @@ import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useLogs } from "../../src/hooks/useLogs";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
+import { registerRequest } from "../../src/lib/useRequestMap";
+import { formatTime, formatDuration } from "../../src/lib/format";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
+import type { RunDetail, RunRecord } from "../../src/types/job";
 
 export default function JobDetailScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
   const job = useJob(name);
   const status = useJobStatus(name);
   const { logs } = useLogs(name);
+  const runs = useRuns(name);
   const { isWide } = useResponsive();
+  const [outputCollapsed, setOutputCollapsed] = useState(false);
+  const [runsCollapsed, setRunsCollapsed] = useState(false);
+  const [runsLoading, setRunsLoading] = useState(false);
+
+  // Fetch run history
+  const loadRuns = useCallback(() => {
+    const send = getWsSend();
+    if (!send || !name) return;
+    const id = nextId();
+    setRunsLoading(true);
+    send({ type: "get_run_history", id, name, limit: 50 });
+    registerRequest<RunRecord[]>(id).then((result) => {
+      useRunsStore.getState().setRuns(name, result);
+      setRunsLoading(false);
+    });
+  }, [name]);
 
   useEffect(() => {
-    const send = getWsSend();
-    if (send && name) {
-      send({ type: "subscribe_logs", id: nextId(), name });
-    }
-    return () => {
-      const send = getWsSend();
-      if (send) {
-        send({ type: "unsubscribe_logs", name });
-      }
-    };
-  }, [name]);
+    loadRuns();
+  }, [loadRuns]);
+
+  // Reload runs when status changes (a run finished or started)
+  useEffect(() => {
+    loadRuns();
+  }, [status.state]);
 
   const handleAction = useCallback(
     (action: "run_job" | "pause_job" | "resume_job" | "stop_job") => {
@@ -73,23 +90,43 @@ export default function JobDetailScreen() {
         options={{
           title: job.name,
           headerRight: () => (
-            <View style={styles.headerActions}>
+            <View style={styles.headerRight}>
               <StatusBadge status={status} />
             </View>
           ),
         }}
       />
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.contentOuter}>
+      {/* Path subtitle */}
+      {(job.work_dir || job.path) ? (
+        <View style={styles.pathRow}>
+          <Text style={styles.pathText} numberOfLines={1}>
+            {(job.work_dir || job.path || "").replace(/^\/Users\/[^/]+/, "~")}
+          </Text>
+        </View>
+      ) : null}
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <ContentContainer wide>
           <View style={[styles.content, isWide && styles.contentWide]}>
             {/* Info row */}
             <View style={styles.infoRow}>
-              <Text style={styles.jobType}>{job.job_type}</Text>
-              {job.cron ? <Text style={styles.cron}>{job.cron}</Text> : null}
+              <View style={styles.infoPill}>
+                <Text style={styles.infoLabel}>{job.job_type}</Text>
+              </View>
+              {job.cron ? (
+                <View style={styles.infoPill}>
+                  <Text style={styles.cronText}>{job.cron}</Text>
+                </View>
+              ) : null}
+              <View style={styles.infoPill}>
+                <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
+                  {job.enabled ? "Enabled" : "Disabled"}
+                </Text>
+              </View>
             </View>
 
-            {/* Action buttons - matching desktop style */}
+            {/* Action buttons */}
             <View style={styles.actions}>
               {isRunning && (
                 <>
@@ -109,29 +146,99 @@ export default function JobDetailScreen() {
               {state === "success" && (
                 <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run_job")} />
               )}
-              {(state === "idle") && (
+              {state === "idle" && (
                 <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run_job")} />
               )}
             </View>
 
-            {/* Live Output */}
+            {/* Live Output - collapsible */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                {isRunning ? "Live Output" : "Output"}
-              </Text>
-              <View style={styles.logsContainer}>
-                <LogViewer content={logs} />
-              </View>
+              <Pressable onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader}>
+                <Text style={styles.collapseArrow}>
+                  {outputCollapsed ? "\u25B6" : "\u25BC"}
+                </Text>
+                <Text style={styles.sectionTitle}>
+                  {isRunning ? "Live Output" : "Output"}
+                </Text>
+              </Pressable>
+              {!outputCollapsed && (
+                <View style={styles.logsContainer}>
+                  <LogViewer content={logs} />
+                </View>
+              )}
+            </View>
+
+            {/* Run History - collapsible */}
+            <View style={styles.section}>
+              <Pressable onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader}>
+                <Text style={styles.collapseArrow}>
+                  {runsCollapsed ? "\u25B6" : "\u25BC"}
+                </Text>
+                <Text style={styles.sectionTitle}>Runs</Text>
+              </Pressable>
+              {!runsCollapsed && (
+                <View style={styles.runsContainer}>
+                  {runsLoading && !runs ? (
+                    <Text style={styles.runsEmpty}>Loading...</Text>
+                  ) : !runs || runs.length === 0 ? (
+                    <Text style={styles.runsEmpty}>No run history</Text>
+                  ) : (
+                    runs.map((run) => (
+                      <RunRow key={run.id} run={run} currentState={state} />
+                    ))
+                  )}
+                </View>
+              )}
             </View>
           </View>
         </ContentContainer>
       </ScrollView>
 
-      {/* Input bar for running/paused jobs */}
       {(isRunning || isPaused) && (
-        <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
+        <>
+          <OptionButtons logs={logs} onSend={handleSendInput} />
+          <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
+        </>
       )}
     </View>
+  );
+}
+
+function parseNumberedOptions(text: string): { number: string; label: string }[] {
+  const lines = text.split("\n").slice(-20);
+  const options: { number: string; label: string }[] = [];
+  for (const line of lines) {
+    const match = line.match(/^[\s>›»❯▸▶]*(\d+)\.\s+(.+)/);
+    if (match) {
+      options.push({ number: match[1], label: match[2].trim() });
+    }
+  }
+  return options;
+}
+
+function OptionButtons({ logs, onSend }: { logs: string; onSend: (text: string) => void }) {
+  const options = useMemo(() => parseNumberedOptions(logs), [logs]);
+  if (options.length === 0) return null;
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.optionBar}
+      contentContainerStyle={styles.optionBarContent}
+    >
+      {options.map((opt) => (
+        <Pressable
+          key={opt.number}
+          style={styles.optionBtn}
+          onPress={() => onSend(opt.number)}
+        >
+          <Text style={styles.optionBtnText}>
+            {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
+          </Text>
+        </Pressable>
+      ))}
+    </ScrollView>
   );
 }
 
@@ -163,6 +270,87 @@ function ActionButton({
   );
 }
 
+function RunRow({ run, currentState }: { run: RunRecord; currentState: string }) {
+  const statusColor = getRunStatusColor(run, currentState);
+  const statusLabel = getRunStatusLabel(run, currentState);
+  const duration = formatDuration(run.started_at, run.finished_at);
+  const [expanded, setExpanded] = useState(false);
+  const [detail, setDetail] = useState<RunDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !detail && !loading) {
+      setLoading(true);
+      const send = getWsSend();
+      if (send) {
+        const id = nextId();
+        send({ type: "get_run_detail", id, run_id: run.id });
+        registerRequest<{ detail?: RunDetail }>(id).then((resp) => {
+          setDetail(resp.detail ?? null);
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
+    }
+  };
+
+  const logContent = detail
+    ? [detail.stdout, detail.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
+    : null;
+
+  return (
+    <Pressable onPress={handleToggle}>
+      <View style={styles.runRow}>
+        <View style={styles.runLeft}>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <View style={styles.runInfo}>
+            <Text style={[styles.runStatus, { color: statusColor }]}>{statusLabel}</Text>
+            <Text style={styles.runTrigger}>{run.trigger}</Text>
+          </View>
+        </View>
+        <View style={styles.runRight}>
+          <Text style={styles.runTime}>{formatTime(run.started_at)}</Text>
+          <Text style={styles.runDuration}>{duration}</Text>
+        </View>
+      </View>
+      {expanded && (
+        <View style={styles.runLogs}>
+          {loading ? (
+            <Text style={styles.runLogsText}>Loading...</Text>
+          ) : logContent ? (
+            <ScrollView horizontal={false} style={{ maxHeight: 200 }}>
+              <Text style={styles.runLogsText} selectable>{logContent}</Text>
+            </ScrollView>
+          ) : (
+            <Text style={styles.runLogsText}>(no output)</Text>
+          )}
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+function getRunStatusColor(run: RunRecord, currentState: string): string {
+  if (run.exit_code == null) {
+    if (run.finished_at || currentState !== "running") return colors.danger;
+    return colors.statusRunning;
+  }
+  if (run.exit_code === 0) return colors.success;
+  return colors.danger;
+}
+
+function getRunStatusLabel(run: RunRecord, currentState: string): string {
+  if (run.exit_code == null) {
+    if (run.finished_at || currentState !== "running") return "interrupted";
+    return "running";
+  }
+  if (run.exit_code === 0) return "ok";
+  return `exit ${run.exit_code}`;
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -171,7 +359,7 @@ const styles = StyleSheet.create({
   scroll: {
     flex: 1,
   },
-  contentOuter: {
+  scrollContent: {
     flexGrow: 1,
   },
   content: {
@@ -191,27 +379,46 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 16,
   },
-  headerActions: {
+  headerRight: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
     marginRight: 4,
   },
+  pathRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 4,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  pathText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: "monospace",
+  },
   infoRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+    flexWrap: "wrap",
   },
-  jobType: {
+  infoPill: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  infoLabel: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
     fontWeight: "600",
   },
-  cron: {
+  cronText: {
     color: colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: "monospace",
   },
   actions: {
@@ -231,6 +438,11 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.sm,
   },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   sectionTitle: {
     color: colors.textSecondary,
     fontSize: 11,
@@ -238,7 +450,101 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  collapseArrow: {
+    fontFamily: "monospace",
+    fontSize: 9,
+    color: colors.textSecondary,
+  },
   logsContainer: {
     height: 400,
+  },
+  runsContainer: {
+    gap: 1,
+  },
+  runsEmpty: {
+    color: colors.textMuted,
+    fontSize: 12,
+    paddingVertical: spacing.sm,
+  },
+  runRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    marginBottom: 2,
+  },
+  runLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  runInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  runStatus: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  runTrigger: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  runRight: {
+    alignItems: "flex-end",
+  },
+  runTime: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  runDuration: {
+    fontSize: 11,
+    color: colors.textMuted,
+  },
+  optionBar: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.bg,
+    maxHeight: 44,
+  },
+  optionBarContent: {
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  optionBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  optionBtnText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  runLogs: {
+    padding: spacing.sm,
+    backgroundColor: "#000",
+    borderRadius: radius.sm,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  runLogsText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontFamily: "monospace",
+    lineHeight: 16,
   },
 });

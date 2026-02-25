@@ -343,6 +343,10 @@ pub fn run() {
             commands::relay::relay_connect,
             commands::relay::relay_save_tokens,
             commands::relay::relay_check_subscription,
+            commands::processes::detect_claude_processes,
+            commands::processes::focus_detected_process,
+            commands::processes::get_detected_process_logs,
+            commands::processes::send_detected_process_input,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

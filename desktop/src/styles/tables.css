@@ -230,10 +230,13 @@
   font-family: "SF Mono", "Menlo", "Monaco", monospace;
   font-size: 12px;
   line-height: 1.5;
-  max-height: 400px;
+  height: 300px;
+  min-height: 60px;
+  max-height: 800px;
   overflow-y: auto;
   overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--text-primary);
+  resize: vertical;
 }

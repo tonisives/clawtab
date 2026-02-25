@@ -1,4 +1,4 @@
-import type { JobStatus, RemoteJob, RunRecord } from "./job";
+import type { ClaudeProcess, JobStatus, RemoteJob, RunDetail, RunRecord } from "./job";
 
 // Messages sent by this client to the relay server
 export type ClientMessage =
@@ -21,7 +21,9 @@ export type ClientMessage =
       prompt?: string;
       cron?: string;
       group?: string;
-    };
+    }
+  | { type: "detect_processes"; id: string }
+  | { type: "get_run_detail"; id: string; run_id: string };
 
 // Messages received from the relay (desktop responses forwarded through)
 export type DesktopMessage =
@@ -46,7 +48,9 @@ export type DesktopMessage =
   | { type: "send_input_ack"; id: string; success: boolean }
   | { type: "subscribe_logs_ack"; id: string; success: boolean }
   | { type: "run_agent_ack"; id: string; success: boolean; job_name?: string }
-  | { type: "create_job_ack"; id: string; success: boolean; error?: string };
+  | { type: "create_job_ack"; id: string; success: boolean; error?: string }
+  | { type: "detected_processes"; id: string; processes: ClaudeProcess[] }
+  | { type: "run_detail_response"; id: string; detail?: RunDetail };
 
 // Messages from the relay server itself
 export type ServerMessage =

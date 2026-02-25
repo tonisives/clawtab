@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use clawtab_protocol::{ClientMessage, DesktopMessage, JobStatus as RemoteJobStatus, RemoteJob};
+use clawtab_protocol::{
+    ClaudeProcess as RemoteClaudeProcess, ClientMessage, DesktopMessage,
+    JobStatus as RemoteJobStatus, RemoteJob,
+};
 
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
@@ -149,6 +152,16 @@ pub async fn handle_incoming(
                 success: result.is_ok(),
                 error: result.err(),
             })
+        }
+
+        ClientMessage::DetectProcesses { id } => {
+            let processes = detect_processes(jobs_config, job_status);
+            Some(DesktopMessage::DetectedProcesses { id, processes })
+        }
+
+        ClientMessage::GetRunDetail { id, run_id } => {
+            let detail = get_run_detail_full(&run_id, history);
+            Some(DesktopMessage::RunDetailResponse { id, detail })
         }
     };
 
@@ -327,4 +340,113 @@ fn create_job(
 ) -> Result<(), String> {
     // TODO: implement remote job creation
     Err("remote job creation not yet implemented".to_string())
+}
+
+fn get_run_detail_full(
+    run_id: &str,
+    history: &Arc<Mutex<HistoryStore>>,
+) -> Option<clawtab_protocol::RunDetail> {
+    let h = history.lock().unwrap();
+    match h.get_by_id(run_id) {
+        Ok(Some(r)) => Some(clawtab_protocol::RunDetail {
+            id: r.id,
+            job_name: r.job_name,
+            started_at: r.started_at,
+            finished_at: r.finished_at,
+            exit_code: r.exit_code,
+            trigger: r.trigger,
+            stdout: r.stdout,
+            stderr: r.stderr,
+        }),
+        _ => None,
+    }
+}
+
+fn detect_processes(
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+) -> Vec<RemoteClaudeProcess> {
+    use std::collections::HashSet;
+    use std::process::Command;
+
+    fn is_semver(s: &str) -> bool {
+        let parts: Vec<&str> = s.split('.').collect();
+        parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    }
+
+    let output = match Command::new("tmux")
+        .args([
+            "list-panes", "-a", "-F",
+            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}",
+        ])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return vec![],
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let tracked_panes: HashSet<String> = {
+        let statuses = job_status.lock().unwrap();
+        statuses.values().filter_map(|s| match s {
+            JobStatus::Running { pane_id: Some(pid), .. } => Some(pid.clone()),
+            _ => None,
+        }).collect()
+    };
+
+    let match_entries: Vec<(String, String, String)> = {
+        let config = jobs_config.lock().unwrap();
+        config.jobs.iter().filter_map(|job| {
+            if let Some(ref fp) = job.folder_path {
+                let root = fp.strip_suffix("/.cwt").unwrap_or(fp);
+                Some((root.to_string(), job.group.clone(), job.name.clone()))
+            } else if let Some(ref wd) = job.work_dir {
+                Some((wd.clone(), job.group.clone(), job.name.clone()))
+            } else {
+                None
+            }
+        }).collect()
+    };
+
+    let mut seen = HashSet::new();
+    let mut results = Vec::new();
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(5, '\t').collect();
+        if parts.len() < 5 { continue; }
+
+        let (pane_id, command, cwd, session, window) =
+            (parts[0], parts[1], parts[2], parts[3], parts[4]);
+
+        if !is_semver(command) { continue; }
+        if !seen.insert(pane_id.to_string()) { continue; }
+        if tracked_panes.contains(pane_id) { continue; }
+
+        let mut matched_group = None;
+        let mut matched_job = None;
+        for (root, group, name) in &match_entries {
+            if cwd == root || cwd.starts_with(&format!("{}/", root)) {
+                matched_group = Some(group.clone());
+                matched_job = Some(name.clone());
+                break;
+            }
+        }
+
+        let log_lines = crate::tmux::capture_pane(session, pane_id, 5)
+            .unwrap_or_default().trim().to_string();
+
+        results.push(RemoteClaudeProcess {
+            pane_id: pane_id.to_string(),
+            cwd: cwd.to_string(),
+            version: command.to_string(),
+            tmux_session: session.to_string(),
+            window_name: window.to_string(),
+            matched_group,
+            matched_job,
+            log_lines,
+        });
+    }
+
+    results
 }

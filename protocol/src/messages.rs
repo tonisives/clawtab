@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::job::{JobStatus, RemoteJob, RunRecord};
+use crate::job::{ClaudeProcess, JobStatus, RemoteJob, RunDetail, RunRecord};
 
 /// Messages sent by mobile/web clients to the relay server.
 /// The relay forwards these to the appropriate desktop app.
@@ -61,6 +61,13 @@ pub enum ClientMessage {
         cron: String,
         #[serde(default)]
         group: String,
+    },
+    DetectProcesses {
+        id: String,
+    },
+    GetRunDetail {
+        id: String,
+        run_id: String,
     },
 }
 
@@ -148,6 +155,17 @@ pub enum DesktopMessage {
         success: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+    },
+    /// Response to detect_processes
+    DetectedProcesses {
+        id: String,
+        processes: Vec<ClaudeProcess>,
+    },
+    /// Response to get_run_detail
+    RunDetailResponse {
+        id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detail: Option<RunDetail>,
     },
 }
 

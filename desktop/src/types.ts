@@ -96,6 +96,17 @@ export interface ToolInfo {
   brew_formula: string | null;
 }
 
+export interface ClaudeProcess {
+  pane_id: string;
+  cwd: string;
+  version: string;
+  tmux_session: string;
+  window_name: string;
+  matched_group: string | null;
+  matched_job: string | null;
+  log_lines: string;
+}
+
 export type JobStatus =
   | { state: "idle" }
   | { state: "running"; run_id: string; started_at: string; pane_id?: string; tmux_session?: string }

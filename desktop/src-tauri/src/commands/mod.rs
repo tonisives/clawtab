@@ -3,6 +3,7 @@ pub mod browser;
 pub mod claude_usage;
 pub mod history;
 pub mod jobs;
+pub mod processes;
 pub mod relay;
 pub mod secrets;
 pub mod settings;

@@ -277,7 +277,9 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::SubscribeLogs { id, .. }
         | ClientMessage::GetRunHistory { id, .. }
         | ClientMessage::RunAgent { id, .. }
-        | ClientMessage::CreateJob { id, .. } => Some(id.clone()),
+        | ClientMessage::CreateJob { id, .. }
+        | ClientMessage::DetectProcesses { id, .. }
+        | ClientMessage::GetRunDetail { id, .. } => Some(id.clone()),
         ClientMessage::UnsubscribeLogs { .. } => None,
     }
 }
