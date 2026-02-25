@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: clawtab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clawtab}
+      POSTGRES_DB: clawtab
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clawtab"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  relay:
+    build:
+      context: ..
+      dockerfile: etc/Dockerfile.relay
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://clawtab:${POSTGRES_PASSWORD:-clawtab}@postgres/clawtab
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      LISTEN_ADDR: 0.0.0.0:8080
+      SELF_HOSTED: "true"
+      RUST_LOG: clawtab_relay=info
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-clawtab-frontend}
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:

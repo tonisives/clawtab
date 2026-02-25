@@ -278,7 +278,13 @@ pub async fn connect_loop(
                 log::info!("Relay: connection lost, reconnecting in {:?}", backoff);
             }
             Err(e) => {
-                log::error!("Relay: connect failed: {}", e);
+                let err_str = e.to_string();
+                log::error!("Relay: connect failed: {}", err_str);
+                if err_str.contains("403") {
+                    log::info!("Relay: subscription required (403 from server)");
+                    *relay_sub_required.lock().unwrap() = true;
+                    return;
+                }
             }
         }
 

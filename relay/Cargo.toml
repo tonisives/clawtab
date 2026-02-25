@@ -1,0 +1,94 @@
+[package]
+name = "clawtab-relay"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clawtab-protocol = { path = "../protocol" }
+
+# web framework
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync", "time"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# database
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "migrate"] }
+
+# auth
+jsonwebtoken = "9"
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"
+
+# observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
+
+# body utils
+http-body-util = "0.1"
+
+# config
+dotenvy = "0.15"
+
+# types
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# websocket
+futures-util = "0.3"
+
+# http client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# crypto
+sha2 = "0.10"
+hex = "0.4"
+
+# rate limiting
+governor = "0.8"
+tower_governor = "0.6"
+
+# url encoding
+urlencoding = "2"
+
+# utils
+anyhow = "1"
+thiserror = "2"
+
+[lints.rust]
+warnings = "deny"
+unused = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+needless_pass_by_value = "deny"
+unnecessary_mut_passed = "deny"
+too_many_lines = "warn"
+cognitive_complexity = "warn"
+excessive_nesting = "warn"
+clone_on_ref_ptr = "warn"
+manual_let_else = "warn"
+redundant_closure_for_method_calls = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+semicolon_if_nothing_returned = "warn"
+unused_self = "warn"
+single_match_else = "warn"
+manual_string_new = "warn"
+needless_continue = "warn"
+match_wildcard_for_single_variants = "warn"
+inconsistent_struct_constructor = "warn"
+unnested_or_patterns = "warn"
+trivially_copy_pass_by_ref = "warn"
+map_unwrap_or = "warn"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

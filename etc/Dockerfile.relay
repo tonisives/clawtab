@@ -1,0 +1,34 @@
+# Build stage
+FROM rust:1.93-slim AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+# Cache dependencies
+COPY relay/Cargo.toml relay/Cargo.lock ./relay/
+COPY protocol/Cargo.toml protocol/Cargo.lock ./protocol/
+RUN mkdir -p relay/src protocol/src && echo "fn main() {}" > relay/src/main.rs && echo "" > protocol/src/lib.rs
+RUN cd relay && cargo build --release
+RUN rm -rf relay/src protocol/src
+
+# Build
+COPY protocol/src ./protocol/src
+COPY relay/src ./relay/src
+COPY relay/migrations ./relay/migrations
+RUN touch relay/src/main.rs protocol/src/lib.rs
+RUN cd relay && cargo build --release
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/relay/target/release/clawtab-relay /usr/local/bin/server
+COPY relay/migrations /app/migrations
+
+ENV LISTEN_ADDR=0.0.0.0:8080
+
+EXPOSE 8080
+
+CMD ["server"]

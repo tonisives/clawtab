@@ -20,6 +20,9 @@ jobs:
             target: x86_64-apple-darwin
 
     runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        working-directory: desktop
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,7 +35,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: desktop/src-tauri
           shared-key: ${{ matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
 
@@ -68,6 +71,9 @@ jobs:
     permissions:
       contents: read
     runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -78,7 +84,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: desktop/src-tauri
           shared-key: aarch64-apple-darwin
 
       - name: Setup Node.js

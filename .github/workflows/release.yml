@@ -11,6 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    defaults:
+      run:
+        working-directory: desktop
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,7 +51,7 @@ jobs:
 
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+            git add desktop/package.json desktop/src-tauri/tauri.conf.json desktop/src-tauri/Cargo.toml desktop/src-tauri/Cargo.lock
             git commit -m "chore: bump version to $VERSION"
             git push
           fi
@@ -69,6 +72,9 @@ jobs:
             arch: 'x64'
 
     runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        working-directory: desktop
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,6 +83,7 @@ jobs:
 
       - name: Pull latest (includes version bump)
         run: git pull origin ${{ github.event.release.target_commitish || 'main' }}
+        working-directory: .
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
@@ -109,7 +116,7 @@ jobs:
         with:
           name: app-bundle-${{ matrix.arch }}
           path: |
-            src-tauri/target/*/release/bundle/macos/*.app
+            desktop/src-tauri/target/*/release/bundle/macos/*.app
           retention-days: 1
 
       - name: Upload tar.gz for updater signing
@@ -117,7 +124,7 @@ jobs:
         with:
           name: updater-unsigned-${{ matrix.arch }}
           path: |
-            src-tauri/target/*/release/bundle/macos/*.app.tar.gz
+            desktop/src-tauri/target/*/release/bundle/macos/*.app.tar.gz
           retention-days: 1
 
   sign-updater:

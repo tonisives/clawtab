@@ -54,6 +54,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -408,10 +409,53 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                   {status?.connected
                     ? "Connected"
                     : status?.subscription_required
-                      ? "Subscription required"
+                      ? "No subscription"
                       : "Disconnected"}
                 </span>
               </div>
+              {status?.subscription_required && (
+                <div style={{ marginTop: 12 }}>
+                  <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 10px 0" }}>
+                    A subscription is required to use remote access.
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={async () => {
+                        try {
+                          const resp = await fetch("https://backend.clawtab.cc/subscription/payment-link");
+                          const { url } = await resp.json();
+                          await openUrl(url);
+                        } catch {
+                          await openUrl("https://buy.stripe.com/14AdRaemTbqlaF2bUL0Jq01");
+                        }
+                      }}
+                    >
+                      Subscribe
+                    </button>
+                    <button
+                      className="btn"
+                      disabled={refreshing}
+                      onClick={async () => {
+                        setRefreshing(true);
+                        try {
+                          // Disconnect any stale connection first
+                          await invoke("relay_disconnect");
+                          // Clear subscription-required flag and reconnect
+                          await invoke("relay_connect");
+                          // Wait a moment for the connection to establish
+                          await new Promise((r) => setTimeout(r, 2000));
+                        } catch {}
+                        const st = await invoke<RelayStatus>("get_relay_status");
+                        setStatus(st);
+                        setRefreshing(false);
+                      }}
+                    >
+                      {refreshing ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-group">
