@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, View, Text, TextInput, Pressable, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useJobsStore } from "../../src/store/jobs";
 import { useWsStore } from "../../src/store/ws";
 import { JobCard } from "../../src/components/JobCard";
@@ -48,9 +49,15 @@ export default function JobsScreen() {
   }, []);
 
   const flatListRef = useRef<FlatList>(null);
+  const itemOffsets = useRef<Map<number, number>>(new Map());
 
   const scrollToIndex = useCallback((idx: number) => {
-    flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 });
+    const offset = itemOffsets.current.get(idx);
+    if (offset != null) {
+      flatListRef.current?.scrollToOffset({ offset, animated: true });
+    } else {
+      flatListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0 });
+    }
   }, []);
 
   const handleRefresh = useCallback(() => {
@@ -91,7 +98,6 @@ export default function JobsScreen() {
   const agentState = agentStatus.state;
   const canRunAgent = agentState === "idle" || agentState === "success" || agentState === "failed";
 
-  // Group jobs by group, putting agent group first
   const grouped = new Map<string, RemoteJob[]>();
   for (const job of jobs) {
     const group = job.group || "default";
@@ -99,7 +105,6 @@ export default function JobsScreen() {
     grouped.get(group)!.push(job);
   }
 
-  // Group detected processes
   const matchedProcessesByGroup = new Map<string, ClaudeProcess[]>();
   const unmatchedProcesses: ClaudeProcess[] = [];
   for (const proc of detectedProcesses) {
@@ -120,7 +125,6 @@ export default function JobsScreen() {
 
   const items: ListItem[] = [];
 
-  // Agent section always first
   if (!subscriptionRequired) {
     items.push({ kind: "agent" });
   }
@@ -217,45 +221,22 @@ export default function JobsScreen() {
             renderItem={({ item, index }) => {
               if (item.kind === "agent") {
                 return (
-                  <View style={styles.agentSection}>
-                    <View style={styles.agentHeader}>
-                      <Text style={styles.groupHeader}>Agent</Text>
-                      <StatusBadge status={agentStatus} />
-                    </View>
-                    {canRunAgent && (
-                      <View style={styles.agentInput}>
-                        <TextInput
-                          style={styles.agentTextInput}
-                          value={agentPrompt}
-                          onChangeText={setAgentPrompt}
-                          placeholder="Enter a prompt for the agent..."
-                          placeholderTextColor={colors.textMuted}
-                          returnKeyType="send"
-                          onSubmitEditing={handleRunAgent}
-                          editable={!agentSending}
-                        />
-                        <Pressable
-                          style={[styles.agentRunBtn, (!agentPrompt.trim() || agentSending) && styles.btnDisabled]}
-                          onPress={handleRunAgent}
-                          disabled={!agentPrompt.trim() || agentSending}
-                        >
-                          <Text style={styles.agentRunBtnText}>Run</Text>
-                        </Pressable>
-                      </View>
-                    )}
-                  </View>
+                  <AgentSection
+                    agentStatus={agentStatus}
+                    canRunAgent={canRunAgent}
+                    agentPrompt={agentPrompt}
+                    setAgentPrompt={setAgentPrompt}
+                    agentSending={agentSending}
+                    handleRunAgent={handleRunAgent}
+                    onScrollTo={() => scrollToIndex(index)}
+                  />
                 );
               }
               if (item.kind === "header") {
                 const isCollapsed = collapsedGroups.has(item.group);
                 return (
-                  <Pressable
-                    onPress={() => toggleGroup(item.group)}
-                    style={styles.groupHeaderRow}
-                  >
-                    <Text style={styles.groupHeaderArrow}>
-                      {isCollapsed ? "\u25B6" : "\u25BC"}
-                    </Text>
+                  <Pressable onPress={() => toggleGroup(item.group)} style={styles.groupHeaderRow}>
+                    <Text style={styles.groupHeaderArrow}>{isCollapsed ? "\u25B6" : "\u25BC"}</Text>
                     <Text style={styles.groupHeader}>{item.group}</Text>
                   </Pressable>
                 );
@@ -275,13 +256,7 @@ export default function JobsScreen() {
             }}
             contentContainerStyle={[styles.list, isWide && styles.listWide]}
             ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
-            refreshControl={
-              <RefreshControl
-                refreshing={false}
-                onRefresh={handleRefresh}
-                tintColor={colors.accent}
-              />
-            }
+            refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.accent} />}
             onScrollToIndexFailed={(info) => {
               setTimeout(() => {
                 flatListRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0 });
@@ -290,11 +265,7 @@ export default function JobsScreen() {
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>No jobs</Text>
-                <Text style={styles.emptyText}>
-                  {connected
-                    ? "No jobs found. Create jobs on your desktop."
-                    : "Connecting..."}
-                </Text>
+                <Text style={styles.emptyText}>{connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}</Text>
               </View>
             }
           />
@@ -309,9 +280,7 @@ function parseNumberedOptions(text: string): { number: string; label: string }[]
   const options: { number: string; label: string }[] = [];
   for (const line of lines) {
     const match = line.match(/^[\s>›»❯▸▶]*(\d+)\.\s+(.+)/);
-    if (match) {
-      options.push({ number: match[1], label: match[2].trim() });
-    }
+    if (match) options.push({ number: match[1], label: match[2].trim() });
   }
   return options;
 }
@@ -319,6 +288,7 @@ function parseNumberedOptions(text: string): { number: string; label: string }[]
 function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?: () => void }) {
   const [text, setText] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const { logs } = useLogs(jobName);
   const options = parseNumberedOptions(logs);
 
@@ -333,53 +303,41 @@ function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?:
   const handleToggle = () => {
     const next = !expanded;
     setExpanded(next);
-    if (next && onScrollTo) {
-      setTimeout(onScrollTo, 100);
-    }
+    if (next && onScrollTo) setTimeout(onScrollTo, 100);
   };
 
   return (
-    <View style={styles.inlineReply}>
-      {expanded && <InlineJobLogs jobName={jobName} onSend={handleSend} />}
-      <Pressable onPress={handleToggle} style={styles.inlineReplyToggle}>
-        <Text style={styles.inlineReplyToggleText}>{expanded ? "Hide logs" : "Show logs & reply"}</Text>
-      </Pressable>
-      {!expanded && options.length > 0 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
-          {options.map((opt) => (
-            <Pressable
-              key={opt.number}
-              style={styles.optionBtn}
-              onPress={() => handleSend(opt.number)}
-            >
-              <Text style={styles.optionBtnText}>
-                {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
-      {!expanded && (
-        <View style={styles.inlineReplyInput}>
-          <TextInput
-            style={styles.inlineReplyTextInput}
-            value={text}
-            onChangeText={setText}
-            placeholder="Reply..."
-            placeholderTextColor={colors.textMuted}
-            returnKeyType="send"
-            onSubmitEditing={() => handleSend(text)}
-          />
-          <Pressable
-            style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]}
-            onPress={() => handleSend(text)}
-            disabled={!text.trim()}
-          >
-            <Text style={styles.inlineReplySendText}>Send</Text>
+    <>
+      <View style={styles.inlineReply}>
+        {expanded && <InlineJobLogs jobName={jobName} onSend={handleSend} />}
+        <View style={styles.inlineReplyToggleRow}>
+          <Pressable onPress={handleToggle} style={styles.inlineReplyToggle}>
+            <Text style={styles.inlineReplyToggleText}>{expanded ? "Hide logs" : "Show logs & reply"}</Text>
+          </Pressable>
+          <Pressable onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8}>
+            <Ionicons name="scan-outline" size={14} color={colors.textMuted} />
           </Pressable>
         </View>
-      )}
-    </View>
+        {!expanded && options.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
+            {options.map((opt) => (
+              <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+                <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+        {!expanded && (
+          <View style={styles.inlineReplyInput}>
+            <TextInput style={styles.inlineReplyTextInput} value={text} onChangeText={setText} placeholder="Reply..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(text)} />
+            <Pressable style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()}>
+              <Text style={styles.inlineReplySendText}>Send</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+      {fullscreen && <FullscreenJobTerminal jobName={jobName} title={jobName} onClose={() => setFullscreen(false)} />}
+    </>
   );
 }
 
@@ -388,23 +346,16 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
   const [text, setText] = useState("");
   const [logsExpanded, setLogsExpanded] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
-
   const screenH = Dimensions.get("window").height;
   const logHeight = logsExpanded ? screenH * 0.6 : Math.round(screenH / 3);
-
   const options = parseNumberedOptions(logs);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: false });
-    }, 50);
+    const timer = setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: false }); }, 50);
     return () => clearTimeout(timer);
   }, [logs]);
 
-  const handleSend = (input: string) => {
-    onSend(input);
-    setText("");
-  };
+  const handleSend = (input: string) => { onSend(input); setText(""); };
 
   return (
     <View>
@@ -421,33 +372,15 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
       {options.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
           {options.map((opt) => (
-            <Pressable
-              key={opt.number}
-              style={styles.optionBtn}
-              onPress={() => handleSend(opt.number)}
-            >
-              <Text style={styles.optionBtnText}>
-                {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
-              </Text>
+            <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+              <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
             </Pressable>
           ))}
         </ScrollView>
       )}
       <View style={styles.inlineReplyInput}>
-        <TextInput
-          style={styles.inlineReplyTextInput}
-          value={text}
-          onChangeText={setText}
-          placeholder="Reply..."
-          placeholderTextColor={colors.textMuted}
-          returnKeyType="send"
-          onSubmitEditing={() => handleSend(text)}
-        />
-        <Pressable
-          style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]}
-          onPress={() => handleSend(text)}
-          disabled={!text.trim()}
-        >
+        <TextInput style={styles.inlineReplyTextInput} value={text} onChangeText={setText} placeholder="Reply..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(text)} />
+        <Pressable style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()}>
           <Text style={styles.inlineReplySendText}>Send</Text>
         </Pressable>
       </View>
@@ -455,24 +388,136 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
   );
 }
 
+function AgentSection({ agentStatus, canRunAgent, agentPrompt, setAgentPrompt, agentSending, handleRunAgent, onScrollTo }: {
+  agentStatus: JobStatus; canRunAgent: boolean; agentPrompt: string; setAgentPrompt: (v: string) => void; agentSending: boolean; handleRunAgent: () => void; onScrollTo?: () => void;
+}) {
+  const isActive = agentStatus.state === "running" || agentStatus.state === "paused";
+
+  return (
+    <View style={styles.agentSection}>
+      <View style={styles.agentHeader}>
+        <Text style={styles.groupHeader}>Agent</Text>
+        <View style={styles.agentHeaderRight}>
+          <StatusBadge status={agentStatus} />
+        </View>
+      </View>
+      {canRunAgent && (
+        <View style={styles.agentInput}>
+          <TextInput style={styles.agentTextInput} value={agentPrompt} onChangeText={setAgentPrompt} placeholder="Enter a prompt for the agent..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={handleRunAgent} editable={!agentSending} />
+          <Pressable style={[styles.agentRunBtn, (!agentPrompt.trim() || agentSending) && styles.btnDisabled]} onPress={handleRunAgent} disabled={!agentPrompt.trim() || agentSending}>
+            <Text style={styles.agentRunBtnText}>Run</Text>
+          </Pressable>
+        </View>
+      )}
+      {isActive && <InlineJobReply jobName="agent" onScrollTo={onScrollTo} />}
+    </View>
+  );
+}
+
+function FullscreenJobTerminal({ jobName, title, onClose }: { jobName: string; title: string; onClose: () => void }) {
+  const { logs } = useLogs(jobName);
+  const status = useJobsStore((s) => s.statuses[jobName]);
+  const [inputText, setInputText] = useState("");
+  const scrollRef = useRef<ScrollView>(null);
+  const options = parseNumberedOptions(logs);
+  const isRunning = status?.state === "running" || status?.state === "paused";
+
+  useEffect(() => {
+    const timer = setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: false }); }, 50);
+    return () => clearTimeout(timer);
+  }, [logs]);
+
+  const handleSend = (text: string) => {
+    const send = getWsSend();
+    if (send && text.trim()) { send({ type: "send_input", id: nextId(), name: jobName, text: text.trim() }); setInputText(""); }
+  };
+
+  const handleAction = (action: "run_job" | "pause_job" | "resume_job" | "stop_job") => {
+    const send = getWsSend();
+    if (send) send({ type: action, id: nextId(), name: jobName });
+  };
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="fullScreen">
+      <View style={styles.fsContainer}>
+        <View style={styles.fsHeader}>
+          <Pressable onPress={onClose} style={styles.fsCloseBtn}><Text style={styles.fsCloseBtnText}>Close</Text></Pressable>
+          <Text style={styles.fsTitle} numberOfLines={1}>{title}</Text>
+          {status && <StatusBadge status={status} />}
+        </View>
+        <ScrollView ref={scrollRef} style={styles.fsLogs} contentContainerStyle={styles.fsLogsContent}>
+          <Text style={styles.fsLogsText} selectable>{logs}</Text>
+        </ScrollView>
+        {options.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fsOptionBar} contentContainerStyle={styles.fsOptionBarContent}>
+            {options.map((opt) => (
+              <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+                <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+        {isRunning ? (
+          <View style={styles.fsInputRow}>
+            <TextInput style={styles.fsTextInput} value={inputText} onChangeText={setInputText} placeholder="Send input..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(inputText)} />
+            <Pressable style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]} onPress={() => handleSend(inputText)} disabled={!inputText.trim()}>
+              <Text style={styles.fsSendBtnText}>Send</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.fsActionRow}>
+            {(status?.state === "idle" || status?.state === "success") && (
+              <Pressable style={[styles.fsActionBtn, { backgroundColor: colors.accent }]} onPress={() => handleAction("run_job")}>
+                <Text style={styles.fsActionBtnText}>{status?.state === "success" ? "Run Again" : "Run"}</Text>
+              </Pressable>
+            )}
+            {status?.state === "failed" && (
+              <Pressable style={[styles.fsActionBtn, { backgroundColor: colors.accent }]} onPress={() => handleAction("run_job")}>
+                <Text style={styles.fsActionBtnText}>Restart</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 function ProcessCard({ process }: { process: ClaudeProcess }) {
   const [expanded, setExpanded] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [liveLogs, setLiveLogs] = useState<string | null>(null);
   const displayName = process.cwd.replace(/^\/Users\/[^/]+/, "~");
+
+  useEffect(() => {
+    if (!expanded) { setLiveLogs(null); return; }
+    let active = true;
+    const poll = async () => {
+      const send = getWsSend();
+      if (!send) return;
+      const id = nextId();
+      send({ type: "get_detected_process_logs", id, tmux_session: process.tmux_session, pane_id: process.pane_id });
+      const resp = await registerRequest<{ logs?: string }>(id);
+      if (active && resp.logs != null) setLiveLogs(resp.logs);
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
+  }, [expanded, process.pane_id, process.tmux_session]);
+
+  const logsText = liveLogs ?? process.log_lines;
+  const options = parseNumberedOptions(logsText);
+
+  const handleSend = (text: string) => {
+    const send = getWsSend();
+    if (send && text.trim()) send({ type: "send_detected_process_input", id: nextId(), pane_id: process.pane_id, text: text.trim() });
+  };
 
   return (
     <>
-      <Pressable
-        style={({ pressed }) => [
-          styles.processCard,
-          pressed && styles.processCardPressed,
-        ]}
-        onPress={() => setExpanded((v) => !v)}
-      >
+      <Pressable style={({ pressed }) => [styles.processCard, pressed && styles.processCardPressed]} onPress={() => setExpanded((v) => !v)}>
         <View style={styles.processRow}>
-          <View style={[styles.processTypeIcon]}>
-            <Text style={styles.processTypeIconText}>C</Text>
-          </View>
+          <View style={styles.processTypeIcon}><Text style={styles.processTypeIconText}>C</Text></View>
           <View style={styles.processInfo}>
             <Text style={styles.processName} numberOfLines={1}>{displayName}</Text>
             <View style={styles.processMeta}>
@@ -480,43 +525,57 @@ function ProcessCard({ process }: { process: ClaudeProcess }) {
               <Text style={styles.processMetaText}>detected</Text>
             </View>
           </View>
-          <Pressable
-            onPress={() => setFullscreen(true)}
-            style={styles.processZoomBtn}
-            hitSlop={8}
-          >
-            <Text style={styles.processZoomText}>{'\u2197\u2199'}</Text>
+          <Pressable onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8}>
+            <Ionicons name="scan-outline" size={16} color={colors.textMuted} />
           </Pressable>
-          <View style={styles.processRunningBadge}>
-            <Text style={styles.processRunningText}>running</Text>
-          </View>
+          <View style={styles.processRunningBadge}><Text style={styles.processRunningText}>running</Text></View>
         </View>
-        {expanded && process.log_lines ? (
-          <View style={styles.processLogs}>
-            <Text style={styles.processLogsText} selectable>{process.log_lines}</Text>
-          </View>
-        ) : null}
+        {expanded && <ProcessInlineView logsText={logsText} options={options} onSend={handleSend} />}
       </Pressable>
-      {fullscreen && (
-        <FullscreenProcessTerminal
-          process={process}
-          displayName={displayName}
-          onClose={() => setFullscreen(false)}
-        />
-      )}
+      {fullscreen && <FullscreenProcessTerminal process={process} displayName={displayName} onClose={() => setFullscreen(false)} />}
     </>
   );
 }
 
-function FullscreenProcessTerminal({
-  process,
-  displayName,
-  onClose,
-}: {
-  process: ClaudeProcess;
-  displayName: string;
-  onClose: () => void;
-}) {
+function ProcessInlineView({ logsText, options, onSend }: { logsText: string; options: { number: string; label: string }[]; onSend: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const scrollRef = useRef<ScrollView>(null);
+  const screenH = Dimensions.get("window").height;
+
+  useEffect(() => {
+    const timer = setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: false }); }, 50);
+    return () => clearTimeout(timer);
+  }, [logsText]);
+
+  const handleSend = (input: string) => { onSend(input); setText(""); };
+
+  return (
+    <View style={styles.processInline}>
+      {logsText ? (
+        <ScrollView ref={scrollRef} style={[styles.inlineReplyLogs, { maxHeight: screenH / 3 }]} nestedScrollEnabled>
+          <Text style={styles.inlineReplyLogsText} selectable>{logsText}</Text>
+        </ScrollView>
+      ) : null}
+      {options.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
+          {options.map((opt) => (
+            <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+              <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+      <View style={styles.inlineReplyInput}>
+        <TextInput style={styles.inlineReplyTextInput} value={text} onChangeText={setText} placeholder="Reply..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(text)} />
+        <Pressable style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()}>
+          <Text style={styles.inlineReplySendText}>Send</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function FullscreenProcessTerminal({ process, displayName, onClose }: { process: ClaudeProcess; displayName: string; onClose: () => void }) {
   const [logs, setLogs] = useState(process.log_lines);
   const [inputText, setInputText] = useState("");
   const scrollRef = useRef<ScrollView>(null);
@@ -537,9 +596,7 @@ function FullscreenProcessTerminal({
   }, [process.pane_id, process.tmux_session]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: false });
-    }, 50);
+    const timer = setTimeout(() => { scrollRef.current?.scrollToEnd({ animated: false }); }, 50);
     return () => clearTimeout(timer);
   }, [logs]);
 
@@ -547,66 +604,32 @@ function FullscreenProcessTerminal({
 
   const handleSend = (text: string) => {
     const send = getWsSend();
-    if (send && text.trim()) {
-      send({ type: "send_detected_process_input", id: nextId(), pane_id: process.pane_id, text: text.trim() });
-      setInputText("");
-    }
+    if (send && text.trim()) { send({ type: "send_detected_process_input", id: nextId(), pane_id: process.pane_id, text: text.trim() }); setInputText(""); }
   };
 
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen">
       <View style={styles.fsContainer}>
         <View style={styles.fsHeader}>
-          <Pressable onPress={onClose} style={styles.fsCloseBtn}>
-            <Text style={styles.fsCloseBtnText}>Close</Text>
-          </Pressable>
+          <Pressable onPress={onClose} style={styles.fsCloseBtn}><Text style={styles.fsCloseBtnText}>Close</Text></Pressable>
           <Text style={styles.fsTitle} numberOfLines={1}>{displayName}</Text>
-          <View style={styles.processRunningBadge}>
-            <Text style={styles.processRunningText}>running</Text>
-          </View>
+          <View style={styles.processRunningBadge}><Text style={styles.processRunningText}>running</Text></View>
         </View>
-        <ScrollView
-          ref={scrollRef}
-          style={styles.fsLogs}
-          contentContainerStyle={styles.fsLogsContent}
-        >
+        <ScrollView ref={scrollRef} style={styles.fsLogs} contentContainerStyle={styles.fsLogsContent}>
           <Text style={styles.fsLogsText} selectable>{logs}</Text>
         </ScrollView>
         {options.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.fsOptionBar}
-            contentContainerStyle={styles.fsOptionBarContent}
-          >
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fsOptionBar} contentContainerStyle={styles.fsOptionBarContent}>
             {options.map((opt) => (
-              <Pressable
-                key={opt.number}
-                style={styles.optionBtn}
-                onPress={() => handleSend(opt.number)}
-              >
-                <Text style={styles.optionBtnText}>
-                  {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
-                </Text>
+              <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+                <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
               </Pressable>
             ))}
           </ScrollView>
         )}
         <View style={styles.fsInputRow}>
-          <TextInput
-            style={styles.fsTextInput}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Send input..."
-            placeholderTextColor={colors.textMuted}
-            returnKeyType="send"
-            onSubmitEditing={() => handleSend(inputText)}
-          />
-          <Pressable
-            style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]}
-            onPress={() => handleSend(inputText)}
-            disabled={!inputText.trim()}
-          >
+          <TextInput style={styles.fsTextInput} value={inputText} onChangeText={setInputText} placeholder="Send input..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(inputText)} />
+          <Pressable style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]} onPress={() => handleSend(inputText)} disabled={!inputText.trim()}>
             <Text style={styles.fsSendBtnText}>Send</Text>
           </Pressable>
         </View>
@@ -616,461 +639,88 @@ function FullscreenProcessTerminal({
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: 60,
-  },
-  loadingText: {
-    color: colors.textMuted,
-    fontSize: 13,
-  },
-  banner: {
-    backgroundColor: colors.surface,
-    padding: spacing.sm,
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  bannerWarn: {
-    backgroundColor: "#332800",
-  },
-  bannerText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  subBanner: {
-    padding: spacing.xl,
-    alignItems: "center",
-    gap: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  subBannerWide: {
-    paddingVertical: 48,
-  },
-  subTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  subText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    textAlign: "center",
-  },
-  subBtn: {
-    height: 44,
-    paddingHorizontal: spacing.xl,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  subBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  btnDisabled: {
-    opacity: 0.5,
-  },
-  list: {
-    padding: spacing.lg,
-  },
-  listWide: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xl,
-  },
-  groupHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-  groupHeaderArrow: {
-    fontFamily: "monospace",
-    fontSize: 9,
-    color: colors.textSecondary,
-  },
-  groupHeader: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  empty: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingTop: 100,
-    gap: spacing.sm,
-  },
-  emptyTitle: {
-    color: colors.text,
-    fontSize: 18,
-    fontWeight: "600",
-  },
-  emptyText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-  },
-  agentSection: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: spacing.sm,
-  },
-  agentHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  agentInput: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    alignItems: "center",
-  },
-  agentTextInput: {
-    flex: 1,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    color: colors.text,
-    fontSize: 13,
-  },
-  agentRunBtn: {
-    height: 36,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  agentRunBtnText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  processCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    opacity: 0.7,
-  },
-  processCardPressed: {
-    backgroundColor: colors.surfaceHover,
-  },
-  processRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  processTypeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentBg,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  processTypeIconText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: "monospace",
-    fontStyle: "italic",
-  },
-  processInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  processName: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "500",
-    fontStyle: "italic",
-  },
-  processMeta: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  processMetaText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  processRunningBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: colors.accentBg,
-  },
-  processRunningText: {
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.3,
-    color: colors.accent,
-  },
-  processLogs: {
-    marginTop: spacing.sm,
-    padding: spacing.sm,
-    backgroundColor: "#000",
-    borderRadius: radius.sm,
-  },
-  processLogsText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontFamily: "monospace",
-    lineHeight: 16,
-  },
-  inlineReply: {
-    marginTop: 4,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-  },
-  inlineReplyToggle: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-  },
-  inlineReplyToggleText: {
-    color: colors.textMuted,
-    fontSize: 11,
-  },
-  inlineReplyLogs: {
-    backgroundColor: "#000",
-    borderRadius: radius.sm,
-    margin: spacing.sm,
-    marginBottom: 0,
-    padding: spacing.sm,
-  },
-  logsExpandToggle: {
-    alignSelf: "center",
-    paddingVertical: 2,
-    paddingHorizontal: spacing.sm,
-  },
-  logsExpandToggleText: {
-    color: colors.textMuted,
-    fontSize: 10,
-  },
-  inlineReplyLogsText: {
-    color: colors.textSecondary,
-    fontSize: 10,
-    fontFamily: "monospace",
-    lineHeight: 14,
-  },
-  optionScroll: {
-    maxHeight: 36,
-    marginHorizontal: spacing.sm,
-  },
-  optionScrollContent: {
-    gap: 4,
-    paddingVertical: 2,
-  },
-  optionBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  optionBtnText: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: "500",
-  },
-  inlineReplyInput: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.sm,
-    alignItems: "center",
-  },
-  inlineReplyTextInput: {
-    flex: 1,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    color: colors.text,
-    fontSize: 12,
-  },
-  inlineReplySendBtn: {
-    height: 32,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  inlineReplySendText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  demoList: {
-    padding: spacing.lg,
-    opacity: 0.35,
-  },
-  demoCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  demoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  demoTypeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: "rgba(152, 152, 157, 0.12)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  demoTypeIconText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: "monospace",
-  },
-  demoInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  demoName: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  demoMeta: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  demoBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  demoBadgeText: {
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.3,
-  },
-  processZoomBtn: {
-    padding: 4,
-  },
-  processZoomText: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontFamily: "monospace",
-  },
-  fsContainer: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  fsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: 54,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  fsCloseBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: spacing.sm,
-  },
-  fsCloseBtnText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  fsTitle: {
-    flex: 1,
-    color: colors.text,
-    fontSize: 13,
-    fontFamily: "monospace",
-  },
-  fsLogs: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  fsLogsContent: {
-    padding: spacing.md,
-  },
-  fsLogsText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontFamily: "monospace",
-    lineHeight: 18,
-  },
-  fsOptionBar: {
-    maxHeight: 40,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  fsOptionBarContent: {
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    alignItems: "center",
-  },
-  fsInputRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.md,
-    paddingBottom: 34,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    alignItems: "center",
-  },
-  fsTextInput: {
-    flex: 1,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    color: colors.text,
-    fontSize: 13,
-  },
-  fsSendBtn: {
-    height: 36,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fsSendBtnText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "600",
-  },
+  container: { flex: 1, backgroundColor: colors.bg },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", gap: spacing.md, paddingVertical: 60 },
+  loadingText: { color: colors.textMuted, fontSize: 13 },
+  banner: { backgroundColor: colors.surface, padding: spacing.sm, alignItems: "center", borderBottomWidth: 1, borderBottomColor: colors.border },
+  bannerWarn: { backgroundColor: "#332800" },
+  bannerText: { color: colors.textSecondary, fontSize: 12 },
+  subBanner: { padding: spacing.xl, alignItems: "center", gap: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  subBannerWide: { paddingVertical: 48 },
+  subTitle: { color: colors.text, fontSize: 18, fontWeight: "600" },
+  subText: { color: colors.textSecondary, fontSize: 14, textAlign: "center" },
+  subBtn: { height: 44, paddingHorizontal: spacing.xl, borderRadius: radius.sm, backgroundColor: colors.accent, justifyContent: "center", alignItems: "center" },
+  subBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  btnDisabled: { opacity: 0.5 },
+  list: { padding: spacing.lg },
+  listWide: { paddingHorizontal: spacing.xl, paddingVertical: spacing.xl },
+  groupHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: spacing.sm, paddingHorizontal: spacing.xs },
+  groupHeaderArrow: { fontFamily: "monospace", fontSize: 9, color: colors.textSecondary },
+  groupHeader: { color: colors.textSecondary, fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
+  empty: { flex: 1, justifyContent: "center", alignItems: "center", paddingTop: 100, gap: spacing.sm },
+  emptyTitle: { color: colors.text, fontSize: 18, fontWeight: "600" },
+  emptyText: { color: colors.textSecondary, fontSize: 14 },
+  agentSection: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
+  agentHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  agentHeaderRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  agentInput: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
+  agentTextInput: { flex: 1, height: 36, borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, color: colors.text, fontSize: 13 },
+  agentRunBtn: { height: 36, paddingHorizontal: spacing.lg, borderRadius: radius.sm, backgroundColor: colors.accent, justifyContent: "center", alignItems: "center" },
+  agentRunBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  expandBtn: { padding: 4 },
+  processCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border, opacity: 0.7 },
+  processCardPressed: { backgroundColor: colors.surfaceHover },
+  processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  processTypeIcon: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: colors.accentBg, justifyContent: "center", alignItems: "center" },
+  processTypeIconText: { color: colors.accent, fontSize: 14, fontWeight: "600", fontFamily: "monospace", fontStyle: "italic" },
+  processInfo: { flex: 1, gap: 2 },
+  processName: { color: colors.text, fontSize: 15, fontWeight: "500", fontStyle: "italic" },
+  processMeta: { flexDirection: "row", gap: spacing.sm },
+  processMetaText: { color: colors.textSecondary, fontSize: 12 },
+  processRunningBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: 10, backgroundColor: colors.accentBg },
+  processRunningText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.accent },
+  processInline: { marginTop: spacing.sm },
+  inlineReply: { marginTop: 4, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
+  inlineReplyToggleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: spacing.sm },
+  inlineReplyToggle: { paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  inlineReplyToggleText: { color: colors.textMuted, fontSize: 11 },
+  inlineReplyLogs: { backgroundColor: "#000", borderRadius: radius.sm, margin: spacing.sm, marginBottom: 0, padding: spacing.sm },
+  logsExpandToggle: { alignSelf: "center", paddingVertical: 2, paddingHorizontal: spacing.sm },
+  logsExpandToggleText: { color: colors.textMuted, fontSize: 10 },
+  inlineReplyLogsText: { color: colors.textSecondary, fontSize: 10, fontFamily: "monospace", lineHeight: 14 },
+  optionScroll: { maxHeight: 36, marginHorizontal: spacing.sm },
+  optionScrollContent: { gap: 4, paddingVertical: 2 },
+  optionBtn: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.accent },
+  optionBtnText: { color: colors.accent, fontSize: 11, fontWeight: "500" },
+  inlineReplyInput: { flexDirection: "row", gap: spacing.sm, padding: spacing.sm, alignItems: "center" },
+  inlineReplyTextInput: { flex: 1, height: 32, borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, color: colors.text, fontSize: 12 },
+  inlineReplySendBtn: { height: 32, paddingHorizontal: spacing.md, borderRadius: radius.sm, backgroundColor: colors.accent, justifyContent: "center", alignItems: "center" },
+  inlineReplySendText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  demoList: { padding: spacing.lg, opacity: 0.35 },
+  demoCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
+  demoRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  demoTypeIcon: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: "rgba(152, 152, 157, 0.12)", justifyContent: "center", alignItems: "center" },
+  demoTypeIconText: { color: colors.textSecondary, fontSize: 14, fontWeight: "600", fontFamily: "monospace" },
+  demoInfo: { flex: 1, gap: 2 },
+  demoName: { color: colors.text, fontSize: 15, fontWeight: "500" },
+  demoMeta: { color: colors.textSecondary, fontSize: 12 },
+  demoBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: 10 },
+  demoBadgeText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3 },
+  fsContainer: { flex: 1, backgroundColor: colors.bg },
+  fsHeader: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, paddingTop: 54, paddingBottom: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  fsCloseBtn: { paddingVertical: 4, paddingHorizontal: spacing.sm },
+  fsCloseBtnText: { color: colors.accent, fontSize: 14, fontWeight: "500" },
+  fsTitle: { flex: 1, color: colors.text, fontSize: 13, fontFamily: "monospace" },
+  fsLogs: { flex: 1, backgroundColor: "#000" },
+  fsLogsContent: { padding: spacing.md },
+  fsLogsText: { color: colors.textSecondary, fontSize: 12, fontFamily: "monospace", lineHeight: 18 },
+  fsOptionBar: { maxHeight: 40, borderTopWidth: 1, borderTopColor: colors.border },
+  fsOptionBarContent: { gap: 4, paddingHorizontal: spacing.md, paddingVertical: 4, alignItems: "center" },
+  fsInputRow: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, paddingBottom: 34, borderTopWidth: 1, borderTopColor: colors.border, alignItems: "center" },
+  fsTextInput: { flex: 1, height: 36, borderRadius: radius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, color: colors.text, fontSize: 13 },
+  fsSendBtn: { height: 36, paddingHorizontal: spacing.lg, borderRadius: radius.sm, backgroundColor: colors.accent, justifyContent: "center", alignItems: "center" },
+  fsSendBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  fsActionRow: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, paddingBottom: 34, borderTopWidth: 1, borderTopColor: colors.border, justifyContent: "center" },
+  fsActionBtn: { paddingHorizontal: spacing.xl, paddingVertical: spacing.sm, borderRadius: radius.sm },
+  fsActionBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
 });

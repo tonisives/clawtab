@@ -106,10 +106,25 @@ pub async fn handle_incoming(
             })
         }
 
-        ClientMessage::SubscribeLogs { id, name: _ } => Some(DesktopMessage::SubscribeLogsAck {
-            id,
-            success: true,
-        }),
+        ClientMessage::SubscribeLogs { id, name } => {
+            // Send current pane content as initial log chunk so mobile gets existing logs
+            let statuses = job_status.lock().unwrap();
+            if let Some(JobStatus::Running {
+                pane_id: Some(pane_id),
+                tmux_session: Some(session),
+                ..
+            }) = statuses.get(&name)
+            {
+                if let Ok(content) = crate::tmux::capture_pane(session, pane_id, 200) {
+                    let content = content.trim().to_string();
+                    if !content.is_empty() {
+                        super::push_log_chunk(relay, &name, &content);
+                    }
+                }
+            }
+            drop(statuses);
+            Some(DesktopMessage::SubscribeLogsAck { id, success: true })
+        }
 
         ClientMessage::UnsubscribeLogs { .. } => None,
 
@@ -127,6 +142,7 @@ pub async fn handle_incoming(
                 settings,
                 job_status,
                 active_agents,
+                relay,
             );
             Some(DesktopMessage::RunAgentAck {
                 id,
@@ -330,16 +346,45 @@ fn get_run_history(
 }
 
 fn run_agent(
-    _prompt: &str,
-    _jobs_config: &Arc<Mutex<JobsConfig>>,
-    _secrets: &Arc<Mutex<SecretsManager>>,
-    _history: &Arc<Mutex<HistoryStore>>,
-    _settings: &Arc<Mutex<AppSettings>>,
-    _job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    _active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    prompt: &str,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    history: &Arc<Mutex<HistoryStore>>,
+    settings: &Arc<Mutex<AppSettings>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
 ) -> Result<String, String> {
-    // TODO: implement agent run via relay
-    Err("agent run via relay not yet implemented".to_string())
+    let (s, jobs) = {
+        let s = settings.lock().unwrap().clone();
+        let j = jobs_config.lock().unwrap().jobs.clone();
+        (s, j)
+    };
+    let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs)?;
+    let job_name = job.name.clone();
+
+    let secrets = Arc::clone(secrets);
+    let history = Arc::clone(history);
+    let settings = Arc::clone(settings);
+    let job_status = Arc::clone(job_status);
+    let active_agents = Arc::clone(active_agents);
+    let relay = Arc::clone(relay);
+
+    tokio::spawn(async move {
+        crate::scheduler::executor::execute_job(
+            &job,
+            &secrets,
+            &history,
+            &settings,
+            &job_status,
+            "remote",
+            &active_agents,
+            &relay,
+        )
+        .await;
+    });
+
+    Ok(job_name)
 }
 
 fn create_job(
