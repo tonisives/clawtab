@@ -15,6 +15,7 @@ graph TB
         Monitor["Pane Monitor"]
         IpcServer["IPC Server"]
         TgPoller["Telegram Agent Poller"]
+        RelayConn["Relay Client"]
     end
 
     subgraph External["External"]
@@ -23,6 +24,11 @@ graph TB
         Keychain["macOS Keychain"]
         Gopass["gopass"]
         TgAPI["Telegram Bot API"]
+    end
+
+    subgraph Relay["Relay"]
+        RelayServer["Relay Server"]
+        Mobile["Mobile App"]
     end
 
     subgraph Clients["Clients"]
@@ -44,6 +50,8 @@ graph TB
     CLI -->|Unix socket| IpcServer
     TUI -->|Unix socket| IpcServer
     IpcServer --> Commands
+    RelayConn <-->|WebSocket| RelayServer
+    Mobile <-->|WebSocket| RelayServer
 ```
 
 ## Tech Stack
@@ -124,6 +132,7 @@ src-tauri/src/
     secrets.rs              # Secret management
     settings.rs             # Settings get/set
     telegram.rs             # Telegram config + setup polling
+    relay.rs                # Relay login, pairing, token storage, status
     status.rs               # Job status queries
     tmux.rs                 # Tmux session/window operations
     tools.rs                # Tool detection + installation
@@ -136,6 +145,9 @@ src-tauri/src/
     mod.rs                  # SecretsManager (unified lookup)
     keychain.rs             # macOS Keychain backend
     gopass.rs               # Gopass backend
+  relay/
+    mod.rs                  # WS connect loop, subscription check, message push
+    handler.rs              # Incoming message handler (mobile commands)
   telegram/
     mod.rs                  # Send messages, notify, config struct
     commands.rs             # Agent command parsing + formatting
@@ -162,6 +174,7 @@ src/
     SecretsPanel.tsx         # Secret management
     TelegramPanel.tsx        # Telegram settings
     TelegramSetup.tsx        # Telegram bot setup flow
+    RelayPanel.tsx           # Remote access setup + status
     GeneralSettings.tsx      # App preferences
     ToolsPanel.tsx           # Tool detection + install
     CronInput.tsx            # Cron expression editor
