@@ -1,4 +1,3 @@
-use redis::AsyncCommands;
 use uuid::Uuid;
 
 /// Check if a push notification is allowed for the given user.
@@ -10,7 +9,8 @@ pub async fn allow_push(
     ttl_seconds: u64,
 ) -> bool {
     let key = format!("push_limit:{}", user_id);
-    let result: Result<bool, _> = redis::cmd("SET")
+    // SET key 1 NX EX ttl - returns OK if set (key was new), nil if already exists
+    let result: Result<Option<String>, _> = redis::cmd("SET")
         .arg(&key)
         .arg("1")
         .arg("NX")
@@ -19,5 +19,7 @@ pub async fn allow_push(
         .query_async(redis)
         .await;
 
-    result.unwrap_or(false)
+    // Some("OK") means the key was set (not rate limited)
+    // None means the key already existed (rate limited)
+    matches!(result, Ok(Some(_)))
 }

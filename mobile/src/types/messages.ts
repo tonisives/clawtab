@@ -1,4 +1,4 @@
-import type { ClaudeProcess, ClaudeQuestion, JobStatus, RemoteJob, RunDetail, RunRecord } from "./job";
+import type { ClaudeProcess, ClaudeQuestion, JobStatus, NotificationHistoryItem, RemoteJob, RunDetail, RunRecord } from "./job";
 
 // Messages sent by this client to the relay server
 export type ClientMessage =
@@ -59,7 +59,7 @@ export type DesktopMessage =
   | { type: "detected_process_logs"; id: string; logs: string }
   | { type: "send_detected_process_input_ack"; id: string; success: boolean }
   | { type: "claude_questions"; questions: ClaudeQuestion[] }
-  | { type: "notification_history"; id: string; notifications: import("./job").NotificationHistoryItem[] }
+  | { type: "notification_history"; id: string; notifications: NotificationHistoryItem[] }
   | { type: "register_push_token_ack"; id: string; success: boolean };
 
 // Messages from the relay server itself

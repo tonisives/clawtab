@@ -1,6 +1,6 @@
 use a2::{
-    Client, DefaultNotificationBuilder, Endpoint, NotificationBuilder, NotificationOptions,
-    Priority,
+    Client, ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
+    NotificationOptions, Priority,
 };
 use serde::Serialize;
 
@@ -45,8 +45,9 @@ impl ApnsClient {
             Endpoint::Production
         };
 
-        let client = Client::token(&mut key_file, key_id, team_id, endpoint)
-            .map_err(|e| format!("failed to create APNs client: {e}"))?;
+        let client =
+            Client::token(&mut key_file, key_id, team_id, ClientConfig::new(endpoint))
+                .map_err(|e| format!("failed to create APNs client: {e}"))?;
 
         let topic = config
             .apns_topic
@@ -82,12 +83,11 @@ impl ApnsClient {
         let custom_json =
             serde_json::to_value(&custom_data).map_err(|e| format!("json error: {e}"))?;
 
-        let mut builder = DefaultNotificationBuilder::new()
+        let builder = DefaultNotificationBuilder::new()
             .set_title(title)
             .set_body(body)
             .set_mutable_content()
             .set_category("CLAUDE_QUESTION")
-            .set_thread_id(pane_id)
             .set_sound("default");
 
         let options_obj = NotificationOptions {
@@ -100,26 +100,23 @@ impl ApnsClient {
         };
 
         let mut payload = builder.build(device_token, options_obj);
-        payload.add_custom_data("clawtab", &custom_json)
+        payload
+            .add_custom_data("clawtab", &custom_json)
             .map_err(|e| format!("custom data error: {e}"))?;
 
-        let response = self
-            .client
-            .send(payload)
-            .await
-            .map_err(|e| format!("APNs send error: {e}"))?;
-
-        if response.code == 410 || response.code == 400 {
-            return Err(format!("invalid_token:{}", response.code));
+        match self.client.send(payload).await {
+            Ok(_) => Ok(()),
+            Err(a2::Error::ResponseError(response)) => {
+                if response.code == 410 || response.code == 400 {
+                    Err(format!("invalid_token:{}", response.code))
+                } else {
+                    Err(format!(
+                        "APNs error {}: {:?}",
+                        response.code, response.error
+                    ))
+                }
+            }
+            Err(e) => Err(format!("APNs send error: {e}")),
         }
-
-        if response.code != 200 {
-            return Err(format!(
-                "APNs error {}: {:?}",
-                response.code, response.error
-            ));
-        }
-
-        Ok(())
     }
 }
