@@ -76,6 +76,12 @@ fn make_question_id(pane_id: &str, options: &[QuestionOption]) -> String {
 /// Previous question state per pane.
 type QuestionState = HashMap<String, Vec<QuestionOption>>;
 
+/// Full cached question info for a pane, so we can re-send from cache on transient misses.
+struct CachedQuestion {
+    question: ClaudeQuestion,
+    miss_count: u32,
+}
+
 /// Runs the question detection loop. Checks every 5 seconds for Claude processes
 /// that have interactive numbered options, and sends them to the relay.
 pub async fn question_detection_loop(
@@ -84,6 +90,9 @@ pub async fn question_detection_loop(
     relay: Arc<Mutex<Option<RelayHandle>>>,
     active_questions: Arc<Mutex<QuestionState>>,
 ) {
+    // Cache full question data per pane so transient detection misses don't flicker
+    let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
+
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
@@ -95,8 +104,9 @@ pub async fn question_detection_loop(
 
         let processes = detect_question_processes(&jobs_config, &job_status);
 
+        // Track which panes were detected this tick
+        let mut detected_panes = std::collections::HashSet::new();
         let mut new_state = HashMap::new();
-        let mut questions = Vec::new();
 
         for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in &processes {
             let options = parse_numbered_options(log_lines);
@@ -104,10 +114,12 @@ pub async fn question_detection_loop(
                 continue;
             }
 
+            detected_panes.insert(pane_id.clone());
+
             let question_id = make_question_id(pane_id, &options);
             new_state.insert(pane_id.clone(), options.clone());
 
-            questions.push(ClaudeQuestion {
+            let q = ClaudeQuestion {
                 pane_id: pane_id.clone(),
                 cwd: cwd.clone(),
                 tmux_session: tmux_session.clone(),
@@ -117,8 +129,32 @@ pub async fn question_detection_loop(
                 options,
                 matched_group: matched_group.clone(),
                 matched_job: matched_job.clone(),
+            };
+
+            question_cache.insert(pane_id.clone(), CachedQuestion {
+                question: q,
+                miss_count: 0,
             });
         }
+
+        // For panes not detected this tick, increment miss count or remove
+        let stale_panes: Vec<String> = question_cache.keys()
+            .filter(|p| !detected_panes.contains(p.as_str()))
+            .cloned()
+            .collect();
+        for pane_id in stale_panes {
+            let entry = question_cache.get_mut(&pane_id).unwrap();
+            entry.miss_count += 1;
+            // After 3 consecutive misses (15s), consider the question truly gone
+            if entry.miss_count >= 3 {
+                question_cache.remove(&pane_id);
+            }
+        }
+
+        // Build final question list from cache (includes grace-period entries)
+        let questions: Vec<ClaudeQuestion> = question_cache.values()
+            .map(|c| c.question.clone())
+            .collect();
 
         *active_questions.lock().unwrap() = new_state;
 

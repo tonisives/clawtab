@@ -303,7 +303,7 @@ export default function JobsScreen() {
                     <View
                       key={key}
                       onLayout={onCellLayout}
-                      style={index > 0 ? { marginTop: spacing.sm } : undefined}
+                      style={{ paddingBottom: spacing.lg, marginBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}
                     >
                       <AgentSection
                         agentStatus={agentStatus}
@@ -313,6 +313,8 @@ export default function JobsScreen() {
                         agentSending={agentSending}
                         handleRunAgent={handleRunAgent}
                         onScrollTo={() => scrollToCell(key)}
+                        collapsed={collapsedGroups.has("Agent")}
+                        onToggleCollapse={() => toggleGroup("Agent")}
                       />
                     </View>
                   )
@@ -570,6 +572,8 @@ function AgentSection({
   agentSending,
   handleRunAgent,
   onScrollTo,
+  collapsed,
+  onToggleCollapse,
 }: {
   agentStatus: JobStatus
   canRunAgent: boolean
@@ -578,43 +582,56 @@ function AgentSection({
   agentSending: boolean
   handleRunAgent: () => void
   onScrollTo?: () => void
+  collapsed: boolean
+  onToggleCollapse: () => void
 }) {
   const isActive = agentStatus.state === "running" || agentStatus.state === "paused"
 
   return (
-    <View style={styles.agentSection}>
-      <View style={styles.agentHeader}>
+    <View>
+      <TouchableOpacity
+        onPress={onToggleCollapse}
+        style={styles.groupHeaderRow}
+        activeOpacity={0.6}
+      >
+        <Text style={styles.groupHeaderArrow}>
+          {collapsed ? "\u25B6" : "\u25BC"}
+        </Text>
         <Text style={styles.groupHeader}>Agent</Text>
         <View style={styles.agentHeaderRight}>
           <StatusBadge status={agentStatus} />
         </View>
-      </View>
-      {canRunAgent && (
-        <View style={styles.agentInput}>
-          <TextInput
-            style={styles.agentTextInput}
-            value={agentPrompt}
-            onChangeText={setAgentPrompt}
-            placeholder="Enter a prompt for the agent..."
-            placeholderTextColor={colors.textMuted}
-            returnKeyType="send"
-            onSubmitEditing={handleRunAgent}
-            editable={!agentSending}
-          />
-          <TouchableOpacity
-            style={[
-              styles.agentRunBtn,
-              (!agentPrompt.trim() || agentSending) && styles.btnDisabled,
-            ]}
-            onPress={handleRunAgent}
-            disabled={!agentPrompt.trim() || agentSending}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.agentRunBtnText}>Run</Text>
-          </TouchableOpacity>
+      </TouchableOpacity>
+      {!collapsed && (
+        <View style={styles.agentSection}>
+          {canRunAgent && (
+            <View style={styles.agentInput}>
+              <TextInput
+                style={styles.agentTextInput}
+                value={agentPrompt}
+                onChangeText={setAgentPrompt}
+                placeholder="Enter a prompt for the agent..."
+                placeholderTextColor={colors.textMuted}
+                returnKeyType="send"
+                onSubmitEditing={handleRunAgent}
+                editable={!agentSending}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.agentRunBtn,
+                  (!agentPrompt.trim() || agentSending) && styles.btnDisabled,
+                ]}
+                onPress={handleRunAgent}
+                disabled={!agentPrompt.trim() || agentSending}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.agentRunBtnText}>Run</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {isActive && <InlineJobReply jobName="agent" onScrollTo={onScrollTo} />}
         </View>
       )}
-      {isActive && <InlineJobReply jobName="agent" onScrollTo={onScrollTo} />}
     </View>
   )
 }
@@ -819,8 +836,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.sm,
   },
-  agentHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  agentHeaderRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  agentHeaderRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginLeft: "auto" },
   agentInput: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
   agentTextInput: {
     flex: 1,
