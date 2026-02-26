@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio::time::interval;
 use uuid::Uuid;
 
-use clawtab_protocol::{error_codes, ClientMessage, DesktopMessage, ServerMessage};
+use clawtab_protocol::{error_codes, ClientMessage, DesktopMessage, ServerMessage, ClaudeQuestion};
 
 use crate::error::AppError;
 use crate::ws::hub::{DesktopConnection, MobileConnection};
@@ -159,6 +159,23 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
         return;
     };
 
+    // Handle relay-intercepted messages (not forwarded to desktop)
+    match &msg {
+        ClientMessage::RegisterPushToken {
+            id,
+            push_token,
+            platform,
+        } => {
+            handle_register_push_token(state, user_id, id, push_token, platform).await;
+            return;
+        }
+        ClientMessage::GetNotificationHistory { id, limit } => {
+            handle_get_notification_history(state, user_id, id, *limit).await;
+            return;
+        }
+        _ => {}
+    }
+
     let hub = state.hub.read().await;
 
     if !hub.has_desktop(user_id) {
@@ -173,7 +190,112 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
         return;
     }
 
+    // AnswerQuestion: forward to desktop AND mark as answered in DB
+    if let ClientMessage::AnswerQuestion {
+        question_id,
+        answer,
+        ..
+    } = &msg
+    {
+        let qid = question_id.clone();
+        let ans = answer.clone();
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            sqlx::query(
+                "UPDATE notification_history SET answered = true, answered_with = $1 WHERE question_id = $2",
+            )
+            .bind(&ans)
+            .bind(&qid)
+            .execute(&pool)
+            .await
+            .ok();
+        });
+    }
+
     hub.forward_to_desktop(user_id, &msg);
+}
+
+async fn handle_register_push_token(
+    state: &AppState,
+    user_id: Uuid,
+    id: &str,
+    push_token: &str,
+    platform: &str,
+) {
+    let result = sqlx::query(
+        "INSERT INTO push_tokens (user_id, push_token, platform)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (push_token)
+         DO UPDATE SET user_id = $1, platform = $3, updated_at = now()",
+    )
+    .bind(user_id)
+    .bind(push_token)
+    .bind(platform)
+    .execute(&state.pool)
+    .await;
+
+    let success = result.is_ok();
+    if let Err(ref e) = result {
+        tracing::error!("failed to save push token: {e}");
+    }
+
+    // Send ack back to mobile
+    let ack = serde_json::json!({
+        "type": "register_push_token_ack",
+        "id": id,
+        "success": success,
+    });
+    if let Ok(json) = serde_json::to_string(&ack) {
+        let hub = state.hub.read().await;
+        hub.send_raw_to_mobiles(user_id, &json);
+    }
+}
+
+async fn handle_get_notification_history(
+    state: &AppState,
+    user_id: Uuid,
+    id: &str,
+    limit: u32,
+) {
+    let limit = limit.min(50) as i64;
+    let rows: Vec<(String, String, String, String, serde_json::Value, bool, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT question_id, pane_id, cwd, context_lines, options, answered, answered_with, created_at
+         FROM notification_history
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2",
+    )
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    let notifications: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|(question_id, pane_id, cwd, context_lines, options, answered, answered_with, created_at)| {
+            serde_json::json!({
+                "question_id": question_id,
+                "pane_id": pane_id,
+                "cwd": cwd,
+                "context_lines": context_lines,
+                "options": options,
+                "answered": answered,
+                "answered_with": answered_with,
+                "created_at": created_at.to_rfc3339(),
+            })
+        })
+        .collect();
+
+    let resp = serde_json::json!({
+        "type": "notification_history",
+        "id": id,
+        "notifications": notifications,
+    });
+    if let Ok(json) = serde_json::to_string(&resp) {
+        let hub = state.hub.read().await;
+        hub.send_raw_to_mobiles(user_id, &json);
+    }
 }
 
 #[allow(clippy::cognitive_complexity)]
@@ -256,7 +378,7 @@ async fn handle_desktop(
 
 async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
     // Validate it parses as a DesktopMessage
-    let Ok(_msg) = serde_json::from_str::<DesktopMessage>(text) else {
+    let Ok(msg) = serde_json::from_str::<DesktopMessage>(text) else {
         tracing::warn!("invalid message from desktop: {text}");
         return;
     };
@@ -264,6 +386,129 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
     // Forward raw JSON to all mobile clients (avoids re-serialization)
     let hub = state.hub.read().await;
     hub.send_raw_to_mobiles(user_id, text);
+
+    // If this is a ClaudeQuestions message, trigger push notifications
+    if let DesktopMessage::ClaudeQuestions { ref questions } = msg {
+        if !questions.is_empty() {
+            let state = state.clone();
+            let questions = questions.clone();
+            tokio::spawn(async move {
+                handle_claude_questions_push(&state, user_id, &questions).await;
+            });
+        }
+    }
+}
+
+async fn handle_claude_questions_push(
+    state: &AppState,
+    user_id: Uuid,
+    questions: &[ClaudeQuestion],
+) {
+    // Rate limit check
+    if let Some(ref redis) = state.redis {
+        let mut conn = redis.clone();
+        if !crate::push_limiter::allow_push(
+            &mut conn,
+            user_id,
+            state.config.push_rate_limit_seconds,
+        )
+        .await
+        {
+            tracing::debug!("push rate limited for user {user_id}");
+            return;
+        }
+    }
+
+    // Save to notification_history
+    for q in questions {
+        let options_json = serde_json::to_value(&q.options).unwrap_or_default();
+        sqlx::query(
+            "INSERT INTO notification_history (user_id, question_id, pane_id, cwd, context_lines, options)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (question_id) DO NOTHING",
+        )
+        .bind(user_id)
+        .bind(&q.question_id)
+        .bind(&q.pane_id)
+        .bind(&q.cwd)
+        .bind(&q.context_lines)
+        .bind(&options_json)
+        .execute(&state.pool)
+        .await
+        .ok();
+    }
+
+    // Send push notifications
+    let Some(ref apns) = state.apns else {
+        return;
+    };
+
+    // Get user's push tokens
+    let tokens: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, push_token FROM push_tokens WHERE user_id = $1 AND platform = 'ios'",
+    )
+    .bind(user_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    if tokens.is_empty() {
+        return;
+    }
+
+    // Use the first question for the push notification
+    let q = &questions[0];
+    let project = q
+        .cwd
+        .rsplit('/')
+        .next()
+        .unwrap_or(&q.cwd);
+
+    let title = format!("Claude needs input - {project}");
+    let body = if q.context_lines.is_empty() {
+        q.options
+            .iter()
+            .map(|o| format!("{}. {}", o.number, o.label))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    } else {
+        q.context_lines.clone()
+    };
+
+    let options: Vec<(String, String)> = q
+        .options
+        .iter()
+        .map(|o| (o.number.clone(), o.label.clone()))
+        .collect();
+
+    let mut invalid_token_ids = Vec::new();
+
+    for (token_id, device_token) in &tokens {
+        match apns
+            .send_question_notification(device_token, &title, &body, &q.question_id, &q.pane_id, &options)
+            .await
+        {
+            Ok(()) => {
+                tracing::info!("push sent to {device_token}");
+            }
+            Err(e) if e.starts_with("invalid_token:") => {
+                tracing::warn!("removing invalid push token: {device_token}");
+                invalid_token_ids.push(*token_id);
+            }
+            Err(e) => {
+                tracing::error!("push failed: {e}");
+            }
+        }
+    }
+
+    // Clean up invalid tokens
+    for token_id in invalid_token_ids {
+        sqlx::query("DELETE FROM push_tokens WHERE id = $1")
+            .bind(token_id)
+            .execute(&state.pool)
+            .await
+            .ok();
+    }
 }
 
 fn extract_id(msg: &ClientMessage) -> Option<String> {
@@ -279,7 +524,12 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::RunAgent { id, .. }
         | ClientMessage::CreateJob { id, .. }
         | ClientMessage::DetectProcesses { id, .. }
-        | ClientMessage::GetRunDetail { id, .. } => Some(id.clone()),
+        | ClientMessage::GetRunDetail { id, .. }
+        | ClientMessage::GetDetectedProcessLogs { id, .. }
+        | ClientMessage::SendDetectedProcessInput { id, .. }
+        | ClientMessage::RegisterPushToken { id, .. }
+        | ClientMessage::AnswerQuestion { id, .. }
+        | ClientMessage::GetNotificationHistory { id, .. } => Some(id.clone()),
         ClientMessage::UnsubscribeLogs { .. } => None,
     }
 }

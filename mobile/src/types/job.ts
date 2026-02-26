@@ -46,3 +46,31 @@ export interface ClaudeProcess {
   matched_job: string | null;
   log_lines: string;
 }
+
+export interface QuestionOption {
+  number: string;
+  label: string;
+}
+
+export interface ClaudeQuestion {
+  pane_id: string;
+  cwd: string;
+  tmux_session: string;
+  window_name: string;
+  question_id: string;
+  context_lines: string;
+  options: QuestionOption[];
+  matched_group?: string | null;
+  matched_job?: string | null;
+}
+
+export interface NotificationHistoryItem {
+  question_id: string;
+  pane_id: string;
+  cwd: string;
+  context_lines: string;
+  options: QuestionOption[];
+  answered: boolean;
+  answered_with?: string | null;
+  created_at: string;
+}

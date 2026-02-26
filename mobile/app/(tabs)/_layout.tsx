@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { ResizableSidebar } from "../../src/components/ResizableSidebar";
+import { registerNotificationCategories } from "../../src/lib/notifications";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -93,6 +95,10 @@ function TabsContent({ isWide }: { isWide: boolean }) {
 
 export default function TabLayout() {
   const { isWide } = useResponsive();
+
+  useEffect(() => {
+    registerNotificationCategories();
+  }, []);
 
   if (isWide) {
     return (

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::job::{ClaudeProcess, JobStatus, RemoteJob, RunDetail, RunRecord};
+use crate::job::{ClaudeProcess, ClaudeQuestion, JobStatus, RemoteJob, RunDetail, RunRecord};
 
 /// Messages sent by mobile/web clients to the relay server.
 /// The relay forwards these to the appropriate desktop app.
@@ -78,6 +78,21 @@ pub enum ClientMessage {
         id: String,
         pane_id: String,
         text: String,
+    },
+    RegisterPushToken {
+        id: String,
+        push_token: String,
+        platform: String,
+    },
+    AnswerQuestion {
+        id: String,
+        question_id: String,
+        pane_id: String,
+        answer: String,
+    },
+    GetNotificationHistory {
+        id: String,
+        limit: u32,
     },
 }
 
@@ -186,6 +201,10 @@ pub enum DesktopMessage {
     SendDetectedProcessInputAck {
         id: String,
         success: bool,
+    },
+    /// Desktop proactively pushes when Claude questions change
+    ClaudeQuestions {
+        questions: Vec<ClaudeQuestion>,
     },
 }
 

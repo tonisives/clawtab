@@ -3,7 +3,9 @@ import { AppState as RNAppState, Platform } from "react-native";
 import { getWsUrl, getSubscriptionStatus } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import { useJobsStore } from "../store/jobs";
+import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
+import { getPushToken } from "../lib/notifications";
 import { dispatchLogChunk } from "./useLogs";
 import { resolveRequest } from "../lib/useRequestMap";
 import type { ClientMessage, IncomingMessage } from "../types/messages";
@@ -85,6 +87,19 @@ export function useWebSocket() {
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
       ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
+      ws.send(JSON.stringify({ type: "get_notification_history", id: nextId(), limit: 20 }));
+
+      // Register push token
+      getPushToken().then((token) => {
+        if (token && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "register_push_token",
+            id: nextId(),
+            push_token: token,
+            platform: Platform.OS === "ios" ? "ios" : "android",
+          }));
+        }
+      });
     };
 
     ws.onmessage = (event) => {
@@ -114,6 +129,12 @@ export function useWebSocket() {
           break;
         case "detected_processes":
           useJobsStore.getState().setDetectedProcesses(msg.processes);
+          break;
+        case "claude_questions":
+          useNotificationStore.getState().setQuestions(msg.questions);
+          break;
+        case "notification_history":
+          useNotificationStore.getState().hydrateFromHistory(msg.notifications);
           break;
         case "desktop_status":
           setDesktopStatus(msg.device_id, msg.device_name, msg.online);

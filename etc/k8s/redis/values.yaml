@@ -1,0 +1,21 @@
+# helm install redis-clawtab bitnami/redis -n clawtab -f values.yaml
+master:
+  disableCommands: []
+  resources:
+    requests:
+      memory: 25Mi
+    limits:
+      memory: 50Mi
+  configuration: |
+    maxmemory 40mb
+    maxmemory-policy allkeys-lru
+replica:
+  replicaCount: 0
+service:
+  type: ClusterIP
+  port: 6379
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: clawtab

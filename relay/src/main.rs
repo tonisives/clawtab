@@ -8,11 +8,13 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+mod apns;
 mod auth;
 mod billing;
 mod config;
 mod db;
 mod error;
+mod push_limiter;
 mod routes;
 mod ws;
 
@@ -21,6 +23,8 @@ pub struct AppState {
     pub config: Arc<config::Config>,
     pub pool: PgPool,
     pub hub: Arc<RwLock<ws::Hub>>,
+    pub apns: Option<Arc<apns::ApnsClient>>,
+    pub redis: Option<redis::aio::ConnectionManager>,
 }
 
 #[tokio::main]
@@ -40,10 +44,50 @@ async fn main() -> anyhow::Result<()> {
     let hub = Arc::new(RwLock::new(ws::Hub::new()));
     let listen_addr = config.listen_addr.clone();
 
+    // Initialize APNs client (optional)
+    let apns_client = if config.apns_key_path.is_some() {
+        match apns::ApnsClient::new(&config) {
+            Ok(client) => {
+                tracing::info!("APNs client initialized");
+                Some(Arc::new(client))
+            }
+            Err(e) => {
+                tracing::warn!("APNs client not available: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Initialize Redis connection (optional)
+    let redis_conn = if let Some(ref redis_url) = config.redis_url {
+        match redis::Client::open(redis_url.as_str()) {
+            Ok(client) => match redis::aio::ConnectionManager::new(client).await {
+                Ok(conn) => {
+                    tracing::info!("Redis connected");
+                    Some(conn)
+                }
+                Err(e) => {
+                    tracing::warn!("Redis connection failed: {e}");
+                    None
+                }
+            },
+            Err(e) => {
+                tracing::warn!("Redis client creation failed: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let state = AppState {
         config: Arc::new(config),
         pool,
         hub,
+        apns: apns_client,
+        redis: redis_conn,
     };
 
     let cors = CorsLayer::new()

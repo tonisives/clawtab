@@ -193,6 +193,17 @@ pub async fn handle_incoming(
                 success: result.is_ok(),
             })
         }
+
+        ClientMessage::AnswerQuestion { id, pane_id, answer, .. } => {
+            let result = crate::tmux::send_keys_to_tui_pane(&pane_id, &answer);
+            Some(DesktopMessage::SendDetectedProcessInputAck {
+                id,
+                success: result.is_ok(),
+            })
+        }
+
+        // RegisterPushToken and GetNotificationHistory are handled by the relay server
+        ClientMessage::RegisterPushToken { .. } | ClientMessage::GetNotificationHistory { .. } => None,
     };
 
     match response {

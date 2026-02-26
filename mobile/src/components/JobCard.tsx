@@ -1,4 +1,4 @@
-import { Pressable, View, Text, StyleSheet } from "react-native";
+import { TouchableOpacity, View, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
@@ -50,13 +50,13 @@ export function JobCard({
   const icon = typeIcon(job.job_type);
 
   return (
-    <Pressable
-      style={({ pressed }) => [
+    <TouchableOpacity
+      style={[
         styles.card,
-        pressed && styles.cardPressed,
         !job.enabled && styles.cardDisabled,
       ]}
       onPress={() => router.push(`/job/${job.name}`)}
+      activeOpacity={0.7}
     >
       <View style={styles.row}>
         <View style={[styles.typeIcon, { backgroundColor: icon.bg }]}>
@@ -77,7 +77,7 @@ export function JobCard({
         </View>
         <StatusBadge status={status} />
       </View>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -88,9 +88,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  cardPressed: {
-    backgroundColor: colors.surfaceHover,
   },
   cardDisabled: {
     opacity: 0.5,

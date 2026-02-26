@@ -12,6 +12,17 @@ pub struct Config {
     // Google OAuth (optional)
     pub google_client_id: Option<String>,
     pub google_client_secret: Option<String>,
+
+    // APNs (optional)
+    pub apns_key_path: Option<String>,
+    pub apns_key_id: Option<String>,
+    pub apns_team_id: Option<String>,
+    pub apns_topic: Option<String>,
+    pub apns_sandbox: bool,
+
+    // Redis (optional)
+    pub redis_url: Option<String>,
+    pub push_rate_limit_seconds: u64,
 }
 
 impl Config {
@@ -36,6 +47,18 @@ impl Config {
                 .unwrap_or(5),
             google_client_id: env::var("GOOGLE_CLIENT_ID").ok(),
             google_client_secret: env::var("GOOGLE_CLIENT_SECRET").ok(),
+            apns_key_path: env::var("APNS_KEY_PATH").ok(),
+            apns_key_id: env::var("APNS_KEY_ID").ok(),
+            apns_team_id: env::var("APNS_TEAM_ID").ok(),
+            apns_topic: env::var("APNS_TOPIC").ok(),
+            apns_sandbox: env::var("APNS_SANDBOX")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
+            redis_url: env::var("REDIS_URL").ok(),
+            push_rate_limit_seconds: env::var("PUSH_RATE_LIMIT_SECONDS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(30),
         }
     }
 }

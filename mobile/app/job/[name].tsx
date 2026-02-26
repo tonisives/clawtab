@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { useJob, useJobStatus } from "../../src/store/jobs";
 import { useRuns, useRunsStore } from "../../src/store/runs";
@@ -153,14 +153,14 @@ export default function JobDetailScreen() {
 
             {/* Live Output - collapsible */}
             <View style={styles.section}>
-              <Pressable onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader}>
+              <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
                 <Text style={styles.collapseArrow}>
                   {outputCollapsed ? "\u25B6" : "\u25BC"}
                 </Text>
                 <Text style={styles.sectionTitle}>
                   {isRunning ? "Live Output" : "Output"}
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
               {!outputCollapsed && (
                 <View style={styles.logsContainer}>
                   <LogViewer content={logs} />
@@ -170,12 +170,12 @@ export default function JobDetailScreen() {
 
             {/* Run History - collapsible */}
             <View style={styles.section}>
-              <Pressable onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader}>
+              <TouchableOpacity onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
                 <Text style={styles.collapseArrow}>
                   {runsCollapsed ? "\u25B6" : "\u25BC"}
                 </Text>
                 <Text style={styles.sectionTitle}>Runs</Text>
-              </Pressable>
+              </TouchableOpacity>
               {!runsCollapsed && (
                 <View style={styles.runsContainer}>
                   {runsLoading && !runs ? (
@@ -255,7 +255,7 @@ function ActionButton({
   filled?: boolean;
 }) {
   return (
-    <Pressable
+    <TouchableOpacity
       style={[
         styles.actionBtn,
         filled
@@ -263,11 +263,12 @@ function ActionButton({
           : { borderColor: color, borderWidth: 1 },
       ]}
       onPress={onPress}
+      activeOpacity={0.7}
     >
       <Text style={[styles.actionText, { color: filled ? "#fff" : color }]}>
         {label}
       </Text>
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 
@@ -303,7 +304,7 @@ function RunRow({ run, currentState }: { run: RunRecord; currentState: string })
     : null;
 
   return (
-    <Pressable onPress={handleToggle}>
+    <TouchableOpacity onPress={handleToggle} activeOpacity={0.7}>
       <View style={styles.runRow}>
         <View style={styles.runLeft}>
           <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
@@ -330,7 +331,7 @@ function RunRow({ run, currentState }: { run: RunRecord; currentState: string })
           )}
         </View>
       )}
-    </Pressable>
+    </TouchableOpacity>
   );
 }
 

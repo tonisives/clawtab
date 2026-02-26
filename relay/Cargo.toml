@@ -55,6 +55,10 @@ tower_governor = "0.6"
 # url encoding
 urlencoding = "2"
 
+# push notifications
+a2 = "0.10"
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+
 # utils
 anyhow = "1"
 thiserror = "2"

@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   View,
   TextInput,
-  Pressable,
+  TouchableOpacity,
   Text,
   StyleSheet,
   KeyboardAvoidingView,
@@ -43,13 +43,14 @@ export function MessageInput({
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
         />
-        <Pressable
+        <TouchableOpacity
           style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
           onPress={handleSend}
           disabled={!text.trim()}
+          activeOpacity={0.7}
         >
           <Text style={styles.sendText}>Send</Text>
-        </Pressable>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );

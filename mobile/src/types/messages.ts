@@ -1,4 +1,4 @@
-import type { ClaudeProcess, JobStatus, RemoteJob, RunDetail, RunRecord } from "./job";
+import type { ClaudeProcess, ClaudeQuestion, JobStatus, RemoteJob, RunDetail, RunRecord } from "./job";
 
 // Messages sent by this client to the relay server
 export type ClientMessage =
@@ -25,7 +25,10 @@ export type ClientMessage =
   | { type: "detect_processes"; id: string }
   | { type: "get_run_detail"; id: string; run_id: string }
   | { type: "get_detected_process_logs"; id: string; tmux_session: string; pane_id: string }
-  | { type: "send_detected_process_input"; id: string; pane_id: string; text: string };
+  | { type: "send_detected_process_input"; id: string; pane_id: string; text: string }
+  | { type: "register_push_token"; id: string; push_token: string; platform: string }
+  | { type: "answer_question"; id: string; question_id: string; pane_id: string; answer: string }
+  | { type: "get_notification_history"; id: string; limit: number };
 
 // Messages received from the relay (desktop responses forwarded through)
 export type DesktopMessage =
@@ -54,7 +57,10 @@ export type DesktopMessage =
   | { type: "detected_processes"; id: string; processes: ClaudeProcess[] }
   | { type: "run_detail_response"; id: string; detail?: RunDetail }
   | { type: "detected_process_logs"; id: string; logs: string }
-  | { type: "send_detected_process_input_ack"; id: string; success: boolean };
+  | { type: "send_detected_process_input_ack"; id: string; success: boolean }
+  | { type: "claude_questions"; questions: ClaudeQuestion[] }
+  | { type: "notification_history"; id: string; notifications: import("./job").NotificationHistoryItem[] }
+  | { type: "register_push_token_ack"; id: string; success: boolean };
 
 // Messages from the relay server itself
 export type ServerMessage =

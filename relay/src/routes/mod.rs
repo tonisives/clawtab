@@ -5,6 +5,7 @@ mod refresh;
 mod device;
 mod google_auth;
 mod google_callback;
+mod notifications;
 mod subscription;
 
 use std::sync::Arc;
@@ -67,6 +68,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/devices", get(device::list))
         .route("/devices/{id}", delete(device::remove))
         .route("/subscription/status", get(subscription::status))
+        .route("/notifications/history", get(notifications::history))
         .layer(middleware::from_fn_with_state(state, auth_middleware));
 
     public

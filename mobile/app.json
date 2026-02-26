@@ -17,7 +17,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "cc.clawtab",
       "entitlements": {
-        "keychain-access-groups": ["$(AppIdentifierPrefix)cc.clawtab"]
+        "keychain-access-groups": ["$(AppIdentifierPrefix)cc.clawtab"],
+        "aps-environment": "production"
       }
     },
     "android": {
@@ -36,6 +37,13 @@
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#7986cb"
+        }
+      ],
       [
         "@react-native-google-signin/google-signin",
         {

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useJobsStore } from "../../src/store/jobs";
 import { useWsStore } from "../../src/store/ws";
 import { JobCard } from "../../src/components/JobCard";
 import { StatusBadge } from "../../src/components/StatusBadge";
 import { ContentContainer } from "../../src/components/ContentContainer";
+import { NotificationStack } from "../../src/components/NotificationStack";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
+import { useNotifications } from "../../src/hooks/useNotifications";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { useLogs } from "../../src/hooks/useLogs";
 import { useResponsive } from "../../src/hooks/useResponsive";
@@ -38,6 +40,8 @@ export default function JobsScreen() {
   const [agentSending, setAgentSending] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const { isWide } = useResponsive();
+
+  useNotifications();
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {
@@ -163,13 +167,14 @@ export default function JobsScreen() {
             <Text style={[styles.subText, isWide && { maxWidth: 400 }]}>
               Subscribe to connect to your desktop and run jobs remotely.
             </Text>
-            <Pressable
+            <TouchableOpacity
               style={[styles.subBtn, subLoading && styles.btnDisabled]}
               onPress={handleSubscribe}
               disabled={subLoading}
+              activeOpacity={0.7}
             >
               <Text style={styles.subBtnText}>{subLoading ? "Loading..." : "Subscribe"}</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
         )}
         {!connected && !subscriptionRequired && (
@@ -215,6 +220,7 @@ export default function JobsScreen() {
             contentContainerStyle={[styles.list, isWide && styles.listWide]}
             refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.accent} />}
           >
+            <NotificationStack />
             {items.length === 0 ? (
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>No jobs</Text>
@@ -243,10 +249,10 @@ export default function JobsScreen() {
                   const isCollapsed = collapsedGroups.has(item.group);
                   return (
                     <View key={key} onLayout={onCellLayout} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-                      <Pressable onPress={() => toggleGroup(item.group)} style={styles.groupHeaderRow}>
+                      <TouchableOpacity onPress={() => toggleGroup(item.group)} style={styles.groupHeaderRow} activeOpacity={0.6}>
                         <Text style={styles.groupHeaderArrow}>{isCollapsed ? "\u25B6" : "\u25BC"}</Text>
                         <Text style={styles.groupHeader}>{item.group}</Text>
-                      </Pressable>
+                      </TouchableOpacity>
                     </View>
                   );
                 }
@@ -311,12 +317,12 @@ function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?:
       <View style={styles.inlineReply}>
         {expanded && <InlineJobLogs jobName={jobName} onSend={handleSend} />}
         <View style={styles.inlineReplyToggleRow}>
-          <Pressable onPress={handleToggle} style={styles.inlineReplyToggle}>
+          <TouchableOpacity onPress={handleToggle} style={styles.inlineReplyToggle} activeOpacity={0.6}>
             <Text style={styles.inlineReplyToggleText}>{expanded ? "Hide logs" : "Show logs & reply"}</Text>
-          </Pressable>
-          <Pressable onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8}>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8} activeOpacity={0.6}>
             <Ionicons name="scan-outline" size={14} color={colors.textMuted} />
-          </Pressable>
+          </TouchableOpacity>
         </View>
         {!expanded && options.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
@@ -330,9 +336,9 @@ function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?:
         {!expanded && (
           <View style={styles.inlineReplyInput}>
             <TextInput style={styles.inlineReplyTextInput} value={text} onChangeText={setText} placeholder="Reply..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(text)} />
-            <Pressable style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()}>
+            <TouchableOpacity style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()} activeOpacity={0.7}>
               <Text style={styles.inlineReplySendText}>Send</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -364,9 +370,9 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
           <ScrollView ref={scrollRef} style={[styles.inlineReplyLogs, { maxHeight: logHeight }]} nestedScrollEnabled>
             <Text style={styles.inlineReplyLogsText} selectable>{logs}</Text>
           </ScrollView>
-          <Pressable onPress={() => setLogsExpanded((v) => !v)} style={styles.logsExpandToggle}>
+          <TouchableOpacity onPress={() => setLogsExpanded((v) => !v)} style={styles.logsExpandToggle} activeOpacity={0.6}>
             <Text style={styles.logsExpandToggleText}>{logsExpanded ? "Collapse" : "Expand"}</Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
       ) : null}
       {options.length > 0 && (
@@ -380,9 +386,9 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
       )}
       <View style={styles.inlineReplyInput}>
         <TextInput style={styles.inlineReplyTextInput} value={text} onChangeText={setText} placeholder="Reply..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(text)} />
-        <Pressable style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()}>
+        <TouchableOpacity style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()} activeOpacity={0.7}>
           <Text style={styles.inlineReplySendText}>Send</Text>
-        </Pressable>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -404,9 +410,9 @@ function AgentSection({ agentStatus, canRunAgent, agentPrompt, setAgentPrompt, a
       {canRunAgent && (
         <View style={styles.agentInput}>
           <TextInput style={styles.agentTextInput} value={agentPrompt} onChangeText={setAgentPrompt} placeholder="Enter a prompt for the agent..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={handleRunAgent} editable={!agentSending} />
-          <Pressable style={[styles.agentRunBtn, (!agentPrompt.trim() || agentSending) && styles.btnDisabled]} onPress={handleRunAgent} disabled={!agentPrompt.trim() || agentSending}>
+          <TouchableOpacity style={[styles.agentRunBtn, (!agentPrompt.trim() || agentSending) && styles.btnDisabled]} onPress={handleRunAgent} disabled={!agentPrompt.trim() || agentSending} activeOpacity={0.7}>
             <Text style={styles.agentRunBtnText}>Run</Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
       )}
       {isActive && <InlineJobReply jobName="agent" onScrollTo={onScrollTo} />}
@@ -441,7 +447,7 @@ function FullscreenJobTerminal({ jobName, title, onClose }: { jobName: string; t
     <Modal visible animationType="slide" presentationStyle="fullScreen">
       <View style={styles.fsContainer}>
         <View style={styles.fsHeader}>
-          <Pressable onPress={onClose} style={styles.fsCloseBtn}><Text style={styles.fsCloseBtnText}>Close</Text></Pressable>
+          <TouchableOpacity onPress={onClose} style={styles.fsCloseBtn} activeOpacity={0.6}><Text style={styles.fsCloseBtnText}>Close</Text></TouchableOpacity>
           <Text style={styles.fsTitle} numberOfLines={1}>{title}</Text>
           {status && <StatusBadge status={status} />}
         </View>
@@ -460,21 +466,21 @@ function FullscreenJobTerminal({ jobName, title, onClose }: { jobName: string; t
         {isRunning ? (
           <View style={styles.fsInputRow}>
             <TextInput style={styles.fsTextInput} value={inputText} onChangeText={setInputText} placeholder="Send input..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(inputText)} />
-            <Pressable style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]} onPress={() => handleSend(inputText)} disabled={!inputText.trim()}>
+            <TouchableOpacity style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]} onPress={() => handleSend(inputText)} disabled={!inputText.trim()} activeOpacity={0.7}>
               <Text style={styles.fsSendBtnText}>Send</Text>
-            </Pressable>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.fsActionRow}>
             {(status?.state === "idle" || status?.state === "success") && (
-              <Pressable style={[styles.fsActionBtn, { backgroundColor: colors.accent }]} onPress={() => handleAction("run_job")}>
+              <TouchableOpacity style={[styles.fsActionBtn, { backgroundColor: colors.accent }]} onPress={() => handleAction("run_job")} activeOpacity={0.7}>
                 <Text style={styles.fsActionBtnText}>{status?.state === "success" ? "Run Again" : "Run"}</Text>
-              </Pressable>
+              </TouchableOpacity>
             )}
             {status?.state === "failed" && (
-              <Pressable style={[styles.fsActionBtn, { backgroundColor: colors.accent }]} onPress={() => handleAction("run_job")}>
+              <TouchableOpacity style={[styles.fsActionBtn, { backgroundColor: colors.accent }]} onPress={() => handleAction("run_job")} activeOpacity={0.7}>
                 <Text style={styles.fsActionBtnText}>Restart</Text>
-              </Pressable>
+              </TouchableOpacity>
             )}
           </View>
         )}
@@ -513,10 +519,16 @@ function ProcessCard({ process, onScrollTo }: { process: ClaudeProcess; onScroll
     if (send && text.trim()) send({ type: "send_detected_process_input", id: nextId(), pane_id: process.pane_id, text: text.trim() });
   };
 
+  const handleToggle = () => {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && onScrollTo) setTimeout(onScrollTo, 100);
+  };
+
   return (
     <>
       <View style={styles.processCard}>
-        <Pressable style={({ pressed }) => [pressed && styles.processCardPressed]} onPress={() => { setExpanded((v) => { const next = !v; if (next && onScrollTo) setTimeout(onScrollTo, 100); return next; }); }}>
+        <TouchableOpacity onPress={handleToggle} activeOpacity={0.7}>
           <View style={styles.processRow}>
             <View style={styles.processTypeIcon}><Text style={styles.processTypeIconText}>C</Text></View>
             <View style={styles.processInfo}>
@@ -526,12 +538,12 @@ function ProcessCard({ process, onScrollTo }: { process: ClaudeProcess; onScroll
                 <Text style={styles.processMetaText}>detected</Text>
               </View>
             </View>
-            <Pressable onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8}>
+            <TouchableOpacity onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8} activeOpacity={0.6}>
               <Ionicons name="scan-outline" size={16} color={colors.textMuted} />
-            </Pressable>
+            </TouchableOpacity>
             <View style={styles.processRunningBadge}><Text style={styles.processRunningText}>running</Text></View>
           </View>
-        </Pressable>
+        </TouchableOpacity>
         {expanded && <ProcessInlineView logsText={logsText} options={options} onSend={handleSend} />}
       </View>
       {fullscreen && <FullscreenProcessTerminal process={process} displayName={displayName} onClose={() => setFullscreen(false)} />}
@@ -569,9 +581,9 @@ function ProcessInlineView({ logsText, options, onSend }: { logsText: string; op
       )}
       <View style={styles.inlineReplyInput}>
         <TextInput style={styles.inlineReplyTextInput} value={text} onChangeText={setText} placeholder="Reply..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(text)} />
-        <Pressable style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()}>
+        <TouchableOpacity style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]} onPress={() => handleSend(text)} disabled={!text.trim()} activeOpacity={0.7}>
           <Text style={styles.inlineReplySendText}>Send</Text>
-        </Pressable>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -613,7 +625,7 @@ function FullscreenProcessTerminal({ process, displayName, onClose }: { process:
     <Modal visible animationType="slide" presentationStyle="fullScreen">
       <View style={styles.fsContainer}>
         <View style={styles.fsHeader}>
-          <Pressable onPress={onClose} style={styles.fsCloseBtn}><Text style={styles.fsCloseBtnText}>Close</Text></Pressable>
+          <TouchableOpacity onPress={onClose} style={styles.fsCloseBtn} activeOpacity={0.6}><Text style={styles.fsCloseBtnText}>Close</Text></TouchableOpacity>
           <Text style={styles.fsTitle} numberOfLines={1}>{displayName}</Text>
           <View style={styles.processRunningBadge}><Text style={styles.processRunningText}>running</Text></View>
         </View>
@@ -631,9 +643,9 @@ function FullscreenProcessTerminal({ process, displayName, onClose }: { process:
         )}
         <View style={styles.fsInputRow}>
           <TextInput style={styles.fsTextInput} value={inputText} onChangeText={setInputText} placeholder="Send input..." placeholderTextColor={colors.textMuted} returnKeyType="send" onSubmitEditing={() => handleSend(inputText)} />
-          <Pressable style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]} onPress={() => handleSend(inputText)} disabled={!inputText.trim()}>
+          <TouchableOpacity style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]} onPress={() => handleSend(inputText)} disabled={!inputText.trim()} activeOpacity={0.7}>
             <Text style={styles.fsSendBtnText}>Send</Text>
-          </Pressable>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>

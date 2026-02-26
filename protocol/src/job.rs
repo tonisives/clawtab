@@ -1,6 +1,27 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionOption {
+    pub number: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeQuestion {
+    pub pane_id: String,
+    pub cwd: String,
+    pub tmux_session: String,
+    pub window_name: String,
+    pub question_id: String,
+    pub context_lines: String,
+    pub options: Vec<QuestionOption>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_group: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_job: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteJob {
     pub name: String,
     pub job_type: String,

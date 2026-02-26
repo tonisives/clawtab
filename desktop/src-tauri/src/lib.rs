@@ -6,6 +6,7 @@ mod config;
 mod cwt;
 mod history;
 pub mod ipc;
+mod questions;
 mod relay;
 mod scheduler;
 mod secrets;
@@ -22,6 +23,8 @@ use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     Manager,
 };
+
+use clawtab_protocol::QuestionOption;
 
 use config::jobs::{JobStatus, JobsConfig};
 use config::settings::AppSettings;
@@ -40,6 +43,7 @@ pub struct AppState {
     pub active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     pub relay: Arc<Mutex<Option<relay::RelayHandle>>>,
     pub relay_sub_required: Arc<Mutex<bool>>,
+    pub active_questions: Arc<Mutex<HashMap<String, Vec<QuestionOption>>>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -192,6 +196,8 @@ pub fn run() {
         Arc::new(Mutex::new(HashMap::new()));
     let relay_handle: Arc<Mutex<Option<relay::RelayHandle>>> = Arc::new(Mutex::new(None));
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let active_questions: Arc<Mutex<HashMap<String, Vec<QuestionOption>>>> =
+        Arc::new(Mutex::new(HashMap::new()));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -203,6 +209,7 @@ pub fn run() {
         active_agents: Arc::clone(&active_agents),
         relay: Arc::clone(&relay_handle),
         relay_sub_required: Arc::clone(&relay_sub_required),
+        active_questions: Arc::clone(&active_questions),
     };
 
     // Clones for IPC handler
@@ -216,6 +223,7 @@ pub fn run() {
         active_agents: Arc::clone(&active_agents),
         relay: Arc::clone(&relay_handle),
         relay_sub_required: Arc::clone(&relay_sub_required),
+        active_questions: Arc::clone(&active_questions),
     };
 
     // Clones for scheduler
@@ -244,6 +252,12 @@ pub fn run() {
     let secrets_for_relay = Arc::clone(&secrets);
     let history_for_relay = Arc::clone(&history);
     let active_agents_for_relay = Arc::clone(&active_agents);
+
+    // Clones for question detection loop
+    let jobs_for_questions = Arc::clone(&jobs_config);
+    let job_status_for_questions = Arc::clone(&job_status);
+    let relay_for_questions = Arc::clone(&relay_handle);
+    let active_questions_for_loop = Arc::clone(&active_questions);
 
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
@@ -510,6 +524,17 @@ pub fn run() {
                     }
                 }
             }
+
+            // Start question detection loop
+            tauri::async_runtime::spawn(async move {
+                questions::question_detection_loop(
+                    jobs_for_questions,
+                    job_status_for_questions,
+                    relay_for_questions,
+                    active_questions_for_loop,
+                )
+                .await;
+            });
 
             // Start telegram agent polling
             tauri::async_runtime::spawn(async move {
