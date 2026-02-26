@@ -404,7 +404,7 @@ async fn handle_claude_questions_push(
     user_id: Uuid,
     questions: &[ClaudeQuestion],
 ) {
-    // Rate limit check
+    // Rate limit check (per-user cooldown)
     if let Some(ref redis) = state.redis {
         let mut conn = redis.clone();
         if !crate::push_limiter::allow_push(
@@ -415,6 +415,13 @@ async fn handle_claude_questions_push(
         .await
         {
             tracing::debug!("push rate limited for user {user_id}");
+            return;
+        }
+
+        // Per-question dedup: skip if we already pushed for this question
+        let q_id = &questions[0].question_id;
+        if crate::push_limiter::is_question_pushed(&mut conn, q_id).await {
+            tracing::debug!("push already sent for question {q_id}");
             return;
         }
     }

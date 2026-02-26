@@ -72,6 +72,13 @@ function NotificationCard({
     }
   }, [question.question_id]);
 
+  // Auto-reset after 10s so buttons re-appear if question persists
+  useEffect(() => {
+    if (!answered) return;
+    const timer = setTimeout(() => setAnswered(false), 10000);
+    return () => clearTimeout(timer);
+  }, [answered]);
+
   const handleOptionPress = (optionNumber: string) => {
     const send = getWsSend();
     if (!send) return;

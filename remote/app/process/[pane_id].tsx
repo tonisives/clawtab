@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
-import { useLocalSearchParams, Stack, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, Stack } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { LogViewer } from "../../src/components/LogViewer";
 import { MessageInput } from "../../src/components/MessageInput";
@@ -13,16 +12,6 @@ import { confirm } from "../../src/lib/platform";
 import { parseNumberedOptions } from "../../src/components/ProcessCard";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
-
-function BackButton() {
-  const router = useRouter();
-  return (
-    <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.6}>
-      <Ionicons name="chevron-back" size={22} color={colors.text} />
-      <Text style={styles.backText}>Jobs</Text>
-    </TouchableOpacity>
-  );
-}
 
 export default function ProcessDetailScreen() {
   const { pane_id } = useLocalSearchParams<{ pane_id: string }>();
@@ -117,14 +106,11 @@ export default function ProcessDetailScreen() {
       <Stack.Screen
         options={{
           title: displayName,
-          headerLeft: () => <BackButton />,
           headerRight: () => (
-            <View style={styles.headerRight}>
-              <View style={isAlive ? styles.runningBadge : styles.endedBadge}>
-                <Text style={isAlive ? styles.runningText : styles.endedText}>
-                  {isAlive ? "running" : "ended"}
-                </Text>
-              </View>
+            <View style={isAlive ? styles.runningBadge : styles.endedBadge}>
+              <Text style={isAlive ? styles.runningText : styles.endedText}>
+                {isAlive ? "running" : "ended"}
+              </Text>
             </View>
           ),
         }}
@@ -207,16 +193,6 @@ const styles = StyleSheet.create({
   contentWide: { paddingTop: 32, paddingHorizontal: spacing.xl },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   notFound: { color: colors.textMuted, fontSize: 16 },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginLeft: -8,
-  },
-  backText: {
-    color: colors.text,
-    fontSize: 16,
-  },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginRight: 4 },
   runningBadge: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,

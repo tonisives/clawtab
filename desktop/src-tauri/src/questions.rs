@@ -54,13 +54,16 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
 /// Check whether the terminal output contains indicators of an interactive prompt.
 /// Claude CLI's interactive menus always include instructional text like
 /// "Enter to select . ↑/↓ to navigate . Esc to cancel"
-/// We only check the LAST few lines so stale prompt text higher up doesn't trigger.
+/// This instruction is always on the very last non-empty line when a prompt is
+/// actively waiting, so we only check that line to avoid stale matches.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
-    // Check only the last 5 lines for prompt indicators to avoid stale matches
-    let tail: String = text.lines().rev().take(5).collect::<Vec<_>>().join("\n").to_lowercase();
-    tail.contains("enter to select")
-        || tail.contains("to navigate")
-        || tail.contains("esc to cancel")
+    let last_line = text.lines().rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .to_lowercase();
+    last_line.contains("enter to select")
+        || last_line.contains("to navigate")
+        || last_line.contains("esc to cancel")
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.
