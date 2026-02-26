@@ -9,7 +9,7 @@ export default function ProcessLayout() {
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: "600" },
         headerBackVisible: true,
-        headerBackTitle: "Jobs",
+        headerBackTitle: "",
       }}
     />
   );

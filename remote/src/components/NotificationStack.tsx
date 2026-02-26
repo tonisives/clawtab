@@ -55,11 +55,13 @@ function PaginationDots({
 function NotificationCard({
   question,
   processMap,
+  resolvedJob,
   onNavigate,
 }: {
   question: ClaudeQuestion;
   processMap: Map<string, ClaudeProcess>;
-  onNavigate: (q: ClaudeQuestion) => void;
+  resolvedJob: string | null;
+  onNavigate: (q: ClaudeQuestion, jobName: string | null) => void;
 }) {
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
@@ -82,8 +84,8 @@ function NotificationCard({
   const handleOptionPress = (optionNumber: string) => {
     const send = getWsSend();
     if (!send) return;
-    if (question.matched_job) {
-      send({ type: "send_input", id: nextId(), name: question.matched_job, text: optionNumber });
+    if (resolvedJob) {
+      send({ type: "send_input", id: nextId(), name: resolvedJob, text: optionNumber });
     } else {
       const proc = processMap.get(question.pane_id);
       if (proc) {
@@ -94,8 +96,8 @@ function NotificationCard({
   };
 
   const proc = processMap.get(question.pane_id);
-  const title = question.matched_job
-    ? question.matched_job
+  const title = resolvedJob
+    ? resolvedJob
     : proc
       ? proc.cwd.replace(/^\/Users\/[^/]+/, "~")
       : question.cwd.replace(/^\/Users\/[^/]+/, "~");
@@ -107,7 +109,7 @@ function NotificationCard({
     <View style={styles.card}>
       <TouchableOpacity
         style={styles.cardBody}
-        onPress={() => onNavigate(question)}
+        onPress={() => onNavigate(question, resolvedJob)}
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>
@@ -180,6 +182,7 @@ export function NotificationStack() {
   );
 
   const statuses = useJobsStore((s) => s.statuses);
+  const jobs = useJobsStore((s) => s.jobs);
 
   const processMap = new Map<string, ClaudeProcess>();
   for (const proc of detectedProcesses) {
@@ -191,8 +194,32 @@ export function NotificationStack() {
     if (status.state === "running") runningJobs.add(name);
   }
 
+  // Resolve the job name for a question: use matched_job, or fall back to
+  // matching the question's cwd against running jobs' work_dir/group.
+  const resolveJob = useCallback(
+    (q: ClaudeQuestion): string | null => {
+      if (q.matched_job && runningJobs.has(q.matched_job)) return q.matched_job;
+      // Match by cwd
+      for (const job of jobs) {
+        if (!runningJobs.has(job.name)) continue;
+        const dir = job.work_dir || job.path;
+        if (!dir) continue;
+        if (q.cwd === dir || q.cwd.startsWith(dir + "/")) return job.name;
+      }
+      // Match by group name
+      if (q.matched_group) {
+        for (const job of jobs) {
+          if (!runningJobs.has(job.name)) continue;
+          if (job.group === q.matched_group) return job.name;
+        }
+      }
+      return q.matched_job || null;
+    },
+    [jobs, runningJobs],
+  );
+
   const activeQuestions = questions.filter(
-    (q) => processMap.has(q.pane_id) || (q.matched_job && runningJobs.has(q.matched_job)),
+    (q) => processMap.has(q.pane_id) || resolveJob(q) != null,
   );
 
   const handleScroll = useCallback(
@@ -220,11 +247,11 @@ export function NotificationStack() {
   );
 
   const navigateToQuestion = useCallback(
-    (q: ClaudeQuestion) => {
-      if (q.matched_job) {
-        router.push(`/job/${q.matched_job}`);
+    (q: ClaudeQuestion, jobName: string | null) => {
+      if (jobName) {
+        router.push(`/job/${jobName}`);
       } else {
-        router.push(`/process/${q.pane_id}`);
+        router.push(`/process/${q.pane_id.replace(/%/g, "_pct_")}`);
       }
     },
     [router],
@@ -240,7 +267,7 @@ export function NotificationStack() {
       if (scrollRef.current) {
         setTimeout(() => scrollToIndex(idx), 100);
       }
-      navigateToQuestion(activeQuestions[idx]);
+      navigateToQuestion(activeQuestions[idx], resolveJob(activeQuestions[idx]));
     }
     setDeepLinkQuestionId(null);
   }, [
@@ -266,6 +293,7 @@ export function NotificationStack() {
         <NotificationCard
           question={activeQuestions[0]}
           processMap={processMap}
+          resolvedJob={resolveJob(activeQuestions[0])}
           onNavigate={navigateToQuestion}
         />
       </Animated.View>
@@ -293,6 +321,7 @@ export function NotificationStack() {
             <NotificationCard
               question={q}
               processMap={processMap}
+              resolvedJob={resolveJob(q)}
               onNavigate={navigateToQuestion}
             />
           </View>

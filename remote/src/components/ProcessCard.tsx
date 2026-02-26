@@ -35,7 +35,7 @@ export function ProcessCard({
   return (
     <TouchableOpacity
       style={styles.processCard}
-      onPress={() => router.push(`/process/${process.pane_id}`)}
+      onPress={() => router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)}
       activeOpacity={0.7}
     >
       <View style={styles.processRow}>

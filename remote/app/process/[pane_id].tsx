@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
-import { useLocalSearchParams, Stack } from "expo-router";
+import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
+import { useNotificationStore } from "../../src/store/notifications";
 import { LogViewer } from "../../src/components/LogViewer";
 import { MessageInput } from "../../src/components/MessageInput";
 import { ContentContainer } from "../../src/components/ContentContainer";
@@ -14,8 +15,49 @@ import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
 
 export default function ProcessDetailScreen() {
-  const { pane_id } = useLocalSearchParams<{ pane_id: string }>();
-  const process = useJobsStore((s) => s.detectedProcesses.find((p) => p.pane_id === pane_id));
+  const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();
+  const router = useRouter();
+
+  // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
+  // We encode % as _pct_ in URLs and decode it back here.
+  const pane_id = (rawPaneId ?? "").replace(/_pct_/g, "%");
+
+  const process = useJobsStore((s) =>
+    s.detectedProcesses.find((p) => p.pane_id === pane_id),
+  );
+
+  // If this pane belongs to a tracked job (not in detectedProcesses), redirect
+  // to the job detail page instead.
+  const jobs = useJobsStore((s) => s.jobs);
+  const statuses = useJobsStore((s) => s.statuses);
+  const questions = useNotificationStore((s) => s.questions);
+  useEffect(() => {
+    if (process) return; // found as detected process, no redirect needed
+    const paneQuestions = questions.filter((q) => q.pane_id === pane_id);
+    for (const q of paneQuestions) {
+      if (q.matched_job) {
+        router.replace(`/job/${q.matched_job}`);
+        return;
+      }
+      for (const job of jobs) {
+        if (statuses[job.name]?.state !== "running") continue;
+        const dir = job.work_dir || job.path;
+        if (dir && (q.cwd === dir || q.cwd.startsWith(dir + "/"))) {
+          router.replace(`/job/${job.name}`);
+          return;
+        }
+      }
+      if (q.matched_group) {
+        for (const job of jobs) {
+          if (statuses[job.name]?.state !== "running") continue;
+          if (job.group === q.matched_group) {
+            router.replace(`/job/${job.name}`);
+            return;
+          }
+        }
+      }
+    }
+  }, [process, pane_id, questions, jobs, statuses, router]);
   const lastProcessRef = useRef(process);
   if (process) lastProcessRef.current = process;
   const lastProcess = lastProcessRef.current;
