@@ -76,6 +76,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             "cli",
                             &active_agents,
                             &relay,
+                            &std::collections::HashMap::new(),
                         )
                         .await;
                     });
@@ -126,6 +127,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             "restart",
                             &active_agents,
                             &relay,
+                            &std::collections::HashMap::new(),
                         )
                         .await;
                     });

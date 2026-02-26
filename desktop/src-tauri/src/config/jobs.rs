@@ -103,6 +103,8 @@ pub struct Job {
     pub slug: String,
     #[serde(default)]
     pub skill_paths: Vec<String>,
+    #[serde(default)]
+    pub params: Vec<String>,
 }
 
 fn default_group() -> String {

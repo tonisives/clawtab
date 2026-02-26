@@ -28,6 +28,7 @@ export interface Job {
   group: string;
   slug: string;
   skill_paths: string[];
+  params: string[];
 }
 
 export interface AerospaceWorkspace {

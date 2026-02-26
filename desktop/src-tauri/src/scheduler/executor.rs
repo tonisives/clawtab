@@ -28,6 +28,7 @@ pub async fn execute_job(
     trigger: &str,
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
+    params: &HashMap<String, String>,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
@@ -71,8 +72,8 @@ pub async fn execute_job(
             JobType::Binary => execute_binary_job(job, secrets, settings)
                 .await
                 .map(|(code, out, err)| (code, out, err, None)),
-            JobType::Claude => execute_claude_job(job, secrets, settings).await,
-            JobType::Folder => execute_folder_job(job, secrets, settings).await,
+            JobType::Claude => execute_claude_job(job, secrets, settings, params).await,
+            JobType::Folder => execute_folder_job(job, secrets, settings, params).await,
         };
 
     // Get telegram config for notifications
@@ -300,6 +301,7 @@ async fn execute_claude_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
+    params: &HashMap<String, String>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::tmux;
 
@@ -325,6 +327,9 @@ async fn execute_claude_job(
     // Read prompt file content so we can pass it inline (preserves @ references)
     let raw_prompt = std::fs::read_to_string(prompt_path)
         .map_err(|e| format!("Failed to read prompt file {}: {}", prompt_path, e))?;
+
+    // Replace {key} placeholders with param values
+    let raw_prompt = apply_params(raw_prompt, params);
 
     // Prepend skill @ references if any
     let prompt_content = if job.skill_paths.is_empty() {
@@ -398,6 +403,7 @@ async fn execute_folder_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
+    params: &HashMap<String, String>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::cwt::CwtFolder;
     use crate::tmux;
@@ -423,6 +429,9 @@ async fn execute_folder_job(
     }
 
     let raw_prompt = folder.read_entry_point()?;
+
+    // Replace {key} placeholders with param values
+    let raw_prompt = apply_params(raw_prompt, params);
 
     // Build prompt: shared context, then per-job context, then skills, then per-job instructions
     let skill_refs = job
@@ -518,6 +527,14 @@ async fn execute_folder_job(
         pane_id,
     };
     Ok((Some(0), String::new(), String::new(), Some(handle)))
+}
+
+/// Replace `{key}` placeholders in a prompt string with the provided param values.
+fn apply_params(mut prompt: String, params: &HashMap<String, String>) -> String {
+    for (key, value) in params {
+        prompt = prompt.replace(&format!("{{{}}}", key), value);
+    }
+    prompt
 }
 
 /// Collect env vars from job's secret_keys as (key, value) pairs.

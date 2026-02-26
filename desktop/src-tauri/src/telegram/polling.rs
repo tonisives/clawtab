@@ -260,10 +260,41 @@ async fn handle_message(
                     .unwrap_or_default();
                 commands::format_status(&statuses)
             }
-            AgentCommand::Run(name) => {
+            AgentCommand::Run(name, params) => {
                 let job = lock_or_log(&state.jobs_config, "jobs_config")
                     .and_then(|c| c.jobs.iter().find(|j| j.name == name).cloned());
                 match job {
+                    Some(ref job) if !job.params.is_empty() => {
+                        // Validate all required params are provided
+                        let missing: Vec<&str> = job.params.iter()
+                            .filter(|k| !params.contains_key(k.as_str()))
+                            .map(|k| k.as_str())
+                            .collect();
+                        if !missing.is_empty() {
+                            format!(
+                                "Missing params: {}. Usage: /run {} {}",
+                                missing.join(", "),
+                                name,
+                                job.params.iter().map(|k| format!("{}=value", k)).collect::<Vec<_>>().join(" "),
+                            )
+                        } else {
+                            let job = job.clone();
+                            let secrets = Arc::clone(&state.secrets);
+                            let history = Arc::clone(&state.history);
+                            let settings = Arc::clone(&state.settings);
+                            let job_status = Arc::clone(&state.job_status);
+                            let active_agents = Arc::clone(&state.active_agents);
+                            let relay = Arc::clone(&state.relay);
+                            tokio::spawn(async move {
+                                crate::scheduler::executor::execute_job(
+                                    &job, &secrets, &history, &settings, &job_status, "telegram",
+                                    &active_agents, &relay, &params,
+                                )
+                                .await;
+                            });
+                            format!("Started job <code>{}</code>", name)
+                        }
+                    }
                     Some(job) => {
                         let secrets = Arc::clone(&state.secrets);
                         let history = Arc::clone(&state.history);
@@ -274,7 +305,7 @@ async fn handle_message(
                         tokio::spawn(async move {
                             crate::scheduler::executor::execute_job(
                                 &job, &secrets, &history, &settings, &job_status, "telegram",
-                                &active_agents, &relay,
+                                &active_agents, &relay, &params,
                             )
                             .await;
                         });
@@ -363,7 +394,7 @@ async fn handle_agent_command(
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "telegram",
-            &active_agents_for_exec, &relay,
+            &active_agents_for_exec, &relay, &std::collections::HashMap::new(),
         )
         .await;
     });

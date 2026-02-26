@@ -367,6 +367,7 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         slug: job.slug.clone(),
         work_dir: job.work_dir.clone(),
         path: Some(job.path.clone()),
+        params: job.params.clone(),
     }
 }
 

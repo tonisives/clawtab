@@ -7,7 +7,7 @@ pub enum AgentCommand {
     Help,
     Jobs,
     Status,
-    Run(String),
+    Run(String, HashMap<String, String>),
     Pause(String),
     Resume(String),
     Agent(String),
@@ -30,7 +30,19 @@ pub fn parse_command(text: &str) -> Option<AgentCommand> {
         "/jobs" | "/list" => AgentCommand::Jobs,
         "/status" => AgentCommand::Status,
         "/run" => match arg {
-            Some(name) => AgentCommand::Run(name),
+            Some(arg_str) => {
+                let mut parts = arg_str.splitn(2, ' ');
+                let name = parts.next().unwrap().to_string();
+                let mut params = HashMap::new();
+                if let Some(rest) = parts.next() {
+                    for token in rest.split_whitespace() {
+                        if let Some((k, v)) = token.split_once('=') {
+                            params.insert(k.to_string(), v.to_string());
+                        }
+                    }
+                }
+                AgentCommand::Run(name, params)
+            }
             None => AgentCommand::Unknown("/run requires a job name".to_string()),
         },
         "/pause" => match arg {
@@ -53,7 +65,7 @@ pub fn format_help() -> String {
         "",
         "/jobs - List all configured jobs",
         "/status - Show job statuses",
-        "/run &lt;name&gt; - Run a job",
+        "/run &lt;name&gt; [key=val ...] - Run a job",
         "/pause &lt;name&gt; - Pause a running job",
         "/resume &lt;name&gt; - Resume a paused job",
         "/agent [prompt] - Start interactive Claude Code session",

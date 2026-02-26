@@ -99,7 +99,11 @@ pub fn toggle_job(state: State<AppState>, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub async fn run_job_now(
+    state: State<'_, AppState>,
+    name: String,
+    params: Option<std::collections::HashMap<String, String>>,
+) -> Result<(), String> {
     let job = {
         let config = state.jobs_config.lock().unwrap();
         config
@@ -116,6 +120,7 @@ pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(),
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
+    let params = params.unwrap_or_default();
 
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
@@ -127,6 +132,7 @@ pub async fn run_job_now(state: State<'_, AppState>, name: String) -> Result<(),
             "manual",
             &active_agents,
             &relay,
+            &params,
         )
         .await;
     });
@@ -176,7 +182,11 @@ pub fn stop_job(state: State<AppState>, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(), String> {
+pub async fn restart_job(
+    state: State<'_, AppState>,
+    name: String,
+    params: Option<std::collections::HashMap<String, String>>,
+) -> Result<(), String> {
     let job = {
         let config = state.jobs_config.lock().unwrap();
         config
@@ -193,6 +203,7 @@ pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(),
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
+    let params = params.unwrap_or_default();
 
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
@@ -204,6 +215,7 @@ pub async fn restart_job(state: State<'_, AppState>, name: String) -> Result<(),
             "restart",
             &active_agents,
             &relay,
+            &params,
         )
         .await;
     });
@@ -968,6 +980,7 @@ pub fn build_agent_job(
         group: "agent".to_string(),
         slug: "agent/default".to_string(),
         skill_paths: Vec::new(),
+        params: Vec::new(),
     })
 }
 
@@ -990,7 +1003,7 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(),
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
-            &relay,
+            &relay, &std::collections::HashMap::new(),
         )
         .await;
     });

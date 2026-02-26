@@ -527,6 +527,7 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::GetRunDetail { id, .. }
         | ClientMessage::GetDetectedProcessLogs { id, .. }
         | ClientMessage::SendDetectedProcessInput { id, .. }
+        | ClientMessage::StopDetectedProcess { id, .. }
         | ClientMessage::RegisterPushToken { id, .. }
         | ClientMessage::AnswerQuestion { id, .. }
         | ClientMessage::GetNotificationHistory { id, .. } => Some(id.clone()),

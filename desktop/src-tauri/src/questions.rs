@@ -8,6 +8,8 @@ use crate::relay::RelayHandle;
 
 /// Parse numbered options from Claude output text.
 /// Matches lines like "1. Fix the bug" or "  > 2. Skip this step"
+/// Only returns options if the output looks like an interactive prompt
+/// (contains prompt indicators like "Enter to select", arrow navigation hints, etc.)
 pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     let lines: Vec<&str> = text.lines().collect();
     let tail = if lines.len() > 20 { &lines[lines.len() - 20..] } else { &lines };
@@ -33,7 +35,30 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
             }
         }
     }
+
+    if options.is_empty() {
+        return options;
+    }
+
+    // Verify that the output looks like an interactive prompt, not just numbered text.
+    // Claude's interactive menus include instructional text like "Enter to select",
+    // navigation hints, or the prompt cursor character.
+    if !has_interactive_prompt_indicator(text) {
+        return Vec::new();
+    }
+
     options
+}
+
+/// Check whether the terminal output contains indicators of an interactive prompt.
+/// Claude CLI's interactive menus always include instructional text like
+/// "Enter to select . ↑/↓ to navigate . Esc to cancel"
+fn has_interactive_prompt_indicator(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.contains("enter to select")
+        || lower.contains("to navigate")
+        || lower.contains("esc to cancel")
+        || lower.contains("to select")
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.
@@ -95,25 +120,13 @@ pub async fn question_detection_loop(
             });
         }
 
-        // Check if anything changed
-        let changed = {
-            let prev = active_questions.lock().unwrap();
-            prev.len() != new_state.len() || prev.iter().any(|(k, v)| {
-                new_state.get(k).map_or(true, |nv| {
-                    v.len() != nv.len() || v.iter().zip(nv.iter()).any(|(a, b)| a.number != b.number || a.label != b.label)
-                })
-            })
-        };
+        *active_questions.lock().unwrap() = new_state;
 
-        if changed {
-            *active_questions.lock().unwrap() = new_state;
-            if !questions.is_empty() {
-                let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions };
-                if let Ok(guard) = relay.lock() {
-                    if let Some(handle) = guard.as_ref() {
-                        handle.send_message(&msg);
-                    }
-                }
+        // Always send current questions so mobile stays in sync after reconnects
+        let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions };
+        if let Ok(guard) = relay.lock() {
+            if let Some(handle) = guard.as_ref() {
+                handle.send_message(&msg);
             }
         }
     }

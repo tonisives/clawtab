@@ -33,6 +33,8 @@ pub struct RemoteJob {
     pub work_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    #[serde(default)]
+    pub params: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

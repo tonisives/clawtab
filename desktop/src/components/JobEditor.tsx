@@ -61,6 +61,7 @@ const emptyJob: Job = {
   group: "default",
   slug: "",
   skill_paths: [],
+  params: [],
 };
 
 type WizardStep = "identity" | "settings";
@@ -168,6 +169,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
+  const [paramInput, setParamInput] = useState("");
 
   // Template categories for wizard
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
@@ -189,6 +191,15 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [useWeekly, setUseWeekly] = useState(!isNew ? (form.cron === "" || initWeekly !== null) : true);
   const [weeklyDays, setWeeklyDays] = useState<string[]>(initWeekly?.days ?? ["Mon"]);
   const [weeklyTime, setWeeklyTime] = useState(initWeekly?.time ?? "09:00");
+
+  // Force manual-only when params are present
+  const hasParams = form.params.length > 0;
+  useEffect(() => {
+    if (hasParams && !manualOnly) {
+      setManualOnly(true);
+      setForm((prev) => ({ ...prev, cron: "" }));
+    }
+  }, [hasParams]);
 
   // job.md edited tracking
   const [cwtEdited, setCwtEdited] = useState(!isNew);
@@ -653,13 +664,106 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     );
   };
 
+  const renderParamsFields = () => {
+    if (form.job_type !== "folder") return null;
+
+    const addParam = (name: string) => {
+      const key = name.trim().replace(/[^a-zA-Z0-9_]/g, "");
+      if (!key || form.params.includes(key)) return;
+      setForm({ ...form, params: [...form.params, key] });
+      setParamInput("");
+      // Insert placeholder at cursor in editor if visible
+      if (editorRef.current && previewFile === "job.md") {
+        const ta = editorRef.current;
+        const pos = ta.selectionStart;
+        const before = inlineContent.slice(0, pos);
+        const after = inlineContent.slice(pos);
+        const inserted = `{${key}}`;
+        handleInlineChange(before + inserted + after);
+        requestAnimationFrame(() => {
+          ta.selectionStart = ta.selectionEnd = pos + inserted.length;
+          ta.focus();
+        });
+      }
+    };
+
+    const removeParam = (key: string) => {
+      setForm({ ...form, params: form.params.filter((p) => p !== key) });
+    };
+
+    return (
+      <div className="form-group">
+        <label>Parameters</label>
+        <span className="hint">
+          Named placeholders replaced at runtime. Jobs with parameters are manual-only.
+        </span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+          {form.params.map((p) => (
+            <span
+              key={p}
+              className="tag"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 4,
+                padding: "2px 8px",
+                fontSize: 12,
+              }}
+            >
+              <code>{`{${p}}`}</code>
+              <span
+                style={{ cursor: "pointer", opacity: 0.6, fontSize: 14, lineHeight: 1 }}
+                onClick={() => removeParam(p)}
+                title="Remove"
+              >
+                x
+              </span>
+            </span>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <input
+            className="input"
+            type="text"
+            value={paramInput}
+            onChange={(e) => setParamInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addParam(paramInput);
+              }
+            }}
+            placeholder="param name"
+            style={{ flex: 1, maxWidth: 200 }}
+          />
+          <button
+            className="btn btn-sm"
+            onClick={() => addParam(paramInput)}
+            disabled={!paramInput.trim()}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderScheduleFields = () => (
     <div className="form-group">
-      <div style={{ marginBottom: 12 }}>
+      {hasParams && (
+        <span className="hint" style={{ marginBottom: 8, display: "block" }}>
+          Schedule is disabled because this job has parameters (manual-only).
+        </span>
+      )}
+      <div style={{ marginBottom: 12, opacity: hasParams ? 0.5 : 1, pointerEvents: hasParams ? "none" : "auto" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
           <input
             type="checkbox"
             checked={manualOnly}
+            disabled={hasParams}
             onChange={(e) => {
               setManualOnly(e.target.checked);
               if (e.target.checked) {
@@ -1124,6 +1228,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                 <div className="wizard-directions-col">
                   <FieldGroup title="Directions">
                     {renderDirectionsFields()}
+                    {renderParamsFields()}
                   </FieldGroup>
                 </div>
               )}
@@ -1264,6 +1369,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       {form.job_type === "folder" && form.folder_path && (
         <FieldGroup title="Directions">
           {renderDirectionsFields()}
+          {renderParamsFields()}
         </FieldGroup>
       )}
 

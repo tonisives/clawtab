@@ -53,9 +53,10 @@ pub async fn handle_incoming(
             })
         }
 
-        ClientMessage::RunJob { id, name } => {
+        ClientMessage::RunJob { id, name, params } => {
             let result = run_job(
                 &name,
+                &params,
                 jobs_config,
                 secrets,
                 history,
@@ -194,6 +195,15 @@ pub async fn handle_incoming(
             })
         }
 
+        ClientMessage::StopDetectedProcess { id, pane_id } => {
+            let result = crate::tmux::kill_pane(&pane_id);
+            Some(DesktopMessage::StopDetectedProcessAck {
+                id,
+                success: result.is_ok(),
+                error: result.err(),
+            })
+        }
+
         ClientMessage::AnswerQuestion { id, pane_id, answer, .. } => {
             let result = crate::tmux::send_keys_to_tui_pane(&pane_id, &answer);
             Some(DesktopMessage::SendDetectedProcessInputAck {
@@ -223,6 +233,7 @@ pub async fn handle_incoming(
 
 fn run_job(
     name: &str,
+    params: &HashMap<String, String>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     secrets: &Arc<Mutex<SecretsManager>>,
     history: &Arc<Mutex<HistoryStore>>,
@@ -247,6 +258,7 @@ fn run_job(
     let job_status = Arc::clone(job_status);
     let active_agents = Arc::clone(active_agents);
     let relay = Arc::clone(relay);
+    let params = params.clone();
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
@@ -258,6 +270,7 @@ fn run_job(
             "remote",
             &active_agents,
             &relay,
+            &params,
         )
         .await;
     });
@@ -391,6 +404,7 @@ fn run_agent(
             "remote",
             &active_agents,
             &relay,
+            &HashMap::new(),
         )
         .await;
     });

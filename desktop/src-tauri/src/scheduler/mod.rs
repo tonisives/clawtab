@@ -95,7 +95,7 @@ async fn run_loop(
                 tauri::async_runtime::spawn(async move {
                     executor::execute_job(
                         &job, &secrets, &history, &settings, &job_status, "cron",
-                        &active_agents, &relay,
+                        &active_agents, &relay, &std::collections::HashMap::new(),
                     )
                     .await;
                 });

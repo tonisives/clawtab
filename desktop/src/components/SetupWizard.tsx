@@ -114,6 +114,7 @@ export function SetupWizard({ onComplete }: Props) {
         group: "tutorial",
         slug: "",
         skill_paths: [],
+        params: [],
       };
       await invoke("save_job", { job });
       await invoke("run_job_now", { name: "hello-world" });
@@ -167,6 +168,7 @@ export function SetupWizard({ onComplete }: Props) {
         group: "tutorial",
         slug: "",
         skill_paths: [],
+        params: [],
       };
       await invoke("save_job", { job });
       await invoke("run_job_now", { name: "Hacker News" });

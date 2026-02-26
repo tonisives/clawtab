@@ -170,6 +170,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   const [viewingAgent, setViewingAgent] = useState(false);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
   const [claudeProcesses, setClaudeProcesses] = useState<ClaudeProcess[]>([]);
+  const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
 
   const loadJobs = async () => {
     try {
@@ -270,8 +271,26 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   };
 
   const handleRunNow = async (name: string) => {
+    const job = jobs.find((j) => j.name === name);
+    if (job && job.params.length > 0) {
+      const values: Record<string, string> = {};
+      for (const p of job.params) values[p] = "";
+      setParamsDialog({ job, values });
+      return;
+    }
     try {
       await invoke("run_job_now", { name });
+      setTimeout(loadStatuses, 500);
+    } catch (e) {
+      console.error("Failed to run job:", e);
+    }
+  };
+
+  const handleRunWithParams = async () => {
+    if (!paramsDialog) return;
+    try {
+      await invoke("run_job_now", { name: paramsDialog.job.name, params: paramsDialog.values });
+      setParamsDialog(null);
       setTimeout(loadStatuses, 500);
     } catch (e) {
       console.error("Failed to run job:", e);
@@ -306,6 +325,13 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
   };
 
   const handleRestart = async (name: string) => {
+    const job = jobs.find((j) => j.name === name);
+    if (job && job.params.length > 0) {
+      const values: Record<string, string> = {};
+      for (const p of job.params) values[p] = "";
+      setParamsDialog({ job, values });
+      return;
+    }
     try {
       await invoke("restart_job", { name });
       setTimeout(loadStatuses, 500);
@@ -674,22 +700,81 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
                 }}
                 onOpenAgent={() => handleOpen("agent")}
                 onViewAgent={() => setViewingAgent(true)}
-                onAddJob={isFolderGroup ? () => { setCreateForGroup({ group, folderPath: groupJobs[0]?.folder_path ?? null }); setIsCreating(true); } : undefined}
+                onAddJob={
+                  isFolderGroup
+                    ? () => { setCreateForGroup({ group, folderPath: groupJobs[0]?.folder_path ?? null }); setIsCreating(true); }
+                    : group === "default"
+                      ? () => { setCreateForGroup({ group: "default", folderPath: null }); setIsCreating(true); }
+                      : undefined
+                }
               />
             );
           })}
         </SortableContext>
       </DndContext>
 
-      {unmatchedProcesses.length > 0 && (
-        <DetectedProcessesGroup
-          processes={unmatchedProcesses}
-          isCollapsed={collapsedGroups.has("_detected")}
-          onToggle={() => toggleGroup("_detected")}
-          tableHead={tableHead}
-          jobSelectMode={jobSelectMode}
-        />
-      )}
+      {unmatchedProcesses.length > 0 && (() => {
+        // Group detected processes by their cwd
+        const byFolder = new Map<string, ClaudeProcess[]>();
+        for (const proc of unmatchedProcesses) {
+          const list = byFolder.get(proc.cwd) ?? [];
+          list.push(proc);
+          byFolder.set(proc.cwd, list);
+        }
+        // Folders with 2+ processes become sub-groups, rest go into ungrouped
+        const folderGroups: [string, ClaudeProcess[]][] = [];
+        const ungrouped: ClaudeProcess[] = [];
+        for (const [folder, procs] of byFolder) {
+          if (procs.length >= 2 && folder) {
+            folderGroups.push([folder, procs]);
+          } else {
+            ungrouped.push(...procs);
+          }
+        }
+        // If no folder groups, render flat like before
+        if (folderGroups.length === 0) {
+          return (
+            <DetectedProcessesGroup
+              processes={unmatchedProcesses}
+              isCollapsed={collapsedGroups.has("_detected")}
+              onToggle={() => toggleGroup("_detected")}
+              tableHead={tableHead}
+              jobSelectMode={jobSelectMode}
+              onAddJob={(folderPath) => { setCreateForGroup({ group: "default", folderPath }); setIsCreating(true); }}
+            />
+          );
+        }
+        return (
+          <>
+            {folderGroups.map(([folder, procs]) => {
+              const displayFolder = folder.startsWith("/") ? "~" + folder : folder;
+              const groupKey = `_detected_${folder}`;
+              return (
+                <DetectedProcessesGroup
+                  key={groupKey}
+                  processes={procs}
+                  label={displayFolder}
+                  isCollapsed={collapsedGroups.has(groupKey)}
+                  onToggle={() => toggleGroup(groupKey)}
+                  tableHead={tableHead}
+                  jobSelectMode={jobSelectMode}
+                  onAddJob={(folderPath) => { setCreateForGroup({ group: "default", folderPath }); setIsCreating(true); }}
+                />
+              );
+            })}
+            {ungrouped.length > 0 && (
+              <DetectedProcessesGroup
+                processes={ungrouped}
+                isCollapsed={collapsedGroups.has("_detected")}
+                onToggle={() => toggleGroup("_detected")}
+                tableHead={tableHead}
+                jobSelectMode={jobSelectMode}
+                onAddJob={(folderPath) => { setCreateForGroup({ group: "default", folderPath }); setIsCreating(true); }}
+              />
+            )}
+          </>
+        );
+      })()}
 
       {confirmBulkDeleteJobs && (
         <ConfirmDialog
@@ -697,6 +782,52 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           onConfirm={() => { handleBulkDeleteJobs(); setConfirmBulkDeleteJobs(false); }}
           onCancel={() => setConfirmBulkDeleteJobs(false)}
         />
+      )}
+
+      {paramsDialog && (
+        <div className="confirm-overlay" onClick={() => setParamsDialog(null)}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <h3 style={{ marginBottom: 12 }}>Run: {paramsDialog.job.name}</h3>
+            <p className="text-secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+              Fill in all parameters before running.
+            </p>
+            {paramsDialog.job.params.map((key) => (
+              <div key={key} style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, display: "block" }}>
+                  {key}
+                </label>
+                <input
+                  className="input"
+                  type="text"
+                  value={paramsDialog.values[key] ?? ""}
+                  onChange={(e) => {
+                    setParamsDialog({
+                      ...paramsDialog,
+                      values: { ...paramsDialog.values, [key]: e.target.value },
+                    });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleRunWithParams();
+                  }}
+                  placeholder={`{${key}}`}
+                  autoFocus={key === paramsDialog.job.params[0]}
+                />
+              </div>
+            ))}
+            <div className="btn-group" style={{ marginTop: 16, justifyContent: "flex-end" }}>
+              <button className="btn btn-sm" onClick={() => setParamsDialog(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleRunWithParams}
+                disabled={paramsDialog.job.params.some((k) => !paramsDialog.values[k]?.trim())}
+              >
+                Run
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
@@ -1396,17 +1527,24 @@ function FullscreenTerminal({
 
 function DetectedProcessesGroup({
   processes,
+  label,
   isCollapsed,
   onToggle,
   tableHead,
   jobSelectMode,
+  onAddJob,
 }: {
   processes: ClaudeProcess[];
+  label?: string;
   isCollapsed: boolean;
   onToggle: () => void;
   tableHead: React.ReactNode;
   jobSelectMode: boolean;
+  onAddJob?: (folderPath: string) => void;
 }) {
+  // For folder-grouped sections, derive the common folder path from the first process
+  const folderPath = processes.length > 0 ? processes[0].cwd : null;
+
   return (
     <div className="field-group">
       <div
@@ -1434,11 +1572,21 @@ function DetectedProcessesGroup({
           <span style={{ fontFamily: "monospace", fontSize: 9 }}>
             {isCollapsed ? "\u25B6" : "\u25BC"}
           </span>
-          Detected
+          {label ?? "Detected"}
           <span style={{ fontWeight: 400, fontSize: 10, opacity: 0.7 }}>
             ({processes.length})
           </span>
         </button>
+        {onAddJob && folderPath && (
+          <button
+            className="add-job-btn"
+            style={{ width: 20, height: 20, fontSize: 16, marginRight: 0 }}
+            onClick={() => onAddJob(folderPath)}
+            title="Add job for this folder"
+          >
+            <span style={{ position: "relative", top: -1 }}>+</span>
+          </button>
+        )}
       </div>
       {!isCollapsed && (
         <table className="data-table">

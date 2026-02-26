@@ -15,6 +15,8 @@ pub enum ClientMessage {
     RunJob {
         id: String,
         name: String,
+        #[serde(default)]
+        params: HashMap<String, String>,
     },
     PauseJob {
         id: String,
@@ -78,6 +80,10 @@ pub enum ClientMessage {
         id: String,
         pane_id: String,
         text: String,
+    },
+    StopDetectedProcess {
+        id: String,
+        pane_id: String,
     },
     RegisterPushToken {
         id: String,
@@ -201,6 +207,13 @@ pub enum DesktopMessage {
     SendDetectedProcessInputAck {
         id: String,
         success: bool,
+    },
+    /// Ack for stop_detected_process
+    StopDetectedProcessAck {
+        id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     /// Desktop proactively pushes when Claude questions change
     ClaudeQuestions {
