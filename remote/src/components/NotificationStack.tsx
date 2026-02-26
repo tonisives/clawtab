@@ -21,8 +21,6 @@ import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import type { ClaudeProcess, ClaudeQuestion } from "../types/job";
 
-const SCREEN_HEIGHT = Dimensions.get("window").height;
-const CARD_MIN_HEIGHT = Math.round(SCREEN_HEIGHT / 3);
 
 function PaginationDots({
   count,
@@ -102,8 +100,11 @@ function NotificationCard({
       ? proc.cwd.replace(/^\/Users\/[^/]+/, "~")
       : question.cwd.replace(/^\/Users\/[^/]+/, "~");
 
-  const lines = question.context_lines.trim().split("\n");
-  const preview = lines.slice(-8).join("\n").trim();
+  const lines = question.context_lines
+    .trim()
+    .split("\n")
+    .filter((l) => !/^[\s\-_=~]{10,}$/.test(l)); // drop decorative separator lines
+  const preview = lines.join("\n").trim();
 
   return (
     <View style={styles.card}>
@@ -126,7 +127,7 @@ function NotificationCard({
 
         {preview ? (
           <View style={styles.logPreview}>
-            <Text style={styles.logText} numberOfLines={8}>{preview}</Text>
+            <Text style={styles.logText}>{preview}</Text>
           </View>
         ) : null}
       </TouchableOpacity>
@@ -152,7 +153,7 @@ function NotificationCard({
                 activeOpacity={0.6}
               >
                 <Text style={styles.optionBtnText} numberOfLines={1}>
-                  {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
+                  {opt.number}. {opt.label}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -348,7 +349,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.warning,
-    minHeight: CARD_MIN_HEIGHT,
+    minHeight: 120,
     overflow: "hidden",
   },
   cardBody: {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -1395,25 +1396,22 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
           </td>
         </tr>
       )}
-      {fullscreen && (
-        <tr style={{ display: "none" }}>
-          <td>
-            <FullscreenTerminal
-              title={displayName}
-              logs={logs}
-              preRef={fullscreenPreRef}
-              inputRef={fullscreenInputRef}
-              inputText={inputText}
-              sending={sending}
-              options={options}
-              onInputChange={setInputText}
-              onSend={handleSend}
-              onOptionClick={handleOptionClick}
-              onOpen={handleOpen}
-              onClose={() => setFullscreen(false)}
-            />
-          </td>
-        </tr>
+      {fullscreen && createPortal(
+        <FullscreenTerminal
+          title={displayName}
+          logs={logs}
+          preRef={fullscreenPreRef}
+          inputRef={fullscreenInputRef}
+          inputText={inputText}
+          sending={sending}
+          options={options}
+          onInputChange={setInputText}
+          onSend={handleSend}
+          onOptionClick={handleOptionClick}
+          onOpen={handleOpen}
+          onClose={() => setFullscreen(false)}
+        />,
+        document.body,
       )}
     </>
   );
