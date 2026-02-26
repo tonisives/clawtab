@@ -3,6 +3,15 @@
     "name": "ClawTab",
     "slug": "clawtab",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 30000,
+      "url": "https://ota.clawtab.cc/manifest"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -49,7 +58,36 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.186596496380-9rdm6vtappp444abiuftee5fde9eh56j"
         }
+      ],
+      [
+        "expo-nse-plugin",
+        {
+          "mode": "production",
+          "nse": {
+            "sourceFiles": "./nse/NotificationService.swift",
+            "bundleName": "ClawTabNotificationService"
+          }
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "ClawTabNotificationService",
+                  "bundleIdentifier": "cc.clawtab.ClawTabNotificationService",
+                  "entitlements": {
+                    "aps-environment": "production"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
   }
 }

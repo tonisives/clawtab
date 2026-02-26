@@ -14,9 +14,11 @@ Notifications.setNotificationHandler({
 export function registerNotificationCategories() {
   if (Platform.OS !== "ios") return;
 
-  // Register the base CLAUDE_QUESTION category.
-  // The Notification Service Extension will dynamically replace actions
-  // with real option labels, but we need a base category registered.
+  // Fallback category with generic labels. The Notification Service Extension
+  // (nse/NotificationService.swift) intercepts each push and registers a
+  // dynamic per-question category (CLAUDE_QUESTION_{id}) with real option
+  // labels from the payload. This static category only appears if the NSE
+  // fails to run (e.g. payload too large, extension killed by OS).
   Notifications.setNotificationCategoryAsync("CLAUDE_QUESTION", [
     { identifier: "1", buttonTitle: "Option 1", options: { opensAppToForeground: false } },
     { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },

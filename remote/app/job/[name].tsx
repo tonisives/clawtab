@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Modal } from "react-native";
-import { useLocalSearchParams, Stack } from "expo-router";
+import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useJob, useJobStatus } from "../../src/store/jobs";
 import { useRuns, useRunsStore } from "../../src/store/runs";
 import { StatusBadge } from "../../src/components/StatusBadge";
@@ -15,6 +16,16 @@ import { formatTime, formatDuration } from "../../src/lib/format";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
 import type { RunDetail, RunRecord } from "../../src/types/job";
+
+function BackButton() {
+  const router = useRouter();
+  return (
+    <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} activeOpacity={0.6}>
+      <Ionicons name="chevron-back" size={22} color={colors.text} />
+      <Text style={styles.backText}>Jobs</Text>
+    </TouchableOpacity>
+  );
+}
 
 export default function JobDetailScreen() {
   const { name } = useLocalSearchParams<{ name: string }>();
@@ -90,7 +101,7 @@ export default function JobDetailScreen() {
   if (!job) {
     return (
       <View style={styles.container}>
-        <Stack.Screen options={{ title: name }} />
+        <Stack.Screen options={{ title: name, headerLeft: () => <BackButton /> }} />
         <View style={styles.center}>
           <Text style={styles.notFound}>Job not found</Text>
         </View>
@@ -107,6 +118,7 @@ export default function JobDetailScreen() {
       <Stack.Screen
         options={{
           title: job.name,
+          headerLeft: () => <BackButton />,
           headerRight: () => (
             <View style={styles.headerRight}>
               <StatusBadge status={status} />
@@ -169,22 +181,22 @@ export default function JobDetailScreen() {
               )}
             </View>
 
-            {/* Live Output - collapsible */}
-            <View style={styles.section}>
-              <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
-                <Text style={styles.collapseArrow}>
-                  {outputCollapsed ? "\u25B6" : "\u25BC"}
-                </Text>
-                <Text style={styles.sectionTitle}>
-                  {isRunning ? "Live Output" : "Output"}
-                </Text>
-              </TouchableOpacity>
-              {!outputCollapsed && (
-                <View style={styles.logsContainer}>
-                  <LogViewer content={logs} />
-                </View>
-              )}
-            </View>
+            {/* Live Output - only when running/paused */}
+            {(isRunning || isPaused) && (
+              <View style={styles.section}>
+                <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
+                  <Text style={styles.collapseArrow}>
+                    {outputCollapsed ? "\u25B6" : "\u25BC"}
+                  </Text>
+                  <Text style={styles.sectionTitle}>Live Output</Text>
+                </TouchableOpacity>
+                {!outputCollapsed && (
+                  <View style={styles.logsContainer}>
+                    <LogViewer content={logs} />
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Run History - collapsible */}
             <View style={styles.section}>
@@ -201,8 +213,8 @@ export default function JobDetailScreen() {
                   ) : !runs || runs.length === 0 ? (
                     <Text style={styles.runsEmpty}>No run history</Text>
                   ) : (
-                    runs.map((run) => (
-                      <RunRow key={run.id} run={run} currentState={state} />
+                    runs.map((run, i) => (
+                      <RunRow key={run.id} run={run} currentState={state} defaultExpanded={i === 0} />
                     ))
                   )}
                 </View>
@@ -325,13 +337,31 @@ function ActionButton({
   );
 }
 
-function RunRow({ run, currentState }: { run: RunRecord; currentState: string }) {
+function RunRow({ run, currentState, defaultExpanded }: { run: RunRecord; currentState: string; defaultExpanded?: boolean }) {
   const statusColor = getRunStatusColor(run, currentState);
   const statusLabel = getRunStatusLabel(run, currentState);
   const duration = formatDuration(run.started_at, run.finished_at);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Auto-load detail for default expanded
+  useEffect(() => {
+    if (defaultExpanded && !detail && !loading) {
+      setLoading(true);
+      const send = getWsSend();
+      if (send) {
+        const id = nextId();
+        send({ type: "get_run_detail", id, run_id: run.id });
+        registerRequest<{ detail?: RunDetail }>(id).then((resp) => {
+          setDetail(resp.detail ?? null);
+          setLoading(false);
+        });
+      } else {
+        setLoading(false);
+      }
+    }
+  }, [defaultExpanded, run.id]);
 
   const handleToggle = () => {
     const next = !expanded;
@@ -376,7 +406,7 @@ function RunRow({ run, currentState }: { run: RunRecord; currentState: string })
           {loading ? (
             <Text style={styles.runLogsText}>Loading...</Text>
           ) : logContent ? (
-            <ScrollView horizontal={false} style={{ maxHeight: 200 }}>
+            <ScrollView horizontal={false} style={{ maxHeight: 300 }} nestedScrollEnabled>
               <Text style={styles.runLogsText} selectable>{logContent}</Text>
             </ScrollView>
           ) : (
@@ -432,6 +462,15 @@ const styles = StyleSheet.create({
   },
   notFound: {
     color: colors.textMuted,
+    fontSize: 16,
+  },
+  backBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: -8,
+  },
+  backText: {
+    color: colors.text,
     fontSize: 16,
   },
   headerRight: {

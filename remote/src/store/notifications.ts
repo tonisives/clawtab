@@ -49,6 +49,8 @@ export const useNotificationStore = create<NotificationState>((set) => ({
           question_id: item.question_id,
           context_lines: item.context_lines,
           options: item.options,
+          matched_job: (item as { matched_job?: string }).matched_job ?? null,
+          matched_group: (item as { matched_group?: string }).matched_group ?? null,
         }));
 
       return {

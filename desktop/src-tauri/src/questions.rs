@@ -16,7 +16,8 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     let mut options = Vec::new();
     for line in tail {
         // Match optional leading whitespace/prompt chars, then digit(s).label
-        let trimmed = line.trim_start_matches(|c: char| c.is_whitespace() || ">~`|".contains(c));
+        // Include Unicode prompt indicators: › (U+203A), » (U+00BB), ❯ (U+276F), ▸ (U+25B8), ▶ (U+25B6)
+        let trimmed = line.trim_start_matches(|c: char| c.is_whitespace() || ">~`|›»❯▸▶".contains(c));
         if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
             // Could be multi-digit, find the dot
             let digit_end = rest.find(". ");
@@ -53,12 +54,13 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
 /// Check whether the terminal output contains indicators of an interactive prompt.
 /// Claude CLI's interactive menus always include instructional text like
 /// "Enter to select . ↑/↓ to navigate . Esc to cancel"
+/// We only check the LAST few lines so stale prompt text higher up doesn't trigger.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    lower.contains("enter to select")
-        || lower.contains("to navigate")
-        || lower.contains("esc to cancel")
-        || lower.contains("to select")
+    // Check only the last 5 lines for prompt indicators to avoid stale matches
+    let tail: String = text.lines().rev().take(5).collect::<Vec<_>>().join("\n").to_lowercase();
+    tail.contains("enter to select")
+        || tail.contains("to navigate")
+        || tail.contains("esc to cancel")
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.
@@ -175,7 +177,7 @@ fn last_context_lines(text: &str) -> String {
     for line in lines.iter().rev() {
         let trimmed = line.trim();
         // Skip option lines
-        let stripped = trimmed.trim_start_matches(|c: char| c.is_whitespace() || ">~`|".contains(c));
+        let stripped = trimmed.trim_start_matches(|c: char| c.is_whitespace() || ">~`|›»❯▸▶".contains(c));
         if stripped.starts_with(|c: char| c.is_ascii_digit()) && stripped.contains(". ") {
             continue;
         }

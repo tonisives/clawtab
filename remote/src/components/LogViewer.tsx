@@ -27,6 +27,7 @@ export function LogViewer({ content }: { content: string }) {
       ref={scrollRef}
       style={styles.container}
       contentContainerStyle={styles.content}
+      nestedScrollEnabled
     >
       <Text style={styles.text} selectable>
         {content}

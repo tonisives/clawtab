@@ -7,21 +7,18 @@ import {
   StyleSheet,
   RefreshControl,
   ScrollView,
-  Modal,
   ActivityIndicator,
-  Dimensions,
 } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
 import { JobCard } from "../../src/components/JobCard"
 import { StatusBadge } from "../../src/components/StatusBadge"
 import { ContentContainer } from "../../src/components/ContentContainer"
 import { NotificationStack } from "../../src/components/NotificationStack"
-import { ProcessCard, parseNumberedOptions } from "../../src/components/ProcessCard"
+import { ProcessCard } from "../../src/components/ProcessCard"
+import { RunningJobCard } from "../../src/components/RunningJobCard"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
 import { useNotifications } from "../../src/hooks/useNotifications"
-import { useLogs } from "../../src/hooks/useLogs"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import * as api from "../../src/api/client"
 import { alertError, openUrl } from "../../src/lib/platform"
@@ -355,7 +352,7 @@ export default function JobsScreen() {
                       style={index > 0 ? { marginTop: spacing.sm } : undefined}
                     >
 
-                      <ProcessCard process={item.process} onScrollTo={() => scrollToCell(key)} />
+                      <ProcessCard process={item.process} />
                     </View>
                   )
                 }
@@ -369,12 +366,10 @@ export default function JobsScreen() {
                       index > 0 ? { marginTop: spacing.sm } : undefined,
                     ]}
                   >
-                    <JobCard job={item.job} status={status} />
-                    {status.state === "running" && (
-                      <InlineJobReply
-                        jobName={item.job.name}
-                        onScrollTo={() => scrollToCell(key)}
-                      />
+                    {status.state === "running" ? (
+                      <RunningJobCard jobName={item.job.name} />
+                    ) : (
+                      <JobCard job={item.job} status={status} />
                     )}
                   </View>
                 )
@@ -387,190 +382,6 @@ export default function JobsScreen() {
   )
 }
 
-function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?: () => void }) {
-  const [text, setText] = useState("")
-  const [expanded, setExpanded] = useState(false)
-  const [fullscreen, setFullscreen] = useState(false)
-  const { logs } = useLogs(jobName)
-  const options = parseNumberedOptions(logs)
-
-  const handleSend = (input: string) => {
-    const send = getWsSend()
-    if (send && input.trim()) {
-      send({ type: "send_input", id: nextId(), name: jobName, text: input.trim() })
-      setText("")
-    }
-  }
-
-  const handleToggle = () => {
-    const next = !expanded
-    setExpanded(next)
-    if (next && onScrollTo) setTimeout(onScrollTo, 300)
-  }
-
-  return (
-    <>
-      <View style={styles.inlineReply}>
-        {expanded && <InlineJobLogs jobName={jobName} onSend={handleSend} />}
-        <View style={styles.inlineReplyToggleRow}>
-          <TouchableOpacity
-            onPress={handleToggle}
-            style={styles.inlineReplyToggle}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.inlineReplyToggleText}>
-              {expanded ? "Hide logs" : "Show logs & reply"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setFullscreen(true)}
-            style={styles.expandBtn}
-            hitSlop={8}
-            activeOpacity={0.6}
-          >
-            <Ionicons name="scan-outline" size={14} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-        {!expanded && options.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.optionScroll}
-            contentContainerStyle={styles.optionScrollContent}
-          >
-            {options.map((opt) => (
-              <TouchableOpacity
-                key={opt.number}
-                style={styles.optionBtn}
-                onPress={() => handleSend(opt.number)}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.optionBtnText}>
-                  {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-        {!expanded && (
-          <View style={styles.inlineReplyInput}>
-            <TextInput
-              style={styles.inlineReplyTextInput}
-              value={text}
-              onChangeText={setText}
-              placeholder="Reply..."
-              placeholderTextColor={colors.textMuted}
-              returnKeyType="send"
-              onSubmitEditing={() => handleSend(text)}
-            />
-            <TouchableOpacity
-              style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]}
-              onPress={() => handleSend(text)}
-              disabled={!text.trim()}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.inlineReplySendText}>Send</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-      {fullscreen && (
-        <FullscreenJobTerminal
-          jobName={jobName}
-          title={jobName}
-          onClose={() => setFullscreen(false)}
-        />
-      )}
-    </>
-  )
-}
-
-function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: string) => void }) {
-  const { logs } = useLogs(jobName)
-  const [text, setText] = useState("")
-  const [logsExpanded, setLogsExpanded] = useState(false)
-  const scrollRef = useRef<ScrollView>(null)
-  const screenH = Dimensions.get("window").height
-  const logHeight = logsExpanded ? screenH * 0.6 : Math.round(screenH / 3)
-  const options = parseNumberedOptions(logs)
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: false })
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [logs])
-
-  const handleSend = (input: string) => {
-    onSend(input)
-    setText("")
-  }
-
-  return (
-    <View>
-      {logs ? (
-        <View>
-          <ScrollView
-            ref={scrollRef}
-            style={[styles.inlineReplyLogs, { maxHeight: logHeight }]}
-            nestedScrollEnabled
-          >
-            <Text style={styles.inlineReplyLogsText} selectable>
-              {logs}
-            </Text>
-          </ScrollView>
-          <TouchableOpacity
-            onPress={() => setLogsExpanded((v) => !v)}
-            style={styles.logsExpandToggle}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.logsExpandToggleText}>{logsExpanded ? "Collapse" : "Expand"}</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-      {options.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.optionScroll}
-          contentContainerStyle={styles.optionScrollContent}
-        >
-          {options.map((opt) => (
-            <TouchableOpacity
-              key={opt.number}
-              style={styles.optionBtn}
-              onPress={() => handleSend(opt.number)}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.optionBtnText}>
-                {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
-      <View style={styles.inlineReplyInput}>
-        <TextInput
-          style={styles.inlineReplyTextInput}
-          value={text}
-          onChangeText={setText}
-          placeholder="Reply..."
-          placeholderTextColor={colors.textMuted}
-          returnKeyType="send"
-          onSubmitEditing={() => handleSend(text)}
-        />
-        <TouchableOpacity
-          style={[styles.inlineReplySendBtn, !text.trim() && styles.btnDisabled]}
-          onPress={() => handleSend(text)}
-          disabled={!text.trim()}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.inlineReplySendText}>Send</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  )
-}
 
 function AgentSection({
   agentStatus,
@@ -613,7 +424,7 @@ function AgentSection({
       {!collapsed && (
         <>
           {agentProcess ? (
-            <ProcessCard process={agentProcess} onScrollTo={onScrollTo} />
+            <ProcessCard process={agentProcess} />
           ) : (
             <View style={styles.agentSection}>
               {canRunAgent && (
@@ -649,132 +460,6 @@ function AgentSection({
   )
 }
 
-function FullscreenJobTerminal({
-  jobName,
-  title,
-  onClose,
-}: {
-  jobName: string
-  title: string
-  onClose: () => void
-}) {
-  const { logs } = useLogs(jobName)
-  const status = useJobsStore((s) => s.statuses[jobName])
-  const [inputText, setInputText] = useState("")
-  const scrollRef = useRef<ScrollView>(null)
-  const options = parseNumberedOptions(logs)
-  const isRunning = status?.state === "running" || status?.state === "paused"
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: false })
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [logs])
-
-  const handleSend = (text: string) => {
-    const send = getWsSend()
-    if (send && text.trim()) {
-      send({ type: "send_input", id: nextId(), name: jobName, text: text.trim() })
-      setInputText("")
-    }
-  }
-
-  const handleAction = (action: "run_job" | "pause_job" | "resume_job" | "stop_job") => {
-    const send = getWsSend()
-    if (send) send({ type: action, id: nextId(), name: jobName })
-  }
-
-  return (
-    <Modal visible animationType="slide" presentationStyle="fullScreen">
-      <View style={styles.fsContainer}>
-        <View style={styles.fsHeader}>
-          <TouchableOpacity onPress={onClose} style={styles.fsCloseBtn} activeOpacity={0.6}>
-            <Text style={styles.fsCloseBtnText}>Close</Text>
-          </TouchableOpacity>
-          <Text style={styles.fsTitle} numberOfLines={1}>
-            {title}
-          </Text>
-          {status && <StatusBadge status={status} />}
-        </View>
-        <ScrollView
-          ref={scrollRef}
-          style={styles.fsLogs}
-          contentContainerStyle={styles.fsLogsContent}
-        >
-          <Text style={styles.fsLogsText} selectable>
-            {logs}
-          </Text>
-        </ScrollView>
-        {options.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.fsOptionBar}
-            contentContainerStyle={styles.fsOptionBarContent}
-          >
-            {options.map((opt) => (
-              <TouchableOpacity
-                key={opt.number}
-                style={styles.optionBtn}
-                onPress={() => handleSend(opt.number)}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.optionBtnText}>
-                  {opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-        {isRunning ? (
-          <View style={styles.fsInputRow}>
-            <TextInput
-              style={styles.fsTextInput}
-              value={inputText}
-              onChangeText={setInputText}
-              placeholder="Send input..."
-              placeholderTextColor={colors.textMuted}
-              returnKeyType="send"
-              onSubmitEditing={() => handleSend(inputText)}
-            />
-            <TouchableOpacity
-              style={[styles.fsSendBtn, !inputText.trim() && styles.btnDisabled]}
-              onPress={() => handleSend(inputText)}
-              disabled={!inputText.trim()}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.fsSendBtnText}>Send</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <View style={styles.fsActionRow}>
-            {(status?.state === "idle" || status?.state === "success") && (
-              <TouchableOpacity
-                style={[styles.fsActionBtn, { backgroundColor: colors.accent }]}
-                onPress={() => handleAction("run_job")}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.fsActionBtnText}>
-                  {status?.state === "success" ? "Run Again" : "Run"}
-                </Text>
-              </TouchableOpacity>
-            )}
-            {status?.state === "failed" && (
-              <TouchableOpacity
-                style={[styles.fsActionBtn, { backgroundColor: colors.accent }]}
-                onPress={() => handleAction("run_job")}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.fsActionBtnText}>Restart</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-      </View>
-    </Modal>
-  )
-}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
@@ -876,74 +561,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   agentRunBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  expandBtn: { padding: 4 },
-  inlineReply: {
-    marginTop: 4,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: "hidden",
-  },
-  inlineReplyToggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingRight: spacing.sm,
-  },
-  inlineReplyToggle: { paddingHorizontal: spacing.sm, paddingVertical: 4 },
-  inlineReplyToggleText: { color: colors.textMuted, fontSize: 11 },
-  inlineReplyLogs: {
-    backgroundColor: "#000",
-    borderRadius: radius.sm,
-    margin: spacing.sm,
-    marginBottom: 0,
-    padding: spacing.sm,
-  },
-  logsExpandToggle: { alignSelf: "center", paddingVertical: 2, paddingHorizontal: spacing.sm },
-  logsExpandToggleText: { color: colors.textMuted, fontSize: 10 },
-  inlineReplyLogsText: {
-    color: colors.textSecondary,
-    fontSize: 10,
-    fontFamily: "monospace",
-    lineHeight: 14,
-  },
-  optionScroll: { maxHeight: 32, marginHorizontal: spacing.sm },
-  optionScrollContent: { gap: 6, paddingVertical: 2 },
-  optionBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  optionBtnText: { color: colors.accent, fontSize: 11, fontWeight: "500" },
-  inlineReplyInput: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.sm,
-    alignItems: "center",
-  },
-  inlineReplyTextInput: {
-    flex: 1,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    color: colors.text,
-    fontSize: 12,
-  },
-  inlineReplySendBtn: {
-    height: 32,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  inlineReplySendText: { color: "#fff", fontSize: 12, fontWeight: "600" },
   demoList: { padding: spacing.lg, opacity: 0.35 },
   demoCard: {
     backgroundColor: colors.surface,
@@ -972,77 +589,4 @@ const styles = StyleSheet.create({
   demoMeta: { color: colors.textSecondary, fontSize: 12 },
   demoBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: 10 },
   demoBadgeText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3 },
-  fsContainer: { flex: 1, backgroundColor: colors.bg },
-  fsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: 54,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  fsCloseBtn: { paddingVertical: 4, paddingHorizontal: spacing.sm },
-  fsCloseBtnText: { color: colors.accent, fontSize: 14, fontWeight: "500" },
-  fsTitle: { flex: 1, color: colors.text, fontSize: 13, fontFamily: "monospace" },
-  fsLogs: { flex: 1, backgroundColor: "#000" },
-  fsLogsContent: { padding: spacing.md },
-  fsLogsText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontFamily: "monospace",
-    lineHeight: 18,
-  },
-  fsOptionBar: { maxHeight: 48, borderTopWidth: 1, borderTopColor: colors.border },
-  fsOptionBarContent: {
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    alignItems: "center",
-  },
-  fsInputRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.md,
-    paddingBottom: 34,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    alignItems: "center",
-  },
-  fsTextInput: {
-    flex: 1,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    color: colors.text,
-    fontSize: 13,
-  },
-  fsSendBtn: {
-    height: 36,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fsSendBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
-  fsActionRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.md,
-    paddingBottom: 34,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    justifyContent: "center",
-  },
-  fsActionBtn: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-  },
-  fsActionBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
 })

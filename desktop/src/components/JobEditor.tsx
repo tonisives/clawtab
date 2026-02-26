@@ -423,12 +423,19 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                 }}
                 placeholder=""
                 style={{ flex: 1 }}
+                disabled={!isNew}
               />
-              <button className="btn btn-sm" onClick={pickFolder}>
-                Browse...
-              </button>
+              {isNew && (
+                <button className="btn btn-sm" onClick={pickFolder}>
+                  Browse...
+                </button>
+              )}
             </div>
-            <span className="hint">Pick a project folder. A .cwt/ directory will be created inside it.</span>
+            <span className="hint">
+              {isNew
+                ? "Pick a project folder. A .cwt/ directory will be created inside it."
+                : "Directory cannot be changed after creation."}
+            </span>
           </div>
 
           <div className="form-group">
@@ -668,7 +675,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     if (form.job_type !== "folder") return null;
 
     const addParam = (name: string) => {
-      const key = name.trim().replace(/[^a-zA-Z0-9_]/g, "");
+      const key = name.trim().replace(/[^a-zA-Z0-9_-]/g, "");
       if (!key || form.params.includes(key)) return;
       setForm({ ...form, params: [...form.params, key] });
       setParamInput("");

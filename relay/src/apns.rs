@@ -1,3 +1,5 @@
+use std::io::Cursor;
+
 use a2::{
     Client, ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
     NotificationOptions, Priority,
@@ -36,23 +38,37 @@ impl ApnsClient {
             .as_ref()
             .ok_or("APNS_TEAM_ID not set")?;
 
-        let mut key_file =
-            std::fs::File::open(key_path).map_err(|e| format!("failed to open APNs key: {e}"))?;
-
         let endpoint = if config.apns_sandbox {
             Endpoint::Sandbox
         } else {
             Endpoint::Production
         };
 
-        let client =
-            Client::token(&mut key_file, key_id, team_id, ClientConfig::new(endpoint))
-                .map_err(|e| format!("failed to create APNs client: {e}"))?;
-
         let topic = config
             .apns_topic
             .clone()
             .unwrap_or_else(|| "cc.clawtab".to_string());
+
+        tracing::info!(
+            "APNs config: key_id={key_id} team_id={team_id} topic={topic} endpoint={} key_path={key_path}",
+            if config.apns_sandbox { "sandbox" } else { "production" }
+        );
+
+        let key_bytes = std::fs::read(key_path)
+            .map_err(|e| format!("failed to read APNs key at {key_path}: {e}"))?;
+
+        let key_str = String::from_utf8_lossy(&key_bytes);
+        if !key_str.contains("BEGIN PRIVATE KEY") {
+            return Err(
+                "APNs .p8 file does not contain 'BEGIN PRIVATE KEY' - must be PKCS#8 PEM format"
+                    .to_string(),
+            );
+        }
+
+        let mut cursor = Cursor::new(key_bytes);
+        let client =
+            Client::token(&mut cursor, key_id, team_id, ClientConfig::new(endpoint))
+                .map_err(|e| format!("failed to create APNs client: {e}"))?;
 
         Ok(Self { client, topic })
     }
@@ -109,6 +125,17 @@ impl ApnsClient {
             Err(a2::Error::ResponseError(response)) => {
                 if response.code == 410 || response.code == 400 {
                     Err(format!("invalid_token:{}", response.code))
+                } else if response.code == 403 {
+                    tracing::error!(
+                        "APNs 403 InvalidProviderToken - check: \
+                         (1) APNS_KEY_ID matches the key ID in Apple Developer Console, \
+                         (2) APNS_TEAM_ID matches your Apple Developer Team ID, \
+                         (3) the .p8 file is the correct key for this key ID"
+                    );
+                    Err(format!(
+                        "APNs error 403: {:?} (likely JWT auth misconfiguration)",
+                        response.error
+                    ))
                 } else {
                     Err(format!(
                         "APNs error {}: {:?}",

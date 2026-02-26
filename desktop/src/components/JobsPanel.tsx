@@ -533,21 +533,66 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
 
   if (viewingJob) {
     return (
-      <JobDetailView
-        job={viewingJob}
-        status={statuses[viewingJob.name]}
-        onBack={() => setViewingJob(null)}
-        onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
-        onRun={() => handleRunNow(viewingJob.name)}
-        onStop={() => handleStop(viewingJob.name)}
-        onPause={() => handlePause(viewingJob.name)}
-        onResume={() => handleResume(viewingJob.name)}
-        onRestart={() => handleRestart(viewingJob.name)}
-        onOpen={() => handleOpen(viewingJob.name)}
-        onToggle={() => handleToggle(viewingJob.name)}
-        onDuplicate={() => handleDuplicate(viewingJob)}
-        onDelete={() => { handleDelete(viewingJob.name); setViewingJob(null); }}
-      />
+      <>
+        <JobDetailView
+          job={viewingJob}
+          status={statuses[viewingJob.name]}
+          onBack={() => setViewingJob(null)}
+          onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
+          onRun={() => handleRunNow(viewingJob.name)}
+          onStop={() => handleStop(viewingJob.name)}
+          onPause={() => handlePause(viewingJob.name)}
+          onResume={() => handleResume(viewingJob.name)}
+          onRestart={() => handleRestart(viewingJob.name)}
+          onOpen={() => handleOpen(viewingJob.name)}
+          onToggle={() => handleToggle(viewingJob.name)}
+          onDuplicate={() => handleDuplicate(viewingJob)}
+          onDelete={() => { handleDelete(viewingJob.name); setViewingJob(null); }}
+        />
+        {paramsDialog && (
+          <div className="confirm-overlay" onClick={() => setParamsDialog(null)}>
+            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+              <h3 style={{ marginBottom: 12 }}>Run: {paramsDialog.job.name}</h3>
+              <p className="text-secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+                Fill in all parameters before running.
+              </p>
+              {paramsDialog.job.params.map((key) => (
+                <div key={key} style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, display: "block" }}>
+                    {key}
+                  </label>
+                  <input
+                    className="input"
+                    type="text"
+                    value={paramsDialog.values[key] ?? ""}
+                    onChange={(e) => {
+                      setParamsDialog({
+                        ...paramsDialog,
+                        values: { ...paramsDialog.values, [key]: e.target.value },
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleRunWithParams();
+                    }}
+                    placeholder={`{${key}}`}
+                    autoFocus={key === paramsDialog.job.params[0]}
+                  />
+                </div>
+              ))}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+                <button className="btn btn-sm" onClick={() => setParamsDialog(null)}>Cancel</button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleRunWithParams}
+                  disabled={paramsDialog.job.params.some((k) => !paramsDialog.values[k]?.trim())}
+                >
+                  Run
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 

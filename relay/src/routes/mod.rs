@@ -3,6 +3,7 @@ mod register;
 mod login;
 mod refresh;
 mod device;
+mod debug;
 mod google_auth;
 mod google_callback;
 mod notifications;
@@ -69,6 +70,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/devices/{id}", delete(device::remove))
         .route("/subscription/status", get(subscription::status))
         .route("/notifications/history", get(notifications::history))
+        .route("/debug/test-push", post(debug::test_push))
         .layer(middleware::from_fn_with_state(state, auth_middleware));
 
     public

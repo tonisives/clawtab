@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   TextInput,
   TouchableOpacity,
   Text,
+  ActivityIndicator,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -19,12 +20,21 @@ export function MessageInput({
   placeholder?: string;
 }) {
   const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  // Reset sending state after a short delay (the response will appear in logs)
+  useEffect(() => {
+    if (!sending) return;
+    const timer = setTimeout(() => setSending(false), 2000);
+    return () => clearTimeout(timer);
+  }, [sending]);
 
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed) return;
     onSend(trimmed);
     setText("");
+    setSending(true);
   };
 
   return (
@@ -42,15 +52,23 @@ export function MessageInput({
           returnKeyType="send"
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
+          editable={!sending}
         />
-        <TouchableOpacity
-          style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
-          onPress={handleSend}
-          disabled={!text.trim()}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.sendText}>Send</Text>
-        </TouchableOpacity>
+        {sending ? (
+          <View style={styles.sendingIndicator}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.sendingText}>Sent</Text>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
+            onPress={handleSend}
+            disabled={!text.trim()}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.sendText}>Send</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -90,5 +108,15 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "600",
     fontSize: 14,
+  },
+  sendingIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+  },
+  sendingText: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
 });
