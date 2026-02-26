@@ -174,30 +174,28 @@ pub async fn question_detection_loop(
     }
 }
 
-/// Extract last few non-empty context lines before the options.
+/// Extract the last visible lines from terminal output for the notification card.
+/// Includes numbered options and their descriptions so the card mirrors the terminal.
+/// Only strips interactive instruction lines (e.g. "Enter to select").
 fn last_context_lines(text: &str) -> String {
     let lines: Vec<&str> = text.lines().collect();
+    let tail = if lines.len() > 30 { &lines[lines.len() - 30..] } else { &lines };
     let mut context = Vec::new();
-    for line in lines.iter().rev() {
-        let trimmed = line.trim();
-        // Skip option lines
-        let stripped = trimmed.trim_start_matches(|c: char| c.is_whitespace() || ">~`|›»❯▸▶".contains(c));
-        if stripped.starts_with(|c: char| c.is_ascii_digit()) && stripped.contains(". ") {
-            continue;
-        }
+    for line in tail {
+        let lower = line.trim().to_lowercase();
         // Skip interactive prompt instruction lines
-        let lower = trimmed.to_lowercase();
         if lower.contains("enter to select") || lower.contains("to navigate") || lower.contains("esc to cancel") {
             continue;
         }
-        if !trimmed.is_empty() {
-            context.push(*line);
-            if context.len() >= 8 {
-                break;
-            }
-        }
+        context.push(*line);
     }
-    context.reverse();
+    // Trim leading/trailing empty lines
+    while context.first().map_or(false, |l| l.trim().is_empty()) {
+        context.remove(0);
+    }
+    while context.last().map_or(false, |l| l.trim().is_empty()) {
+        context.pop();
+    }
     context.join("\n")
 }
 
