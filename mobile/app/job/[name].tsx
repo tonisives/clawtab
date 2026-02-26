@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView } from "react-native";
+import { View, Text, Pressable, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { useJob, useJobStatus } from "../../src/store/jobs";
 import { useRuns, useRunsStore } from "../../src/store/runs";
@@ -228,15 +228,16 @@ function OptionButtons({ logs, onSend }: { logs: string; onSend: (text: string) 
       contentContainerStyle={styles.optionBarContent}
     >
       {options.map((opt) => (
-        <Pressable
+        <TouchableOpacity
           key={opt.number}
           style={styles.optionBtn}
           onPress={() => onSend(opt.number)}
+          activeOpacity={0.6}
         >
           <Text style={styles.optionBtnText}>
             {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
           </Text>
-        </Pressable>
+        </TouchableOpacity>
       ))}
     </ScrollView>
   );

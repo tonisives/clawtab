@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, View, Text, TextInput, Pressable, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions, findNodeHandle } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Pressable, StyleSheet, RefreshControl, ScrollView, Modal, ActivityIndicator, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useJobsStore } from "../../src/store/jobs";
 import { useWsStore } from "../../src/store/ws";
@@ -48,20 +48,14 @@ export default function JobsScreen() {
     });
   }, []);
 
-  const flatListRef = useRef<FlatList>(null);
-  const cellRefs = useRef<Map<number, View>>(new Map());
+  const scrollRef = useRef<ScrollView>(null);
+  const cellOffsets = useRef<Map<string, number>>(new Map());
 
-  const scrollToCell = useCallback((idx: number) => {
-    const cellView = cellRefs.current.get(idx);
-    const listNode = findNodeHandle(flatListRef.current);
-    if (!cellView || !listNode) return;
-    cellView.measureLayout(
-      listNode as any,
-      (_x, y) => {
-        flatListRef.current?.scrollToOffset({ offset: y, animated: true });
-      },
-      () => {},
-    );
+  const scrollToCell = useCallback((key: string) => {
+    const y = cellOffsets.current.get(key);
+    if (y != null) {
+      scrollRef.current?.scrollTo({ y, animated: true });
+    }
   }, []);
 
   const handleRefresh = useCallback(() => {
@@ -216,68 +210,65 @@ export default function JobsScreen() {
             ))}
           </View>
         ) : (
-          <FlatList
-            ref={flatListRef}
-            data={items}
-            keyExtractor={(item) =>
-              item.kind === "agent" ? "agent" : item.kind === "header" ? `h_${item.group}` : item.kind === "process" ? `p_${item.process.pane_id}` : `j_${item.job.name}`
-            }
-            renderItem={({ item, index }) => {
-              const refCb = (v: View | null) => { if (v) cellRefs.current.set(index, v); else cellRefs.current.delete(index); };
-              if (item.kind === "agent") {
-                return (
-                  <View ref={refCb}>
-                    <AgentSection
-                      agentStatus={agentStatus}
-                      canRunAgent={canRunAgent}
-                      agentPrompt={agentPrompt}
-                      setAgentPrompt={setAgentPrompt}
-                      agentSending={agentSending}
-                      handleRunAgent={handleRunAgent}
-                      onScrollTo={() => scrollToCell(index)}
-                    />
-                  </View>
-                );
-              }
-              if (item.kind === "header") {
-                const isCollapsed = collapsedGroups.has(item.group);
-                return (
-                  <View ref={refCb}>
-                    <Pressable onPress={() => toggleGroup(item.group)} style={styles.groupHeaderRow}>
-                      <Text style={styles.groupHeaderArrow}>{isCollapsed ? "\u25B6" : "\u25BC"}</Text>
-                      <Text style={styles.groupHeader}>{item.group}</Text>
-                    </Pressable>
-                  </View>
-                );
-              }
-              if (item.kind === "process") {
-                return (
-                  <View ref={refCb}>
-                    <ProcessCard process={item.process} />
-                  </View>
-                );
-              }
-              const status = statuses[item.job.name] ?? IDLE_STATUS;
-              return (
-                <View ref={refCb} style={item.idx % 2 === 1 ? { opacity: 0.85 } : undefined}>
-                  <JobCard job={item.job} status={status} />
-                  {status.state === "running" && (
-                    <InlineJobReply jobName={item.job.name} onScrollTo={() => scrollToCell(index)} />
-                  )}
-                </View>
-              );
-            }}
+          <ScrollView
+            ref={scrollRef}
             contentContainerStyle={[styles.list, isWide && styles.listWide]}
-            ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
             refreshControl={<RefreshControl refreshing={false} onRefresh={handleRefresh} tintColor={colors.accent} />}
-            onScrollToIndexFailed={() => {}}
-            ListEmptyComponent={
+          >
+            {items.length === 0 ? (
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>No jobs</Text>
                 <Text style={styles.emptyText}>{connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}</Text>
               </View>
-            }
-          />
+            ) : (
+              items.map((item, index) => {
+                const key = item.kind === "agent" ? "agent" : item.kind === "header" ? `h_${item.group}` : item.kind === "process" ? `p_${item.process.pane_id}` : `j_${item.job.name}`;
+                const onCellLayout = (e: { nativeEvent: { layout: { y: number } } }) => { cellOffsets.current.set(key, e.nativeEvent.layout.y); };
+                if (item.kind === "agent") {
+                  return (
+                    <View key={key} onLayout={onCellLayout} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                      <AgentSection
+                        agentStatus={agentStatus}
+                        canRunAgent={canRunAgent}
+                        agentPrompt={agentPrompt}
+                        setAgentPrompt={setAgentPrompt}
+                        agentSending={agentSending}
+                        handleRunAgent={handleRunAgent}
+                        onScrollTo={() => scrollToCell(key)}
+                      />
+                    </View>
+                  );
+                }
+                if (item.kind === "header") {
+                  const isCollapsed = collapsedGroups.has(item.group);
+                  return (
+                    <View key={key} onLayout={onCellLayout} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                      <Pressable onPress={() => toggleGroup(item.group)} style={styles.groupHeaderRow}>
+                        <Text style={styles.groupHeaderArrow}>{isCollapsed ? "\u25B6" : "\u25BC"}</Text>
+                        <Text style={styles.groupHeader}>{item.group}</Text>
+                      </Pressable>
+                    </View>
+                  );
+                }
+                if (item.kind === "process") {
+                  return (
+                    <View key={key} onLayout={onCellLayout} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                      <ProcessCard process={item.process} onScrollTo={() => scrollToCell(key)} />
+                    </View>
+                  );
+                }
+                const status = statuses[item.job.name] ?? IDLE_STATUS;
+                return (
+                  <View key={key} onLayout={onCellLayout} style={[item.idx % 2 === 1 ? { opacity: 0.85 } : undefined, index > 0 ? { marginTop: spacing.sm } : undefined]}>
+                    <JobCard job={item.job} status={status} />
+                    {status.state === "running" && (
+                      <InlineJobReply jobName={item.job.name} onScrollTo={() => scrollToCell(key)} />
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
         )}
       </ContentContainer>
     </View>
@@ -330,9 +321,9 @@ function InlineJobReply({ jobName, onScrollTo }: { jobName: string; onScrollTo?:
         {!expanded && options.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
             {options.map((opt) => (
-              <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+              <TouchableOpacity key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)} activeOpacity={0.6}>
                 <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         )}
@@ -381,9 +372,9 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
       {options.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
           {options.map((opt) => (
-            <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+            <TouchableOpacity key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)} activeOpacity={0.6}>
               <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
-            </Pressable>
+            </TouchableOpacity>
           ))}
         </ScrollView>
       )}
@@ -460,9 +451,9 @@ function FullscreenJobTerminal({ jobName, title, onClose }: { jobName: string; t
         {options.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fsOptionBar} contentContainerStyle={styles.fsOptionBarContent}>
             {options.map((opt) => (
-              <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+              <TouchableOpacity key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)} activeOpacity={0.6}>
                 <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         )}
@@ -492,7 +483,7 @@ function FullscreenJobTerminal({ jobName, title, onClose }: { jobName: string; t
   );
 }
 
-function ProcessCard({ process }: { process: ClaudeProcess }) {
+function ProcessCard({ process, onScrollTo }: { process: ClaudeProcess; onScrollTo?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [liveLogs, setLiveLogs] = useState<string | null>(null);
@@ -524,23 +515,25 @@ function ProcessCard({ process }: { process: ClaudeProcess }) {
 
   return (
     <>
-      <Pressable style={({ pressed }) => [styles.processCard, pressed && styles.processCardPressed]} onPress={() => setExpanded((v) => !v)}>
-        <View style={styles.processRow}>
-          <View style={styles.processTypeIcon}><Text style={styles.processTypeIconText}>C</Text></View>
-          <View style={styles.processInfo}>
-            <Text style={styles.processName} numberOfLines={1}>{displayName}</Text>
-            <View style={styles.processMeta}>
-              <Text style={styles.processMetaText}>v{process.version}</Text>
-              <Text style={styles.processMetaText}>detected</Text>
+      <View style={styles.processCard}>
+        <Pressable style={({ pressed }) => [pressed && styles.processCardPressed]} onPress={() => { setExpanded((v) => { const next = !v; if (next && onScrollTo) setTimeout(onScrollTo, 100); return next; }); }}>
+          <View style={styles.processRow}>
+            <View style={styles.processTypeIcon}><Text style={styles.processTypeIconText}>C</Text></View>
+            <View style={styles.processInfo}>
+              <Text style={styles.processName} numberOfLines={1}>{displayName}</Text>
+              <View style={styles.processMeta}>
+                <Text style={styles.processMetaText}>v{process.version}</Text>
+                <Text style={styles.processMetaText}>detected</Text>
+              </View>
             </View>
+            <Pressable onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8}>
+              <Ionicons name="scan-outline" size={16} color={colors.textMuted} />
+            </Pressable>
+            <View style={styles.processRunningBadge}><Text style={styles.processRunningText}>running</Text></View>
           </View>
-          <Pressable onPress={() => setFullscreen(true)} style={styles.expandBtn} hitSlop={8}>
-            <Ionicons name="scan-outline" size={16} color={colors.textMuted} />
-          </Pressable>
-          <View style={styles.processRunningBadge}><Text style={styles.processRunningText}>running</Text></View>
-        </View>
+        </Pressable>
         {expanded && <ProcessInlineView logsText={logsText} options={options} onSend={handleSend} />}
-      </Pressable>
+      </View>
       {fullscreen && <FullscreenProcessTerminal process={process} displayName={displayName} onClose={() => setFullscreen(false)} />}
     </>
   );
@@ -568,9 +561,9 @@ function ProcessInlineView({ logsText, options, onSend }: { logsText: string; op
       {options.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.optionScroll} contentContainerStyle={styles.optionScrollContent}>
           {options.map((opt) => (
-            <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+            <TouchableOpacity key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)} activeOpacity={0.6}>
               <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
-            </Pressable>
+            </TouchableOpacity>
           ))}
         </ScrollView>
       )}
@@ -630,9 +623,9 @@ function FullscreenProcessTerminal({ process, displayName, onClose }: { process:
         {options.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fsOptionBar} contentContainerStyle={styles.fsOptionBarContent}>
             {options.map((opt) => (
-              <Pressable key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)}>
+              <TouchableOpacity key={opt.number} style={styles.optionBtn} onPress={() => handleSend(opt.number)} activeOpacity={0.6}>
                 <Text style={styles.optionBtnText}>{opt.number}. {opt.label.length > 20 ? opt.label.slice(0, 20) + "..." : opt.label}</Text>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         )}
@@ -697,9 +690,9 @@ const styles = StyleSheet.create({
   logsExpandToggle: { alignSelf: "center", paddingVertical: 2, paddingHorizontal: spacing.sm },
   logsExpandToggleText: { color: colors.textMuted, fontSize: 10 },
   inlineReplyLogsText: { color: colors.textSecondary, fontSize: 10, fontFamily: "monospace", lineHeight: 14 },
-  optionScroll: { maxHeight: 36, marginHorizontal: spacing.sm },
-  optionScrollContent: { gap: 4, paddingVertical: 2 },
-  optionBtn: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.accent },
+  optionScroll: { maxHeight: 44, marginHorizontal: spacing.sm },
+  optionScrollContent: { gap: 6, paddingVertical: 4 },
+  optionBtn: { paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.accent },
   optionBtnText: { color: colors.accent, fontSize: 11, fontWeight: "500" },
   inlineReplyInput: { flexDirection: "row", gap: spacing.sm, padding: spacing.sm, alignItems: "center" },
   inlineReplyTextInput: { flex: 1, height: 32, borderRadius: radius.sm, backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, color: colors.text, fontSize: 12 },
@@ -723,8 +716,8 @@ const styles = StyleSheet.create({
   fsLogs: { flex: 1, backgroundColor: "#000" },
   fsLogsContent: { padding: spacing.md },
   fsLogsText: { color: colors.textSecondary, fontSize: 12, fontFamily: "monospace", lineHeight: 18 },
-  fsOptionBar: { maxHeight: 40, borderTopWidth: 1, borderTopColor: colors.border },
-  fsOptionBarContent: { gap: 4, paddingHorizontal: spacing.md, paddingVertical: 4, alignItems: "center" },
+  fsOptionBar: { maxHeight: 48, borderTopWidth: 1, borderTopColor: colors.border },
+  fsOptionBarContent: { gap: 6, paddingHorizontal: spacing.md, paddingVertical: 6, alignItems: "center" },
   fsInputRow: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, paddingBottom: 34, borderTopWidth: 1, borderTopColor: colors.border, alignItems: "center" },
   fsTextInput: { flex: 1, height: 36, borderRadius: radius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, color: colors.text, fontSize: 13 },
   fsSendBtn: { height: 36, paddingHorizontal: spacing.lg, borderRadius: radius.sm, backgroundColor: colors.accent, justifyContent: "center", alignItems: "center" },
