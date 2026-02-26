@@ -354,6 +354,12 @@ async fn run_session<S, R>(
 }
 
 fn job_to_remote(job: &Job) -> RemoteJob {
+    // Compute effective work_dir: prefer explicit work_dir, then folder_path root
+    let work_dir = job.work_dir.clone().or_else(|| {
+        job.folder_path.as_ref().map(|fp| {
+            fp.strip_suffix("/.cwt").unwrap_or(fp).to_string()
+        })
+    });
     RemoteJob {
         name: job.name.clone(),
         job_type: match job.job_type {
@@ -365,7 +371,7 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         cron: job.cron.clone(),
         group: job.group.clone(),
         slug: job.slug.clone(),
-        work_dir: job.work_dir.clone(),
+        work_dir,
         path: Some(job.path.clone()),
         params: job.params.clone(),
     }

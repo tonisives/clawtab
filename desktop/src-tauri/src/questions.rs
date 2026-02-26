@@ -51,11 +51,13 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     options
 }
 
-/// Check whether the terminal output contains indicators of an interactive prompt.
-/// Claude CLI's interactive menus always include instructional text like
-/// "Enter to select . ↑/↓ to navigate . Esc to cancel"
-/// This instruction is always on the very last non-empty line when a prompt is
-/// actively waiting, so we only check that line to avoid stale matches.
+/// Check whether the terminal output contains indicators of an interactive
+/// *numbered option* prompt. Claude CLI's option menus include:
+///   "Enter to select · ↑/↓ to navigate · Esc to cancel"
+/// Tool permission prompts (Yes/No) use a different footer:
+///   "Esc to cancel · Tab to amend · ctrl+e to explain"
+/// We must NOT match the latter, so we only check for "enter to select"
+/// and "to navigate" which are unique to numbered option menus.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
     let last_line = text.lines().rev()
         .find(|l| !l.trim().is_empty())
@@ -63,7 +65,6 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
         .to_lowercase();
     last_line.contains("enter to select")
         || last_line.contains("to navigate")
-        || last_line.contains("esc to cancel")
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.
@@ -184,9 +185,14 @@ fn last_context_lines(text: &str) -> String {
         if stripped.starts_with(|c: char| c.is_ascii_digit()) && stripped.contains(". ") {
             continue;
         }
+        // Skip interactive prompt instruction lines
+        let lower = trimmed.to_lowercase();
+        if lower.contains("enter to select") || lower.contains("to navigate") || lower.contains("esc to cancel") {
+            continue;
+        }
         if !trimmed.is_empty() {
             context.push(*line);
-            if context.len() >= 3 {
+            if context.len() >= 8 {
                 break;
             }
         }
