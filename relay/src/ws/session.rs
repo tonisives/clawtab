@@ -525,7 +525,7 @@ async fn handle_claude_questions_push(
 
     for (token_id, device_token) in &tokens {
         match apns
-            .send_question_notification(device_token, &title, &body, &q.question_id, &q.pane_id, &options)
+            .send_question_notification(device_token, &title, &body, &q.question_id, &q.pane_id, q.matched_job.as_deref(), &options)
             .await
         {
             Ok(()) => {

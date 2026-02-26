@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
+import { useRouter } from "expo-router";
 
 import { useNotificationStore } from "../store/notifications";
 import { getWsSend, nextId } from "./useWebSocket";
 
 export function useNotifications() {
+  const router = useRouter();
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const setDeepLinkQuestionId = useNotificationStore((s) => s.setDeepLinkQuestionId);
   const responseListener = useRef<Notifications.Subscription | null>(null);
@@ -20,6 +22,7 @@ export function useNotifications() {
           clawtab?: {
             question_id?: string;
             pane_id?: string;
+            matched_job?: string;
             options?: { number: string; label: string }[];
           };
         } | undefined;
@@ -42,9 +45,13 @@ export function useNotifications() {
             });
           }
           answerQuestion(clawtab.question_id);
+        }
+
+        // Navigate to the job/process screen
+        if (clawtab.matched_job) {
+          router.push(`/job/${clawtab.matched_job}`);
         } else {
-          // User tapped the notification body - deep link to the card
-          setDeepLinkQuestionId(clawtab.question_id);
+          router.push(`/process/${clawtab.pane_id.replace(/%/g, "_pct_")}`);
         }
       },
     );
@@ -54,5 +61,5 @@ export function useNotifications() {
         responseListener.current.remove();
       }
     };
-  }, [answerQuestion, setDeepLinkQuestionId]);
+  }, [answerQuestion, setDeepLinkQuestionId, router]);
 }

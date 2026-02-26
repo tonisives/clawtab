@@ -33,6 +33,7 @@ pub async fn test_push(
             "This is a test notification from ClawTab relay",
             "test-question-id",
             "test-pane-id",
+            None,
             &options,
         )
         .await

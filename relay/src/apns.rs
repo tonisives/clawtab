@@ -17,6 +17,8 @@ pub struct ApnsClient {
 struct QuestionPayload {
     question_id: String,
     pane_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matched_job: Option<String>,
     options: Vec<PayloadOption>,
 }
 
@@ -80,6 +82,7 @@ impl ApnsClient {
         body: &str,
         question_id: &str,
         pane_id: &str,
+        matched_job: Option<&str>,
         options: &[(String, String)],
     ) -> Result<(), String> {
         let payload_options: Vec<PayloadOption> = options
@@ -93,6 +96,7 @@ impl ApnsClient {
         let custom_data = QuestionPayload {
             question_id: question_id.to_string(),
             pane_id: pane_id.to_string(),
+            matched_job: matched_job.map(|s| s.to_string()),
             options: payload_options,
         };
 
