@@ -4,17 +4,19 @@ import { useResponsive, CONTENT_MAX_WIDTH, WIDE_CONTENT_MAX_WIDTH } from "../hoo
 export function ContentContainer({
   children,
   wide,
+  fill,
 }: {
   children: React.ReactNode;
   wide?: boolean;
+  fill?: boolean;
 }) {
   const { isWide } = useResponsive();
 
   if (!isWide) return <>{children}</>;
 
   return (
-    <View style={styles.outer}>
-      <View style={[styles.inner, { maxWidth: wide ? WIDE_CONTENT_MAX_WIDTH : CONTENT_MAX_WIDTH }]}>
+    <View style={[styles.outer, fill && styles.fill]}>
+      <View style={[styles.inner, fill && styles.fill, { maxWidth: wide ? WIDE_CONTENT_MAX_WIDTH : CONTENT_MAX_WIDTH }]}>
         {children}
       </View>
     </View>
@@ -23,11 +25,12 @@ export function ContentContainer({
 
 const styles = StyleSheet.create({
   outer: {
-    flex: 1,
     alignItems: "center",
   },
   inner: {
-    flex: 1,
     width: "100%",
+  },
+  fill: {
+    flex: 1,
   },
 });

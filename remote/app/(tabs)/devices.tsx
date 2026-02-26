@@ -81,7 +81,7 @@ export default function DevicesScreen() {
   if (subscriptionRequired) {
     return (
       <View style={styles.container}>
-        <ContentContainer>
+        <ContentContainer fill>
           <View style={[styles.subBanner, isWide && styles.subBannerWide]}>
             <Text style={styles.subTitle}>Subscription required</Text>
             <Text style={[styles.subText, isWide && { maxWidth: 400 }]}>
@@ -115,7 +115,7 @@ export default function DevicesScreen() {
 
   return (
     <View style={styles.container}>
-      <ContentContainer>
+      <ContentContainer fill>
         <FlatList
           data={devices}
           keyExtractor={(d) => d.id}

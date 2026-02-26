@@ -26,6 +26,7 @@ export type ClientMessage =
   | { type: "get_run_detail"; id: string; run_id: string }
   | { type: "get_detected_process_logs"; id: string; tmux_session: string; pane_id: string }
   | { type: "send_detected_process_input"; id: string; pane_id: string; text: string }
+  | { type: "stop_detected_process"; id: string; pane_id: string }
   | { type: "register_push_token"; id: string; push_token: string; platform: string }
   | { type: "answer_question"; id: string; question_id: string; pane_id: string; answer: string }
   | { type: "get_notification_history"; id: string; limit: number };
@@ -58,6 +59,7 @@ export type DesktopMessage =
   | { type: "run_detail_response"; id: string; detail?: RunDetail }
   | { type: "detected_process_logs"; id: string; logs: string }
   | { type: "send_detected_process_input_ack"; id: string; success: boolean }
+  | { type: "stop_detected_process_ack"; id: string; success: boolean; error?: string }
   | { type: "claude_questions"; questions: ClaudeQuestion[] }
   | { type: "notification_history"; id: string; notifications: NotificationHistoryItem[] }
   | { type: "register_push_token_ack"; id: string; success: boolean };

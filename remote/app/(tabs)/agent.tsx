@@ -62,7 +62,7 @@ export default function AgentScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={90}
     >
-      <ContentContainer>
+      <ContentContainer fill>
         <View style={[styles.inner, isWide && styles.innerWide]}>
           {subscriptionRequired && (
             <View style={styles.subBanner}>

@@ -24,7 +24,7 @@ import { registerRequest } from "../../src/lib/useRequestMap"
 import { useLogs } from "../../src/hooks/useLogs"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import * as api from "../../src/api/client"
-import { alertError, openUrl } from "../../src/lib/platform"
+import { alertError, confirm, openUrl } from "../../src/lib/platform"
 import { colors } from "../../src/theme/colors"
 import { radius, spacing } from "../../src/theme/spacing"
 import type { ClaudeProcess, RemoteJob, JobStatus } from "../../src/types/job"
@@ -234,7 +234,7 @@ export default function JobsScreen() {
           </View>
         )}
 
-        {subscriptionRequired ? (
+        {subscriptionRequired && (
           <View style={[styles.demoList, { pointerEvents: "none" as const }]}>
             {DEMO_JOBS.map((d, i) => (
               <View key={d.name} style={[styles.demoCard, i > 0 && { marginTop: spacing.sm }]}>
@@ -262,18 +262,21 @@ export default function JobsScreen() {
               </View>
             ))}
           </View>
-        ) : (
-          <ScrollView
-            ref={scrollRef}
-            contentContainerStyle={[styles.list, isWide && styles.listWide]}
-            refreshControl={
-              <RefreshControl
-                refreshing={false}
-                onRefresh={handleRefresh}
-                tintColor={colors.accent}
-              />
-            }
-          >
+        )}
+      </ContentContainer>
+      {!subscriptionRequired && (
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[styles.list, isWide && styles.listWide]}
+          refreshControl={
+            <RefreshControl
+              refreshing={false}
+              onRefresh={handleRefresh}
+              tintColor={colors.accent}
+            />
+          }
+        >
+          <ContentContainer wide>
             <NotificationStack />
             {items.length === 0 ? (
               <View style={styles.empty}>
@@ -367,9 +370,9 @@ export default function JobsScreen() {
                 )
               })
             )}
-          </ScrollView>
-        )}
-      </ContentContainer>
+          </ContentContainer>
+        </ScrollView>
+      )}
     </View>
   )
 }
@@ -757,6 +760,7 @@ function ProcessCard({ process, onScrollTo }: { process: ClaudeProcess; onScroll
   const [expanded, setExpanded] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [liveLogs, setLiveLogs] = useState<string | null>(null)
+  const [stopping, setStopping] = useState(false)
   const displayName = process.cwd.replace(/^\/Users\/[^/]+/, "~")
 
   useEffect(() => {
@@ -806,6 +810,21 @@ function ProcessCard({ process, onScrollTo }: { process: ClaudeProcess; onScroll
     if (next && onScrollTo) setTimeout(onScrollTo, 100)
   }
 
+  const doStop = async () => {
+    const send = getWsSend()
+    if (!send || stopping) return
+    setStopping(true)
+    const id = nextId()
+    send({ type: "stop_detected_process", id, pane_id: process.pane_id })
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
+    await Promise.race([registerRequest(id), timeout])
+    setStopping(false)
+  }
+
+  const handleStop = () => {
+    confirm("Stop process", `Kill the Claude process in ${displayName}?`, doStop)
+  }
+
   return (
     <>
       <View style={styles.processCard}>
@@ -833,6 +852,17 @@ function ProcessCard({ process, onScrollTo }: { process: ClaudeProcess; onScroll
             <View style={styles.processRunningBadge}>
               <Text style={styles.processRunningText}>running</Text>
             </View>
+            {expanded && (
+              <TouchableOpacity
+                style={[styles.stopBtn, stopping && styles.btnDisabled]}
+                onPress={handleStop}
+                disabled={stopping}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="stop-circle-outline" size={14} color={colors.danger} />
+                <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </TouchableOpacity>
         {expanded && (
@@ -943,6 +973,7 @@ function FullscreenProcessTerminal({
 }) {
   const [logs, setLogs] = useState(process.log_lines)
   const [inputText, setInputText] = useState("")
+  const [stopping, setStopping] = useState(false)
   const scrollRef = useRef<ScrollView>(null)
 
   useEffect(() => {
@@ -990,6 +1021,23 @@ function FullscreenProcessTerminal({
     }
   }
 
+  const doStop = async () => {
+    const send = getWsSend()
+    if (!send || stopping) return
+    setStopping(true)
+    const id = nextId()
+    send({ type: "stop_detected_process", id, pane_id: process.pane_id })
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
+    await Promise.race([registerRequest(id), timeout])
+    setStopping(false)
+    onClose()
+  }
+
+  const handleStop = () => {
+    const name = process.cwd.replace(/^\/Users\/[^/]+/, "~")
+    confirm("Stop process", `Kill the Claude process in ${name}?`, doStop)
+  }
+
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen">
       <View style={styles.fsContainer}>
@@ -1000,6 +1048,15 @@ function FullscreenProcessTerminal({
           <Text style={styles.fsTitle} numberOfLines={1}>
             {displayName}
           </Text>
+          <TouchableOpacity
+            style={[styles.fsStopBtn, stopping && styles.btnDisabled]}
+            onPress={handleStop}
+            disabled={stopping}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="stop-circle-outline" size={14} color={colors.danger} />
+            <Text style={styles.fsStopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
+          </TouchableOpacity>
           <View style={styles.processRunningBadge}>
             <Text style={styles.processRunningText}>running</Text>
           </View>
@@ -1192,6 +1249,16 @@ const styles = StyleSheet.create({
   },
   processRunningText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.accent },
   processInline: { marginTop: spacing.sm },
+  stopBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.dangerBg,
+  },
+  stopBtnText: { color: colors.danger, fontSize: 11, fontWeight: "500" },
   inlineReply: {
     marginTop: 4,
     backgroundColor: colors.surface,
@@ -1300,6 +1367,16 @@ const styles = StyleSheet.create({
   },
   fsCloseBtn: { paddingVertical: 4, paddingHorizontal: spacing.sm },
   fsCloseBtnText: { color: colors.accent, fontSize: 14, fontWeight: "500" },
+  fsStopBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.dangerBg,
+  },
+  fsStopBtnText: { color: colors.danger, fontSize: 12, fontWeight: "500" },
   fsTitle: { flex: 1, color: colors.text, fontSize: 13, fontFamily: "monospace" },
   fsLogs: { flex: 1, backgroundColor: "#000" },
   fsLogsContent: { padding: spacing.md },
