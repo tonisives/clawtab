@@ -78,7 +78,7 @@ export default function AgentScreen() {
             </View>
           )}
 
-          <View style={[subscriptionRequired ? styles.demoOverlay : undefined, { pointerEvents: (subscriptionRequired ? "none" : "auto") as const }]}>
+          <View style={[subscriptionRequired ? styles.demoOverlay : undefined, { pointerEvents: subscriptionRequired ? "none" as const : "auto" as const }]}>
             <Text style={styles.heading}>Run Agent</Text>
             <Text style={styles.description}>
               Send a prompt to run a Claude agent on your desktop.

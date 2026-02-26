@@ -51,7 +51,7 @@ export function useNotifications() {
 
     return () => {
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, [answerQuestion, setDeepLinkQuestionId]);

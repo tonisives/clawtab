@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, TextInput, Modal } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
 import { useJob, useJobStatus } from "../../src/store/jobs";
 import { useRuns, useRunsStore } from "../../src/store/runs";
@@ -49,15 +49,33 @@ export default function JobDetailScreen() {
     loadRuns();
   }, [status.state]);
 
+  const [showParamsModal, setShowParamsModal] = useState(false);
+  const [paramValues, setParamValues] = useState<Record<string, string>>({});
+
   const handleAction = useCallback(
     (action: "run_job" | "pause_job" | "resume_job" | "stop_job") => {
+      if (action === "run_job" && job?.params && job.params.length > 0) {
+        const values: Record<string, string> = {};
+        for (const p of job.params) values[p] = "";
+        setParamValues(values);
+        setShowParamsModal(true);
+        return;
+      }
       const send = getWsSend();
       if (send) {
         send({ type: action, id: nextId(), name });
       }
     },
-    [name],
+    [name, job],
   );
+
+  const handleRunWithParams = useCallback(() => {
+    const send = getWsSend();
+    if (send) {
+      send({ type: "run_job", id: nextId(), name, params: paramValues });
+    }
+    setShowParamsModal(false);
+  }, [name, paramValues]);
 
   const handleSendInput = useCallback(
     (text: string) => {
@@ -200,6 +218,41 @@ export default function JobDetailScreen() {
           <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
         </>
       )}
+
+      <Modal visible={showParamsModal} transparent animationType="fade" onRequestClose={() => setShowParamsModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Run: {job?.name}</Text>
+            <Text style={styles.modalHint}>Fill in all parameters before running.</Text>
+            {job?.params?.map((key) => (
+              <View key={key} style={styles.paramRow}>
+                <Text style={styles.paramLabel}>{key}</Text>
+                <TextInput
+                  style={styles.paramInput}
+                  value={paramValues[key] ?? ""}
+                  onChangeText={(text) => setParamValues((prev) => ({ ...prev, [key]: text }))}
+                  placeholder={`{${key}}`}
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            ))}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowParamsModal(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalRunBtn, (job?.params?.some((k) => !paramValues[k]?.trim())) && { opacity: 0.4 }]}
+                onPress={handleRunWithParams}
+                disabled={job?.params?.some((k) => !paramValues[k]?.trim())}
+              >
+                <Text style={styles.modalRunText}>Run</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -548,5 +601,79 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: "monospace",
     lineHeight: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    width: "100%",
+    maxWidth: 400,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  modalHint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginBottom: 16,
+  },
+  paramRow: {
+    marginBottom: 12,
+  },
+  paramLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "500",
+    marginBottom: 4,
+  },
+  paramInput: {
+    backgroundColor: colors.bg,
+    color: colors.text,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+    fontSize: 14,
+    fontFamily: "monospace",
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.sm,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalCancelText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalRunBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+  },
+  modalRunText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

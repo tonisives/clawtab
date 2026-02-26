@@ -7,6 +7,7 @@ export interface RemoteJob {
   slug: string;
   work_dir?: string;
   path?: string;
+  params?: string[];
 }
 
 export type JobStatus =

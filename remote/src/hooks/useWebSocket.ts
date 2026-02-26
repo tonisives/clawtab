@@ -87,7 +87,6 @@ export function useWebSocket() {
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
       ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
-      ws.send(JSON.stringify({ type: "get_notification_history", id: nextId(), limit: 20 }));
 
       // Register push token
       getPushToken().then((token) => {
@@ -134,7 +133,7 @@ export function useWebSocket() {
           useNotificationStore.getState().setQuestions(msg.questions);
           break;
         case "notification_history":
-          useNotificationStore.getState().hydrateFromHistory(msg.notifications);
+          // Ignored - desktop sends authoritative claude_questions
           break;
         case "desktop_status":
           setDesktopStatus(msg.device_id, msg.device_name, msg.online);
@@ -213,7 +212,7 @@ export function useWebSocket() {
     };
 
     ws.onerror = (e) => {
-      console.log("[ws] error:", e.message || e);
+      console.log("[ws] error:", e);
     };
 
     globalSend = (msg: ClientMessage) => {

@@ -3,7 +3,7 @@ import type { ClaudeProcess, ClaudeQuestion, JobStatus, NotificationHistoryItem,
 // Messages sent by this client to the relay server
 export type ClientMessage =
   | { type: "list_jobs"; id: string }
-  | { type: "run_job"; id: string; name: string }
+  | { type: "run_job"; id: string; name: string; params?: Record<string, string> }
   | { type: "pause_job"; id: string; name: string }
   | { type: "resume_job"; id: string; name: string }
   | { type: "stop_job"; id: string; name: string }
