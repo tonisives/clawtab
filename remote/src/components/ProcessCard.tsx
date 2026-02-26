@@ -93,7 +93,7 @@ export function ProcessCard({
     }
   }, [isExpanded, process.pane_id, process.tmux_session])
 
-  const logsText = liveLogs ?? process.log_lines
+  const logsText = (liveLogs ?? process.log_lines).trimEnd()
   const options = parseNumberedOptions(logsText)
 
   const handleSend = (text: string) => {
@@ -302,7 +302,7 @@ function FullscreenProcessTerminal({
           setTimeout(() => resolve({}), 5000),
         )
         const resp = await Promise.race([registerRequest<{ logs?: string }>(id), timeout])
-        if (active && resp.logs != null) setLogs(resp.logs)
+        if (active && resp.logs != null) setLogs(resp.logs.trimEnd())
       } finally {
         polling = false
       }
@@ -493,11 +493,11 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     lineHeight: 14,
   },
-  optionScroll: { maxHeight: 44, marginHorizontal: spacing.sm },
-  optionScrollContent: { gap: 6, paddingVertical: 4 },
+  optionScroll: { maxHeight: 32, marginHorizontal: spacing.sm },
+  optionScrollContent: { gap: 6, paddingVertical: 2 },
   optionBtn: {
     paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    paddingVertical: 3,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.accent,

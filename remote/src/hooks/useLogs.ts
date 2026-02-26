@@ -8,7 +8,7 @@ const logListeners = new Map<string, Set<(content: string) => void>>();
 // Called from the WebSocket message handler
 export function dispatchLogChunk(name: string, content: string) {
   const existing = logBuffers.get(name) || "";
-  logBuffers.set(name, existing + content);
+  logBuffers.set(name, (existing + content).trimEnd());
   const listeners = logListeners.get(name);
   if (listeners) {
     const full = logBuffers.get(name)!;

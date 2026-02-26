@@ -135,7 +135,10 @@ export default function JobsScreen() {
     setAgentSending(false)
   }
 
-  const agentStatus = statuses["agent"] ?? IDLE_STATUS
+  const agentProcess = detectedProcesses.find((p) => p.cwd.endsWith("/clawtab/agent"))
+  const agentStatus: JobStatus =
+    statuses["agent"] ??
+    (agentProcess ? { state: "running", run_id: "", started_at: "" } : IDLE_STATUS)
   const agentState = agentStatus.state
   const canRunAgent = agentState === "idle" || agentState === "success" || agentState === "failed"
 
@@ -287,6 +290,7 @@ export default function JobsScreen() {
               </View>
             ) : (
               items.map((item, index) => {
+                const beforeAgent = item.kind === "agent" && index > 0
                 const key =
                   item.kind === "agent"
                     ? "agent"
@@ -303,10 +307,12 @@ export default function JobsScreen() {
                     <View
                       key={key}
                       onLayout={onCellLayout}
-                      style={{ paddingBottom: spacing.lg, marginBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                      style={{ marginBottom: spacing.md }}
                     >
+                      {beforeAgent && <View style={styles.separator} />}
                       <AgentSection
                         agentStatus={agentStatus}
+                        agentProcess={agentProcess ?? null}
                         canRunAgent={canRunAgent}
                         agentPrompt={agentPrompt}
                         setAgentPrompt={setAgentPrompt}
@@ -327,6 +333,7 @@ export default function JobsScreen() {
                       onLayout={onCellLayout}
                       style={index > 0 ? { marginTop: spacing.sm } : undefined}
                     >
+
                       <TouchableOpacity
                         onPress={() => toggleGroup(item.group)}
                         style={styles.groupHeaderRow}
@@ -347,6 +354,7 @@ export default function JobsScreen() {
                       onLayout={onCellLayout}
                       style={index > 0 ? { marginTop: spacing.sm } : undefined}
                     >
+
                       <ProcessCard process={item.process} onScrollTo={() => scrollToCell(key)} />
                     </View>
                   )
@@ -566,6 +574,7 @@ function InlineJobLogs({ jobName, onSend }: { jobName: string; onSend: (text: st
 
 function AgentSection({
   agentStatus,
+  agentProcess,
   canRunAgent,
   agentPrompt,
   setAgentPrompt,
@@ -576,6 +585,7 @@ function AgentSection({
   onToggleCollapse,
 }: {
   agentStatus: JobStatus
+  agentProcess: ClaudeProcess | null
   canRunAgent: boolean
   agentPrompt: string
   setAgentPrompt: (v: string) => void
@@ -585,8 +595,6 @@ function AgentSection({
   collapsed: boolean
   onToggleCollapse: () => void
 }) {
-  const isActive = agentStatus.state === "running" || agentStatus.state === "paused"
-
   return (
     <View>
       <TouchableOpacity
@@ -603,34 +611,39 @@ function AgentSection({
         </View>
       </TouchableOpacity>
       {!collapsed && (
-        <View style={styles.agentSection}>
-          {canRunAgent && (
-            <View style={styles.agentInput}>
-              <TextInput
-                style={styles.agentTextInput}
-                value={agentPrompt}
-                onChangeText={setAgentPrompt}
-                placeholder="Enter a prompt for the agent..."
-                placeholderTextColor={colors.textMuted}
-                returnKeyType="send"
-                onSubmitEditing={handleRunAgent}
-                editable={!agentSending}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.agentRunBtn,
-                  (!agentPrompt.trim() || agentSending) && styles.btnDisabled,
-                ]}
-                onPress={handleRunAgent}
-                disabled={!agentPrompt.trim() || agentSending}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.agentRunBtnText}>Run</Text>
-              </TouchableOpacity>
+        <>
+          {agentProcess ? (
+            <ProcessCard process={agentProcess} onScrollTo={onScrollTo} />
+          ) : (
+            <View style={styles.agentSection}>
+              {canRunAgent && (
+                <View style={styles.agentInput}>
+                  <TextInput
+                    style={styles.agentTextInput}
+                    value={agentPrompt}
+                    onChangeText={setAgentPrompt}
+                    placeholder="Enter a prompt for the agent..."
+                    placeholderTextColor={colors.textMuted}
+                    returnKeyType="send"
+                    onSubmitEditing={handleRunAgent}
+                    editable={!agentSending}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.agentRunBtn,
+                      (!agentPrompt.trim() || agentSending) && styles.btnDisabled,
+                    ]}
+                    onPress={handleRunAgent}
+                    disabled={!agentPrompt.trim() || agentSending}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.agentRunBtnText}>Run</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
-          {isActive && <InlineJobReply jobName="agent" onScrollTo={onScrollTo} />}
-        </View>
+        </>
       )}
     </View>
   )
@@ -819,6 +832,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
+  separator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginBottom: spacing.sm,
+  },
   empty: {
     flex: 1,
     justifyContent: "center",
@@ -890,11 +908,11 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     lineHeight: 14,
   },
-  optionScroll: { maxHeight: 44, marginHorizontal: spacing.sm },
-  optionScrollContent: { gap: 6, paddingVertical: 4 },
+  optionScroll: { maxHeight: 32, marginHorizontal: spacing.sm },
+  optionScrollContent: { gap: 6, paddingVertical: 2 },
   optionBtn: {
     paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    paddingVertical: 3,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.accent,
