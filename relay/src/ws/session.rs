@@ -472,14 +472,47 @@ async fn handle_claude_questions_push(
         .unwrap_or(&q.cwd);
 
     let title = format!("Claude needs input - {project}");
-    let body = if q.context_lines.is_empty() {
-        q.options
+    let body = {
+        // Extract the question text from context_lines by stripping decorative
+        // lines and keeping only meaningful content.
+        let question_text: Vec<&str> = q
+            .context_lines
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                if t.is_empty() {
+                    return false;
+                }
+                // Skip lines made entirely of box-drawing / decoration chars
+                !t.chars().all(|c| {
+                    matches!(c,
+                        '-' | '_' | '=' | '~' | '\u{2501}' | '\u{2500}' | '\u{2550}'
+                        | '\u{254C}' | '\u{254D}' | '\u{2504}' | '\u{2505}'
+                        | '\u{2508}' | '\u{2509}' | '\u{2574}' | '\u{2576}'
+                        | '\u{2578}' | '\u{257A}' | '\u{2594}' | '\u{2581}'
+                        | '|' | '\u{2502}' | '\u{2503}' | ' '
+                    )
+                })
+            })
+            .collect();
+
+        let options_str = q
+            .options
             .iter()
             .map(|o| format!("{}. {}", o.number, o.label))
             .collect::<Vec<_>>()
-            .join(" | ")
-    } else {
-        q.context_lines.clone()
+            .join(" | ");
+
+        if question_text.is_empty() {
+            options_str
+        } else {
+            let ctx = question_text.join("\n");
+            if options_str.is_empty() {
+                ctx
+            } else {
+                format!("{ctx}\n{options_str}")
+            }
+        }
     };
 
     let options: Vec<(String, String)> = q

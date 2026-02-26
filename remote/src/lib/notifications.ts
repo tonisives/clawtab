@@ -20,10 +20,10 @@ export function registerNotificationCategories() {
   // labels from the payload. This static category only appears if the NSE
   // fails to run (e.g. payload too large, extension killed by OS).
   Notifications.setNotificationCategoryAsync("CLAUDE_QUESTION", [
-    { identifier: "1", buttonTitle: "Option 1", options: { opensAppToForeground: false } },
-    { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },
-    { identifier: "3", buttonTitle: "Option 3", options: { opensAppToForeground: false } },
-    { identifier: "4", buttonTitle: "Option 4", options: { opensAppToForeground: false } },
+    { identifier: "1", buttonTitle: "1.", options: { opensAppToForeground: false } },
+    { identifier: "2", buttonTitle: "2.", options: { opensAppToForeground: false } },
+    { identifier: "3", buttonTitle: "3.", options: { opensAppToForeground: false } },
+    { identifier: "4", buttonTitle: "4.", options: { opensAppToForeground: false } },
   ]).catch(() => {});
 }
 

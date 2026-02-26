@@ -32,7 +32,7 @@ class NotificationService: UNNotificationServiceExtension {
             }
             return UNNotificationAction(
                 identifier: number,
-                title: label,
+                title: "\(number). \(label)",
                 options: []
             )
         }
