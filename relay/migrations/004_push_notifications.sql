@@ -1,4 +1,4 @@
-CREATE TABLE push_tokens (
+CREATE TABLE IF NOT EXISTS push_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     push_token TEXT UNIQUE NOT NULL,
@@ -6,9 +6,9 @@ CREATE TABLE push_tokens (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_push_tokens_user_id ON push_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_tokens_user_id ON push_tokens(user_id);
 
-CREATE TABLE notification_history (
+CREATE TABLE IF NOT EXISTS notification_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     question_id TEXT UNIQUE NOT NULL,
@@ -20,5 +20,5 @@ CREATE TABLE notification_history (
     answered_with TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_notification_history_user ON notification_history(user_id);
-CREATE INDEX idx_notification_history_created ON notification_history(created_at);
+CREATE INDEX IF NOT EXISTS idx_notification_history_user ON notification_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_notification_history_created ON notification_history(created_at);
