@@ -27,6 +27,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          package_json_file: desktop/package.json
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
@@ -100,6 +102,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          package_json_file: desktop/package.json
 
       - name: Install frontend dependencies
         run: pnpm install
