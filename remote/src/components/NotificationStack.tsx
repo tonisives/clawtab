@@ -103,7 +103,12 @@ function NotificationCard({
   const lines = question.context_lines
     .trim()
     .split("\n")
-    .filter((l) => !/^[\s\-_=~]{10,}$/.test(l)); // drop decorative separator lines
+    .filter((l) => {
+      const t = l.trim();
+      if (!t) return true;
+      // Drop lines made entirely of repeating box-drawing / decoration chars
+      return !/^[\s\-_=~━─═╌╍┄┅┈┉╴╶╸╺▔▁|│┃┆┇┊┋╎╏]+$/.test(t);
+    });
   const preview = lines.join("\n").trim();
 
   return (
@@ -214,7 +219,7 @@ export function NotificationStack() {
           if (job.group === q.matched_group) return job.name;
         }
       }
-      return q.matched_job || null;
+      return null;
     },
     [jobs, runningJobs],
   );

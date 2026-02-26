@@ -1,8 +1,10 @@
 import { useRef, useEffect } from "react";
-import { Text, StyleSheet, Animated } from "react-native";
+import { Text, StyleSheet, Animated, Platform } from "react-native";
 import type { JobStatus } from "../types/job";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+
+const isNative = Platform.OS !== "web";
 
 function statusStyle(status: JobStatus): { color: string; bg: string } {
   switch (status.state) {
@@ -53,7 +55,7 @@ export function StatusBadge({ status }: { status: JobStatus }) {
   }, [status.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Animated.View style={[styles.badge, { backgroundColor: bg, opacity: status.state === "running" ? pulse : 1 }]}>
+    <Animated.View style={[styles.badge, !isNative && { backgroundColor: bg }, { opacity: status.state === "running" ? pulse : 1 }]}>
       <Text style={[styles.label, { color }]}>{statusLabel(status)}</Text>
     </Animated.View>
   );
