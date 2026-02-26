@@ -5,11 +5,15 @@
     "paths": {
       "@/*": [
         "./src/*"
-      ]
+      ],
+      "@clawtab/shared": ["../shared/src"],
+      "@clawtab/shared/*": ["../shared/src/*"]
     }
   },
   "include": [
     "**/*.ts",
-    "**/*.tsx"
+    "**/*.tsx",
+    "../shared/src/**/*.ts",
+    "../shared/src/**/*.tsx"
   ]
 }

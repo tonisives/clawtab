@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
-import { JobsPanel } from "./JobsPanel";
+import { JobsTab } from "./JobsTab";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
@@ -198,7 +198,7 @@ export function SettingsApp() {
 
       <div className="tab-content">
         <div style={{ display: activeTab === "jobs" ? undefined : "none" }}>
-          <JobsPanel
+          <JobsTab
             key={jobsResetKey}
             pendingTemplateId={pendingTemplateId}
             onTemplateHandled={() => setPendingTemplateId(null)}

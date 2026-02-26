@@ -3,16 +3,12 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-nati
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { LogViewer } from "../../src/components/LogViewer";
-import { MessageInput } from "../../src/components/MessageInput";
+import { LogViewer, MessageInput, parseNumberedOptions, colors, radius, spacing } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { confirm } from "../../src/lib/platform";
-import { parseNumberedOptions } from "../../src/components/ProcessCard";
-import { colors } from "../../src/theme/colors";
-import { radius, spacing } from "../../src/theme/spacing";
 
 export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();

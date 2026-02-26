@@ -6,6 +6,13 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "react-native": "react-native-web",
+      "@clawtab/shared": resolve(__dirname, "../shared/src"),
+    },
+    extensions: [".web.tsx", ".web.ts", ".web.js", ".tsx", ".ts", ".js"],
+  },
   build: {
     rollupOptions: {
       input: {

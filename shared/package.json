@@ -1,0 +1,15 @@
+{
+  "name": "@clawtab/shared",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "peerDependencies": {
+    "react": ">=19",
+    "react-native": ">=0.70 || >=0.70.0-0",
+    "react-native-web": ">=0.19"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-native": "^0.73.0"
+  }
+}
