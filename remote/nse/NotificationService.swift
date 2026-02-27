@@ -21,7 +21,6 @@ class NotificationService: UNNotificationServiceExtension {
               let questionId = clawtab["question_id"] as? String,
               !options.isEmpty
         else {
-            // No clawtab payload or no options - deliver as-is
             contentHandler(content)
             return
         }
@@ -42,7 +41,6 @@ class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        // Use a per-question category ID to avoid collisions between concurrent notifications
         let categoryId = "CLAUDE_QUESTION_\(questionId)"
 
         let category = UNNotificationCategory(
@@ -52,19 +50,21 @@ class NotificationService: UNNotificationServiceExtension {
             options: []
         )
 
-        // Register this dynamic category, then update the notification to use it
         UNUserNotificationCenter.current().getNotificationCategories { existing in
             var categories = existing
             categories.insert(category)
             UNUserNotificationCenter.current().setNotificationCategories(categories)
 
-            content.categoryIdentifier = categoryId
-            contentHandler(content)
+            // Small delay to let iOS process the category registration
+            // before delivering the notification
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                content.categoryIdentifier = categoryId
+                contentHandler(content)
+            }
         }
     }
 
     override func serviceExtensionTimeWillExpire() {
-        // Deliver whatever we have so far
         if let contentHandler = contentHandler, let content = bestAttemptContent {
             contentHandler(content)
         }

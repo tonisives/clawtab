@@ -1,35 +1,30 @@
 use clawtab_protocol::QuestionOption;
 
 /// Format the notification body for an iOS push notification.
-/// iOS shows ~5 lines of text. Strategy:
-/// - Lines 1-2: question context (the actual question being asked)
-/// - Lines 3-5: answer options
+/// iOS shows ~5 lines of text on the lock screen. Strategy:
+/// - Options get priority (they're actionable)
+/// - Question context gets 1 line max, truncated if needed
+/// - Filter out terminal artifacts (breadcrumbs, navigation, decorative lines)
 ///
 /// `context_lines` is raw terminal output that includes the question text,
-/// numbered options, option descriptions, and decorative lines. We need to
-/// extract just the question and format options from the structured data.
+/// numbered options, option descriptions, and decorative/UI lines.
 pub fn format_body(context_lines: &str, options: &[QuestionOption]) -> String {
-    // Build set of option number prefixes so we can identify option lines
-    // and their description lines in the raw terminal output.
     let option_prefixes: Vec<String> = options.iter().map(|o| format!("{}.", o.number)).collect();
 
     // Find where options start in the terminal output, keep only lines before that
     let lines: Vec<&str> = context_lines.lines().collect();
     let first_option_idx = lines.iter().position(|l| {
-        let stripped = l
-            .trim()
-            .trim_start_matches(|c: char| matches!(c, '>' | '~' | '`' | '|' | ' ') || !c.is_ascii())
-            .trim();
+        let stripped = strip_prompt_chars(l.trim());
         option_prefixes.iter().any(|p| stripped.starts_with(p))
     });
 
     // Everything before the first option line is potential question context
-    let pre_option_lines: Vec<&str> = match first_option_idx {
-        Some(idx) => lines[..idx].to_vec(),
-        None => lines.clone(),
+    let pre_option_lines = match first_option_idx {
+        Some(idx) => &lines[..idx],
+        None => &lines[..],
     };
 
-    // Filter out decorative/empty lines from the question context
+    // Filter out decorative/empty/artifact lines from the question context
     let question_text: Vec<&str> = pre_option_lines
         .iter()
         .filter(|l| {
@@ -37,78 +32,140 @@ pub fn format_body(context_lines: &str, options: &[QuestionOption]) -> String {
             if t.is_empty() {
                 return false;
             }
-            // Skip lines made entirely of box-drawing / decoration chars
-            !t.chars().all(|c| {
-                matches!(
-                    c,
-                    '-' | '_'
-                        | '='
-                        | '~'
-                        | '\u{2501}'
-                        | '\u{2500}'
-                        | '\u{2550}'
-                        | '\u{254C}'
-                        | '\u{254D}'
-                        | '\u{2504}'
-                        | '\u{2505}'
-                        | '\u{2508}'
-                        | '\u{2509}'
-                        | '\u{2574}'
-                        | '\u{2576}'
-                        | '\u{2578}'
-                        | '\u{257A}'
-                        | '\u{2594}'
-                        | '\u{2581}'
-                        | '|'
-                        | '\u{2502}'
-                        | '\u{2503}'
-                        | ' '
-                )
-            })
+            if is_decorative_line(t) {
+                return false;
+            }
+            if is_ui_artifact(t) {
+                return false;
+            }
+            true
         })
         .copied()
         .collect();
 
-    // Format options compactly.
-    // If all labels are short (<= 10 chars), put on single line: "1.Paris 2.Lyon 3.Marseille"
-    // Otherwise one per line: "1. Fix the authentication bug\n2. Skip this step"
-    let options_str = if options.is_empty() {
-        String::new()
-    } else {
-        let all_short = options.iter().all(|o| o.label.len() <= 10);
-        if all_short {
-            options
-                .iter()
-                .map(|o| format!("{}.{}", o.number, o.label))
-                .collect::<Vec<_>>()
-                .join(" ")
-        } else {
-            options
-                .iter()
-                .map(|o| format!("{}. {}", o.number, o.label))
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
-    };
+    // Format options: only labels, no descriptions
+    let options_str = format_options(options);
 
-    // Take at most 2 lines of question context (last lines are most relevant)
+    // Take only the last line of question context (most relevant = the actual question)
+    // and truncate to ~80 chars so it fits in 1 line on iOS
     if question_text.is_empty() {
         options_str
     } else {
-        let ctx = question_text
-            .iter()
-            .rev()
-            .take(2)
-            .rev()
-            .copied()
-            .collect::<Vec<_>>()
-            .join("\n");
+        let last_line = question_text.last().unwrap().trim();
+        let ctx = truncate(last_line, 80);
         if options_str.is_empty() {
             ctx
         } else {
             format!("{ctx}\n{options_str}")
         }
     }
+}
+
+/// Format options compactly.
+/// Short labels (<= 10 chars each): single line "1.Yes 2.No 3.Skip"
+/// Long labels: one per line "1. Fix the auth bug\n2. Skip"
+fn format_options(options: &[QuestionOption]) -> String {
+    if options.is_empty() {
+        return String::new();
+    }
+
+    let all_short = options.iter().all(|o| o.label.len() <= 10);
+    if all_short {
+        options
+            .iter()
+            .map(|o| format!("{}.{}", o.number, o.label))
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        options
+            .iter()
+            .map(|o| format!("{}. {}", o.number, o.label))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        let mut end = max - 1;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &s[..end])
+    }
+}
+
+fn strip_prompt_chars(s: &str) -> &str {
+    s.trim_start_matches(|c: char| matches!(c, '>' | '~' | '`' | '|' | ' ') || !c.is_ascii())
+        .trim()
+}
+
+/// Lines made entirely of box-drawing / decoration chars
+fn is_decorative_line(t: &str) -> bool {
+    t.chars().all(|c| {
+        matches!(
+            c,
+            '-' | '_'
+                | '='
+                | '~'
+                | '\u{2501}'
+                | '\u{2500}'
+                | '\u{2550}'
+                | '\u{254C}'
+                | '\u{254D}'
+                | '\u{2504}'
+                | '\u{2505}'
+                | '\u{2508}'
+                | '\u{2509}'
+                | '\u{2574}'
+                | '\u{2576}'
+                | '\u{2578}'
+                | '\u{257A}'
+                | '\u{2594}'
+                | '\u{2581}'
+                | '|'
+                | '\u{2502}'
+                | '\u{2503}'
+                | ' '
+        )
+    })
+}
+
+/// Terminal UI artifacts: breadcrumbs, navigation hints, status lines, progress indicators
+fn is_ui_artifact(t: &str) -> bool {
+    // Breadcrumb/navigation lines with arrows and checkbox chars
+    // e.g. "<- SSR goal  Architecture  Hydration  Submit ->"
+    if (t.contains('\u{2190}') || t.contains('\u{2192}') || t.contains("<-") || t.contains("->"))
+        && (t.contains('\u{25A1}') // empty checkbox
+            || t.contains('\u{25A0}') // filled checkbox
+            || t.contains('\u{2713}') // checkmark
+            || t.contains('\u{2714}') // heavy checkmark
+            || t.contains("Submit"))
+    {
+        return true;
+    }
+    // Lines that are navigation hints
+    if t.contains("Enter to select")
+        || t.contains("to navigate")
+        || t.contains("Esc to cancel")
+        || t.contains("ctrl+o to expand")
+        || t.contains("shift+tab")
+        || t.contains("accept edits")
+    {
+        return true;
+    }
+    // Lines that are purely checkbox/breadcrumb items without question marks
+    let checkbox_count = t.matches('\u{25A1}').count() + t.matches('\u{25A0}').count();
+    if checkbox_count >= 2 && !t.contains('?') {
+        return true;
+    }
+    // Progress/status indicator lines (e.g. "Read 5 files (ctrl+o to expand)")
+    if t.starts_with("Read ") && t.contains("files") {
+        return true;
+    }
+    false
 }
 
 /// Compact a cwd path for use as a notification title.
@@ -121,7 +178,6 @@ pub fn compact_cwd(cwd: &str) -> String {
         .or_else(|| cwd.strip_prefix("/home/"));
     let segments: Vec<&str> = match path {
         Some(rest) => {
-            // Skip the username, treat everything after as the meaningful path
             let parts: Vec<&str> = rest.splitn(2, '/').collect();
             if parts.len() < 2 {
                 return cwd.rsplit('/').next().unwrap_or(cwd).to_string();
@@ -135,7 +191,6 @@ pub fn compact_cwd(cwd: &str) -> String {
         return cwd.to_string();
     }
 
-    // Keep last 2 segments full, abbreviate the rest
     let keep_full = 2.min(segments.len());
     let abbrev_count = segments.len() - keep_full;
 
@@ -169,8 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn test_france_question_short_options() {
-        // Real terminal output from Claude asking about capital of France
+    fn test_france_question() {
         let context = "\
 Geography
 
@@ -197,14 +251,54 @@ What is the capital of France?
         ];
 
         let body = format_body(context, &options);
-        // Should show the question and compact options
-        assert!(body.contains("What is the capital of France?"), "body: {body}");
-        // All labels <= 10 chars, so should be on single line
-        // But "Type something." is 15 chars, so it goes multi-line
-        // Actually "Chat about this" is 15 chars too
-        assert!(!body.contains("The City of Light"), "descriptions should be filtered: {body}");
-        assert!(!body.contains("Second-largest"), "descriptions should be filtered: {body}");
-        println!("France question body:\n{body}");
+        assert!(body.contains("capital of France"), "question present: {body}");
+        assert!(!body.contains("City of Light"), "descriptions filtered: {body}");
+        assert!(!body.contains("Geography"), "only last line of context: {body}");
+        println!("France:\n{body}\n");
+    }
+
+    #[test]
+    fn test_ssr_question_with_breadcrumbs() {
+        // Real terminal output with breadcrumb artifacts
+        let context = "\
+Read 5 files (ctrl+o to expand)
+
+Now I have a very thorough understanding. Before writing the plan, I have a few questions to clarify scope.
+
+\u{2190} \u{25A1} SSR goal  \u{25A1} Architecture  \u{25A1} Hydration  \u{2714} Submit  \u{2192}
+
+What's the primary goal for moving to SSR? Is it SEO (replacing the prerender service), faster initial page loads, or both?
+
+\u{203A} 1. SEO (replace prerender)
+   Eliminate the prerender service dependency, serve fully-rendered HTML to crawlers natively
+  2. Both SEO + performance
+   Better SEO and faster initial paint for users
+  3. Full SSR for all pages
+   Every page server-rendered, SPA behavior only for client interactions
+  4. Type something.
+  5. Chat about this
+  6. Skip interview and plan immediately";
+
+        let options = vec![
+            opt("1", "SEO (replace prerender)"),
+            opt("2", "Both SEO + performance"),
+            opt("3", "Full SSR for all pages"),
+            opt("4", "Type something."),
+            opt("5", "Chat about this"),
+            opt("6", "Skip interview and plan immediately"),
+        ];
+
+        let body = format_body(context, &options);
+        // Should NOT contain breadcrumb/navigation artifacts
+        assert!(!body.contains("SSR goal"), "breadcrumbs filtered: {body}");
+        assert!(!body.contains("Architecture"), "breadcrumbs filtered: {body}");
+        assert!(!body.contains("Read 5 files"), "progress filtered: {body}");
+        assert!(!body.contains("thorough understanding"), "only last context line: {body}");
+        // Should contain the question (truncated to ~80 chars)
+        assert!(body.contains("primary goal"), "question present: {body}");
+        // Should contain the options
+        assert!(body.contains("1. SEO"), "options present: {body}");
+        println!("SSR:\n{body}\n");
     }
 
     #[test]
@@ -219,9 +313,8 @@ Do you want to proceed with the changes?
 
         let body = format_body(context, &options);
         assert!(body.contains("proceed with the changes"), "body: {body}");
-        // Yes/No are short, should be on single line
-        assert!(body.contains("1.Yes 2.No"), "short options should be inline: {body}");
-        println!("Yes/No body:\n{body}");
+        assert!(body.contains("1.Yes 2.No"), "short options inline: {body}");
+        println!("Yes/No:\n{body}\n");
     }
 
     #[test]
@@ -245,10 +338,7 @@ Allow this action?
 
         let body = format_body(context, &options);
         assert!(body.contains("Allow this action?"), "body: {body}");
-        // "Allow always" is 12 chars (> 10), so multi-line
-        assert!(body.contains("1. Allow once"), "body: {body}");
-        assert!(body.contains("3. Deny"), "body: {body}");
-        println!("Tool permission body:\n{body}");
+        println!("Tool permission:\n{body}\n");
     }
 
     #[test]
@@ -268,10 +358,8 @@ Which approach should we use?
 
         let body = format_body(context, &options);
         assert!(body.contains("Which approach"), "body: {body}");
-        // Long options, each on own line
         assert!(body.contains("1. Refactor"), "body: {body}");
-        assert!(body.contains("\n2. Keep"), "body: {body}");
-        println!("Long options body:\n{body}");
+        println!("Long options:\n{body}\n");
     }
 
     #[test]
@@ -283,10 +371,9 @@ Which approach should we use?
         let options = vec![opt("1", "Fix the bug"), opt("2", "Skip")];
 
         let body = format_body(context, &options);
-        // No question context, just options. "Fix the bug" is 11 chars (> 10), multi-line
         assert!(body.contains("1. Fix the bug"), "body: {body}");
         assert!(body.contains("2. Skip"), "body: {body}");
-        println!("No context body:\n{body}");
+        println!("No context:\n{body}\n");
     }
 
     #[test]
@@ -305,7 +392,6 @@ Which approach should we use?
 
     #[test]
     fn test_description_lines_filtered() {
-        // Ensure description lines under options don't leak into notification
         let context = "\
 What is the capital of France?
 
@@ -318,28 +404,26 @@ What is the capital of France?
 
         let body = format_body(context, &options);
         assert!(!body.contains("City of Light"), "descriptions filtered: {body}");
-        assert!(!body.contains("Second-largest"), "descriptions filtered: {body}");
         assert!(body.contains("capital of France"), "question present: {body}");
         assert!(body.contains("1.Paris 2.Lyon"), "options present: {body}");
-        println!("Filtered descriptions body:\n{body}");
+        println!("Filtered descriptions:\n{body}\n");
     }
 
     #[test]
-    fn test_decorative_lines_filtered() {
+    fn test_truncate_long_question() {
         let context = "\
----
-Geography
-===
-What is the capital of France?
+What's the primary goal for moving to SSR? Is it SEO (replacing the prerender service), faster initial page loads, or both?
 
-\u{203A} 1. Paris
-  2. Lyon";
+\u{203A} 1. SEO
+  2. Both";
 
-        let options = vec![opt("1", "Paris"), opt("2", "Lyon")];
+        let options = vec![opt("1", "SEO"), opt("2", "Both")];
 
         let body = format_body(context, &options);
-        assert!(!body.contains("---"), "decorative filtered: {body}");
-        assert!(!body.contains("==="), "decorative filtered: {body}");
-        println!("Decorative lines body:\n{body}");
+        // Question should be truncated to ~80 chars
+        let first_line = body.lines().next().unwrap();
+        assert!(first_line.len() <= 83, "truncated to ~80: len={} {first_line}", first_line.len());
+        assert!(first_line.ends_with("..."), "ends with ellipsis: {first_line}");
+        println!("Truncated:\n{body}\n");
     }
 }

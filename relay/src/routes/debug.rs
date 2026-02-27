@@ -156,5 +156,19 @@ fn build_test_scenarios() -> Vec<TestScenario> {
                 opt("4", "Ignore"),
             ],
         },
+        // 7. SSR question with breadcrumb artifacts (real-world scenario)
+        TestScenario {
+            name: "ssr_breadcrumbs",
+            cwd: "/Users/tonis/workspace/tgs/defi-jobs".into(),
+            context_lines: "Read 5 files (ctrl+o to expand)\n\nNow I have a very thorough understanding. Before writing the plan, I have a few questions to clarify scope.\n\n\u{2190} \u{25A1} SSR goal  \u{25A1} Architecture  \u{25A1} Hydration  \u{2714} Submit  \u{2192}\n\nWhat's the primary goal for moving to SSR? Is it SEO (replacing the prerender service), faster initial page loads, or both?\n\n\u{203A} 1. SEO (replace prerender)\n   Eliminate the prerender service dependency\n  2. Both SEO + performance\n   Better SEO and faster initial paint\n  3. Full SSR for all pages\n   Every page server-rendered\n  4. Type something.\n  5. Chat about this\n  6. Skip interview and plan immediately".into(),
+            options: vec![
+                opt("1", "SEO (replace prerender)"),
+                opt("2", "Both SEO + performance"),
+                opt("3", "Full SSR for all pages"),
+                opt("4", "Type something."),
+                opt("5", "Chat about this"),
+                opt("6", "Skip interview and plan immediately"),
+            ],
+        },
     ]
 }
