@@ -159,3 +159,8 @@ pub fn get_detected_process_logs(tmux_session: String, pane_id: String) -> Resul
 pub fn send_detected_process_input(pane_id: String, text: String) -> Result<(), String> {
     crate::tmux::send_keys_to_tui_pane(&pane_id, &text)
 }
+
+#[tauri::command]
+pub fn get_active_questions(state: State<AppState>) -> Vec<clawtab_protocol::ClaudeQuestion> {
+    state.active_questions.lock().unwrap().clone()
+}

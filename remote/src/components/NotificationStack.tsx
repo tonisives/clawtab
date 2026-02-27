@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Animated,
   Dimensions,
   NativeScrollEvent,
@@ -12,14 +11,14 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 
 import { useNotificationStore } from "../store/notifications";
 import { useJobsStore } from "../store/jobs";
 import { getWsSend, nextId } from "../hooks/useWebSocket";
-import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/spacing";
-import type { ClaudeProcess, ClaudeQuestion } from "../types/job";
+import { NotificationCard } from "@clawtab/shared";
+import { colors } from "@clawtab/shared";
+import { spacing } from "@clawtab/shared";
+import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 
 
 function PaginationDots({
@@ -46,125 +45,6 @@ function PaginationDots({
           />
         </TouchableOpacity>
       ))}
-    </View>
-  );
-}
-
-function NotificationCard({
-  question,
-  processMap,
-  resolvedJob,
-  onNavigate,
-}: {
-  question: ClaudeQuestion;
-  processMap: Map<string, ClaudeProcess>;
-  resolvedJob: string | null;
-  onNavigate: (q: ClaudeQuestion, jobName: string | null) => void;
-}) {
-  const [answered, setAnswered] = useState(false);
-  const prevQuestionId = useRef(question.question_id);
-
-  // If the question_id changes (new question detected), reset answered state
-  useEffect(() => {
-    if (question.question_id !== prevQuestionId.current) {
-      prevQuestionId.current = question.question_id;
-      setAnswered(false);
-    }
-  }, [question.question_id]);
-
-  // Auto-reset after 10s so buttons re-appear if question persists
-  useEffect(() => {
-    if (!answered) return;
-    const timer = setTimeout(() => setAnswered(false), 10000);
-    return () => clearTimeout(timer);
-  }, [answered]);
-
-  const handleOptionPress = (optionNumber: string) => {
-    const send = getWsSend();
-    if (!send) return;
-    if (resolvedJob) {
-      send({ type: "send_input", id: nextId(), name: resolvedJob, text: optionNumber });
-    } else {
-      const proc = processMap.get(question.pane_id);
-      if (proc) {
-        send({ type: "send_detected_process_input", id: nextId(), pane_id: proc.pane_id, text: optionNumber });
-      }
-    }
-    setAnswered(true);
-  };
-
-  const proc = processMap.get(question.pane_id);
-  const title = resolvedJob
-    ? resolvedJob
-    : proc
-      ? proc.cwd.replace(/^\/Users\/[^/]+/, "~")
-      : question.cwd.replace(/^\/Users\/[^/]+/, "~");
-
-  const lines = question.context_lines
-    .trim()
-    .split("\n")
-    .filter((l) => {
-      const t = l.trim();
-      if (!t) return true;
-      // Drop lines made entirely of repeating box-drawing / decoration chars
-      return !/^[\s\-_=~━─═╌╍┄┅┈┉╴╶╸╺▔▁|│┃┆┇┊┋╎╏]+$/.test(t);
-    });
-  const preview = lines.join("\n").trim();
-
-  return (
-    <View style={styles.card}>
-      <TouchableOpacity
-        style={styles.cardBody}
-        onPress={() => onNavigate(question, resolvedJob)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.questionBadge}>
-            <Ionicons name="alert-circle" size={14} color={colors.warning} />
-            <Text style={styles.questionLabel}>Waiting for input</Text>
-          </View>
-          <View style={styles.headerRight}>
-            <Text style={styles.openText}>Open</Text>
-            <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-          </View>
-        </View>
-        <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
-
-        {preview ? (
-          <View style={styles.logPreview}>
-            <Text style={styles.logText}>{preview}</Text>
-          </View>
-        ) : null}
-      </TouchableOpacity>
-
-      {question.options.length > 0 && (
-        answered ? (
-          <View style={styles.sentRow}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.sentText}>Sent</Text>
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.optionRow}
-            contentContainerStyle={styles.optionRowContent}
-          >
-            {question.options.map((opt) => (
-              <TouchableOpacity
-                key={opt.number}
-                style={styles.optionBtn}
-                onPress={() => handleOptionPress(opt.number)}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.optionBtnText} numberOfLines={1}>
-                  {opt.number}. {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )
-      )}
     </View>
   );
 }
@@ -253,14 +133,30 @@ export function NotificationStack() {
   );
 
   const navigateToQuestion = useCallback(
-    (q: ClaudeQuestion, jobName: string | null) => {
+    (_q: ClaudeQuestion, jobName: string | null) => {
       if (jobName) {
         router.push(`/job/${jobName}`);
       } else {
-        router.push(`/process/${q.pane_id.replace(/%/g, "_pct_")}`);
+        router.push(`/process/${_q.pane_id.replace(/%/g, "_pct_")}`);
       }
     },
     [router],
+  );
+
+  const handleSendOption = useCallback(
+    (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
+      const send = getWsSend();
+      if (!send) return;
+      if (resolvedJob) {
+        send({ type: "send_input", id: nextId(), name: resolvedJob, text: optionNumber });
+      } else {
+        const proc = processMap.get(q.pane_id);
+        if (proc) {
+          send({ type: "send_detected_process_input", id: nextId(), pane_id: proc.pane_id, text: optionNumber });
+        }
+      }
+    },
+    [processMap],
   );
 
   // Handle deep link
@@ -298,9 +194,9 @@ export function NotificationStack() {
       <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
         <NotificationCard
           question={activeQuestions[0]}
-          processMap={processMap}
           resolvedJob={resolveJob(activeQuestions[0])}
           onNavigate={navigateToQuestion}
+          onSendOption={handleSendOption}
         />
       </Animated.View>
     );
@@ -326,9 +222,9 @@ export function NotificationStack() {
           >
             <NotificationCard
               question={q}
-              processMap={processMap}
               resolvedJob={resolveJob(q)}
               onNavigate={navigateToQuestion}
+              onSendOption={handleSendOption}
             />
           </View>
         ))}
@@ -348,97 +244,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    minHeight: 120,
-    overflow: "hidden",
-  },
-  cardBody: {
-    flex: 1,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  questionBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  questionLabel: {
-    color: colors.warning,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-  },
-  openText: {
-    color: colors.textMuted,
-    fontSize: 12,
-  },
-  cardTitle: {
-    color: colors.text,
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  logPreview: {
-    flex: 1,
-    backgroundColor: "#000",
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    marginTop: 2,
-  },
-  logText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontFamily: "monospace",
-    lineHeight: 16,
-  },
-  optionRow: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    maxHeight: 44,
-  },
-  optionRowContent: {
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    alignItems: "center",
-  },
-  optionBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  optionBtnText: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  sentRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingVertical: 8,
-  },
-  sentText: {
-    color: colors.textMuted,
-    fontSize: 12,
   },
   dots: {
     flexDirection: "row",

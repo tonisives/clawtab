@@ -24,7 +24,7 @@ use tauri::{
     Manager,
 };
 
-use clawtab_protocol::QuestionOption;
+use clawtab_protocol::ClaudeQuestion;
 
 use config::jobs::{JobStatus, JobsConfig};
 use config::settings::AppSettings;
@@ -43,7 +43,7 @@ pub struct AppState {
     pub active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     pub relay: Arc<Mutex<Option<relay::RelayHandle>>>,
     pub relay_sub_required: Arc<Mutex<bool>>,
-    pub active_questions: Arc<Mutex<HashMap<String, Vec<QuestionOption>>>>,
+    pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -198,8 +198,8 @@ pub fn run() {
         Arc::new(Mutex::new(HashMap::new()));
     let relay_handle: Arc<Mutex<Option<relay::RelayHandle>>> = Arc::new(Mutex::new(None));
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-    let active_questions: Arc<Mutex<HashMap<String, Vec<QuestionOption>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> =
+        Arc::new(Mutex::new(Vec::new()));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -363,6 +363,7 @@ pub fn run() {
             commands::processes::focus_detected_process,
             commands::processes::get_detected_process_logs,
             commands::processes::send_detected_process_input,
+            commands::processes::get_active_questions,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]

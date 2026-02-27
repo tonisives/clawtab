@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -33,6 +34,8 @@ export interface JobDetailViewProps {
   onDuplicate?: () => void;
   onToggleEnabled?: () => void;
   onDelete?: () => void;
+  // Slot for platform-specific content (e.g. desktop configuration sections)
+  extraContent?: ReactNode;
 }
 
 export function JobDetailView({
@@ -49,6 +52,7 @@ export function JobDetailView({
   onDuplicate,
   onToggleEnabled,
   onDelete,
+  extraContent,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -226,6 +230,9 @@ export function JobDetailView({
               </View>
             )}
           </View>
+
+          {/* Platform-specific extra content */}
+          {extraContent}
 
           {/* Danger zone (desktop-only) */}
           {(onToggleEnabled || onDuplicate || onDelete) && (

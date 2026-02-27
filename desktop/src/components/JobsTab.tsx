@@ -1,46 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { RemoteJob, JobStatus } from "@clawtab/shared";
+import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  KeyboardSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import type { JobStatus, RunRecord } from "@clawtab/shared";
-import type { ClaudeProcess } from "@clawtab/shared";
+  JobListView,
+  JobDetailView,
+  NotificationCard,
+  useJobsCore,
+  useJobActions,
+  useJobDetail,
+  useLogBuffer,
+} from "@clawtab/shared";
+import { createTauriTransport } from "../transport/tauriTransport";
 import type { AppSettings, Job } from "../types";
 import { JobEditor } from "./JobEditor";
 import { SamplePicker } from "./SamplePicker";
-import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
-import { LogViewer } from "./LogViewer";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { describeCron } from "./CronInput";
 
-function shortenPath(path: string | null | undefined): string {
-  if (!path) return "";
-  return path.replace(/^\/Users\/[^/]+/, "~");
-}
-
-function parseNumberedOptions(text: string): { number: string; label: string }[] {
-  const lines = text.split("\n").slice(-20);
-  const options: { number: string; label: string }[] = [];
-  for (const line of lines) {
-    const match = line.match(/^[\s>›»❯▸▶]*(\d+)\.\s+(.+)/);
-    if (match) {
-      options.push({ number: match[1], label: match[2].trim() });
-    }
-  }
-  return options;
-}
+const transport = createTauriTransport();
 
 const EDITOR_LABELS: Record<string, string> = {
   nvim: "Neovim",
@@ -53,99 +32,6 @@ const EDITOR_LABELS: Record<string, string> = {
   emacs: "Emacs",
 };
 
-function StatusBadge({ status }: { status: JobStatus | undefined }) {
-  if (!status || status.state === "idle") {
-    return <span className="status-badge status-idle">idle</span>;
-  }
-  if (status.state === "running") {
-    return <span className="status-badge status-running">running</span>;
-  }
-  if (status.state === "success") {
-    return <span className="status-badge status-success">success</span>;
-  }
-  if (status.state === "failed") {
-    return (
-      <span className="status-badge status-failed">
-        failed ({status.exit_code})
-      </span>
-    );
-  }
-  if (status.state === "paused") {
-    return <span className="status-badge status-paused">paused</span>;
-  }
-  return null;
-}
-
-function groupJobs(jobs: Job[]): Map<string, Job[]> {
-  const groups = new Map<string, Job[]>();
-  for (const job of jobs) {
-    const group = job.group || "default";
-    const list = groups.get(group) ?? [];
-    list.push(job);
-    groups.set(group, list);
-  }
-  return groups;
-}
-
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function useJobRuns(jobName: string) {
-  const [runs, setRuns] = useState<RunRecord[] | null>(null);
-
-  const load = async () => {
-    try {
-      const loaded = await invoke<RunRecord[]>("get_job_runs", { jobName });
-      setRuns(loaded);
-    } catch (e) {
-      console.error("Failed to load runs:", e);
-    }
-  };
-
-  useEffect(() => { load(); }, [jobName]);
-
-  return { runs, reload: load };
-}
-
-function DragGrip() {
-  return (
-    <span
-      className="drag-grip"
-      title="Drag to reorder"
-      style={{
-        cursor: "grab",
-        display: "inline-flex",
-        flexDirection: "column",
-        gap: 2,
-        padding: "2px 4px",
-        opacity: 0.4,
-        userSelect: "none",
-      }}
-    >
-      <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-        <circle cx="2" cy="2" r="1.2" />
-        <circle cx="8" cy="2" r="1.2" />
-        <circle cx="2" cy="7" r="1.2" />
-        <circle cx="8" cy="7" r="1.2" />
-        <circle cx="2" cy="12" r="1.2" />
-        <circle cx="8" cy="12" r="1.2" />
-      </svg>
-    </span>
-  );
-}
-
-
 interface JobsTabProps {
   pendingTemplateId?: string | null;
   onTemplateHandled?: () => void;
@@ -153,96 +39,58 @@ interface JobsTabProps {
 }
 
 export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: JobsTabProps) {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, JobStatus>>({});
+  const core = useJobsCore(transport);
+  const actions = useJobActions(transport, core.reloadStatuses);
+  const [groupOrder, setGroupOrder] = useState<string[]>([]);
+
+  // Desktop-only state
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerTemplateId, setPickerTemplateId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [groupOrder, setGroupOrder] = useState<string[]>([]);
-  const [agentPrompt, setAgentPrompt] = useState("");
-  const [jobSelectMode, setJobSelectMode] = useState(false);
-  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
-  const [confirmBulkDeleteJobs, setConfirmBulkDeleteJobs] = useState(false);
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
-  const [viewingAgent, setViewingAgent] = useState(false);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
-  const [claudeProcesses, setClaudeProcesses] = useState<ClaudeProcess[]>([]);
+  const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
+  const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
 
-  const loadJobs = async () => {
-    try {
-      const loaded = await invoke<Job[]>("get_jobs");
-      setJobs(loaded);
-      setViewingJob((prev) => {
-        if (!prev) return null;
-        return loaded.find((j) => j.name === prev.name) ?? null;
-      });
-    } catch (e) {
-      console.error("Failed to load jobs:", e);
-    }
-  };
+  // Poll for active questions
+  useEffect(() => {
+    const loadQuestions = () => {
+      invoke<ClaudeQuestion[]>("get_active_questions").then(setQuestions).catch(() => {});
+    };
+    loadQuestions();
+    const interval = setInterval(loadQuestions, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
-  const loadStatuses = async () => {
-    try {
-      const loaded = await invoke<Record<string, JobStatus>>(
-        "get_job_statuses"
-      );
-      setStatuses(loaded);
-    } catch (e) {
-      console.error("Failed to load statuses:", e);
-    }
-  };
-
-  const loadProcesses = async () => {
-    try {
-      const loaded = await invoke<ClaudeProcess[]>("detect_claude_processes");
-      setClaudeProcesses(loaded);
-    } catch (e) {
-      console.error("Failed to detect claude processes:", e);
-    }
-  };
-
-  const loadSettings = async () => {
-    try {
-      const s = await invoke<AppSettings>("get_settings");
+  // Load group order from settings
+  useEffect(() => {
+    invoke<AppSettings>("get_settings").then((s) => {
       if (s.group_order && s.group_order.length > 0) {
         setGroupOrder(s.group_order);
       }
-    } catch (e) {
-      console.error("Failed to load settings:", e);
-    }
-  };
-
-  const saveGroupOrder = async (order: string[]) => {
-    setGroupOrder(order);
-    try {
-      const s = await invoke<AppSettings>("get_settings");
-      await invoke("set_settings", { newSettings: { ...s, group_order: order } });
-    } catch (e) {
-      console.error("Failed to save group order:", e);
-    }
-  };
-
-  useEffect(() => {
-    loadJobs();
-    loadStatuses();
-    loadProcesses();
-    loadSettings();
-    const interval = setInterval(() => {
-      loadStatuses();
-      loadProcesses();
-    }, 5000);
-    const unlistenPromise = listen("jobs-changed", () => {
-      loadJobs();
-    });
-    return () => {
-      clearInterval(interval);
-      unlistenPromise.then((fn) => fn());
-    };
+    }).catch(() => {});
   }, []);
+
+  // Listen for jobs-changed events to reload (supplements the shared hook's polling)
+  useEffect(() => {
+    const unlistenPromise = listen("jobs-changed", () => {
+      core.reload();
+    });
+    return () => { unlistenPromise.then((fn) => fn()); };
+  }, [core.reload]);
+
+  // Update viewingJob when jobs reload
+  useEffect(() => {
+    if (viewingJob) {
+      const fresh = (core.jobs as Job[]).find((j) => j.name === viewingJob.name);
+      if (fresh && fresh !== viewingJob) {
+        setViewingJob(fresh);
+      }
+    }
+  }, [core.jobs, viewingJob]);
 
   useEffect(() => {
     if (pendingTemplateId) {
@@ -256,108 +104,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     }
   }, [createJobKey]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor),
-  );
-
-  const handleToggle = async (name: string) => {
-    try {
-      await invoke("toggle_job", { name });
-      await loadJobs();
-    } catch (e) {
-      console.error("Failed to toggle job:", e);
+  // Scroll tab-content to top when switching to editor/picker/detail views
+  useEffect(() => {
+    if (editingJob || isCreating || showPicker || viewingJob) {
+      const tabContent = document.querySelector(".tab-content");
+      if (tabContent) tabContent.scrollTop = 0;
     }
-  };
+  }, [editingJob, isCreating, showPicker, viewingJob]);
 
-  const handleRunNow = async (name: string) => {
-    const job = jobs.find((j) => j.name === name);
-    if (job && job.params.length > 0) {
-      const values: Record<string, string> = {};
-      for (const p of job.params) values[p] = "";
-      setParamsDialog({ job, values });
-      return;
-    }
-    try {
-      await invoke("run_job_now", { name });
-      setTimeout(loadStatuses, 500);
-    } catch (e) {
-      console.error("Failed to run job:", e);
-    }
-  };
-
-  const handleRunWithParams = async () => {
+  const handleRunWithParams = useCallback(async () => {
     if (!paramsDialog) return;
-    try {
-      await invoke("run_job_now", { name: paramsDialog.job.name, params: paramsDialog.values });
-      setParamsDialog(null);
-      setTimeout(loadStatuses, 500);
-    } catch (e) {
-      console.error("Failed to run job:", e);
-    }
-  };
+    await actions.runJob(paramsDialog.job.name, paramsDialog.values);
+    setParamsDialog(null);
+  }, [paramsDialog, actions]);
 
-  const handlePause = async (name: string) => {
-    try {
-      await invoke("pause_job", { name });
-      setTimeout(loadStatuses, 500);
-    } catch (e) {
-      console.error("Failed to pause job:", e);
-    }
-  };
-
-  const handleResume = async (name: string) => {
-    try {
-      await invoke("resume_job", { name });
-      setTimeout(loadStatuses, 500);
-    } catch (e) {
-      console.error("Failed to resume job:", e);
-    }
-  };
-
-  const handleStop = async (name: string) => {
-    try {
-      await invoke("stop_job", { name });
-      setTimeout(loadStatuses, 500);
-    } catch (e) {
-      console.error("Failed to stop job:", e);
-    }
-  };
-
-  const handleRestart = async (name: string) => {
-    const job = jobs.find((j) => j.name === name);
-    if (job && job.params.length > 0) {
-      const values: Record<string, string> = {};
-      for (const p of job.params) values[p] = "";
-      setParamsDialog({ job, values });
-      return;
-    }
-    try {
-      await invoke("restart_job", { name });
-      setTimeout(loadStatuses, 500);
-    } catch (e) {
-      console.error("Failed to restart job:", e);
-    }
-  };
-
-  const handleOpen = async (name: string) => {
-    try {
-      await invoke("focus_job_window", { name });
-    } catch (e) {
-      console.error("Failed to open job window:", e);
-    }
-  };
-
-  const handleDelete = async (name: string) => {
-    try {
-      await invoke("delete_job", { name });
-      await loadJobs();
-    } catch (e) {
-      console.error("Failed to delete job:", e);
-    }
-  };
-
-  const handleSave = async (job: Job) => {
+  const handleSave = useCallback(async (job: Job) => {
     setSaveError(null);
     try {
       const wasEditing = editingJob;
@@ -367,7 +128,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         job = { ...job, slug: "" };
       }
       await invoke("save_job", { job });
-      await loadJobs();
+      await core.reload();
       setEditingJob(null);
       setIsCreating(false);
       if (wasEditing) {
@@ -378,10 +139,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       setSaveError(msg);
       console.error("Failed to save job:", e);
     }
-  };
+  }, [editingJob, core.reload]);
 
-  const handleDuplicate = async (job: Job) => {
-    const existingNames = new Set(jobs.map((j) => j.name));
+  const handleDuplicate = useCallback(async (job: Job) => {
+    const existingNames = new Set(core.jobs.map((j) => j.name));
     let copyName = `${job.name}-copy`;
     let i = 2;
     while (existingNames.has(copyName)) {
@@ -389,68 +150,47 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       i++;
     }
     const dup: Job = { ...job, name: copyName, slug: "", enabled: false };
-    try {
-      await invoke("save_job", { job: dup });
-      await loadJobs();
-    } catch (e) {
-      console.error("Failed to duplicate job:", e);
-    }
-  };
+    await invoke("save_job", { job: dup });
+    await core.reload();
+  }, [core.jobs, core.reload]);
 
-  const toggleJobSelected = (name: string) => {
-    setSelectedJobs((prev) => {
-      const next = new Set(prev);
-      if (next.has(name)) {
-        next.delete(name);
-      } else {
-        next.add(name);
-      }
-      return next;
+  const handleOpen = useCallback(async (name: string) => {
+    await invoke("focus_job_window", { name });
+  }, []);
+
+  const handleSelectJob = useCallback((job: RemoteJob) => {
+    setViewingJob(job as Job);
+  }, []);
+
+  const handleSelectProcess = useCallback((process: ClaudeProcess) => {
+    // If this is the agent process, show agent detail view
+    if (process.cwd.endsWith("/clawtab/agent")) {
+      setViewingAgent(true);
+      return;
+    }
+    // Otherwise, open the terminal window
+    invoke("focus_detected_process", {
+      tmuxSession: process.tmux_session,
+      windowName: process.window_name,
+    }).catch(() => {});
+  }, []);
+
+  const handleRunAgent = useCallback(async (prompt: string) => {
+    await actions.runAgent(prompt);
+  }, [actions]);
+
+  const handleAddJob = useCallback((group: string) => {
+    const jobs = core.jobs as Job[];
+    const groupJobs = jobs.filter((j) => (j.group || "default") === group);
+    const isFolderGroup = groupJobs.length > 0 && groupJobs.every((j) => j.job_type === "folder");
+    setCreateForGroup({
+      group,
+      folderPath: isFolderGroup ? groupJobs[0]?.folder_path ?? null : null,
     });
-  };
+    setIsCreating(true);
+  }, [core.jobs]);
 
-  const toggleSelectAllJobs = () => {
-    if (selectedJobs.size === jobs.length) {
-      setSelectedJobs(new Set());
-    } else {
-      setSelectedJobs(new Set(jobs.map((j) => j.name)));
-    }
-  };
-
-  const handleBulkDeleteJobs = async () => {
-    for (const name of selectedJobs) {
-      try {
-        await invoke("delete_job", { name });
-      } catch (e) {
-        console.error("Failed to delete job:", name, e);
-      }
-    }
-    setSelectedJobs(new Set());
-    setJobSelectMode(false);
-    await loadJobs();
-  };
-
-  const toggleGroup = (group: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) {
-        next.delete(group);
-      } else {
-        next.add(group);
-      }
-      return next;
-    });
-  };
-
-
-  // Scroll tab-content to top when switching to editor/picker/detail views
-  useEffect(() => {
-    if (editingJob || isCreating || showPicker || viewingJob || viewingAgent) {
-      const tabContent = document.querySelector(".tab-content");
-      if (tabContent) tabContent.scrollTop = 0;
-    }
-  }, [editingJob, isCreating, showPicker, viewingJob, viewingAgent]);
-
+  // Editor / picker screens (React DOM, kept as-is)
   if (editingJob || isCreating) {
     return (
       <>
@@ -463,9 +203,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           job={editingJob}
           onSave={handleSave}
           onCancel={() => {
-            if (editingJob) {
-              setViewingJob(editingJob);
-            }
+            if (editingJob) setViewingJob(editingJob);
             setEditingJob(null);
             setIsCreating(false);
             setCreateForGroup(null);
@@ -492,7 +230,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           setShowPicker(false);
           setPickerTemplateId(null);
           onTemplateHandled?.();
-          loadJobs();
+          core.reload();
         }}
         onBlank={() => {
           setShowPicker(false);
@@ -510,22 +248,20 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   }
 
   if (viewingAgent) {
-    const agentStatus = statuses["agent"];
-    const agentState = agentStatus?.state ?? "idle";
+    const agentJob: RemoteJob = {
+      name: "agent",
+      job_type: "claude",
+      enabled: true,
+      cron: "",
+      group: "",
+      slug: "agent",
+    };
+    const agentStatus = core.statuses["agent"] ?? { state: "idle" as const };
     return (
-      <AgentDetailView
+      <AgentDetail
+        job={agentJob}
         status={agentStatus}
-        state={agentState}
         onBack={() => setViewingAgent(false)}
-        onRun={async (prompt) => {
-          try {
-            await invoke("run_agent", { prompt });
-            setTimeout(loadStatuses, 500);
-          } catch (e) {
-            console.error("Failed to run agent:", e);
-          }
-        }}
-        onStop={() => handleStop("agent")}
         onOpen={() => handleOpen("agent")}
       />
     );
@@ -534,992 +270,213 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   if (viewingJob) {
     return (
       <>
-        <JobDetailViewDesktop
+        <DesktopJobDetail
           job={viewingJob}
-          status={statuses[viewingJob.name]}
+          status={core.statuses[viewingJob.name] ?? { state: "idle" as const }}
           onBack={() => setViewingJob(null)}
           onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
-          onRun={() => handleRunNow(viewingJob.name)}
-          onStop={() => handleStop(viewingJob.name)}
-          onPause={() => handlePause(viewingJob.name)}
-          onResume={() => handleResume(viewingJob.name)}
-          onRestart={() => handleRestart(viewingJob.name)}
           onOpen={() => handleOpen(viewingJob.name)}
-          onToggle={() => handleToggle(viewingJob.name)}
+          onToggle={() => { actions.toggleJob(viewingJob.name); core.reload(); }}
           onDuplicate={() => handleDuplicate(viewingJob)}
-          onDelete={() => { handleDelete(viewingJob.name); setViewingJob(null); }}
+          onDelete={() => { actions.deleteJob(viewingJob.name); setViewingJob(null); core.reload(); }}
         />
         {paramsDialog && (
-          <div className="confirm-overlay" onClick={() => setParamsDialog(null)}>
-            <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
-              <h3 style={{ marginBottom: 12 }}>Run: {paramsDialog.job.name}</h3>
-              <p className="text-secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-                Fill in all parameters before running.
-              </p>
-              {paramsDialog.job.params.map((key) => (
-                <div key={key} style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, display: "block" }}>
-                    {key}
-                  </label>
-                  <input
-                    className="input"
-                    type="text"
-                    value={paramsDialog.values[key] ?? ""}
-                    onChange={(e) => {
-                      setParamsDialog({
-                        ...paramsDialog,
-                        values: { ...paramsDialog.values, [key]: e.target.value },
-                      });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRunWithParams();
-                    }}
-                    placeholder={`{${key}}`}
-                    autoFocus={key === paramsDialog.job.params[0]}
-                  />
-                </div>
-              ))}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-                <button className="btn btn-sm" onClick={() => setParamsDialog(null)}>Cancel</button>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleRunWithParams}
-                  disabled={paramsDialog.job.params.some((k) => !paramsDialog.values[k]?.trim())}
-                >
-                  Run
-                </button>
-              </div>
-            </div>
-          </div>
+          <ParamsOverlay
+            job={paramsDialog.job}
+            values={paramsDialog.values}
+            onChange={(values) => setParamsDialog({ ...paramsDialog, values })}
+            onRun={handleRunWithParams}
+            onCancel={() => setParamsDialog(null)}
+          />
         )}
       </>
     );
   }
 
-  const grouped = groupJobs(jobs);
-  const allGroupNames = new Set(grouped.keys());
-  allGroupNames.add("agent");
-
-  // Group detected processes by their matched group
-  const matchedProcessesByGroup = new Map<string, ClaudeProcess[]>();
-  const unmatchedProcesses: ClaudeProcess[] = [];
-  for (const proc of claudeProcesses) {
-    if (proc.matched_group) {
-      const list = matchedProcessesByGroup.get(proc.matched_group) ?? [];
-      list.push(proc);
-      matchedProcessesByGroup.set(proc.matched_group, list);
-    } else {
-      unmatchedProcesses.push(proc);
+  const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
+    if (resolvedJob) {
+      const job = (core.jobs as Job[]).find((j) => j.name === resolvedJob);
+      if (job) { setViewingJob(job); return; }
     }
-  }
+    invoke("focus_detected_process", {
+      tmuxSession: q.tmux_session,
+      windowName: q.window_name,
+    }).catch(() => {});
+  }, [core.jobs]);
 
-  const sortedGroups = sortGroupNames(Array.from(allGroupNames), groupOrder);
+  const handleQuestionSendOption = useCallback((q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
+    if (resolvedJob) {
+      invoke("send_job_input", { name: resolvedJob, text: optionNumber }).catch(() => {});
+    } else {
+      invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
+    }
+  }, []);
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIdx = sortedGroups.indexOf(String(active.id));
-    const newIdx = sortedGroups.indexOf(String(over.id));
-    if (oldIdx === -1 || newIdx === -1) return;
-    const newOrder = [...sortedGroups];
-    newOrder.splice(oldIdx, 1);
-    newOrder.splice(newIdx, 0, String(active.id));
-    saveGroupOrder(newOrder);
-  };
-
-  const renderJobRowsWithInput = (job: Job, index: number) => {
-    const status = statuses[job.name];
-    const isRunning = status?.state === "running" && status.pane_id;
-
+  const notificationCards = useMemo(() => {
+    if (questions.length === 0) return undefined;
     return (
-      <JobRowWithInput
-        key={job.slug}
-        job={job}
-        status={status}
-        selectMode={jobSelectMode}
-        isSelected={selectedJobs.has(job.name)}
-        isRunning={!!isRunning}
-        odd={index % 2 === 1}
-        onToggleSelected={() => toggleJobSelected(job.name)}
-        onToggleEnabled={() => handleToggle(job.name)}
-        onClick={() => setViewingJob(job)}
-      />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+        {questions.map((q) => (
+          <NotificationCard
+            key={q.question_id}
+            question={q}
+            resolvedJob={q.matched_job ?? null}
+            onNavigate={handleQuestionNavigate}
+            onSendOption={handleQuestionSendOption}
+          />
+        ))}
+      </div>
     );
-  };
+  }, [questions, handleQuestionNavigate, handleQuestionSendOption]);
 
-  const tableHead = (
-    <thead>
-      <tr>
-        {jobSelectMode && (
-          <th style={{ width: 24, padding: "8px 4px" }}>
-            <input
-              type="checkbox"
-              checked={jobs.length > 0 && selectedJobs.size === jobs.length}
-              onChange={toggleSelectAllJobs}
-              title="Select all"
-              style={{ margin: 0 }}
-            />
-          </th>
-        )}
-        <th className="col-toggle" title="Enabled"></th>
-        <th className="col-name">Name</th>
-        <th className="col-type">Type</th>
-        <th className="col-cron">Cron</th>
-        <th className="col-status">Status</th>
-        <th className="col-actions"></th>
-      </tr>
-    </thead>
-  );
-
+  // Main jobs list using shared component
   return (
     <div className="settings-section">
       <div className="section-header">
         <h2>Jobs</h2>
         <div className="btn-group">
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => setIsCreating(true)}
-          >
+          <button className="btn btn-primary btn-sm" onClick={() => setIsCreating(true)}>
             Add Job
           </button>
         </div>
       </div>
 
-      {jobs.length === 0 && !sortedGroups.includes("agent") && (
-        <div className="empty-state">
-          <p>No jobs configured yet.</p>
-          <button
-            className="btn btn-primary"
-            onClick={() => setIsCreating(true)}
-          >
-            Create your first job
-          </button>
-        </div>
-      )}
-
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={sortedGroups}
-          strategy={verticalListSortingStrategy}
-        >
-          {sortedGroups.map((group) => {
-            const groupJobList = grouped.get(group) ?? [];
-            const isFolderGroup = group !== "agent" && group !== "default" && groupJobList.length > 0 && groupJobList.every((j) => j.job_type === "folder");
-            return (
-              <SortableGroup
-                key={group}
-                id={group}
-                group={group}
-                grouped={grouped}
-                statuses={statuses}
-                collapsedGroups={collapsedGroups}
-                tableHead={tableHead}
-                jobSelectMode={jobSelectMode}
-                selectedJobCount={selectedJobs.size}
-                detectedProcesses={matchedProcessesByGroup.get(group) ?? []}
-                onToggleSelectMode={() => {
-                  if (jobSelectMode) {
-                    setJobSelectMode(false);
-                    setSelectedJobs(new Set());
-                  } else {
-                    setJobSelectMode(true);
-                  }
-                }}
-                onDeleteSelected={() => setConfirmBulkDeleteJobs(true)}
-                renderJobRows={renderJobRowsWithInput}
-                onToggleGroup={() => toggleGroup(group)}
-                agentPrompt={agentPrompt}
-                onAgentPromptChange={setAgentPrompt}
-                onRunAgent={async (prompt) => {
-                  try {
-                    await invoke("run_agent", { prompt });
-                    setAgentPrompt("");
-                    setTimeout(loadStatuses, 500);
-                  } catch (e) {
-                    console.error("Failed to run agent:", e);
-                  }
-                }}
-                onOpenAgent={() => handleOpen("agent")}
-                onViewAgent={() => setViewingAgent(true)}
-                onAddJob={
-                  isFolderGroup
-                    ? () => { setCreateForGroup({ group, folderPath: groupJobList[0]?.folder_path ?? null }); setIsCreating(true); }
-                    : group === "default"
-                      ? () => { setCreateForGroup({ group: "default", folderPath: null }); setIsCreating(true); }
-                      : undefined
-                }
-              />
-            );
-          })}
-        </SortableContext>
-      </DndContext>
-
-      {unmatchedProcesses.length > 0 && (() => {
-        // Group detected processes by their cwd
-        const byFolder = new Map<string, ClaudeProcess[]>();
-        for (const proc of unmatchedProcesses) {
-          const list = byFolder.get(proc.cwd) ?? [];
-          list.push(proc);
-          byFolder.set(proc.cwd, list);
-        }
-        const folderGroups: [string, ClaudeProcess[]][] = [];
-        const ungrouped: ClaudeProcess[] = [];
-        for (const [folder, procs] of byFolder) {
-          if (procs.length >= 2 && folder) {
-            folderGroups.push([folder, procs]);
-          } else {
-            ungrouped.push(...procs);
-          }
-        }
-        if (folderGroups.length === 0) {
-          return (
-            <DetectedProcessesGroup
-              processes={unmatchedProcesses}
-              isCollapsed={collapsedGroups.has("_detected")}
-              onToggle={() => toggleGroup("_detected")}
-              tableHead={tableHead}
-              jobSelectMode={jobSelectMode}
-              onAddJob={(folderPath) => { setCreateForGroup({ group: "default", folderPath }); setIsCreating(true); }}
-            />
-          );
-        }
-        return (
-          <>
-            {folderGroups.map(([folder, procs]) => {
-              const displayFolder = folder.startsWith("/") ? "~" + folder : folder;
-              const groupKey = `_detected_${folder}`;
-              return (
-                <DetectedProcessesGroup
-                  key={groupKey}
-                  processes={procs}
-                  label={displayFolder}
-                  isCollapsed={collapsedGroups.has(groupKey)}
-                  onToggle={() => toggleGroup(groupKey)}
-                  tableHead={tableHead}
-                  jobSelectMode={jobSelectMode}
-                  onAddJob={(folderPath) => { setCreateForGroup({ group: "default", folderPath }); setIsCreating(true); }}
-                />
-              );
-            })}
-            {ungrouped.length > 0 && (
-              <DetectedProcessesGroup
-                processes={ungrouped}
-                isCollapsed={collapsedGroups.has("_detected")}
-                onToggle={() => toggleGroup("_detected")}
-                tableHead={tableHead}
-                jobSelectMode={jobSelectMode}
-                onAddJob={(folderPath) => { setCreateForGroup({ group: "default", folderPath }); setIsCreating(true); }}
-              />
-            )}
-          </>
-        );
-      })()}
-
-      {confirmBulkDeleteJobs && (
-        <ConfirmDialog
-          message={`Delete ${selectedJobs.size} job${selectedJobs.size === 1 ? "" : "s"}? This cannot be undone.`}
-          onConfirm={() => { handleBulkDeleteJobs(); setConfirmBulkDeleteJobs(false); }}
-          onCancel={() => setConfirmBulkDeleteJobs(false)}
-        />
-      )}
+      <JobListView
+        jobs={core.jobs}
+        statuses={core.statuses}
+        detectedProcesses={core.processes}
+        collapsedGroups={core.collapsedGroups}
+        onToggleGroup={core.toggleGroup}
+        groupOrder={groupOrder}
+        onSelectJob={handleSelectJob}
+        onSelectProcess={handleSelectProcess}
+        onRunAgent={handleRunAgent}
+        onAddJob={handleAddJob}
+        headerContent={notificationCards}
+        showEmpty={core.loaded}
+        emptyMessage="No jobs configured yet."
+      />
 
       {paramsDialog && (
-        <div className="confirm-overlay" onClick={() => setParamsDialog(null)}>
-          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
-            <h3 style={{ marginBottom: 12 }}>Run: {paramsDialog.job.name}</h3>
-            <p className="text-secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-              Fill in all parameters before running.
-            </p>
-            {paramsDialog.job.params.map((key) => (
-              <div key={key} style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, display: "block" }}>
-                  {key}
-                </label>
-                <input
-                  className="input"
-                  type="text"
-                  value={paramsDialog.values[key] ?? ""}
-                  onChange={(e) => {
-                    setParamsDialog({
-                      ...paramsDialog,
-                      values: { ...paramsDialog.values, [key]: e.target.value },
-                    });
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleRunWithParams();
-                  }}
-                  placeholder={`{${key}}`}
-                  autoFocus={key === paramsDialog.job.params[0]}
-                />
-              </div>
-            ))}
-            <div className="btn-group" style={{ marginTop: 16, justifyContent: "flex-end" }}>
-              <button className="btn btn-sm" onClick={() => setParamsDialog(null)}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handleRunWithParams}
-                disabled={paramsDialog.job.params.some((k) => !paramsDialog.values[k]?.trim())}
-              >
-                Run
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-function sortGroupNames(groups: string[], savedOrder: string[]): string[] {
-  const orderMap = new Map(savedOrder.map((g, i) => [g, i]));
-  return [...groups].sort((a, b) => {
-    const aIdx = orderMap.get(a);
-    const bIdx = orderMap.get(b);
-    if (aIdx !== undefined && bIdx !== undefined) return aIdx - bIdx;
-    if (aIdx !== undefined) return -1;
-    if (bIdx !== undefined) return 1;
-    if (a === "agent") return -1;
-    if (b === "agent") return 1;
-    if (a === "default") return -1;
-    if (b === "default") return 1;
-    return a.localeCompare(b);
-  });
-}
-
-// All the sub-components from the original JobsPanel, kept as React DOM
-
-function SortableGroup({
-  id,
-  group,
-  grouped,
-  statuses,
-  collapsedGroups,
-  tableHead,
-  jobSelectMode,
-  selectedJobCount,
-  detectedProcesses,
-  onToggleSelectMode,
-  onDeleteSelected,
-  renderJobRows,
-  onToggleGroup,
-  agentPrompt,
-  onAgentPromptChange,
-  onRunAgent,
-  onOpenAgent,
-  onViewAgent,
-  onAddJob,
-}: {
-  id: string;
-  group: string;
-  grouped: Map<string, Job[]>;
-  statuses: Record<string, JobStatus>;
-  collapsedGroups: Set<string>;
-  tableHead: React.ReactNode;
-  jobSelectMode: boolean;
-  selectedJobCount: number;
-  detectedProcesses: ClaudeProcess[];
-  onToggleSelectMode: () => void;
-  onDeleteSelected: () => void;
-  renderJobRows: (job: Job, index: number) => React.ReactNode;
-  onToggleGroup: () => void;
-  agentPrompt: string;
-  onAgentPromptChange: (value: string) => void;
-  onRunAgent: (prompt: string) => void;
-  onOpenAgent: () => void;
-  onViewAgent: () => void;
-  onAddJob?: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-
-  const style = {
-    transform: CSS.Transform.toString(
-      transform ? { ...transform, scaleX: 1, scaleY: 1 } : null
-    ),
-    transition: isDragging ? "none" : transition || "transform 200ms ease",
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  const isCollapsed = collapsedGroups.has(group);
-
-  if (group === "agent") {
-    const agentStatus = statuses["agent"];
-    const agentState = agentStatus?.state ?? "idle";
-
-    return (
-      <div ref={setNodeRef} style={style} className="field-group">
-        <GroupHeader
-          displayName="Agent"
-          count={null}
-          isCollapsed={isCollapsed}
-          onToggle={onToggleGroup}
-          dragAttributes={attributes}
-          dragListeners={listeners}
+        <ParamsOverlay
+          job={paramsDialog.job}
+          values={paramsDialog.values}
+          onChange={(values) => setParamsDialog({ ...paramsDialog, values })}
+          onRun={handleRunWithParams}
+          onCancel={() => setParamsDialog(null)}
         />
-        {!isCollapsed && (
-          <>
-            <table className="data-table">
-              {tableHead}
-              <tbody>
-                <AgentRow
-                  status={agentStatus}
-                  state={agentState}
-                  selectMode={jobSelectMode}
-                  onOpen={onOpenAgent}
-                  onClick={onViewAgent}
-                />
-              </tbody>
-            </table>
-            {(agentState === "idle" || !agentStatus || agentState === "success" || agentState === "failed") && (
-              <div style={{ display: "flex", gap: 6, padding: "8px 0 4px" }}>
-                <input
-                  type="text"
-                  value={agentPrompt}
-                  onChange={(e) => onAgentPromptChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && agentPrompt.trim()) {
-                      onRunAgent(agentPrompt.trim());
-                    }
-                  }}
-                  placeholder="Enter a prompt for the agent..."
-                  style={{ flex: 1, fontSize: 12 }}
-                />
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() => { if (agentPrompt.trim()) onRunAgent(agentPrompt.trim()); }}
-                  disabled={!agentPrompt.trim()}
-                >
-                  Run
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    );
-  }
-
-  const groupJobList = grouped.get(group) ?? [];
-  if (groupJobList.length === 0 && detectedProcesses.length === 0) return null;
-
-  const displayName = group === "default" ? "General" : group;
-  const totalCount = groupJobList.length + detectedProcesses.length;
-
-  return (
-    <div ref={setNodeRef} style={style} className="field-group">
-      <GroupHeader
-        displayName={displayName}
-        count={totalCount}
-        isCollapsed={isCollapsed}
-        onToggle={onToggleGroup}
-        dragAttributes={attributes}
-        dragListeners={listeners}
-        selectMode={jobSelectMode}
-        selectedCount={selectedJobCount}
-        onToggleSelectMode={onToggleSelectMode}
-        onDeleteSelected={onDeleteSelected}
-        onAddJob={onAddJob}
-      />
-      {!isCollapsed && (
-        <table className="data-table">
-          {tableHead}
-          <tbody>
-            {groupJobList.map((job, idx) => renderJobRows(job, idx))}
-            {detectedProcesses.map((proc) => (
-              <DetectedProcessRow key={proc.pane_id} process={proc} selectMode={jobSelectMode} />
-            ))}
-          </tbody>
-        </table>
       )}
     </div>
   );
 }
 
-function GroupHeader({
-  displayName,
-  count,
-  isCollapsed,
-  onToggle,
-  dragAttributes,
-  dragListeners,
-  selectMode,
-  selectedCount,
-  onToggleSelectMode,
-  onDeleteSelected,
-  onAddJob,
-}: {
-  displayName: string;
-  count: number | null;
-  isCollapsed: boolean;
-  onToggle: () => void;
-  dragAttributes: ReturnType<typeof useSortable>["attributes"];
-  dragListeners: ReturnType<typeof useSortable>["listeners"];
-  selectMode?: boolean;
-  selectedCount?: number;
-  onToggleSelectMode?: () => void;
-  onDeleteSelected?: () => void;
-  onAddJob?: () => void;
-}) {
-  return (
-    <div
-      className="field-group-title"
-      style={{ display: "flex", alignItems: "center", gap: 6, ...(isCollapsed ? { borderBottom: "none", marginBottom: 0, paddingBottom: 0 } : {}) }}
-    >
-      <button
-        onClick={onToggle}
-        style={{
-          background: "none",
-          border: "none",
-          color: "var(--text-secondary)",
-          cursor: "pointer",
-          padding: 0,
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          flex: 1,
-        }}
-      >
-        <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-          {isCollapsed ? "\u25B6" : "\u25BC"}
-        </span>
-        {displayName}
-        {count !== null && (
-          <span style={{ fontWeight: 400, fontSize: 10, opacity: 0.7 }}>
-            ({count})
-          </span>
-        )}
-      </button>
-      {selectMode && (selectedCount ?? 0) > 0 && onDeleteSelected && (
-        <>
-          <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-            {selectedCount} sel
-          </span>
-          <button
-            className="btn btn-sm"
-            style={{ fontSize: 10, padding: "1px 6px", color: "var(--danger-color)" }}
-            onClick={onDeleteSelected}
-          >
-            Delete
-          </button>
-        </>
-      )}
-      {onAddJob && (
-        <button
-          className="add-job-btn"
-          style={{ width: 20, height: 20, fontSize: 16, marginRight: 0 }}
-          onClick={onAddJob}
-          title="Add job to this group"
-        >
-          <span style={{ position: "relative", top: -1 }}>+</span>
-        </button>
-      )}
-      {onToggleSelectMode && !isCollapsed && (
-        <button
-          className="btn btn-sm"
-          style={{ fontSize: 10, padding: "1px 6px" }}
-          onClick={onToggleSelectMode}
-        >
-          {selectMode ? "Done" : "Select"}
-        </button>
-      )}
-      <div {...dragAttributes} {...dragListeners}>
-        <DragGrip />
-      </div>
-    </div>
-  );
-}
-
-function AgentRow({
-  status,
-  state,
-  selectMode,
-  onOpen,
-  onClick,
-}: {
-  status: JobStatus | undefined;
-  state: string;
-  selectMode: boolean;
-  onOpen: () => void;
-  onClick: () => void;
-}) {
-  const handleRowClick = (e: React.MouseEvent<HTMLTableRowElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest("button, input, .toggle-switch, .btn")) return;
-    onClick();
-  };
-
-  return (
-    <tr onClick={handleRowClick} style={{ cursor: "pointer" }}>
-      {selectMode && <td style={{ width: 24, padding: "8px 4px" }} />}
-      <td className="col-toggle">
-        <input
-          type="checkbox"
-          className="toggle-switch"
-          checked={true}
-          disabled
-          title="Enabled"
-        />
-      </td>
-      <td className="col-name">agent</td>
-      <td className="col-type">claude</td>
-      <td className="col-cron">
-        <code>manual</code>
-      </td>
-      <td className="col-status">
-        <StatusBadge status={status} />
-      </td>
-      <td className="col-actions actions">
-        <div className="btn-group">
-          {state === "running" && (
-            <button className="btn btn-sm" onClick={onOpen}>
-              Open
-            </button>
-          )}
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; selectMode: boolean }) {
-  const displayName = shortenPath(process.cwd);
-  const [expanded, setExpanded] = useState(false);
-  const [fullscreen, _setFullscreen] = useState(false);
-  const [logs, setLogs] = useState(process.log_lines);
-  const [inputText, setInputText] = useState("");
-  const [sending, setSending] = useState(false);
-  const preRef = useRef<HTMLPreElement>(null);
-  const fullscreenPreRef = useRef<HTMLPreElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!expanded && !fullscreen) return;
-    let active = true;
-    const poll = async () => {
-      try {
-        const result = await invoke<string>("get_detected_process_logs", {
-          tmuxSession: process.tmux_session,
-          paneId: process.pane_id,
-        });
-        if (active) setLogs(result);
-      } catch {
-        // Process may have stopped
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => { active = false; clearInterval(interval); };
-  }, [expanded, fullscreen, process.pane_id, process.tmux_session]);
-
-  useEffect(() => {
-    if (expanded && preRef.current) {
-      const el = preRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-    if (fullscreen && fullscreenPreRef.current) {
-      const el = fullscreenPreRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-  }, [logs, expanded, fullscreen]);
-
-  const handleOpen = async () => {
-    try {
-      await invoke("focus_detected_process", {
-        tmuxSession: process.tmux_session,
-        windowName: process.window_name,
-      });
-    } catch (e) {
-      console.error("Failed to open detected process:", e);
-    }
-  };
-
-  const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || sending) return;
-    setSending(true);
-    try {
-      await invoke("send_detected_process_input", { paneId: process.pane_id, text });
-      setInputText("");
-      inputRef.current?.focus();
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleOptionClick = async (num: string) => {
-    setSending(true);
-    try {
-      await invoke("send_detected_process_input", { paneId: process.pane_id, text: num });
-      inputRef.current?.focus();
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const options = parseNumberedOptions(logs);
-
-  return (
-    <>
-      <tr
-        style={{ opacity: 0.7, fontStyle: "italic", cursor: "pointer" }}
-        onClick={() => setExpanded((v) => !v)}
-      >
-        {selectMode && <td style={{ width: 24, padding: "8px 4px" }} />}
-        <td className="col-toggle" />
-        <td className="col-name" title={process.cwd}>
-          {displayName}
-        </td>
-        <td className="col-type">
-          <code style={{ fontSize: 11 }}>{process.version}</code>
-        </td>
-        <td className="col-cron">
-          <code>detected</code>
-        </td>
-        <td className="col-status">
-          <span className="status-badge status-running">running</span>
-        </td>
-        <td className="col-actions actions">
-          <div className="btn-group">
-            <button
-              className="btn btn-sm"
-              onClick={(e) => { e.stopPropagation(); handleOpen(); }}
-              title="Open in terminal"
-              style={{ padding: "2px 6px", lineHeight: 1 }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </button>
-          </div>
-        </td>
-      </tr>
-      {expanded && (
-        <tr>
-          <td colSpan={selectMode ? 8 : 7} style={{ padding: 0 }}>
-            <div style={{ padding: "4px 12px 8px" }}>
-              {logs && (
-                <pre ref={preRef} style={{
-                  margin: 0,
-                  padding: "4px 6px",
-                  fontSize: 10,
-                  lineHeight: 1.3,
-                  background: "var(--bg-secondary, #1a1a1a)",
-                  borderRadius: 4,
-                  overflowY: "auto",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
-                  height: 120,
-                  minHeight: 40,
-                  maxHeight: 300,
-                  resize: "vertical",
-                  color: "var(--text-secondary)",
-                  overscrollBehavior: "contain",
-                }}>{logs}</pre>
-              )}
-              {options.length > 0 && (
-                <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
-                  {options.map((opt) => (
-                    <button
-                      key={opt.number}
-                      className="btn btn-sm"
-                      style={{
-                        fontSize: 10,
-                        padding: "1px 6px",
-                        border: "1px solid var(--accent-color, #6366f1)",
-                        color: "var(--accent-color, #6366f1)",
-                      }}
-                      onClick={() => handleOptionClick(opt.number)}
-                      disabled={sending}
-                      title={opt.label}
-                    >
-                      {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="Send input..."
-                  style={{ flex: 1, fontSize: 11 }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <button
-                  className="btn btn-primary btn-sm"
-                  style={{ fontSize: 11, padding: "2px 8px" }}
-                  onClick={(e) => { e.stopPropagation(); handleSend(); }}
-                  disabled={!inputText.trim() || sending}
-                >
-                  Send
-                </button>
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-function DetectedProcessesGroup({
-  processes,
-  label,
-  isCollapsed,
-  onToggle,
-  tableHead,
-  jobSelectMode,
-  onAddJob,
-}: {
-  processes: ClaudeProcess[];
-  label?: string;
-  isCollapsed: boolean;
-  onToggle: () => void;
-  tableHead: React.ReactNode;
-  jobSelectMode: boolean;
-  onAddJob?: (folderPath: string) => void;
-}) {
-  const folderPath = processes.length > 0 ? processes[0].cwd : null;
-
-  return (
-    <div className="field-group">
-      <div
-        className="field-group-title"
-        style={{ display: "flex", alignItems: "center", gap: 6, ...(isCollapsed ? { borderBottom: "none", marginBottom: 0, paddingBottom: 0 } : {}) }}
-      >
-        <button
-          onClick={onToggle}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            padding: 0,
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            flex: 1,
-          }}
-        >
-          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-            {isCollapsed ? "\u25B6" : "\u25BC"}
-          </span>
-          {label ?? "Detected"}
-          <span style={{ fontWeight: 400, fontSize: 10, opacity: 0.7 }}>
-            ({processes.length})
-          </span>
-        </button>
-        {onAddJob && folderPath && (
-          <button
-            className="add-job-btn"
-            style={{ width: 20, height: 20, fontSize: 16, marginRight: 0 }}
-            onClick={() => onAddJob(folderPath)}
-            title="Add job for this folder"
-          >
-            <span style={{ position: "relative", top: -1 }}>+</span>
-          </button>
-        )}
-      </div>
-      {!isCollapsed && (
-        <table className="data-table">
-          {tableHead}
-          <tbody>
-            {processes.map((proc) => (
-              <DetectedProcessRow key={proc.pane_id} process={proc} selectMode={jobSelectMode} />
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div style={{ display: "flex", gap: 12, padding: "4px 0", fontSize: 13 }}>
-      <span style={{ color: "var(--text-secondary)", minWidth: 120, flexShrink: 0 }}>{label}</span>
-      {mono ? <code style={{ flex: 1 }}>{value}</code> : <span style={{ flex: 1 }}>{value}</span>}
-    </div>
-  );
-}
-
-function JobDetailViewDesktop({
+// Desktop job detail - wraps the shared JobDetailView with desktop-specific sections
+function DesktopJobDetail({
   job,
   status,
   onBack,
   onEdit,
-  onRun,
-  onStop,
-  onPause,
-  onResume,
-  onRestart,
   onOpen,
   onToggle,
   onDuplicate,
   onDelete,
 }: {
   job: Job;
-  status: JobStatus | undefined;
+  status: JobStatus;
   onBack: () => void;
   onEdit: () => void;
-  onRun: () => void;
-  onStop: () => void;
-  onPause: () => void;
-  onResume: () => void;
-  onRestart: () => void;
   onOpen: () => void;
   onToggle: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
-  const state = status?.state ?? "idle";
+  const { runs, reloadRuns } = useJobDetail(transport, job.name);
+  const { logs } = useLogBuffer(transport, job.name);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [runsCollapsed, setRunsCollapsed] = useState(false);
+
+  const extraContent = useMemo(
+    () => <DesktopDetailSections job={job} />,
+    [job],
+  );
+
+  return (
+    <>
+      <JobDetailView
+        transport={transport}
+        job={job as unknown as RemoteJob}
+        status={status}
+        logs={logs}
+        runs={runs}
+        onBack={onBack}
+        onReloadRuns={reloadRuns}
+        onEdit={onEdit}
+        onOpen={onOpen}
+        onToggleEnabled={onToggle}
+        onDuplicate={onDuplicate}
+        onDelete={() => setShowConfirm(true)}
+        extraContent={extraContent}
+      />
+      {showConfirm && (
+        <ConfirmDialog
+          message={`Delete job "${job.name}"? This cannot be undone.`}
+          onConfirm={() => { onDelete(); setShowConfirm(false); }}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// Agent detail view - wraps shared JobDetailView for the agent
+function AgentDetail({
+  job,
+  status,
+  onBack,
+  onOpen,
+}: {
+  job: RemoteJob;
+  status: JobStatus;
+  onBack: () => void;
+  onOpen: () => void;
+}) {
+  const { runs, reloadRuns } = useJobDetail(transport, "agent");
+  const { logs } = useLogBuffer(transport, "agent");
+
+  return (
+    <JobDetailView
+      transport={transport}
+      job={job}
+      status={status}
+      logs={logs}
+      runs={runs}
+      onBack={onBack}
+      onReloadRuns={reloadRuns}
+      onOpen={onOpen}
+    />
+  );
+}
+
+// Desktop-only detail sections: Directions, Configuration, Runtime, Secrets
+function DesktopDetailSections({ job }: { job: Job }) {
   const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
+  const [configCollapsed, setConfigCollapsed] = useState(false);
   const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
   const [inlineContent, setInlineContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
   const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
+  const savedContentRef = useRef(savedContent);
+  savedContentRef.current = savedContent;
+
+  const dirty = inlineContent !== savedContent;
 
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
-    });
+    }).catch(() => {});
   }, []);
 
-  const [savedContent, setSavedContent] = useState("");
-  const dirty = inlineContent !== savedContent;
-  const savedContentRef = useRef(savedContent);
-  savedContentRef.current = savedContent;
-
-  const reloadDirections = () => {
+  const reloadDirections = useCallback(() => {
     if (job.job_type !== "folder" || !job.folder_path) return;
     const jn = job.job_name ?? "default";
     invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
@@ -1528,7 +485,7 @@ function JobDetailViewDesktop({
         setSavedContent(content);
       })
       .catch(() => {});
-  };
+  }, [job]);
 
   useEffect(() => {
     if (job.job_type === "folder" && job.folder_path) {
@@ -1549,13 +506,13 @@ function JobDetailViewDesktop({
     if (job.job_type !== "folder" || !job.folder_path) return;
     const interval = setInterval(reloadDirections, 2000);
     return () => clearInterval(interval);
-  }, [job]);
+  }, [job, reloadDirections]);
 
   useEffect(() => {
     const onFocus = () => reloadDirections();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [job]);
+  }, [reloadDirections]);
 
   const handleSaveDirections = () => {
     if (job.folder_path) {
@@ -1570,92 +527,8 @@ function JobDetailViewDesktop({
   };
 
   return (
-    <div className="settings-section">
-      <div className="section-header" style={{ justifyContent: "space-between" }}>
-        <div
-          onClick={onBack}
-          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-          title="Back to jobs"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <h2>{job.name}</h2>
-              <StatusBadge status={status} />
-            </div>
-            {(job.folder_path || job.work_dir || job.path) && (
-              <code style={{ fontSize: 11, color: "var(--text-secondary)", display: "block", marginTop: 2 }}>
-                {shortenPath(job.folder_path?.replace(/\/\.cwt$/, "") || job.work_dir || job.path)}
-              </code>
-            )}
-          </div>
-        </div>
-        <div className="btn-group">
-          {state === "running" && (
-            <>
-              <button className="btn btn-sm" onClick={onOpen}>Open</button>
-              <button className="btn btn-sm" onClick={onPause}>Pause</button>
-              <button className="btn btn-sm" style={{ color: "var(--danger-color)" }} onClick={onStop}>Stop</button>
-            </>
-          )}
-          {state === "paused" && (
-            <>
-              <button className="btn btn-primary btn-sm" onClick={onResume}>Resume</button>
-              <button className="btn btn-sm" style={{ color: "var(--danger-color)" }} onClick={onStop}>Stop</button>
-            </>
-          )}
-          {state === "failed" && (
-            <button className="btn btn-primary btn-sm" onClick={onRestart}>Restart</button>
-          )}
-          {state === "success" && (
-            <button className="btn btn-primary btn-sm" onClick={onRun}>Run Again</button>
-          )}
-          {(state === "idle" || !status) && (
-            <button className="btn btn-primary btn-sm" onClick={onRun}>Run</button>
-          )}
-          <button className="btn btn-sm" onClick={onEdit}>Edit</button>
-        </div>
-      </div>
-
-      {state === "running" && status?.state === "running" && status.pane_id && (
-        <div className="field-group">
-          <span className="field-group-title">Live Output</span>
-          <RunningLogsContent jobName={job.name} />
-        </div>
-      )}
-
-      <div className="field-group">
-        <button
-          onClick={() => setRunsCollapsed((v) => !v)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            padding: 0,
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            width: "100%",
-          }}
-          className="field-group-title"
-        >
-          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-            {runsCollapsed ? "\u25B6" : "\u25BC"}
-          </span>
-          Runs
-        </button>
-        {!runsCollapsed && (
-          <RunsPanelContent jobName={job.name} jobState={state} />
-        )}
-      </div>
-
+    <>
+      {/* Directions (folder jobs only) */}
       {job.job_type === "folder" && job.folder_path && (
         <div className="field-group">
           <button
@@ -1738,35 +611,64 @@ function JobDetailViewDesktop({
         </div>
       )}
 
+      {/* Configuration */}
       <div className="field-group">
-        <span className="field-group-title">Configuration</span>
-        <DetailRow label="Type" value={job.job_type} />
-        <DetailRow label="Enabled" value={job.enabled ? "Yes" : "No"} />
-        {job.cron ? (
+        <button
+          onClick={() => setConfigCollapsed((v) => !v)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+            padding: 0,
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.5px",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            width: "100%",
+          }}
+          className="field-group-title"
+        >
+          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+            {configCollapsed ? "\u25B6" : "\u25BC"}
+          </span>
+          Configuration
+        </button>
+        {!configCollapsed && (
           <>
-            <DetailRow label="Schedule" value={describeCron(job.cron)} />
-            <DetailRow label="Cron" value={job.cron} mono />
+            <DetailRow label="Type" value={job.job_type} />
+            <DetailRow label="Enabled" value={job.enabled ? "Yes" : "No"} />
+            {job.cron ? (
+              <>
+                <DetailRow label="Schedule" value={describeCron(job.cron)} />
+                <DetailRow label="Cron" value={job.cron} mono />
+              </>
+            ) : (
+              <DetailRow label="Schedule" value="Manual" />
+            )}
+            {job.group && job.group !== "default" && (
+              <DetailRow label="Group" value={job.group} />
+            )}
+            {job.job_type === "folder" && job.folder_path && (
+              <DetailRow label="Folder" value={job.folder_path} mono />
+            )}
+            {job.job_type === "binary" && (
+              <DetailRow label="Path" value={job.path} mono />
+            )}
+            {job.args.length > 0 && (
+              <DetailRow label="Args" value={job.args.join(" ")} mono />
+            )}
+            {job.work_dir && (
+              <DetailRow label="Work dir" value={job.work_dir} mono />
+            )}
           </>
-        ) : (
-          <DetailRow label="Schedule" value="Manual" />
-        )}
-        {job.group && job.group !== "default" && (
-          <DetailRow label="Group" value={job.group} />
-        )}
-        {job.job_type === "folder" && job.folder_path && (
-          <DetailRow label="Folder" value={job.folder_path} mono />
-        )}
-        {job.job_type === "binary" && (
-          <DetailRow label="Path" value={job.path} mono />
-        )}
-        {job.args.length > 0 && (
-          <DetailRow label="Args" value={job.args.join(" ")} mono />
-        )}
-        {job.work_dir && (
-          <DetailRow label="Work dir" value={job.work_dir} mono />
         )}
       </div>
 
+      {/* Runtime */}
       {(job.tmux_session || job.aerospace_workspace || job.telegram_chat_id) && (
         <div className="field-group">
           <span className="field-group-title">Runtime</span>
@@ -1795,6 +697,7 @@ function JobDetailViewDesktop({
         </div>
       )}
 
+      {/* Secrets */}
       {job.secret_keys.length > 0 && (
         <div className="field-group">
           <span className="field-group-title">Secrets</span>
@@ -1803,776 +706,66 @@ function JobDetailViewDesktop({
           ))}
         </div>
       )}
-
-      <div className="field-group">
-        <span className="field-group-title">Danger Zone</span>
-        <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
-          <button className="btn btn-sm" onClick={onToggle}>
-            {job.enabled ? "Disable" : "Enable"}
-          </button>
-          <button className="btn btn-sm" onClick={onDuplicate}>Duplicate</button>
-          <button
-            className="btn btn-sm"
-            style={{ color: "var(--danger-color)" }}
-            onClick={() => setShowConfirm(true)}
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-
-      {showConfirm && (
-        <ConfirmDialog
-          message={`Delete job "${job.name}"? This cannot be undone.`}
-          onConfirm={() => { onDelete(); setShowConfirm(false); }}
-          onCancel={() => setShowConfirm(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function AgentDetailView({
-  status,
-  state,
-  onBack,
-  onRun,
-  onStop,
-  onOpen,
-}: {
-  status: JobStatus | undefined;
-  state: string;
-  onBack: () => void;
-  onRun: (prompt: string) => void;
-  onStop: () => void;
-  onOpen: () => void;
-}) {
-  const [runsCollapsed, setRunsCollapsed] = useState(false);
-  const [prompt, setPrompt] = useState("");
-
-  return (
-    <div className="settings-section">
-      <div className="section-header" style={{ justifyContent: "space-between" }}>
-        <div
-          onClick={onBack}
-          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-          title="Back to jobs"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          <h2>agent</h2>
-          <StatusBadge status={status} />
-        </div>
-        <div className="btn-group">
-          {state === "running" && (
-            <>
-              <button className="btn btn-sm" onClick={onOpen}>Open</button>
-              <button className="btn btn-sm" style={{ color: "var(--danger-color)" }} onClick={onStop}>Stop</button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {(state === "idle" || !status || state === "success" || state === "failed") && (
-        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && prompt.trim()) {
-                onRun(prompt.trim());
-                setPrompt("");
-              }
-            }}
-            placeholder="Enter a prompt for the agent..."
-            style={{ flex: 1, fontSize: 12 }}
-          />
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => { if (prompt.trim()) { onRun(prompt.trim()); setPrompt(""); } }}
-            disabled={!prompt.trim()}
-          >
-            Run
-          </button>
-        </div>
-      )}
-
-      {state === "running" && status?.state === "running" && status.pane_id && (
-        <div className="field-group">
-          <span className="field-group-title">Live Output</span>
-          <RunningLogsContent jobName="agent" />
-        </div>
-      )}
-
-      <div className="field-group">
-        <button
-          onClick={() => setRunsCollapsed((v) => !v)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            padding: 0,
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            width: "100%",
-          }}
-          className="field-group-title"
-        >
-          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-            {runsCollapsed ? "\u25B6" : "\u25BC"}
-          </span>
-          Runs
-        </button>
-        {!runsCollapsed && (
-          <RunsPanelContent jobName="agent" jobState={state} />
-        )}
-      </div>
-
-      <div className="field-group">
-        <span className="field-group-title">Configuration</span>
-        <DetailRow label="Type" value="claude" />
-        <DetailRow label="Schedule" value="Manual" />
-      </div>
-    </div>
-  );
-}
-
-function JobRow({
-  job,
-  status,
-  selectMode,
-  isSelected,
-  odd,
-  onToggleSelected,
-  onToggleEnabled,
-  onClick,
-}: {
-  job: Job;
-  status: JobStatus | undefined;
-  selectMode: boolean;
-  isSelected: boolean;
-  odd?: boolean;
-  onToggleSelected: () => void;
-  onToggleEnabled: () => void;
-  onClick: () => void;
-}) {
-  const handleRowClick = (e: React.MouseEvent<HTMLTableRowElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest("button, input, .toggle-switch, .btn, .gear-icon, .job-action-menu")) return;
-    onClick();
-  };
-
-  return (
-    <tr onClick={handleRowClick} style={{ cursor: "pointer", ...(odd ? { background: "rgba(255,255,255,0.02)" } : {}) }}>
-      {selectMode && (
-        <td style={{ width: 24, padding: "8px 4px" }}>
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onToggleSelected}
-            style={{ margin: 0 }}
-          />
-        </td>
-      )}
-      <td className="col-toggle">
-        <input
-          type="checkbox"
-          className="toggle-switch"
-          checked={job.enabled}
-          onChange={onToggleEnabled}
-          title="Enabled"
-        />
-      </td>
-      <td className="col-name">
-        {job.name}
-      </td>
-      <td className="col-type">{job.job_type}</td>
-      <td className="col-cron">
-        <code>{job.cron || "manual"}</code>
-      </td>
-      <td className="col-status">
-        <StatusBadge status={status} />
-      </td>
-      <td className="col-actions actions">
-      </td>
-    </tr>
-  );
-}
-
-function JobRowWithInput({
-  job,
-  status,
-  selectMode,
-  isSelected,
-  isRunning,
-  odd,
-  onToggleSelected,
-  onToggleEnabled,
-  onClick,
-}: {
-  job: Job;
-  status: JobStatus | undefined;
-  selectMode: boolean;
-  isSelected: boolean;
-  isRunning: boolean;
-  odd?: boolean;
-  onToggleSelected: () => void;
-  onToggleEnabled: () => void;
-  onClick: () => void;
-}) {
-  const [showInput, setShowInput] = useState(false);
-
-  return (
-    <>
-      <JobRow
-        job={job}
-        status={status}
-        selectMode={selectMode}
-        isSelected={isSelected}
-        odd={odd}
-        onToggleSelected={onToggleSelected}
-        onToggleEnabled={onToggleEnabled}
-        onClick={onClick}
-      />
-      {isRunning && (
-        <tr>
-          <td colSpan={selectMode ? 8 : 7} style={{ padding: 0, border: "none" }}>
-            {!showInput ? (
-              <div style={{ padding: "2px 12px 4px" }}>
-                <button
-                  className="btn btn-sm"
-                  style={{ fontSize: 10, padding: "1px 8px", opacity: 0.7 }}
-                  onClick={() => setShowInput(true)}
-                >
-                  Reply
-                </button>
-              </div>
-            ) : (
-              <InlineJobInput jobName={job.name} onCollapse={() => setShowInput(false)} />
-            )}
-          </td>
-        </tr>
-      )}
     </>
   );
 }
 
-function InlineJobInput({ jobName, onCollapse }: { jobName: string; onCollapse: () => void }) {
-  const [logs, setLogs] = useState("");
-  const [inputText, setInputText] = useState("");
-  const [sending, setSending] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const preRef = useRef<HTMLPreElement>(null);
-
-  useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const result = await invoke<string>("get_running_job_logs", { name: jobName });
-        if (active) setLogs(result);
-      } catch {
-        // Job may have stopped
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => { active = false; clearInterval(interval); };
-  }, [jobName]);
-
-  useEffect(() => {
-    if (preRef.current) {
-      const el = preRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-  }, [logs]);
-
-  const options = parseNumberedOptions(logs);
-
-  const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || sending) return;
-    setSending(true);
-    try {
-      await invoke("send_job_input", { name: jobName, text });
-      setInputText("");
-      inputRef.current?.focus();
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleOptionClick = async (num: string) => {
-    setSending(true);
-    try {
-      await invoke("send_job_input", { name: jobName, text: num });
-      inputRef.current?.focus();
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  };
-
+function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
-    <div style={{ padding: "4px 12px 8px" }}>
-      {logs && (
-        <pre ref={preRef} style={{
-          margin: 0,
-          padding: "4px 6px",
-          fontSize: 10,
-          lineHeight: 1.3,
-          background: "var(--bg-secondary, #1a1a1a)",
-          borderRadius: 4,
-          overflowY: "auto",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          height: 120,
-          minHeight: 40,
-          maxHeight: 300,
-          resize: "vertical",
-          color: "var(--text-secondary)",
-          overscrollBehavior: "contain",
-        }}>{logs}</pre>
-      )}
-      {options.length > 0 && (
-        <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
-          {options.map((opt) => (
-            <button
-              key={opt.number}
-              className="btn btn-sm"
-              style={{
-                fontSize: 10,
-                padding: "1px 6px",
-                border: "1px solid var(--accent-color, #6366f1)",
-                color: "var(--accent-color, #6366f1)",
-              }}
-              onClick={() => handleOptionClick(opt.number)}
-              disabled={sending}
-              title={opt.label}
-            >
-              {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-      <div style={{ display: "flex", gap: 4, marginTop: 4, alignItems: "center" }}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-          placeholder="Send input..."
-          style={{ flex: 1, fontSize: 11 }}
-          autoFocus
-        />
-        <button
-          className="btn btn-primary btn-sm"
-          style={{ fontSize: 11, padding: "2px 8px" }}
-          onClick={handleSend}
-          disabled={!inputText.trim() || sending}
-        >
-          Send
-        </button>
-        <button
-          className="btn btn-sm"
-          style={{ fontSize: 10, padding: "2px 6px", opacity: 0.6 }}
-          onClick={onCollapse}
-        >
-          Hide
-        </button>
-      </div>
+    <div style={{ display: "flex", gap: 12, padding: "4px 0", fontSize: 13 }}>
+      <span style={{ color: "var(--text-secondary)", minWidth: 120, flexShrink: 0 }}>{label}</span>
+      {mono ? <code style={{ flex: 1 }}>{value}</code> : <span style={{ flex: 1 }}>{value}</span>}
     </div>
   );
 }
 
-function buildLogContent(run: RunRecord): string {
-  let content = "";
-  if (run.stdout) {
-    content += run.stdout;
-  }
-  if (run.stderr) {
-    if (content) content += "\n";
-    content += "--- stderr ---\n" + run.stderr;
-  }
-  return content || "(no output)";
-}
-
-function RunningLogsContent({ jobName }: { jobName: string }) {
-  const [logs, setLogs] = useState("");
-  const [inputText, setInputText] = useState("");
-  const [sending, setSending] = useState(false);
-  const preRef = useRef<HTMLPreElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const result = await invoke<string>("get_running_job_logs", { name: jobName });
-        if (active) setLogs(result);
-      } catch {
-        // Job may have stopped between polls
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => { active = false; clearInterval(interval); };
-  }, [jobName]);
-
-  useEffect(() => {
-    if (preRef.current) {
-      const el = preRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-  }, [logs]);
-
-  const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || sending) return;
-    setSending(true);
-    try {
-      await invoke("send_job_input", { name: jobName, text });
-      setInputText("");
-      inputRef.current?.focus();
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const options = parseNumberedOptions(logs);
-
-  const handleOptionClick = async (num: string) => {
-    setSending(true);
-    try {
-      await invoke("send_job_input", { name: jobName, text: num });
-      inputRef.current?.focus();
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  };
-
+function ParamsOverlay({
+  job,
+  values,
+  onChange,
+  onRun,
+  onCancel,
+}: {
+  job: Job;
+  values: Record<string, string>;
+  onChange: (values: Record<string, string>) => void;
+  onRun: () => void;
+  onCancel: () => void;
+}) {
   return (
-    <div>
-      {logs && (
-        <pre ref={preRef} style={{
-          margin: 0,
-          padding: "6px 8px",
-          fontSize: 11,
-          lineHeight: 1.4,
-          background: "var(--bg-secondary, #1a1a1a)",
-          borderRadius: 4,
-          overflowY: "auto",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          height: 400,
-          minHeight: 40,
-          maxHeight: 400,
-          resize: "vertical",
-          color: "var(--text-secondary)",
-          overscrollBehavior: "contain",
-        }}>{logs}</pre>
-      )}
-      {options.length > 0 && (
-        <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
-          {options.map((opt) => (
-            <button
-              key={opt.number}
-              className="btn btn-sm"
-              style={{
-                fontSize: 11,
-                padding: "2px 8px",
-                border: "1px solid var(--accent-color, #6366f1)",
-                color: "var(--accent-color, #6366f1)",
-              }}
-              onClick={() => handleOptionClick(opt.number)}
-              disabled={sending}
-              title={opt.label}
-            >
-              {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
-            </button>
-          ))}
+    <div className="confirm-overlay" onClick={onCancel}>
+      <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <h3 style={{ marginBottom: 12 }}>Run: {job.name}</h3>
+        <p className="text-secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+          Fill in all parameters before running.
+        </p>
+        {job.params.map((key) => (
+          <div key={key} style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, display: "block" }}>
+              {key}
+            </label>
+            <input
+              className="input"
+              type="text"
+              value={values[key] ?? ""}
+              onChange={(e) => onChange({ ...values, [key]: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") onRun(); }}
+              placeholder={`{${key}}`}
+              autoFocus={key === job.params[0]}
+            />
+          </div>
+        ))}
+        <div className="btn-group" style={{ marginTop: 16, justifyContent: "flex-end" }}>
+          <button className="btn btn-sm" onClick={onCancel}>Cancel</button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={onRun}
+            disabled={job.params.some((k) => !values[k]?.trim())}
+          >
+            Run
+          </button>
         </div>
-      )}
-      <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Send input to job..."
-          style={{ flex: 1 }}
-        />
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={handleSend}
-          disabled={!inputText.trim() || sending}
-        >
-          Send
-        </button>
       </div>
-    </div>
-  );
-}
-
-
-function RunsPanelContent({ jobName, jobState }: { jobName: string; jobState: string }) {
-  const { runs, reload } = useJobRuns(jobName);
-  const [confirmRunId, setConfirmRunId] = useState<string | null>(null);
-  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
-  const [selectMode, setSelectMode] = useState(false);
-  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
-  const [preferredEditor, setPreferredEditor] = useState("nvim");
-
-  useEffect(() => { reload(); }, []);
-
-  useEffect(() => {
-    invoke<AppSettings>("get_settings").then((s) => {
-      setPreferredEditor(s.preferred_editor);
-    });
-  }, []);
-
-  const handleDeleteRun = async (runId: string) => {
-    try {
-      await invoke("delete_run", { runId });
-      reload();
-    } catch (e) {
-      console.error("Failed to delete run:", e);
-    }
-  };
-
-  const handleDeleteSelected = async () => {
-    try {
-      await invoke("delete_runs", { runIds: Array.from(selectedRuns) });
-      setSelectedRuns(new Set());
-      setSelectMode(false);
-      reload();
-    } catch (e) {
-      console.error("Failed to delete runs:", e);
-    }
-  };
-
-  const handleOpenLog = async (runId: string) => {
-    try {
-      await invoke("open_run_log", { runId });
-    } catch (e) {
-      console.error("Failed to open log:", e);
-    }
-  };
-
-  const toggleRunSelected = (runId: string) => {
-    setSelectedRuns((prev) => {
-      const next = new Set(prev);
-      if (next.has(runId)) {
-        next.delete(runId);
-      } else {
-        next.add(runId);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (!runs) return;
-    if (selectedRuns.size === runs.length) {
-      setSelectedRuns(new Set());
-    } else {
-      setSelectedRuns(new Set(runs.map((r) => r.id)));
-    }
-  };
-
-  const exitCodeClass = (run: RunRecord) => {
-    if (run.exit_code === null || run.exit_code === undefined) {
-      if (run.finished_at || jobState !== "running") return "error";
-      return "running";
-    }
-    if (run.exit_code === 0) return "idle";
-    return "error";
-  };
-
-  const exitCodeLabel = (run: RunRecord) => {
-    if (run.exit_code === null || run.exit_code === undefined) {
-      if (run.finished_at || jobState !== "running") return "interrupted";
-      return "running";
-    }
-    if (run.exit_code === 0) return "ok";
-    return `exit ${run.exit_code}`;
-  };
-
-  const hasSelection = selectedRuns.size > 0;
-
-  return (
-    <div>
-      {runs === null ? (
-        <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>Loading...</span>
-      ) : runs.length === 0 ? (
-        <span className="text-secondary" style={{ fontSize: 12, padding: "0 12px" }}>No run history</span>
-      ) : (
-        <>
-          {selectMode && hasSelection && (
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "4px 12px",
-              fontSize: 12,
-              color: "var(--text-secondary)",
-            }}>
-              <span>{selectedRuns.size} selected</span>
-              <button
-                className="btn btn-sm"
-                style={{ fontSize: 11, color: "var(--danger-color)" }}
-                onClick={() => setConfirmBulkDelete(true)}
-              >
-                Delete selected
-              </button>
-              <button
-                className="btn btn-sm"
-                style={{ fontSize: 11, marginLeft: "auto" }}
-                onClick={() => { setSelectMode(false); setSelectedRuns(new Set()); }}
-              >
-                Done
-              </button>
-            </div>
-          )}
-          <table className="data-table runs-table" style={{ fontSize: 12 }}>
-            <thead>
-              <tr>
-                <th className="col-run-expand"></th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    Status
-                    {selectMode ? (
-                      <input
-                        type="checkbox"
-                        checked={runs.length > 0 && selectedRuns.size === runs.length}
-                        onChange={toggleSelectAll}
-                        title="Select all"
-                        style={{ margin: 0 }}
-                      />
-                    ) : (
-                      <button
-                        className="btn btn-sm"
-                        style={{ fontSize: 10, padding: "1px 6px" }}
-                        onClick={() => setSelectMode(true)}
-                      >
-                        Select
-                      </button>
-                    )}
-                  </span>
-                </th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>Trigger</th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>Started</th>
-                <th style={{ fontSize: 10, padding: "4px 12px" }}>Duration</th>
-                <th style={{ fontSize: 10, padding: "4px 8px", width: 28 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((run) => {
-                const duration = run.finished_at
-                  ? `${((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000).toFixed(1)}s`
-                  : "...";
-                const isLogExpanded = expandedRunId === run.id;
-
-                return [
-                  <tr key={run.id} className={isLogExpanded ? "row-expanded" : undefined}>
-                    <td className="col-run-expand">
-                      <button
-                        className="expand-btn"
-                        onClick={() => setExpandedRunId(isLogExpanded ? null : run.id)}
-                        title="Logs"
-                      >
-                        <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-                          {isLogExpanded ? "\u25BC" : "\u25B6"}
-                        </span>
-                      </button>
-                    </td>
-                    <td>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        {selectMode && (
-                          <input
-                            type="checkbox"
-                            checked={selectedRuns.has(run.id)}
-                            onChange={() => toggleRunSelected(run.id)}
-                            style={{ margin: 0 }}
-                          />
-                        )}
-                        <span className={`status-dot ${exitCodeClass(run)}`} />
-                        {exitCodeLabel(run)}
-                      </span>
-                    </td>
-                    <td>{run.trigger}</td>
-                    <td>{formatTime(run.started_at)}</td>
-                    <td>{duration}</td>
-                    <td style={{ textAlign: "right", padding: "0 8px" }}>
-                      <DeleteButton
-                        onClick={() => setConfirmRunId(run.id)}
-                        title="Delete this run"
-                        size={11}
-                      />
-                    </td>
-                  </tr>,
-                  isLogExpanded && (
-                    <tr key={`${run.id}-logs`}>
-                      <td colSpan={6} style={{ padding: "0 12px 8px", border: "none" }}>
-                        <LogViewer content={buildLogContent(run)} />
-                        <button
-                          className="btn btn-sm"
-                          style={{ marginTop: 6, fontSize: 11 }}
-                          onClick={() => handleOpenLog(run.id)}
-                        >
-                          Open in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-                        </button>
-                      </td>
-                    </tr>
-                  ),
-                ];
-              })}
-            </tbody>
-          </table>
-        </>
-      )}
-      {confirmRunId && (
-        <ConfirmDialog
-          message="Delete this run record? This cannot be undone."
-          onConfirm={() => { handleDeleteRun(confirmRunId); setConfirmRunId(null); }}
-          onCancel={() => setConfirmRunId(null)}
-        />
-      )}
-      {confirmBulkDelete && (
-        <ConfirmDialog
-          message={`Delete ${selectedRuns.size} run record${selectedRuns.size === 1 ? "" : "s"}? This cannot be undone.`}
-          onConfirm={() => { handleDeleteSelected(); setConfirmBulkDelete(false); }}
-          onCancel={() => setConfirmBulkDelete(false)}
-        />
-      )}
     </div>
   );
 }

@@ -79,9 +79,6 @@ fn make_question_id(pane_id: &str, options: &[QuestionOption]) -> String {
     format!("{}:{:x}", pane_id, hash)
 }
 
-/// Previous question state per pane.
-type QuestionState = HashMap<String, Vec<QuestionOption>>;
-
 /// Full cached question info for a pane, so we can re-send from cache on transient misses.
 struct CachedQuestion {
     question: ClaudeQuestion,
@@ -89,12 +86,13 @@ struct CachedQuestion {
 }
 
 /// Runs the question detection loop. Checks every 5 seconds for Claude processes
-/// that have interactive numbered options, and sends them to the relay.
+/// that have interactive numbered options, and sends them to the relay and stores
+/// them for the desktop frontend.
 pub async fn question_detection_loop(
     jobs_config: Arc<Mutex<JobsConfig>>,
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     relay: Arc<Mutex<Option<RelayHandle>>>,
-    active_questions: Arc<Mutex<QuestionState>>,
+    active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
 ) {
     // Cache full question data per pane so transient detection misses don't flicker
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
@@ -102,17 +100,10 @@ pub async fn question_detection_loop(
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-        // Only run if relay is connected
-        let has_relay = relay.lock().unwrap().is_some();
-        if !has_relay {
-            continue;
-        }
-
         let processes = detect_question_processes(&jobs_config, &job_status);
 
         // Track which panes were detected this tick
         let mut detected_panes = std::collections::HashSet::new();
-        let mut new_state = HashMap::new();
 
         for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in &processes {
             let options = parse_numbered_options(log_lines);
@@ -123,7 +114,6 @@ pub async fn question_detection_loop(
             detected_panes.insert(pane_id.clone());
 
             let question_id = make_question_id(pane_id, &options);
-            new_state.insert(pane_id.clone(), options.clone());
 
             let q = ClaudeQuestion {
                 pane_id: pane_id.clone(),
@@ -162,9 +152,10 @@ pub async fn question_detection_loop(
             .map(|c| c.question.clone())
             .collect();
 
-        *active_questions.lock().unwrap() = new_state;
+        // Store for desktop frontend
+        *active_questions.lock().unwrap() = questions.clone();
 
-        // Always send current questions so mobile stays in sync after reconnects
+        // Send to relay for mobile
         let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions };
         if let Ok(guard) = relay.lock() {
             if let Some(handle) = guard.as_ref() {

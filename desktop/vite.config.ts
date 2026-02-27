@@ -6,6 +6,9 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
   plugins: [react()],
+  define: {
+    global: "globalThis",
+  },
   resolve: {
     alias: {
       "react-native": "react-native-web",
