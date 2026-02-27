@@ -234,8 +234,23 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     [],
   );
 
+  // Keep rendering NotificationSection briefly after questions drop to 0 so departure
+  // animations play out before the section disappears.
+  const [nfnVisible, setNfnVisible] = useState(questions.length > 0);
+  const nfnHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (questions.length > 0) {
+      if (nfnHideTimer.current) clearTimeout(nfnHideTimer.current);
+      setNfnVisible(true);
+    } else {
+      nfnHideTimer.current = setTimeout(() => setNfnVisible(false), 500);
+    }
+    return () => { if (nfnHideTimer.current) clearTimeout(nfnHideTimer.current); };
+  }, [questions.length]);
+
   const notificationSection = useMemo(() => {
-    if (questions.length === 0) return undefined;
+    if (!nfnVisible) return undefined;
     return (
       <NotificationSection
         questions={questions}
@@ -246,7 +261,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         onToggleCollapse={() => core.toggleGroup("Notifications")}
       />
     );
-  }, [questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup]);
+  }, [nfnVisible, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup]);
 
   // Editor / picker screens (React DOM, kept as-is)
   if (editingJob || isCreating) {

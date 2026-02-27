@@ -45,11 +45,22 @@ export function NotificationSection({
 
   // Detect removed questions and animate them out
   useEffect(() => {
+    const prev = prevQuestionsRef.current;
     const currentIds = new Set(questions.map((q) => q.question_id));
-    const removed = prevQuestionsRef.current.filter((q) => !currentIds.has(q.question_id));
+    const removed = prev.filter((q) => !currentIds.has(q.question_id));
     prevQuestionsRef.current = questions;
 
     if (removed.length === 0) return;
+
+    // Adjust scroll position: if the active card was removed, stay at the same
+    // index (which now points to the next card) or clamp to the last card.
+    if (questions.length > 0 && cardWidth > 0) {
+      const newIndex = Math.min(activeIndex, questions.length - 1);
+      setActiveIndex(newIndex);
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ x: newIndex * cardWidth, animated: true });
+      }, 50);
+    }
 
     const newDeparting = removed.map((question) => {
       const anim = new Animated.Value(0);
@@ -67,7 +78,7 @@ export function NotificationSection({
         setDeparting((prev) => prev.filter((p) => p.question.question_id !== d.question.question_id));
       });
     }
-  }, [questions]);
+  }, [questions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const count = questions.length;
   const hasDeparting = departing.length > 0;

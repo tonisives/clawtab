@@ -50,18 +50,25 @@ class NotificationService: UNNotificationServiceExtension {
             options: []
         )
 
+        // Register category and wait for completion before delivering.
+        // Use a semaphore to ensure setNotificationCategories has been
+        // processed before we call contentHandler.
+        let semaphore = DispatchSemaphore(value: 0)
+
         UNUserNotificationCenter.current().getNotificationCategories { existing in
             var categories = existing
+            // Remove any stale CLAUDE_QUESTION_ categories to keep the set small
+            categories = categories.filter { !$0.identifier.hasPrefix("CLAUDE_QUESTION_") }
             categories.insert(category)
             UNUserNotificationCenter.current().setNotificationCategories(categories)
-
-            // Small delay to let iOS process the category registration
-            // before delivering the notification
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                content.categoryIdentifier = categoryId
-                contentHandler(content)
-            }
+            semaphore.signal()
         }
+
+        // Wait up to 2 seconds for category registration
+        _ = semaphore.wait(timeout: .now() + 2.0)
+
+        content.categoryIdentifier = categoryId
+        contentHandler(content)
     }
 
     override func serviceExtensionTimeWillExpire() {

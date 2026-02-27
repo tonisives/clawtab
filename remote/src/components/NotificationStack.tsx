@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -113,7 +113,22 @@ export function NotificationStack() {
     navigateToQuestion,
   ]);
 
-  if (activeQuestions.length === 0) return null;
+  // Keep rendering briefly after questions drop to 0 so departure animations play
+  const [visible, setVisible] = useState(activeQuestions.length > 0);
+  const hideTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    if (activeQuestions.length > 0) {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      setVisible(true);
+    } else {
+      // Wait for departure animation (300ms) + buffer
+      hideTimer.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
+  }, [activeQuestions.length]);
+
+  if (!visible) return null;
 
   return (
     <View style={styles.container}>

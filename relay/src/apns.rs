@@ -165,7 +165,6 @@ impl ApnsClient {
             .set_title(title)
             .set_body(body)
             .set_mutable_content()
-            .set_category("CLAUDE_QUESTION")
             .set_sound("default");
 
         let options_obj = NotificationOptions {
