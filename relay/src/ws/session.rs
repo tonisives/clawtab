@@ -472,8 +472,16 @@ async fn handle_claude_questions_push(
     let title = compact_cwd(&q.cwd);
 
     let body = {
+        // Build option prefixes to filter them out of context_lines
+        // (context_lines comes from terminal output which includes the options)
+        let option_prefixes: Vec<String> = q
+            .options
+            .iter()
+            .map(|o| format!("{}.", o.number))
+            .collect();
+
         // Extract the question text from context_lines by stripping decorative
-        // lines and keeping only meaningful content.
+        // lines, option lines, and keeping only the actual question.
         let question_text: Vec<&str> = q
             .context_lines
             .lines()
@@ -483,7 +491,7 @@ async fn handle_claude_questions_push(
                     return false;
                 }
                 // Skip lines made entirely of box-drawing / decoration chars
-                !t.chars().all(|c| {
+                if t.chars().all(|c| {
                     matches!(c,
                         '-' | '_' | '=' | '~' | '\u{2501}' | '\u{2500}' | '\u{2550}'
                         | '\u{254C}' | '\u{254D}' | '\u{2504}' | '\u{2505}'
@@ -491,7 +499,15 @@ async fn handle_claude_questions_push(
                         | '\u{2578}' | '\u{257A}' | '\u{2594}' | '\u{2581}'
                         | '|' | '\u{2502}' | '\u{2503}' | ' '
                     )
-                })
+                }) {
+                    return false;
+                }
+                // Skip lines that are numbered options (already in structured options)
+                // Strip leading prompt chars (>, ~, etc.) before checking
+                let stripped = t.trim_start_matches(|c: char| {
+                    matches!(c, '>' | '~' | '`' | '|' | ' ') || !c.is_ascii()
+                }).trim();
+                !option_prefixes.iter().any(|p| stripped.starts_with(p))
             })
             .collect();
 
@@ -517,13 +533,13 @@ async fn handle_claude_questions_push(
             }
         };
 
-        // iOS shows ~5 lines in a notification. Try to fit:
+        // iOS shows ~5 lines in a notification. Fit:
         // - question on first 2 lines
         // - options on remaining lines
         if question_text.is_empty() {
             options_str
         } else {
-            // Take at most 2 lines of question context
+            // Take at most 2 lines of question context (last lines are most relevant)
             let ctx = question_text
                 .iter()
                 .rev()
