@@ -16,7 +16,7 @@ import type { RunRecord } from "@clawtab/shared";
 const wsTransport = createWsTransport();
 
 export default function JobDetailScreen() {
-  const { name } = useLocalSearchParams<{ name: string }>();
+  const { name, run_id } = useLocalSearchParams<{ name: string; run_id?: string }>();
   const job = useJob(name);
   const status = useJobStatus(name);
   const { logs } = useLogs(name);
@@ -69,6 +69,7 @@ export default function JobDetailScreen() {
           runsLoading={runsLoading}
           onBack={() => router.back()}
           onReloadRuns={loadRuns}
+          expandRunId={run_id}
         />
       </ContentContainer>
     </View>

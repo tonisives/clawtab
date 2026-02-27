@@ -204,7 +204,7 @@ pub async fn execute_job(
                 }
                 NotifyTarget::App => {
                     let event = if success { "completed" } else { "failed" };
-                    crate::relay::push_job_notification(relay, &job.name, event);
+                    crate::relay::push_job_notification(relay, &job.name, event, &run_id);
                 }
                 NotifyTarget::None => {}
             }
@@ -240,7 +240,7 @@ pub async fn execute_job(
                     }
                 }
                 NotifyTarget::App => {
-                    crate::relay::push_job_notification(relay, &job.name, "failed");
+                    crate::relay::push_job_notification(relay, &job.name, "failed", &run_id);
                 }
                 NotifyTarget::None => {}
             }

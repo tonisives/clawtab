@@ -28,6 +28,12 @@ struct PayloadOption {
     label: String,
 }
 
+#[derive(Serialize)]
+struct JobPayload {
+    job_name: String,
+    run_id: String,
+}
+
 impl ApnsClient {
     pub fn new(config: &Config) -> Result<Self, String> {
         let key_path = config
@@ -80,9 +86,17 @@ impl ApnsClient {
         device_token: &str,
         job_name: &str,
         event: &str,
+        run_id: &str,
     ) -> Result<(), String> {
         let title = "ClawTab";
         let body = format!("Job {} {}", job_name, event);
+
+        let custom_data = JobPayload {
+            job_name: job_name.to_string(),
+            run_id: run_id.to_string(),
+        };
+        let custom_json =
+            serde_json::to_value(&custom_data).map_err(|e| format!("json error: {e}"))?;
 
         let builder = DefaultNotificationBuilder::new()
             .set_title(title)
@@ -98,7 +112,10 @@ impl ApnsClient {
             apns_push_type: None,
         };
 
-        let payload = builder.build(device_token, options_obj);
+        let mut payload = builder.build(device_token, options_obj);
+        payload
+            .add_custom_data("clawtab", &custom_json)
+            .map_err(|e| format!("custom data error: {e}"))?;
 
         match self.client.send(payload).await {
             Ok(_) => Ok(()),

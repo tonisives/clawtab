@@ -399,12 +399,13 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
     }
 
     // If this is a JobNotification message, send APNs push
-    if let DesktopMessage::JobNotification { ref name, ref event } = msg {
+    if let DesktopMessage::JobNotification { ref name, ref event, ref run_id } = msg {
         let state = state.clone();
         let name = name.clone();
         let event = event.clone();
+        let run_id = run_id.clone();
         tokio::spawn(async move {
-            handle_job_notification_push(&state, user_id, &name, &event).await;
+            handle_job_notification_push(&state, user_id, &name, &event, &run_id).await;
         });
     }
 }
@@ -597,6 +598,7 @@ async fn handle_job_notification_push(
     user_id: Uuid,
     job_name: &str,
     event: &str,
+    run_id: &str,
 ) {
     let Some(ref apns) = state.apns else {
         return;
@@ -637,7 +639,7 @@ async fn handle_job_notification_push(
 
     for (token_id, device_token) in &tokens {
         match apns
-            .send_job_notification(device_token, job_name, event)
+            .send_job_notification(device_token, job_name, event, run_id)
             .await
         {
             Ok(()) => {

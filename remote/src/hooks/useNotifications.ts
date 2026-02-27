@@ -24,11 +24,23 @@ export function useNotifications() {
             pane_id?: string;
             matched_job?: string;
             options?: { number: string; label: string }[];
+            job_name?: string;
+            run_id?: string;
           };
         } | undefined;
 
         const clawtab = data?.clawtab;
-        if (!clawtab?.question_id || !clawtab?.pane_id) return;
+        if (!clawtab) return;
+
+        // Job notification (no question_id means it's a job status push)
+        if (clawtab.job_name && !clawtab.question_id) {
+          const params = clawtab.run_id ? `?run_id=${clawtab.run_id}` : "";
+          router.push(`/job/${clawtab.job_name}${params}`);
+          return;
+        }
+
+        // Question notification
+        if (!clawtab.question_id || !clawtab.pane_id) return;
 
         const actionId = response.actionIdentifier;
 

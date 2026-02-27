@@ -59,7 +59,7 @@ pub async fn monitor_pane(params: MonitorParams) {
             }
         }
         if use_app {
-            crate::relay::push_job_notification(&params.relay, &params.job_name, "started");
+            crate::relay::push_job_notification(&params.relay, &params.job_name, "started", &params.run_id);
         }
     }
 
@@ -360,7 +360,7 @@ pub async fn monitor_pane(params: MonitorParams) {
             }
         }
         if use_app {
-            crate::relay::push_job_notification(&params.relay, &params.job_name, "completed");
+            crate::relay::push_job_notification(&params.relay, &params.job_name, "completed", &params.run_id);
         }
     }
 

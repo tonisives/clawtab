@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Modal,
+  SafeAreaView,
 } from "react-native";
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "../types/job";
@@ -34,6 +36,8 @@ export interface JobDetailViewProps {
   onDuplicate?: () => void;
   onToggleEnabled?: () => void;
   onDelete?: () => void;
+  // Auto-expand a specific run by ID (e.g. from notification deep link)
+  expandRunId?: string;
   // Slot for platform-specific content (e.g. desktop configuration sections)
   extraContent?: ReactNode;
 }
@@ -52,6 +56,7 @@ export function JobDetailView({
   onDuplicate,
   onToggleEnabled,
   onDelete,
+  expandRunId,
   extraContent,
 }: JobDetailViewProps) {
   const state = status.state;
@@ -61,6 +66,7 @@ export function JobDetailView({
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
+  const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
 
   // Reload runs when status changes
   useEffect(() => {
@@ -224,7 +230,14 @@ export function JobDetailView({
                   <Text style={styles.runsEmpty}>No run history</Text>
                 ) : (
                   runs.map((run, i) => (
-                    <RunRow key={run.id} run={run} transport={transport} currentState={state} defaultExpanded={i === 0} />
+                    <RunRow
+                      key={run.id}
+                      run={run}
+                      transport={transport}
+                      currentState={state}
+                      defaultExpanded={expandRunId ? run.id === expandRunId : i === 0}
+                      onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
+                    />
                   ))
                 )}
               </View>
@@ -274,6 +287,16 @@ export function JobDetailView({
           visible={showParamsModal}
           onRun={handleRunWithParams}
           onCancel={() => setShowParamsModal(false)}
+        />
+      )}
+
+      {/* Fullscreen log zoom modal */}
+      {zoomRun && (
+        <LogZoomModal
+          run={zoomRun.run}
+          logContent={zoomRun.logContent}
+          currentState={state}
+          onClose={() => setZoomRun(null)}
         />
       )}
     </View>
@@ -341,11 +364,13 @@ function RunRow({
   transport,
   currentState,
   defaultExpanded,
+  onZoom,
 }: {
   run: RunRecord;
   transport: Transport;
   currentState: string;
   defaultExpanded?: boolean;
+  onZoom?: (run: RunRecord, logContent: string) => void;
 }) {
   const color = runStatusColor(run, currentState);
   const label = runStatusLabel(run, currentState);
@@ -353,6 +378,7 @@ function RunRow({
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
     if (defaultExpanded && !detail && !loading) {
@@ -363,6 +389,16 @@ function RunRow({
       });
     }
   }, [defaultExpanded, run.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-scroll to bottom when log content loads
+  useEffect(() => {
+    if (expanded && detail && scrollRef.current) {
+      const timer = setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: false });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [expanded, detail]);
 
   const handleToggle = () => {
     const next = !expanded;
@@ -393,7 +429,19 @@ function RunRow({
           </View>
         </View>
         <View style={styles.runRight}>
-          <Text style={styles.runTime}>{formatTime(run.started_at)}</Text>
+          <View style={styles.runRightRow}>
+            <Text style={styles.runTime}>{formatTime(run.started_at)}</Text>
+            {expanded && logContent && onZoom && (
+              <TouchableOpacity
+                onPress={(e) => { e.stopPropagation(); onZoom(run, logContent); }}
+                style={styles.zoomBtn}
+                activeOpacity={0.6}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.zoomIcon}>{"\u2922"}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <Text style={styles.runDuration}>{duration}</Text>
         </View>
       </View>
@@ -402,7 +450,7 @@ function RunRow({
           {loading ? (
             <Text style={styles.runLogsText}>Loading...</Text>
           ) : logContent ? (
-            <ScrollView horizontal={false} style={{ maxHeight: 300 }} nestedScrollEnabled>
+            <ScrollView ref={scrollRef} horizontal={false} style={{ maxHeight: 300 }} nestedScrollEnabled>
               <Text style={styles.runLogsText} selectable>{logContent}</Text>
             </ScrollView>
           ) : (
@@ -411,6 +459,51 @@ function RunRow({
         </View>
       )}
     </TouchableOpacity>
+  );
+}
+
+function LogZoomModal({
+  run,
+  logContent,
+  currentState,
+  onClose,
+}: {
+  run: RunRecord;
+  logContent: string;
+  currentState: string;
+  onClose: () => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const color = runStatusColor(run, currentState);
+  const label = runStatusLabel(run, currentState);
+  const duration = formatDuration(run.started_at, run.finished_at);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: false });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={styles.zoomModal}>
+        <View style={styles.zoomHeader}>
+          <View style={styles.zoomHeaderLeft}>
+            <View style={[styles.statusDot, { backgroundColor: color }]} />
+            <Text style={styles.zoomHeaderLabel}>{label}</Text>
+            <Text style={styles.zoomHeaderTime}>{formatTime(run.started_at)}</Text>
+            <Text style={styles.zoomHeaderDuration}>{duration}</Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.zoomCloseBtn} activeOpacity={0.6}>
+            <Text style={styles.zoomCloseText}>{"\u2715"}</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView ref={scrollRef} style={styles.zoomLogScroll} contentContainerStyle={styles.zoomLogContent}>
+          <Text style={styles.zoomLogText} selectable>{logContent}</Text>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -592,6 +685,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
   },
+  runRightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  zoomBtn: {
+    padding: 2,
+  },
+  zoomIcon: {
+    color: colors.textMuted,
+    fontSize: 14,
+    fontFamily: "monospace",
+  },
   runLogs: {
     padding: spacing.sm,
     backgroundColor: "#000",
@@ -604,5 +710,55 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: "monospace",
     lineHeight: 16,
+  },
+  zoomModal: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  zoomHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  zoomHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  zoomHeaderLabel: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  zoomHeaderTime: {
+    color: colors.textSecondary,
+    fontSize: 11,
+  },
+  zoomHeaderDuration: {
+    color: colors.textMuted,
+    fontSize: 11,
+  },
+  zoomCloseBtn: {
+    padding: spacing.sm,
+  },
+  zoomCloseText: {
+    color: colors.textSecondary,
+    fontSize: 18,
+  },
+  zoomLogScroll: {
+    flex: 1,
+  },
+  zoomLogContent: {
+    padding: spacing.md,
+  },
+  zoomLogText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontFamily: "monospace",
+    lineHeight: 18,
   },
 });

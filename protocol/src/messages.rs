@@ -223,6 +223,7 @@ pub enum DesktopMessage {
     JobNotification {
         name: String,
         event: String,
+        run_id: String,
     },
 }
 

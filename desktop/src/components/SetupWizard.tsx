@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings, Job, NotifyTarget, TelegramConfig, ToolInfo } from "../types";
 import { ToolGroupList } from "./ToolGroupList";
 import { TelegramSetup } from "./TelegramSetup";
+import { RelayPanel } from "./RelayPanel";
 
 type Props = {
   onComplete: () => void;
@@ -41,6 +42,9 @@ export function SetupWizard({ onComplete }: Props) {
   const [browseStatus, setBrowseStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
   const [browseError, setBrowseError] = useState("");
 
+  // Relay connection state (for "app" notification choice)
+  const [relayConnected, setRelayConnected] = useState(false);
+
   const hasTmux = tools.some((t) => t.name === "tmux" && t.available);
   const hasAiAgent = tools.some((t) => t.category === "AI Agent" && t.available);
   const hasTerminal = tools.some((t) => t.category === "Terminal" && t.available);
@@ -69,6 +73,19 @@ export function SetupWizard({ onComplete }: Props) {
       setTelegramLoaded(true);
     });
   }, []);
+
+  // Poll relay status when "app" notification choice is selected
+  useEffect(() => {
+    if (notifyChoice !== "app" || currentStep !== "notifications") return;
+    const check = () => {
+      invoke<{ connected: boolean }>("get_relay_status").then((st) => {
+        setRelayConnected(st.connected);
+      }).catch(() => {});
+    };
+    check();
+    const interval = setInterval(check, 3000);
+    return () => clearInterval(interval);
+  }, [notifyChoice, currentStep]);
 
   const goNext = () => {
     if (currentIdx < STEPS.length - 1) {
@@ -371,6 +388,17 @@ export function SetupWizard({ onComplete }: Props) {
                 initialConfig={telegramConfig}
                 onComplete={handleTelegramComplete}
               />
+            </div>
+          )}
+
+          {notifyChoice === "app" && (
+            <div style={{ marginTop: 20 }}>
+              <RelayPanel />
+              {relayConnected && (
+                <p style={{ color: "var(--success-color)", marginTop: 12, fontSize: 13 }}>
+                  Connected to relay. You can proceed to the next step.
+                </p>
+              )}
             </div>
           )}
         </div>
