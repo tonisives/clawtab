@@ -857,6 +857,11 @@ pub fn agent_dir_path() -> std::path::PathBuf {
         .join("agent")
 }
 
+#[tauri::command]
+pub fn get_agent_dir() -> String {
+    agent_dir_path().display().to_string()
+}
+
 fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     let mut out = String::new();
     let jn = job.job_name.as_deref().unwrap_or("default");

@@ -465,13 +465,12 @@ async fn handle_claude_questions_push(
 
     // Use the first question for the push notification
     let q = &questions[0];
-    let project = q
-        .cwd
-        .rsplit('/')
-        .next()
-        .unwrap_or(&q.cwd);
 
-    let title = format!("Claude needs input - {project}");
+    // Compact the path: keep the last folder (most important) plus a
+    // shortened prefix. e.g. "/Users/tonis/workspace/tgs/clawtab/public"
+    // becomes "~/w/t/clawtab/public"
+    let title = compact_cwd(&q.cwd);
+
     let body = {
         // Extract the question text from context_lines by stripping decorative
         // lines and keeping only meaningful content.
@@ -496,17 +495,43 @@ async fn handle_claude_questions_push(
             })
             .collect();
 
-        let options_str = q
-            .options
-            .iter()
-            .map(|o| format!("{}. {}", o.number, o.label))
-            .collect::<Vec<_>>()
-            .join(" | ");
+        // Format options compactly. If all labels are short (<=6 chars),
+        // put them on a single line: "1.Yes 2.No 3.Skip"
+        // Otherwise one per line: "1. Fix the authentication bug\n2. Skip this step"
+        let options_str = if q.options.is_empty() {
+            String::new()
+        } else {
+            let all_short = q.options.iter().all(|o| o.label.len() <= 6);
+            if all_short {
+                q.options
+                    .iter()
+                    .map(|o| format!("{}.{}", o.number, o.label))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            } else {
+                q.options
+                    .iter()
+                    .map(|o| format!("{}. {}", o.number, o.label))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        };
 
+        // iOS shows ~5 lines in a notification. Try to fit:
+        // - question on first 2 lines
+        // - options on remaining lines
         if question_text.is_empty() {
             options_str
         } else {
-            let ctx = question_text.join("\n");
+            // Take at most 2 lines of question context
+            let ctx = question_text
+                .iter()
+                .rev()
+                .take(2)
+                .rev()
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n");
             if options_str.is_empty() {
                 ctx
             } else {
@@ -548,6 +573,50 @@ async fn handle_claude_questions_push(
             .execute(&state.pool)
             .await
             .ok();
+    }
+}
+
+/// Compact a cwd path for use as a notification title.
+/// Keeps the last 2 segments in full, abbreviates earlier ones to first char.
+/// e.g. "/Users/tonis/workspace/tgs/clawtab/public" -> "~/w/t/clawtab/public"
+///      "/home/user/myproject" -> "~/myproject"
+fn compact_cwd(cwd: &str) -> String {
+    let path = cwd.strip_prefix("/Users/").or_else(|| cwd.strip_prefix("/home/"));
+    let segments: Vec<&str> = match path {
+        Some(rest) => {
+            // Skip the username, treat everything after as the meaningful path
+            let parts: Vec<&str> = rest.splitn(2, '/').collect();
+            if parts.len() < 2 {
+                return cwd.rsplit('/').next().unwrap_or(cwd).to_string();
+            }
+            parts[1].split('/').filter(|s| !s.is_empty()).collect()
+        }
+        None => cwd.split('/').filter(|s| !s.is_empty()).collect(),
+    };
+
+    if segments.is_empty() {
+        return cwd.to_string();
+    }
+
+    // Keep last 2 segments full, abbreviate the rest
+    let keep_full = 2.min(segments.len());
+    let abbrev_count = segments.len() - keep_full;
+
+    let mut parts: Vec<String> = Vec::new();
+    for (i, seg) in segments.iter().enumerate() {
+        if i < abbrev_count {
+            // First char only
+            parts.push(seg.chars().next().map(|c| c.to_string()).unwrap_or_default());
+        } else {
+            parts.push(seg.to_string());
+        }
+    }
+
+    let joined = parts.join("/");
+    if path.is_some() {
+        format!("~/{joined}")
+    } else {
+        format!("/{joined}")
     }
 }
 

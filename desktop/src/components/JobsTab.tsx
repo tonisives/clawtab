@@ -444,6 +444,11 @@ function AgentDetail({
   const { runs, reloadRuns } = useJobDetail(transport, "agent");
   const { logs } = useLogBuffer(transport, "agent");
 
+  const extraContent = useMemo(
+    () => <AgentDetailSections />,
+    [],
+  );
+
   return (
     <JobDetailView
       transport={transport}
@@ -454,7 +459,160 @@ function AgentDetail({
       onBack={onBack}
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
+      extraContent={extraContent}
     />
+  );
+}
+
+// Agent directions editor - lets user edit job.md and view cwt.md
+function AgentDetailSections() {
+  const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
+  const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
+  const [inlineContent, setInlineContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
+  const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
+  const [preferredEditor, setPreferredEditor] = useState("nvim");
+  const [agentDir, setAgentDir] = useState<string | null>(null);
+  const savedContentRef = useRef(savedContent);
+  savedContentRef.current = savedContent;
+
+  const dirty = inlineContent !== savedContent;
+
+  useEffect(() => {
+    invoke<string>("get_agent_dir").then(setAgentDir).catch(() => {});
+    invoke<AppSettings>("get_settings").then((s) => {
+      setPreferredEditor(s.preferred_editor);
+    }).catch(() => {});
+  }, []);
+
+  const reloadDirections = useCallback(() => {
+    if (!agentDir) return;
+    invoke<string>("read_cwt_entry", { folderPath: agentDir, jobName: "default" })
+      .then((content) => {
+        setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
+        setSavedContent(content);
+      })
+      .catch(() => {});
+  }, [agentDir]);
+
+  useEffect(() => {
+    if (!agentDir) return;
+    invoke<string>("read_cwt_entry", { folderPath: agentDir, jobName: "default" })
+      .then((content) => {
+        setInlineContent(content);
+        setSavedContent(content);
+      })
+      .catch(() => {});
+    invoke<string>("read_cwt_context", { folderPath: agentDir, jobName: "default" })
+      .then(setCwtContextPreview)
+      .catch(() => setCwtContextPreview(null));
+  }, [agentDir]);
+
+  useEffect(() => {
+    if (!agentDir) return;
+    const interval = setInterval(reloadDirections, 2000);
+    return () => clearInterval(interval);
+  }, [agentDir, reloadDirections]);
+
+  useEffect(() => {
+    const onFocus = () => reloadDirections();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [reloadDirections]);
+
+  const handleSaveDirections = () => {
+    if (!agentDir) return;
+    invoke("write_cwt_entry", {
+      folderPath: agentDir,
+      jobName: "default",
+      content: inlineContent,
+    }).then(() => {
+      setSavedContent(inlineContent);
+    }).catch(() => {});
+  };
+
+  if (!agentDir) return null;
+
+  return (
+    <div className="field-group">
+      <button
+        onClick={() => setDirectionsCollapsed((v) => !v)}
+        style={{
+          background: "none",
+          border: "none",
+          color: "var(--text-secondary)",
+          cursor: "pointer",
+          padding: 0,
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+        }}
+        className="field-group-title"
+      >
+        <span style={{ fontFamily: "monospace", fontSize: 9 }}>
+          {directionsCollapsed ? "\u25B6" : "\u25BC"}
+        </span>
+        Directions
+      </button>
+      {!directionsCollapsed && (
+        <div style={{ marginTop: 8 }}>
+          <div className="directions-box">
+            <div className="directions-tabs">
+              <button
+                className={`directions-tab ${previewFile === "job.md" ? "active" : ""}`}
+                onClick={() => setPreviewFile("job.md")}
+              >
+                job.md
+              </button>
+              <button
+                className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
+                onClick={() => setPreviewFile("cwt.md")}
+              >
+                cwt.md
+              </button>
+            </div>
+            {previewFile === "job.md" ? (
+              <textarea
+                className="directions-editor"
+                value={inlineContent}
+                onChange={(e) => setInlineContent(e.target.value)}
+                spellCheck={false}
+                placeholder="Describe what the agent should do..."
+              />
+            ) : (
+              <pre className="directions-body">
+                {cwtContextPreview || "(no cwt.md)"}
+              </pre>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+            {dirty && (
+              <button className="btn btn-primary btn-sm" onClick={handleSaveDirections}>
+                Save
+              </button>
+            )}
+            <button
+              className="btn btn-sm"
+              onClick={() => {
+                invoke("open_job_editor", {
+                  folderPath: agentDir,
+                  editor: preferredEditor,
+                  jobName: "default",
+                  fileName: previewFile,
+                });
+              }}
+            >
+              Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

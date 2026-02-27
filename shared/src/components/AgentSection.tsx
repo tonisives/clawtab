@@ -53,35 +53,33 @@ export function AgentSection({
         <>
           {agentProcess ? (
             <ProcessCard process={agentProcess} onPress={onSelectProcess} />
-          ) : (
+          ) : canRun ? (
             <View style={styles.agentSection}>
-              {canRun && (
-                <View style={styles.agentInput}>
-                  <TextInput
-                    style={styles.agentTextInput}
-                    value={prompt}
-                    onChangeText={setPrompt}
-                    placeholder="Enter a prompt for the agent..."
-                    placeholderTextColor={colors.textMuted}
-                    returnKeyType="send"
-                    onSubmitEditing={handleRun}
-                    editable={!sending}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.agentRunBtn,
-                      (!prompt.trim() || sending) && styles.btnDisabled,
-                    ]}
-                    onPress={handleRun}
-                    disabled={!prompt.trim() || sending}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.agentRunBtnText}>Run</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+              <View style={styles.agentInput}>
+                <TextInput
+                  style={styles.agentTextInput}
+                  value={prompt}
+                  onChangeText={setPrompt}
+                  placeholder="Enter a prompt for the agent..."
+                  placeholderTextColor={colors.textMuted}
+                  returnKeyType="send"
+                  onSubmitEditing={handleRun}
+                  editable={!sending}
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.agentRunBtn,
+                    (!prompt.trim() || sending) && styles.btnDisabled,
+                  ]}
+                  onPress={handleRun}
+                  disabled={!prompt.trim() || sending}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.agentRunBtnText}>Run</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          )}
+          ) : null}
         </>
       )}
     </View>

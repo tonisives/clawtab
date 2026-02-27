@@ -292,6 +292,7 @@ pub fn run() {
             commands::jobs::stop_job,
             commands::jobs::restart_job,
             commands::jobs::run_agent,
+            commands::jobs::get_agent_dir,
             commands::jobs::open_job_editor,
             commands::jobs::open_job_in_editor,
             commands::jobs::init_cwt_folder,
