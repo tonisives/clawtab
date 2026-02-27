@@ -470,96 +470,14 @@ async fn handle_claude_questions_push(
     // Compact the path: keep the last folder (most important) plus a
     // shortened prefix. e.g. "/Users/tonis/workspace/tgs/clawtab/public"
     // becomes "~/w/t/clawtab/public"
-    let title = compact_cwd(&q.cwd);
+    let title = crate::notification_fmt::compact_cwd(&q.cwd);
+    let body = crate::notification_fmt::format_body(&q.context_lines, &q.options);
 
-    let body = {
-        // Build option prefixes to filter them out of context_lines
-        // (context_lines comes from terminal output which includes the options)
-        let option_prefixes: Vec<String> = q
-            .options
-            .iter()
-            .map(|o| format!("{}.", o.number))
-            .collect();
-
-        // Extract the question text from context_lines by stripping decorative
-        // lines, option lines, and keeping only the actual question.
-        let question_text: Vec<&str> = q
-            .context_lines
-            .lines()
-            .filter(|l| {
-                let t = l.trim();
-                if t.is_empty() {
-                    return false;
-                }
-                // Skip lines made entirely of box-drawing / decoration chars
-                if t.chars().all(|c| {
-                    matches!(c,
-                        '-' | '_' | '=' | '~' | '\u{2501}' | '\u{2500}' | '\u{2550}'
-                        | '\u{254C}' | '\u{254D}' | '\u{2504}' | '\u{2505}'
-                        | '\u{2508}' | '\u{2509}' | '\u{2574}' | '\u{2576}'
-                        | '\u{2578}' | '\u{257A}' | '\u{2594}' | '\u{2581}'
-                        | '|' | '\u{2502}' | '\u{2503}' | ' '
-                    )
-                }) {
-                    return false;
-                }
-                // Skip lines that are numbered options (already in structured options)
-                // Strip leading prompt chars (>, ~, etc.) before checking
-                let stripped = t.trim_start_matches(|c: char| {
-                    matches!(c, '>' | '~' | '`' | '|' | ' ') || !c.is_ascii()
-                }).trim();
-                !option_prefixes.iter().any(|p| stripped.starts_with(p))
-            })
-            .collect();
-
-        // Format options compactly. If all labels are short (<=6 chars),
-        // put them on a single line: "1.Yes 2.No 3.Skip"
-        // Otherwise one per line: "1. Fix the authentication bug\n2. Skip this step"
-        let options_str = if q.options.is_empty() {
-            String::new()
-        } else {
-            let all_short = q.options.iter().all(|o| o.label.len() <= 6);
-            if all_short {
-                q.options
-                    .iter()
-                    .map(|o| format!("{}.{}", o.number, o.label))
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            } else {
-                q.options
-                    .iter()
-                    .map(|o| format!("{}. {}", o.number, o.label))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            }
-        };
-
-        // iOS shows ~5 lines in a notification. Fit:
-        // - question on first 2 lines
-        // - options on remaining lines
-        if question_text.is_empty() {
-            options_str
-        } else {
-            // Take at most 2 lines of question context (last lines are most relevant)
-            let ctx = question_text
-                .iter()
-                .rev()
-                .take(2)
-                .rev()
-                .copied()
-                .collect::<Vec<_>>()
-                .join("\n");
-            if options_str.is_empty() {
-                ctx
-            } else {
-                format!("{ctx}\n{options_str}")
-            }
-        }
-    };
-
+    // iOS allows max 4 action buttons
     let options: Vec<(String, String)> = q
         .options
         .iter()
+        .take(4)
         .map(|o| (o.number.clone(), o.label.clone()))
         .collect();
 
@@ -664,49 +582,6 @@ async fn handle_job_notification_push(
     }
 }
 
-/// Compact a cwd path for use as a notification title.
-/// Keeps the last 2 segments in full, abbreviates earlier ones to first char.
-/// e.g. "/Users/tonis/workspace/tgs/clawtab/public" -> "~/w/t/clawtab/public"
-///      "/home/user/myproject" -> "~/myproject"
-fn compact_cwd(cwd: &str) -> String {
-    let path = cwd.strip_prefix("/Users/").or_else(|| cwd.strip_prefix("/home/"));
-    let segments: Vec<&str> = match path {
-        Some(rest) => {
-            // Skip the username, treat everything after as the meaningful path
-            let parts: Vec<&str> = rest.splitn(2, '/').collect();
-            if parts.len() < 2 {
-                return cwd.rsplit('/').next().unwrap_or(cwd).to_string();
-            }
-            parts[1].split('/').filter(|s| !s.is_empty()).collect()
-        }
-        None => cwd.split('/').filter(|s| !s.is_empty()).collect(),
-    };
-
-    if segments.is_empty() {
-        return cwd.to_string();
-    }
-
-    // Keep last 2 segments full, abbreviate the rest
-    let keep_full = 2.min(segments.len());
-    let abbrev_count = segments.len() - keep_full;
-
-    let mut parts: Vec<String> = Vec::new();
-    for (i, seg) in segments.iter().enumerate() {
-        if i < abbrev_count {
-            // First char only
-            parts.push(seg.chars().next().map(|c| c.to_string()).unwrap_or_default());
-        } else {
-            parts.push(seg.to_string());
-        }
-    }
-
-    let joined = parts.join("/");
-    if path.is_some() {
-        format!("~/{joined}")
-    } else {
-        format!("/{joined}")
-    }
-}
 
 fn extract_id(msg: &ClientMessage) -> Option<String> {
     match msg {

@@ -14,6 +14,7 @@ mod billing;
 mod config;
 mod db;
 mod error;
+mod notification_fmt;
 mod push_limiter;
 mod routes;
 mod ws;
