@@ -224,6 +224,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     } else {
       invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
     }
+    // Optimistically remove the question so the card hides immediately
+    setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
     startFastQuestionPoll();
   }, [startFastQuestionPoll]);
 

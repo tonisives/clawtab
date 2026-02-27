@@ -76,10 +76,14 @@ export function NotificationStack() {
     [router],
   );
 
+  const answerQuestion = useNotificationStore((s) => s.answerQuestion);
+
   const handleSendOption = useCallback(
     (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
       const send = getWsSend();
       if (!send) return;
+      // Optimistically remove the question so the card hides immediately
+      answerQuestion(q.question_id);
       if (resolvedJob) {
         send({ type: "send_input", id: nextId(), name: resolvedJob, text: optionNumber });
       } else {
@@ -89,7 +93,7 @@ export function NotificationStack() {
         }
       }
     },
-    [processMap],
+    [processMap, answerQuestion],
   );
 
   // Handle deep link

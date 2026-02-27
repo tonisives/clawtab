@@ -530,6 +530,10 @@ const styles = StyleSheet.create({
   backArrow: {
     color: colors.textSecondary,
     fontSize: 18,
+    lineHeight: 22,
+    textAlign: "center",
+    width: 22,
+    height: 22,
   },
   jobName: {
     color: colors.text,
@@ -691,11 +695,11 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   zoomBtn: {
-    padding: 2,
+    padding: 6,
   },
   zoomIcon: {
     color: colors.textMuted,
-    fontSize: 14,
+    fontSize: 18,
     fontFamily: "monospace",
   },
   runLogs: {
