@@ -69,16 +69,12 @@ export function NotificationCard({
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>
-          <View style={styles.questionBadge}>
-            <Text style={styles.warningIcon}>!</Text>
-            <Text style={styles.questionLabel}>Waiting for input</Text>
-          </View>
+          <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
           <View style={styles.headerRight}>
             <Text style={styles.openText}>Open</Text>
             <Text style={styles.chevron}>{"\u203A"}</Text>
           </View>
         </View>
-        <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
 
         {preview ? (
           <View style={styles.logPreview}>
@@ -137,23 +133,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-  questionBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  warningIcon: {
-    color: colors.warning,
-    fontSize: 14,
-    fontWeight: "700",
-    width: 16,
-    textAlign: "center",
-  },
-  questionLabel: {
-    color: colors.warning,
-    fontSize: 12,
-    fontWeight: "600",
   },
   headerRight: {
     flexDirection: "row",

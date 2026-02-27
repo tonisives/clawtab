@@ -51,13 +51,11 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     options
 }
 
-/// Check whether the terminal output contains indicators of an interactive
-/// *numbered option* prompt. Claude CLI's option menus include:
-///   "Enter to select · ↑/↓ to navigate · Esc to cancel"
-/// Tool permission prompts (Yes/No) use a different footer:
-///   "Esc to cancel · Tab to amend · ctrl+e to explain"
-/// We must NOT match the latter, so we only check for "enter to select"
-/// and "to navigate" which are unique to numbered option menus.
+/// Check whether the terminal output contains indicators of an interactive prompt.
+/// Claude CLI uses two kinds of numbered prompts:
+///   Option menus: "Enter to select · ↑/↓ to navigate · Esc to cancel"
+///   Tool permissions: "Esc to cancel · Tab to amend · ctrl+e to explain"
+/// Both should be detected so notification cards appear for all interactive prompts.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
     let last_line = text.lines().rev()
         .find(|l| !l.trim().is_empty())
@@ -65,6 +63,8 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
         .to_lowercase();
     last_line.contains("enter to select")
         || last_line.contains("to navigate")
+        || last_line.contains("tab to amend")
+        || last_line.contains("esc to cancel")
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.

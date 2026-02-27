@@ -6,7 +6,7 @@ import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import {
   JobListView,
   JobDetailView,
-  NotificationCard,
+  NotificationSection,
   useJobsCore,
   useJobActions,
   useJobDetail,
@@ -190,6 +190,44 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     setIsCreating(true);
   }, [core.jobs]);
 
+  const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
+    if (resolvedJob) {
+      const job = (core.jobs as Job[]).find((j) => j.name === resolvedJob);
+      if (job) { setViewingJob(job); return; }
+    }
+    invoke("focus_detected_process", {
+      tmuxSession: q.tmux_session,
+      windowName: q.window_name,
+    }).catch(() => {});
+  }, [core.jobs]);
+
+  const handleQuestionSendOption = useCallback((q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
+    if (resolvedJob) {
+      invoke("send_job_input", { name: resolvedJob, text: optionNumber }).catch(() => {});
+    } else {
+      invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
+    }
+  }, []);
+
+  const resolveQuestionJob = useCallback(
+    (q: ClaudeQuestion) => q.matched_job ?? null,
+    [],
+  );
+
+  const notificationSection = useMemo(() => {
+    if (questions.length === 0) return undefined;
+    return (
+      <NotificationSection
+        questions={questions}
+        resolveJob={resolveQuestionJob}
+        onNavigate={handleQuestionNavigate}
+        onSendOption={handleQuestionSendOption}
+        collapsed={core.collapsedGroups.has("Notifications")}
+        onToggleCollapse={() => core.toggleGroup("Notifications")}
+      />
+    );
+  }, [questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup]);
+
   // Editor / picker screens (React DOM, kept as-is)
   if (editingJob || isCreating) {
     return (
@@ -293,42 +331,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     );
   }
 
-  const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
-    if (resolvedJob) {
-      const job = (core.jobs as Job[]).find((j) => j.name === resolvedJob);
-      if (job) { setViewingJob(job); return; }
-    }
-    invoke("focus_detected_process", {
-      tmuxSession: q.tmux_session,
-      windowName: q.window_name,
-    }).catch(() => {});
-  }, [core.jobs]);
-
-  const handleQuestionSendOption = useCallback((q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
-    if (resolvedJob) {
-      invoke("send_job_input", { name: resolvedJob, text: optionNumber }).catch(() => {});
-    } else {
-      invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
-    }
-  }, []);
-
-  const notificationCards = useMemo(() => {
-    if (questions.length === 0) return undefined;
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-        {questions.map((q) => (
-          <NotificationCard
-            key={q.question_id}
-            question={q}
-            resolvedJob={q.matched_job ?? null}
-            onNavigate={handleQuestionNavigate}
-            onSendOption={handleQuestionSendOption}
-          />
-        ))}
-      </div>
-    );
-  }, [questions, handleQuestionNavigate, handleQuestionSendOption]);
-
   // Main jobs list using shared component
   return (
     <div className="settings-section">
@@ -352,7 +354,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         onSelectProcess={handleSelectProcess}
         onRunAgent={handleRunAgent}
         onAddJob={handleAddJob}
-        headerContent={notificationCards}
+        headerContent={notificationSection}
         showEmpty={core.loaded}
         emptyMessage="No jobs configured yet."
       />

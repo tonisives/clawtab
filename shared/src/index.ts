@@ -39,6 +39,7 @@ export { MessageInput } from "./components/MessageInput";
 export { ParamsDialog } from "./components/ParamsDialog";
 export { AgentSection } from "./components/AgentSection";
 export { NotificationCard } from "./components/NotificationCard";
+export { NotificationSection } from "./components/NotificationSection";
 export { JobListView } from "./components/JobListView";
 export { JobDetailView } from "./components/JobDetailView";
 
