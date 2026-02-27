@@ -464,74 +464,38 @@ function AgentDetail({
   );
 }
 
-// Agent directions editor - lets user edit job.md and view cwt.md
+// Agent directions - shows cwt.md context with option to open in editor
 function AgentDetailSections() {
   const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
-  const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
-  const [inlineContent, setInlineContent] = useState("");
-  const [savedContent, setSavedContent] = useState("");
-  const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
+  const [cwtContext, setCwtContext] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
-  const [agentDir, setAgentDir] = useState<string | null>(null);
-  const savedContentRef = useRef(savedContent);
-  savedContentRef.current = savedContent;
-
-  const dirty = inlineContent !== savedContent;
 
   useEffect(() => {
-    invoke<string>("get_agent_dir").then(setAgentDir).catch(() => {});
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
     }).catch(() => {});
   }, []);
 
-  const reloadDirections = useCallback(() => {
-    if (!agentDir) return;
-    invoke<string>("read_cwt_entry", { folderPath: agentDir, jobName: "default" })
-      .then((content) => {
-        setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
-        setSavedContent(content);
-      })
-      .catch(() => {});
-  }, [agentDir]);
+  const reloadContext = useCallback(() => {
+    invoke<string>("read_agent_context")
+      .then(setCwtContext)
+      .catch(() => setCwtContext(null));
+  }, []);
 
   useEffect(() => {
-    if (!agentDir) return;
-    invoke<string>("read_cwt_entry", { folderPath: agentDir, jobName: "default" })
-      .then((content) => {
-        setInlineContent(content);
-        setSavedContent(content);
-      })
-      .catch(() => {});
-    invoke<string>("read_cwt_context", { folderPath: agentDir, jobName: "default" })
-      .then(setCwtContextPreview)
-      .catch(() => setCwtContextPreview(null));
-  }, [agentDir]);
+    reloadContext();
+  }, [reloadContext]);
 
   useEffect(() => {
-    if (!agentDir) return;
-    const interval = setInterval(reloadDirections, 2000);
+    const interval = setInterval(reloadContext, 2000);
     return () => clearInterval(interval);
-  }, [agentDir, reloadDirections]);
+  }, [reloadContext]);
 
   useEffect(() => {
-    const onFocus = () => reloadDirections();
+    const onFocus = () => reloadContext();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [reloadDirections]);
-
-  const handleSaveDirections = () => {
-    if (!agentDir) return;
-    invoke("write_cwt_entry", {
-      folderPath: agentDir,
-      jobName: "default",
-      content: inlineContent,
-    }).then(() => {
-      setSavedContent(inlineContent);
-    }).catch(() => {});
-  };
-
-  if (!agentDir) return null;
+  }, [reloadContext]);
 
   return (
     <div className="field-group">
@@ -561,50 +525,29 @@ function AgentDetailSections() {
       </button>
       {!directionsCollapsed && (
         <div style={{ marginTop: 8 }}>
-          <div className="directions-box">
-            <div className="directions-tabs">
-              <button
-                className={`directions-tab ${previewFile === "job.md" ? "active" : ""}`}
-                onClick={() => setPreviewFile("job.md")}
-              >
-                job.md
-              </button>
-              <button
-                className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
-                onClick={() => setPreviewFile("cwt.md")}
-              >
-                cwt.md
-              </button>
-            </div>
-            {previewFile === "job.md" ? (
-              <textarea
-                className="directions-editor"
-                value={inlineContent}
-                onChange={(e) => setInlineContent(e.target.value)}
-                spellCheck={false}
-                placeholder="Describe what the agent should do..."
-              />
-            ) : (
-              <pre className="directions-body">
-                {cwtContextPreview || "(no cwt.md)"}
-              </pre>
-            )}
-          </div>
+          <pre style={{
+            padding: "10px 12px",
+            height: 350,
+            minHeight: 225,
+            overflowY: "auto",
+            fontFamily: "monospace",
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "var(--text-primary)",
+            background: "var(--bg-secondary)",
+            whiteSpace: "pre-wrap",
+            margin: 0,
+            border: "1px solid var(--border-color)",
+            borderRadius: 7,
+            boxSizing: "border-box",
+          }}>
+            {cwtContext || "(no cwt.md)"}
+          </pre>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            {dirty && (
-              <button className="btn btn-primary btn-sm" onClick={handleSaveDirections}>
-                Save
-              </button>
-            )}
             <button
               className="btn btn-sm"
               onClick={() => {
-                invoke("open_job_editor", {
-                  folderPath: agentDir,
-                  editor: preferredEditor,
-                  jobName: "default",
-                  fileName: previewFile,
-                });
+                invoke("open_agent_editor", { fileName: "cwt.md" });
               }}
             >
               Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
@@ -829,7 +772,7 @@ function DesktopDetailSections({ job }: { job: Job }) {
       </div>
 
       {/* Runtime */}
-      {(job.tmux_session || job.aerospace_workspace || job.telegram_chat_id) && (
+      {(job.tmux_session || job.aerospace_workspace || job.notify_target !== "none") && (
         <div className="field-group">
           <span className="field-group-title">Runtime</span>
           {job.tmux_session && (
@@ -838,7 +781,10 @@ function DesktopDetailSections({ job }: { job: Job }) {
           {job.aerospace_workspace && (
             <DetailRow label="Aerospace workspace" value={job.aerospace_workspace} />
           )}
-          {job.telegram_chat_id && (
+          {job.notify_target !== "none" && (
+            <DetailRow label="Notify target" value={job.notify_target === "telegram" ? "Telegram" : "App"} />
+          )}
+          {job.notify_target === "telegram" && job.telegram_chat_id && (
             <>
               <DetailRow label="Telegram chat" value={String(job.telegram_chat_id)} mono />
               <DetailRow

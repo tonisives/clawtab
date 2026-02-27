@@ -219,6 +219,11 @@ pub enum DesktopMessage {
     ClaudeQuestions {
         questions: Vec<ClaudeQuestion>,
     },
+    /// Desktop pushes job status events for APNs push notifications
+    JobNotification {
+        name: String,
+        event: String,
+    },
 }
 
 /// Messages sent by the relay server to connected clients.

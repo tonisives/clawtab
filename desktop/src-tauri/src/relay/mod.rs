@@ -86,6 +86,22 @@ pub fn push_status_update(
     }
 }
 
+/// Push a job notification to relay for APNs push delivery.
+pub fn push_job_notification(
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    job_name: &str,
+    event: &str,
+) {
+    if let Ok(guard) = relay.lock() {
+        if let Some(handle) = guard.as_ref() {
+            handle.send_message(&DesktopMessage::JobNotification {
+                name: job_name.to_string(),
+                event: event.to_string(),
+            });
+        }
+    }
+}
+
 /// Push a log chunk to relay for a specific job.
 pub fn push_log_chunk(relay: &Arc<Mutex<Option<RelayHandle>>>, job_name: &str, content: &str) {
     if content.is_empty() {

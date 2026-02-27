@@ -397,6 +397,16 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
             });
         }
     }
+
+    // If this is a JobNotification message, send APNs push
+    if let DesktopMessage::JobNotification { ref name, ref event } = msg {
+        let state = state.clone();
+        let name = name.clone();
+        let event = event.clone();
+        tokio::spawn(async move {
+            handle_job_notification_push(&state, user_id, &name, &event).await;
+        });
+    }
 }
 
 async fn handle_claude_questions_push(
@@ -404,21 +414,11 @@ async fn handle_claude_questions_push(
     user_id: Uuid,
     questions: &[ClaudeQuestion],
 ) {
-    // Rate limit check (per-user cooldown)
+    // Per-question dedup: skip if we already pushed for this question.
+    // No per-user rate limit - questions are already debounced on the desktop
+    // side and per-question dedup prevents duplicates.
     if let Some(ref redis) = state.redis {
         let mut conn = redis.clone();
-        if !crate::push_limiter::allow_push(
-            &mut conn,
-            user_id,
-            state.config.push_rate_limit_seconds,
-        )
-        .await
-        {
-            tracing::debug!("push rate limited for user {user_id}");
-            return;
-        }
-
-        // Per-question dedup: skip if we already pushed for this question
         let q_id = &questions[0].question_id;
         if crate::push_limiter::is_question_pushed(&mut conn, q_id).await {
             tracing::debug!("push already sent for question {q_id}");
@@ -567,6 +567,76 @@ async fn handle_claude_questions_push(
     }
 
     // Clean up invalid tokens
+    for token_id in invalid_token_ids {
+        sqlx::query("DELETE FROM push_tokens WHERE id = $1")
+            .bind(token_id)
+            .execute(&state.pool)
+            .await
+            .ok();
+    }
+}
+
+async fn handle_job_notification_push(
+    state: &AppState,
+    user_id: Uuid,
+    job_name: &str,
+    event: &str,
+) {
+    let Some(ref apns) = state.apns else {
+        return;
+    };
+
+    // Per-job dedup via Redis (short TTL to avoid spamming)
+    if let Some(ref redis) = state.redis {
+        let mut conn = redis.clone();
+        let key = format!("job_push:{}:{}:{}", user_id, job_name, event);
+        let result: Result<Option<String>, _> = redis::cmd("SET")
+            .arg(&key)
+            .arg("1")
+            .arg("NX")
+            .arg("EX")
+            .arg(30_u64)
+            .query_async(&mut conn)
+            .await;
+        // NX returns Some("OK") if key was newly set, None if it already existed
+        if !matches!(result, Ok(Some(_))) {
+            tracing::debug!("job push dedup: already sent for {job_name}:{event}");
+            return;
+        }
+    }
+
+    let tokens: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, push_token FROM push_tokens WHERE user_id = $1 AND platform = 'ios'",
+    )
+    .bind(user_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+
+    if tokens.is_empty() {
+        return;
+    }
+
+    let mut invalid_token_ids = Vec::new();
+
+    for (token_id, device_token) in &tokens {
+        match apns
+            .send_job_notification(device_token, job_name, event)
+            .await
+        {
+            Ok(()) => {
+                tracing::info!("job push sent to {device_token}: {job_name} {event}");
+            }
+            Err(e) if e.starts_with("invalid_token:") => {
+                tracing::warn!("removing invalid push token: {device_token}");
+                invalid_token_ids.push(*token_id);
+            }
+            Err(e) => {
+                tracing::error!("job push failed: {e}");
+            }
+        }
+    }
+
     for token_id in invalid_token_ids {
         sqlx::query("DELETE FROM push_tokens WHERE id = $1")
             .bind(token_id)

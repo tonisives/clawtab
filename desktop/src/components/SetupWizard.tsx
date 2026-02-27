@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, Job, TelegramConfig, ToolInfo } from "../types";
+import type { AppSettings, Job, NotifyTarget, TelegramConfig, ToolInfo } from "../types";
 import { ToolGroupList } from "./ToolGroupList";
 import { TelegramSetup } from "./TelegramSetup";
 
@@ -8,12 +8,13 @@ type Props = {
   onComplete: () => void;
 };
 
-type Step = "welcome" | "tools" | "telegram" | "hello-world" | "web-browse" | "done";
+type Step = "welcome" | "tools" | "notifications" | "hello-world" | "web-browse" | "done";
+type NotifyChoice = "app" | "telegram" | "skip";
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "welcome", label: "Welcome" },
   { id: "tools", label: "Tools" },
-  { id: "telegram", label: "Telegram" },
+  { id: "notifications", label: "Notifications" },
   { id: "hello-world", label: "Hello World" },
   { id: "web-browse", label: "Web Browse" },
   { id: "done", label: "Done" },
@@ -30,6 +31,7 @@ export function SetupWizard({ onComplete }: Props) {
   const [preferredEditor, setPreferredEditor] = useState("");
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
   const [telegramLoaded, setTelegramLoaded] = useState(false);
+  const [notifyChoice, setNotifyChoice] = useState<NotifyChoice | null>(null);
 
   // Hello World job state
   const [helloStatus, setHelloStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
@@ -89,8 +91,13 @@ export function SetupWizard({ onComplete }: Props) {
     }
   };
 
+  // Derive notify_target and telegram_chat_id from the user's choice
+  const jobNotifyTarget: NotifyTarget = notifyChoice === "telegram" ? "telegram" : notifyChoice === "app" ? "app" : "none";
+  const jobChatId = notifyChoice === "telegram" && telegramConfig?.chat_ids?.length
+    ? telegramConfig.chat_ids[0]
+    : null;
+
   const handleCreateHelloWorld = async () => {
-    if (!telegramConfig || telegramConfig.chat_ids.length === 0) return;
     setHelloStatus("creating");
     setHelloError("");
     try {
@@ -108,9 +115,10 @@ export function SetupWizard({ onComplete }: Props) {
         aerospace_workspace: null,
         folder_path: null,
         job_name: "default",
-        telegram_chat_id: telegramConfig.chat_ids[0],
+        telegram_chat_id: jobChatId,
         telegram_log_mode: "on_prompt",
         telegram_notify: { start: true, working: true, logs: true, finish: true },
+        notify_target: jobNotifyTarget,
         group: "tutorial",
         slug: "",
         skill_paths: [],
@@ -126,7 +134,7 @@ export function SetupWizard({ onComplete }: Props) {
   };
 
   const handleCreateWebBrowse = async () => {
-    if (!telegramConfig || telegramConfig.chat_ids.length === 0 || !settings) return;
+    if (!settings) return;
     setBrowseStatus("creating");
     setBrowseError("");
     try {
@@ -136,18 +144,21 @@ export function SetupWizard({ onComplete }: Props) {
 
       await invoke("init_cwt_folder", { folderPath, jobName });
 
+      const sendLine = notifyChoice === "telegram"
+        ? "4. Send the results to Telegram."
+        : "4. Print the results.";
+
       const jobMd = [
         "# Hacker News",
         "",
         "1. Use the WebFetch tool to fetch https://news.ycombinator.com/ and extract the top stories.",
         "2. Pick the top 5 most interesting stories from the front page.",
         "3. For each story, include the title, points, and comment count.",
-        "4. Send the results to Telegram.",
+        sendLine,
       ].join("\n");
 
       await invoke("write_cwt_entry", { folderPath, jobName, content: jobMd });
 
-      const chatId = telegramConfig.chat_ids[0];
       const job: Job = {
         name: "Hacker News",
         job_type: "folder",
@@ -162,9 +173,10 @@ export function SetupWizard({ onComplete }: Props) {
         aerospace_workspace: null,
         folder_path: folderPath,
         job_name: jobName,
-        telegram_chat_id: chatId,
+        telegram_chat_id: jobChatId,
         telegram_log_mode: "on_prompt",
         telegram_notify: { start: true, working: true, logs: true, finish: true },
+        notify_target: jobNotifyTarget,
         group: "tutorial",
         slug: "",
         skill_paths: [],
@@ -199,13 +211,21 @@ export function SetupWizard({ onComplete }: Props) {
   const toolsReady = hasTmux && hasAiAgent && hasTerminal && hasEditor;
   const telegramReady = !!(telegramConfig && telegramConfig.chat_ids.length > 0);
 
+  const notificationsReady = (): boolean => {
+    if (!notifyChoice) return false;
+    if (notifyChoice === "telegram") return telegramReady;
+    return true;
+  };
+
   const canAdvance = (): boolean => {
     if (currentStep === "tools") return toolsReady;
-    if (currentStep === "telegram") return telegramReady;
+    if (currentStep === "notifications") return notificationsReady();
     if (currentStep === "hello-world") return helloStatus === "success";
     if (currentStep === "web-browse") return browseStatus === "success";
     return true;
   };
+
+  const notifyLabel = jobNotifyTarget === "telegram" ? "Telegram" : jobNotifyTarget === "app" ? "App" : "None";
 
   return (
     <div className="settings-section" style={{ maxWidth: 600, margin: "0 auto" }}>
@@ -233,12 +253,12 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Welcome to ClawTab</h3>
           <p className="section-description">
-            We'll set up Telegram and create your first two Claude Code jobs.
+            We'll set up notifications and create your first two Claude Code jobs.
             This takes about 5 minutes.
           </p>
           <div style={{ marginTop: 16, fontSize: 13, lineHeight: 1.8, color: "var(--text-secondary)" }}>
             <p style={{ margin: "0 0 4px" }}>1. Check that required tools are installed</p>
-            <p style={{ margin: "0 0 4px" }}>2. Connect your Telegram bot</p>
+            <p style={{ margin: "0 0 4px" }}>2. Choose how to receive notifications</p>
             <p style={{ margin: "0 0 4px" }}>3. Create and run a Hello World job</p>
             <p style={{ margin: "0 0 4px" }}>4. Create and run a web browsing job</p>
           </div>
@@ -291,18 +311,68 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
       )}
 
-      {currentStep === "telegram" && telegramLoaded && (
+      {currentStep === "notifications" && telegramLoaded && (
         <div>
-          <h3>Telegram Setup</h3>
+          <h3>Notifications</h3>
           <p className="section-description">
-            Set up a Telegram bot to receive job notifications and send commands.
-            This is required for the tutorial jobs.
+            Choose how you want to receive job notifications.
           </p>
-          <TelegramSetup
-            embedded
-            initialConfig={telegramConfig}
-            onComplete={handleTelegramComplete}
-          />
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
+            {([
+              {
+                value: "app" as NotifyChoice,
+                label: "ClawTab App",
+                desc: "Get push notifications on your phone. Download from the App Store or visit remote.clawtab.cc",
+              },
+              {
+                value: "telegram" as NotifyChoice,
+                label: "Telegram",
+                desc: "Set up a Telegram bot to receive notifications and send commands",
+              },
+              {
+                value: "skip" as NotifyChoice,
+                label: "Skip",
+                desc: "Set up notifications later",
+              },
+            ]).map(({ value, label, desc }) => (
+              <label
+                key={value}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  padding: "12px 14px",
+                  border: `1px solid ${notifyChoice === value ? "var(--accent)" : "var(--border)"}`,
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  background: notifyChoice === value ? "var(--bg-hover)" : "transparent",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="notify_choice"
+                  checked={notifyChoice === value}
+                  onChange={() => setNotifyChoice(value)}
+                  style={{ margin: "2px 0 0 0" }}
+                />
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: 14 }}>{label}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 2 }}>{desc}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {notifyChoice === "telegram" && (
+            <div style={{ marginTop: 20 }}>
+              <TelegramSetup
+                embedded
+                initialConfig={telegramConfig}
+                onComplete={handleTelegramComplete}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -310,8 +380,8 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Hello World Job</h3>
           <p className="section-description">
-            Your first job -- a simple echo command that sends a message to Telegram.
-            This verifies everything is wired up correctly.
+            Your first job -- a simple echo command.
+            {notifyChoice === "telegram" ? " This verifies Telegram is wired up correctly." : ""}
           </p>
 
           <div className="field-group" style={{ marginTop: 16 }}>
@@ -321,8 +391,7 @@ export function SetupWizard({ onComplete }: Props) {
               <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Binary (echo)</p>
               <p style={{ margin: "0 0 4px" }}><strong>Command:</strong> echo "Hello World from ClawTab"</p>
               <p style={{ margin: "0 0 4px" }}>
-                <strong>Telegram:</strong>{" "}
-                {telegramConfig?.chat_ids[0] ?? "none"}
+                <strong>Notifications:</strong> {notifyLabel}
               </p>
             </div>
           </div>
@@ -341,7 +410,9 @@ export function SetupWizard({ onComplete }: Props) {
             {helloStatus === "success" && (
               <div>
                 <p style={{ color: "var(--success-color)" }}>
-                  Job created and running. Check your Telegram for a message.
+                  Job created and running.
+                  {notifyChoice === "telegram" ? " Check your Telegram for a message." : ""}
+                  {notifyChoice === "app" ? " Check the ClawTab app for a notification." : ""}
                 </p>
                 <button
                   className="btn btn-sm"
@@ -378,7 +449,7 @@ export function SetupWizard({ onComplete }: Props) {
           <h3>Web Browse Job</h3>
           <p className="section-description">
             Your first real AI job -- Claude will fetch the Hacker News front page
-            and send you the top stories via Telegram.
+            and pick the top stories.
           </p>
 
           <div className="field-group" style={{ marginTop: 16 }}>
@@ -391,8 +462,7 @@ export function SetupWizard({ onComplete }: Props) {
                 {(settings?.default_work_dir || "~").replace(/\/+$/, "")}/.cwt/hacker-news/
               </p>
               <p style={{ margin: "0 0 4px" }}>
-                <strong>Telegram:</strong>{" "}
-                {telegramConfig?.chat_ids[0] ?? "none"}
+                <strong>Notifications:</strong> {notifyLabel}
               </p>
             </div>
           </div>
@@ -415,7 +485,9 @@ export function SetupWizard({ onComplete }: Props) {
             {browseStatus === "success" && (
               <div>
                 <p style={{ color: "var(--success-color)" }}>
-                  Job created and running. Claude is fetching Hacker News -- check Telegram for results.
+                  Job created and running. Claude is fetching Hacker News.
+                  {notifyChoice === "telegram" ? " Check Telegram for results." : ""}
+                  {notifyChoice === "app" ? " Check the ClawTab app for results." : ""}
                 </p>
                 <button
                   className="btn btn-sm"
@@ -455,7 +527,7 @@ export function SetupWizard({ onComplete }: Props) {
             edit, schedule, or create new ones from there.
           </p>
           <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6 }}>
-            <p style={{ margin: "0 0 4px" }}><strong>Telegram:</strong> Connected</p>
+            <p style={{ margin: "0 0 4px" }}><strong>Notifications:</strong> {notifyLabel}</p>
             <p style={{ margin: "0 0 4px" }}><strong>Jobs created:</strong> hello-world, Hacker News</p>
           </div>
         </div>

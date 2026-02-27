@@ -24,6 +24,20 @@ impl Default for TelegramLogMode {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotifyTarget {
+    None,
+    Telegram,
+    App,
+}
+
+impl Default for NotifyTarget {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
 /// Per-job notification flags controlling what gets sent to Telegram.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TelegramNotify {
@@ -97,6 +111,8 @@ pub struct Job {
     pub telegram_log_mode: TelegramLogMode,
     #[serde(default)]
     pub telegram_notify: TelegramNotify,
+    #[serde(default)]
+    pub notify_target: NotifyTarget,
     #[serde(default = "default_group")]
     pub group: String,
     #[serde(default)]
@@ -204,6 +220,11 @@ impl JobsConfig {
             Ok(contents) => match serde_yml::from_str::<Job>(&contents) {
                 Ok(mut job) => {
                     job.slug = slug.to_string();
+                    // Migration: existing jobs with telegram_chat_id but no explicit
+                    // notify_target should default to Telegram to preserve behavior
+                    if job.telegram_chat_id.is_some() && job.notify_target == NotifyTarget::None {
+                        job.notify_target = NotifyTarget::Telegram;
+                    }
                     Some(job)
                 }
                 Err(e) => {

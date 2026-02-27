@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 
-use crate::config::jobs::{Job, JobStatus, JobType, JobsConfig};
+use crate::config::jobs::{Job, JobStatus, JobType, JobsConfig, NotifyTarget};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
 use crate::relay::RelayHandle;
@@ -181,19 +181,23 @@ pub fn reattach_running_jobs(
                 }
             }
 
-            // Build telegram stream for monitor
-            let telegram = telegram_config.as_ref().and_then(|config| {
-                if !config.is_configured() {
-                    return None;
-                }
-                let chat_id = job
-                    .telegram_chat_id
-                    .or_else(|| config.chat_ids.first().copied())?;
-                Some(TelegramStream {
-                    bot_token: config.bot_token.clone(),
-                    chat_id,
+            // Build telegram stream for monitor (only when notify_target is Telegram)
+            let telegram = if job.notify_target == NotifyTarget::Telegram {
+                telegram_config.as_ref().and_then(|config| {
+                    if !config.is_configured() {
+                        return None;
+                    }
+                    let chat_id = job
+                        .telegram_chat_id
+                        .or_else(|| config.chat_ids.first().copied())?;
+                    Some(TelegramStream {
+                        bot_token: config.bot_token.clone(),
+                        chat_id,
+                    })
                 })
-            });
+            } else {
+                None
+            };
 
             let notify_on_success = telegram_config
                 .as_ref()
@@ -208,6 +212,7 @@ pub fn reattach_running_jobs(
                 slug: job.slug.clone(),
                 telegram,
                 telegram_notify: job.telegram_notify.clone(),
+                notify_target: job.notify_target.clone(),
                 history: Arc::clone(history),
                 job_status: Arc::clone(job_status),
                 notify_on_success,

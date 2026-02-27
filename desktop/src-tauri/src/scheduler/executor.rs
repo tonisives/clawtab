@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use tokio::process::Command;
 
-use crate::config::jobs::{Job, JobStatus, JobType};
+use crate::config::jobs::{Job, JobStatus, JobType, NotifyTarget};
 use crate::config::settings::AppSettings;
 use crate::history::{HistoryStore, RunRecord};
 use crate::relay::RelayHandle;
@@ -99,7 +99,8 @@ pub async fn execute_job(
                     crate::relay::push_status_update(relay, &job.name, &new_status);
                 }
                 // Register in active_agents so Telegram replies can be relayed
-                {
+                // (only needed when using Telegram notifications)
+                if job.notify_target == NotifyTarget::Telegram {
                     let chat_id = job
                         .telegram_chat_id
                         .or_else(|| {
@@ -127,7 +128,12 @@ pub async fn execute_job(
                     }
                 }
 
-                let telegram = build_telegram_stream(&telegram_config, job.telegram_chat_id);
+                // Only build TelegramStream when notify_target is Telegram
+                let telegram = if job.notify_target == NotifyTarget::Telegram {
+                    build_telegram_stream(&telegram_config, job.telegram_chat_id)
+                } else {
+                    None
+                };
                 let notify_on_success = telegram_config
                     .as_ref()
                     .map(|c| c.notify_on_success)
@@ -141,6 +147,7 @@ pub async fn execute_job(
                     slug: job.slug.clone(),
                     telegram,
                     telegram_notify: job.telegram_notify.clone(),
+                    notify_target: job.notify_target.clone(),
                     history: Arc::clone(history),
                     job_status: Arc::clone(job_status),
                     notify_on_success,
@@ -188,9 +195,18 @@ pub async fn execute_job(
                 }
             }
 
-            if let Some(ref tg) = telegram_config {
-                send_job_notification(tg, job.telegram_chat_id, &job.name, exit_code, success, &stdout, &stderr)
-                    .await;
+            match job.notify_target {
+                NotifyTarget::Telegram => {
+                    if let Some(ref tg) = telegram_config {
+                        send_job_notification(tg, job.telegram_chat_id, &job.name, exit_code, success, &stdout, &stderr)
+                            .await;
+                    }
+                }
+                NotifyTarget::App => {
+                    let event = if success { "completed" } else { "failed" };
+                    crate::relay::push_job_notification(relay, &job.name, event);
+                }
+                NotifyTarget::None => {}
             }
         }
         Err(e) => {
@@ -217,8 +233,16 @@ pub async fn execute_job(
                 }
             }
 
-            if let Some(ref tg) = telegram_config {
-                send_job_notification(tg, job.telegram_chat_id, &job.name, Some(-1), false, "", &e).await;
+            match job.notify_target {
+                NotifyTarget::Telegram => {
+                    if let Some(ref tg) = telegram_config {
+                        send_job_notification(tg, job.telegram_chat_id, &job.name, Some(-1), false, "", &e).await;
+                    }
+                }
+                NotifyTarget::App => {
+                    crate::relay::push_job_notification(relay, &job.name, "failed");
+                }
+                NotifyTarget::None => {}
             }
         }
     }
@@ -565,9 +589,9 @@ fn collect_env_vars(
         }
     }
 
-    // Auto-inject TELEGRAM_BOT_TOKEN from global settings when job has a chat_id
+    // Auto-inject TELEGRAM_BOT_TOKEN from global settings when job uses Telegram
     if !vars.iter().any(|(k, _)| k == "TELEGRAM_BOT_TOKEN") {
-        if job.telegram_chat_id.is_some() || is_agent {
+        if job.notify_target == NotifyTarget::Telegram || is_agent {
             let s = settings.lock().unwrap();
             if let Some(ref tg) = s.telegram {
                 if !tg.bot_token.is_empty() {

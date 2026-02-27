@@ -22,7 +22,6 @@ pub struct Config {
 
     // Redis (optional)
     pub redis_url: Option<String>,
-    pub push_rate_limit_seconds: u64,
 }
 
 impl Config {
@@ -55,10 +54,6 @@ impl Config {
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false),
             redis_url: env::var("REDIS_URL").ok(),
-            push_rate_limit_seconds: env::var("PUSH_RATE_LIMIT_SECONDS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(30),
         }
     }
 }

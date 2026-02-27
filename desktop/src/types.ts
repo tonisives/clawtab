@@ -1,5 +1,6 @@
 export type JobType = "binary" | "claude" | "folder";
 export type TelegramLogMode = "off" | "on_prompt" | "always";
+export type NotifyTarget = "none" | "telegram" | "app";
 
 export interface TelegramNotify {
   start: boolean;
@@ -25,6 +26,7 @@ export interface Job {
   telegram_chat_id: number | null;
   telegram_log_mode: TelegramLogMode;
   telegram_notify: TelegramNotify;
+  notify_target: NotifyTarget;
   group: string;
   slug: string;
   skill_paths: string[];

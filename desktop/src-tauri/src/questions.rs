@@ -96,6 +96,8 @@ pub async fn question_detection_loop(
 ) {
     // Cache full question data per pane so transient detection misses don't flicker
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
+    // Track which question IDs we last sent to relay, so we only push on changes
+    let mut last_sent_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -155,11 +157,18 @@ pub async fn question_detection_loop(
         // Store for desktop frontend
         *active_questions.lock().unwrap() = questions.clone();
 
-        // Send to relay for mobile
-        let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions };
-        if let Ok(guard) = relay.lock() {
-            if let Some(handle) = guard.as_ref() {
-                handle.send_message(&msg);
+        // Only send to relay when the set of question IDs changes
+        let current_ids: std::collections::HashSet<String> = questions
+            .iter()
+            .map(|q| q.question_id.clone())
+            .collect();
+        if current_ids != last_sent_ids {
+            last_sent_ids = current_ids;
+            let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions };
+            if let Ok(guard) = relay.lock() {
+                if let Some(handle) = guard.as_ref() {
+                    handle.send_message(&msg);
+                }
             }
         }
     }

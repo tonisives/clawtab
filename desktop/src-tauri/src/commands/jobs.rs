@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{Emitter, State};
 
-use crate::config::jobs::{Job, JobStatus};
+use crate::config::jobs::{Job, JobStatus, NotifyTarget};
 use crate::config::settings::AppSettings;
 use crate::cwt::CwtFolder;
 use crate::scheduler;
@@ -810,9 +810,12 @@ pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
 
                     // Write helper scripts into .cwt/ root
                     write_browse_sh(cwt_root);
-                    let chat_id = resolve_telegram_chat_id(job, settings);
-                    if let Some(cid) = chat_id {
-                        write_send_sh(cwt_root, cid);
+                    // Only write send.sh when notify_target is Telegram
+                    if job.notify_target == NotifyTarget::Telegram {
+                        let chat_id = resolve_telegram_chat_id(job, settings);
+                        if let Some(cid) = chat_id {
+                            write_send_sh(cwt_root, cid);
+                        }
                     }
 
                     // Write Claude Code permissions in the project root (parent of .cwt)
@@ -857,9 +860,71 @@ pub fn agent_dir_path() -> std::path::PathBuf {
         .join("agent")
 }
 
+/// Open an agent file (cwt.md) in the user's preferred editor.
 #[tauri::command]
-pub fn get_agent_dir() -> String {
-    agent_dir_path().display().to_string()
+pub fn open_agent_editor(state: State<AppState>, file_name: Option<String>) -> Result<(), String> {
+    let preferred_editor = {
+        let s = state.settings.lock().unwrap();
+        s.preferred_editor.clone()
+    };
+
+    let agent_dir = agent_dir_path();
+    let target = file_name.as_deref().unwrap_or("job.md");
+    let file_path = agent_dir.join(target);
+
+    // Create job.md with template if it doesn't exist
+    if target == "job.md" && !file_path.exists() {
+        let template = "# Agent Directions\n\nDescribe what the agent should do here.\n";
+        std::fs::write(&file_path, template)
+            .map_err(|e| format!("Failed to create job.md: {}", e))?;
+    }
+
+    let file_path_str = file_path.display().to_string();
+    let folder = agent_dir.display().to_string();
+
+    match preferred_editor.as_str() {
+        "code" => {
+            std::process::Command::new("code")
+                .args([&folder, "--goto", &file_path_str])
+                .spawn()
+                .map_err(|e| format!("Failed to open VS Code: {}", e))?;
+        }
+        "codium" => {
+            std::process::Command::new("codium")
+                .args([&folder, "--goto", &file_path_str])
+                .spawn()
+                .map_err(|e| format!("Failed to open VSCodium: {}", e))?;
+        }
+        "zed" => {
+            std::process::Command::new("zed")
+                .arg(&file_path_str)
+                .spawn()
+                .map_err(|e| format!("Failed to open Zed: {}", e))?;
+        }
+        "subl" => {
+            std::process::Command::new("subl")
+                .arg(&file_path_str)
+                .spawn()
+                .map_err(|e| format!("Failed to open Sublime Text: {}", e))?;
+        }
+        editor => {
+            let cmd = format!("{} {}", editor, file_path_str);
+            crate::terminal::open_in_terminal(&cmd)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Read the agent's auto-generated context (cwt.md in agent dir root).
+#[tauri::command]
+pub fn read_agent_context() -> Result<String, String> {
+    let path = agent_dir_path().join("cwt.md");
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))
 }
 
 fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
@@ -875,6 +940,7 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     out.push_str("- Only edit and look for files in the current directory.\n");
     out.push_str(&format!("- The job directions are in `.cwt/{}/job.md`.\n", jn));
     out.push_str("- Shared project context is in `.cwt/cwt.md` (user-managed).\n");
+    out.push_str("- Notifications are handled by ClawTab. Do not send notifications directly.\n");
     out.push_str("- When your task is fully complete and you need no further input, terminate your own process by running: `kill $PPID`\n");
 
     out.push_str("\n## Job Management CLI\n\n");
@@ -889,20 +955,21 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     out.push_str("cwtctl restart <name> # Restart a job\n");
     out.push_str("```\n");
 
-    // Telegram section: show when a chat_id is resolvable and a bot token is available
-    // (either explicitly in secret_keys or from global settings, which is auto-injected at runtime)
-    let has_token = job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN")
-        || settings.telegram.as_ref().map_or(false, |tg| !tg.bot_token.is_empty());
-    let chat_id = resolve_telegram_chat_id(job, settings);
+    // Telegram section: only when notify_target is Telegram
+    if job.notify_target == NotifyTarget::Telegram {
+        let has_token = job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN")
+            || settings.telegram.as_ref().map_or(false, |tg| !tg.bot_token.is_empty());
+        let chat_id = resolve_telegram_chat_id(job, settings);
 
-    if has_token {
-        if let Some(_cid) = chat_id {
-            out.push_str("\n## Telegram\n\n");
-            out.push_str("A `send.sh` helper script is available in the .cwt/ root.\n");
-            out.push_str("Always use this script instead of raw curl commands.\n\n");
-            out.push_str("```bash\n");
-            out.push_str(".cwt/send.sh \"<b>Title</b>\\n\\nMessage body\"\n");
-            out.push_str("```\n");
+        if has_token {
+            if let Some(_cid) = chat_id {
+                out.push_str("\n## Telegram\n\n");
+                out.push_str("A `send.sh` helper script is available in the .cwt/ root.\n");
+                out.push_str("Always use this script instead of raw curl commands.\n\n");
+                out.push_str("```bash\n");
+                out.push_str(".cwt/send.sh \"<b>Title</b>\\n\\nMessage body\"\n");
+                out.push_str("```\n");
+            }
         }
     }
 
@@ -982,6 +1049,11 @@ pub fn build_agent_job(
         telegram_chat_id: chat_id,
         telegram_log_mode: crate::config::jobs::TelegramLogMode::OnPrompt,
         telegram_notify: crate::config::jobs::TelegramNotify::default(),
+        notify_target: if chat_id.is_some() {
+            crate::config::jobs::NotifyTarget::Telegram
+        } else {
+            crate::config::jobs::NotifyTarget::None
+        },
         group: "agent".to_string(),
         slug: "agent/default".to_string(),
         skill_paths: Vec::new(),

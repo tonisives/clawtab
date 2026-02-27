@@ -28,11 +28,10 @@ This produces three binaries:
 On first launch, the setup wizard walks through:
 
 1. **Tools** -- Detects installed tools (editors, terminals, tmux, claude, gopass, aerospace)
-2. **Terminal** -- Pick your terminal emulator
-3. **Editor** -- Pick your code editor
-4. **Secrets** -- Shows available secret backends (macOS Keychain, gopass)
-5. **Telegram** -- Optional bot token + chat ID setup
-6. **Done** -- Saves `settings.yaml`, marks setup complete
+2. **Notifications** -- Choose notification target: ClawTab App (push), Telegram (bot), or skip
+3. **Hello World** -- Creates and runs a test job to verify the setup
+4. **Web Browse** -- Creates an AI job that fetches Hacker News
+5. **Done** -- Saves `settings.yaml`, marks setup complete
 
 The wizard auto-detects tools and shows version + path for each. Missing tools can be installed via Homebrew directly from the UI.
 

@@ -75,6 +75,47 @@ impl ApnsClient {
         Ok(Self { client, topic })
     }
 
+    pub async fn send_job_notification(
+        &self,
+        device_token: &str,
+        job_name: &str,
+        event: &str,
+    ) -> Result<(), String> {
+        let title = "ClawTab";
+        let body = format!("Job {} {}", job_name, event);
+
+        let builder = DefaultNotificationBuilder::new()
+            .set_title(title)
+            .set_body(&body)
+            .set_sound("default");
+
+        let options_obj = NotificationOptions {
+            apns_id: None,
+            apns_expiration: None,
+            apns_priority: Some(Priority::High),
+            apns_topic: Some(&self.topic),
+            apns_collapse_id: None,
+            apns_push_type: None,
+        };
+
+        let payload = builder.build(device_token, options_obj);
+
+        match self.client.send(payload).await {
+            Ok(_) => Ok(()),
+            Err(a2::Error::ResponseError(response)) => {
+                if response.code == 410 || response.code == 400 {
+                    Err(format!("invalid_token:{}", response.code))
+                } else {
+                    Err(format!(
+                        "APNs error {}: {:?}",
+                        response.code, response.error
+                    ))
+                }
+            }
+            Err(e) => Err(format!("APNs send error: {e}")),
+        }
+    }
+
     pub async fn send_question_notification(
         &self,
         device_token: &str,
