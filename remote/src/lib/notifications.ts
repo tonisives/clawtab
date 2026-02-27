@@ -12,8 +12,16 @@ Notifications.setNotificationHandler({
 });
 
 export function registerNotificationCategories() {
-  // Categories are registered dynamically by the Notification Service Extension
-  // (NotificationService.swift) per notification with real option labels.
+  if (Platform.OS !== "ios") return;
+
+  // Static fallback category. The NSE overrides this with real option labels
+  // per notification. These only show if the NSE fails to run.
+  Notifications.setNotificationCategoryAsync("CLAUDE_QUESTION", [
+    { identifier: "1", buttonTitle: "Option 1", options: { opensAppToForeground: false } },
+    { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },
+    { identifier: "3", buttonTitle: "Option 3", options: { opensAppToForeground: false } },
+    { identifier: "4", buttonTitle: "Option 4", options: { opensAppToForeground: false } },
+  ]).catch(() => {});
 }
 
 export async function getPushToken(): Promise<string | null> {

@@ -56,9 +56,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
   const questionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fastPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track recently dismissed question IDs so polls don't bring them back
+  const dismissedRef = useRef<Map<string, number>>(new Map());
 
   const loadQuestions = useCallback(() => {
-    invoke<ClaudeQuestion[]>("get_active_questions").then(setQuestions).catch(() => {});
+    invoke<ClaudeQuestion[]>("get_active_questions").then((qs) => {
+      const now = Date.now();
+      // Purge stale dismissals (>10s)
+      for (const [id, ts] of dismissedRef.current) {
+        if (now - ts > 10000) dismissedRef.current.delete(id);
+      }
+      setQuestions(qs.filter((q) => !dismissedRef.current.has(q.question_id)));
+    }).catch(() => {});
   }, []);
 
   // Poll for active questions
@@ -224,7 +233,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     } else {
       invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
     }
-    // Optimistically remove the question so the card hides immediately
+    // Optimistically remove and suppress re-polling from bringing it back
+    dismissedRef.current.set(q.question_id, Date.now());
     setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
     startFastQuestionPoll();
   }, [startFastQuestionPoll]);

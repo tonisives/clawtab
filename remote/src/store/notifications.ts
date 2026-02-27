@@ -6,6 +6,9 @@ interface NotificationState {
   deepLinkQuestionId: string | null;
   // Once the desktop sends authoritative claude_questions, ignore history hydration
   hasDesktopQuestions: boolean;
+  // Recently dismissed question IDs (optimistic removal) - prevents re-polling
+  // from bringing them back before the desktop has consumed the answer.
+  dismissedIds: Map<string, number>;
 
   setQuestions: (questions: ClaudeQuestion[]) => void;
   answerQuestion: (questionId: string) => void;
@@ -14,22 +17,33 @@ interface NotificationState {
   reset: () => void;
 }
 
-export const useNotificationStore = create<NotificationState>((set) => ({
+export const useNotificationStore = create<NotificationState>((set, get) => ({
   questions: [],
   deepLinkQuestionId: null,
   hasDesktopQuestions: false,
+  dismissedIds: new Map(),
 
   setQuestions: (questions) =>
-    set(() => ({
-      // Replace: the desktop sends the full current set of active questions.
-      questions,
-      hasDesktopQuestions: true,
-    })),
+    set(() => {
+      const dismissed = get().dismissedIds;
+      const now = Date.now();
+      // Purge stale dismissals (>10s)
+      for (const [id, ts] of dismissed) {
+        if (now - ts > 10000) dismissed.delete(id);
+      }
+      return {
+        questions: questions.filter((q) => !dismissed.has(q.question_id)),
+        hasDesktopQuestions: true,
+      };
+    }),
 
   answerQuestion: (questionId) =>
-    set((state) => ({
-      questions: state.questions.filter((q) => q.question_id !== questionId),
-    })),
+    set((state) => {
+      state.dismissedIds.set(questionId, Date.now());
+      return {
+        questions: state.questions.filter((q) => q.question_id !== questionId),
+      };
+    }),
 
   setDeepLinkQuestionId: (id) => set({ deepLinkQuestionId: id }),
 
@@ -58,5 +72,5 @@ export const useNotificationStore = create<NotificationState>((set) => ({
       };
     }),
 
-  reset: () => set({ questions: [], hasDesktopQuestions: false }),
+  reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map() }),
 }));
