@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -23,6 +24,11 @@ export interface NotificationSectionProps {
   onToggleCollapse: () => void;
 }
 
+interface DepartingQuestion {
+  question: ClaudeQuestion;
+  anim: Animated.Value;
+}
+
 export function NotificationSection({
   questions,
   resolveJob,
@@ -34,11 +40,41 @@ export function NotificationSection({
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [cardWidth, setCardWidth] = useState(0);
+  const [departing, setDeparting] = useState<DepartingQuestion[]>([]);
+  const prevQuestionsRef = useRef<ClaudeQuestion[]>(questions);
+
+  // Detect removed questions and animate them out
+  useEffect(() => {
+    const currentIds = new Set(questions.map((q) => q.question_id));
+    const removed = prevQuestionsRef.current.filter((q) => !currentIds.has(q.question_id));
+    prevQuestionsRef.current = questions;
+
+    if (removed.length === 0) return;
+
+    const newDeparting = removed.map((question) => {
+      const anim = new Animated.Value(0);
+      return { question, anim };
+    });
+
+    setDeparting((prev) => [...prev, ...newDeparting]);
+
+    for (const d of newDeparting) {
+      Animated.timing(d.anim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        setDeparting((prev) => prev.filter((p) => p.question.question_id !== d.question.question_id));
+      });
+    }
+  }, [questions]);
 
   const count = questions.length;
-  if (count === 0) return null;
+  const hasDeparting = departing.length > 0;
+  if (count === 0 && !hasDeparting) return null;
 
-  const clampedIndex = Math.min(activeIndex, count - 1);
+  const displayCount = count || departing.length;
+  const clampedIndex = Math.min(activeIndex, Math.max(count - 1, 0));
 
   const handleScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -74,8 +110,37 @@ export function NotificationSection({
     if (clampedIndex < count - 1) scrollToIndex(clampedIndex + 1);
   }, [clampedIndex, count, scrollToIndex]);
 
-  const prevPath = clampedIndex > 0 ? shortenPath(questions[clampedIndex - 1].cwd) : null;
-  const nextPath = clampedIndex < count - 1 ? shortenPath(questions[clampedIndex + 1].cwd) : null;
+  const prevPath = count > 0 && clampedIndex > 0 ? shortenPath(questions[clampedIndex - 1].cwd) : null;
+  const nextPath = count > 0 && clampedIndex < count - 1 ? shortenPath(questions[clampedIndex + 1].cwd) : null;
+
+  // If only departing cards remain (no live questions), show the fly-away animation
+  if (count === 0 && hasDeparting) {
+    return (
+      <View style={styles.container}>
+        <View>
+          {departing.map((d) => (
+            <Animated.View
+              key={d.question.question_id}
+              style={{
+                opacity: Animated.subtract(1, d.anim),
+                transform: [
+                  { translateX: d.anim.interpolate({ inputRange: [0, 1], outputRange: [0, 400] }) },
+                  { scale: d.anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.8] }) },
+                ],
+              }}
+            >
+              <NotificationCard
+                question={d.question}
+                resolvedJob={resolveJob(d.question)}
+                onNavigate={onNavigate}
+                onSendOption={onSendOption}
+              />
+            </Animated.View>
+          ))}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -91,7 +156,7 @@ export function NotificationSection({
         <Text style={styles.headerText}>Waiting for input</Text>
         <View style={styles.headerRight}>
           <View style={styles.countBadge}>
-            <Text style={styles.countText}>{count}</Text>
+            <Text style={styles.countText}>{displayCount}</Text>
           </View>
         </View>
       </TouchableOpacity>

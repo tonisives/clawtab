@@ -54,16 +54,33 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
+  const questionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fastPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadQuestions = useCallback(() => {
+    invoke<ClaudeQuestion[]>("get_active_questions").then(setQuestions).catch(() => {});
+  }, []);
 
   // Poll for active questions
   useEffect(() => {
-    const loadQuestions = () => {
-      invoke<ClaudeQuestion[]>("get_active_questions").then(setQuestions).catch(() => {});
-    };
     loadQuestions();
-    const interval = setInterval(loadQuestions, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    questionPollRef.current = setInterval(loadQuestions, 5000);
+    return () => {
+      if (questionPollRef.current) clearInterval(questionPollRef.current);
+      if (fastPollTimerRef.current) clearTimeout(fastPollTimerRef.current);
+    };
+  }, [loadQuestions]);
+
+  // Temporarily switch to fast polling (500ms for 5s) after answering a question
+  const startFastQuestionPoll = useCallback(() => {
+    if (questionPollRef.current) clearInterval(questionPollRef.current);
+    if (fastPollTimerRef.current) clearTimeout(fastPollTimerRef.current);
+    questionPollRef.current = setInterval(loadQuestions, 500);
+    fastPollTimerRef.current = setTimeout(() => {
+      if (questionPollRef.current) clearInterval(questionPollRef.current);
+      questionPollRef.current = setInterval(loadQuestions, 5000);
+    }, 5000);
+  }, [loadQuestions]);
 
   // Load group order from settings
   useEffect(() => {
@@ -207,7 +224,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     } else {
       invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
     }
-  }, []);
+    startFastQuestionPoll();
+  }, [startFastQuestionPoll]);
 
   const resolveQuestionJob = useCallback(
     (q: ClaudeQuestion) => q.matched_job ?? null,

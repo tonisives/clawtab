@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   ScrollView,
   StyleSheet,
   Text,
@@ -26,25 +27,36 @@ export function NotificationCard({
 }: NotificationCardProps) {
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
+  const flyAnim = useRef(new Animated.Value(0)).current;
 
   // Reset answered state when question changes
   useEffect(() => {
     if (question.question_id !== prevQuestionId.current) {
       prevQuestionId.current = question.question_id;
       setAnswered(false);
+      flyAnim.setValue(0);
     }
-  }, [question.question_id]);
+  }, [question.question_id, flyAnim]);
 
   // Auto-reset after 10s so buttons re-appear if question persists
   useEffect(() => {
     if (!answered) return;
-    const timer = setTimeout(() => setAnswered(false), 10000);
+    const timer = setTimeout(() => {
+      setAnswered(false);
+      flyAnim.setValue(0);
+    }, 10000);
     return () => clearTimeout(timer);
-  }, [answered]);
+  }, [answered, flyAnim]);
 
   const handleOptionPress = (optionNumber: string) => {
     onSendOption(question, resolvedJob, optionNumber);
     setAnswered(true);
+    Animated.timing(flyAnim, {
+      toValue: 1,
+      duration: 300,
+      delay: 400,
+      useNativeDriver: true,
+    }).start();
   };
 
   const title = resolvedJob
@@ -62,7 +74,18 @@ export function NotificationCard({
   const preview = lines.join("\n").trim();
 
   return (
-    <View style={styles.card}>
+    <Animated.View
+      style={[
+        styles.card,
+        answered && {
+          opacity: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+          transform: [
+            { translateX: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) },
+            { scale: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] }) },
+          ],
+        },
+      ]}
+    >
       <TouchableOpacity
         style={styles.cardBody}
         onPress={() => onNavigate(question, resolvedJob)}
@@ -111,7 +134,7 @@ export function NotificationCard({
           </ScrollView>
         )
       )}
-    </View>
+    </Animated.View>
   );
 }
 
