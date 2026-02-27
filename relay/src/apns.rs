@@ -161,11 +161,18 @@ impl ApnsClient {
         let custom_json =
             serde_json::to_value(&custom_data).map_err(|e| format!("json error: {e}"))?;
 
+        // Pick category based on option count (pre-registered in the iOS app)
+        let category = match options.len().min(4) {
+            2 => "CLAUDE_Q2",
+            3 => "CLAUDE_Q3",
+            _ => "CLAUDE_Q4",
+        };
+
         let builder = DefaultNotificationBuilder::new()
             .set_title(title)
             .set_body(body)
             .set_mutable_content()
-            .set_category("CLAUDE_QUESTION")
+            .set_category(category)
             .set_sound("default");
 
         let options_obj = NotificationOptions {

@@ -14,13 +14,26 @@ Notifications.setNotificationHandler({
 export function registerNotificationCategories() {
   if (Platform.OS !== "ios") return;
 
-  // Static fallback category. The NSE overrides this with real option labels
-  // per notification. These only show if the NSE fails to run.
-  Notifications.setNotificationCategoryAsync("CLAUDE_QUESTION", [
-    { identifier: "1", buttonTitle: "Option 1", options: { opensAppToForeground: false } },
-    { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },
-    { identifier: "3", buttonTitle: "Option 3", options: { opensAppToForeground: false } },
-    { identifier: "4", buttonTitle: "Option 4", options: { opensAppToForeground: false } },
+  // Pre-register categories for different option counts.
+  // The relay sets the category based on option count (max 4).
+  // Button numbers match the option numbers shown in the notification body.
+  // The NSE attempts to upgrade these with real labels per notification.
+  Notifications.setNotificationCategoryAsync("CLAUDE_Q2", [
+    { identifier: "1", buttonTitle: "1", options: { opensAppToForeground: false } },
+    { identifier: "2", buttonTitle: "2", options: { opensAppToForeground: false } },
+  ]).catch(() => {});
+
+  Notifications.setNotificationCategoryAsync("CLAUDE_Q3", [
+    { identifier: "1", buttonTitle: "1", options: { opensAppToForeground: false } },
+    { identifier: "2", buttonTitle: "2", options: { opensAppToForeground: false } },
+    { identifier: "3", buttonTitle: "3", options: { opensAppToForeground: false } },
+  ]).catch(() => {});
+
+  Notifications.setNotificationCategoryAsync("CLAUDE_Q4", [
+    { identifier: "1", buttonTitle: "1", options: { opensAppToForeground: false } },
+    { identifier: "2", buttonTitle: "2", options: { opensAppToForeground: false } },
+    { identifier: "3", buttonTitle: "3", options: { opensAppToForeground: false } },
+    { identifier: "4", buttonTitle: "4", options: { opensAppToForeground: false } },
   ]).catch(() => {});
 }
 

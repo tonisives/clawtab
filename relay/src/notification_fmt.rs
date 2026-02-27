@@ -62,20 +62,22 @@ pub fn format_body(context_lines: &str, options: &[QuestionOption]) -> String {
 }
 
 /// Format options compactly.
-/// Short labels (<= 10 chars each): single line "1.Yes 2.No 3.Skip"
-/// Long labels: one per line "1. Fix the auth bug\n2. Skip"
+/// If all options fit on a single line (<= 45 chars total), use "1.Yes 2.No 3.Skip"
+/// Otherwise one per line: "1. Fix the auth bug\n2. Skip"
 fn format_options(options: &[QuestionOption]) -> String {
     if options.is_empty() {
         return String::new();
     }
 
-    let all_short = options.iter().all(|o| o.label.len() <= 10);
-    if all_short {
-        options
-            .iter()
-            .map(|o| format!("{}.{}", o.number, o.label))
-            .collect::<Vec<_>>()
-            .join(" ")
+    // Try single-line format first
+    let single_line: String = options
+        .iter()
+        .map(|o| format!("{}.{}", o.number, o.label))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if single_line.len() <= 45 {
+        single_line
     } else {
         options
             .iter()
@@ -371,8 +373,8 @@ Which approach should we use?
         let options = vec![opt("1", "Fix the bug"), opt("2", "Skip")];
 
         let body = format_body(context, &options);
-        assert!(body.contains("1. Fix the bug"), "body: {body}");
-        assert!(body.contains("2. Skip"), "body: {body}");
+        // "1.Fix the bug 2.Skip" = 21 chars, fits single line
+        assert!(body.contains("1.Fix the bug 2.Skip"), "body: {body}");
         println!("No context:\n{body}\n");
     }
 

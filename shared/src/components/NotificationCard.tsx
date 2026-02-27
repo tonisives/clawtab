@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +12,8 @@ import {
 import type { ClaudeQuestion } from "../types/process";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+
+const isWeb = Platform.OS === "web";
 
 export interface NotificationCardProps {
   question: ClaudeQuestion;
@@ -34,6 +37,7 @@ export function NotificationCard({
     if (question.question_id !== prevQuestionId.current) {
       prevQuestionId.current = question.question_id;
       setAnswered(false);
+      setFlying(false);
       flyAnim.setValue(0);
     }
   }, [question.question_id, flyAnim]);
@@ -43,20 +47,33 @@ export function NotificationCard({
     if (!answered) return;
     const timer = setTimeout(() => {
       setAnswered(false);
+      setFlying(false);
       flyAnim.setValue(0);
     }, 10000);
     return () => clearTimeout(timer);
   }, [answered, flyAnim]);
 
+  // Web: track "flying" state for CSS transition (after 400ms delay)
+  const [flying, setFlying] = useState(false);
+
+  useEffect(() => {
+    if (!answered || !isWeb) return;
+    const timer = setTimeout(() => setFlying(true), 400);
+    return () => clearTimeout(timer);
+  }, [answered]);
+
   const handleOptionPress = (optionNumber: string) => {
     onSendOption(question, resolvedJob, optionNumber);
     setAnswered(true);
-    Animated.timing(flyAnim, {
-      toValue: 1,
-      duration: 300,
-      delay: 400,
-      useNativeDriver: true,
-    }).start();
+    setFlying(false);
+    if (!isWeb) {
+      Animated.timing(flyAnim, {
+        toValue: 1,
+        duration: 300,
+        delay: 400,
+        useNativeDriver: true,
+      }).start();
+    }
   };
 
   const title = resolvedJob
@@ -73,19 +90,8 @@ export function NotificationCard({
     });
   const preview = lines.join("\n").trim();
 
-  return (
-    <Animated.View
-      style={[
-        styles.card,
-        answered && {
-          opacity: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
-          transform: [
-            { translateX: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) },
-            { scale: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] }) },
-          ],
-        },
-      ]}
-    >
+  const cardContent = (
+    <>
       <TouchableOpacity
         style={styles.cardBody}
         onPress={() => onNavigate(question, resolvedJob)}
@@ -134,6 +140,35 @@ export function NotificationCard({
           </ScrollView>
         )
       )}
+    </>
+  );
+
+  if (isWeb) {
+    return (
+      <div style={{
+        transition: "opacity 300ms ease, transform 300ms ease",
+        opacity: flying ? 0 : 1,
+        transform: flying ? "translateX(300px) scale(0.85)" : "translateX(0) scale(1)",
+      }}>
+        <View style={styles.card}>{cardContent}</View>
+      </div>
+    );
+  }
+
+  return (
+    <Animated.View
+      style={[
+        styles.card,
+        answered && {
+          opacity: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+          transform: [
+            { translateX: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 300] }) },
+            { scale: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] }) },
+          ],
+        },
+      ]}
+    >
+      {cardContent}
     </Animated.View>
   );
 }

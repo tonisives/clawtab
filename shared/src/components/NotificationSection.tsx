@@ -3,6 +3,7 @@ import {
   Animated,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,8 +13,10 @@ import {
 import type { ClaudeQuestion } from "../types/process";
 import { NotificationCard } from "./NotificationCard";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/spacing";
+import { spacing } from "../theme/spacing";
 import { shortenPath } from "../util/format";
+
+const isWeb = Platform.OS === "web";
 
 export interface NotificationSectionProps {
   questions: ClaudeQuestion[];
@@ -27,6 +30,8 @@ export interface NotificationSectionProps {
 interface DepartingQuestion {
   question: ClaudeQuestion;
   anim: Animated.Value;
+  // For web: start as "entering" so we can trigger CSS transition
+  phase: "entering" | "leaving";
 }
 
 export function NotificationSection({
@@ -42,13 +47,44 @@ export function NotificationSection({
   const [cardWidth, setCardWidth] = useState(0);
   const [departing, setDeparting] = useState<DepartingQuestion[]>([]);
   const prevQuestionsRef = useRef<ClaudeQuestion[]>(questions);
+  // Track entrance animation state per question_id (web: CSS class, native: Animated.Value)
+  const [entering, setEntering] = useState<Set<string>>(new Set());
+  const entranceAnims = useRef<Map<string, Animated.Value>>(new Map());
 
-  // Detect removed questions and animate them out
+  // Detect added/removed questions and animate
   useEffect(() => {
     const prev = prevQuestionsRef.current;
     const currentIds = new Set(questions.map((q) => q.question_id));
+    const prevIds = new Set(prev.map((q) => q.question_id));
     const removed = prev.filter((q) => !currentIds.has(q.question_id));
+    const added = questions.filter((q) => !prevIds.has(q.question_id));
     prevQuestionsRef.current = questions;
+
+    // Entrance animations for new questions
+    if (added.length > 0) {
+      if (isWeb) {
+        // Web: add to "entering" set, then remove after a frame to trigger CSS transition
+        const ids = new Set(added.map((q) => q.question_id));
+        setEntering(ids);
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setEntering(new Set());
+          });
+        });
+      } else {
+        for (const q of added) {
+          const anim = new Animated.Value(0);
+          entranceAnims.current.set(q.question_id, anim);
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }).start(() => {
+            entranceAnims.current.delete(q.question_id);
+          });
+        }
+      }
+    }
 
     if (removed.length === 0) return;
 
@@ -64,19 +100,33 @@ export function NotificationSection({
 
     const newDeparting = removed.map((question) => {
       const anim = new Animated.Value(0);
-      return { question, anim };
+      return { question, anim, phase: "entering" as const };
     });
 
     setDeparting((prev) => [...prev, ...newDeparting]);
 
-    for (const d of newDeparting) {
-      Animated.timing(d.anim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
-        setDeparting((prev) => prev.filter((p) => p.question.question_id !== d.question.question_id));
+    if (isWeb) {
+      // Web: transition from phase "entering" (visible) to "leaving" (hidden) after a frame
+      requestAnimationFrame(() => {
+        setDeparting((prev) =>
+          prev.map((d) => (d.phase === "entering" ? { ...d, phase: "leaving" } : d)),
+        );
       });
+      // Clean up after CSS transition completes
+      setTimeout(() => {
+        const removedIds = new Set(removed.map((q) => q.question_id));
+        setDeparting((prev) => prev.filter((p) => !removedIds.has(p.question.question_id)));
+      }, 350);
+    } else {
+      for (const d of newDeparting) {
+        Animated.timing(d.anim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setDeparting((prev) => prev.filter((p) => p.question.question_id !== d.question.question_id));
+        });
+      }
     }
   }, [questions]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -124,34 +174,101 @@ export function NotificationSection({
   const prevPath = count > 0 && clampedIndex > 0 ? shortenPath(questions[clampedIndex - 1].cwd) : null;
   const nextPath = count > 0 && clampedIndex < count - 1 ? shortenPath(questions[clampedIndex + 1].cwd) : null;
 
+  const renderDepartingCard = (d: DepartingQuestion) => {
+    const card = (
+      <NotificationCard
+        question={d.question}
+        resolvedJob={resolveJob(d.question)}
+        onNavigate={onNavigate}
+        onSendOption={onSendOption}
+      />
+    );
+
+    if (isWeb) {
+      const isLeaving = d.phase === "leaving";
+      return (
+        <div
+          key={d.question.question_id}
+          style={{
+            transition: "opacity 300ms ease, transform 300ms ease",
+            opacity: isLeaving ? 0 : 1,
+            transform: isLeaving ? "translateX(400px) scale(0.8)" : "translateX(0) scale(1)",
+          }}
+        >
+          {card}
+        </div>
+      );
+    }
+
+    return (
+      <Animated.View
+        key={d.question.question_id}
+        style={{
+          opacity: d.anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+          transform: [
+            { translateX: d.anim.interpolate({ inputRange: [0, 1], outputRange: [0, 400] }) },
+            { scale: d.anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.8] }) },
+          ],
+        }}
+      >
+        {card}
+      </Animated.View>
+    );
+  };
+
   // If only departing cards remain (no live questions), show the fly-away animation
   if (count === 0 && hasDeparting) {
     return (
       <View style={styles.container}>
-        <View>
-          {departing.map((d) => (
-            <Animated.View
-              key={d.question.question_id}
-              style={{
-                opacity: Animated.subtract(1, d.anim),
-                transform: [
-                  { translateX: d.anim.interpolate({ inputRange: [0, 1], outputRange: [0, 400] }) },
-                  { scale: d.anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.8] }) },
-                ],
-              }}
-            >
-              <NotificationCard
-                question={d.question}
-                resolvedJob={resolveJob(d.question)}
-                onNavigate={onNavigate}
-                onSendOption={onSendOption}
-              />
-            </Animated.View>
-          ))}
-        </View>
+        <View>{departing.map(renderDepartingCard)}</View>
       </View>
     );
   }
+
+  const renderQuestionCard = (q: ClaudeQuestion) => {
+    const inner = (
+      <NotificationCard
+        question={q}
+        resolvedJob={resolveJob(q)}
+        onNavigate={onNavigate}
+        onSendOption={onSendOption}
+      />
+    );
+
+    if (isWeb) {
+      const isEntering = entering.has(q.question_id);
+      return (
+        <View key={q.question_id} style={{ width: cardWidth || "100%" }}>
+          <div
+            style={{
+              transition: "opacity 300ms ease, transform 300ms ease",
+              opacity: isEntering ? 0 : 1,
+              transform: isEntering ? "translateX(-100px) scale(0.9)" : "translateX(0) scale(1)",
+            }}
+          >
+            {inner}
+          </div>
+        </View>
+      );
+    }
+
+    const entAnim = entranceAnims.current.get(q.question_id);
+    return (
+      <View key={q.question_id} style={{ width: cardWidth || "100%" }}>
+        {entAnim ? (
+          <Animated.View style={{
+            opacity: entAnim,
+            transform: [
+              { translateX: entAnim.interpolate({ inputRange: [0, 1], outputRange: [-100, 0] }) },
+              { scale: entAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
+            ],
+          }}>
+            {inner}
+          </Animated.View>
+        ) : inner}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -164,12 +281,7 @@ export function NotificationSection({
         <Text style={styles.headerArrow}>
           {collapsed ? "\u25B6" : "\u25BC"}
         </Text>
-        <Text style={styles.headerText}>Waiting for input</Text>
-        <View style={styles.headerRight}>
-          <View style={styles.countBadge}>
-            <Text style={styles.countText}>{displayCount}</Text>
-          </View>
-        </View>
+        <Text style={styles.headerText}>Waiting for input ({displayCount})</Text>
       </TouchableOpacity>
 
       {!collapsed && (
@@ -180,12 +292,13 @@ export function NotificationSection({
               <TouchableOpacity
                 onPress={goPrev}
                 disabled={clampedIndex === 0}
-                style={styles.navBtn}
+                style={[styles.navBtn, styles.navBtnLeft]}
                 activeOpacity={0.6}
               >
-                <Text style={[styles.navBtnText, clampedIndex === 0 && styles.navBtnDisabled]}>
-                  {prevPath ? `\u2039 ${prevPath}` : ""}
-                </Text>
+                <View style={[styles.arrowCircle, clampedIndex === 0 && styles.arrowDisabled]}>
+                  <Text style={styles.arrowText}>{"\u2039"}</Text>
+                </View>
+                {prevPath ? <Text style={[styles.navPath, clampedIndex === 0 && styles.arrowDisabled]} numberOfLines={1}>{prevPath}</Text> : null}
               </TouchableOpacity>
 
               <Text style={styles.navCounter}>
@@ -195,18 +308,13 @@ export function NotificationSection({
               <TouchableOpacity
                 onPress={goNext}
                 disabled={clampedIndex >= count - 1}
-                style={styles.navBtn}
+                style={[styles.navBtn, styles.navBtnRight]}
                 activeOpacity={0.6}
               >
-                <Text
-                  style={[
-                    styles.navBtnText,
-                    styles.navBtnRight,
-                    clampedIndex >= count - 1 && styles.navBtnDisabled,
-                  ]}
-                >
-                  {nextPath ? `${nextPath} \u203A` : ""}
-                </Text>
+                {nextPath ? <Text style={[styles.navPath, clampedIndex >= count - 1 && styles.arrowDisabled]} numberOfLines={1}>{nextPath}</Text> : null}
+                <View style={[styles.arrowCircle, clampedIndex >= count - 1 && styles.arrowDisabled]}>
+                  <Text style={styles.arrowText}>{"\u203A"}</Text>
+                </View>
               </TouchableOpacity>
             </View>
           )}
@@ -220,16 +328,7 @@ export function NotificationSection({
             onScroll={handleScroll}
             scrollEventThrottle={16}
           >
-            {questions.map((q) => (
-              <View key={q.question_id} style={{ width: cardWidth || "100%" }}>
-                <NotificationCard
-                  question={q}
-                  resolvedJob={resolveJob(q)}
-                  onNavigate={onNavigate}
-                  onSendOption={onSendOption}
-                />
-              </View>
-            ))}
+            {questions.map(renderQuestionCard)}
           </ScrollView>
         </View>
       )}
@@ -261,23 +360,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginLeft: "auto",
-  },
-  countBadge: {
-    backgroundColor: colors.warningBg,
-    borderRadius: radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  countText: {
-    color: colors.warning,
-    fontSize: 11,
-    fontWeight: "600",
-  },
   // Nav row
   navRow: {
     flexDirection: "row",
@@ -287,17 +369,41 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   navBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     flex: 1,
   },
-  navBtnText: {
-    color: colors.textSecondary,
-    fontSize: 12,
+  navBtnLeft: {
+    justifyContent: "flex-start",
   },
   navBtnRight: {
-    textAlign: "right",
+    justifyContent: "flex-end",
   },
-  navBtnDisabled: {
-    opacity: 0,
+  navPath: {
+    color: colors.textMuted,
+    fontSize: 11,
+    flexShrink: 1,
+  },
+  arrowCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  arrowDisabled: {
+    opacity: 0.25,
+  },
+  arrowText: {
+    color: colors.textSecondary,
+    fontSize: 18,
+    lineHeight: 20,
+    marginTop: -2,
+    fontWeight: "600",
   },
   navCounter: {
     color: colors.textMuted,
