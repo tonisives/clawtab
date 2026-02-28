@@ -240,3 +240,10 @@
   color: var(--text-primary);
   resize: vertical;
 }
+
+.log-viewer .log-sep {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0.4;
+}

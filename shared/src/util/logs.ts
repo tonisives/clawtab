@@ -12,12 +12,33 @@ function isBlank(line: string): boolean {
   return line.replace(ANSI_STRIP, "").trim().length === 0;
 }
 
+/** Trim a separator line to at most `max` visible characters. */
+function truncateSeparator(line: string, max: number): string {
+  const stripped = line.replace(ANSI_STRIP, "");
+  if (stripped.length <= max) return line;
+  // For plain separator lines (no ANSI), just slice
+  if (stripped.length === line.length) return line.slice(0, max);
+  // With ANSI codes, walk through keeping codes but counting visible chars
+  let vis = 0;
+  let i = 0;
+  while (i < line.length && vis < max) {
+    const m = line.slice(i).match(/^\x1b\[[0-9;]*[A-Za-z]/);
+    if (m) { i += m[0].length; continue; }
+    vis++;
+    i++;
+  }
+  return line.slice(0, i);
+}
+
+const DEFAULT_MAX_SEP = 40;
+
 /**
  * Collapse consecutive separator lines down to a single occurrence,
  * collapse runs of blank lines to one, and remove blank lines
- * adjacent to separators.
+ * adjacent to separators. Separator lines are truncated to `maxSepLen`
+ * visible characters so they don't wrap in narrow views.
  */
-export function collapseSeparators(text: string): string {
+export function collapseSeparators(text: string, maxSepLen = DEFAULT_MAX_SEP): string {
   const lines = text.replace(/\r/g, "").split("\n");
 
   // First pass: mark separator lines
@@ -43,7 +64,8 @@ export function collapseSeparators(text: string): string {
       if (next < lines.length && seps[next]) continue;
     }
 
-    out.push(lines[i]);
+    // Truncate separator lines to avoid wrapping in narrow views
+    out.push(sep ? truncateSeparator(lines[i], maxSepLen) : lines[i]);
     prevWasSep = sep;
     prevWasBlank = blank;
   }

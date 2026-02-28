@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
-import { collapseSeparators } from "@clawtab/shared/src/util/logs";
+import { collapseSeparators } from "@clawtab/shared";
+
+// eslint-disable-next-line no-control-regex
+const ANSI_STRIP_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
+const SEP_RE = /^[\s\-_=~\u2501\u2500\u2550\u254C\u254D\u2504\u2505\u2508\u2509\u2574\u2576\u2578\u257A\u2594\u2581|│┃┆┇┊┋╎╏]+$/;
+function isSep(line: string): boolean {
+  const s = line.replace(ANSI_STRIP_RE, "").trim();
+  return s.length > 0 && SEP_RE.test(s);
+}
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[([0-9;]*)m/g;
@@ -117,7 +125,14 @@ export function LogViewer({ content, autoScroll = true, className, style }: Prop
 
   const processed = useMemo(() => collapseSeparators(content), [content]);
   const hasAnsi = processed.includes("\x1b[");
-  const html = useMemo(() => hasAnsi ? ansiToHtml(processed) : null, [processed, hasAnsi]);
+  const html = useMemo(() => {
+    const lines = processed.split("\n");
+    const parts = lines.map((line) => {
+      const rendered = hasAnsi ? ansiToHtml(line) : esc(line);
+      return isSep(line) ? `<span class="log-sep">${rendered}</span>` : rendered;
+    });
+    return parts.join("\n");
+  }, [processed, hasAnsi]);
 
   useEffect(() => {
     if (autoScroll && ref.current) {
@@ -130,9 +145,5 @@ export function LogViewer({ content, autoScroll = true, className, style }: Prop
 
   const cls = className ?? "log-viewer";
 
-  if (html) {
-    return <pre ref={ref} className={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
-  }
-
-  return <pre ref={ref} className={cls} style={style}>{processed}</pre>;
+  return <pre ref={ref} className={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
 }

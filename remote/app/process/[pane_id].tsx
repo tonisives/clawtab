@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
@@ -59,6 +59,7 @@ export default function ProcessDetailScreen() {
   const lastProcess = lastProcessRef.current;
   const { isWide } = useResponsive();
   const [logs, setLogs] = useState(process?.log_lines ?? "");
+  const [logsLoaded, setLogsLoaded] = useState(!!process?.log_lines);
   const [stopping, setStopping] = useState(false);
 
   const displayName = (process ?? lastProcess)
@@ -88,7 +89,10 @@ export default function ProcessDetailScreen() {
           setTimeout(() => resolve({}), 5000),
         );
         const resp = await Promise.race([registerRequest<{ logs?: string }>(id), timeout]);
-        if (active && resp.logs != null) setLogs(resp.logs.trimEnd());
+        if (active && resp.logs != null) {
+          setLogs(resp.logs.trimEnd());
+          setLogsLoaded(true);
+        }
       } finally {
         polling = false;
       }
@@ -101,7 +105,14 @@ export default function ProcessDetailScreen() {
     };
   }, [activeProcess?.pane_id, activeProcess?.tmux_session]);
 
-  const options = useMemo(() => parseNumberedOptions(logs), [logs]);
+  // Prefer question options from notification store (more reliable), fallback to log parsing
+  const paneQuestion = questions.find((q) => q.pane_id === pane_id);
+  const options = useMemo(() => {
+    if (paneQuestion && paneQuestion.options.length > 0) return paneQuestion.options;
+    return parseNumberedOptions(logs);
+  }, [paneQuestion, logs]);
+
+  const answerQuestion = useNotificationStore((s) => s.answerQuestion);
 
   const handleSend = useCallback(
     (text: string) => {
@@ -116,8 +127,12 @@ export default function ProcessDetailScreen() {
           text: text.trim(),
         });
       }
+      // Dismiss notification card if we just answered a question
+      if (paneQuestion) {
+        answerQuestion(paneQuestion.question_id);
+      }
     },
-    [process?.pane_id],
+    [process?.pane_id, paneQuestion, answerQuestion],
   );
 
   const doStop = async () => {
@@ -185,7 +200,14 @@ export default function ProcessDetailScreen() {
         )}
 
         <View style={styles.logsContainer}>
-          <LogViewer content={logs} />
+          {!logsLoaded ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator color={colors.accent} />
+              <Text style={styles.loadingText}>Loading logs...</Text>
+            </View>
+          ) : (
+            <LogViewer content={logs} />
+          )}
         </View>
       </View>
     </ContentContainer>
@@ -232,8 +254,8 @@ export default function ProcessDetailScreen() {
         </ScrollView>
       )}
 
-      {isAlive && <OptionButtons options={options} onSend={handleSend} />}
-      {isAlive && <MessageInput onSend={handleSend} placeholder="Send input..." />}
+      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} />}
+      {(isAlive || paneQuestion) && <MessageInput onSend={handleSend} placeholder="Send input..." />}
     </View>
   );
 }
@@ -314,6 +336,13 @@ const styles = StyleSheet.create({
   },
   stopBtnText: { color: colors.danger, fontSize: 14, fontWeight: "600" },
   logsContainer: { flex: 1, minHeight: 300 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  loadingText: { color: colors.textMuted, fontSize: 13 },
   optionBar: {
     borderTopWidth: 1,
     borderTopColor: colors.border,

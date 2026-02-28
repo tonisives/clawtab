@@ -11,7 +11,10 @@ import {
   useJobActions,
   useJobDetail,
   useLogBuffer,
+  parseNumberedOptions,
+  shortenPath,
 } from "@clawtab/shared";
+import { LogViewer } from "./LogViewer";
 import { createTauriTransport } from "../transport/tauriTransport";
 import type { AppSettings, Job } from "../types";
 import { JobEditor } from "./JobEditor";
@@ -32,6 +35,155 @@ const EDITOR_LABELS: Record<string, string> = {
   emacs: "Emacs",
 };
 
+// Detail view for detected (non-job) Claude processes
+function DetectedProcessDetail({
+  process,
+  questions,
+  onBack,
+  onDismissQuestion,
+}: {
+  process: ClaudeProcess;
+  questions: ClaudeQuestion[];
+  onBack: () => void;
+  onDismissQuestion: (questionId: string) => void;
+}) {
+  const [logs, setLogs] = useState(process.log_lines);
+  const [inputText, setInputText] = useState("");
+  const [sending, setSending] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const processRef = useRef(process);
+  processRef.current = process;
+
+  const displayName = shortenPath(process.cwd);
+
+  // Poll logs
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      try {
+        const result = await invoke<string>("get_detected_process_logs", {
+          tmuxSession: processRef.current.tmux_session,
+          paneId: processRef.current.pane_id,
+        });
+        if (active) setLogs(result);
+      } catch {
+        // Process may have stopped
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => { active = false; clearInterval(interval); };
+  }, [process.pane_id]);
+
+  // Prefer question options from notifications, fallback to log parsing
+  const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
+  const options = useMemo(() => {
+    if (paneQuestion && paneQuestion.options.length > 0) return paneQuestion.options;
+    return parseNumberedOptions(logs);
+  }, [paneQuestion, logs]);
+
+  const handleSend = useCallback(async (text: string) => {
+    const t = text.trim();
+    if (!t || sending) return;
+    setSending(true);
+    try {
+      await invoke("send_detected_process_input", { paneId: process.pane_id, text: t });
+      setInputText("");
+      inputRef.current?.focus();
+      if (paneQuestion) onDismissQuestion(paneQuestion.question_id);
+    } catch (e) {
+      console.error("Failed to send input:", e);
+    } finally {
+      setSending(false);
+    }
+  }, [process.pane_id, sending, paneQuestion, onDismissQuestion]);
+
+  const handleOpen = useCallback(() => {
+    invoke("focus_detected_process", {
+      tmuxSession: process.tmux_session,
+      windowName: process.window_name,
+    }).catch(() => {});
+  }, [process.tmux_session, process.window_name]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <button className="btn btn-sm" onClick={onBack}>
+          Back
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {displayName}
+            </span>
+            <code style={{ fontSize: 11, color: "var(--text-secondary)" }}>v{process.version}</code>
+            <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
+          </div>
+        </div>
+        <div className="btn-group">
+          <button className="btn btn-sm" onClick={handleOpen} title="Open in terminal">
+            Open in Terminal
+          </button>
+        </div>
+      </div>
+
+      {/* Logs */}
+      <LogViewer
+        content={logs}
+        className="log-viewer"
+        style={{ flex: 1, minHeight: 200 }}
+      />
+
+      {/* Option buttons */}
+      {options.length > 0 && (
+        <div style={{
+          display: "flex",
+          gap: 6,
+          padding: "8px 0",
+          flexWrap: "wrap",
+        }}>
+          {options.map((opt) => (
+            <button
+              key={opt.number}
+              className="btn btn-sm"
+              style={{
+                borderColor: "var(--accent)",
+                color: "var(--accent)",
+              }}
+              disabled={sending}
+              onClick={() => handleSend(opt.number)}
+            >
+              {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Input bar */}
+      <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
+        <input
+          ref={inputRef}
+          className="input"
+          type="text"
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSend(inputText); }}
+          placeholder="Send input..."
+          style={{ flex: 1 }}
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          disabled={!inputText.trim() || sending}
+          onClick={() => handleSend(inputText)}
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface JobsTabProps {
   pendingTemplateId?: string | null;
   onTemplateHandled?: () => void;
@@ -50,6 +202,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const [pickerTemplateId, setPickerTemplateId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
+  const [viewingProcess, setViewingProcess] = useState<ClaudeProcess | null>(null);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
@@ -120,6 +273,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     }
   }, [core.jobs, viewingJob]);
 
+  // Update viewingProcess when processes reload
+  useEffect(() => {
+    if (viewingProcess) {
+      const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
+      if (fresh && fresh !== viewingProcess) {
+        setViewingProcess(fresh);
+      }
+    }
+  }, [core.processes, viewingProcess]);
+
   useEffect(() => {
     if (pendingTemplateId) {
       setShowPicker(true);
@@ -134,11 +297,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
 
   // Scroll tab-content to top when switching to editor/picker/detail views
   useEffect(() => {
-    if (editingJob || isCreating || showPicker || viewingJob) {
+    if (editingJob || isCreating || showPicker || viewingJob || viewingProcess) {
       const tabContent = document.querySelector(".tab-content");
       if (tabContent) tabContent.scrollTop = 0;
     }
-  }, [editingJob, isCreating, showPicker, viewingJob]);
+  }, [editingJob, isCreating, showPicker, viewingJob, viewingProcess]);
 
   const handleRunWithParams = useCallback(async () => {
     if (!paramsDialog) return;
@@ -196,11 +359,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       setViewingAgent(true);
       return;
     }
-    // Otherwise, open the terminal window
-    invoke("focus_detected_process", {
-      tmuxSession: process.tmux_session,
-      windowName: process.window_name,
-    }).catch(() => {});
+    setViewingProcess(process);
   }, []);
 
   const handleRunAgent = useCallback(async (prompt: string) => {
@@ -223,11 +382,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       const job = (core.jobs as Job[]).find((j) => j.name === resolvedJob);
       if (job) { setViewingJob(job); return; }
     }
-    invoke("focus_detected_process", {
-      tmuxSession: q.tmux_session,
-      windowName: q.window_name,
-    }).catch(() => {});
-  }, [core.jobs]);
+    const proc = core.processes.find((p) => p.pane_id === q.pane_id);
+    if (proc) {
+      setViewingProcess(proc);
+    } else {
+      // Fallback: open terminal if process not found in list
+      invoke("focus_detected_process", {
+        tmuxSession: q.tmux_session,
+        windowName: q.window_name,
+      }).catch(() => {});
+    }
+  }, [core.jobs, core.processes]);
 
   const handleQuestionSendOption = useCallback((q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
     if (resolvedJob) {
@@ -348,6 +513,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         status={agentStatus}
         onBack={() => setViewingAgent(false)}
         onOpen={() => handleOpen("agent")}
+      />
+    );
+  }
+
+  if (viewingProcess) {
+    return (
+      <DetectedProcessDetail
+        process={viewingProcess}
+        questions={questions}
+        onBack={() => setViewingProcess(null)}
+        onDismissQuestion={(qId) => {
+          dismissedRef.current.set(qId, Date.now());
+          setQuestions((prev) => prev.filter((q) => q.question_id !== qId));
+          startFastQuestionPoll();
+        }}
       />
     );
   }
