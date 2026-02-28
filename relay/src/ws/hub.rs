@@ -28,6 +28,8 @@ pub struct Hub {
     last_questions: HashMap<Uuid, String>,
     /// user_id -> pane_ids with auto-yes enabled (suppress push notifications for these)
     auto_yes_panes: HashMap<Uuid, HashSet<String>>,
+    /// user_id -> last auto_yes_panes JSON payload (replayed to newly connecting mobiles)
+    last_auto_yes_panes: HashMap<Uuid, String>,
 }
 
 impl Hub {
@@ -37,6 +39,7 @@ impl Hub {
             mobiles: HashMap::new(),
             last_questions: HashMap::new(),
             auto_yes_panes: HashMap::new(),
+            last_auto_yes_panes: HashMap::new(),
         }
     }
 
@@ -106,6 +109,11 @@ impl Hub {
             let _ = conn.tx.send(questions_json.clone());
         }
 
+        // Replay last auto_yes_panes so the mobile sees current auto-yes state
+        if let Some(auto_yes_json) = self.last_auto_yes_panes.get(&user_id) {
+            let _ = conn.tx.send(auto_yes_json.clone());
+        }
+
         self.mobiles.entry(user_id).or_default().push(conn);
     }
 
@@ -165,6 +173,11 @@ impl Hub {
     /// Cache the last claude_questions payload for replay to newly connecting mobiles.
     pub fn cache_questions(&mut self, user_id: Uuid, json: &str) {
         self.last_questions.insert(user_id, json.to_string());
+    }
+
+    /// Cache the last auto_yes_panes payload for replay to newly connecting mobiles.
+    pub fn cache_auto_yes_panes(&mut self, user_id: Uuid, json: &str) {
+        self.last_auto_yes_panes.insert(user_id, json.to_string());
     }
 
     /// Send a raw JSON string to all mobile clients for a user.

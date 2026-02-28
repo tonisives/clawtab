@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::process::Command;
 
+use clawtab_protocol::DesktopMessage;
+
 use serde::Serialize;
 use tauri::State;
 
@@ -114,13 +116,12 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             continue;
         }
 
-        // Match against configured jobs
+        // Match against configured jobs (CWD match only sets group, not job)
         let mut matched_group = None;
-        let mut matched_job = None;
-        for (root, group, name) in &match_entries {
+        let matched_job = None;
+        for (root, group, _name) in &match_entries {
             if cwd == root || cwd.starts_with(&format!("{}/", root)) {
                 matched_group = Some(group.clone());
-                matched_job = Some(name.clone());
                 break;
             }
         }
@@ -166,4 +167,29 @@ pub fn send_detected_process_input(pane_id: String, text: String) -> Result<(), 
 #[tauri::command]
 pub fn get_active_questions(state: State<AppState>) -> Vec<clawtab_protocol::ClaudeQuestion> {
     state.active_questions.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn get_auto_yes_panes(state: State<AppState>) -> Vec<String> {
+    state.auto_yes_panes.lock().unwrap().iter().cloned().collect()
+}
+
+#[tauri::command]
+pub fn set_auto_yes_panes(state: State<AppState>, pane_ids: Vec<String>) {
+    let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
+    *state.auto_yes_panes.lock().unwrap() = pane_set;
+
+    // Push to relay for cross-device sync
+    if let Ok(guard) = state.relay.lock() {
+        if let Some(handle) = guard.as_ref() {
+            handle.send_message(&DesktopMessage::AutoYesPanes {
+                pane_ids,
+            });
+        }
+    }
+}
+
+#[tauri::command]
+pub fn stop_detected_process(pane_id: String) -> Result<(), String> {
+    crate::tmux::kill_pane(&pane_id)
 }

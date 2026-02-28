@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
@@ -117,6 +117,24 @@ struct CachedQuestion {
     miss_count: u32,
 }
 
+/// Find the best "yes" option from a list of question options.
+/// Prefers "Yes, during this session" over plain "Yes".
+fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
+    // Prefer "Yes, during this session" or similar session-scoped option
+    for opt in options {
+        if opt.label.to_lowercase().contains("yes") && opt.label.to_lowercase().contains("session") {
+            return Some(opt.number.clone());
+        }
+    }
+    // Fall back to plain "Yes"
+    for opt in options {
+        if opt.label.to_lowercase().starts_with("yes") {
+            return Some(opt.number.clone());
+        }
+    }
+    None
+}
+
 /// Runs the question detection loop. Checks every 2 seconds for Claude processes
 /// that have interactive numbered options, and sends them to the relay and stores
 /// them for the desktop frontend.
@@ -125,6 +143,7 @@ pub async fn question_detection_loop(
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     relay: Arc<Mutex<Option<RelayHandle>>>,
     active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
+    auto_yes_panes: Arc<Mutex<HashSet<String>>>,
 ) {
     // Cache full question data per pane so transient detection misses don't flicker
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
@@ -132,6 +151,8 @@ pub async fn question_detection_loop(
     let mut last_sent_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Re-send unchanged questions periodically so newly connected clients get them
     let mut ticks_since_send: u32 = 0;
+    // Track which question IDs have been auto-answered to avoid double-sending
+    let mut auto_answered_ids: HashSet<String> = HashSet::new();
 
     loop {
         let processes = detect_question_processes(&jobs_config, &job_status);
@@ -188,6 +209,28 @@ pub async fn question_detection_loop(
         let questions: Vec<ClaudeQuestion> = question_cache.values()
             .map(|c| c.question.clone())
             .collect();
+
+        // Auto-answer questions for panes with auto-yes enabled
+        {
+            let yes_panes = auto_yes_panes.lock().unwrap().clone();
+            if !yes_panes.is_empty() {
+                for q in &questions {
+                    if !yes_panes.contains(&q.pane_id) { continue; }
+                    if auto_answered_ids.contains(&q.question_id) { continue; }
+                    if let Some(opt) = find_yes_option(&q.options) {
+                        log::info!("[questions] auto-answering pane {} question {} with option {}", q.pane_id, q.question_id, opt);
+                        if let Err(e) = crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt) {
+                            log::error!("[questions] auto-answer send_keys failed: {}", e);
+                        }
+                        auto_answered_ids.insert(q.question_id.clone());
+                    }
+                }
+            }
+        }
+
+        // Clean up stale auto-answered IDs (questions no longer in cache)
+        let current_qids: HashSet<String> = questions.iter().map(|q| q.question_id.clone()).collect();
+        auto_answered_ids.retain(|id| current_qids.contains(id));
 
         // Store for desktop frontend
         log::info!("[questions] storing {} active questions", questions.len());
@@ -317,15 +360,13 @@ fn detect_question_processes(
         } else {
             // Try to match against configured job folders
             let mut mg = None;
-            let mut mj = None;
-            for (root, group, name) in &match_entries {
+            for (root, group, _name) in &match_entries {
                 if cwd == root || cwd.starts_with(&format!("{}/", root)) {
                     mg = Some(group.clone());
-                    mj = Some(name.clone());
                     break;
                 }
             }
-            (mg, mj)
+            (mg, None)
         };
 
         let log_lines = crate::tmux::capture_pane(session, pane_id, 20)

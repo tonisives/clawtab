@@ -16,7 +16,7 @@ mod tmux;
 mod tools;
 mod updater;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use tauri::{
@@ -44,6 +44,7 @@ pub struct AppState {
     pub relay: Arc<Mutex<Option<relay::RelayHandle>>>,
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
+    pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -200,6 +201,8 @@ pub fn run() {
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> =
         Arc::new(Mutex::new(Vec::new()));
+    let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
+        Arc::new(Mutex::new(HashSet::new()));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -212,6 +215,7 @@ pub fn run() {
         relay: Arc::clone(&relay_handle),
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
+        auto_yes_panes: Arc::clone(&auto_yes_panes),
     };
 
     // Clones for IPC handler
@@ -226,6 +230,7 @@ pub fn run() {
         relay: Arc::clone(&relay_handle),
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
+        auto_yes_panes: Arc::clone(&auto_yes_panes),
     };
 
     // Clones for scheduler
@@ -254,12 +259,14 @@ pub fn run() {
     let secrets_for_relay = Arc::clone(&secrets);
     let history_for_relay = Arc::clone(&history);
     let active_agents_for_relay = Arc::clone(&active_agents);
+    let auto_yes_for_relay = Arc::clone(&auto_yes_panes);
 
     // Clones for question detection loop
     let jobs_for_questions = Arc::clone(&jobs_config);
     let job_status_for_questions = Arc::clone(&job_status);
     let relay_for_questions = Arc::clone(&relay_handle);
     let active_questions_for_loop = Arc::clone(&active_questions);
+    let auto_yes_for_questions = Arc::clone(&auto_yes_panes);
 
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
@@ -366,6 +373,9 @@ pub fn run() {
             commands::processes::get_detected_process_logs,
             commands::processes::send_detected_process_input,
             commands::processes::get_active_questions,
+            commands::processes::get_auto_yes_panes,
+            commands::processes::set_auto_yes_panes,
+            commands::processes::stop_detected_process,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -523,6 +533,7 @@ pub fn run() {
                                 history_for_relay,
                                 settings_for_relay,
                                 active_agents_for_relay,
+                                auto_yes_for_relay,
                             )
                             .await;
                         });
@@ -537,6 +548,7 @@ pub fn run() {
                     job_status_for_questions,
                     relay_for_questions,
                     active_questions_for_loop,
+                    auto_yes_for_questions,
                 )
                 .await;
             });

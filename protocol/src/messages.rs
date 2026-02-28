@@ -230,6 +230,10 @@ pub enum DesktopMessage {
         event: String,
         run_id: String,
     },
+    /// Desktop pushes which pane_ids have auto-yes enabled (synced to mobile)
+    AutoYesPanes {
+        pane_ids: Vec<String>,
+    },
 }
 
 /// Messages sent by the relay server to connected clients.

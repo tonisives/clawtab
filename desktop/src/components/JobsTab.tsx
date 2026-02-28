@@ -13,7 +13,6 @@ import {
   useJobDetail,
   useLogBuffer,
   parseNumberedOptions,
-  findYesOption,
   shortenPath,
 } from "@clawtab/shared";
 import type { AutoYesEntry } from "@clawtab/shared";
@@ -236,9 +235,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const fastPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track recently dismissed question IDs so polls don't bring them back
   const dismissedRef = useRef<Map<string, number>>(new Map());
-  // Auto-yes state
+  // Auto-yes state (backed by Rust backend for cross-device sync)
   const [autoYesPaneIds, setAutoYesPaneIds] = useState<Set<string>>(new Set());
-  const autoAnsweredRef = useRef<Set<string>>(new Set());
 
   const loadQuestions = useCallback(() => {
     invoke<ClaudeQuestion[]>("get_active_questions").then((qs) => {
@@ -263,6 +261,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     };
   }, [loadQuestions]);
 
+  // Initialize auto-yes state from backend
+  useEffect(() => {
+    invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
+      setAutoYesPaneIds(new Set(paneIds));
+    }).catch(() => {});
+  }, []);
+
   // Temporarily switch to fast polling (500ms for 5s) after answering a question
   const startFastQuestionPoll = useCallback(() => {
     if (questionPollRef.current) clearInterval(questionPollRef.current);
@@ -276,66 +281,28 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
 
   const handleToggleAutoYes = useCallback((q: ClaudeQuestion) => {
     if (autoYesPaneIds.has(q.pane_id)) {
-      setAutoYesPaneIds((prev) => {
-        const next = new Set(prev);
-        next.delete(q.pane_id);
-        return next;
-      });
+      const next = new Set(autoYesPaneIds);
+      next.delete(q.pane_id);
+      setAutoYesPaneIds(next);
+      invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
       return;
     }
     const title = q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~");
     if (!confirm(`Enable auto-yes for "${title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`)) return;
-    setAutoYesPaneIds((prev) => {
-      const next = new Set(prev);
-      next.add(q.pane_id);
-      return next;
-    });
-    // Auto-answer the current question
-    const yesOpt = findYesOption(q);
-    if (yesOpt) {
-      const resolvedJob = q.matched_job ?? null;
-      if (resolvedJob) {
-        invoke("send_job_input", { name: resolvedJob, text: yesOpt }).catch(() => {});
-      } else {
-        invoke("send_detected_process_input", { paneId: q.pane_id, text: yesOpt }).catch(() => {});
-      }
-      dismissedRef.current.set(q.question_id, Date.now());
-      setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
-      startFastQuestionPoll();
-    }
+    const next = new Set(autoYesPaneIds);
+    next.add(q.pane_id);
+    setAutoYesPaneIds(next);
+    invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
+    // Rust backend will auto-answer on the next question detection tick
+    startFastQuestionPoll();
   }, [autoYesPaneIds, startFastQuestionPoll]);
 
-  // Auto-answer questions for panes with auto-yes enabled
-  useEffect(() => {
-    for (const q of questions) {
-      if (!autoYesPaneIds.has(q.pane_id)) continue;
-      if (autoAnsweredRef.current.has(q.question_id)) continue;
-      const yesOpt = findYesOption(q);
-      if (yesOpt) {
-        autoAnsweredRef.current.add(q.question_id);
-        const resolvedJob = q.matched_job ?? null;
-        if (resolvedJob) {
-          invoke("send_job_input", { name: resolvedJob, text: yesOpt }).catch(() => {});
-        } else {
-          invoke("send_detected_process_input", { paneId: q.pane_id, text: yesOpt }).catch(() => {});
-        }
-        const qid = q.question_id;
-        setTimeout(() => {
-          dismissedRef.current.set(qid, Date.now());
-          setQuestions((prev) => prev.filter((pq) => pq.question_id !== qid));
-          startFastQuestionPoll();
-        }, 1500);
-      }
-    }
-  }, [questions, autoYesPaneIds, startFastQuestionPoll]);
-
   const handleDisableAutoYes = useCallback((paneId: string) => {
-    setAutoYesPaneIds((prev) => {
-      const next = new Set(prev);
-      next.delete(paneId);
-      return next;
-    });
-  }, []);
+    const next = new Set(autoYesPaneIds);
+    next.delete(paneId);
+    setAutoYesPaneIds(next);
+    invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
+  }, [autoYesPaneIds]);
 
   const autoYesEntries: AutoYesEntry[] = useMemo(() => {
     const entries: AutoYesEntry[] = [];

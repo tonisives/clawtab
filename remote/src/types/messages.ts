@@ -62,6 +62,7 @@ export type DesktopMessage =
   | { type: "send_detected_process_input_ack"; id: string; success: boolean }
   | { type: "stop_detected_process_ack"; id: string; success: boolean; error?: string }
   | { type: "claude_questions"; questions: ClaudeQuestion[] }
+  | { type: "auto_yes_panes"; pane_ids: string[] }
   | { type: "notification_history"; id: string; notifications: NotificationHistoryItem[] }
   | { type: "register_push_token_ack"; id: string; success: boolean };
 

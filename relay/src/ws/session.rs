@@ -173,10 +173,10 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
             handle_get_notification_history(state, user_id, id, *limit).await;
             return;
         }
-        ClientMessage::SetAutoYesPanes { pane_ids, .. } => {
-            let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
-            let mut hub = state.hub.write().await;
-            hub.set_auto_yes_panes(user_id, pane_set);
+        ClientMessage::SetAutoYesPanes { .. } => {
+            // Forward to desktop - it will update its auto_yes_panes and broadcast back
+            let hub = state.hub.read().await;
+            hub.forward_to_desktop(user_id, &msg);
             return;
         }
         _ => {}
@@ -403,6 +403,13 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
                 handle_claude_questions_push(&state, user_id, &questions).await;
             });
         }
+    } else if let DesktopMessage::AutoYesPanes { ref pane_ids } = msg {
+        // Cache auto-yes state, update push suppression, and forward to mobiles
+        let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
+        let mut hub = state.hub.write().await;
+        hub.set_auto_yes_panes(user_id, pane_set);
+        hub.cache_auto_yes_panes(user_id, text);
+        hub.send_raw_to_mobiles(user_id, text);
     } else {
         // Forward raw JSON to all mobile clients (avoids re-serialization)
         let hub = state.hub.read().await;

@@ -132,6 +132,9 @@ export function useWebSocket() {
         case "claude_questions":
           useNotificationStore.getState().setQuestions(msg.questions);
           break;
+        case "auto_yes_panes":
+          useNotificationStore.getState().setAutoYesPanes((msg as { pane_ids?: string[] }).pane_ids ?? []);
+          break;
         case "notification_history":
           // Ignored - desktop sends authoritative claude_questions
           break;

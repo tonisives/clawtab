@@ -205,6 +205,7 @@ pub async fn connect_loop(
     history: Arc<Mutex<HistoryStore>>,
     settings: Arc<Mutex<AppSettings>>,
     active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    auto_yes_panes: Arc<Mutex<std::collections::HashSet<String>>>,
 ) {
     let mut backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(60);
@@ -261,6 +262,11 @@ pub async fn connect_loop(
                 };
 
                 push_full_state(&handle, &jobs_config, &job_status);
+                // Push auto-yes pane state
+                {
+                    let pane_ids: Vec<String> = auto_yes_panes.lock().unwrap().iter().cloned().collect();
+                    handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
+                }
 
                 {
                     let mut guard = relay.lock().unwrap();
@@ -280,6 +286,7 @@ pub async fn connect_loop(
                     &history,
                     &settings,
                     &active_agents,
+                    &auto_yes_panes,
                 )
                 .await;
 
@@ -324,6 +331,7 @@ async fn run_session<S, R>(
     history: &Arc<Mutex<HistoryStore>>,
     settings: &Arc<Mutex<AppSettings>>,
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
 ) where
     S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     R: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
@@ -349,6 +357,7 @@ async fn run_session<S, R>(
                             settings,
                             active_agents,
                             relay,
+                            auto_yes_panes,
                         ).await;
                         if let Some(json) = response {
                             let _ = tx.send(json);

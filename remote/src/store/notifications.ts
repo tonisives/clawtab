@@ -18,6 +18,7 @@ interface NotificationState {
   hydrateFromHistory: (items: NotificationHistoryItem[]) => void;
   enableAutoYes: (paneId: string) => void;
   disableAutoYes: (paneId: string) => void;
+  setAutoYesPanes: (paneIds: string[]) => void;
   reset: () => void;
 }
 
@@ -90,6 +91,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       next.delete(paneId);
       return { autoYesPaneIds: next };
     }),
+
+  setAutoYesPanes: (paneIds) =>
+    set(() => ({ autoYesPaneIds: new Set(paneIds) })),
 
   reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map(), autoYesPaneIds: new Set() }),
 }));

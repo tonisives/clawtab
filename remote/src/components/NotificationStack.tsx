@@ -29,28 +29,17 @@ export function NotificationStack() {
 
   const [collapsed, setCollapsed] = useState(false);
 
-  const statuses = useJobsStore((s) => s.statuses);
-
   const processMap = new Map<string, ClaudeProcess>();
   for (const proc of detectedProcesses) {
     processMap.set(proc.pane_id, proc);
   }
 
-  const runningJobs = new Set<string>();
-  for (const [name, status] of Object.entries(statuses)) {
-    if (status.state === "running") runningJobs.add(name);
-  }
-
   // Resolve the job name for a question.
-  // Only trust matched_job from the backend (it checks actual pane ownership).
-  // cwd-based matching is too aggressive since multiple Claude instances can
-  // run in the same directory (e.g. a self-launched Claude inside a job folder).
+  // After Phase 1, matched_job is only set for pane-id-authoritative matches,
+  // so we can trust it directly.
   const resolveJob = useCallback(
-    (q: ClaudeQuestion): string | null => {
-      if (q.matched_job && runningJobs.has(q.matched_job)) return q.matched_job;
-      return null;
-    },
-    [runningJobs],
+    (q: ClaudeQuestion): string | null => q.matched_job ?? null,
+    [],
   );
 
   const activeQuestions = questions.filter(
@@ -144,24 +133,8 @@ export function NotificationStack() {
     [autoYesPaneIds, enableAutoYes, disableAutoYes, sendAnswer, resolveJob, answerQuestion],
   );
 
-  // Auto-answer questions for panes with auto-yes enabled
-  useEffect(() => {
-    for (const q of activeQuestions) {
-      if (!autoYesPaneIds.has(q.pane_id)) continue;
-      if (autoAnsweredRef.current.has(q.question_id)) continue;
-      const yesOpt = findYesOption(q);
-      if (yesOpt) {
-        autoAnsweredRef.current.add(q.question_id);
-        setAutoAnsweredIds(new Set(autoAnsweredRef.current));
-        sendAnswer(q, resolveJob(q), yesOpt);
-        // Show the card briefly, then dismiss
-        const qid = q.question_id;
-        setTimeout(() => {
-          answerQuestion(qid);
-        }, 1500);
-      }
-    }
-  }, [activeQuestions, autoYesPaneIds, sendAnswer, resolveJob, answerQuestion]);
+  // Auto-answering is handled by the desktop Rust backend.
+  // Mobile only displays auto-yes state.
 
   // Handle deep link
   useEffect(() => {

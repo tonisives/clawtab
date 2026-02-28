@@ -220,6 +220,7 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
     let history = Arc::clone(&state.history);
     let settings = Arc::clone(&state.settings);
     let active_agents = Arc::clone(&state.active_agents);
+    let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
 
     tauri::async_runtime::spawn(async move {
         crate::relay::connect_loop(
@@ -234,6 +235,7 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
             history,
             settings,
             active_agents,
+            auto_yes_panes,
         )
         .await;
     });

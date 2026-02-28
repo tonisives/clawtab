@@ -25,6 +25,7 @@ pub async fn handle_incoming(
     settings: &Arc<Mutex<AppSettings>>,
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
+    auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
 ) -> Option<String> {
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
@@ -212,10 +213,22 @@ pub async fn handle_incoming(
             })
         }
 
+        ClientMessage::SetAutoYesPanes { pane_ids, .. } => {
+            let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
+            *auto_yes_panes.lock().unwrap() = pane_set;
+            // Broadcast back to relay so it updates its cache and forwards to all mobiles
+            let msg = DesktopMessage::AutoYesPanes { pane_ids };
+            if let Ok(guard) = relay.lock() {
+                if let Some(handle) = guard.as_ref() {
+                    handle.send_message(&msg);
+                }
+            }
+            None
+        }
+
         // These are handled by the relay server, never forwarded to desktop
         ClientMessage::RegisterPushToken { .. }
-        | ClientMessage::GetNotificationHistory { .. }
-        | ClientMessage::SetAutoYesPanes { .. } => None,
+        | ClientMessage::GetNotificationHistory { .. } => None,
     };
 
     match response {
@@ -510,11 +523,10 @@ fn detect_processes(
         if tracked_panes.contains(pane_id) { continue; }
 
         let mut matched_group = None;
-        let mut matched_job = None;
-        for (root, group, name) in &match_entries {
+        let matched_job = None;
+        for (root, group, _name) in &match_entries {
             if cwd == root || cwd.starts_with(&format!("{}/", root)) {
                 matched_group = Some(group.clone());
-                matched_job = Some(name.clone());
                 break;
             }
         }
