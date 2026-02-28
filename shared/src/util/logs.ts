@@ -1,5 +1,5 @@
 // eslint-disable-next-line no-control-regex
-const ANSI_STRIP = /\x1b\[[0-9;]*m/g;
+const ANSI_STRIP = /\x1b\[[0-9;]*[A-Za-z]/g;
 
 const SEPARATOR_RE = /^[\s\-_=~\u2501\u2500\u2550\u254C\u254D\u2504\u2505\u2508\u2509\u2574\u2576\u2578\u257A\u2594\u2581|│┃┆┇┊┋╎╏]+$/;
 
@@ -18,7 +18,7 @@ function isBlank(line: string): boolean {
  * adjacent to separators.
  */
 export function collapseSeparators(text: string): string {
-  const lines = text.split("\n");
+  const lines = text.replace(/\r/g, "").split("\n");
 
   // First pass: mark separator lines
   const seps = lines.map(isSeparator);

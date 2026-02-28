@@ -23,7 +23,7 @@ function useAutoScroll(dep: string) {
     first.current = false;
 
     if (Platform.OS === "web") {
-      const el = domNode.current;
+      const el = domNode.current as any;
       if (!el) return;
       // Double RAF to ensure layout is complete after React commit
       requestAnimationFrame(() => {
@@ -38,8 +38,6 @@ function useAutoScroll(dep: string) {
 
   return { nativeRef, webRef };
 }
-
-export { useAutoScroll };
 
 export function LogViewer({ content }: { content: string }) {
   const processed = useMemo(() => collapseSeparators(content), [content]);

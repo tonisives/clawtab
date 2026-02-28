@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
@@ -138,6 +138,58 @@ export default function ProcessDetailScreen() {
   };
 
   const isAlive = !!process;
+  const isWeb = Platform.OS === "web";
+  const outerScrollRef = useRef<ScrollView>(null);
+  const outerWebRef = useRef<HTMLElement | null>(null);
+  const prevLogsLenRef = useRef(0);
+
+  const outerWebRefCb = useCallback((node: HTMLElement | null) => {
+    outerWebRef.current = node;
+  }, []);
+
+  // Scroll to bottom when logs grow
+  useEffect(() => {
+    if (logs.length <= prevLogsLenRef.current) {
+      prevLogsLenRef.current = logs.length;
+      return;
+    }
+    prevLogsLenRef.current = logs.length;
+
+    if (isWeb) {
+      const el = outerWebRef.current;
+      if (!el) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight;
+        });
+      });
+    } else {
+      outerScrollRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [logs, isWeb]);
+
+  const pageContent = (
+    <ContentContainer wide>
+      <View style={[styles.content, isWide && styles.contentWide]}>
+        {isAlive && (
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.stopBtn, stopping && { opacity: 0.5 }]}
+              onPress={handleStop}
+              disabled={stopping}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.logsContainer}>
+          <LogViewer content={logs} />
+        </View>
+      </View>
+    </ContentContainer>
+  );
 
   return (
     <View style={styles.container}>
@@ -163,28 +215,22 @@ export default function ProcessDetailScreen() {
         </View>
       )}
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <ContentContainer wide>
-          <View style={[styles.content, isWide && styles.contentWide]}>
-            {isAlive && (
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.stopBtn, stopping && { opacity: 0.5 }]}
-                  onPress={handleStop}
-                  disabled={stopping}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <View style={styles.logsContainer}>
-              <LogViewer content={logs} />
-            </View>
-          </View>
-        </ContentContainer>
-      </ScrollView>
+      {isWeb ? (
+        <div
+          ref={outerWebRefCb as any}
+          style={{
+            flex: 1,
+            overflowY: "auto" as any,
+            minHeight: 0,
+          }}
+        >
+          {pageContent}
+        </div>
+      ) : (
+        <ScrollView ref={outerScrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          {pageContent}
+        </ScrollView>
+      )}
 
       {isAlive && <OptionButtons options={options} onSend={handleSend} />}
       {isAlive && <MessageInput onSend={handleSend} placeholder="Send input..." />}

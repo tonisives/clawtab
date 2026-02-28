@@ -15,7 +15,7 @@ const isWeb = Platform.OS === "web";
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
-import { LogViewer, useAutoScroll } from "./LogViewer";
+import { LogViewer } from "./LogViewer";
 import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
@@ -91,7 +91,7 @@ export function JobDetailView({
     prevLogsLen.current = logs.length;
 
     if (isWeb) {
-      const el = webDivRef.current;
+      const el = webDivRef.current as any;
       if (!el) return;
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -167,6 +167,133 @@ export function JobDetailView({
   );
 
   const pathDisplay = (job.work_dir || job.path || "").replace(/^\/Users\/[^/]+/, "~");
+
+  const detailInner = (
+    <>
+      {/* Header with back button */}
+      <TouchableOpacity onPress={onBack} style={styles.backRow} activeOpacity={0.6}>
+        <Text style={styles.backArrow}>{"\u2190"}</Text>
+        <Text style={styles.jobName}>{job.name}</Text>
+        <StatusBadge status={status} />
+      </TouchableOpacity>
+
+      {/* Info row */}
+      <View style={styles.infoRow}>
+        <View style={styles.infoPill}>
+          <Text style={styles.infoLabel}>{job.job_type}</Text>
+        </View>
+        {job.cron ? (
+          <View style={styles.infoPill}>
+            <Text style={styles.cronText}>{job.cron}</Text>
+          </View>
+        ) : null}
+        <View style={styles.infoPill}>
+          <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
+            {job.enabled ? "Enabled" : "Disabled"}
+          </Text>
+        </View>
+      </View>
+
+      {/* Action buttons */}
+      <View style={styles.actions}>
+        {isRunning && (
+          <>
+            {onOpen && <ActionButton label="Open" color={colors.accent} onPress={() => onOpen()} />}
+            <ActionButton label="Pause" color={colors.warning} onPress={() => handleAction("pause")} />
+            <ActionButton label="Stop" color={colors.danger} onPress={() => handleAction("stop")} />
+          </>
+        )}
+        {isPaused && (
+          <>
+            <ActionButton label="Resume" color={colors.success} filled onPress={() => handleAction("resume")} />
+            <ActionButton label="Stop" color={colors.danger} onPress={() => handleAction("stop")} />
+          </>
+        )}
+        {state === "failed" && (
+          <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} />
+        )}
+        {state === "success" && (
+          <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} />
+        )}
+        {state === "idle" && (
+          <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
+        )}
+        {onEdit && <ActionButton label="Edit" color={colors.textSecondary} onPress={onEdit} />}
+      </View>
+
+      {/* Live Output */}
+      {(isRunning || isPaused) && (
+        <View style={styles.section}>
+          <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
+            <Text style={styles.collapseArrow}>
+              {outputCollapsed ? "\u25B6" : "\u25BC"}
+            </Text>
+            <Text style={styles.sectionTitle}>Live Output</Text>
+          </TouchableOpacity>
+          {!outputCollapsed && (
+            <View style={styles.logsContainer}>
+              <LogViewer content={logs} />
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Run History */}
+      <View style={styles.section}>
+        <TouchableOpacity onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
+          <Text style={styles.collapseArrow}>
+            {runsCollapsed ? "\u25B6" : "\u25BC"}
+          </Text>
+          <Text style={styles.sectionTitle}>Runs</Text>
+        </TouchableOpacity>
+        {!runsCollapsed && (
+          <View style={styles.runsContainer}>
+            {runsLoading && !runs ? (
+              <Text style={styles.runsEmpty}>Loading...</Text>
+            ) : !runs || runs.length === 0 ? (
+              <Text style={styles.runsEmpty}>No run history</Text>
+            ) : (
+              runs.map((run, i) => (
+                <RunRow
+                  key={run.id}
+                  run={run}
+                  transport={transport}
+                  currentState={state}
+                  defaultExpanded={expandRunId ? run.id === expandRunId : i === 0}
+                  onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
+                />
+              ))
+            )}
+          </View>
+        )}
+      </View>
+
+      {/* Platform-specific extra content */}
+      {extraContent}
+
+      {/* Danger zone (desktop-only) */}
+      {(onToggleEnabled || onDuplicate || onDelete) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Actions</Text>
+          <View style={styles.actions}>
+            {onToggleEnabled && (
+              <ActionButton
+                label={job.enabled ? "Disable" : "Enable"}
+                color={colors.textSecondary}
+                onPress={onToggleEnabled}
+              />
+            )}
+            {onDuplicate && (
+              <ActionButton label="Duplicate" color={colors.textSecondary} onPress={onDuplicate} />
+            )}
+            {onDelete && (
+              <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />
+            )}
+          </View>
+        </View>
+      )}
+    </>
+  );
 
   return (
     <View style={styles.container}>
@@ -308,6 +435,7 @@ function RunRow({
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const runWebRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (defaultExpanded && !detail && !loading) {
@@ -321,7 +449,14 @@ function RunRow({
 
   // Auto-scroll to bottom when log content loads
   useEffect(() => {
-    if (expanded && detail && scrollRef.current) {
+    if (!expanded || !detail) return;
+    if (isWeb) {
+      const el = runWebRef.current as any;
+      if (!el) return;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    } else if (scrollRef.current) {
       const timer = setTimeout(() => {
         scrollRef.current?.scrollToEnd({ animated: false });
       }, 50);
@@ -381,13 +516,26 @@ function RunRow({
           {loading ? (
             <Text style={styles.runLogsText}>Loading...</Text>
           ) : logContent ? (
-            <ScrollView ref={scrollRef} horizontal={false} style={{ maxHeight: 300 }} nestedScrollEnabled>
-              {hasAnsi(logContent) ? (
-                <AnsiText content={logContent} style={styles.runLogsText} selectable />
-              ) : (
-                <Text style={styles.runLogsText} selectable>{logContent}</Text>
-              )}
-            </ScrollView>
+            isWeb ? (
+              <div
+                ref={(node: HTMLElement | null) => { runWebRef.current = node; }}
+                style={{ maxHeight: 300, overflowY: "auto" as any }}
+              >
+                {hasAnsi(logContent) ? (
+                  <AnsiText content={logContent} style={styles.runLogsText} selectable />
+                ) : (
+                  <Text style={styles.runLogsText} selectable>{logContent}</Text>
+                )}
+              </div>
+            ) : (
+              <ScrollView ref={scrollRef} horizontal={false} style={{ maxHeight: 300 }} nestedScrollEnabled>
+                {hasAnsi(logContent) ? (
+                  <AnsiText content={logContent} style={styles.runLogsText} selectable />
+                ) : (
+                  <Text style={styles.runLogsText} selectable>{logContent}</Text>
+                )}
+              </ScrollView>
+            )
           ) : (
             <Text style={styles.runLogsText}>(no output)</Text>
           )}
@@ -409,16 +557,34 @@ function LogZoomModal({
   onClose: () => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const zoomWebRef = useRef<HTMLElement | null>(null);
   const color = runStatusColor(run, currentState);
   const label = runStatusLabel(run, currentState);
   const duration = formatDuration(run.started_at, run.finished_at);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: false });
-    }, 100);
-    return () => clearTimeout(timer);
+  const zoomWebRefCb = useCallback((node: HTMLElement | null) => {
+    zoomWebRef.current = node;
+    if (node) {
+      requestAnimationFrame(() => {
+        (node as any).scrollTop = (node as any).scrollHeight;
+      });
+    }
   }, []);
+
+  useEffect(() => {
+    if (!isWeb) {
+      const timer = setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const logInner = hasAnsi(logContent) ? (
+    <AnsiText content={logContent} style={styles.zoomLogText} selectable />
+  ) : (
+    <Text style={styles.zoomLogText} selectable>{logContent}</Text>
+  );
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -434,13 +600,23 @@ function LogZoomModal({
             <Text style={styles.zoomCloseText}>{"\u2715"}</Text>
           </TouchableOpacity>
         </View>
-        <ScrollView ref={scrollRef} style={styles.zoomLogScroll} contentContainerStyle={styles.zoomLogContent}>
-          {hasAnsi(logContent) ? (
-            <AnsiText content={logContent} style={styles.zoomLogText} selectable />
-          ) : (
-            <Text style={styles.zoomLogText} selectable>{logContent}</Text>
-          )}
-        </ScrollView>
+        {isWeb ? (
+          <div
+            ref={zoomWebRefCb as any}
+            style={{
+              flex: 1,
+              overflowY: "auto" as any,
+              padding: 16,
+              minHeight: 0,
+            }}
+          >
+            {logInner}
+          </div>
+        ) : (
+          <ScrollView ref={scrollRef} style={styles.zoomLogScroll} contentContainerStyle={styles.zoomLogContent}>
+            {logInner}
+          </ScrollView>
+        )}
       </SafeAreaView>
     </Modal>
   );
