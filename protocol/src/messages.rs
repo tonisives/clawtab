@@ -96,6 +96,11 @@ pub enum ClientMessage {
         pane_id: String,
         answer: String,
     },
+    /// Tell relay which pane_ids have auto-yes enabled (suppresses push notifications)
+    SetAutoYesPanes {
+        id: String,
+        pane_ids: Vec<String>,
+    },
     GetNotificationHistory {
         id: String,
         limit: u32,

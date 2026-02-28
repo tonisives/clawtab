@@ -29,6 +29,7 @@ export type ClientMessage =
   | { type: "stop_detected_process"; id: string; pane_id: string }
   | { type: "register_push_token"; id: string; push_token: string; platform: string }
   | { type: "answer_question"; id: string; question_id: string; pane_id: string; answer: string }
+  | { type: "set_auto_yes_panes"; id: string; pane_ids: string[] }
   | { type: "get_notification_history"; id: string; limit: number };
 
 // Messages received from the relay (desktop responses forwarded through)

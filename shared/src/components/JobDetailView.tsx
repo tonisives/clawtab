@@ -15,9 +15,11 @@ import { StatusBadge } from "./StatusBadge";
 import { LogViewer } from "./LogViewer";
 import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
+import { AnsiText, hasAnsi } from "./AnsiText";
 import { formatTime, formatDuration } from "../util/format";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { parseNumberedOptions } from "../util/jobs";
+import { collapseSeparators } from "../util/logs";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -67,6 +69,15 @@ export function JobDetailView({
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
+  const mainScrollRef = useRef<ScrollView>(null);
+
+  // Scroll to bottom on mount so recent logs are visible
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      mainScrollRef.current?.scrollToEnd({ animated: false });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload runs when status changes
   useEffect(() => {
@@ -144,7 +155,7 @@ export function JobDetailView({
         </View>
       ) : null}
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView ref={mainScrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <View style={styles.content}>
           {/* Header with back button */}
           <TouchableOpacity onPress={onBack} style={styles.backRow} activeOpacity={0.6}>
@@ -412,11 +423,13 @@ function RunRow({
     }
   };
 
-  const logContent = detail
+  const logContentRaw = detail
     ? [detail.stdout, detail.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
     : run.stdout || run.stderr
       ? [run.stdout, run.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
       : null;
+
+  const logContent = logContentRaw ? collapseSeparators(logContentRaw) : null;
 
   return (
     <TouchableOpacity onPress={handleToggle} activeOpacity={0.7}>
@@ -451,7 +464,11 @@ function RunRow({
             <Text style={styles.runLogsText}>Loading...</Text>
           ) : logContent ? (
             <ScrollView ref={scrollRef} horizontal={false} style={{ maxHeight: 300 }} nestedScrollEnabled>
-              <Text style={styles.runLogsText} selectable>{logContent}</Text>
+              {hasAnsi(logContent) ? (
+                <AnsiText content={logContent} style={styles.runLogsText} selectable />
+              ) : (
+                <Text style={styles.runLogsText} selectable>{logContent}</Text>
+              )}
             </ScrollView>
           ) : (
             <Text style={styles.runLogsText}>(no output)</Text>
@@ -500,7 +517,11 @@ function LogZoomModal({
           </TouchableOpacity>
         </View>
         <ScrollView ref={scrollRef} style={styles.zoomLogScroll} contentContainerStyle={styles.zoomLogContent}>
-          <Text style={styles.zoomLogText} selectable>{logContent}</Text>
+          {hasAnsi(logContent) ? (
+            <AnsiText content={logContent} style={styles.zoomLogText} selectable />
+          ) : (
+            <Text style={styles.zoomLogText} selectable>{logContent}</Text>
+          )}
         </ScrollView>
       </SafeAreaView>
     </Modal>

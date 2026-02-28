@@ -9,11 +9,15 @@ interface NotificationState {
   // Recently dismissed question IDs (optimistic removal) - prevents re-polling
   // from bringing them back before the desktop has consumed the answer.
   dismissedIds: Map<string, number>;
+  // Pane IDs with "yes to all" enabled - auto-answers questions with "yes"
+  autoYesPaneIds: Set<string>;
 
   setQuestions: (questions: ClaudeQuestion[]) => void;
   answerQuestion: (questionId: string) => void;
   setDeepLinkQuestionId: (id: string | null) => void;
   hydrateFromHistory: (items: NotificationHistoryItem[]) => void;
+  enableAutoYes: (paneId: string) => void;
+  disableAutoYes: (paneId: string) => void;
   reset: () => void;
 }
 
@@ -22,6 +26,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   deepLinkQuestionId: null,
   hasDesktopQuestions: false,
   dismissedIds: new Map(),
+  autoYesPaneIds: new Set(),
 
   setQuestions: (questions) =>
     set(() => {
@@ -72,5 +77,19 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       };
     }),
 
-  reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map() }),
+  enableAutoYes: (paneId) =>
+    set((state) => {
+      const next = new Set(state.autoYesPaneIds);
+      next.add(paneId);
+      return { autoYesPaneIds: next };
+    }),
+
+  disableAutoYes: (paneId) =>
+    set((state) => {
+      const next = new Set(state.autoYesPaneIds);
+      next.delete(paneId);
+      return { autoYesPaneIds: next };
+    }),
+
+  reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map(), autoYesPaneIds: new Set() }),
 }));

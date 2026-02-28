@@ -173,6 +173,12 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
             handle_get_notification_history(state, user_id, id, *limit).await;
             return;
         }
+        ClientMessage::SetAutoYesPanes { pane_ids, .. } => {
+            let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
+            let mut hub = state.hub.write().await;
+            hub.set_auto_yes_panes(user_id, pane_set);
+            return;
+        }
         _ => {}
     }
 
@@ -420,6 +426,17 @@ async fn handle_claude_questions_push(
     user_id: Uuid,
     questions: &[ClaudeQuestion],
 ) {
+    // Filter out questions for panes with auto-yes enabled (no push needed)
+    let questions: Vec<&ClaudeQuestion> = {
+        let hub = state.hub.read().await;
+        questions.iter()
+            .filter(|q| !hub.is_auto_yes_pane(user_id, &q.pane_id))
+            .collect()
+    };
+    if questions.is_empty() {
+        return;
+    }
+
     // Per-question dedup: skip if we already pushed for this question.
     // No per-user rate limit - questions are already debounced on the desktop
     // side and per-question dedup prevents duplicates.
@@ -433,7 +450,7 @@ async fn handle_claude_questions_push(
     }
 
     // Save to notification_history
-    for q in questions {
+    for q in &questions {
         let options_json = serde_json::to_value(&q.options).unwrap_or_default();
         sqlx::query(
             "INSERT INTO notification_history (user_id, question_id, pane_id, cwd, context_lines, options)
@@ -607,6 +624,7 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::StopDetectedProcess { id, .. }
         | ClientMessage::RegisterPushToken { id, .. }
         | ClientMessage::AnswerQuestion { id, .. }
+        | ClientMessage::SetAutoYesPanes { id, .. }
         | ClientMessage::GetNotificationHistory { id, .. } => Some(id.clone()),
         ClientMessage::UnsubscribeLogs { .. } => None,
     }

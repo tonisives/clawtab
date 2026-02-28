@@ -25,6 +25,10 @@ export interface NotificationSectionProps {
   onSendOption: (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  autoYesPaneIds?: Set<string>;
+  onToggleAutoYes?: (question: ClaudeQuestion) => void;
+  /** Question IDs that were auto-answered (shown briefly before dismissal) */
+  autoAnsweredIds?: Set<string>;
 }
 
 interface DepartingQuestion {
@@ -40,6 +44,9 @@ export function NotificationSection({
   onSendOption,
   collapsed,
   onToggleCollapse,
+  autoYesPaneIds,
+  onToggleAutoYes,
+  autoAnsweredIds,
 }: NotificationSectionProps) {
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -177,6 +184,9 @@ export function NotificationSection({
         resolvedJob={resolveJob(d.question)}
         onNavigate={onNavigate}
         onSendOption={onSendOption}
+        autoYesActive={autoYesPaneIds?.has(d.question.pane_id)}
+        onToggleAutoYes={onToggleAutoYes}
+        autoAnswered={autoAnsweredIds?.has(d.question.question_id)}
       />
     );
 
@@ -228,6 +238,9 @@ export function NotificationSection({
         resolvedJob={resolveJob(q)}
         onNavigate={onNavigate}
         onSendOption={onSendOption}
+        autoYesActive={autoYesPaneIds?.has(q.pane_id)}
+        onToggleAutoYes={onToggleAutoYes}
+        autoAnswered={autoAnsweredIds?.has(q.question_id)}
       />
     );
 

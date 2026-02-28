@@ -1,11 +1,15 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { ScrollView, Text, StyleSheet, View } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import { AnsiText, hasAnsi } from "./AnsiText";
+import { collapseSeparators } from "../util/logs";
 
 export function LogViewer({ content }: { content: string }) {
   const scrollRef = useRef<ScrollView>(null);
   const hasScrolled = useRef(false);
+
+  const processed = useMemo(() => collapseSeparators(content), [content]);
 
   useEffect(() => {
     // First scroll is instant so the user sees the end immediately;
@@ -16,7 +20,7 @@ export function LogViewer({ content }: { content: string }) {
       scrollRef.current?.scrollToEnd({ animated });
     }, 50);
     return () => clearTimeout(timer);
-  }, [content]);
+  }, [processed]);
 
   if (!content) {
     return (
@@ -33,9 +37,13 @@ export function LogViewer({ content }: { content: string }) {
       contentContainerStyle={styles.content}
       nestedScrollEnabled
     >
-      <Text style={styles.text} selectable>
-        {content}
-      </Text>
+      {hasAnsi(processed) ? (
+        <AnsiText content={processed} style={styles.text} selectable />
+      ) : (
+        <Text style={styles.text} selectable>
+          {processed}
+        </Text>
+      )}
     </ScrollView>
   );
 }

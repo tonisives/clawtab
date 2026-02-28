@@ -20,6 +20,10 @@ export interface NotificationCardProps {
   resolvedJob: string | null;
   onNavigate: (question: ClaudeQuestion, resolvedJob: string | null) => void;
   onSendOption: (question: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => void;
+  autoYesActive?: boolean;
+  onToggleAutoYes?: (question: ClaudeQuestion) => void;
+  /** Card was auto-answered - show briefly then dismiss */
+  autoAnswered?: boolean;
 }
 
 export function NotificationCard({
@@ -27,6 +31,9 @@ export function NotificationCard({
   resolvedJob,
   onNavigate,
   onSendOption,
+  autoYesActive,
+  onToggleAutoYes,
+  autoAnswered,
 }: NotificationCardProps) {
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
@@ -76,6 +83,8 @@ export function NotificationCard({
     }
   };
 
+  const showAnswered = answered || autoAnswered;
+
   const title = resolvedJob
     ? resolvedJob
     : question.cwd.replace(/^\/Users\/[^/]+/, "~");
@@ -113,10 +122,10 @@ export function NotificationCard({
       </TouchableOpacity>
 
       {question.options.length > 0 && (
-        answered ? (
+        showAnswered ? (
           <View style={styles.sentRow}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.sentText}>Sent</Text>
+            <ActivityIndicator size="small" color={autoAnswered ? colors.warning : colors.accent} />
+            <Text style={styles.sentText}>{autoAnswered ? "Auto-accepted" : "Sent"}</Text>
           </View>
         ) : (
           <ScrollView
@@ -137,6 +146,20 @@ export function NotificationCard({
                 </Text>
               </TouchableOpacity>
             ))}
+            {onToggleAutoYes && (
+              <>
+                <View style={styles.separator} />
+                <TouchableOpacity
+                  style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
+                  onPress={() => onToggleAutoYes(question)}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.autoYesBtnText} numberOfLines={1}>
+                    {autoYesActive ? "! Auto ON" : "! Yes all"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </ScrollView>
         )
       )}
@@ -245,6 +268,26 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 12,
     fontWeight: "500",
+  },
+  separator: {
+    width: 1,
+    height: 18,
+    backgroundColor: colors.border,
+  },
+  autoYesBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  autoYesBtnActive: {
+    backgroundColor: colors.warningBg,
+  },
+  autoYesBtnText: {
+    color: colors.warning,
+    fontSize: 12,
+    fontWeight: "600",
   },
   sentRow: {
     flexDirection: "row",

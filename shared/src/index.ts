@@ -19,6 +19,7 @@ export { spacing, radius } from "./theme/spacing";
 // Utils
 export { formatTime, formatDuration, timeAgo, shortenPath } from "./util/format";
 export { groupJobs, sortGroupNames, parseNumberedOptions, typeIcon } from "./util/jobs";
+export { collapseSeparators } from "./util/logs";
 export {
   statusLabel,
   statusColor,
@@ -40,6 +41,8 @@ export { ParamsDialog } from "./components/ParamsDialog";
 export { AgentSection } from "./components/AgentSection";
 export { NotificationCard } from "./components/NotificationCard";
 export { NotificationSection } from "./components/NotificationSection";
+export { AutoYesBanner } from "./components/AutoYesBanner";
+export type { AutoYesEntry } from "./components/AutoYesBanner";
 export { JobListView } from "./components/JobListView";
 export { JobDetailView } from "./components/JobDetailView";
 

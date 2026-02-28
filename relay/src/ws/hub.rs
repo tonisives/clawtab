@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -26,6 +26,8 @@ pub struct Hub {
     mobiles: HashMap<Uuid, Vec<MobileConnection>>,
     /// user_id -> last claude_questions JSON payload (replayed to newly connecting mobiles)
     last_questions: HashMap<Uuid, String>,
+    /// user_id -> pane_ids with auto-yes enabled (suppress push notifications for these)
+    auto_yes_panes: HashMap<Uuid, HashSet<String>>,
 }
 
 impl Hub {
@@ -34,6 +36,7 @@ impl Hub {
             desktops: HashMap::new(),
             mobiles: HashMap::new(),
             last_questions: HashMap::new(),
+            auto_yes_panes: HashMap::new(),
         }
     }
 
@@ -158,6 +161,22 @@ impl Hub {
                 let _ = conn.tx.send(json.to_string());
             }
         }
+    }
+
+    /// Set which pane_ids have auto-yes enabled for a user (suppresses push notifications).
+    pub fn set_auto_yes_panes(&mut self, user_id: Uuid, pane_ids: HashSet<String>) {
+        if pane_ids.is_empty() {
+            self.auto_yes_panes.remove(&user_id);
+        } else {
+            self.auto_yes_panes.insert(user_id, pane_ids);
+        }
+    }
+
+    /// Check if a pane_id has auto-yes enabled for a user.
+    pub fn is_auto_yes_pane(&self, user_id: Uuid, pane_id: &str) -> bool {
+        self.auto_yes_panes
+            .get(&user_id)
+            .is_some_and(|panes| panes.contains(pane_id))
     }
 
     fn send_to_mobiles(&self, user_id: Uuid, msg: &ServerMessage) {

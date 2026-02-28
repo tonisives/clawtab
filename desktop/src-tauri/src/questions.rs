@@ -93,7 +93,7 @@ struct CachedQuestion {
     miss_count: u32,
 }
 
-/// Runs the question detection loop. Checks every 5 seconds for Claude processes
+/// Runs the question detection loop. Checks every 2 seconds for Claude processes
 /// that have interactive numbered options, and sends them to the relay and stores
 /// them for the desktop frontend.
 pub async fn question_detection_loop(
@@ -154,8 +154,8 @@ pub async fn question_detection_loop(
         for pane_id in stale_panes {
             let entry = question_cache.get_mut(&pane_id).unwrap();
             entry.miss_count += 1;
-            // After 3 consecutive misses (15s), consider the question truly gone
-            if entry.miss_count >= 3 {
+            // After 5 consecutive misses (10s), consider the question truly gone
+            if entry.miss_count >= 5 {
                 question_cache.remove(&pane_id);
             }
         }
@@ -189,7 +189,7 @@ pub async fn question_detection_loop(
             }
         }
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }
 
