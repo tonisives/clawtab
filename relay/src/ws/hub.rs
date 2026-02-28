@@ -24,6 +24,8 @@ pub struct Hub {
     desktops: HashMap<Uuid, Vec<DesktopConnection>>,
     /// user_id -> mobile connections
     mobiles: HashMap<Uuid, Vec<MobileConnection>>,
+    /// user_id -> last claude_questions JSON payload (replayed to newly connecting mobiles)
+    last_questions: HashMap<Uuid, String>,
 }
 
 impl Hub {
@@ -31,6 +33,7 @@ impl Hub {
         Self {
             desktops: HashMap::new(),
             mobiles: HashMap::new(),
+            last_questions: HashMap::new(),
         }
     }
 
@@ -80,6 +83,11 @@ impl Hub {
                     let _ = conn.tx.send(json);
                 }
             }
+        }
+
+        // Replay last claude_questions so the mobile sees active notifications
+        if let Some(questions_json) = self.last_questions.get(&user_id) {
+            let _ = conn.tx.send(questions_json.clone());
         }
 
         self.mobiles.entry(user_id).or_default().push(conn);
@@ -136,6 +144,11 @@ impl Hub {
         self.desktops
             .get(&user_id)
             .is_some_and(|conns| !conns.is_empty())
+    }
+
+    /// Cache the last claude_questions payload for replay to newly connecting mobiles.
+    pub fn cache_questions(&mut self, user_id: Uuid, json: &str) {
+        self.last_questions.insert(user_id, json.to_string());
     }
 
     /// Send a raw JSON string to all mobile clients for a user.

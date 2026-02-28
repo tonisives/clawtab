@@ -383,12 +383,13 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
         return;
     };
 
-    // Forward raw JSON to all mobile clients (avoids re-serialization)
-    let hub = state.hub.read().await;
-    hub.send_raw_to_mobiles(user_id, text);
-
-    // If this is a ClaudeQuestions message, trigger push notifications
+    // If this is a ClaudeQuestions message, cache it for replay and trigger push
     if let DesktopMessage::ClaudeQuestions { ref questions } = msg {
+        {
+            let mut hub = state.hub.write().await;
+            hub.cache_questions(user_id, text);
+            hub.send_raw_to_mobiles(user_id, text);
+        }
         if !questions.is_empty() {
             let state = state.clone();
             let questions = questions.clone();
@@ -396,6 +397,10 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
                 handle_claude_questions_push(&state, user_id, &questions).await;
             });
         }
+    } else {
+        // Forward raw JSON to all mobile clients (avoids re-serialization)
+        let hub = state.hub.read().await;
+        hub.send_raw_to_mobiles(user_id, text);
     }
 
     // If this is a JobNotification message, send APNs push

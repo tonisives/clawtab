@@ -13,37 +13,45 @@ use crate::relay::RelayHandle;
 pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     let lines: Vec<&str> = text.lines().collect();
     let tail = if lines.len() > 20 { &lines[lines.len() - 20..] } else { &lines };
-    let mut options = Vec::new();
+
+    // Collect all contiguous groups of numbered items, keep only the last group.
+    // This avoids picking up numbered plans/lists that appear before the actual prompt.
+    let mut groups: Vec<Vec<QuestionOption>> = Vec::new();
+    let mut current_group: Vec<QuestionOption> = Vec::new();
+
     for line in tail {
-        // Match optional leading whitespace/prompt chars, then digit(s).label
-        // Include Unicode prompt indicators: › (U+203A), » (U+00BB), ❯ (U+276F), ▸ (U+25B8), ▶ (U+25B6)
         let trimmed = line.trim_start_matches(|c: char| c.is_whitespace() || ">~`|›»❯▸▶".contains(c));
         if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
-            // Could be multi-digit, find the dot
             let digit_end = rest.find(". ");
             if let Some(dot_pos) = digit_end {
                 let number_str = &trimmed[..trimmed.len() - rest.len() + dot_pos];
-                // Verify it's all digits
                 if number_str.chars().all(|c| c.is_ascii_digit()) {
                     let label = rest[dot_pos + 2..].trim().to_string();
                     if !label.is_empty() {
-                        options.push(QuestionOption {
+                        current_group.push(QuestionOption {
                             number: number_str.to_string(),
                             label,
                         });
+                        continue;
                     }
                 }
             }
         }
+        // Non-numbered line (empty or not): finalize current group if any
+        if !current_group.is_empty() {
+            groups.push(std::mem::take(&mut current_group));
+        }
     }
+    if !current_group.is_empty() {
+        groups.push(current_group);
+    }
+
+    let options = groups.into_iter().last().unwrap_or_default();
 
     if options.is_empty() {
         return options;
     }
 
-    // Verify that the output looks like an interactive prompt, not just numbered text.
-    // Claude's interactive menus include instructional text like "Enter to select",
-    // navigation hints, or the prompt cursor character.
     if !has_interactive_prompt_indicator(text) {
         return Vec::new();
     }
@@ -98,11 +106,12 @@ pub async fn question_detection_loop(
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
     // Track which question IDs we last sent to relay, so we only push on changes
     let mut last_sent_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Re-send unchanged questions periodically so newly connected clients get them
+    let mut ticks_since_send: u32 = 0;
 
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-
         let processes = detect_question_processes(&jobs_config, &job_status);
+        log::info!("[questions] detected {} claude processes", processes.len());
 
         // Track which panes were detected this tick
         let mut detected_panes = std::collections::HashSet::new();
@@ -110,8 +119,10 @@ pub async fn question_detection_loop(
         for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in &processes {
             let options = parse_numbered_options(log_lines);
             if options.is_empty() {
+                log::trace!("[questions] pane {} ({}): no options parsed", pane_id, cwd);
                 continue;
             }
+            log::info!("[questions] pane {} ({}): {} options", pane_id, cwd, options.len());
 
             detected_panes.insert(pane_id.clone());
 
@@ -155,15 +166,21 @@ pub async fn question_detection_loop(
             .collect();
 
         // Store for desktop frontend
+        log::info!("[questions] storing {} active questions", questions.len());
         *active_questions.lock().unwrap() = questions.clone();
 
-        // Only send to relay when the set of question IDs changes
+        // Send to relay when questions change, or periodically (every 6 ticks = 30s)
+        // so newly connected clients get them without waiting for a change
         let current_ids: std::collections::HashSet<String> = questions
             .iter()
             .map(|q| q.question_id.clone())
             .collect();
-        if current_ids != last_sent_ids {
+        ticks_since_send += 1;
+        let changed = current_ids != last_sent_ids;
+        let periodic_resend = !questions.is_empty() && ticks_since_send >= 2;
+        if changed || periodic_resend {
             last_sent_ids = current_ids;
+            ticks_since_send = 0;
             let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions };
             if let Ok(guard) = relay.lock() {
                 if let Some(handle) = guard.as_ref() {
@@ -171,6 +188,8 @@ pub async fn question_detection_loop(
                 }
             }
         }
+
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
 

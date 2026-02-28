@@ -25,7 +25,6 @@ export function NotificationStack() {
   const [collapsed, setCollapsed] = useState(false);
 
   const statuses = useJobsStore((s) => s.statuses);
-  const jobs = useJobsStore((s) => s.jobs);
 
   const processMap = new Map<string, ClaudeProcess>();
   for (const proc of detectedProcesses) {
@@ -37,28 +36,16 @@ export function NotificationStack() {
     if (status.state === "running") runningJobs.add(name);
   }
 
-  // Resolve the job name for a question: use matched_job, or fall back to
-  // matching the question's cwd against running jobs' work_dir/group.
+  // Resolve the job name for a question.
+  // Only trust matched_job from the backend (it checks actual pane ownership).
+  // cwd-based matching is too aggressive since multiple Claude instances can
+  // run in the same directory (e.g. a self-launched Claude inside a job folder).
   const resolveJob = useCallback(
     (q: ClaudeQuestion): string | null => {
       if (q.matched_job && runningJobs.has(q.matched_job)) return q.matched_job;
-      // Match by cwd
-      for (const job of jobs) {
-        if (!runningJobs.has(job.name)) continue;
-        const dir = job.work_dir || job.path;
-        if (!dir) continue;
-        if (q.cwd === dir || q.cwd.startsWith(dir + "/")) return job.name;
-      }
-      // Match by group name
-      if (q.matched_group) {
-        for (const job of jobs) {
-          if (!runningJobs.has(job.name)) continue;
-          if (job.group === q.matched_group) return job.name;
-        }
-      }
       return null;
     },
-    [jobs, runningJobs],
+    [runningJobs],
   );
 
   const activeQuestions = questions.filter(

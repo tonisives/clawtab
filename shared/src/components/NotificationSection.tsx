@@ -30,7 +30,6 @@ export interface NotificationSectionProps {
 interface DepartingQuestion {
   question: ClaudeQuestion;
   anim: Animated.Value;
-  // For web: start as "entering" so we can trigger CSS transition
   phase: "entering" | "leaving";
 }
 
@@ -46,8 +45,7 @@ export function NotificationSection({
   const [activeIndex, setActiveIndex] = useState(0);
   const [cardWidth, setCardWidth] = useState(0);
   const [departing, setDeparting] = useState<DepartingQuestion[]>([]);
-  const prevQuestionsRef = useRef<ClaudeQuestion[]>(questions);
-  // Track entrance animation state per question_id (web: CSS class, native: Animated.Value)
+  const prevQuestionsRef = useRef<ClaudeQuestion[]>([]);
   const [entering, setEntering] = useState<Set<string>>(new Set());
   const entranceAnims = useRef<Map<string, Animated.Value>>(new Map());
 
@@ -63,7 +61,6 @@ export function NotificationSection({
     // Entrance animations for new questions
     if (added.length > 0) {
       if (isWeb) {
-        // Web: add to "entering" set, then remove after a frame to trigger CSS transition
         const ids = new Set(added.map((q) => q.question_id));
         setEntering(ids);
         requestAnimationFrame(() => {
@@ -88,8 +85,7 @@ export function NotificationSection({
 
     if (removed.length === 0) return;
 
-    // Adjust scroll position: if the active card was removed, stay at the same
-    // index (which now points to the next card) or clamp to the last card.
+    // Adjust scroll position
     if (questions.length > 0 && cardWidth > 0) {
       const newIndex = Math.min(activeIndex, questions.length - 1);
       setActiveIndex(newIndex);
@@ -106,13 +102,11 @@ export function NotificationSection({
     setDeparting((prev) => [...prev, ...newDeparting]);
 
     if (isWeb) {
-      // Web: transition from phase "entering" (visible) to "leaving" (hidden) after a frame
       requestAnimationFrame(() => {
         setDeparting((prev) =>
           prev.map((d) => (d.phase === "entering" ? { ...d, phase: "leaving" } : d)),
         );
       });
-      // Clean up after CSS transition completes
       setTimeout(() => {
         const removedIds = new Set(removed.map((q) => q.question_id));
         setDeparting((prev) => prev.filter((p) => !removedIds.has(p.question.question_id)));
@@ -132,7 +126,6 @@ export function NotificationSection({
 
   const count = questions.length;
   const hasDeparting = departing.length > 0;
-  if (count === 0 && !hasDeparting) return null;
 
   const displayCount = count || departing.length;
   const clampedIndex = Math.min(activeIndex, Math.max(count - 1, 0));
@@ -170,6 +163,9 @@ export function NotificationSection({
   const goNext = useCallback(() => {
     if (clampedIndex < count - 1) scrollToIndex(clampedIndex + 1);
   }, [clampedIndex, count, scrollToIndex]);
+
+  // Nothing to show
+  if (count === 0 && !hasDeparting) return null;
 
   const prevPath = count > 0 && clampedIndex > 0 ? shortenPath(questions[clampedIndex - 1].cwd) : null;
   const nextPath = count > 0 && clampedIndex < count - 1 ? shortenPath(questions[clampedIndex + 1].cwd) : null;
@@ -216,7 +212,7 @@ export function NotificationSection({
     );
   };
 
-  // If only departing cards remain (no live questions), show the fly-away animation
+  // If only departing cards remain, show the fly-away animation
   if (count === 0 && hasDeparting) {
     return (
       <View style={styles.container}>
@@ -272,7 +268,6 @@ export function NotificationSection({
 
   return (
     <View style={styles.container}>
-      {/* Collapsible header */}
       <TouchableOpacity
         onPress={onToggleCollapse}
         style={styles.headerRow}
@@ -286,7 +281,6 @@ export function NotificationSection({
 
       {!collapsed && (
         <View onLayout={handleLayout}>
-          {/* Nav row - only show when multiple questions */}
           {count > 1 && (
             <View style={styles.navRow}>
               <TouchableOpacity
@@ -319,7 +313,6 @@ export function NotificationSection({
             </View>
           )}
 
-          {/* Horizontal scroller */}
           <ScrollView
             ref={scrollRef}
             horizontal
@@ -340,7 +333,6 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.md,
   },
-  // Header - matches AgentSection/group header pattern
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -360,7 +352,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  // Nav row
   navRow: {
     flexDirection: "row",
     alignItems: "center",

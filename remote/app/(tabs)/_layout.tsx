@@ -41,6 +41,7 @@ function HeaderIcon() {
 function TabsContent({ isWide }: { isWide: boolean }) {
   return (
     <Tabs
+      initialRouteName="index"
       screenOptions={{
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,

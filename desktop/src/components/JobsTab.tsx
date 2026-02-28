@@ -61,17 +61,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
 
   const loadQuestions = useCallback(() => {
     invoke<ClaudeQuestion[]>("get_active_questions").then((qs) => {
+      console.log("[nfn] loadQuestions got", qs.length, "questions");
       const now = Date.now();
       // Purge stale dismissals (>10s)
       for (const [id, ts] of dismissedRef.current) {
         if (now - ts > 10000) dismissedRef.current.delete(id);
       }
       setQuestions(qs.filter((q) => !dismissedRef.current.has(q.question_id)));
-    }).catch(() => {});
+    }).catch((e) => { console.error("[nfn] loadQuestions error", e); });
   }, []);
 
   // Poll for active questions
   useEffect(() => {
+    console.log("[nfn] mounting, calling loadQuestions immediately");
     loadQuestions();
     questionPollRef.current = setInterval(loadQuestions, 5000);
     return () => {

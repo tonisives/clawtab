@@ -5,10 +5,15 @@ import { radius, spacing } from "../theme/spacing";
 
 export function LogViewer({ content }: { content: string }) {
   const scrollRef = useRef<ScrollView>(null);
+  const hasScrolled = useRef(false);
 
   useEffect(() => {
+    // First scroll is instant so the user sees the end immediately;
+    // subsequent updates animate smoothly.
+    const animated = hasScrolled.current;
+    hasScrolled.current = true;
     const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated: true });
+      scrollRef.current?.scrollToEnd({ animated });
     }, 50);
     return () => clearTimeout(timer);
   }, [content]);
