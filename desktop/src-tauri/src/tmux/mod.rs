@@ -222,6 +222,7 @@ pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String,
             "-t",
             pane_id,
             "-p",
+            "-e",
             "-S",
             &start,
         ])
@@ -369,7 +370,7 @@ pub fn get_window_pane_id(session: &str, window: &str) -> Result<String, String>
 /// Capture the entire scrollback from a pane.
 pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
     let output = Command::new("tmux")
-        .args(["capture-pane", "-t", pane_id, "-p", "-S", "-"])
+        .args(["capture-pane", "-t", pane_id, "-p", "-e", "-S", "-"])
         .output()
         .map_err(|e| format!("Failed to capture pane: {}", e))?;
 

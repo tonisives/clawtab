@@ -1199,8 +1199,6 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
   const [logs, setLogs] = useState(process.log_lines);
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
-  const preRef = useRef<HTMLPreElement>(null);
-  const fullscreenPreRef = useRef<HTMLPreElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fullscreenInputRef = useRef<HTMLInputElement>(null);
 
@@ -1222,21 +1220,6 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
     const interval = setInterval(poll, 3000);
     return () => { active = false; clearInterval(interval); };
   }, [expanded, fullscreen, process.pane_id, process.tmux_session]);
-
-  useEffect(() => {
-    if (expanded && preRef.current) {
-      const el = preRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-    if (fullscreen && fullscreenPreRef.current) {
-      const el = fullscreenPreRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-  }, [logs, expanded, fullscreen]);
 
   const handleOpen = async () => {
     try {
@@ -1333,23 +1316,14 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
           <td colSpan={selectMode ? 8 : 7} style={{ padding: 0 }}>
             <div style={{ padding: "4px 12px 8px" }}>
               {logs && (
-                <pre ref={preRef} style={{
-                  margin: 0,
-                  padding: "4px 6px",
-                  fontSize: 10,
-                  lineHeight: 1.3,
-                  background: "var(--bg-secondary, #1a1a1a)",
-                  borderRadius: 4,
-                  overflowY: "auto",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
+                <LogViewer content={logs} className="log-viewer" style={{
                   height: 120,
                   minHeight: 40,
                   maxHeight: 300,
                   resize: "vertical",
-                  color: "var(--text-secondary)",
-                  overscrollBehavior: "contain",
-                }}>{logs}</pre>
+                  fontSize: 10,
+                  lineHeight: 1.3,
+                }} />
               )}
               {options.length > 0 && (
                 <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
@@ -1400,7 +1374,6 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
         <FullscreenTerminal
           title={displayName}
           logs={logs}
-          preRef={fullscreenPreRef}
           inputRef={fullscreenInputRef}
           inputText={inputText}
           sending={sending}
@@ -1420,7 +1393,6 @@ function DetectedProcessRow({ process, selectMode }: { process: ClaudeProcess; s
 function FullscreenTerminal({
   title,
   logs,
-  preRef,
   inputRef,
   inputText,
   sending,
@@ -1433,7 +1405,6 @@ function FullscreenTerminal({
 }: {
   title: string;
   logs: string;
-  preRef: React.RefObject<HTMLPreElement | null>;
   inputRef: React.RefObject<HTMLInputElement | null>;
   inputText: string;
   sending: boolean;
@@ -1500,18 +1471,11 @@ function FullscreenTerminal({
           </svg>
         </button>
       </div>
-      <pre ref={preRef} style={{
+      <LogViewer content={logs} className="log-viewer" style={{
         flex: 1,
-        margin: 0,
-        padding: "8px 12px",
         fontSize: 12,
         lineHeight: 1.4,
-        overflowY: "auto",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-all",
-        color: "var(--text-secondary)",
-        overscrollBehavior: "contain",
-      }}>{logs}</pre>
+      }} />
       {options.length > 0 && (
         <div style={{
           display: "flex",
@@ -2292,7 +2256,6 @@ function InlineJobInput({ jobName, onCollapse }: { jobName: string; onCollapse: 
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const preRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -2308,15 +2271,6 @@ function InlineJobInput({ jobName, onCollapse }: { jobName: string; onCollapse: 
     const interval = setInterval(poll, 3000);
     return () => { active = false; clearInterval(interval); };
   }, [jobName]);
-
-  useEffect(() => {
-    if (preRef.current) {
-      const el = preRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-  }, [logs]);
 
   const options = parseNumberedOptions(logs);
 
@@ -2350,23 +2304,14 @@ function InlineJobInput({ jobName, onCollapse }: { jobName: string; onCollapse: 
   return (
     <div style={{ padding: "4px 12px 8px" }}>
       {logs && (
-        <pre ref={preRef} style={{
-          margin: 0,
-          padding: "4px 6px",
-          fontSize: 10,
-          lineHeight: 1.3,
-          background: "var(--bg-secondary, #1a1a1a)",
-          borderRadius: 4,
-          overflowY: "auto",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
+        <LogViewer content={logs} className="log-viewer" style={{
           height: 120,
           minHeight: 40,
           maxHeight: 300,
           resize: "vertical",
-          color: "var(--text-secondary)",
-          overscrollBehavior: "contain",
-        }}>{logs}</pre>
+          fontSize: 10,
+          lineHeight: 1.3,
+        }} />
       )}
       {options.length > 0 && (
         <div style={{ display: "flex", gap: 3, marginTop: 4, flexWrap: "wrap" }}>
@@ -2436,7 +2381,6 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
   const [logs, setLogs] = useState("");
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
-  const preRef = useRef<HTMLPreElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -2453,15 +2397,6 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
     const interval = setInterval(poll, 3000);
     return () => { active = false; clearInterval(interval); };
   }, [jobName]);
-
-  useEffect(() => {
-    if (preRef.current) {
-      const el = preRef.current;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    }
-  }, [logs]);
 
   const handleSend = async () => {
     const text = inputText.trim();
@@ -2502,23 +2437,12 @@ function RunningLogsContent({ jobName }: { jobName: string }) {
   return (
     <div>
       {logs && (
-        <pre ref={preRef} style={{
-          margin: 0,
-          padding: "6px 8px",
-          fontSize: 11,
-          lineHeight: 1.4,
-          background: "var(--bg-secondary, #1a1a1a)",
-          borderRadius: 4,
-          overflowY: "auto",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
+        <LogViewer content={logs} className="log-viewer" style={{
           height: 400,
           minHeight: 40,
           maxHeight: 400,
           resize: "vertical",
-          color: "var(--text-secondary)",
-          overscrollBehavior: "contain",
-        }}>{logs}</pre>
+        }} />
       )}
       {options.length > 0 && (
         <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>

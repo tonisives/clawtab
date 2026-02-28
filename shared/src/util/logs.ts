@@ -5,8 +5,9 @@ const SEPARATOR_RE = /^[\s\-_=~\u2501\u2500\u2550\u254C\u254D\u2504\u2505\u2508\
 
 /**
  * Collapse consecutive separator lines (lines composed entirely of -_=~ and
- * box-drawing characters) down to a single occurrence. This prevents 5+
- * identical separator lines from wasting vertical space on mobile.
+ * box-drawing characters) down to a single occurrence. Blank lines between
+ * separators are also collapsed. This prevents 5+ identical separator lines
+ * from wasting vertical space on mobile.
  */
 export function collapseSeparators(text: string): string {
   const lines = text.split("\n");
@@ -16,7 +17,9 @@ export function collapseSeparators(text: string): string {
   for (const line of lines) {
     const stripped = line.replace(ANSI_STRIP, "").trim();
     const isSep = stripped.length > 0 && SEPARATOR_RE.test(stripped);
-    if (isSep && prevWasSep) continue;
+    const isBlank = stripped.length === 0;
+    // Skip blank lines and extra separators following a separator
+    if (prevWasSep && (isSep || isBlank)) continue;
     out.push(line);
     prevWasSep = isSep;
   }

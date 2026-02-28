@@ -212,8 +212,10 @@ pub async fn handle_incoming(
             })
         }
 
-        // RegisterPushToken and GetNotificationHistory are handled by the relay server
-        ClientMessage::RegisterPushToken { .. } | ClientMessage::GetNotificationHistory { .. } => None,
+        // These are handled by the relay server, never forwarded to desktop
+        ClientMessage::RegisterPushToken { .. }
+        | ClientMessage::GetNotificationHistory { .. }
+        | ClientMessage::SetAutoYesPanes { .. } => None,
     };
 
     match response {

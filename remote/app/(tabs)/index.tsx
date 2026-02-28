@@ -148,10 +148,17 @@ export default function JobsScreen() {
         </View>
       )}
       {connected && !loaded && !subscriptionRequired && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.loadingText}>Loading jobs...</Text>
-        </View>
+        desktopOnline ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.loadingText}>Loading jobs...</Text>
+          </View>
+        ) : (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.offlineTitle}>Desktop offline</Text>
+            <Text style={styles.offlineText}>Your desktop app needs to be running to load jobs.</Text>
+          </View>
+        )
       )}
       <NotificationStack />
     </>
@@ -202,7 +209,7 @@ export default function JobsScreen() {
             onRefresh={handleRefresh}
             onSelectJob={handleSelectJob}
             onSelectProcess={handleSelectProcess}
-            onRunAgent={handleRunAgent}
+            onRunAgent={desktopOnline ? handleRunAgent : undefined}
             headerContent={bannerContent}
             showEmpty={loaded}
             emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
@@ -222,6 +229,8 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   loadingText: { color: colors.textMuted, fontSize: 13 },
+  offlineTitle: { color: colors.warning, fontSize: 15, fontWeight: "600" as const },
+  offlineText: { color: colors.textMuted, fontSize: 13, textAlign: "center" as const },
   banner: {
     backgroundColor: colors.surface,
     padding: spacing.sm,

@@ -108,9 +108,11 @@ function ansiToHtml(raw: string): string {
 interface Props {
   content: string;
   autoScroll?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
 }
 
-export function LogViewer({ content, autoScroll = true }: Props) {
+export function LogViewer({ content, autoScroll = true, className, style }: Props) {
   const ref = useRef<HTMLPreElement>(null);
 
   const processed = useMemo(() => collapseSeparators(content), [content]);
@@ -126,9 +128,11 @@ export function LogViewer({ content, autoScroll = true }: Props) {
     }
   }, [processed, autoScroll]);
 
+  const cls = className ?? "log-viewer";
+
   if (html) {
-    return <pre ref={ref} className="log-viewer" dangerouslySetInnerHTML={{ __html: html }} />;
+    return <pre ref={ref} className={cls} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
   }
 
-  return <pre ref={ref} className="log-viewer">{processed}</pre>;
+  return <pre ref={ref} className={cls} style={style}>{processed}</pre>;
 }

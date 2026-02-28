@@ -71,13 +71,17 @@ export function JobDetailView({
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const mainScrollRef = useRef<ScrollView>(null);
 
-  // Scroll to bottom on mount so recent logs are visible
+  const hasScrolledToBottom = useRef(false);
+
+  // Scroll to bottom once after runs load so recent logs are visible
   useEffect(() => {
+    if (hasScrolledToBottom.current || !runs) return;
+    hasScrolledToBottom.current = true;
     const timer = setTimeout(() => {
       mainScrollRef.current?.scrollToEnd({ animated: false });
-    }, 150);
+    }, 100);
     return () => clearTimeout(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [runs]);
 
   // Reload runs when status changes
   useEffect(() => {
