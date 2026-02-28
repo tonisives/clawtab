@@ -19,7 +19,7 @@ export { spacing, radius } from "./theme/spacing";
 // Utils
 export { formatTime, formatDuration, timeAgo, shortenPath } from "./util/format";
 export { groupJobs, sortGroupNames, parseNumberedOptions, typeIcon } from "./util/jobs";
-export { collapseSeparators } from "./util/logs";
+export { collapseSeparators, stripSeparators } from "./util/logs";
 export {
   statusLabel,
   statusColor,

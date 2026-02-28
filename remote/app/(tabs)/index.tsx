@@ -199,7 +199,7 @@ export default function JobsScreen() {
         </ContentContainer>
       )}
       {!subscriptionRequired && (
-        <ContentContainer wide>
+        <ContentContainer wide fill>
           <JobListView
             jobs={jobs}
             statuses={statuses}

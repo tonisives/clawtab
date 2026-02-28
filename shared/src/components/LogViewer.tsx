@@ -1,26 +1,49 @@
-import { useRef, useEffect, useMemo } from "react";
-import { ScrollView, Text, StyleSheet, View } from "react-native";
+import { useRef, useEffect, useMemo, useCallback } from "react";
+import { ScrollView, Text, StyleSheet, View, Platform } from "react-native";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/spacing";
 import { AnsiText, hasAnsi } from "./AnsiText";
 import { collapseSeparators } from "../util/logs";
 
-export function LogViewer({ content }: { content: string }) {
-  const scrollRef = useRef<ScrollView>(null);
-  const hasScrolled = useRef(false);
+/**
+ * Hook that returns a callback ref. Every time `dep` changes, scrolls
+ * the element to the bottom. Works on web (DOM) and native (ScrollView).
+ */
+function useAutoScroll(dep: string) {
+  const nativeRef = useRef<ScrollView>(null);
+  const domNode = useRef<HTMLElement | null>(null);
+  const first = useRef(true);
 
-  const processed = useMemo(() => collapseSeparators(content), [content]);
+  const webRef = useCallback((node: HTMLElement | null) => {
+    domNode.current = node;
+  }, []);
 
   useEffect(() => {
-    // First scroll is instant so the user sees the end immediately;
-    // subsequent updates animate smoothly.
-    const animated = hasScrolled.current;
-    hasScrolled.current = true;
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd({ animated });
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [processed]);
+    if (!dep) return;
+    const isFirst = first.current;
+    first.current = false;
+
+    if (Platform.OS === "web") {
+      const el = domNode.current;
+      if (!el) return;
+      // Double RAF to ensure layout is complete after React commit
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight;
+        });
+      });
+    } else {
+      nativeRef.current?.scrollToEnd({ animated: !isFirst });
+    }
+  }, [dep]);
+
+  return { nativeRef, webRef };
+}
+
+export { useAutoScroll };
+
+export function LogViewer({ content }: { content: string }) {
+  const processed = useMemo(() => collapseSeparators(content), [content]);
+  const { nativeRef, webRef } = useAutoScroll(processed);
 
   if (!content) {
     return (
@@ -30,20 +53,39 @@ export function LogViewer({ content }: { content: string }) {
     );
   }
 
+  const inner = hasAnsi(processed) ? (
+    <AnsiText content={processed} style={styles.text} selectable />
+  ) : (
+    <Text style={styles.text} selectable>{processed}</Text>
+  );
+
+  if (Platform.OS === "web") {
+    return (
+      <div
+        ref={webRef as any}
+        style={{
+          flex: 1,
+          backgroundColor: "#000",
+          borderRadius: 8,
+          border: `1px solid ${colors.border}`,
+          padding: 12,
+          overflow: "auto",
+          minHeight: 0,
+        }}
+      >
+        {inner}
+      </div>
+    );
+  }
+
   return (
     <ScrollView
-      ref={scrollRef}
+      ref={nativeRef}
       style={styles.container}
       contentContainerStyle={styles.content}
       nestedScrollEnabled
     >
-      {hasAnsi(processed) ? (
-        <AnsiText content={processed} style={styles.text} selectable />
-      ) : (
-        <Text style={styles.text} selectable>
-          {processed}
-        </Text>
-      )}
+      {inner}
     </ScrollView>
   );
 }
@@ -52,12 +94,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
-    borderRadius: radius.md,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.border,
   },
   content: {
-    padding: spacing.md,
+    padding: 12,
   },
   text: {
     fontFamily: "monospace",

@@ -1,5 +1,27 @@
 use clawtab_protocol::QuestionOption;
 
+/// Strip ANSI escape sequences from text.
+fn strip_ansi(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Format the notification body for an iOS push notification.
 /// iOS shows ~5 lines of text on the lock screen. Strategy:
 /// - Options get priority (they're actionable)
@@ -9,6 +31,7 @@ use clawtab_protocol::QuestionOption;
 /// `context_lines` is raw terminal output that includes the question text,
 /// numbered options, option descriptions, and decorative/UI lines.
 pub fn format_body(context_lines: &str, options: &[QuestionOption]) -> String {
+    let context_lines = strip_ansi(context_lines);
     let option_prefixes: Vec<String> = options.iter().map(|o| format!("{}.", o.number)).collect();
 
     // Find where options start in the terminal output, keep only lines before that

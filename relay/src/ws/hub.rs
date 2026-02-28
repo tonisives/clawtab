@@ -62,8 +62,21 @@ impl Hub {
                 .unwrap_or_default();
 
             conns.retain(|c| c.device_id != device_id);
-            if conns.is_empty() {
+            let no_desktops = conns.is_empty();
+            if no_desktops {
                 self.desktops.remove(&user_id);
+                // Clear cached questions so mobile clients don't see stale data
+                self.last_questions.remove(&user_id);
+                // Send empty questions to connected mobiles
+                if let Ok(json) = serde_json::to_string(&DesktopMessage::ClaudeQuestions {
+                    questions: vec![],
+                }) {
+                    if let Some(mobile_conns) = self.mobiles.get(&user_id) {
+                        for conn in mobile_conns {
+                            let _ = conn.tx.send(json.clone());
+                        }
+                    }
+                }
             }
 
             self.send_to_mobiles(user_id, &ServerMessage::DesktopStatus {

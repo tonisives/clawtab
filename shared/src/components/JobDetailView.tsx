@@ -8,11 +8,14 @@ import {
   StyleSheet,
   Modal,
   SafeAreaView,
+  Platform,
 } from "react-native";
+
+const isWeb = Platform.OS === "web";
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
-import { LogViewer } from "./LogViewer";
+import { LogViewer, useAutoScroll } from "./LogViewer";
 import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
@@ -69,19 +72,36 @@ export function JobDetailView({
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
-  const mainScrollRef = useRef<ScrollView>(null);
+  // Scroll to bottom when new logs arrive
+  const scrollRef = useRef<ScrollView>(null);
+  const webDivRef = useRef<HTMLElement | null>(null);
+  const prevLogsLen = useRef(0);
 
-  const hasScrolledToBottom = useRef(false);
+  const webRefCb = useCallback((node: HTMLElement | null) => {
+    webDivRef.current = node;
+  }, []);
 
-  // Scroll to bottom once after runs load so recent logs are visible
   useEffect(() => {
-    if (hasScrolledToBottom.current || !runs) return;
-    hasScrolledToBottom.current = true;
-    const timer = setTimeout(() => {
-      mainScrollRef.current?.scrollToEnd({ animated: false });
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [runs]);
+    if (!isRunning || outputCollapsed) return;
+    // Only scroll when content actually grows
+    if (logs.length <= prevLogsLen.current) {
+      prevLogsLen.current = logs.length;
+      return;
+    }
+    prevLogsLen.current = logs.length;
+
+    if (isWeb) {
+      const el = webDivRef.current;
+      if (!el) return;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight;
+        });
+      });
+    } else {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [logs, isRunning, outputCollapsed]);
 
   // Reload runs when status changes
   useEffect(() => {
@@ -159,132 +179,26 @@ export function JobDetailView({
         </View>
       ) : null}
 
-      <ScrollView ref={mainScrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.content}>
-          {/* Header with back button */}
-          <TouchableOpacity onPress={onBack} style={styles.backRow} activeOpacity={0.6}>
-            <Text style={styles.backArrow}>{"\u2190"}</Text>
-            <Text style={styles.jobName}>{job.name}</Text>
-            <StatusBadge status={status} />
-          </TouchableOpacity>
-
-          {/* Info row */}
-          <View style={styles.infoRow}>
-            <View style={styles.infoPill}>
-              <Text style={styles.infoLabel}>{job.job_type}</Text>
-            </View>
-            {job.cron ? (
-              <View style={styles.infoPill}>
-                <Text style={styles.cronText}>{job.cron}</Text>
-              </View>
-            ) : null}
-            <View style={styles.infoPill}>
-              <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
-                {job.enabled ? "Enabled" : "Disabled"}
-              </Text>
-            </View>
+      {isWeb ? (
+        <div
+          ref={webRefCb as any}
+          style={{
+            flex: 1,
+            overflowY: "auto" as any,
+            minHeight: 0,
+          }}
+        >
+          <View style={styles.content}>
+            {detailInner}
           </View>
-
-          {/* Action buttons */}
-          <View style={styles.actions}>
-            {isRunning && (
-              <>
-                {onOpen && <ActionButton label="Open" color={colors.accent} onPress={() => onOpen()} />}
-                <ActionButton label="Pause" color={colors.warning} onPress={() => handleAction("pause")} />
-                <ActionButton label="Stop" color={colors.danger} onPress={() => handleAction("stop")} />
-              </>
-            )}
-            {isPaused && (
-              <>
-                <ActionButton label="Resume" color={colors.success} filled onPress={() => handleAction("resume")} />
-                <ActionButton label="Stop" color={colors.danger} onPress={() => handleAction("stop")} />
-              </>
-            )}
-            {state === "failed" && (
-              <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} />
-            )}
-            {state === "success" && (
-              <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} />
-            )}
-            {state === "idle" && (
-              <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
-            )}
-            {onEdit && <ActionButton label="Edit" color={colors.textSecondary} onPress={onEdit} />}
+        </div>
+      ) : (
+        <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.content}>
+            {detailInner}
           </View>
-
-          {/* Live Output */}
-          {(isRunning || isPaused) && (
-            <View style={styles.section}>
-              <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
-                <Text style={styles.collapseArrow}>
-                  {outputCollapsed ? "\u25B6" : "\u25BC"}
-                </Text>
-                <Text style={styles.sectionTitle}>Live Output</Text>
-              </TouchableOpacity>
-              {!outputCollapsed && (
-                <View style={styles.logsContainer}>
-                  <LogViewer content={logs} />
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Run History */}
-          <View style={styles.section}>
-            <TouchableOpacity onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
-              <Text style={styles.collapseArrow}>
-                {runsCollapsed ? "\u25B6" : "\u25BC"}
-              </Text>
-              <Text style={styles.sectionTitle}>Runs</Text>
-            </TouchableOpacity>
-            {!runsCollapsed && (
-              <View style={styles.runsContainer}>
-                {runsLoading && !runs ? (
-                  <Text style={styles.runsEmpty}>Loading...</Text>
-                ) : !runs || runs.length === 0 ? (
-                  <Text style={styles.runsEmpty}>No run history</Text>
-                ) : (
-                  runs.map((run, i) => (
-                    <RunRow
-                      key={run.id}
-                      run={run}
-                      transport={transport}
-                      currentState={state}
-                      defaultExpanded={expandRunId ? run.id === expandRunId : i === 0}
-                      onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
-                    />
-                  ))
-                )}
-              </View>
-            )}
-          </View>
-
-          {/* Platform-specific extra content */}
-          {extraContent}
-
-          {/* Danger zone (desktop-only) */}
-          {(onToggleEnabled || onDuplicate || onDelete) && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Actions</Text>
-              <View style={styles.actions}>
-                {onToggleEnabled && (
-                  <ActionButton
-                    label={job.enabled ? "Disable" : "Enable"}
-                    color={colors.textSecondary}
-                    onPress={onToggleEnabled}
-                  />
-                )}
-                {onDuplicate && (
-                  <ActionButton label="Duplicate" color={colors.textSecondary} onPress={onDuplicate} />
-                )}
-                {onDelete && (
-                  <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />
-                )}
-              </View>
-            </View>
-          )}
-        </View>
-      </ScrollView>
+        </ScrollView>
+      )}
 
       {/* Input bar when running/paused */}
       {(isRunning || isPaused) && (

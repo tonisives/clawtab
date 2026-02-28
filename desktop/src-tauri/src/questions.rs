@@ -6,11 +6,35 @@ use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::relay::RelayHandle;
 
+/// Strip ANSI escape sequences from text.
+fn strip_ansi(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip ESC [ ... (letter) sequences
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Parse numbered options from Claude output text.
 /// Matches lines like "1. Fix the bug" or "  > 2. Skip this step"
 /// Only returns options if the output looks like an interactive prompt
 /// (contains prompt indicators like "Enter to select", arrow navigation hints, etc.)
 pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
+    let text = &strip_ansi(text);
     let lines: Vec<&str> = text.lines().collect();
     let tail = if lines.len() > 20 { &lines[lines.len() - 20..] } else { &lines };
 

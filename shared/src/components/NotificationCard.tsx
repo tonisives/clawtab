@@ -12,6 +12,8 @@ import {
 import type { ClaudeQuestion } from "../types/process";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import { AnsiText, hasAnsi } from "./AnsiText";
+import { collapseSeparators } from "../util/logs";
 
 const isWeb = Platform.OS === "web";
 
@@ -89,15 +91,7 @@ export function NotificationCard({
     ? resolvedJob
     : question.cwd.replace(/^\/Users\/[^/]+/, "~");
 
-  const lines = question.context_lines
-    .trim()
-    .split("\n")
-    .filter((l) => {
-      const t = l.trim();
-      if (!t) return true;
-      return !/^[\s\-_=~\u2501\u2500\u2550\u254C\u254D\u2504\u2505\u2508\u2509\u2574\u2576\u2578\u257A\u2594\u2581|│┃┆┇┊┋╎╏]+$/.test(t);
-    });
-  const preview = lines.join("\n").trim();
+  const preview = collapseSeparators(question.context_lines).trim();
 
   const cardContent = (
     <>
@@ -116,7 +110,11 @@ export function NotificationCard({
 
         {preview ? (
           <View style={styles.logPreview}>
-            <Text style={styles.logText}>{preview}</Text>
+            {hasAnsi(preview) ? (
+              <AnsiText content={preview} style={styles.logText} />
+            ) : (
+              <Text style={styles.logText}>{preview}</Text>
+            )}
           </View>
         ) : null}
       </TouchableOpacity>

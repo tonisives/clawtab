@@ -137,6 +137,7 @@ export function JobListView({
   return (
     <ScrollView
       ref={scrollRef}
+      style={styles.scroll}
       contentContainerStyle={styles.list}
       refreshControl={
         onRefresh ? (
@@ -240,6 +241,9 @@ export function JobListView({
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flex: 1,
+  },
   list: {
     padding: spacing.lg,
   },
