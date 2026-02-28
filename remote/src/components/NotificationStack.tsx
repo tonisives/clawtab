@@ -5,22 +5,10 @@ import { useRouter } from "expo-router";
 import { useNotificationStore } from "../store/notifications";
 import { useJobsStore } from "../store/jobs";
 import { getWsSend, nextId } from "../hooks/useWebSocket";
-import { NotificationSection, AutoYesBanner } from "@clawtab/shared";
+import { NotificationSection, AutoYesBanner, findYesOption } from "@clawtab/shared";
 import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
 import type { AutoYesEntry, ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
-
-
-// Find the best "yes" option: prefer "Yes, during this session" over plain "Yes"
-function findYesOption(q: ClaudeQuestion): string | null {
-  const sessionOpt = q.options.find((o) =>
-    /yes.*session/i.test(o.label),
-  );
-  if (sessionOpt) return sessionOpt.number;
-  const yesOpt = q.options.find((o) => /^yes/i.test(o.label));
-  if (yesOpt) return yesOpt.number;
-  return null;
-}
 
 function syncAutoYesToRelay(paneIds: Set<string>) {
   const send = getWsSend();

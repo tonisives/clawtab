@@ -2,7 +2,7 @@ import { useRef, useEffect, useMemo, useCallback } from "react";
 import { ScrollView, Text, StyleSheet, View, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { AnsiText, hasAnsi } from "./AnsiText";
-import { collapseSeparators } from "../util/logs";
+import { collapseSeparators, truncateLogLines } from "../util/logs";
 
 /**
  * Hook that returns a callback ref. Every time `dep` changes, scrolls
@@ -39,8 +39,13 @@ function useAutoScroll(dep: string) {
   return { nativeRef, webRef };
 }
 
+const isNative = Platform.OS !== "web";
+
 export function LogViewer({ content }: { content: string }) {
-  const processed = useMemo(() => collapseSeparators(content), [content]);
+  const processed = useMemo(() => {
+    const collapsed = collapseSeparators(content);
+    return isNative ? truncateLogLines(collapsed, 120) : collapsed;
+  }, [content]);
   const { nativeRef, webRef } = useAutoScroll(processed);
 
   if (!content) {

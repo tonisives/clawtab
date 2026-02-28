@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Activit
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { LogViewer, MessageInput, parseNumberedOptions, colors, radius, spacing } from "@clawtab/shared";
+import { LogViewer, MessageInput, parseNumberedOptions, findYesOption, colors, radius, spacing } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
@@ -113,6 +113,43 @@ export default function ProcessDetailScreen() {
   }, [paneQuestion, logs]);
 
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
+  const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
+  const enableAutoYes = useNotificationStore((s) => s.enableAutoYes);
+  const disableAutoYes = useNotificationStore((s) => s.disableAutoYes);
+  const autoYesActive = autoYesPaneIds.has(pane_id);
+
+  const handleToggleAutoYes = useCallback(() => {
+    if (autoYesPaneIds.has(pane_id)) {
+      disableAutoYes(pane_id);
+      const send = getWsSend();
+      if (send) {
+        const next = new Set(autoYesPaneIds);
+        next.delete(pane_id);
+        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
+      }
+      return;
+    }
+    const title = displayName;
+    confirm("Enable auto-yes?", `All future questions for "${title}" will be automatically accepted with "Yes". This stays active until you disable it.`, () => {
+      enableAutoYes(pane_id);
+      const send = getWsSend();
+      if (send) {
+        const next = new Set(autoYesPaneIds);
+        next.add(pane_id);
+        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
+      }
+      if (paneQuestion) {
+        const yesOpt = findYesOption(paneQuestion);
+        if (yesOpt) {
+          const s = getWsSend();
+          if (s) {
+            s({ type: "send_detected_process_input", id: nextId(), pane_id, text: yesOpt });
+          }
+          setTimeout(() => answerQuestion(paneQuestion.question_id), 1500);
+        }
+      }
+    });
+  }, [pane_id, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion]);
 
   const handleSend = useCallback(
     (text: string) => {
@@ -254,7 +291,7 @@ export default function ProcessDetailScreen() {
         </ScrollView>
       )}
 
-      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} />}
+      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
       {(isAlive || paneQuestion) && <MessageInput onSend={handleSend} placeholder="Send input..." />}
     </View>
   );
@@ -263,9 +300,13 @@ export default function ProcessDetailScreen() {
 function OptionButtons({
   options,
   onSend,
+  autoYesActive,
+  onToggleAutoYes,
 }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
+  autoYesActive?: boolean;
+  onToggleAutoYes?: () => void;
 }) {
   if (options.length === 0) return null;
   return (
@@ -287,6 +328,20 @@ function OptionButtons({
           </Text>
         </TouchableOpacity>
       ))}
+      {onToggleAutoYes && (
+        <>
+          <View style={styles.autoYesSeparator} />
+          <TouchableOpacity
+            style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
+            onPress={onToggleAutoYes}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.autoYesBtnText} numberOfLines={1}>
+              {autoYesActive ? "! Auto ON" : "! Yes all"}
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -363,4 +418,14 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   optionBtnText: { color: colors.accent, fontSize: 12, fontWeight: "500" },
+  autoYesSeparator: { width: 1, height: 18, backgroundColor: colors.border },
+  autoYesBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  autoYesBtnActive: { backgroundColor: colors.warningBg },
+  autoYesBtnText: { color: colors.warning, fontSize: 12, fontWeight: "600" },
 });

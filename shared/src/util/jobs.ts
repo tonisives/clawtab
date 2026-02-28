@@ -1,4 +1,5 @@
 import type { RemoteJob } from "../types/job";
+import type { ClaudeQuestion } from "../types/process";
 import { colors } from "../theme/colors";
 
 export function groupJobs<T extends RemoteJob>(jobs: T[]): Map<string, T[]> {
@@ -38,6 +39,17 @@ export function parseNumberedOptions(text: string): { number: string; label: str
     }
   }
   return options;
+}
+
+/** Find the best "yes" option: prefer "Yes, during this session" over plain "Yes" */
+export function findYesOption(q: ClaudeQuestion): string | null {
+  const sessionOpt = q.options.find((o) =>
+    /yes.*session/i.test(o.label),
+  );
+  if (sessionOpt) return sessionOpt.number;
+  const yesOpt = q.options.find((o) => /^yes/i.test(o.label));
+  if (yesOpt) return yesOpt.number;
+  return null;
 }
 
 export function typeIcon(jobType: string): { letter: string; bg: string } {

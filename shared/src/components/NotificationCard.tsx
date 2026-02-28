@@ -13,7 +13,7 @@ import type { ClaudeQuestion } from "../types/process";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { AnsiText, hasAnsi } from "./AnsiText";
-import { collapseSeparators } from "../util/logs";
+import { collapseSeparators, truncateLogLines } from "../util/logs";
 
 const isWeb = Platform.OS === "web";
 
@@ -91,7 +91,7 @@ export function NotificationCard({
     ? resolvedJob
     : question.cwd.replace(/^\/Users\/[^/]+/, "~");
 
-  const preview = collapseSeparators(question.context_lines).trim();
+  const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 80);
 
   const cardContent = (
     <>

@@ -83,3 +83,30 @@ export function stripSeparators(text: string): string {
     .filter((line) => !isSeparator(line))
     .join("\n");
 }
+
+/**
+ * Truncate each line to at most `maxChars` visible characters.
+ * ANSI escape sequences are preserved but don't count towards the limit.
+ * Lines that exceed the limit get "..." appended.
+ */
+export function truncateLogLines(text: string, maxChars: number): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      const stripped = line.replace(ANSI_STRIP, "");
+      if (stripped.length <= maxChars) return line;
+      // Plain line (no ANSI) - fast path
+      if (stripped.length === line.length) return line.slice(0, maxChars) + "...";
+      // ANSI-aware walk
+      let vis = 0;
+      let i = 0;
+      while (i < line.length && vis < maxChars) {
+        const m = line.slice(i).match(/^\x1b\[[0-9;]*[A-Za-z]/);
+        if (m) { i += m[0].length; continue; }
+        vis++;
+        i++;
+      }
+      return line.slice(0, i) + "...";
+    })
+    .join("\n");
+}

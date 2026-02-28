@@ -7,13 +7,16 @@ import {
   JobListView,
   JobDetailView,
   NotificationSection,
+  AutoYesBanner,
   useJobsCore,
   useJobActions,
   useJobDetail,
   useLogBuffer,
   parseNumberedOptions,
+  findYesOption,
   shortenPath,
 } from "@clawtab/shared";
+import type { AutoYesEntry } from "@clawtab/shared";
 import { LogViewer } from "./LogViewer";
 import { createTauriTransport } from "../transport/tauriTransport";
 import type { AppSettings, Job } from "../types";
@@ -41,11 +44,15 @@ function DetectedProcessDetail({
   questions,
   onBack,
   onDismissQuestion,
+  autoYesActive,
+  onToggleAutoYes,
 }: {
   process: ClaudeProcess;
   questions: ClaudeQuestion[];
   onBack: () => void;
   onDismissQuestion: (questionId: string) => void;
+  autoYesActive?: boolean;
+  onToggleAutoYes?: () => void;
 }) {
   const [logs, setLogs] = useState(process.log_lines);
   const [inputText, setInputText] = useState("");
@@ -142,6 +149,7 @@ function DetectedProcessDetail({
           gap: 6,
           padding: "8px 0",
           flexWrap: "wrap",
+          alignItems: "center",
         }}>
           {options.map((opt) => (
             <button
@@ -157,6 +165,23 @@ function DetectedProcessDetail({
               {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
             </button>
           ))}
+          {onToggleAutoYes && (
+            <>
+              <div style={{ width: 1, height: 18, backgroundColor: "var(--border-color)" }} />
+              <button
+                className="btn btn-sm"
+                style={{
+                  borderColor: "var(--warning-color)",
+                  color: "var(--warning-color)",
+                  backgroundColor: autoYesActive ? "var(--warning-bg)" : undefined,
+                  fontWeight: 600,
+                }}
+                onClick={onToggleAutoYes}
+              >
+                {autoYesActive ? "! Auto ON" : "! Yes all"}
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -211,6 +236,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const fastPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track recently dismissed question IDs so polls don't bring them back
   const dismissedRef = useRef<Map<string, number>>(new Map());
+  // Auto-yes state
+  const [autoYesPaneIds, setAutoYesPaneIds] = useState<Set<string>>(new Set());
+  const autoAnsweredRef = useRef<Set<string>>(new Set());
 
   const loadQuestions = useCallback(() => {
     invoke<ClaudeQuestion[]>("get_active_questions").then((qs) => {
@@ -245,6 +273,87 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       questionPollRef.current = setInterval(loadQuestions, 5000);
     }, 5000);
   }, [loadQuestions]);
+
+  const handleToggleAutoYes = useCallback((q: ClaudeQuestion) => {
+    if (autoYesPaneIds.has(q.pane_id)) {
+      setAutoYesPaneIds((prev) => {
+        const next = new Set(prev);
+        next.delete(q.pane_id);
+        return next;
+      });
+      return;
+    }
+    const title = q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~");
+    if (!confirm(`Enable auto-yes for "${title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`)) return;
+    setAutoYesPaneIds((prev) => {
+      const next = new Set(prev);
+      next.add(q.pane_id);
+      return next;
+    });
+    // Auto-answer the current question
+    const yesOpt = findYesOption(q);
+    if (yesOpt) {
+      const resolvedJob = q.matched_job ?? null;
+      if (resolvedJob) {
+        invoke("send_job_input", { name: resolvedJob, text: yesOpt }).catch(() => {});
+      } else {
+        invoke("send_detected_process_input", { paneId: q.pane_id, text: yesOpt }).catch(() => {});
+      }
+      dismissedRef.current.set(q.question_id, Date.now());
+      setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
+      startFastQuestionPoll();
+    }
+  }, [autoYesPaneIds, startFastQuestionPoll]);
+
+  // Auto-answer questions for panes with auto-yes enabled
+  useEffect(() => {
+    for (const q of questions) {
+      if (!autoYesPaneIds.has(q.pane_id)) continue;
+      if (autoAnsweredRef.current.has(q.question_id)) continue;
+      const yesOpt = findYesOption(q);
+      if (yesOpt) {
+        autoAnsweredRef.current.add(q.question_id);
+        const resolvedJob = q.matched_job ?? null;
+        if (resolvedJob) {
+          invoke("send_job_input", { name: resolvedJob, text: yesOpt }).catch(() => {});
+        } else {
+          invoke("send_detected_process_input", { paneId: q.pane_id, text: yesOpt }).catch(() => {});
+        }
+        const qid = q.question_id;
+        setTimeout(() => {
+          dismissedRef.current.set(qid, Date.now());
+          setQuestions((prev) => prev.filter((pq) => pq.question_id !== qid));
+          startFastQuestionPoll();
+        }, 1500);
+      }
+    }
+  }, [questions, autoYesPaneIds, startFastQuestionPoll]);
+
+  const handleDisableAutoYes = useCallback((paneId: string) => {
+    setAutoYesPaneIds((prev) => {
+      const next = new Set(prev);
+      next.delete(paneId);
+      return next;
+    });
+  }, []);
+
+  const autoYesEntries: AutoYesEntry[] = useMemo(() => {
+    const entries: AutoYesEntry[] = [];
+    for (const paneId of autoYesPaneIds) {
+      const q = questions.find((q) => q.pane_id === paneId);
+      if (q) {
+        entries.push({ paneId, label: q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~") });
+        continue;
+      }
+      const proc = core.processes.find((p) => p.pane_id === paneId);
+      if (proc) {
+        entries.push({ paneId, label: proc.matched_job ?? proc.cwd.replace(/^\/Users\/[^/]+/, "~") });
+        continue;
+      }
+      entries.push({ paneId, label: paneId });
+    }
+    return entries;
+  }, [autoYesPaneIds, questions, core.processes]);
 
   // Load group order from settings
   useEffect(() => {
@@ -427,18 +536,25 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   }, [questions.length]);
 
   const notificationSection = useMemo(() => {
-    if (!nfnVisible) return undefined;
+    if (!nfnVisible && autoYesEntries.length === 0) return undefined;
     return (
-      <NotificationSection
-        questions={questions}
-        resolveJob={resolveQuestionJob}
-        onNavigate={handleQuestionNavigate}
-        onSendOption={handleQuestionSendOption}
-        collapsed={core.collapsedGroups.has("Notifications")}
-        onToggleCollapse={() => core.toggleGroup("Notifications")}
-      />
+      <>
+        <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} />
+        {nfnVisible && (
+          <NotificationSection
+            questions={questions}
+            resolveJob={resolveQuestionJob}
+            onNavigate={handleQuestionNavigate}
+            onSendOption={handleQuestionSendOption}
+            collapsed={core.collapsedGroups.has("Notifications")}
+            onToggleCollapse={() => core.toggleGroup("Notifications")}
+            autoYesPaneIds={autoYesPaneIds}
+            onToggleAutoYes={handleToggleAutoYes}
+          />
+        )}
+      </>
     );
-  }, [nfnVisible, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup]);
+  }, [nfnVisible, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup, autoYesPaneIds, handleToggleAutoYes, autoYesEntries, handleDisableAutoYes]);
 
   // Editor / picker screens (React DOM, kept as-is)
   if (editingJob || isCreating) {
@@ -528,11 +644,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           setQuestions((prev) => prev.filter((q) => q.question_id !== qId));
           startFastQuestionPoll();
         }}
+        autoYesActive={autoYesPaneIds.has(viewingProcess.pane_id)}
+        onToggleAutoYes={() => {
+          const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
+          if (paneQuestion) {
+            handleToggleAutoYes(paneQuestion);
+          }
+        }}
       />
     );
   }
 
   if (viewingJob) {
+    const jobQuestion = questions.find((q) => q.matched_job === viewingJob.name);
     return (
       <>
         <DesktopJobDetail
@@ -544,6 +668,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           onToggle={() => { actions.toggleJob(viewingJob.name); core.reload(); }}
           onDuplicate={() => handleDuplicate(viewingJob)}
           onDelete={() => { actions.deleteJob(viewingJob.name); setViewingJob(null); core.reload(); }}
+          autoYesActive={jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false}
+          onToggleAutoYes={jobQuestion ? () => handleToggleAutoYes(jobQuestion) : undefined}
         />
         {paramsDialog && (
           <ParamsOverlay
@@ -609,6 +735,8 @@ function DesktopJobDetail({
   onToggle,
   onDuplicate,
   onDelete,
+  autoYesActive,
+  onToggleAutoYes,
 }: {
   job: Job;
   status: JobStatus;
@@ -618,6 +746,8 @@ function DesktopJobDetail({
   onToggle: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  autoYesActive?: boolean;
+  onToggleAutoYes?: () => void;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.name);
   const { logs } = useLogBuffer(transport, job.name);
@@ -644,6 +774,8 @@ function DesktopJobDetail({
         onDuplicate={onDuplicate}
         onDelete={() => setShowConfirm(true)}
         extraContent={extraContent}
+        autoYesActive={autoYesActive}
+        onToggleAutoYes={onToggleAutoYes}
       />
       {showConfirm && (
         <ConfirmDialog

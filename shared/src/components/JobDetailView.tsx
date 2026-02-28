@@ -22,7 +22,7 @@ import { AnsiText, hasAnsi } from "./AnsiText";
 import { formatTime, formatDuration } from "../util/format";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { parseNumberedOptions } from "../util/jobs";
-import { collapseSeparators } from "../util/logs";
+import { collapseSeparators, truncateLogLines } from "../util/logs";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -45,6 +45,9 @@ export interface JobDetailViewProps {
   expandRunId?: string;
   // Slot for platform-specific content (e.g. desktop configuration sections)
   extraContent?: ReactNode;
+  // Auto-yes support for option buttons
+  autoYesActive?: boolean;
+  onToggleAutoYes?: () => void;
 }
 
 export function JobDetailView({
@@ -63,6 +66,8 @@ export function JobDetailView({
   onDelete,
   expandRunId,
   extraContent,
+  autoYesActive,
+  onToggleAutoYes,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -330,7 +335,7 @@ export function JobDetailView({
       {/* Input bar when running/paused */}
       {(isRunning || isPaused) && (
         <>
-          <OptionButtons logs={logs} onSend={handleSendInput} />
+          <OptionButtons logs={logs} onSend={handleSendInput} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
           <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
         </>
       )}
@@ -388,7 +393,12 @@ function ActionButton({
   );
 }
 
-function OptionButtons({ logs, onSend }: { logs: string; onSend: (text: string) => void }) {
+function OptionButtons({ logs, onSend, autoYesActive, onToggleAutoYes }: {
+  logs: string;
+  onSend: (text: string) => void;
+  autoYesActive?: boolean;
+  onToggleAutoYes?: () => void;
+}) {
   const options = useMemo(() => parseNumberedOptions(logs), [logs]);
   if (options.length === 0) return null;
 
@@ -411,6 +421,20 @@ function OptionButtons({ logs, onSend }: { logs: string; onSend: (text: string) 
           </Text>
         </TouchableOpacity>
       ))}
+      {onToggleAutoYes && (
+        <>
+          <View style={styles.optionSeparator} />
+          <TouchableOpacity
+            style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
+            onPress={onToggleAutoYes}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.autoYesBtnText} numberOfLines={1}>
+              {autoYesActive ? "! Auto ON" : "! Yes all"}
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -482,7 +506,9 @@ function RunRow({
       ? [run.stdout, run.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
       : null;
 
-  const logContent = logContentRaw ? collapseSeparators(logContentRaw) : null;
+  const logContent = logContentRaw
+    ? (isWeb ? collapseSeparators(logContentRaw) : truncateLogLines(collapseSeparators(logContentRaw), 120))
+    : null;
 
   return (
     <TouchableOpacity onPress={handleToggle} activeOpacity={0.7}>
@@ -803,6 +829,26 @@ const styles = StyleSheet.create({
     color: colors.accent,
     fontSize: 12,
     fontWeight: "500",
+  },
+  optionSeparator: {
+    width: 1,
+    height: 18,
+    backgroundColor: colors.border,
+  },
+  autoYesBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  autoYesBtnActive: {
+    backgroundColor: colors.warningBg,
+  },
+  autoYesBtnText: {
+    color: colors.warning,
+    fontSize: 12,
+    fontWeight: "600",
   },
   runRightRow: {
     flexDirection: "row",

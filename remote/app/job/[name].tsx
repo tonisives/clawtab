@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { Alert, View, Text, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useJob, useJobStatus } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
+import { useNotificationStore } from "../../src/store/notifications";
 import { StatusBadge } from "@clawtab/shared";
-import { JobDetailView } from "@clawtab/shared";
+import { JobDetailView, findYesOption } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useLogs } from "../../src/hooks/useLogs";
 import { createWsTransport } from "../../src/transport/wsTransport";
@@ -24,6 +25,14 @@ export default function JobDetailScreen() {
   const router = useRouter();
   const [runsLoading, setRunsLoading] = useState(false);
 
+  const questions = useNotificationStore((s) => s.questions);
+  const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
+  const enableAutoYes = useNotificationStore((s) => s.enableAutoYes);
+  const disableAutoYes = useNotificationStore((s) => s.disableAutoYes);
+  const answerQuestion = useNotificationStore((s) => s.answerQuestion);
+  const jobQuestion = questions.find((q) => q.matched_job === name);
+  const autoYesActive = jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false;
+
   const loadRuns = useCallback(() => {
     const send = getWsSend();
     if (!send || !name) return;
@@ -39,6 +48,47 @@ export default function JobDetailScreen() {
   useEffect(() => {
     loadRuns();
   }, [loadRuns]);
+
+  const handleToggleAutoYes = useCallback(() => {
+    if (!jobQuestion) return;
+    if (autoYesPaneIds.has(jobQuestion.pane_id)) {
+      disableAutoYes(jobQuestion.pane_id);
+      const send = getWsSend();
+      if (send) {
+        const next = new Set(autoYesPaneIds);
+        next.delete(jobQuestion.pane_id);
+        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
+      }
+      return;
+    }
+    const title = jobQuestion.matched_job ?? jobQuestion.cwd.replace(/^\/Users\/[^/]+/, "~");
+    Alert.alert(
+      "Enable auto-yes?",
+      `All future questions for "${title}" will be automatically accepted with "Yes". This stays active until you disable it.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Enable",
+          style: "destructive",
+          onPress: () => {
+            enableAutoYes(jobQuestion.pane_id);
+            const send = getWsSend();
+            if (send) {
+              const next = new Set(autoYesPaneIds);
+              next.add(jobQuestion.pane_id);
+              send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] });
+            }
+            const yesOpt = findYesOption(jobQuestion);
+            if (yesOpt) {
+              const s = getWsSend();
+              if (s) s({ type: "send_input", id: nextId(), name: name, text: yesOpt });
+              setTimeout(() => answerQuestion(jobQuestion.question_id), 1500);
+            }
+          },
+        },
+      ],
+    );
+  }, [jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, name]);
 
   if (!job) {
     return (
@@ -70,6 +120,8 @@ export default function JobDetailScreen() {
           onBack={() => router.back()}
           onReloadRuns={loadRuns}
           expandRunId={run_id}
+          autoYesActive={autoYesActive}
+          onToggleAutoYes={jobQuestion ? handleToggleAutoYes : undefined}
         />
       </ContentContainer>
     </View>
