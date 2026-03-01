@@ -5,7 +5,7 @@ interface Props {
   onChange: (value: string) => void;
 }
 
-export const CRON_PRESETS: { label: string; value: string }[] = [
+const CRON_PRESETS: { label: string; value: string }[] = [
   { label: "Every minute", value: "* * * * *" },
   { label: "Every 5 minutes", value: "*/5 * * * *" },
   { label: "Every 15 minutes", value: "*/15 * * * *" },

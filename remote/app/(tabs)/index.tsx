@@ -14,7 +14,7 @@ import { NotificationStack } from "../../src/components/NotificationStack"
 import { JobListView } from "@clawtab/shared"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
 import { useNotifications } from "../../src/hooks/useNotifications"
-import { useResponsive } from "../../src/hooks/useResponsive"
+import { useResponsive, WIDE_CONTENT_MAX_WIDTH } from "../../src/hooks/useResponsive"
 import * as api from "../../src/api/client"
 import { alertError, openUrl } from "../../src/lib/platform"
 import { colors } from "@clawtab/shared"
@@ -199,7 +199,6 @@ export default function JobsScreen() {
         </ContentContainer>
       )}
       {!subscriptionRequired && (
-        <ContentContainer wide fill>
           <JobListView
             jobs={jobs}
             statuses={statuses}
@@ -213,8 +212,8 @@ export default function JobsScreen() {
             headerContent={bannerContent}
             showEmpty={loaded}
             emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+            contentContainerStyle={isWide ? styles.wideContent : undefined}
           />
-        </ContentContainer>
       )}
     </View>
   )
@@ -222,6 +221,11 @@ export default function JobsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  wideContent: {
+    maxWidth: WIDE_CONTENT_MAX_WIDTH,
+    width: "100%",
+    alignSelf: "center" as const,
+  },
   loadingContainer: {
     justifyContent: "center",
     alignItems: "center",

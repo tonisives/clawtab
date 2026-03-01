@@ -133,7 +133,6 @@ pub fn send_keys(session: &str, window: &str, keys: &str) -> Result<(), String> 
     Ok(())
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize)]
 pub struct PaneInfo {
     pub pane_id: String,
@@ -302,43 +301,6 @@ pub fn list_session_panes(session: &str) -> Result<Vec<(String, PaneInfo)>, Stri
                         active: parts[3] == "1",
                     },
                 ))
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
-/// List all panes in a window.
-#[allow(dead_code)]
-pub fn list_panes(session: &str, window: &str) -> Result<Vec<PaneInfo>, String> {
-    let target = format!("{}:{}", session, window);
-    let output = Command::new("tmux")
-        .args([
-            "list-panes",
-            "-t",
-            &target,
-            "-F",
-            "#{pane_id}:#{pane_current_command}:#{pane_active}",
-        ])
-        .output()
-        .map_err(|e| format!("Failed to list panes: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("tmux error: {}", stderr.trim()));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(3, ':').collect();
-            if parts.len() >= 3 {
-                Some(PaneInfo {
-                    pane_id: parts[0].to_string(),
-                    current_command: parts[1].to_string(),
-                    active: parts[2] == "1",
-                })
             } else {
                 None
             }

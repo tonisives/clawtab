@@ -135,6 +135,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   nav: {
+    flex: 1,
     gap: 2,
     paddingHorizontal: 8,
   },

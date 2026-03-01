@@ -1,3 +1,4 @@
+mod answer;
 mod health;
 mod register;
 mod login;
@@ -71,6 +72,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/subscription/status", get(subscription::status))
         .route("/notifications/history", get(notifications::history))
         .route("/debug/test-push", post(debug::test_push))
+        .route("/api/answer", post(answer::answer))
         .layer(middleware::from_fn_with_state(state, auth_middleware));
 
     public

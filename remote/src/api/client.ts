@@ -264,3 +264,22 @@ export async function getPaymentLink(): Promise<{ url: string }> {
   if (!resp.ok) throw new Error("Failed to get payment link");
   return resp.json();
 }
+
+export async function postAnswer(
+  questionId: string,
+  paneId: string,
+  answer: string,
+): Promise<{ sent: boolean }> {
+  return request<{ sent: boolean }>(
+    "/api/answer",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        question_id: questionId,
+        pane_id: paneId,
+        answer,
+      }),
+    },
+    true,
+  );
+}

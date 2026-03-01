@@ -1,6 +1,3 @@
-#[allow(dead_code)]
-pub mod applescript;
-
 use std::path::PathBuf;
 
 /// Get the browser session directory for a job.

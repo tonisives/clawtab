@@ -6,6 +6,7 @@ import { useRouter } from "expo-router";
 import { useNotificationStore } from "../store/notifications";
 import { getWsSend, nextId } from "./useWebSocket";
 import { enqueueAnswer } from "../lib/pendingAnswers";
+import { postAnswer } from "../api/client";
 
 export function useNotifications() {
   const router = useRouter();
@@ -62,19 +63,30 @@ export function useNotifications() {
 
         if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
           // User tapped an action button (number like "1", "2", etc.)
-          const answerMsg = {
-            type: "answer_question" as const,
-            id: nextId(),
-            question_id: clawtab.question_id,
-            pane_id: clawtab.pane_id,
-            answer: actionId,
-          };
-          const send = getWsSend();
-          if (send) {
-            send(answerMsg);
-          } else {
-            enqueueAnswer(answerMsg);
-          }
+          // Try HTTP POST first (works even without WS connection),
+          // fall back to WS, then queue for later.
+          const qid = clawtab.question_id;
+          const pid = clawtab.pane_id;
+          postAnswer(qid, pid, actionId).catch(() => {
+            const send = getWsSend();
+            if (send) {
+              send({
+                type: "answer_question" as const,
+                id: nextId(),
+                question_id: qid,
+                pane_id: pid,
+                answer: actionId,
+              });
+            } else {
+              enqueueAnswer({
+                type: "answer_question" as const,
+                id: nextId(),
+                question_id: qid,
+                pane_id: pid,
+                answer: actionId,
+              });
+            }
+          });
           answerQuestion(clawtab.question_id);
           // Dismiss the notification from the notification center
           Notifications.dismissNotificationAsync(

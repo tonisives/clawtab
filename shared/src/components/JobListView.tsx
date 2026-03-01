@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from "react";
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
 import type { ClaudeProcess } from "../types/process";
 import { JobCard } from "./JobCard";
@@ -33,6 +33,8 @@ export interface JobListViewProps {
   // Show empty state
   showEmpty?: boolean;
   emptyMessage?: string;
+  // Extra style for scroll content container
+  contentContainerStyle?: StyleProp<ViewStyle>;
 }
 
 type ListItem =
@@ -55,6 +57,7 @@ export function JobListView({
   headerContent,
   showEmpty = true,
   emptyMessage = "No jobs found.",
+  contentContainerStyle,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
 
@@ -166,7 +169,7 @@ export function JobListView({
     <ScrollView
       ref={scrollRef}
       style={styles.scroll}
-      contentContainerStyle={styles.list}
+      contentContainerStyle={[styles.list, contentContainerStyle]}
       refreshControl={
         onRefresh ? (
           <RefreshControl

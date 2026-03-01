@@ -169,7 +169,7 @@ src/
   components/
     SettingsApp.tsx          # Main tabbed UI
     SetupWizard.tsx          # First-run wizard
-    JobsPanel.tsx            # Job list + management
+    JobsTab.tsx              # Job list + management (uses shared JobListView)
     JobEditor.tsx            # Job creation/editing form
     SecretsPanel.tsx         # Secret management
     TelegramPanel.tsx        # Telegram settings

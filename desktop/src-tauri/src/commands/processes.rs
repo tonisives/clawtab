@@ -120,7 +120,6 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
         // Prefix matching (starts_with) is too greedy - a job at /automation
         // would incorrectly claim processes in /automation/business/seo-optimise.
         let mut matched_group = None;
-        let matched_job = None;
         for (root, group, _name) in &match_entries {
             if cwd == root {
                 matched_group = Some(group.clone());
@@ -140,7 +139,7 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             tmux_session: session.to_string(),
             window_name: window.to_string(),
             matched_group,
-            matched_job,
+            matched_job: None,
             log_lines,
         });
     }
