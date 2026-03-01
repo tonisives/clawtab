@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -21,7 +21,6 @@ import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
 import { formatTime, formatDuration } from "../util/format";
 import { runStatusColor, runStatusLabel } from "../util/status";
-import { parseNumberedOptions } from "../util/jobs";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -45,6 +44,8 @@ export interface JobDetailViewProps {
   expandRunId?: string;
   // Slot for platform-specific content (e.g. desktop configuration sections)
   extraContent?: ReactNode;
+  // Pre-parsed question options from Rust backend (avoids TS re-parsing)
+  options?: { number: string; label: string }[];
   // Auto-yes support for option buttons
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
@@ -66,6 +67,7 @@ export function JobDetailView({
   onDelete,
   expandRunId,
   extraContent,
+  options: optionsProp,
   autoYesActive,
   onToggleAutoYes,
 }: JobDetailViewProps) {
@@ -335,7 +337,7 @@ export function JobDetailView({
       {/* Input bar when running/paused */}
       {(isRunning || isPaused) && (
         <>
-          <OptionButtons logs={logs} onSend={handleSendInput} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
           <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
         </>
       )}
@@ -393,13 +395,12 @@ function ActionButton({
   );
 }
 
-function OptionButtons({ logs, onSend, autoYesActive, onToggleAutoYes }: {
-  logs: string;
+function OptionButtons({ options, onSend, autoYesActive, onToggleAutoYes }: {
+  options: { number: string; label: string }[];
   onSend: (text: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
 }) {
-  const options = useMemo(() => parseNumberedOptions(logs), [logs]);
   if (options.length === 0) return null;
 
   return (

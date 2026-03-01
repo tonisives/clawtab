@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { LogViewer, MessageInput, parseNumberedOptions, findYesOption, colors, radius, spacing } from "@clawtab/shared";
+import { LogViewer, MessageInput, findYesOption, colors, radius, spacing } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
@@ -105,12 +105,8 @@ export default function ProcessDetailScreen() {
     };
   }, [activeProcess?.pane_id, activeProcess?.tmux_session]);
 
-  // Prefer question options from notification store (more reliable), fallback to log parsing
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
-  const options = useMemo(() => {
-    if (paneQuestion && paneQuestion.options.length > 0) return paneQuestion.options;
-    return parseNumberedOptions(logs);
-  }, [paneQuestion, logs]);
+  const options = paneQuestion?.options ?? [];
 
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);

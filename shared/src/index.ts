@@ -18,7 +18,7 @@ export { spacing, radius } from "./theme/spacing";
 
 // Utils
 export { formatTime, formatDuration, timeAgo, shortenPath } from "./util/format";
-export { groupJobs, sortGroupNames, parseNumberedOptions, findYesOption, typeIcon } from "./util/jobs";
+export { groupJobs, sortGroupNames, findYesOption, typeIcon } from "./util/jobs";
 export { collapseSeparators, stripSeparators, truncateLogLines } from "./util/logs";
 export {
   statusLabel,

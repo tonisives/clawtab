@@ -120,6 +120,7 @@ export default function JobDetailScreen() {
           onBack={() => router.back()}
           onReloadRuns={loadRuns}
           expandRunId={run_id}
+          options={jobQuestion?.options}
           autoYesActive={autoYesActive}
           onToggleAutoYes={jobQuestion ? handleToggleAutoYes : undefined}
         />

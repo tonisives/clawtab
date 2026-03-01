@@ -12,7 +12,6 @@ import {
   useJobActions,
   useJobDetail,
   useLogBuffer,
-  parseNumberedOptions,
   shortenPath,
 } from "@clawtab/shared";
 import type { AutoYesEntry } from "@clawtab/shared";
@@ -81,12 +80,8 @@ function DetectedProcessDetail({
     return () => { active = false; clearInterval(interval); };
   }, [process.pane_id]);
 
-  // Prefer question options from notifications, fallback to log parsing
   const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
-  const options = useMemo(() => {
-    if (paneQuestion && paneQuestion.options.length > 0) return paneQuestion.options;
-    return parseNumberedOptions(logs);
-  }, [paneQuestion, logs]);
+  const options = paneQuestion?.options ?? [];
 
   const handleSend = useCallback(async (text: string) => {
     const t = text.trim();
@@ -648,6 +643,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           onToggle={() => { actions.toggleJob(viewingJob.name); core.reload(); }}
           onDuplicate={() => handleDuplicate(viewingJob)}
           onDelete={() => { actions.deleteJob(viewingJob.name); setViewingJob(null); core.reload(); }}
+          options={jobQuestion?.options}
           autoYesActive={jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false}
           onToggleAutoYes={jobQuestion ? () => handleToggleAutoYes(jobQuestion) : undefined}
         />
@@ -715,6 +711,7 @@ function DesktopJobDetail({
   onToggle,
   onDuplicate,
   onDelete,
+  options,
   autoYesActive,
   onToggleAutoYes,
 }: {
@@ -726,6 +723,7 @@ function DesktopJobDetail({
   onToggle: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  options?: { number: string; label: string }[];
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
 }) {
@@ -754,6 +752,7 @@ function DesktopJobDetail({
         onDuplicate={onDuplicate}
         onDelete={() => setShowConfirm(true)}
         extraContent={extraContent}
+        options={options}
         autoYesActive={autoYesActive}
         onToggleAutoYes={onToggleAutoYes}
       />
