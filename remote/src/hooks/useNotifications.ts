@@ -76,6 +76,10 @@ export function useNotifications() {
             enqueueAnswer(answerMsg);
           }
           answerQuestion(clawtab.question_id);
+          // Dismiss the notification from the notification center
+          Notifications.dismissNotificationAsync(
+            response.notification.request.identifier,
+          ).catch(() => {});
         }
 
         // Navigate to the job/process screen

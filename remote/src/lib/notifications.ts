@@ -37,6 +37,24 @@ export function registerNotificationCategories() {
   ]).catch(() => {});
 }
 
+/** Dismiss any delivered notifications matching the given question ID. */
+export async function dismissQuestionNotification(questionId: string) {
+  if (Platform.OS === "web") return;
+  try {
+    const delivered = await Notifications.getPresentedNotificationsAsync();
+    for (const n of delivered) {
+      const data = n.request.content.data as {
+        clawtab?: { question_id?: string };
+      } | undefined;
+      if (data?.clawtab?.question_id === questionId) {
+        await Notifications.dismissNotificationAsync(n.request.identifier);
+      }
+    }
+  } catch (e) {
+    console.log("[notifications] failed to dismiss:", e);
+  }
+}
+
 export async function getPushToken(): Promise<string | null> {
   if (Platform.OS === "web") return null;
 

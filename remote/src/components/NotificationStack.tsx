@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { useNotificationStore } from "../store/notifications";
 import { useJobsStore } from "../store/jobs";
 import { getWsSend, nextId } from "../hooks/useWebSocket";
+import { dismissQuestionNotification } from "../lib/notifications";
 import { NotificationSection, AutoYesBanner, findYesOption } from "@clawtab/shared";
 import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
@@ -86,6 +87,7 @@ export function NotificationStack() {
     (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
       answerQuestion(q.question_id);
       sendAnswer(q, resolvedJob, optionNumber);
+      dismissQuestionNotification(q.question_id);
     },
     [answerQuestion, sendAnswer],
   );
@@ -121,6 +123,7 @@ export function NotificationStack() {
                 setAutoAnsweredIds(new Set(autoAnsweredRef.current));
                 sendAnswer(q, resolveJob(q), yesOpt);
                 // Dismiss after a brief flash
+                dismissQuestionNotification(q.question_id);
                 setTimeout(() => {
                   answerQuestion(q.question_id);
                 }, 1500);
