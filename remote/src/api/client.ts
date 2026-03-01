@@ -158,19 +158,31 @@ export async function register(
   return resp;
 }
 
-export async function refreshToken(): Promise<AuthResponse> {
-  const token = await storage.getItem(KEYS.refreshToken);
-  if (!token) throw new Error("No refresh token");
+// Deduplicate concurrent refresh calls to prevent refresh token reuse,
+// which triggers stolen-token detection and revokes all tokens.
+let refreshInFlight: Promise<AuthResponse> | null = null;
 
-  const resp = await request<AuthResponse>("/auth/refresh", {
-    method: "POST",
-    body: JSON.stringify({ refresh_token: token }),
+export async function refreshToken(): Promise<AuthResponse> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const token = await storage.getItem(KEYS.refreshToken);
+    if (!token) throw new Error("No refresh token");
+
+    const resp = await request<AuthResponse>("/auth/refresh", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: token }),
+    });
+
+    await storage.setItem(KEYS.accessToken, resp.access_token);
+    await storage.setItem(KEYS.refreshToken, resp.refresh_token);
+
+    return resp;
+  })().finally(() => {
+    refreshInFlight = null;
   });
 
-  await storage.setItem(KEYS.accessToken, resp.access_token);
-  await storage.setItem(KEYS.refreshToken, resp.refresh_token);
-
-  return resp;
+  return refreshInFlight;
 }
 
 export async function getDevices(): Promise<DeviceInfo[]> {

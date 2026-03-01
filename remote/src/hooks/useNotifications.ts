@@ -6,13 +6,56 @@ import { useRouter } from "expo-router";
 import { useNotificationStore } from "../store/notifications";
 import { getWsSend, nextId } from "./useWebSocket";
 import { enqueueAnswer } from "../lib/pendingAnswers";
-import { postAnswer } from "../api/client";
+import { postAnswer, refreshToken } from "../api/client";
+
+// Track which responses we've already handled to avoid double-processing
+// between getLastNotificationResponseAsync and the listener.
+const handledResponses = new Set<string>();
+
+function responseKey(response: Notifications.NotificationResponse): string {
+  return `${response.notification.request.identifier}_${response.actionIdentifier}`;
+}
+
+function sendAnswer(questionId: string, paneId: string, actionId: string) {
+  console.log("[notif] answering via HTTP:", questionId, actionId);
+  // Eagerly refresh JWT since the access token is likely expired on cold launch.
+  // This is deduplicated in client.ts so concurrent callers share one refresh.
+  refreshToken().catch(() => {}).then(() => postAnswer(questionId, paneId, actionId))
+    .then((res) => console.log("[notif] HTTP answer sent, desktop:", res.sent))
+    .catch((err) => {
+      console.log("[notif] HTTP answer failed:", err, "- falling back");
+      const send = getWsSend();
+      if (send) {
+        console.log("[notif] fallback: sending via WS");
+        send({
+          type: "answer_question" as const,
+          id: nextId(),
+          question_id: questionId,
+          pane_id: paneId,
+          answer: actionId,
+        });
+      } else {
+        console.log("[notif] fallback: queuing to AsyncStorage");
+        enqueueAnswer({
+          type: "answer_question" as const,
+          id: nextId(),
+          question_id: questionId,
+          pane_id: paneId,
+          answer: actionId,
+        });
+      }
+    });
+}
 
 function handleNotificationResponse(
   response: Notifications.NotificationResponse,
   answerQuestion: (id: string) => void,
-  navigate: (path: string) => void,
+  navigate?: (path: string) => void,
 ) {
+  const key = responseKey(response);
+  if (handledResponses.has(key)) return;
+  handledResponses.add(key);
+
   const data = response.notification.request.content.data as {
     clawtab?: {
       question_id?: string;
@@ -30,7 +73,7 @@ function handleNotificationResponse(
   // Job notification (no question_id means it's a job status push)
   if (clawtab.job_name && !clawtab.question_id) {
     const params = clawtab.run_id ? `?run_id=${clawtab.run_id}` : "";
-    navigate(`/job/${clawtab.job_name}${params}`);
+    navigate?.(`/job/${clawtab.job_name}${params}`);
     return;
   }
 
@@ -55,50 +98,34 @@ function handleNotificationResponse(
   const actionId = response.actionIdentifier;
 
   if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
-    // User tapped an action button (number like "1", "2", etc.)
-    // Try HTTP POST first (works even without WS connection),
-    // fall back to WS, then queue for later.
-    const qid = clawtab.question_id;
-    const pid = clawtab.pane_id;
-    console.log("[notif] answering via HTTP:", qid, actionId);
-    postAnswer(qid, pid, actionId)
-      .then((res) => console.log("[notif] HTTP answer sent, desktop:", res.sent))
-      .catch((err) => {
-        console.log("[notif] HTTP answer failed:", err, "- falling back");
-        const send = getWsSend();
-        if (send) {
-          console.log("[notif] fallback: sending via WS");
-          send({
-            type: "answer_question" as const,
-            id: nextId(),
-            question_id: qid,
-            pane_id: pid,
-            answer: actionId,
-          });
-        } else {
-          console.log("[notif] fallback: queuing to AsyncStorage");
-          enqueueAnswer({
-            type: "answer_question" as const,
-            id: nextId(),
-            question_id: qid,
-            pane_id: pid,
-            answer: actionId,
-          });
-        }
-      });
+    sendAnswer(clawtab.question_id, clawtab.pane_id, actionId);
     answerQuestion(clawtab.question_id);
-    // Dismiss the notification from the notification center
     Notifications.dismissNotificationAsync(
       response.notification.request.identifier,
     ).catch(() => {});
   }
 
   // Navigate to the job/process screen
-  if (clawtab.matched_job) {
-    navigate(`/job/${clawtab.matched_job}`);
-  } else {
-    navigate(`/process/${clawtab.pane_id.replace(/%/g, "_pct_")}`);
+  if (navigate) {
+    if (clawtab.matched_job) {
+      navigate(`/job/${clawtab.matched_job}`);
+    } else {
+      navigate(`/process/${clawtab.pane_id.replace(/%/g, "_pct_")}`);
+    }
   }
+}
+
+// Call this early (e.g. from root layout) to handle cold-start answers
+// before the router is ready. Only sends the answer, no navigation.
+export function handleColdStartAnswer() {
+  if (Platform.OS === "web") return;
+  const answerQuestion = useNotificationStore.getState().answerQuestion;
+  Notifications.getLastNotificationResponseAsync().then((response) => {
+    if (response) {
+      console.log("[notif] cold-start response:", response.actionIdentifier);
+      handleNotificationResponse(response, answerQuestion);
+    }
+  });
 }
 
 export function useNotifications() {
@@ -112,12 +139,11 @@ export function useNotifications() {
 
     const navigate = (path: string) => router.push(path as never);
 
-    // Check for notification response that launched the app (cold start).
-    // The listener below only catches responses that arrive *after* it's
-    // registered, so a cold-launch tap would be missed without this.
+    // Re-check cold start response now that router is available for navigation.
+    // The answer was already sent by handleColdStartAnswer, but navigation
+    // was skipped; the dedup set prevents double-sending.
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) {
-        console.log("[notif] cold-start response found:", response.actionIdentifier);
         handleNotificationResponse(response, answerQuestion, navigate);
       }
     });

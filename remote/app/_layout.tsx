@@ -8,6 +8,7 @@ import { useJobsStore } from "../src/store/jobs";
 import { useNotificationStore } from "../src/store/notifications";
 import { loadCache } from "../src/lib/jobCache";
 import { loadPendingAnswers } from "../src/lib/pendingAnswers";
+import { handleColdStartAnswer } from "../src/hooks/useNotifications";
 import { colors } from "../src/theme/colors";
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
@@ -34,6 +35,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     init();
+    handleColdStartAnswer();
   }, [init]);
 
   if (loading) {
