@@ -20,6 +20,16 @@ The relay server acts as a message broker. Your phone sends commands (run job, p
 
 The hosted relay is at `https://relay.clawtab.cc`. You can also self-host the relay server.
 
+## Agent Question Detection
+
+![Remote question answering](remote-demo.gif)
+
+When running multiple Claude Code agents across tmux panes, each agent may pause to ask questions (file permissions, approach decisions, clarifications). ClawTab detects these automatically by parsing the terminal output of each pane.
+
+Detected questions appear as cards in the mobile/web interface. Each card shows the agent name, the question text, and the available answer options as tappable buttons. Selecting an answer sends the keystroke back through the relay to the correct tmux pane, resuming the agent.
+
+This lets you run a swarm of agents and handle all their questions from your phone without switching between terminal windows.
+
 ## Setup
 
 The Remote tab in ClawTab walks you through a two-step process:

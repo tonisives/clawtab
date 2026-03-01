@@ -28,6 +28,23 @@
   <img src="docs/promo.gif" alt="ClawTab demo" width="600" />
 </p>
 
+## Controlling Agent Swarms Remotely
+
+<p align="center">
+  <img src="docs/remote-demo.gif" alt="Remote agent control demo" width="600" />
+</p>
+
+- **Auto-detect questions** - Detects when Claude Code agents are waiting for input across your tmux panes.
+- **Unified card view** - See all pending questions from all instances in one interface.
+- **One-tap answers** - Answer options are rendered as buttons. Tap to send the response back to the agent.
+- **Multi-instance support** - Works across multiple terminal windows and tmux panes simultaneously.
+
+Works on web, desktop, and soon mobile.
+
+**Architecture:** A relay server (Rust/Axum) sits between your local machine and remote clients. The desktop app (Tauri) monitors your tmux panes, parses Claude Code output to detect when an agent is waiting for input, and pushes the state to the relay. The web/mobile client connects to the relay, renders agent cards with answer buttons, and sends responses back through the relay to your terminal.
+
+Desktop (Tauri) -> Relay Server (Rust/Axum) -> Web/Mobile Client
+
 ## How It Works
 
 1. **Define Jobs** -- Create jobs in the GUI: shell scripts, Claude Code prompts, or project folders with `.cwt` instructions.
