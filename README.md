@@ -2,10 +2,10 @@
   <img src="docs/github-banner.png" alt="ClawTab" width="600" />
 </p>
 
-<h3 align="center">Schedule Claude Code agents from your menu bar</h3>
+<h3 align="center">Schedule and control Claude Code agent swarms</h3>
 
 <p align="center">
-  A macOS app for running automated Claude Code jobs, shell scripts, and project-based AI agents on a cron schedule, all orchestrated through tmux.
+  A macOS app for running automated Claude Code agents on a cron schedule, monitoring them across tmux panes, and answering their questions remotely from your phone or browser.
 </p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 
 ## Features
 
-- **Three Job Types** -- Run shell scripts (binary), Claude Code prompts, or project-based folder agents with `.cwt` directories.
+- **Remote Agent Control** -- Detect when agents are asking questions, see them as cards, and answer with one tap from your phone or browser.
 - **Tmux Execution** -- Jobs run inside tmux windows. Output is captured, monitored, and logged. Pane splitting for concurrent runs.
 - **Cron Scheduling** -- Standard cron expressions with a 30-second polling loop. Run on schedule, manually, or via CLI.
 - **Secrets Management** -- Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
