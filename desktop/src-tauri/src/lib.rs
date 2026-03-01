@@ -307,6 +307,8 @@ pub fn run() {
             commands::jobs::read_cwt_entry,
             commands::jobs::write_cwt_entry,
             commands::jobs::read_cwt_context,
+            commands::jobs::read_cwt_shared,
+            commands::jobs::write_cwt_shared,
             commands::jobs::derive_job_slug,
             commands::secrets::list_secrets,
             commands::secrets::set_secret,

@@ -121,6 +121,12 @@ pub struct Job {
     pub skill_paths: Vec<String>,
     #[serde(default)]
     pub params: Vec<String>,
+    #[serde(default = "default_true")]
+    pub kill_on_end: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_group() -> String {

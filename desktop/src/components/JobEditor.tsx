@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -63,6 +63,7 @@ const emptyJob: Job = {
   slug: "",
   skill_paths: [],
   params: [],
+  kill_on_end: true,
 };
 
 type WizardStep = "identity" | "settings";
@@ -160,13 +161,49 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [currentStep, setCurrentStep] = useState<WizardStep>("identity");
   const currentIdx = STEPS.findIndex((s) => s.id === currentStep);
 
+  // Existing jobs for import
+  const [existingJobs, setExistingJobs] = useState<Job[]>([]);
+  const [showImportPicker, setShowImportPicker] = useState(false);
+
+  useEffect(() => {
+    if (isNew) {
+      invoke<Job[]>("get_jobs").then(setExistingJobs).catch(() => {});
+    }
+  }, []);
+
+  const importableJobs = existingJobs.filter((j) => j.job_type === "folder");
+
+  const handleImportJob = async (source: Job) => {
+    // Load the source job's content
+    const jn = source.job_name ?? "default";
+    const [jobMd, cwtMd] = await Promise.all([
+      invoke<string>("read_cwt_entry", { folderPath: source.folder_path, jobName: jn }).catch(() => ""),
+      invoke<string>("read_cwt_shared", { folderPath: source.folder_path! }).catch(() => ""),
+    ]);
+    // Prefill form from source (but clear name/slug so user must set new ones)
+    setForm({
+      ...source,
+      name: "",
+      job_name: null,
+      slug: "",
+      enabled: true,
+    });
+    setInlineContent(jobMd);
+    setInlineLoaded(true);
+    setCwtEdited(!!jobMd && jobMd.trim() !== DEFAULT_TEMPLATE.trim());
+    setSharedContent(cwtMd);
+    setSharedLoaded(true);
+    setShowImportPicker(false);
+  };
+
   // Lazy-loaded data
   const [availableSkills, setAvailableSkills] = useState<{ name: string }[] | null>(null);
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
   const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
   const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
-  const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
+  const [sharedContent, setSharedContent] = useState("");
+  const [sharedLoaded, setSharedLoaded] = useState(false);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
@@ -272,39 +309,42 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     }
   }, [currentStep, isWizard]);
 
-  // Auto-init job.md and load preview when folder path changes
-  const refreshCwtPreview = useCallback((folderPath: string, jn: string | null) => {
-    invoke<string>("read_cwt_entry", { folderPath, jobName: jn ?? "default" })
-      .then((content) => {
-        setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
-        if (!inlineLoaded) {
-          setInlineContent(content);
-          setInlineLoaded(true);
-        }
-      })
-      .catch(() => {});
-    invoke<string>("read_cwt_context", { folderPath, jobName: jn ?? "default" })
-      .then(setCwtContextPreview)
-      .catch(() => setCwtContextPreview(null));
-  }, [inlineLoaded]);
-
+  // Load existing content for edit mode (not new wizard)
   useEffect(() => {
-    if (form.job_type === "folder" && form.folder_path) {
-      // Auto-init then load preview
+    if (!isNew && form.job_type === "folder" && form.folder_path) {
       const jn = form.job_name ?? "default";
-      invoke("init_cwt_folder", { folderPath: form.folder_path, jobName: jn }).then(() => {
-        refreshCwtPreview(form.folder_path!, form.job_name);
-      });
-    } else {
-      setCwtContextPreview(null);
+      invoke<string>("read_cwt_entry", { folderPath: form.folder_path, jobName: jn })
+        .then((content) => {
+          setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
+          if (!inlineLoaded) {
+            setInlineContent(content);
+            setInlineLoaded(true);
+          }
+        })
+        .catch(() => {});
+      if (!sharedLoaded) {
+        invoke<string>("read_cwt_shared", { folderPath: form.folder_path })
+          .then((content) => {
+            setSharedContent(content);
+            setSharedLoaded(true);
+          })
+          .catch(() => {});
+      }
     }
-  }, [form.folder_path, form.job_type, form.job_name, refreshCwtPreview]);
+  }, [form.folder_path, form.job_type]);
 
-  // Save inline content immediately on each change
+  // For new wizard jobs, set default inline content
+  useEffect(() => {
+    if (isNew && !inlineLoaded) {
+      setInlineContent(DEFAULT_TEMPLATE);
+    }
+  }, []);
+
+  // Update inline content - only write to disk in edit mode
   const handleInlineChange = (content: string) => {
     setInlineContent(content);
     setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
-    if (form.folder_path) {
+    if (!isNew && form.folder_path) {
       invoke("write_cwt_entry", {
         folderPath: form.folder_path,
         jobName: form.job_name ?? "default",
@@ -328,7 +368,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     setForm({ ...form, skill_paths: paths });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const args = argsText
       .split(/\s+/)
       .filter((s) => s.length > 0);
@@ -337,6 +377,22 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       const eqIdx = line.indexOf("=");
       if (eqIdx > 0) {
         env[line.slice(0, eqIdx).trim()] = line.slice(eqIdx + 1).trim();
+      }
+    }
+    // For new folder jobs, create the .cwt directory and write files now
+    if (isNew && form.job_type === "folder" && form.folder_path) {
+      const jn = form.job_name ?? "default";
+      await invoke("init_cwt_folder", { folderPath: form.folder_path, jobName: jn });
+      await invoke("write_cwt_entry", {
+        folderPath: form.folder_path,
+        jobName: jn,
+        content: inlineContent,
+      });
+      if (sharedContent) {
+        await invoke("write_cwt_shared", {
+          folderPath: form.folder_path,
+          content: sharedContent,
+        });
       }
     }
     onSave({ ...form, args, env });
@@ -431,9 +487,57 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                 disabled={!isNew}
               />
               {isNew && (
-                <button className="btn btn-sm" onClick={pickFolder}>
-                  Browse...
-                </button>
+                <>
+                  <button className="btn btn-sm" onClick={pickFolder}>
+                    Browse...
+                  </button>
+                  {importableJobs.length > 0 && (
+                    <div style={{ position: "relative" }}>
+                      <button className="btn btn-sm" onClick={() => setShowImportPicker(!showImportPicker)}>
+                        Import...
+                      </button>
+                      {showImportPicker && (
+                        <div style={{
+                          position: "absolute",
+                          top: "100%",
+                          right: 0,
+                          marginTop: 4,
+                          background: "var(--bg-secondary, #1a1a1a)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 6,
+                          padding: 4,
+                          zIndex: 100,
+                          minWidth: 200,
+                          maxHeight: 240,
+                          overflowY: "auto",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                        }}>
+                          {importableJobs.map((j) => (
+                            <button
+                              key={j.slug}
+                              className="btn btn-sm"
+                              style={{
+                                display: "block",
+                                width: "100%",
+                                textAlign: "left",
+                                fontSize: 12,
+                                padding: "6px 8px",
+                                border: "none",
+                                borderRadius: 4,
+                              }}
+                              onClick={() => handleImportJob(j)}
+                            >
+                              <div>{j.name}</div>
+                              <div style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                                {j.folder_path?.replace(/\/\.cwt$/, "").split("/").pop()}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <span className="hint">
@@ -504,82 +608,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     </>
   );
 
-  const generateCwtPreview = (): string => {
-    const jn = form.job_name ?? "default";
-    const lines: string[] = [
-      "<!-- Auto-generated by ClawTab. Regenerated on settings/jobs change. -->",
-      "# ClawTab Environment",
-      "",
-      "You are running as an automated Claude Code job.",
-      `Job name: \`${form.name || "(unnamed)"}\``,
-      "",
-      "## Rules",
-      "",
-      "- Only edit and look for files in the current directory.",
-      `- The job directions are in \`.cwt/${jn}/job.md\`.`,
-      "- Shared project context is in `.cwt/cwt.md` (user-managed).",
-      "- When your task is fully complete and you need no further input, terminate your own process by running: `kill $PPID`",
-      "",
-      "## Job Management CLI",
-      "",
-      "`cwtctl` is available for managing ClawTab jobs:",
-      "",
-      "```",
-      "cwtctl ping           # Check if ClawTab daemon is running",
-      "cwtctl list           # List all configured jobs",
-      "cwtctl status         # Show status of all jobs",
-      "cwtctl run <name>     # Run a job immediately",
-      "cwtctl pause <name>   # Pause a running job",
-      "cwtctl resume <name>  # Resume a paused job",
-      "cwtctl restart <name> # Restart a job",
-      "```",
-    ];
-
-    if (form.notify_target === "telegram" && form.telegram_chat_id != null) {
-      lines.push(
-        "",
-        "## Telegram",
-        "",
-        "A `send.sh` helper script is available in the .cwt/ root.",
-        "Always use this script instead of raw curl commands.",
-        "",
-        "```bash",
-        '.cwt/send.sh "<b>Title</b>\\n\\nMessage body"',
-        "```",
-      );
-    }
-
-    lines.push(
-      "",
-      "## Web Browsing",
-      "",
-      "A `browse.sh` helper script is available in the .cwt/ root for Safari automation.",
-      "Always use these helper scripts instead of running osascript or curl directly.",
-      "",
-      "Usage:",
-      "- `.cwt/browse.sh open <url>` -- Open URL in Safari",
-      "- `.cwt/browse.sh read` -- Get text content of active Safari tab",
-      "- `.cwt/browse.sh url` -- Get URL of active Safari tab",
-      "- `.cwt/browse.sh js <javascript>` -- Execute short inline JavaScript in active Safari tab",
-      "- `.cwt/browse.sh jsfile <path>` -- Execute JavaScript from a file (use for complex extraction)",
-    );
-
-    if (form.secret_keys.length > 0) {
-      lines.push(
-        "",
-        "## Environment Variables",
-        "",
-        "The following secrets are injected as env vars at runtime:",
-        "",
-      );
-      for (const key of form.secret_keys) {
-        lines.push(`- \`$${key}\``);
-      }
-    }
-
-    return lines.join("\n");
-  };
-
   const [dragOver, setDragOver] = useState(false);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const inlineContentRef = useRef(inlineContent);
@@ -616,6 +644,16 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     return () => { unlisten.then((fn) => fn()); };
   }, [previewFile]);
 
+  const handleSharedChange = (content: string) => {
+    setSharedContent(content);
+    if (!isNew && form.folder_path) {
+      invoke("write_cwt_shared", {
+        folderPath: form.folder_path,
+        content,
+      }).catch(() => {});
+    }
+  };
+
   const renderDirectionsFields = () => {
     if (form.job_type !== "folder" || !form.folder_path) return null;
 
@@ -646,26 +684,32 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               placeholder=""
             />
           ) : (
-            <pre className="directions-body">
-              {cwtContextPreview || generateCwtPreview()}
-            </pre>
+            <textarea
+              className="directions-editor"
+              value={sharedContent}
+              onChange={(e) => handleSharedChange(e.target.value)}
+              spellCheck={false}
+              placeholder="Shared project context for all jobs in this folder..."
+            />
           )}
         </div>
 
-        <button
-          className="btn btn-sm"
-          style={{ marginTop: 8 }}
-          onClick={() => {
-            invoke("open_job_editor", {
-              folderPath: form.folder_path,
-              editor: preferredEditor,
-              jobName: form.job_name ?? "default",
-              fileName: previewFile,
-            });
-          }}
-        >
-          Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-        </button>
+        {!isNew && (
+          <button
+            className="btn btn-sm"
+            style={{ marginTop: 8 }}
+            onClick={() => {
+              invoke("open_job_editor", {
+                folderPath: form.folder_path,
+                editor: preferredEditor,
+                jobName: previewFile === "cwt.md" ? "." : (form.job_name ?? "default"),
+                fileName: previewFile === "cwt.md" ? "cwt.md" : "job.md",
+              });
+            }}
+          >
+            Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
+          </button>
+        )}
 
         {isWizard && !cwtEdited && (
           <span className="hint" style={{ color: "var(--warning-color)" }}>
@@ -970,6 +1014,23 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const renderConfigFields = () => (
     <>
+      {form.job_type === "folder" && (
+        <div className="form-group">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.kill_on_end}
+              onChange={(e) => setForm({ ...form, kill_on_end: e.target.checked })}
+              style={{ margin: 0 }}
+            />
+            Kill on end
+          </label>
+          <span className="hint">
+            When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
+          </span>
+        </div>
+      )}
+
       <div className="form-group">
         <label>Group</label>
         <input
@@ -1124,6 +1185,23 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const renderAdvancedFields = () => (
     <>
+      {form.job_type === "folder" && (
+        <div className="form-group">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.kill_on_end}
+              onChange={(e) => setForm({ ...form, kill_on_end: e.target.checked })}
+              style={{ margin: 0 }}
+            />
+            Kill on end
+          </label>
+          <span className="hint">
+            When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
+          </span>
+        </div>
+      )}
+
       <div className="form-group">
         <label>Tmux Session</label>
         <input
@@ -1206,21 +1284,21 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           </div>
 
           {currentStep === "identity" && (
-            <div className="wizard-identity-row">
-              <div className="wizard-identity-col">
-                <FieldGroup title="Identity">
-                  {renderIdentityFields()}
-                </FieldGroup>
-              </div>
-              {form.folder_path && (
-                <div className="wizard-directions-col">
-                  <FieldGroup title="Directions">
-                    {renderDirectionsFields()}
-                    {renderParamsFields()}
+              <div className="wizard-identity-row">
+                <div className="wizard-identity-col">
+                  <FieldGroup title="Identity">
+                    {renderIdentityFields()}
                   </FieldGroup>
                 </div>
-              )}
-            </div>
+                {form.folder_path && (
+                  <div className="wizard-directions-col">
+                    <FieldGroup title="Directions">
+                      {renderDirectionsFields()}
+                      {renderParamsFields()}
+                    </FieldGroup>
+                  </div>
+                )}
+              </div>
           )}
 
           {currentStep === "settings" && (

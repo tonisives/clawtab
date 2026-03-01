@@ -55,15 +55,32 @@ export function NotificationSection({
   const prevQuestionsRef = useRef<ClaudeQuestion[]>([]);
   const [entering, setEntering] = useState<Set<string>>(new Set());
   const entranceAnims = useRef<Map<string, Animated.Value>>(new Map());
+  // Track answered question IDs so we skip departing animations for them
+  // (the card already plays its own fly-away animation before removal)
+  const answeredIds = useRef<Set<string>>(new Set());
+
+  const wrappedOnSendOption = useCallback(
+    (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
+      answeredIds.current.add(q.question_id);
+      onSendOption(q, resolvedJob, optionNumber);
+    },
+    [onSendOption],
+  );
 
   // Detect added/removed questions and animate
   useEffect(() => {
     const prev = prevQuestionsRef.current;
     const currentIds = new Set(questions.map((q) => q.question_id));
     const prevIds = new Set(prev.map((q) => q.question_id));
-    const removed = prev.filter((q) => !currentIds.has(q.question_id));
+    const allRemoved = prev.filter((q) => !currentIds.has(q.question_id));
+    // Only animate departures for questions that weren't answered via action buttons
+    // (answered cards already play their own fly-away animation)
+    const removed = allRemoved.filter((q) => !answeredIds.current.has(q.question_id));
     const added = questions.filter((q) => !prevIds.has(q.question_id));
     prevQuestionsRef.current = questions;
+
+    // Clean up answered tracking for removed questions
+    for (const q of allRemoved) answeredIds.current.delete(q.question_id);
 
     // Entrance animations for new questions
     if (added.length > 0) {
@@ -90,7 +107,7 @@ export function NotificationSection({
       }
     }
 
-    if (removed.length === 0) return;
+    if (allRemoved.length === 0) return;
 
     // Adjust scroll position
     if (questions.length > 0 && cardWidth > 0) {
@@ -100,6 +117,8 @@ export function NotificationSection({
         scrollRef.current?.scrollTo({ x: newIndex * cardWidth, animated: true });
       }, 50);
     }
+
+    if (removed.length === 0) return;
 
     const newDeparting = removed.map((question) => {
       const anim = new Animated.Value(0);
@@ -183,7 +202,7 @@ export function NotificationSection({
         question={d.question}
         resolvedJob={resolveJob(d.question)}
         onNavigate={onNavigate}
-        onSendOption={onSendOption}
+        onSendOption={wrappedOnSendOption}
         autoYesActive={autoYesPaneIds?.has(d.question.pane_id)}
         onToggleAutoYes={onToggleAutoYes}
         autoAnswered={autoAnsweredIds?.has(d.question.question_id)}
@@ -237,7 +256,7 @@ export function NotificationSection({
         question={q}
         resolvedJob={resolveJob(q)}
         onNavigate={onNavigate}
-        onSendOption={onSendOption}
+        onSendOption={wrappedOnSendOption}
         autoYesActive={autoYesPaneIds?.has(q.pane_id)}
         onToggleAutoYes={onToggleAutoYes}
         autoAnswered={autoAnsweredIds?.has(q.question_id)}

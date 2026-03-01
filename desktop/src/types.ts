@@ -31,6 +31,7 @@ export interface Job {
   slug: string;
   skill_paths: string[];
   params: string[];
+  kill_on_end: boolean;
 }
 
 export interface AerospaceWorkspace {

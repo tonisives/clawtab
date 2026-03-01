@@ -85,9 +85,10 @@ export function NotificationStack() {
 
   const handleSendOption = useCallback(
     (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
-      answerQuestion(q.question_id);
       sendAnswer(q, resolvedJob, optionNumber);
       dismissQuestionNotification(q.question_id);
+      // Delay store removal so the card's fly-away animation (400ms delay + 300ms) can play
+      setTimeout(() => answerQuestion(q.question_id), 750);
     },
     [answerQuestion, sendAnswer],
   );

@@ -476,10 +476,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     } else {
       invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
     }
-    // Optimistically remove and suppress re-polling from bringing it back
+    // Suppress re-polling from bringing it back
     dismissedRef.current.set(q.question_id, Date.now());
-    setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
     startFastQuestionPoll();
+    // Delay removal so the card's fly-away animation (400ms delay + 300ms) can play
+    setTimeout(() => {
+      setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
+    }, 750);
   }, [startFastQuestionPoll]);
 
   const resolveQuestionJob = useCallback(

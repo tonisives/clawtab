@@ -759,7 +759,8 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
         </SortableContext>
       </DndContext>
 
-      {unmatchedProcesses.length > 0 && (() => {
+      {(() => {
+        if (unmatchedProcesses.length === 0) return null;
         // Group detected processes by their cwd
         const byFolder = new Map<string, ClaudeProcess[]>();
         for (const proc of unmatchedProcesses) {
@@ -767,7 +768,7 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
           list.push(proc);
           byFolder.set(proc.cwd, list);
         }
-        // Folders with 2+ processes become sub-groups, rest go into ungrouped
+        // Folders with 2+ processes get their own group, rest stay in "Detected"
         const folderGroups: [string, ClaudeProcess[]][] = [];
         const ungrouped: ClaudeProcess[] = [];
         for (const [folder, procs] of byFolder) {
@@ -777,29 +778,16 @@ export function JobsPanel({ pendingTemplateId, onTemplateHandled, createJobKey }
             ungrouped.push(...procs);
           }
         }
-        // If no folder groups, render flat like before
-        if (folderGroups.length === 0) {
-          return (
-            <DetectedProcessesGroup
-              processes={unmatchedProcesses}
-              isCollapsed={collapsedGroups.has("_detected")}
-              onToggle={() => toggleGroup("_detected")}
-              tableHead={tableHead}
-              jobSelectMode={jobSelectMode}
-              onAddJob={(folderPath) => { setCreateForGroup({ group: "default", folderPath }); setIsCreating(true); }}
-            />
-          );
-        }
         return (
           <>
             {folderGroups.map(([folder, procs]) => {
-              const displayFolder = folder.startsWith("/") ? "~" + folder : folder;
+              const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
               const groupKey = `_detected_${folder}`;
               return (
                 <DetectedProcessesGroup
                   key={groupKey}
                   processes={procs}
-                  label={displayFolder}
+                  label={folderName}
                   isCollapsed={collapsedGroups.has(groupKey)}
                   onToggle={() => toggleGroup(groupKey)}
                   tableHead={tableHead}
@@ -1653,8 +1641,10 @@ function JobDetailView({
   const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
   const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
   const [inlineContent, setInlineContent] = useState("");
-  const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
+  const [sharedContent, setSharedContent] = useState("");
+  const [savedSharedContent, setSavedSharedContent] = useState("");
+  const sharedDirty = sharedContent !== savedSharedContent;
 
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
@@ -1687,9 +1677,12 @@ function JobDetailView({
           setSavedContent(content);
         })
         .catch(() => {});
-      invoke<string>("read_cwt_context", { folderPath: job.folder_path, jobName: jn })
-        .then(setCwtContextPreview)
-        .catch(() => setCwtContextPreview(null));
+      invoke<string>("read_cwt_shared", { folderPath: job.folder_path })
+        .then((content) => {
+          setSharedContent(content);
+          setSavedSharedContent(content);
+        })
+        .catch(() => {});
     }
   }, [job]);
 
@@ -1894,14 +1887,29 @@ function JobDetailView({
                     placeholder=""
                   />
                 ) : (
-                  <pre className="directions-body">
-                    {cwtContextPreview || "(no cwt.md)"}
-                  </pre>
+                  <textarea
+                    className="directions-editor"
+                    value={sharedContent}
+                    onChange={(e) => setSharedContent(e.target.value)}
+                    spellCheck={false}
+                    placeholder="Shared project context for all jobs in this folder..."
+                  />
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                {dirty && (
+                {previewFile === "job.md" && dirty && (
                   <button className="btn btn-primary btn-sm" onClick={handleSaveDirections}>
+                    Save
+                  </button>
+                )}
+                {previewFile === "cwt.md" && sharedDirty && (
+                  <button className="btn btn-primary btn-sm" onClick={() => {
+                    if (job.folder_path) {
+                      invoke("write_cwt_shared", { folderPath: job.folder_path, content: sharedContent })
+                        .then(() => setSavedSharedContent(sharedContent))
+                        .catch(() => {});
+                    }
+                  }}>
                     Save
                   </button>
                 )}
@@ -1911,8 +1919,8 @@ function JobDetailView({
                     invoke("open_job_editor", {
                       folderPath: job.folder_path,
                       editor: preferredEditor,
-                      jobName: job.job_name ?? "default",
-                      fileName: previewFile,
+                      jobName: previewFile === "cwt.md" ? "." : (job.job_name ?? "default"),
+                      fileName: previewFile === "cwt.md" ? "cwt.md" : "job.md",
                     });
                   }}
                 >

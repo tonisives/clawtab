@@ -112,10 +112,38 @@ export function JobListView({
     }
 
     if (unmatchedProcesses.length > 0) {
-      result.push({ kind: "header", group: "Detected", displayGroup: "Detected" });
-      if (!collapsedGroups.has("Detected")) {
-        for (const proc of unmatchedProcesses) {
-          result.push({ kind: "process", process: proc });
+      // Group unmatched processes by CWD: folders with 2+ get their own group
+      const byFolder = new Map<string, ClaudeProcess[]>();
+      for (const proc of unmatchedProcesses) {
+        const list = byFolder.get(proc.cwd) ?? [];
+        list.push(proc);
+        byFolder.set(proc.cwd, list);
+      }
+      const folderGroups: [string, ClaudeProcess[]][] = [];
+      const ungrouped: ClaudeProcess[] = [];
+      for (const [folder, procs] of byFolder) {
+        if (procs.length >= 2 && folder) {
+          folderGroups.push([folder, procs]);
+        } else {
+          ungrouped.push(...procs);
+        }
+      }
+      for (const [folder, procs] of folderGroups) {
+        const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
+        const groupKey = `_det_${folder}`;
+        result.push({ kind: "header", group: groupKey, displayGroup: folderName });
+        if (!collapsedGroups.has(groupKey)) {
+          for (const proc of procs) {
+            result.push({ kind: "process", process: proc });
+          }
+        }
+      }
+      if (ungrouped.length > 0) {
+        result.push({ kind: "header", group: "Detected", displayGroup: "Detected" });
+        if (!collapsedGroups.has("Detected")) {
+          for (const proc of ungrouped) {
+            result.push({ kind: "process", process: proc });
+          }
         }
       }
     }

@@ -116,11 +116,13 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             continue;
         }
 
-        // Match against configured jobs (CWD match only sets group, not job)
+        // Match against configured jobs: prefer exact CWD match only.
+        // Prefix matching (starts_with) is too greedy - a job at /automation
+        // would incorrectly claim processes in /automation/business/seo-optimise.
         let mut matched_group = None;
         let matched_job = None;
         for (root, group, _name) in &match_entries {
-            if cwd == root || cwd.starts_with(&format!("{}/", root)) {
+            if cwd == root {
                 matched_group = Some(group.clone());
                 break;
             }

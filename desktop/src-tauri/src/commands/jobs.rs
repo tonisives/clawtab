@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::{Emitter, State};
 
-use crate::config::jobs::{Job, JobStatus, NotifyTarget};
+use crate::config::jobs::{Job, JobStatus};
 use crate::config::settings::AppSettings;
 use crate::cwt::CwtFolder;
 use crate::scheduler;
@@ -365,9 +365,6 @@ pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<
             .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
-    // Write browse.sh into the .cwt/ root (shared across all jobs)
-    write_browse_sh(cwt_root);
-
     // Lazy migration: move .cwt/job.md -> .cwt/default/job.md if needed
     crate::config::jobs::migrate_cwt_root(cwt_root);
 
@@ -386,124 +383,6 @@ pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<
     }
 
     CwtFolder::from_path_with_job(cwt_root, job_name)
-}
-
-/// Current version of browse.sh. Bump when the script content changes
-/// so existing installations get the updated version.
-const BROWSE_SH_VERSION: &str = "v2";
-
-/// Write the browse.sh Safari helper script into a .cwt/ root directory.
-/// Always overwrites if the version marker differs from BROWSE_SH_VERSION.
-fn write_browse_sh(cwt_root: &std::path::Path) {
-    let browse_sh = cwt_root.join("browse.sh");
-    if browse_sh.exists() {
-        if let Ok(existing) = std::fs::read_to_string(&browse_sh) {
-            if existing.contains(&format!("# version: {}", BROWSE_SH_VERSION)) {
-                return;
-            }
-        }
-    }
-    let script = format!(
-        r#"#!/bin/bash
-# ClawTab Safari Browser Helper
-# version: {}
-# Usage: ./browse.sh <command> [args...]
-#   open <url>       -- Open URL in Safari
-#   read             -- Get text content of active Safari tab
-#   url              -- Get URL of active Safari tab
-#   js <javascript>  -- Execute JavaScript in active Safari tab
-#   jsfile <path>    -- Execute JavaScript from a file in active Safari tab
-
-set -euo pipefail
-
-case "${{1:-}}" in
-  open)
-    open -a Safari "${{2:?URL required}}"
-    sleep 2
-    ;;
-  read)
-    osascript -e 'tell application "Safari" to return source of front document' \
-      | sed 's/<[^>]*>//g' | sed '/^$/d' | head -200
-    ;;
-  url)
-    osascript -e 'tell application "Safari" to return URL of front document'
-    ;;
-  js)
-    osascript -e "tell application \"Safari\" to do JavaScript \"${{2:?JS required}}\" in front document"
-    ;;
-  jsfile)
-    JS_CODE=$(cat "${{2:?File path required}}" | tr '\n' ' ' | sed 's/"/\\"/g')
-    osascript -e "tell application \"Safari\" to do JavaScript \"$JS_CODE\" in front document"
-    ;;
-  *)
-    echo "Usage: $0 {{open|read|url|js|jsfile}} [args...]"
-    exit 1
-    ;;
-esac
-"#,
-        BROWSE_SH_VERSION
-    );
-    if let Err(e) = std::fs::write(&browse_sh, script) {
-        log::warn!("Failed to write browse.sh: {}", e);
-        return;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        if let Err(e) = std::fs::set_permissions(&browse_sh, perms) {
-            log::warn!("Failed to chmod browse.sh: {}", e);
-        }
-    }
-}
-
-/// Current version of send.sh. Bump when the script content changes.
-const SEND_SH_VERSION: &str = "v1";
-
-/// Write the send.sh Telegram helper script into a .cwt/ root directory.
-/// Always overwrites if the version marker differs from SEND_SH_VERSION.
-fn write_send_sh(cwt_root: &std::path::Path, chat_id: i64) {
-    let send_sh = cwt_root.join("send.sh");
-    if send_sh.exists() {
-        if let Ok(existing) = std::fs::read_to_string(&send_sh) {
-            if existing.contains(&format!("# version: {}", SEND_SH_VERSION))
-                && existing.contains(&format!("CHAT_ID={}", chat_id))
-            {
-                return;
-            }
-        }
-    }
-    let script = format!(
-        r#"#!/bin/bash
-# ClawTab Telegram Send Helper
-# version: {}
-# Usage: ./send.sh <message>
-#   Sends an HTML-formatted message to the configured Telegram chat.
-
-set -euo pipefail
-
-CHAT_ID={}
-MESSAGE="${{1:?Message required}}"
-
-curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-  -H "Content-Type: application/json" \
-  -d "$(jq -n --arg chat_id "$CHAT_ID" --arg text "$MESSAGE" \
-    '{{chat_id: ($chat_id | tonumber), text: $text, parse_mode: "HTML"}}')"
-"#,
-        SEND_SH_VERSION, chat_id
-    );
-    if let Err(e) = std::fs::write(&send_sh, script) {
-        log::warn!("Failed to write send.sh: {}", e);
-        return;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o755);
-        if let Err(e) = std::fs::set_permissions(&send_sh, perms) {
-            log::warn!("Failed to chmod send.sh: {}", e);
-        }
-    }
 }
 
 #[tauri::command]
@@ -539,6 +418,29 @@ pub fn read_cwt_context(folder_path: String, job_name: Option<String>) -> Result
     }
     std::fs::read_to_string(&cwt_md)
         .map_err(|e| format!("Failed to read {}: {}", cwt_md.display(), e))
+}
+
+#[tauri::command]
+pub fn read_cwt_shared(folder_path: String) -> Result<String, String> {
+    let cwt_root = std::path::Path::new(&folder_path);
+    let cwt_md = cwt_root.join("cwt.md");
+    if !cwt_md.exists() {
+        return Ok(String::new());
+    }
+    std::fs::read_to_string(&cwt_md)
+        .map_err(|e| format!("Failed to read {}: {}", cwt_md.display(), e))
+}
+
+#[tauri::command]
+pub fn write_cwt_shared(folder_path: String, content: String) -> Result<(), String> {
+    let cwt_root = std::path::Path::new(&folder_path);
+    if !cwt_root.exists() {
+        std::fs::create_dir_all(cwt_root)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+    let cwt_md = cwt_root.join("cwt.md");
+    std::fs::write(&cwt_md, content)
+        .map_err(|e| format!("Failed to write {}: {}", cwt_md.display(), e))
 }
 
 #[tauri::command]
@@ -686,10 +588,6 @@ fn write_claude_settings(dir: &std::path::Path) {
                 "Bash(sed *)",
                 "Bash(awk *)",
                 "Bash(chmod *)",
-                "Bash(.cwt/browse.sh *)",
-                "Bash(./browse.sh *)",
-                "Bash(.cwt/send.sh *)",
-                "Bash(./send.sh *)",
                 "Bash(osascript *)",
                 "Bash(echo *)",
                 "Bash(printf *)",
@@ -808,16 +706,6 @@ pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
                         log::warn!("Failed to write cwt.md for '{}': {}", job.name, e);
                     }
 
-                    // Write helper scripts into .cwt/ root
-                    write_browse_sh(cwt_root);
-                    // Only write send.sh when notify_target is Telegram
-                    if job.notify_target == NotifyTarget::Telegram {
-                        let chat_id = resolve_telegram_chat_id(job, settings);
-                        if let Some(cid) = chat_id {
-                            write_send_sh(cwt_root, cid);
-                        }
-                    }
-
                     // Write Claude Code permissions in the project root (parent of .cwt)
                     if let Some(project_root) = cwt_root.parent() {
                         let pr = project_root.to_path_buf();
@@ -927,7 +815,7 @@ pub fn read_agent_context() -> Result<String, String> {
         .map_err(|e| format!("Failed to read {}: {}", path.display(), e))
 }
 
-fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
+fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
     let mut out = String::new();
     let jn = job.job_name.as_deref().unwrap_or("default");
 
@@ -941,7 +829,9 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     out.push_str(&format!("- The job directions are in `.cwt/{}/job.md`.\n", jn));
     out.push_str("- Shared project context is in `.cwt/cwt.md` (user-managed).\n");
     out.push_str("- Notifications are handled by ClawTab. Do not send notifications directly.\n");
-    out.push_str("- When your task is fully complete and you need no further input, terminate your own process by running: `kill $PPID`\n");
+    if job.kill_on_end {
+        out.push_str("- When your task is fully complete and you need no further input, terminate your own process by running: `kill $PPID`\n");
+    }
 
     out.push_str("\n## Job Management CLI\n\n");
     out.push_str("`cwtctl` is available for managing ClawTab jobs:\n\n");
@@ -954,45 +844,6 @@ fn generate_cwt_context(job: &Job, settings: &AppSettings) -> String {
     out.push_str("cwtctl resume <name>  # Resume a paused job\n");
     out.push_str("cwtctl restart <name> # Restart a job\n");
     out.push_str("```\n");
-
-    // Telegram section: only when notify_target is Telegram
-    if job.notify_target == NotifyTarget::Telegram {
-        let has_token = job.secret_keys.iter().any(|k| k == "TELEGRAM_BOT_TOKEN")
-            || settings.telegram.as_ref().map_or(false, |tg| !tg.bot_token.is_empty());
-        let chat_id = resolve_telegram_chat_id(job, settings);
-
-        if has_token {
-            if let Some(_cid) = chat_id {
-                out.push_str("\n## Telegram\n\n");
-                out.push_str("A `send.sh` helper script is available in the .cwt/ root.\n");
-                out.push_str("Always use this script instead of raw curl commands.\n\n");
-                out.push_str("```bash\n");
-                out.push_str(".cwt/send.sh \"<b>Title</b>\\n\\nMessage body\"\n");
-                out.push_str("```\n");
-            }
-        }
-    }
-
-    // Web Browsing section
-    if let Some(ref folder_path) = job.folder_path {
-        let browse_sh = std::path::Path::new(folder_path).join("browse.sh");
-        if browse_sh.exists() {
-            out.push_str("\n## Web Browsing\n\n");
-            out.push_str("A `browse.sh` helper script is available in the .cwt/ root for Safari automation.\n");
-            out.push_str("Always use these helper scripts instead of running osascript or curl directly.\n\n");
-            out.push_str("Usage:\n");
-            out.push_str("- `.cwt/browse.sh open <url>` -- Open URL in Safari\n");
-            out.push_str("- `.cwt/browse.sh read` -- Get text content of active Safari tab\n");
-            out.push_str("- `.cwt/browse.sh url` -- Get URL of active Safari tab\n");
-            out.push_str("- `.cwt/browse.sh js <javascript>` -- Execute short inline JavaScript in active Safari tab\n");
-            out.push_str("- `.cwt/browse.sh jsfile <path>` -- Execute JavaScript from a file (use for complex extraction)\n\n");
-            out.push_str("For complex JavaScript extraction, write a `.js` file and use `jsfile`:\n\n");
-            out.push_str("```bash\n");
-            out.push_str("# Write extraction logic to a file, then run it\n");
-            out.push_str(".cwt/browse.sh jsfile .cwt/my-job/extract.js\n");
-            out.push_str("```\n");
-        }
-    }
 
     // Env vars section: only if any secrets configured
     if !job.secret_keys.is_empty() {
@@ -1058,6 +909,7 @@ pub fn build_agent_job(
         slug: "agent/default".to_string(),
         skill_paths: Vec::new(),
         params: Vec::new(),
+        kill_on_end: true,
     })
 }
 
@@ -1088,14 +940,3 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(),
     Ok(())
 }
 
-fn resolve_telegram_chat_id(job: &Job, settings: &AppSettings) -> Option<i64> {
-    // Per-job chat_id takes priority
-    if let Some(cid) = job.telegram_chat_id {
-        return Some(cid);
-    }
-    // Fall back to first global chat_id
-    if let Some(ref tg) = settings.telegram {
-        return tg.chat_ids.first().copied();
-    }
-    None
-}
