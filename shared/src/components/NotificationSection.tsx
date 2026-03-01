@@ -58,10 +58,27 @@ export function NotificationSection({
   // Track answered question IDs so we skip departing animations for them
   // (the card already plays its own fly-away animation before removal)
   const answeredIds = useRef<Set<string>>(new Set());
+  // Track section collapse: when the last card starts flying, collapse the
+  // entire section (header + margins) with the same CSS transition.
+  const [sectionFlying, setSectionFlying] = useState(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const sectionHeight = useRef(0);
+  // Track section expanding: when section first appears, expand from height 0
+  const expandingRef = useRef(false);
+  const wasEmpty = useRef(true);
+
+  // Reset when new questions arrive
+  useEffect(() => {
+    if (questions.length > 0) setSectionFlying(false);
+  }, [questions.length]);
 
   const wrappedOnSendOption = useCallback(
     (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
       answeredIds.current.add(q.question_id);
+      // Snapshot the section height before anything changes
+      if (isWeb && sectionRef.current) {
+        sectionHeight.current = sectionRef.current.offsetHeight;
+      }
       onSendOption(q, resolvedJob, optionNumber);
     },
     [onSendOption],
@@ -153,6 +170,15 @@ export function NotificationSection({
   const count = questions.length;
   const hasDeparting = departing.length > 0;
 
+  // Called by NotificationCard when the last card starts its fly-away
+  const handleCardFlyStart = useCallback(() => {
+    // All questions have been answered - collapse the section with the card
+    const unanswered = questions.filter((q) => !answeredIds.current.has(q.question_id));
+    if (unanswered.length === 0) {
+      setSectionFlying(true);
+    }
+  }, [questions]);
+
   const displayCount = count || departing.length;
   const clampedIndex = Math.min(activeIndex, Math.max(count - 1, 0));
 
@@ -191,7 +217,18 @@ export function NotificationSection({
   }, [clampedIndex, count, scrollToIndex]);
 
   // Nothing to show
-  if (count === 0 && !hasDeparting) return null;
+  const isEmpty = count === 0 && !hasDeparting;
+  if (isEmpty) {
+    wasEmpty.current = true;
+    return null;
+  }
+  // Mark for expand animation when transitioning from empty to non-empty
+  if (wasEmpty.current && isWeb) {
+    wasEmpty.current = false;
+    expandingRef.current = true;
+  } else if (wasEmpty.current) {
+    wasEmpty.current = false;
+  }
 
   const prevPath = count > 0 && clampedIndex > 0 ? shortenPath(questions[clampedIndex - 1].cwd) : null;
   const nextPath = count > 0 && clampedIndex < count - 1 ? shortenPath(questions[clampedIndex + 1].cwd) : null;
@@ -260,6 +297,7 @@ export function NotificationSection({
         autoYesActive={autoYesPaneIds?.has(q.pane_id)}
         onToggleAutoYes={onToggleAutoYes}
         autoAnswered={autoAnsweredIds?.has(q.question_id)}
+        onFlyStart={handleCardFlyStart}
       />
     );
 
@@ -298,7 +336,7 @@ export function NotificationSection({
     );
   };
 
-  return (
+  const sectionContent = (
     <View style={styles.container}>
       <TouchableOpacity
         onPress={onToggleCollapse}
@@ -358,6 +396,46 @@ export function NotificationSection({
         </View>
       )}
     </View>
+  );
+
+  if (!isWeb) return sectionContent;
+
+  // On web, wrap in a div that expands/collapses height with CSS transitions
+  return (
+    <div
+      ref={(el: HTMLDivElement | null) => {
+        (sectionRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        // When section first appears, animate expand from height 0
+        if (el && expandingRef.current) {
+          expandingRef.current = false;
+          const h = el.scrollHeight;
+          el.style.height = "0px";
+          el.style.overflow = "hidden";
+          el.style.opacity = "0";
+          requestAnimationFrame(() => {
+            el.style.transition = "height 300ms ease, opacity 300ms ease";
+            el.style.height = h + "px";
+            el.style.opacity = "1";
+            const done = () => {
+              el.removeEventListener("transitionend", done);
+              el.style.height = "";
+              el.style.overflow = "";
+              el.style.transition = "";
+            };
+            el.addEventListener("transitionend", done);
+          });
+        }
+      }}
+      style={sectionFlying ? {
+        height: 0,
+        overflow: "hidden",
+        opacity: 0,
+        transition: "height 300ms ease, opacity 300ms ease",
+        pointerEvents: "none",
+      } : undefined}
+    >
+      {sectionContent}
+    </div>
   );
 }
 

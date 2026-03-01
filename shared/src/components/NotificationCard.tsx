@@ -26,6 +26,8 @@ export interface NotificationCardProps {
   onToggleAutoYes?: (question: ClaudeQuestion) => void;
   /** Card was auto-answered - show briefly then dismiss */
   autoAnswered?: boolean;
+  /** Called when the card starts its fly-away animation (web only) */
+  onFlyStart?: () => void;
 }
 
 export function NotificationCard({
@@ -36,10 +38,12 @@ export function NotificationCard({
   autoYesActive,
   onToggleAutoYes,
   autoAnswered,
+  onFlyStart,
 }: NotificationCardProps) {
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
   const flyAnim = useRef(new Animated.Value(0)).current;
+  const webCardHeight = useRef(0);
 
   // Reset answered state when question changes
   useEffect(() => {
@@ -67,9 +71,12 @@ export function NotificationCard({
 
   useEffect(() => {
     if (!answered || !isWeb) return;
-    const timer = setTimeout(() => setFlying(true), 400);
+    const timer = setTimeout(() => {
+      setFlying(true);
+      onFlyStart?.();
+    }, 400);
     return () => clearTimeout(timer);
-  }, [answered]);
+  }, [answered]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleOptionPress = (optionNumber: string) => {
     onSendOption(question, resolvedJob, optionNumber);
@@ -166,11 +173,22 @@ export function NotificationCard({
 
   if (isWeb) {
     return (
-      <div style={{
-        transition: "opacity 300ms ease, transform 300ms ease",
-        opacity: flying ? 0 : 1,
-        transform: flying ? "translateX(300px) scale(0.85)" : "translateX(0) scale(1)",
-      }}>
+      <div
+        ref={(el: HTMLDivElement | null) => {
+          if (el && !flying) webCardHeight.current = el.offsetHeight;
+        }}
+        style={{
+          transition: answered
+            ? "opacity 300ms ease, transform 300ms ease, height 300ms ease"
+            : undefined,
+          opacity: flying ? 0 : 1,
+          transform: flying ? "translateX(300px) scale(0.85)" : "translateX(0) scale(1)",
+          // Pin height when answered so we have an explicit value for CSS to transition from.
+          // When flying, collapse to 0.
+          height: answered ? (flying ? 0 : webCardHeight.current || undefined) : undefined,
+          overflow: answered ? "hidden" : undefined,
+        }}
+      >
         <View style={styles.card}>{cardContent}</View>
       </div>
     );

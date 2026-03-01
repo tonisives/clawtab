@@ -43,6 +43,7 @@
       "bundler": "metro"
     },
     "plugins": [
+      "./plugins/with-native-answer",
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",

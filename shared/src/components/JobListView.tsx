@@ -165,6 +165,96 @@ export function JobListView({
     onRefresh?.();
   }, [onRefresh]);
 
+  const renderItems = () => {
+    if (items.length === 0 && showEmpty) {
+      return (
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>No jobs</Text>
+          <Text style={styles.emptyText}>{emptyMessage}</Text>
+        </View>
+      );
+    }
+    return items.map((item, index) => {
+      const key =
+        item.kind === "agent"
+          ? "agent"
+          : item.kind === "header"
+            ? `h_${item.group}`
+            : item.kind === "process"
+              ? `p_${item.process.pane_id}`
+              : `j_${item.job.name}`;
+
+      if (item.kind === "agent") {
+        return (
+          <View key={key} style={{ marginBottom: spacing.md }}>
+            <AgentSection
+              agentStatus={agentStatus}
+              agentProcess={agentProcess}
+              collapsed={collapsedGroups.has("Agent")}
+              onToggleCollapse={() => onToggleGroup("Agent")}
+              onRunAgent={onRunAgent!}
+              onSelectProcess={onSelectProcess ? () => onSelectProcess(agentProcess!) : undefined}
+            />
+          </View>
+        );
+      }
+
+      if (item.kind === "header") {
+        const isCollapsed = collapsedGroups.has(item.group);
+        return (
+          <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+            <TouchableOpacity
+              onPress={() => onToggleGroup(item.group)}
+              style={styles.groupHeaderRow}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.groupHeaderArrow}>
+                {isCollapsed ? "\u25B6" : "\u25BC"}
+              </Text>
+              <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      if (item.kind === "process") {
+        return (
+          <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+            <ProcessCard
+              process={item.process}
+              onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
+            />
+          </View>
+        );
+      }
+
+      // job
+      const status = statuses[item.job.name] ?? IDLE_STATUS;
+      return (
+        <View
+          key={key}
+          style={[
+            item.idx % 2 === 1 ? { opacity: 0.85 } : undefined,
+            index > 0 ? { marginTop: spacing.sm } : undefined,
+          ]}
+        >
+          {status.state === "running" ? (
+            <RunningJobCard
+              jobName={item.job.name}
+              onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
+            />
+          ) : (
+            <JobCard
+              job={item.job}
+              status={status}
+              onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
+            />
+          )}
+        </View>
+      );
+    });
+  };
+
   return (
     <ScrollView
       ref={scrollRef}
@@ -181,92 +271,7 @@ export function JobListView({
       }
     >
       {headerContent}
-      {items.length === 0 && showEmpty ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No jobs</Text>
-          <Text style={styles.emptyText}>{emptyMessage}</Text>
-        </View>
-      ) : (
-        items.map((item, index) => {
-          const key =
-            item.kind === "agent"
-              ? "agent"
-              : item.kind === "header"
-                ? `h_${item.group}`
-                : item.kind === "process"
-                  ? `p_${item.process.pane_id}`
-                  : `j_${item.job.name}`;
-
-          if (item.kind === "agent") {
-            return (
-              <View key={key} style={{ marginBottom: spacing.md }}>
-                <AgentSection
-                  agentStatus={agentStatus}
-                  agentProcess={agentProcess}
-                  collapsed={collapsedGroups.has("Agent")}
-                  onToggleCollapse={() => onToggleGroup("Agent")}
-                  onRunAgent={onRunAgent!}
-                  onSelectProcess={onSelectProcess ? () => onSelectProcess(agentProcess!) : undefined}
-                />
-              </View>
-            );
-          }
-
-          if (item.kind === "header") {
-            const isCollapsed = collapsedGroups.has(item.group);
-            return (
-              <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-                <TouchableOpacity
-                  onPress={() => onToggleGroup(item.group)}
-                  style={styles.groupHeaderRow}
-                  activeOpacity={0.6}
-                >
-                  <Text style={styles.groupHeaderArrow}>
-                    {isCollapsed ? "\u25B6" : "\u25BC"}
-                  </Text>
-                  <Text style={styles.groupHeader}>{item.displayGroup}</Text>
-                </TouchableOpacity>
-              </View>
-            );
-          }
-
-          if (item.kind === "process") {
-            return (
-              <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-                <ProcessCard
-                  process={item.process}
-                  onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
-                />
-              </View>
-            );
-          }
-
-          // job
-          const status = statuses[item.job.name] ?? IDLE_STATUS;
-          return (
-            <View
-              key={key}
-              style={[
-                item.idx % 2 === 1 ? { opacity: 0.85 } : undefined,
-                index > 0 ? { marginTop: spacing.sm } : undefined,
-              ]}
-            >
-              {status.state === "running" ? (
-                <RunningJobCard
-                  jobName={item.job.name}
-                  onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
-                />
-              ) : (
-                <JobCard
-                  job={item.job}
-                  status={status}
-                  onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
-                />
-              )}
-            </View>
-          );
-        })
-      )}
+      {renderItems()}
     </ScrollView>
   );
 }

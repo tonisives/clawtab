@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { RemoteJob, JobStatus } from "@clawtab/shared";
@@ -495,64 +495,27 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     [],
   );
 
-  // Animate the notification section collapse so groups below slide up smoothly.
-  // When the last card is answered we immediately capture the section height, then
-  // after the card fly-away completes we CSS-transition that height to 0.
-  const nfnContentRef = useRef<HTMLDivElement>(null);
-  const nfnSavedHeight = useRef(0);
-  const [nfnCollapsing, setNfnCollapsing] = useState(false);
-  const [nfnCollapseHeight, setNfnCollapseHeight] = useState<number>(0);
+  // Keep rendering NotificationSection briefly after questions drop to 0 so departure
+  // animations play out before the section disappears.
   const [nfnVisible, setNfnVisible] = useState(questions.length > 0);
   const nfnHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Snapshot the wrapper height whenever questions are present so we have an
-  // accurate value before the content disappears.
-  useLayoutEffect(() => {
-    if (questions.length > 0 && nfnContentRef.current) {
-      nfnSavedHeight.current = nfnContentRef.current.offsetHeight;
-    }
-  });
-
-  // useLayoutEffect so the pinned height is applied before the browser paints,
-  // preventing a single frame where the content jumps.
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (questions.length > 0) {
       if (nfnHideTimer.current) clearTimeout(nfnHideTimer.current);
-      setNfnCollapsing(false);
       setNfnVisible(true);
-    } else if (nfnVisible && !nfnCollapsing) {
-      const h = nfnSavedHeight.current;
-
-      if (h > 0) {
-        // Pin the wrapper to the saved height immediately so it doesn't jump
-        // when NotificationSection returns null
-        setNfnCollapseHeight(h);
-        setNfnCollapsing(true);
-        // After the card fly-away finishes, transition height to 0
-        nfnHideTimer.current = setTimeout(() => {
-          setNfnCollapseHeight(0);
-        }, 500);
-      } else {
-        setNfnVisible(false);
-      }
+    } else {
+      nfnHideTimer.current = setTimeout(() => setNfnVisible(false), 500);
     }
     return () => { if (nfnHideTimer.current) clearTimeout(nfnHideTimer.current); };
-  }, [questions.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleNfnTransitionEnd = useCallback((e: React.TransitionEvent) => {
-    if (e.propertyName === "height" && nfnCollapsing) {
-      setNfnCollapsing(false);
-      setNfnVisible(false);
-    }
-  }, [nfnCollapsing]);
+  }, [questions.length]);
 
   const notificationSection = useMemo(() => {
-    if (!nfnVisible && !nfnCollapsing && autoYesEntries.length === 0) return undefined;
-
-    const content = (
+    if (!nfnVisible && autoYesEntries.length === 0) return undefined;
+    return (
       <>
         <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} />
-        {(nfnVisible || nfnCollapsing) && (
+        {nfnVisible && (
           <NotificationSection
             questions={questions}
             resolveJob={resolveQuestionJob}
@@ -566,24 +529,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         )}
       </>
     );
-
-    if (!nfnVisible && !nfnCollapsing) return content;
-
-    return (
-      <div
-        ref={nfnContentRef}
-        style={{
-          overflow: nfnCollapsing ? "hidden" : undefined,
-          height: nfnCollapsing ? nfnCollapseHeight : undefined,
-          transition: nfnCollapsing && nfnCollapseHeight === 0 ? "height 300ms ease-out" : undefined,
-          pointerEvents: nfnCollapsing ? "none" : undefined,
-        }}
-        onTransitionEnd={handleNfnTransitionEnd}
-      >
-        {content}
-      </div>
-    );
-  }, [nfnVisible, nfnCollapsing, nfnCollapseHeight, handleNfnTransitionEnd, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup, autoYesPaneIds, handleToggleAutoYes, autoYesEntries, handleDisableAutoYes]);
+  }, [nfnVisible, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup, autoYesPaneIds, handleToggleAutoYes, autoYesEntries, handleDisableAutoYes]);
 
   // Editor / picker screens (React DOM, kept as-is)
   if (editingJob || isCreating) {
