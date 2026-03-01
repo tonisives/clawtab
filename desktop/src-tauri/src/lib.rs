@@ -522,6 +522,7 @@ pub fn run() {
                             rs.server_url.clone()
                         };
                         let server_url_for_sub = rs.server_url.clone();
+                        let app_handle_for_relay = app.handle().clone();
                         tauri::async_runtime::spawn(async move {
                             relay::connect_loop(
                                 ws_url,
@@ -536,6 +537,7 @@ pub fn run() {
                                 settings_for_relay,
                                 active_agents_for_relay,
                                 auto_yes_for_relay,
+                                app_handle_for_relay,
                             )
                             .await;
                         });

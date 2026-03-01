@@ -206,6 +206,7 @@ pub async fn connect_loop(
     settings: Arc<Mutex<AppSettings>>,
     active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     auto_yes_panes: Arc<Mutex<std::collections::HashSet<String>>>,
+    app_handle: tauri::AppHandle,
 ) {
     let mut backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(60);
@@ -287,6 +288,7 @@ pub async fn connect_loop(
                     &settings,
                     &active_agents,
                     &auto_yes_panes,
+                    &app_handle,
                 )
                 .await;
 
@@ -332,6 +334,7 @@ async fn run_session<S, R>(
     settings: &Arc<Mutex<AppSettings>>,
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
+    app_handle: &tauri::AppHandle,
 ) where
     S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     R: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
@@ -358,6 +361,7 @@ async fn run_session<S, R>(
                             active_agents,
                             relay,
                             auto_yes_panes,
+                            app_handle,
                         ).await;
                         if let Some(json) = response {
                             let _ = tx.send(json);

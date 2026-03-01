@@ -268,6 +268,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     }).catch(() => {});
   }, []);
 
+  // Listen for auto-yes-changed events (remote toggled auto-yes via relay)
+  useEffect(() => {
+    const unlistenPromise = listen("auto-yes-changed", () => {
+      invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
+        setAutoYesPaneIds(new Set(paneIds));
+      }).catch(() => {});
+    });
+    return () => { unlistenPromise.then((fn) => fn()); };
+  }, []);
+
   // Temporarily switch to fast polling (500ms for 5s) after answering a question
   const startFastQuestionPoll = useCallback(() => {
     if (questionPollRef.current) clearInterval(questionPollRef.current);

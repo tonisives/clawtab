@@ -4,38 +4,6 @@ import { colors } from "../theme/colors"
 import { radius, spacing } from "../theme/spacing"
 import type { ClaudeProcess } from "../types/job"
 
-export function parseNumberedOptions(text: string): { number: string; label: string }[] {
-  const lines = text.split("\n").slice(-20)
-  // Collect contiguous groups of numbered items, keep only the last group.
-  // This avoids picking up numbered plans/lists before the actual prompt.
-  const groups: { number: string; label: string }[][] = []
-  let current: { number: string; label: string }[] = []
-  for (const line of lines) {
-    const match = line.match(/^[\s>›»❯▸▶]*(\d+)\.\s+(.+)/)
-    if (match) {
-      current.push({ number: match[1], label: match[2].trim() })
-    } else {
-      if (current.length > 0) {
-        groups.push(current)
-        current = []
-      }
-    }
-  }
-  if (current.length > 0) groups.push(current)
-  const options = groups.length > 0 ? groups[groups.length - 1] : []
-  if (options.length === 0) return options
-  const lower = text.toLowerCase()
-  if (
-    !lower.includes("enter to select") &&
-    !lower.includes("to navigate") &&
-    !lower.includes("esc to cancel") &&
-    !lower.includes("to select")
-  ) {
-    return []
-  }
-  return options
-}
-
 export function ProcessCard({
   process,
 }: {

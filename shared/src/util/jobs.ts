@@ -31,14 +31,28 @@ export function sortGroupNames(groups: string[], savedOrder: string[]): string[]
 
 export function parseNumberedOptions(text: string): { number: string; label: string }[] {
   const lines = text.split("\n").slice(-20);
-  const options: { number: string; label: string }[] = [];
+  // Collect contiguous groups of numbered items, keep only the last group.
+  // Non-numbered lines that are blank, separators, or indented descriptions
+  // do NOT break the group (options often have multi-line descriptions).
+  const groups: { number: string; label: string }[][] = [];
+  let current: { number: string; label: string }[] = [];
   for (const line of lines) {
     const match = line.match(/^[\s>›»❯▸▶]*(\d+)\.\s+(.+)/);
     if (match) {
-      options.push({ number: match[1], label: match[2].trim() });
+      current.push({ number: match[1], label: match[2].trim() });
+    } else if (current.length > 0) {
+      const stripped = line.trim();
+      const isBlank = stripped === "";
+      const isSeparator = stripped.length > 0 && /^[─━═\-—–_│|┊┆]+$/.test(stripped);
+      const isIndentedDesc = line.startsWith("  ") || line.startsWith("\t");
+      if (!isBlank && !isSeparator && !isIndentedDesc) {
+        groups.push(current);
+        current = [];
+      }
     }
   }
-  return options;
+  if (current.length > 0) groups.push(current);
+  return groups.length > 0 ? groups[groups.length - 1] : [];
 }
 
 /** Find the best "yes" option: prefer "Yes, during this session" over plain "Yes" */

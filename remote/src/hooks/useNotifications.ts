@@ -67,26 +67,32 @@ export function useNotifications() {
           // fall back to WS, then queue for later.
           const qid = clawtab.question_id;
           const pid = clawtab.pane_id;
-          postAnswer(qid, pid, actionId).catch(() => {
-            const send = getWsSend();
-            if (send) {
-              send({
-                type: "answer_question" as const,
-                id: nextId(),
-                question_id: qid,
-                pane_id: pid,
-                answer: actionId,
-              });
-            } else {
-              enqueueAnswer({
-                type: "answer_question" as const,
-                id: nextId(),
-                question_id: qid,
-                pane_id: pid,
-                answer: actionId,
-              });
-            }
-          });
+          console.log("[notif] answering via HTTP:", qid, actionId);
+          postAnswer(qid, pid, actionId)
+            .then((res) => console.log("[notif] HTTP answer sent, desktop:", res.sent))
+            .catch((err) => {
+              console.log("[notif] HTTP answer failed:", err, "- falling back");
+              const send = getWsSend();
+              if (send) {
+                console.log("[notif] fallback: sending via WS");
+                send({
+                  type: "answer_question" as const,
+                  id: nextId(),
+                  question_id: qid,
+                  pane_id: pid,
+                  answer: actionId,
+                });
+              } else {
+                console.log("[notif] fallback: queuing to AsyncStorage");
+                enqueueAnswer({
+                  type: "answer_question" as const,
+                  id: nextId(),
+                  question_id: qid,
+                  pane_id: pid,
+                  answer: actionId,
+                });
+              }
+            });
           answerQuestion(clawtab.question_id);
           // Dismiss the notification from the notification center
           Notifications.dismissNotificationAsync(

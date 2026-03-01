@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
 import { useAuthStore } from "../../src/store/auth";
 import { useWsStore } from "../../src/store/ws";
 import { ContentContainer } from "../../src/components/ContentContainer";
+import { DeviceCard } from "../../src/components/DeviceCard";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import * as api from "../../src/api/client";
 import { confirm, alertError, openUrl } from "../../src/lib/platform";
@@ -48,6 +49,18 @@ export default function SettingsScreen() {
   const [sub, setSub] = useState<SubStatus>(null);
   const [subLoading, setSubLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [devices, setDevices] = useState<api.DeviceInfo[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(true);
+  const subscriptionRequired = useWsStore((s) => s.subscriptionRequired);
+
+  const fetchDevices = useCallback(async () => {
+    try {
+      const d = await api.getDevices();
+      setDevices(d);
+    } catch (e) {
+      console.error("Failed to fetch devices:", e);
+    }
+  }, []);
 
   useEffect(() => {
     api.getSubscriptionStatus()
@@ -55,6 +68,14 @@ export default function SettingsScreen() {
       .catch(() => setSub(null))
       .finally(() => setSubLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!subscriptionRequired) {
+      fetchDevices().finally(() => setDevicesLoading(false));
+    } else {
+      setDevicesLoading(false);
+    }
+  }, [fetchDevices, subscriptionRequired]);
 
   const handleSubscribe = async () => {
     setActionLoading(true);
@@ -161,6 +182,29 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Devices</Text>
+            {devicesLoading ? (
+              <View style={styles.row}>
+                <ActivityIndicator size="small" color={colors.textMuted} />
+              </View>
+            ) : subscriptionRequired ? (
+              <View style={styles.row}>
+                <Text style={styles.label}>Subscribe to view devices</Text>
+              </View>
+            ) : devices.length === 0 ? (
+              <View style={styles.row}>
+                <Text style={styles.label}>No devices paired</Text>
+              </View>
+            ) : (
+              <View style={styles.devicesList}>
+                {devices.map((device) => (
+                  <DeviceCard key={device.id} device={device} />
+                ))}
+              </View>
+            )}
+          </View>
+
+          <View style={styles.section}>
             <Pressable style={[styles.dangerBtn, isWide && styles.btnConstrained]} onPress={handleLogout}>
               <Text style={styles.dangerText}>Log Out</Text>
             </Pressable>
@@ -213,6 +257,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     maxWidth: "60%",
+  },
+  devicesList: {
+    gap: spacing.sm,
   },
   billingBtn: {
     height: 44,

@@ -9,13 +9,13 @@ type IoniconsName = keyof typeof Ionicons.glyphMap;
 
 const NAV_ITEMS = [
   { route: "/(tabs)", label: "Jobs", icon: "briefcase-outline" as IoniconsName, iconFocused: "briefcase" as IoniconsName },
-  { route: "/(tabs)/devices", label: "Devices", icon: "laptop-outline" as IoniconsName, iconFocused: "laptop" as IoniconsName },
   { route: "/(tabs)/settings", label: "Settings", icon: "settings-outline" as IoniconsName, iconFocused: "settings" as IoniconsName },
 ];
 
 function isActive(pathname: string, route: string): boolean {
   if (route === "/(tabs)") return pathname === "/" || pathname === "/(tabs)" || pathname === "/(tabs)/index";
-  return pathname.startsWith(route);
+  const segment = route.replace("/(tabs)", "");
+  return pathname.startsWith(segment) || pathname.startsWith(route);
 }
 
 export function ResizableSidebar({ children }: { children: React.ReactNode }) {

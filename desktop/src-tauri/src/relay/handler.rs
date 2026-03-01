@@ -6,6 +6,8 @@ use clawtab_protocol::{
     JobStatus as RemoteJobStatus, RemoteJob,
 };
 
+use tauri::Emitter;
+
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
@@ -26,6 +28,7 @@ pub async fn handle_incoming(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
+    app_handle: &tauri::AppHandle,
 ) -> Option<String> {
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
@@ -66,6 +69,7 @@ pub async fn handle_incoming(
                 active_agents,
                 relay,
             );
+            let _ = app_handle.emit("jobs-changed", ());
             Some(DesktopMessage::RunJobAck {
                 id,
                 success: result.is_ok(),
@@ -75,6 +79,7 @@ pub async fn handle_incoming(
 
         ClientMessage::PauseJob { id, name } => {
             let result = pause_job(&name, job_status);
+            let _ = app_handle.emit("jobs-changed", ());
             Some(DesktopMessage::PauseJobAck {
                 id,
                 success: result.is_ok(),
@@ -84,6 +89,7 @@ pub async fn handle_incoming(
 
         ClientMessage::ResumeJob { id, name } => {
             let result = resume_job(&name, job_status);
+            let _ = app_handle.emit("jobs-changed", ());
             Some(DesktopMessage::ResumeJobAck {
                 id,
                 success: result.is_ok(),
@@ -93,6 +99,7 @@ pub async fn handle_incoming(
 
         ClientMessage::StopJob { id, name } => {
             let result = stop_job(&name, job_status);
+            let _ = app_handle.emit("jobs-changed", ());
             Some(DesktopMessage::StopJobAck {
                 id,
                 success: result.is_ok(),
@@ -165,6 +172,9 @@ pub async fn handle_incoming(
             let result = create_job(
                 &name, &job_type, &path, &prompt, &cron, &group, jobs_config, settings,
             );
+            if result.is_ok() {
+                let _ = app_handle.emit("jobs-changed", ());
+            }
             Some(DesktopMessage::CreateJobAck {
                 id,
                 success: result.is_ok(),
@@ -216,6 +226,7 @@ pub async fn handle_incoming(
         ClientMessage::SetAutoYesPanes { pane_ids, .. } => {
             let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
             *auto_yes_panes.lock().unwrap() = pane_set;
+            let _ = app_handle.emit("auto-yes-changed", ());
             // Broadcast back to relay so it updates its cache and forwards to all mobiles
             let msg = DesktopMessage::AutoYesPanes { pane_ids };
             if let Ok(guard) = relay.lock() {

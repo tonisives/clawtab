@@ -171,7 +171,7 @@ pub fn relay_disconnect(state: State<AppState>) {
 
 /// Connect (or reconnect) to the relay server using the saved settings.
 #[tauri::command]
-pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
+pub fn relay_connect(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
     let settings = state.settings.lock().unwrap();
     let rs = settings
         .relay
@@ -236,6 +236,7 @@ pub fn relay_connect(state: State<AppState>) -> Result<(), String> {
             settings,
             active_agents,
             auto_yes_panes,
+            app,
         )
         .await;
     });

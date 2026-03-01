@@ -61,9 +61,19 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
                 }
             }
         }
-        // Non-numbered line (empty or not): finalize current group if any
+        // Only break the group on lines that look like real content (not
+        // description lines, separators, or blanks between numbered options).
+        // Description lines are indented text under an option, separator lines
+        // are made of box-drawing chars / dashes, and blank lines appear between
+        // option sections (e.g. before "Chat about this").
         if !current_group.is_empty() {
-            groups.push(std::mem::take(&mut current_group));
+            let stripped = line.trim();
+            let is_blank = stripped.is_empty();
+            let is_separator = !stripped.is_empty() && stripped.chars().all(|c| "─━═-—–_│|┊┆".contains(c));
+            let is_indented_desc = line.starts_with("  ") || line.starts_with('\t');
+            if !is_blank && !is_separator && !is_indented_desc {
+                groups.push(std::mem::take(&mut current_group));
+            }
         }
     }
     if !current_group.is_empty() {

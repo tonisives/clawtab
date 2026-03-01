@@ -11,8 +11,6 @@ type IoniconsName = keyof typeof Ionicons.glyphMap;
 
 const tabIcons: Record<string, { focused: IoniconsName; default: IoniconsName }> = {
   Jobs: { focused: "briefcase", default: "briefcase-outline" },
-  Agent: { focused: "flash", default: "flash-outline" },
-  Devices: { focused: "laptop", default: "laptop-outline" },
   Settings: { focused: "settings", default: "settings-outline" },
 };
 
@@ -75,10 +73,7 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       <Tabs.Screen
         name="devices"
         options={{
-          title: "Devices",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon label="Devices" focused={focused} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen
