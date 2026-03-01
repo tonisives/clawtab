@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import * as api from "../api/client"
+import { clearCache } from "../lib/jobCache"
 
 interface AuthState {
   isAuthenticated: boolean
@@ -54,6 +55,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: async () => {
     await api.clearTokens()
+    await clearCache()
     set({ isAuthenticated: false, userId: null })
   },
 

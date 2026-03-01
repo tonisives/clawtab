@@ -8,10 +8,12 @@ interface JobsState {
   statuses: Record<string, JobStatus>;
   detectedProcesses: ClaudeProcess[];
   loaded: boolean;
+  cachedLoad: boolean;
 
   setJobs: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   updateStatus: (name: string, status: JobStatus) => void;
   setDetectedProcesses: (processes: ClaudeProcess[]) => void;
+  hydrateFromCache: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
 }
 
 export const useJobsStore = create<JobsState>((set) => ({
@@ -19,8 +21,9 @@ export const useJobsStore = create<JobsState>((set) => ({
   statuses: {},
   detectedProcesses: [],
   loaded: false,
+  cachedLoad: false,
 
-  setJobs: (jobs, statuses) => set({ jobs, statuses, loaded: true }),
+  setJobs: (jobs, statuses) => set({ jobs, statuses, loaded: true, cachedLoad: false }),
 
   updateStatus: (name, status) =>
     set((state) => ({
@@ -28,6 +31,12 @@ export const useJobsStore = create<JobsState>((set) => ({
     })),
 
   setDetectedProcesses: (processes) => set({ detectedProcesses: processes }),
+
+  hydrateFromCache: (jobs, statuses) =>
+    set((state) => {
+      if (state.loaded) return state;
+      return { jobs, statuses, cachedLoad: true };
+    }),
 }));
 
 export function useJob(name: string): RemoteJob | undefined {

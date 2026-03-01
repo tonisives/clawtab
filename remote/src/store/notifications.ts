@@ -16,6 +16,8 @@ interface NotificationState {
   answerQuestion: (questionId: string) => void;
   setDeepLinkQuestionId: (id: string | null) => void;
   hydrateFromHistory: (items: NotificationHistoryItem[]) => void;
+  injectFromNotification: (question: ClaudeQuestion) => void;
+  hydrateQuestionsFromCache: (questions: ClaudeQuestion[]) => void;
   enableAutoYes: (paneId: string) => void;
   disableAutoYes: (paneId: string) => void;
   setAutoYesPanes: (paneIds: string[]) => void;
@@ -76,6 +78,20 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       return {
         questions: [...state.questions, ...newQuestions],
       };
+    }),
+
+  injectFromNotification: (question) =>
+    set((state) => {
+      if (state.questions.some((q) => q.question_id === question.question_id)) {
+        return state;
+      }
+      return { questions: [...state.questions, question] };
+    }),
+
+  hydrateQuestionsFromCache: (questions) =>
+    set((state) => {
+      if (state.hasDesktopQuestions) return state;
+      return { questions };
     }),
 
   enableAutoYes: (paneId) =>

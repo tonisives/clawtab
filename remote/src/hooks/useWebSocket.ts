@@ -8,6 +8,8 @@ import { useWsStore } from "../store/ws";
 import { getPushToken } from "../lib/notifications";
 import { dispatchLogChunk } from "./useLogs";
 import { resolveRequest } from "../lib/useRequestMap";
+import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
+import { flushPendingAnswers } from "../lib/pendingAnswers";
 import type { ClientMessage, IncomingMessage } from "../types/messages";
 
 let globalWs: WebSocket | null = null;
@@ -88,6 +90,11 @@ export function useWebSocket() {
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
       ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
 
+      // Flush any answers queued while offline
+      flushPendingAnswers((msg) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+      });
+
       // Register push token
       getPushToken().then((token) => {
         if (token && ws.readyState === WebSocket.OPEN) {
@@ -116,11 +123,13 @@ export function useWebSocket() {
         case "jobs_list":
         case "jobs_changed":
           setJobs(msg.jobs, msg.statuses);
+          saveJobsCache(msg.jobs, msg.statuses);
           // These messages are forwarded from desktop, so desktop is online
           useWsStore.getState().desktopOnline || useWsStore.setState({ desktopOnline: true });
           break;
         case "status_update":
           updateStatus(msg.name, msg.status);
+          { const s = useJobsStore.getState(); saveJobsCache(s.jobs, s.statuses); }
           useWsStore.getState().desktopOnline || useWsStore.setState({ desktopOnline: true });
           break;
         case "log_chunk":
@@ -131,6 +140,7 @@ export function useWebSocket() {
           break;
         case "claude_questions":
           useNotificationStore.getState().setQuestions(msg.questions);
+          saveQuestionsCache(msg.questions);
           break;
         case "auto_yes_panes":
           useNotificationStore.getState().setAutoYesPanes((msg as { pane_ids?: string[] }).pane_ids ?? []);

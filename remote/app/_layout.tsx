@@ -4,9 +4,25 @@ import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useAuthStore } from "../src/store/auth";
 import { useWebSocket } from "../src/hooks/useWebSocket";
+import { useJobsStore } from "../src/store/jobs";
+import { useNotificationStore } from "../src/store/notifications";
+import { loadCache } from "../src/lib/jobCache";
+import { loadPendingAnswers } from "../src/lib/pendingAnswers";
 import { colors } from "../src/theme/colors";
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    loadCache().then((cached) => {
+      if (cached) {
+        useJobsStore.getState().hydrateFromCache(cached.jobs, cached.statuses);
+        if (cached.questions.length > 0) {
+          useNotificationStore.getState().hydrateQuestionsFromCache(cached.questions);
+        }
+      }
+    });
+    loadPendingAnswers();
+  }, []);
+
   useWebSocket();
   return <>{children}</>;
 }
