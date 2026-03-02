@@ -54,11 +54,13 @@ export function NotificationSection({
   const [departing, setDeparting] = useState<DepartingQuestion[]>([]);
   const prevQuestionsRef = useRef<ClaudeQuestion[]>([]);
   const [entering, setEntering] = useState<Set<string>>(new Set());
-  // Cards that slide in after a sibling was dismissed (promoted to active position)
-  const [slidingIn, setSlidingIn] = useState<Set<string>>(new Set());
   const entranceAnims = useRef<Map<string, Animated.Value>>(new Map());
   // Native slide-in anims for promoted cards
   const slideInAnims = useRef<Map<string, Animated.Value>>(new Map());
+  // Refs to card wrapper divs for imperative slide-in animation (web)
+  const cardDivRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Queue of question IDs that need slide-in animation on next render
+  const pendingSlideIn = useRef<Set<string>>(new Set());
   // Track answered question IDs so we skip departing animations for them
   // (the card already plays its own fly-away animation before removal)
   const answeredIds = useRef<Set<string>>(new Set());
@@ -142,12 +144,7 @@ export function NotificationSection({
       const promotedQ = questions[newIndex];
       if (promotedQ && !added.some((a) => a.question_id === promotedQ.question_id)) {
         if (isWeb) {
-          setSlidingIn(new Set([promotedQ.question_id]));
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              setSlidingIn(new Set());
-            });
-          });
+          pendingSlideIn.current.add(promotedQ.question_id);
         } else {
           const anim = new Animated.Value(0);
           slideInAnims.current.set(promotedQ.question_id, anim);
@@ -193,6 +190,32 @@ export function NotificationSection({
       }
     }
   }, [questions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Imperative slide-in animation for promoted cards (web only)
+  useEffect(() => {
+    if (!isWeb || pendingSlideIn.current.size === 0) return;
+    const ids = new Set(pendingSlideIn.current);
+    pendingSlideIn.current.clear();
+    for (const qid of ids) {
+      const el = cardDivRefs.current.get(qid);
+      if (!el) continue;
+      el.style.transform = "translateX(-200px) scale(0.9)";
+      el.style.opacity = "0";
+      el.style.transition = "none";
+      requestAnimationFrame(() => {
+        el.style.transition = "opacity 300ms ease, transform 300ms ease";
+        el.style.transform = "translateX(0) scale(1)";
+        el.style.opacity = "1";
+        const done = () => {
+          el.removeEventListener("transitionend", done);
+          el.style.transform = "";
+          el.style.opacity = "";
+          el.style.transition = "";
+        };
+        el.addEventListener("transitionend", done);
+      });
+    }
+  });
 
   const count = questions.length;
   const hasDeparting = departing.length > 0;
@@ -347,15 +370,17 @@ export function NotificationSection({
 
     if (isWeb) {
       const isEntering = entering.has(q.question_id);
-      const isSliding = slidingIn.has(q.question_id);
-      const animating = isEntering || isSliding;
       return (
         <View key={q.question_id} style={{ width: cardWidth || "100%" }}>
           <div
+            ref={(el: HTMLDivElement | null) => {
+              if (el) cardDivRefs.current.set(q.question_id, el);
+              else cardDivRefs.current.delete(q.question_id);
+            }}
             style={{
               transition: "opacity 300ms ease, transform 300ms ease",
-              opacity: animating ? 0 : 1,
-              transform: animating ? "translateX(-200px) scale(0.9)" : "translateX(0) scale(1)",
+              opacity: isEntering ? 0 : 1,
+              transform: isEntering ? "translateX(-200px) scale(0.9)" : "translateX(0) scale(1)",
             }}
           >
             {inner}
