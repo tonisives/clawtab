@@ -216,6 +216,22 @@ export function NotificationSection({
     if (clampedIndex < count - 1) scrollToIndex(clampedIndex + 1);
   }, [clampedIndex, count, scrollToIndex]);
 
+  // Collapse animation: when sectionFlying becomes true, pin height then transition to 0
+  useEffect(() => {
+    if (!sectionFlying || !isWeb) return;
+    const el = sectionRef.current;
+    if (!el) return;
+    const h = sectionHeight.current || el.offsetHeight;
+    el.style.height = h + "px";
+    el.style.overflow = "hidden";
+    requestAnimationFrame(() => {
+      el.style.transition = "height 300ms ease, opacity 300ms ease";
+      el.style.height = "0px";
+      el.style.opacity = "0";
+      el.style.pointerEvents = "none";
+    });
+  }, [sectionFlying]);
+
   // Nothing to show
   const isEmpty = count === 0 && !hasDeparting;
   if (isEmpty) {
@@ -298,6 +314,7 @@ export function NotificationSection({
         onToggleAutoYes={onToggleAutoYes}
         autoAnswered={autoAnsweredIds?.has(q.question_id)}
         onFlyStart={handleCardFlyStart}
+        isLast={count === 1}
       />
     );
 
@@ -405,8 +422,9 @@ export function NotificationSection({
     <div
       ref={(el: HTMLDivElement | null) => {
         (sectionRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+        if (!el) return;
         // When section first appears, animate expand from height 0
-        if (el && expandingRef.current) {
+        if (expandingRef.current) {
           expandingRef.current = false;
           const h = el.scrollHeight;
           el.style.height = "0px";
@@ -426,13 +444,6 @@ export function NotificationSection({
           });
         }
       }}
-      style={sectionFlying ? {
-        height: 0,
-        overflow: "hidden",
-        opacity: 0,
-        transition: "height 300ms ease, opacity 300ms ease",
-        pointerEvents: "none",
-      } : undefined}
     >
       {sectionContent}
     </div>

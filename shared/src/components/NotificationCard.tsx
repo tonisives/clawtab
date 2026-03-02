@@ -28,6 +28,8 @@ export interface NotificationCardProps {
   autoAnswered?: boolean;
   /** Called when the card starts its fly-away animation (web only) */
   onFlyStart?: () => void;
+  /** True when this is the only card - skip fly-away, just collapse section */
+  isLast?: boolean;
 }
 
 export function NotificationCard({
@@ -39,6 +41,7 @@ export function NotificationCard({
   onToggleAutoYes,
   autoAnswered,
   onFlyStart,
+  isLast,
 }: NotificationCardProps) {
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
@@ -71,6 +74,13 @@ export function NotificationCard({
 
   useEffect(() => {
     if (!answered || !isWeb) return;
+    // For the last card, skip fly-away - just trigger section collapse after brief "Sent" display
+    if (isLast) {
+      const timer = setTimeout(() => {
+        onFlyStart?.();
+      }, 400);
+      return () => clearTimeout(timer);
+    }
     const timer = setTimeout(() => {
       setFlying(true);
       onFlyStart?.();
@@ -82,7 +92,7 @@ export function NotificationCard({
     onSendOption(question, resolvedJob, optionNumber);
     setAnswered(true);
     setFlying(false);
-    if (!isWeb) {
+    if (!isWeb && !isLast) {
       Animated.timing(flyAnim, {
         toValue: 1,
         duration: 300,
@@ -172,6 +182,10 @@ export function NotificationCard({
   );
 
   if (isWeb) {
+    // For the last card, no fly-away - the section wrapper handles the collapse
+    if (isLast) {
+      return <View style={styles.card}>{cardContent}</View>;
+    }
     return (
       <div
         ref={(el: HTMLDivElement | null) => {
@@ -183,8 +197,6 @@ export function NotificationCard({
             : undefined,
           opacity: flying ? 0 : 1,
           transform: flying ? "translateX(300px) scale(0.85)" : "translateX(0) scale(1)",
-          // Pin height when answered so we have an explicit value for CSS to transition from.
-          // When flying, collapse to 0.
           height: answered ? (flying ? 0 : webCardHeight.current || undefined) : undefined,
           overflow: answered ? "hidden" : undefined,
         }}
@@ -192,6 +204,10 @@ export function NotificationCard({
         <View style={styles.card}>{cardContent}</View>
       </div>
     );
+  }
+
+  if (isLast) {
+    return <View style={styles.card}>{cardContent}</View>;
   }
 
   return (
