@@ -9,7 +9,8 @@ use serde::Serialize;
 use crate::config::Config;
 
 pub struct ApnsClient {
-    client: Client,
+    production: Client,
+    sandbox: Client,
     topic: String,
 }
 
@@ -34,6 +35,40 @@ struct JobPayload {
     run_id: String,
 }
 
+/// Result of a single APNs send attempt.
+enum SendResult {
+    Ok,
+    /// Token is invalid for this environment (400/410) - worth retrying on the other.
+    BadToken,
+    /// Non-recoverable error.
+    Fatal(String),
+}
+
+fn classify_send_result(result: Result<a2::Response, a2::Error>) -> SendResult {
+    match result {
+        Ok(_) => SendResult::Ok,
+        Err(a2::Error::ResponseError(response)) => {
+            if response.code == 400 || response.code == 410 {
+                SendResult::BadToken
+            } else {
+                if response.code == 403 {
+                    tracing::error!(
+                        "APNs 403 InvalidProviderToken - check: \
+                         (1) APNS_KEY_ID matches the key ID in Apple Developer Console, \
+                         (2) APNS_TEAM_ID matches your Apple Developer Team ID, \
+                         (3) the .p8 file is the correct key for this key ID"
+                    );
+                }
+                SendResult::Fatal(format!(
+                    "APNs error {}: {:?}",
+                    response.code, response.error
+                ))
+            }
+        }
+        Err(e) => SendResult::Fatal(format!("APNs send error: {e}")),
+    }
+}
+
 impl ApnsClient {
     pub fn new(config: &Config) -> Result<Self, String> {
         let key_path = config
@@ -46,21 +81,10 @@ impl ApnsClient {
             .as_ref()
             .ok_or("APNS_TEAM_ID not set")?;
 
-        let endpoint = if config.apns_sandbox {
-            Endpoint::Sandbox
-        } else {
-            Endpoint::Production
-        };
-
         let topic = config
             .apns_topic
             .clone()
             .unwrap_or_else(|| "cc.clawtab".to_string());
-
-        tracing::info!(
-            "APNs config: key_id={key_id} team_id={team_id} topic={topic} endpoint={} key_path={key_path}",
-            if config.apns_sandbox { "sandbox" } else { "production" }
-        );
 
         let key_bytes = std::fs::read(key_path)
             .map_err(|e| format!("failed to read APNs key at {key_path}: {e}"))?;
@@ -73,12 +97,31 @@ impl ApnsClient {
             );
         }
 
-        let mut cursor = Cursor::new(key_bytes);
-        let client =
-            Client::token(&mut cursor, key_id, team_id, ClientConfig::new(endpoint))
-                .map_err(|e| format!("failed to create APNs client: {e}"))?;
+        let production = Client::token(
+            &mut Cursor::new(&key_bytes),
+            key_id,
+            team_id,
+            ClientConfig::new(Endpoint::Production),
+        )
+        .map_err(|e| format!("failed to create APNs production client: {e}"))?;
 
-        Ok(Self { client, topic })
+        let sandbox = Client::token(
+            &mut Cursor::new(&key_bytes),
+            key_id,
+            team_id,
+            ClientConfig::new(Endpoint::Sandbox),
+        )
+        .map_err(|e| format!("failed to create APNs sandbox client: {e}"))?;
+
+        tracing::info!(
+            "APNs config: key_id={key_id} team_id={team_id} topic={topic} endpoints=production+sandbox key_path={key_path}"
+        );
+
+        Ok(Self {
+            production,
+            sandbox,
+            topic,
+        })
     }
 
     pub async fn send_job_notification(
@@ -98,38 +141,43 @@ impl ApnsClient {
         let custom_json =
             serde_json::to_value(&custom_data).map_err(|e| format!("json error: {e}"))?;
 
-        let builder = DefaultNotificationBuilder::new()
-            .set_title(title)
-            .set_body(&body)
-            .set_sound("default");
+        let build_payload = || {
+            let builder = DefaultNotificationBuilder::new()
+                .set_title(title)
+                .set_body(&body)
+                .set_sound("default");
 
-        let options_obj = NotificationOptions {
-            apns_id: None,
-            apns_expiration: None,
-            apns_priority: Some(Priority::High),
-            apns_topic: Some(&self.topic),
-            apns_collapse_id: None,
-            apns_push_type: None,
+            let options_obj = NotificationOptions {
+                apns_id: None,
+                apns_expiration: None,
+                apns_priority: Some(Priority::High),
+                apns_topic: Some(&self.topic),
+                apns_collapse_id: None,
+                apns_push_type: None,
+            };
+
+            let mut payload = builder.build(device_token, options_obj);
+            payload.add_custom_data("clawtab", &custom_json).ok();
+            payload
         };
 
-        let mut payload = builder.build(device_token, options_obj);
-        payload
-            .add_custom_data("clawtab", &custom_json)
-            .map_err(|e| format!("custom data error: {e}"))?;
-
-        match self.client.send(payload).await {
-            Ok(_) => Ok(()),
-            Err(a2::Error::ResponseError(response)) => {
-                if response.code == 410 || response.code == 400 {
-                    Err(format!("invalid_token:{}", response.code))
-                } else {
-                    Err(format!(
-                        "APNs error {}: {:?}",
-                        response.code, response.error
-                    ))
-                }
+        // Try production first
+        match classify_send_result(self.production.send(build_payload()).await) {
+            SendResult::Ok => return Ok(()),
+            SendResult::BadToken => {
+                tracing::debug!("production rejected token, trying sandbox: {device_token}");
             }
-            Err(e) => Err(format!("APNs send error: {e}")),
+            SendResult::Fatal(e) => return Err(e),
+        }
+
+        // Retry on sandbox
+        match classify_send_result(self.sandbox.send(build_payload()).await) {
+            SendResult::Ok => {
+                tracing::debug!("push delivered via sandbox: {device_token}");
+                Ok(())
+            }
+            SendResult::BadToken => Err("invalid_token:both".to_string()),
+            SendResult::Fatal(e) => Err(e),
         }
     }
 
@@ -168,51 +216,45 @@ impl ApnsClient {
             _ => "CLAUDE_Q4",
         };
 
-        let builder = DefaultNotificationBuilder::new()
-            .set_title(title)
-            .set_body(body)
-            .set_mutable_content()
-            .set_category(category)
-            .set_sound("default");
+        let build_payload = || {
+            let builder = DefaultNotificationBuilder::new()
+                .set_title(title)
+                .set_body(body)
+                .set_mutable_content()
+                .set_category(category)
+                .set_sound("default");
 
-        let options_obj = NotificationOptions {
-            apns_id: None,
-            apns_expiration: None,
-            apns_priority: Some(Priority::High),
-            apns_topic: Some(&self.topic),
-            apns_collapse_id: None,
-            apns_push_type: None,
+            let options_obj = NotificationOptions {
+                apns_id: None,
+                apns_expiration: None,
+                apns_priority: Some(Priority::High),
+                apns_topic: Some(&self.topic),
+                apns_collapse_id: None,
+                apns_push_type: None,
+            };
+
+            let mut payload = builder.build(device_token, options_obj);
+            payload.add_custom_data("clawtab", &custom_json).ok();
+            payload
         };
 
-        let mut payload = builder.build(device_token, options_obj);
-        payload
-            .add_custom_data("clawtab", &custom_json)
-            .map_err(|e| format!("custom data error: {e}"))?;
-
-        match self.client.send(payload).await {
-            Ok(_) => Ok(()),
-            Err(a2::Error::ResponseError(response)) => {
-                if response.code == 410 || response.code == 400 {
-                    Err(format!("invalid_token:{}", response.code))
-                } else if response.code == 403 {
-                    tracing::error!(
-                        "APNs 403 InvalidProviderToken - check: \
-                         (1) APNS_KEY_ID matches the key ID in Apple Developer Console, \
-                         (2) APNS_TEAM_ID matches your Apple Developer Team ID, \
-                         (3) the .p8 file is the correct key for this key ID"
-                    );
-                    Err(format!(
-                        "APNs error 403: {:?} (likely JWT auth misconfiguration)",
-                        response.error
-                    ))
-                } else {
-                    Err(format!(
-                        "APNs error {}: {:?}",
-                        response.code, response.error
-                    ))
-                }
+        // Try production first
+        match classify_send_result(self.production.send(build_payload()).await) {
+            SendResult::Ok => return Ok(()),
+            SendResult::BadToken => {
+                tracing::debug!("production rejected token, trying sandbox: {device_token}");
             }
-            Err(e) => Err(format!("APNs send error: {e}")),
+            SendResult::Fatal(e) => return Err(e),
+        }
+
+        // Retry on sandbox
+        match classify_send_result(self.sandbox.send(build_payload()).await) {
+            SendResult::Ok => {
+                tracing::debug!("push delivered via sandbox: {device_token}");
+                Ok(())
+            }
+            SendResult::BadToken => Err("invalid_token:both".to_string()),
+            SendResult::Fatal(e) => Err(e),
         }
     }
 }

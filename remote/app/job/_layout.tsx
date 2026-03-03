@@ -12,6 +12,7 @@ function BackButton() {
         else router.replace("/");
       }}
       hitSlop={8}
+      style={{ width: 32, height: 32, alignItems: "center", justifyContent: "center" }}
     >
       <Ionicons name="chevron-back" size={24} color={colors.text} />
     </TouchableOpacity>

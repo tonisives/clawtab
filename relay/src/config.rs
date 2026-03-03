@@ -18,7 +18,6 @@ pub struct Config {
     pub apns_key_id: Option<String>,
     pub apns_team_id: Option<String>,
     pub apns_topic: Option<String>,
-    pub apns_sandbox: bool,
 
     // Redis (optional)
     pub redis_url: Option<String>,
@@ -50,9 +49,6 @@ impl Config {
             apns_key_id: env::var("APNS_KEY_ID").ok(),
             apns_team_id: env::var("APNS_TEAM_ID").ok(),
             apns_topic: env::var("APNS_TOPIC").ok(),
-            apns_sandbox: env::var("APNS_SANDBOX")
-                .map(|v| v == "true" || v == "1")
-                .unwrap_or(false),
             redis_url: env::var("REDIS_URL").ok(),
         }
     }

@@ -226,6 +226,19 @@ export function JobDetailView({
           <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
         )}
         {onEdit && <ActionButton label="Edit" color={colors.textSecondary} onPress={onEdit} />}
+        {onToggleEnabled && (
+          <ActionButton
+            label={job.enabled ? "Disable" : "Enable"}
+            color={colors.textSecondary}
+            onPress={onToggleEnabled}
+          />
+        )}
+        {onDuplicate && (
+          <ActionButton label="Duplicate" color={colors.textSecondary} onPress={onDuplicate} />
+        )}
+        {onDelete && (
+          <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />
+        )}
       </View>
 
       {/* Live Output */}
@@ -278,27 +291,6 @@ export function JobDetailView({
       {/* Platform-specific extra content */}
       {extraContent}
 
-      {/* Danger zone (desktop-only) */}
-      {(onToggleEnabled || onDuplicate || onDelete) && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Actions</Text>
-          <View style={styles.actions}>
-            {onToggleEnabled && (
-              <ActionButton
-                label={job.enabled ? "Disable" : "Enable"}
-                color={colors.textSecondary}
-                onPress={onToggleEnabled}
-              />
-            )}
-            {onDuplicate && (
-              <ActionButton label="Duplicate" color={colors.textSecondary} onPress={onDuplicate} />
-            )}
-            {onDelete && (
-              <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />
-            )}
-          </View>
-        </View>
-      )}
     </>
   );
 
@@ -653,6 +645,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,
+    ...(isWeb ? { borderRadius: radius.lg, overflow: "hidden" as const } : {}),
   },
   scroll: {
     flex: 1,
