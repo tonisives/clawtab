@@ -1,12 +1,18 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
+// Use AFTER_FIRST_UNLOCK so native notification handlers can read tokens
+// even when the device is locked (background notification action handling).
+const STORE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK,
+};
+
 // expo-secure-store doesn't support web - fall back to localStorage
 export async function getItem(key: string): Promise<string | null> {
   if (Platform.OS === "web") {
     return localStorage.getItem(key);
   }
-  return SecureStore.getItemAsync(key);
+  return SecureStore.getItemAsync(key, STORE_OPTIONS);
 }
 
 export async function setItem(key: string, value: string): Promise<void> {
@@ -14,13 +20,14 @@ export async function setItem(key: string, value: string): Promise<void> {
     localStorage.setItem(key, value);
     return;
   }
-  await SecureStore.setItemAsync(key, value);
+  await SecureStore.setItemAsync(key, value, STORE_OPTIONS);
 }
+
 
 export async function deleteItem(key: string): Promise<void> {
   if (Platform.OS === "web") {
     localStorage.removeItem(key);
     return;
   }
-  await SecureStore.deleteItemAsync(key);
+  await SecureStore.deleteItemAsync(key, STORE_OPTIONS);
 }

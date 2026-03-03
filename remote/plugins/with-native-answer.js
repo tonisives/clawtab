@@ -1,69 +1,63 @@
 // Expo config plugin: injects native notification action handler into AppDelegate.
-// Survives prebuild regeneration.
+// Works with expo-notifications by registering as a NotificationDelegate.
 const { withAppDelegate } = require("expo/config-plugins");
 
 function withNativeAnswer(config) {
   return withAppDelegate(config, (config) => {
     let contents = config.modResults.contents;
 
-    // Add import if not present
+    // Add imports
     if (!contents.includes("import UserNotifications")) {
       contents = contents.replace(
         "import Expo",
-        "import Expo\nimport UserNotifications",
+        "import Expo\nimport UserNotifications\nimport EXNotifications",
       );
     }
 
-    // Add UNUserNotificationCenterDelegate conformance
-    contents = contents.replace(
-      "public class AppDelegate: ExpoAppDelegate {",
-      "public class AppDelegate: ExpoAppDelegate, UNUserNotificationCenterDelegate {",
-    );
-
-    // Add delegate assignment in didFinishLaunchingWithOptions, before the return
+    // Add registration call in didFinishLaunchingWithOptions
     contents = contents.replace(
       "return super.application(application, didFinishLaunchingWithOptions: launchOptions)",
-      `UNUserNotificationCenter.current().delegate = self
+      `// Register native answer handler with expo-notifications
+    let handler = NativeAnswerHandler()
+    objc_setAssociatedObject(self, "nativeAnswerHandler", handler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    NotificationCenterManager.shared.addDelegate(handler)
+    NSLog("[ClawTab] NativeAnswerHandler registered")
+    NSLog("[ClawTab] keychain check: access_token=%@, refresh_token=%@, server_url=%@",
+      handler.hasKey("clawtab_access_token") ? "YES" : "NO",
+      handler.hasKey("clawtab_refresh_token") ? "YES" : "NO",
+      handler.hasKey("clawtab_server_url") ? "YES" : "NO")
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)`,
     );
 
-    // Add the handler methods and helpers before the closing brace of AppDelegate
-    const handlerCode = `
-  // MARK: - Native notification action handler (injected by with-native-answer plugin)
+    // Append the NativeAnswerHandler class at the end
+    contents += `
 
-  public func userNotificationCenter(
-    _ center: UNUserNotificationCenter,
-    didReceive response: UNNotificationResponse,
-    withCompletionHandler completionHandler: @escaping () -> Void
-  ) {
+class NativeAnswerHandler: NSObject, NotificationDelegate {
+
+  func hasKey(_ key: String) -> Bool {
+    return readKeychain(key) != nil
+  }
+
+  func didReceive(_ response: UNNotificationResponse, completionHandler: @escaping () -> Void) -> Bool {
     let actionId = response.actionIdentifier
     if actionId == UNNotificationDefaultActionIdentifier || actionId == UNNotificationDismissActionIdentifier {
-      completionHandler()
-      return
+      return false
     }
 
     let userInfo = response.notification.request.content.userInfo
     guard let clawtab = userInfo["clawtab"] as? [String: Any],
           let questionId = clawtab["question_id"] as? String,
           let paneId = clawtab["pane_id"] as? String else {
-      completionHandler()
-      return
+      return false
     }
 
     NSLog("[ClawTab] action tapped: question=%@ answer=%@", questionId, actionId)
-    nativePostAnswer(questionId: questionId, paneId: paneId, answer: actionId, completion: completionHandler)
+    postAnswer(questionId: questionId, paneId: paneId, answer: actionId, completion: completionHandler)
+    return true
   }
 
-  public func userNotificationCenter(
-    _ center: UNUserNotificationCenter,
-    willPresent notification: UNNotification,
-    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
-  ) {
-    completionHandler([.banner, .list, .sound])
-  }
-
-  private func nativePostAnswer(questionId: String, paneId: String, answer: String, completion: @escaping () -> Void) {
+  private func postAnswer(questionId: String, paneId: String, answer: String, completion: @escaping () -> Void) {
     let serverUrl = readKeychain("clawtab_server_url") ?? "https://relay.clawtab.cc"
     guard let token = readKeychain("clawtab_access_token") else {
       NSLog("[ClawTab] no access token, trying refresh")
@@ -130,12 +124,16 @@ function withNativeAnswer(config) {
     guard let k = key.data(using: .utf8) else { return nil }
     let q: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "app",
+      kSecAttrService as String: "app:no-auth",
       kSecAttrAccount as String: k, kSecAttrGeneric as String: k,
       kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
     ]
     var r: AnyObject?
-    guard SecItemCopyMatching(q as CFDictionary, &r) == errSecSuccess, let d = r as? Data else { return nil }
+    guard SecItemCopyMatching(q as CFDictionary, &r) == errSecSuccess, let d = r as? Data else {
+      NSLog("[ClawTab] keychain read MISS for %@", key)
+      return nil
+    }
+    NSLog("[ClawTab] keychain read HIT for %@", key)
     return String(data: d, encoding: .utf8)
   }
 
@@ -143,7 +141,7 @@ function withNativeAnswer(config) {
     guard let k = key.data(using: .utf8), let v = value.data(using: .utf8) else { return }
     let q: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "app",
+      kSecAttrService as String: "app:no-auth",
       kSecAttrAccount as String: k, kSecAttrGeneric as String: k,
     ]
     let u: [String: Any] = [kSecValueData as String: v]
@@ -153,14 +151,8 @@ function withNativeAnswer(config) {
       SecItemAdd(a as CFDictionary, nil)
     }
   }
+}
 `;
-
-    // Insert before the last closing brace of the AppDelegate class
-    // Find "}\n\nclass ReactNativeDelegate" and insert before it
-    contents = contents.replace(
-      "}\n\nclass ReactNativeDelegate",
-      `${handlerCode}}\n\nclass ReactNativeDelegate`,
-    );
 
     config.modResults.contents = contents;
     return config;

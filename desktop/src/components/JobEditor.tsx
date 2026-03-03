@@ -180,14 +180,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       invoke<string>("read_cwt_entry", { folderPath: source.folder_path, jobName: jn }).catch(() => ""),
       invoke<string>("read_cwt_shared", { folderPath: source.folder_path! }).catch(() => ""),
     ]);
-    // Prefill form from source (but clear name/slug so user must set new ones)
-    setForm({
-      ...source,
-      name: "",
-      job_name: null,
-      slug: "",
-      enabled: true,
-    });
+    // Only import md file contents, not folder or name
     setInlineContent(jobMd);
     setInlineLoaded(true);
     setCwtEdited(!!jobMd && jobMd.trim() !== DEFAULT_TEMPLATE.trim());
@@ -491,52 +484,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                   <button className="btn btn-sm" onClick={pickFolder}>
                     Browse...
                   </button>
-                  {importableJobs.length > 0 && (
-                    <div style={{ position: "relative" }}>
-                      <button className="btn btn-sm" onClick={() => setShowImportPicker(!showImportPicker)}>
-                        Import...
-                      </button>
-                      {showImportPicker && (
-                        <div style={{
-                          position: "absolute",
-                          top: "100%",
-                          right: 0,
-                          marginTop: 4,
-                          background: "var(--bg-secondary, #1a1a1a)",
-                          border: "1px solid var(--border)",
-                          borderRadius: 6,
-                          padding: 4,
-                          zIndex: 100,
-                          minWidth: 200,
-                          maxHeight: 240,
-                          overflowY: "auto",
-                          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-                        }}>
-                          {importableJobs.map((j) => (
-                            <button
-                              key={j.slug}
-                              className="btn btn-sm"
-                              style={{
-                                display: "block",
-                                width: "100%",
-                                textAlign: "left",
-                                fontSize: 12,
-                                padding: "6px 8px",
-                                border: "none",
-                                borderRadius: 4,
-                              }}
-                              onClick={() => handleImportJob(j)}
-                            >
-                              <div>{j.name}</div>
-                              <div style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "monospace" }}>
-                                {j.folder_path?.replace(/\/\.cwt$/, "").split("/").pop()}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
                 </>
               )}
             </div>
@@ -673,6 +620,55 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             >
               cwt.md
             </button>
+            {isNew && importableJobs.length > 0 && (
+              <div style={{ position: "relative", marginLeft: "auto" }}>
+                <button
+                  className="directions-tab"
+                  onClick={() => setShowImportPicker(!showImportPicker)}
+                >
+                  Import
+                </button>
+                {showImportPicker && (
+                  <div style={{
+                    position: "absolute",
+                    top: "100%",
+                    right: 0,
+                    marginTop: 4,
+                    background: "var(--bg-secondary, #1a1a1a)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    padding: 4,
+                    zIndex: 100,
+                    minWidth: 200,
+                    maxHeight: 240,
+                    overflowY: "auto",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                  }}>
+                    {importableJobs.map((j) => (
+                      <button
+                        key={j.slug}
+                        className="btn btn-sm"
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          fontSize: 12,
+                          padding: "6px 8px",
+                          border: "none",
+                          borderRadius: 4,
+                        }}
+                        onClick={() => handleImportJob(j)}
+                      >
+                        <div>{j.name}</div>
+                        <div style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "monospace" }}>
+                          {j.folder_path?.replace(/\/\.cwt$/, "").split("/").pop()}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           {previewFile === "job.md" ? (
             <textarea
