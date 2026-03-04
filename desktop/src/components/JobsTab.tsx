@@ -349,7 +349,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   // Update viewingJob when jobs reload
   useEffect(() => {
     if (viewingJob) {
-      const fresh = (core.jobs as Job[]).find((j) => j.name === viewingJob.name);
+      const fresh = (core.jobs as Job[]).find((j) => j.slug === viewingJob.slug);
       if (fresh && fresh !== viewingJob) {
         setViewingJob(fresh);
       }

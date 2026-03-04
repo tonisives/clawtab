@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AerospaceWorkspace, AppSettings, Job, JobType, NotifyTarget, SecretEntry } from "../types";
+import { HighlightedTextarea } from "./MarkdownHighlight";
 import { CronInput, describeCron } from "./CronInput";
 import { SAMPLE_TEMPLATES, TEMPLATE_CATEGORIES } from "../data/sampleTemplates";
 
@@ -671,17 +672,16 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             )}
           </div>
           {previewFile === "job.md" ? (
-            <textarea
-              ref={editorRef}
-              className={`directions-editor${dragOver ? " drag-over" : ""}`}
+            <HighlightedTextarea
+              textareaRef={editorRef}
+              wrapClassName={dragOver ? "drag-over" : ""}
               value={inlineContent}
               onChange={(e) => handleInlineChange(e.target.value)}
               spellCheck={false}
               placeholder=""
             />
           ) : (
-            <textarea
-              className="directions-editor"
+            <HighlightedTextarea
               value={sharedContent}
               onChange={(e) => handleSharedChange(e.target.value)}
               spellCheck={false}

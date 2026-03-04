@@ -215,6 +215,10 @@ input[type="password"]:disabled,
   border-color: var(--accent-color) !important;
   background: color-mix(in srgb, var(--accent-color) 6%, transparent);
 }
+.highlighted-textarea-wrap.drag-over {
+  border-color: var(--accent-color) !important;
+  background: color-mix(in srgb, var(--accent-color) 6%, transparent);
+}
 
 /* Markdown syntax highlighting tokens */
 .md-heading-marker {
@@ -285,29 +289,32 @@ input[type="password"]:disabled,
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
   padding: 10px 12px;
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: transparent;
+  color: transparent !important;
   caret-color: var(--text-primary);
-  background: transparent;
+  background: transparent !important;
   border: none !important;
-  outline: none;
+  outline: none !important;
   resize: none;
   white-space: pre-wrap;
   word-wrap: break-word;
   tab-size: 2;
   box-sizing: border-box;
   overflow-y: auto;
+  -webkit-text-fill-color: transparent;
 }
 .highlighted-textarea-input::selection {
   background: var(--accent-hover);
+  -webkit-text-fill-color: var(--text-primary);
 }
 .highlighted-textarea-input:focus {
-  box-shadow: none;
+  box-shadow: none !important;
+  border: none !important;
 }
 
 /* Terminal-style preview (used in TelegramPanel commands) */

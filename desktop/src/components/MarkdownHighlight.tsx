@@ -126,11 +126,15 @@ export function HighlightedTextarea({
   onChange,
   spellCheck,
   placeholder,
+  textareaRef,
+  wrapClassName,
 }: {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   spellCheck?: boolean;
   placeholder?: string;
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
+  wrapClassName?: string;
 }) {
   const backdropRef = useRef<HTMLPreElement>(null);
 
@@ -142,13 +146,14 @@ export function HighlightedTextarea({
   }, []);
 
   return (
-    <div className="highlighted-textarea-wrap">
+    <div className={`highlighted-textarea-wrap ${wrapClassName || ""}`}>
       <MarkdownHighlight
         ref={backdropRef}
         content={value || placeholder || ""}
         className="highlighted-textarea-backdrop"
       />
       <textarea
+        ref={textareaRef}
         className="highlighted-textarea-input"
         value={value}
         onChange={onChange}

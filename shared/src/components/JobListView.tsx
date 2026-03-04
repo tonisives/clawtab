@@ -182,7 +182,7 @@ export function JobListView({
             ? `h_${item.group}`
             : item.kind === "process"
               ? `p_${item.process.pane_id}`
-              : `j_${item.job.name}`;
+              : `j_${item.job.slug || item.job.name}`;
 
       if (item.kind === "agent") {
         return (
