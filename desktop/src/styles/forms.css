@@ -216,6 +216,100 @@ input[type="password"]:disabled,
   background: color-mix(in srgb, var(--accent-color) 6%, transparent);
 }
 
+/* Markdown syntax highlighting tokens */
+.md-heading-marker {
+  color: var(--accent-color);
+  font-weight: 700;
+}
+.md-heading {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.md-code-fence {
+  color: var(--text-secondary);
+}
+.md-code-block {
+  color: var(--success-color);
+}
+.md-code {
+  color: var(--success-color);
+  background: var(--hover-bg);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.md-bold {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.md-italic {
+  color: var(--text-primary);
+  font-style: italic;
+}
+.md-link {
+  color: var(--accent-color);
+}
+.md-list-marker {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+.md-comment {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+/* Highlighted textarea overlay */
+.highlighted-textarea-wrap {
+  position: relative;
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 7px 7px;
+  overflow: hidden;
+}
+.highlighted-textarea-backdrop {
+  padding: 10px 12px;
+  height: 350px;
+  min-height: 225px;
+  max-height: 600px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  box-sizing: border-box;
+  color: var(--text-primary);
+  pointer-events: none;
+}
+.highlighted-textarea-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  padding: 10px 12px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: transparent;
+  caret-color: var(--text-primary);
+  background: transparent;
+  border: none !important;
+  outline: none;
+  resize: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  tab-size: 2;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+.highlighted-textarea-input::selection {
+  background: var(--accent-hover);
+}
+.highlighted-textarea-input:focus {
+  box-shadow: none;
+}
+
 /* Terminal-style preview (used in TelegramPanel commands) */
 .terminal-preview {
   background: #1e1e1e;

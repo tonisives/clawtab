@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { RemoteJob, JobStatus } from "@clawtab/shared";
 import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import {
@@ -21,6 +22,7 @@ import type { AppSettings, Job } from "../types";
 import { JobEditor } from "./JobEditor";
 import { SamplePicker } from "./SamplePicker";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
 import { describeCron } from "./CronInput";
 
 const transport = createTauriTransport();
@@ -396,10 +398,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       const wasEditing = editingJob;
       const renamed = editingJob && job.name !== editingJob.name;
       if (renamed) {
-        await invoke("delete_job", { name: editingJob.name });
-        job = { ...job, slug: "" };
+        await invoke("rename_job", { oldName: editingJob.name, job: { ...job, slug: "" } });
+      } else {
+        await invoke("save_job", { job });
       }
-      await invoke("save_job", { job });
       await core.reload();
       setEditingJob(null);
       setIsCreating(false);
@@ -457,6 +459,81 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     });
     setIsCreating(true);
   }, [core.jobs]);
+
+  type ImportState =
+    | null
+    | { step: "pick-dest"; source: string; jobName: string }
+    | { step: "confirm-duplicate"; source: string; destCwt: string; jobName: string };
+  const [importState, setImportState] = useState<ImportState>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const doImport = useCallback(async (source: string, destCwt: string, jobName: string) => {
+    try {
+      await invoke("import_job_folder", { source, destCwt, jobName });
+      await core.reload();
+      setImportState(null);
+      setImportError(null);
+    } catch (e) {
+      setImportError(typeof e === "string" ? e : String(e));
+    }
+  }, [core.reload]);
+
+  const handleImportCwt = useCallback(async () => {
+    setImportError(null);
+    const selected = await open({ directory: true, title: "Select job folder (contains job.md)" });
+    if (!selected) return;
+
+    // Validate job.md exists (will also be checked backend-side)
+    const source = selected as string;
+    const parts = source.replace(/\/$/, "").split("/");
+    const jobName = parts[parts.length - 1];
+    const parentName = parts.length >= 2 ? parts[parts.length - 2] : "";
+
+    if (parentName === ".cwt") {
+      // Already inside a .cwt folder - use in place
+      const destCwt = parts.slice(0, -1).join("/");
+      // Check if already registered
+      const existing = (core.jobs as Job[]).find(
+        (j) => j.folder_path === destCwt && j.job_name === jobName,
+      );
+      if (existing) {
+        setImportState({ step: "confirm-duplicate", source, destCwt, jobName });
+      } else {
+        await doImport(source, destCwt, jobName);
+      }
+    } else {
+      // Not inside .cwt - ask where to put it
+      setImportState({ step: "pick-dest", source, jobName });
+    }
+  }, [core.jobs, doImport]);
+
+  const pickDestAndImport = useCallback(async (source: string, jobName: string) => {
+    const selected = await open({ directory: true, title: "Select project folder" });
+    if (!selected) return;
+    const picked = (selected as string).replace(/\/+$/, "");
+    // Allow picking either a .cwt folder or a project folder
+    const destCwt = picked.endsWith("/.cwt") || picked.endsWith(".cwt")
+      ? picked
+      : picked + "/.cwt";
+    const existing = (core.jobs as Job[]).find(
+      (j) => j.folder_path === destCwt && j.job_name === jobName,
+    );
+    if (existing) {
+      setImportState({ step: "confirm-duplicate", source, destCwt, jobName });
+    } else {
+      await doImport(source, destCwt, jobName);
+    }
+  }, [core.jobs, doImport]);
+
+  const handleImportPickDest = useCallback(async () => {
+    if (!importState || importState.step !== "pick-dest") return;
+    await pickDestAndImport(importState.source, importState.jobName);
+  }, [importState, pickDestAndImport]);
+
+  const handleImportDuplicate = useCallback(async () => {
+    if (!importState || importState.step !== "confirm-duplicate") return;
+    await pickDestAndImport(importState.source, importState.jobName);
+  }, [importState, pickDestAndImport]);
 
   const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
     if (resolvedJob) {
@@ -665,11 +742,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     <div className="settings-section">
       <div className="section-header">
         <h2>Jobs</h2>
-        <div className="btn-group">
-          <button className="btn btn-primary btn-sm" onClick={() => setIsCreating(true)}>
-            Add Job
-          </button>
-        </div>
+        <button className="btn btn-sm" onClick={handleImportCwt} style={{ marginLeft: "auto" }}>
+          Import .cwt
+        </button>
       </div>
 
       <JobListView
@@ -695,6 +770,36 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           onChange={(values) => setParamsDialog({ ...paramsDialog, values })}
           onRun={handleRunWithParams}
           onCancel={() => setParamsDialog(null)}
+        />
+      )}
+
+      {importState?.step === "pick-dest" && (
+        <ConfirmDialog
+          message={`"${importState.jobName}" is not inside a .cwt folder. Select a project folder to import into.`}
+          onConfirm={handleImportPickDest}
+          onCancel={() => setImportState(null)}
+          confirmLabel="Select folder"
+          confirmClassName="btn btn-primary btn-sm"
+        />
+      )}
+
+      {importState?.step === "confirm-duplicate" && (
+        <ConfirmDialog
+          message={`"${importState.jobName}" already exists in this project. Duplicate to a different project?`}
+          onConfirm={handleImportDuplicate}
+          onCancel={() => setImportState(null)}
+          confirmLabel="Select folder"
+          confirmClassName="btn btn-primary btn-sm"
+        />
+      )}
+
+      {importError && (
+        <ConfirmDialog
+          message={importError}
+          onConfirm={() => setImportError(null)}
+          onCancel={() => setImportError(null)}
+          confirmLabel="OK"
+          confirmClassName="btn btn-sm"
         />
       )}
     </div>
@@ -863,24 +968,25 @@ function AgentDetailSections() {
       </button>
       {!directionsCollapsed && (
         <div style={{ marginTop: 8 }}>
-          <pre style={{
-            padding: "10px 12px",
-            height: 350,
-            minHeight: 225,
-            overflowY: "auto",
-            fontFamily: "monospace",
-            fontSize: 12,
-            lineHeight: 1.5,
-            color: "var(--text-primary)",
-            background: "var(--bg-secondary)",
-            whiteSpace: "pre-wrap",
-            margin: 0,
-            border: "1px solid var(--border-color)",
-            borderRadius: 7,
-            boxSizing: "border-box",
-          }}>
-            {cwtContext || "(no cwt.md)"}
-          </pre>
+          <MarkdownHighlight
+            content={cwtContext || "(no cwt.md)"}
+            style={{
+              padding: "10px 12px",
+              height: 350,
+              minHeight: 225,
+              overflowY: "auto",
+              fontFamily: "monospace",
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "var(--text-primary)",
+              background: "var(--bg-secondary)",
+              whiteSpace: "pre-wrap",
+              margin: 0,
+              border: "1px solid var(--border-color)",
+              borderRadius: 7,
+              boxSizing: "border-box",
+            }}
+          />
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
             <button
               className="btn btn-sm"
@@ -1014,17 +1120,17 @@ function DesktopDetailSections({ job }: { job: Job }) {
                   </button>
                 </div>
                 {previewFile === "job.md" ? (
-                  <textarea
-                    className="directions-editor"
+                  <HighlightedTextarea
                     value={inlineContent}
                     onChange={(e) => setInlineContent(e.target.value)}
                     spellCheck={false}
                     placeholder=""
                   />
                 ) : (
-                  <pre className="directions-body">
-                    {cwtContextPreview || "(no cwt.md)"}
-                  </pre>
+                  <MarkdownHighlight
+                    content={cwtContextPreview || "(no cwt.md)"}
+                    className="directions-body"
+                  />
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>

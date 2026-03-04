@@ -58,6 +58,176 @@ pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Resu
 }
 
 #[tauri::command]
+pub fn rename_job(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    old_name: String,
+    job: Job,
+) -> Result<(), String> {
+    let mut config = state.jobs_config.lock().unwrap();
+
+    let old_job = config
+        .jobs
+        .iter()
+        .find(|j| j.name == old_name)
+        .cloned()
+        .ok_or_else(|| format!("Job not found: {}", old_name))?;
+
+    // Rename .cwt subfolder if the job_name changed and folder_path exists
+    let old_jn = old_job.job_name.as_deref().unwrap_or("default");
+    let new_jn = job.job_name.as_deref().unwrap_or("default");
+    if old_jn != new_jn {
+        if let Some(ref fp) = old_job.folder_path {
+            let cwt_root = std::path::Path::new(fp);
+            let old_dir = cwt_root.join(old_jn);
+            let new_dir = cwt_root.join(new_jn);
+            if old_dir.is_dir() && !new_dir.exists() {
+                std::fs::rename(&old_dir, &new_dir)
+                    .map_err(|e| format!("Failed to rename .cwt subfolder: {}", e))?;
+            }
+        }
+    }
+
+    // Delete old config entry
+    config.delete_job(&old_job.slug)?;
+
+    // Save new job with fresh slug
+    let mut new_job = job;
+    new_job.slug = String::new();
+    // Derive new slug
+    new_job.slug = crate::config::jobs::derive_slug(
+        &new_job.folder_path.as_deref().unwrap_or(&new_job.name),
+        new_job.job_name.as_deref(),
+        &config.jobs,
+    );
+    config.save_job(&new_job)?;
+
+    // Refresh in-memory list
+    *config = crate::config::jobs::JobsConfig::load();
+
+    let settings = state.settings.lock().unwrap().clone();
+    let jobs = config.jobs.clone();
+    drop(config);
+    ensure_agent_dir(&settings, &jobs);
+    regenerate_all_cwt_contexts(&settings, &jobs);
+
+    // Push updated jobs to relay
+    crate::relay::push_full_state_if_connected(
+        &state.relay,
+        &state.jobs_config,
+        &state.job_status,
+    );
+
+    let _ = app.emit("jobs-changed", ());
+
+    Ok(())
+}
+
+/// Import a job folder (containing job.md) into a .cwt directory.
+/// `source` is the folder with job.md/cwt.md.
+/// `dest_cwt` is the target .cwt directory.
+/// `job_name` is the subfolder name inside .cwt.
+/// If source is already inside dest_cwt, files are used in place (no copy).
+#[tauri::command]
+pub fn import_job_folder(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    source: String,
+    dest_cwt: String,
+    job_name: String,
+) -> Result<(), String> {
+    let src = std::path::Path::new(&source);
+    if !src.join("job.md").exists() {
+        return Err("Selected folder does not contain job.md".to_string());
+    }
+
+    let dest_root = std::path::Path::new(&dest_cwt);
+    let dest_dir = dest_root.join(&job_name);
+
+    // Copy files if source != destination
+    let src_canon = src.canonicalize().unwrap_or_else(|_| src.to_path_buf());
+    let dest_canon = if dest_dir.exists() {
+        dest_dir.canonicalize().unwrap_or_else(|_| dest_dir.clone())
+    } else {
+        dest_dir.clone()
+    };
+    if src_canon != dest_canon {
+        std::fs::create_dir_all(&dest_dir)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+        // Copy job.md
+        std::fs::copy(src.join("job.md"), dest_dir.join("job.md"))
+            .map_err(|e| format!("Failed to copy job.md: {}", e))?;
+        // Copy cwt.md if it exists
+        let cwt_md = src.join("cwt.md");
+        if cwt_md.exists() {
+            std::fs::copy(&cwt_md, dest_dir.join("cwt.md"))
+                .map_err(|e| format!("Failed to copy cwt.md: {}", e))?;
+        }
+    }
+
+    // Derive group from project dir (parent of .cwt)
+    let group = dest_root
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "default".to_string());
+
+    let mut config = state.jobs_config.lock().unwrap();
+
+    let job = Job {
+        name: job_name.clone(),
+        job_type: crate::config::jobs::JobType::Folder,
+        enabled: true,
+        path: String::new(),
+        args: Vec::new(),
+        cron: String::new(),
+        secret_keys: Vec::new(),
+        env: std::collections::HashMap::new(),
+        work_dir: None,
+        tmux_session: None,
+        aerospace_workspace: None,
+        folder_path: Some(dest_cwt.clone()),
+        job_name: Some(job_name.clone()),
+        telegram_chat_id: None,
+        telegram_log_mode: crate::config::jobs::TelegramLogMode::OnPrompt,
+        telegram_notify: crate::config::jobs::TelegramNotify::default(),
+        notify_target: crate::config::jobs::NotifyTarget::None,
+        group,
+        slug: String::new(),
+        skill_paths: Vec::new(),
+        params: Vec::new(),
+        kill_on_end: true,
+    };
+
+    let slug = crate::config::jobs::derive_slug(
+        &dest_cwt,
+        Some(&job_name),
+        &config.jobs,
+    );
+    let mut job = job;
+    job.slug = slug;
+    config.save_job(&job)?;
+
+    // Refresh
+    *config = crate::config::jobs::JobsConfig::load();
+    let settings = state.settings.lock().unwrap().clone();
+    let jobs = config.jobs.clone();
+    drop(config);
+    ensure_agent_dir(&settings, &jobs);
+    regenerate_all_cwt_contexts(&settings, &jobs);
+
+    crate::relay::push_full_state_if_connected(
+        &state.relay,
+        &state.jobs_config,
+        &state.job_status,
+    );
+
+    let _ = app.emit("jobs-changed", ());
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn delete_job(app: tauri::AppHandle, state: State<AppState>, name: String) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
 

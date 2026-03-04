@@ -44,10 +44,14 @@ export function ConfirmDialog({
   message,
   onConfirm,
   onCancel,
+  confirmLabel = "Delete",
+  confirmClassName = "btn btn-danger btn-sm",
 }: {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  confirmLabel?: string;
+  confirmClassName?: string;
 }) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -78,8 +82,8 @@ export function ConfirmDialog({
           <button ref={cancelRef} className="btn btn-sm" onClick={onCancel}>
             Cancel
           </button>
-          <button className="btn btn-danger btn-sm" onClick={onConfirm}>
-            Delete
+          <button className={confirmClassName} onClick={onConfirm}>
+            {confirmLabel}
           </button>
         </div>
       </div>

@@ -291,6 +291,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::jobs::get_jobs,
             commands::jobs::save_job,
+            commands::jobs::rename_job,
+            commands::jobs::import_job_folder,
             commands::jobs::delete_job,
             commands::jobs::toggle_job,
             commands::jobs::run_job_now,
