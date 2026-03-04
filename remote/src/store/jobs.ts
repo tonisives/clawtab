@@ -39,10 +39,14 @@ export const useJobsStore = create<JobsState>((set) => ({
     }),
 }));
 
-export function useJob(name: string): RemoteJob | undefined {
-  return useJobsStore((s) => s.jobs.find((j) => j.name === name));
+export function useJob(nameOrSlug: string): RemoteJob | undefined {
+  return useJobsStore((s) => s.jobs.find((j) => j.name === nameOrSlug || j.slug === nameOrSlug));
 }
 
-export function useJobStatus(name: string): JobStatus {
-  return useJobsStore((s) => s.statuses[name] ?? IDLE_STATUS);
+export function useJobStatus(nameOrSlug: string): JobStatus {
+  // Statuses are keyed by slug; find the job to get its slug
+  return useJobsStore((s) => {
+    const job = s.jobs.find((j) => j.name === nameOrSlug || j.slug === nameOrSlug);
+    return s.statuses[job?.slug ?? nameOrSlug] ?? IDLE_STATUS;
+  });
 }

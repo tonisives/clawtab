@@ -124,22 +124,22 @@ export function JobDetailView({
       try {
         switch (action) {
           case "run":
-            await transport.runJob(job.name);
+            await transport.runJob(job.slug);
             break;
           case "stop":
-            await transport.stopJob(job.name);
+            await transport.stopJob(job.slug);
             break;
           case "pause":
-            await transport.pauseJob(job.name);
+            await transport.pauseJob(job.slug);
             break;
           case "resume":
-            await transport.resumeJob(job.name);
+            await transport.resumeJob(job.slug);
             break;
           case "restart":
             if (transport.restartJob) {
-              await transport.restartJob(job.name);
+              await transport.restartJob(job.slug);
             } else {
-              await transport.runJob(job.name);
+              await transport.runJob(job.slug);
             }
             break;
         }
@@ -147,30 +147,30 @@ export function JobDetailView({
         console.error(`Failed to ${action} job:`, e);
       }
     },
-    [transport, job.name, job.params],
+    [transport, job.slug, job.params],
   );
 
   const handleRunWithParams = useCallback(
     async (values: Record<string, string>) => {
       try {
-        await transport.runJob(job.name, values);
+        await transport.runJob(job.slug, values);
       } catch (e) {
         console.error("Failed to run job with params:", e);
       }
       setShowParamsModal(false);
     },
-    [transport, job.name],
+    [transport, job.slug],
   );
 
   const handleSendInput = useCallback(
     async (text: string) => {
       try {
-        await transport.sendInput(job.name, text);
+        await transport.sendInput(job.slug, text);
       } catch (e) {
         console.error("Failed to send input:", e);
       }
     },
-    [transport, job.name],
+    [transport, job.slug],
   );
 
   const pathDisplay = (job.work_dir || job.path || "").replace(/^\/Users\/[^/]+/, "~");
@@ -255,6 +255,8 @@ export function JobDetailView({
               <LogViewer content={logs} />
             </View>
           )}
+          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+          <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
         </View>
       )}
 
@@ -324,14 +326,6 @@ export function JobDetailView({
             {detailInner}
           </View>
         </ScrollView>
-      )}
-
-      {/* Input bar when running/paused */}
-      {(isRunning || isPaused) && (
-        <>
-          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
-          <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
-        </>
       )}
 
       {/* Params modal */}

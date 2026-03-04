@@ -111,7 +111,7 @@ pub fn reattach_running_jobs(
             // Check if this job already has a status (avoid double-attach)
             {
                 let status = job_status.lock().unwrap();
-                if let Some(JobStatus::Running { .. }) = status.get(&job.name) {
+                if let Some(JobStatus::Running { .. }) = status.get(&job.slug) {
                     continue;
                 }
             }
@@ -131,7 +131,7 @@ pub fn reattach_running_jobs(
             {
                 let mut status = job_status.lock().unwrap();
                 status.insert(
-                    job.name.clone(),
+                    job.slug.clone(),
                     JobStatus::Running {
                         run_id: run_id.clone(),
                         started_at: started_at.clone(),
@@ -146,7 +146,7 @@ pub fn reattach_running_jobs(
                 let h = history.lock().unwrap();
                 let record = crate::history::RunRecord {
                     id: run_id.clone(),
-                    job_name: job.name.clone(),
+                    job_name: job.slug.clone(),
                     started_at: started_at.clone(),
                     finished_at: None,
                     exit_code: None,

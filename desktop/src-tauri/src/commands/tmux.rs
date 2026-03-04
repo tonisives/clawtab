@@ -30,7 +30,7 @@ pub fn focus_job_window(state: State<AppState>, name: String) -> Result<(), Stri
             let job = config
                 .jobs
                 .iter()
-                .find(|j| j.name == name)
+                .find(|j| j.slug == name)
                 .ok_or_else(|| format!("Job not found: {}", name))?;
 
             let session = job

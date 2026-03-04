@@ -19,9 +19,10 @@ const wsTransport = createWsTransport();
 export default function JobDetailScreen() {
   const { name, run_id } = useLocalSearchParams<{ name: string; run_id?: string }>();
   const job = useJob(name);
+  const slug = job?.slug ?? name;
   const status = useJobStatus(name);
-  const { logs } = useLogs(name);
-  const runs = useRunsStore((s) => s.runs[name]) ?? null;
+  const { logs } = useLogs(slug);
+  const runs = useRunsStore((s) => s.runs[slug]) ?? null;
   const router = useRouter();
   const [runsLoading, setRunsLoading] = useState(false);
 
@@ -30,7 +31,7 @@ export default function JobDetailScreen() {
   const enableAutoYes = useNotificationStore((s) => s.enableAutoYes);
   const disableAutoYes = useNotificationStore((s) => s.disableAutoYes);
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
-  const jobQuestion = questions.find((q) => q.matched_job === name);
+  const jobQuestion = questions.find((q) => q.matched_job === slug);
   const autoYesActive = jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false;
 
   const loadRuns = useCallback(() => {
@@ -38,12 +39,12 @@ export default function JobDetailScreen() {
     if (!send || !name) return;
     const id = nextId();
     setRunsLoading(true);
-    send({ type: "get_run_history", id, name, limit: 50 });
+    send({ type: "get_run_history", id, name: slug, limit: 50 });
     registerRequest<RunRecord[]>(id).then((result) => {
-      useRunsStore.getState().setRuns(name, result);
+      useRunsStore.getState().setRuns(slug, result);
       setRunsLoading(false);
     });
-  }, [name]);
+  }, [slug]);
 
   useEffect(() => {
     loadRuns();
@@ -81,14 +82,14 @@ export default function JobDetailScreen() {
             const yesOpt = findYesOption(jobQuestion);
             if (yesOpt) {
               const s = getWsSend();
-              if (s) s({ type: "send_input", id: nextId(), name: name, text: yesOpt });
+              if (s) s({ type: "send_input", id: nextId(), name: slug, text: yesOpt });
               setTimeout(() => answerQuestion(jobQuestion.question_id), 1500);
             }
           },
         },
       ],
     );
-  }, [jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, name]);
+  }, [jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, slug]);
 
   if (!job) {
     return (

@@ -42,14 +42,14 @@ pub async fn execute_job(
             tmux_session: None,
         };
         let mut status = job_status.lock().unwrap();
-        status.insert(job.name.clone(), new_status.clone());
+        status.insert(job.slug.clone(), new_status.clone());
         drop(status);
-        crate::relay::push_status_update(relay, &job.name, &new_status);
+        crate::relay::push_status_update(relay, &job.slug, &new_status);
     }
 
     let record = RunRecord {
         id: run_id.clone(),
-        job_name: job.name.clone(),
+        job_name: job.slug.clone(),
         started_at: started_at.clone(),
         finished_at: None,
         exit_code: None,
@@ -94,9 +94,9 @@ pub async fn execute_job(
                         tmux_session: Some(handle.tmux_session.clone()),
                     };
                     let mut status = job_status.lock().unwrap();
-                    status.insert(job.name.clone(), new_status.clone());
+                    status.insert(job.slug.clone(), new_status.clone());
                     drop(status);
-                    crate::relay::push_status_update(relay, &job.name, &new_status);
+                    crate::relay::push_status_update(relay, &job.slug, &new_status);
                 }
                 // Register in active_agents so Telegram replies can be relayed
                 // (only needed when using Telegram notifications)
@@ -181,9 +181,9 @@ pub async fn execute_job(
                     }
                 };
                 let mut status = job_status.lock().unwrap();
-                status.insert(job.name.clone(), new_status.clone());
+                status.insert(job.slug.clone(), new_status.clone());
                 drop(status);
-                crate::relay::push_status_update(relay, &job.name, &new_status);
+                crate::relay::push_status_update(relay, &job.slug, &new_status);
             }
 
             {
@@ -204,7 +204,7 @@ pub async fn execute_job(
                 }
                 NotifyTarget::App => {
                     let event = if success { "completed" } else { "failed" };
-                    crate::relay::push_job_notification(relay, &job.name, event, &run_id);
+                    crate::relay::push_job_notification(relay, &job.slug, event, &run_id);
                 }
                 NotifyTarget::None => {}
             }
@@ -219,9 +219,9 @@ pub async fn execute_job(
                     exit_code: -1,
                 };
                 let mut status = job_status.lock().unwrap();
-                status.insert(job.name.clone(), new_status.clone());
+                status.insert(job.slug.clone(), new_status.clone());
                 drop(status);
-                crate::relay::push_status_update(relay, &job.name, &new_status);
+                crate::relay::push_status_update(relay, &job.slug, &new_status);
             }
 
             {
@@ -240,7 +240,7 @@ pub async fn execute_job(
                     }
                 }
                 NotifyTarget::App => {
-                    crate::relay::push_job_notification(relay, &job.name, "failed", &run_id);
+                    crate::relay::push_job_notification(relay, &job.slug, "failed", &run_id);
                 }
                 NotifyTarget::None => {}
             }

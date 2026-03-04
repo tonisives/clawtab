@@ -273,7 +273,7 @@ fn run_job(
         config
             .jobs
             .iter()
-            .find(|j| j.name == name)
+            .find(|j| j.slug == name)
             .cloned()
             .ok_or_else(|| format!("job not found: {}", name))?
     };

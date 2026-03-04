@@ -326,11 +326,11 @@ fn detect_question_processes(
     let running_panes: HashMap<String, (String, String)> = {
         let statuses = job_status.lock().unwrap();
         let config = jobs_config.lock().unwrap();
-        statuses.iter().filter_map(|(name, s)| {
+        statuses.iter().filter_map(|(slug, s)| {
             if let JobStatus::Running { pane_id: Some(pid), .. } = s {
-                let job = config.jobs.iter().find(|j| j.name == *name);
+                let job = config.jobs.iter().find(|j| j.slug == *slug);
                 let group = job.map(|j| j.group.clone());
-                Some((pid.clone(), (name.clone(), group.unwrap_or_default())))
+                Some((pid.clone(), (slug.clone(), group.unwrap_or_default())))
             } else {
                 None
             }
@@ -342,9 +342,9 @@ fn detect_question_processes(
         config.jobs.iter().filter_map(|job| {
             if let Some(ref fp) = job.folder_path {
                 let root = fp.strip_suffix("/.cwt").unwrap_or(fp);
-                Some((root.to_string(), job.group.clone(), job.name.clone()))
+                Some((root.to_string(), job.group.clone(), job.slug.clone()))
             } else if let Some(ref wd) = job.work_dir {
-                Some((wd.clone(), job.group.clone(), job.name.clone()))
+                Some((wd.clone(), job.group.clone(), job.slug.clone()))
             } else {
                 None
             }

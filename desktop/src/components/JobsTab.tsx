@@ -388,7 +388,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
 
   const handleRunWithParams = useCallback(async () => {
     if (!paramsDialog) return;
-    await actions.runJob(paramsDialog.job.name, paramsDialog.values);
+    await actions.runJob(paramsDialog.job.slug, paramsDialog.values);
     setParamsDialog(null);
   }, [paramsDialog, actions]);
 
@@ -398,7 +398,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       const wasEditing = editingJob;
       const renamed = editingJob && job.name !== editingJob.name;
       if (renamed) {
-        await invoke("rename_job", { oldName: editingJob.name, job: { ...job, slug: "" } });
+        await invoke("rename_job", { oldName: editingJob.slug, job: { ...job, slug: "" } });
       } else {
         await invoke("save_job", { job });
       }
@@ -537,7 +537,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
 
   const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
     if (resolvedJob) {
-      const job = (core.jobs as Job[]).find((j) => j.name === resolvedJob);
+      const job = (core.jobs as Job[]).find((j) => j.slug === resolvedJob);
       if (job) { setViewingJob(job); return; }
     }
     const proc = core.processes.find((p) => p.pane_id === q.pane_id);
@@ -708,18 +708,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   }
 
   if (viewingJob) {
-    const jobQuestion = questions.find((q) => q.matched_job === viewingJob.name);
+    const jobQuestion = questions.find((q) => q.matched_job === viewingJob.slug);
     return (
       <>
         <DesktopJobDetail
           job={viewingJob}
-          status={core.statuses[viewingJob.name] ?? { state: "idle" as const }}
+          status={core.statuses[viewingJob.slug] ?? { state: "idle" as const }}
           onBack={() => setViewingJob(null)}
           onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
-          onOpen={() => handleOpen(viewingJob.name)}
-          onToggle={() => { actions.toggleJob(viewingJob.name); core.reload(); }}
+          onOpen={() => handleOpen(viewingJob.slug)}
+          onToggle={() => { actions.toggleJob(viewingJob.slug); core.reload(); }}
           onDuplicate={() => handleDuplicate(viewingJob)}
-          onDelete={() => { actions.deleteJob(viewingJob.name); setViewingJob(null); core.reload(); }}
+          onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
           options={jobQuestion?.options}
           autoYesActive={jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false}
           onToggleAutoYes={jobQuestion ? () => handleToggleAutoYes(jobQuestion) : undefined}
@@ -832,8 +832,8 @@ function DesktopJobDetail({
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
 }) {
-  const { runs, reloadRuns } = useJobDetail(transport, job.name);
-  const { logs } = useLogBuffer(transport, job.name);
+  const { runs, reloadRuns } = useJobDetail(transport, job.slug);
+  const { logs } = useLogBuffer(transport, job.slug);
   const [showConfirm, setShowConfirm] = useState(false);
 
   const extraContent = useMemo(

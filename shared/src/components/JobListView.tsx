@@ -229,7 +229,7 @@ export function JobListView({
       }
 
       // job
-      const status = statuses[item.job.name] ?? IDLE_STATUS;
+      const status = statuses[item.job.slug] ?? IDLE_STATUS;
       return (
         <View
           key={key}

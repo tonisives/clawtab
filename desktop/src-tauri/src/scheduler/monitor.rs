@@ -59,7 +59,7 @@ pub async fn monitor_pane(params: MonitorParams) {
             }
         }
         if use_app {
-            crate::relay::push_job_notification(&params.relay, &params.job_name, "started", &params.run_id);
+            crate::relay::push_job_notification(&params.relay, &params.slug, "started", &params.run_id);
         }
     }
 
@@ -189,7 +189,7 @@ pub async fn monitor_pane(params: MonitorParams) {
 
             // Push log diffs to relay
             if !new_content.is_empty() {
-                crate::relay::push_log_chunk(&params.relay, &params.job_name, &new_content);
+                crate::relay::push_log_chunk(&params.relay, &params.slug, &new_content);
             }
 
             if notify.logs && use_telegram && !new_content.is_empty() {
@@ -338,9 +338,9 @@ pub async fn monitor_pane(params: MonitorParams) {
             last_run: finished_at,
         };
         let mut status = params.job_status.lock().unwrap();
-        status.insert(params.job_name.clone(), new_status.clone());
+        status.insert(params.slug.clone(), new_status.clone());
         drop(status);
-        crate::relay::push_status_update(&params.relay, &params.job_name, &new_status);
+        crate::relay::push_status_update(&params.relay, &params.slug, &new_status);
     }
 
     // Send completion notification
@@ -360,7 +360,7 @@ pub async fn monitor_pane(params: MonitorParams) {
             }
         }
         if use_app {
-            crate::relay::push_job_notification(&params.relay, &params.job_name, "completed", &params.run_id);
+            crate::relay::push_job_notification(&params.relay, &params.slug, "completed", &params.run_id);
         }
     }
 

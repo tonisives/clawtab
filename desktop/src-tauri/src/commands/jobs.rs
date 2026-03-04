@@ -69,7 +69,7 @@ pub fn rename_job(
     let old_job = config
         .jobs
         .iter()
-        .find(|j| j.name == old_name)
+        .find(|j| j.slug == old_name)
         .cloned()
         .ok_or_else(|| format!("Job not found: {}", old_name))?;
 
@@ -234,7 +234,7 @@ pub fn delete_job(app: tauri::AppHandle, state: State<AppState>, name: String) -
     let slug = config
         .jobs
         .iter()
-        .find(|j| j.name == name)
+        .find(|j| j.slug == name)
         .map(|j| j.slug.clone())
         .ok_or_else(|| format!("Job not found: {}", name))?;
 
@@ -259,7 +259,7 @@ pub fn delete_job(app: tauri::AppHandle, state: State<AppState>, name: String) -
 #[tauri::command]
 pub fn toggle_job(state: State<AppState>, name: String) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
-    if let Some(job) = config.jobs.iter_mut().find(|j| j.name == name) {
+    if let Some(job) = config.jobs.iter_mut().find(|j| j.slug == name) {
         job.enabled = !job.enabled;
         let job = job.clone();
         config.save_job(&job)?;
@@ -279,7 +279,7 @@ pub async fn run_job_now(
         config
             .jobs
             .iter()
-            .find(|j| j.name == name)
+            .find(|j| j.slug == name)
             .cloned()
             .ok_or_else(|| format!("Job not found: {}", name))?
     };
@@ -362,7 +362,7 @@ pub async fn restart_job(
         config
             .jobs
             .iter()
-            .find(|j| j.name == name)
+            .find(|j| j.slug == name)
             .cloned()
             .ok_or_else(|| format!("Job not found: {}", name))?
     };
@@ -1076,7 +1076,7 @@ pub fn build_agent_job(
             crate::config::jobs::NotifyTarget::None
         },
         group: "agent".to_string(),
-        slug: "agent/default".to_string(),
+        slug: "agent".to_string(),
         skill_paths: Vec::new(),
         params: Vec::new(),
         kill_on_end: true,
