@@ -203,6 +203,7 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
         ..
     } = &msg
     {
+        tracing::info!(%question_id, %answer, "answer received via WS, forwarding to desktop");
         let qid = question_id.clone();
         let ans = answer.clone();
         let pool = state.pool.clone();

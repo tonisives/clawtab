@@ -20,6 +20,13 @@ pub async fn answer(
     claims: Claims,
     Json(req): Json<AnswerRequest>,
 ) -> Result<Json<Value>, AppError> {
+    tracing::info!(
+        user_id = %claims.sub,
+        question_id = %req.question_id,
+        answer = %req.answer,
+        "answer received via HTTP"
+    );
+
     let msg = ClientMessage::AnswerQuestion {
         id: format!("http_{}", req.question_id),
         question_id: req.question_id.clone(),
@@ -32,6 +39,8 @@ pub async fn answer(
         let hub = state.hub.read().await;
         hub.forward_to_desktop(claims.sub, &msg)
     };
+
+    tracing::info!(sent, "answer forwarded to desktop");
 
     // Mark answered in DB (fire and forget)
     let pool = state.pool.clone();
