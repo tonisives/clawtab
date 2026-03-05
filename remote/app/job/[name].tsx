@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, View, Text, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { BackTitle } from "./_layout";
 import { useJob, useJobStatus } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
 import { useNotificationStore } from "../../src/store/notifications";
@@ -103,7 +104,7 @@ export default function JobDetailScreen() {
   if (!job) {
     return (
       <View style={styles.container}>
-        <Stack.Screen options={{ title: name }} />
+        <Stack.Screen options={{ title: "", headerLeft: () => <BackTitle title={name} /> }} />
         <View style={styles.center}>
           <Text style={styles.notFound}>Job not found</Text>
         </View>
@@ -115,7 +116,8 @@ export default function JobDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: job.name,
+          title: "",
+          headerLeft: () => <BackTitle title={job.name} />,
           headerRight: () => <StatusBadge status={status} />,
         }}
       />
