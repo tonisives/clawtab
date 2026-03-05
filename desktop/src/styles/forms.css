@@ -132,7 +132,7 @@ input[type="password"]:disabled,
 
 /* Directions editor / preview */
 .directions-box {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .directions-tabs {
@@ -167,7 +167,7 @@ input[type="password"]:disabled,
 .directions-body {
   padding: 10px 12px;
   height: 350px;
-  min-height: 225px;
+  min-height: 120px;
   overflow-y: auto;
   overscroll-behavior: contain;
   font-family: monospace;
@@ -181,6 +181,7 @@ input[type="password"]:disabled,
   border-top: none;
   border-radius: 0 0 7px 7px;
   box-sizing: border-box;
+  resize: vertical;
 }
 
 .directions-editor {
@@ -267,46 +268,86 @@ input[type="password"]:disabled,
   border: 1px solid var(--border-color);
   border-top: none;
   border-radius: 0 0 7px 7px;
+  height: 350px;
+  min-height: 120px;
   overflow: hidden;
 }
+.textarea-resize-grip {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  color: var(--text-secondary);
+  opacity: 0.4;
+  z-index: 2;
+  transition: opacity 0.15s;
+}
+.textarea-resize-grip:hover {
+  opacity: 0.8;
+}
 .highlighted-textarea-backdrop {
+  position: absolute;
+  inset: 0;
   padding: 10px 12px;
-  height: 350px;
-  min-height: 225px;
-  max-height: 600px;
-  overflow-y: auto;
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
-  margin: 0;
   box-sizing: border-box;
+  margin: 0;
+  overflow-y: auto;
   color: var(--text-primary);
   pointer-events: none;
+  scrollbar-width: none;
+}
+.highlighted-textarea-backdrop::-webkit-scrollbar {
+  display: none;
 }
 .highlighted-textarea-input {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100% !important;
-  height: 100% !important;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   padding: 10px 12px;
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+  margin: 0;
   color: transparent !important;
   caret-color: var(--text-primary);
   background: transparent !important;
   border: none !important;
   outline: none !important;
   resize: none;
-  white-space: pre-wrap;
-  word-wrap: break-word;
   tab-size: 2;
-  box-sizing: border-box;
   overflow-y: auto;
   -webkit-text-fill-color: transparent;
+}
+.highlighted-textarea-readonly {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 12px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+  margin: 0;
+  overflow-y: auto;
+  color: var(--text-primary);
 }
 .highlighted-textarea-input::selection {
   background: var(--accent-hover);

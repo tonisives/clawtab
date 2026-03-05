@@ -128,15 +128,18 @@ export function HighlightedTextarea({
   placeholder,
   textareaRef,
   wrapClassName,
+  readOnly,
 }: {
   value: string;
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   spellCheck?: boolean;
   placeholder?: string;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   wrapClassName?: string;
+  readOnly?: boolean;
 }) {
   const backdropRef = useRef<HTMLPreElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
     if (backdropRef.current) {
@@ -145,22 +148,48 @@ export function HighlightedTextarea({
     }
   }, []);
 
+  const handleGripDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const startY = e.clientY;
+    const startH = wrap.offsetHeight;
+    const onMove = (ev: MouseEvent) => {
+      const h = Math.max(120, startH + (ev.clientY - startY));
+      wrap.style.height = h + "px";
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, []);
+
   return (
-    <div className={`highlighted-textarea-wrap ${wrapClassName || ""}`}>
+    <div ref={wrapRef} className={`highlighted-textarea-wrap ${readOnly ? "readonly" : ""} ${wrapClassName || ""}`}>
       <MarkdownHighlight
         ref={backdropRef}
         content={value || placeholder || ""}
-        className="highlighted-textarea-backdrop"
+        className={readOnly ? "highlighted-textarea-readonly" : "highlighted-textarea-backdrop"}
       />
-      <textarea
-        ref={textareaRef}
-        className="highlighted-textarea-input"
-        value={value}
-        onChange={onChange}
-        onScroll={handleScroll}
-        spellCheck={spellCheck}
-        placeholder={placeholder}
-      />
+      {!readOnly && (
+        <textarea
+          ref={textareaRef}
+          className="highlighted-textarea-input"
+          value={value}
+          onChange={onChange}
+          onScroll={handleScroll}
+          spellCheck={spellCheck}
+          placeholder={placeholder}
+        />
+      )}
+      <div className="textarea-resize-grip" onMouseDown={handleGripDown}>
+        <svg width="10" height="6" viewBox="0 0 10 6">
+          <path d="M0 1h10M0 4h10" stroke="currentColor" strokeWidth="1" />
+        </svg>
+      </div>
     </div>
   );
 }

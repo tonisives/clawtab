@@ -6,19 +6,9 @@ import type { AerospaceWorkspace, AppSettings, Job, JobType, NotifyTarget, Secre
 import { HighlightedTextarea } from "./MarkdownHighlight";
 import { CronInput, describeCron } from "./CronInput";
 import { SAMPLE_TEMPLATES, TEMPLATE_CATEGORIES } from "../data/sampleTemplates";
+import { EDITOR_LABELS } from "../constants";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
-
-const EDITOR_LABELS: Record<string, string> = {
-  nvim: "Neovim",
-  vim: "Vim",
-  code: "VS Code",
-  codium: "VSCodium",
-  zed: "Zed",
-  hx: "Helix",
-  subl: "Sublime Text",
-  emacs: "Emacs",
-};
 
 const STEP_TIPS: Record<string, string> = {
   identity: "Choose the project folder, name the job, and write its directions.",
@@ -198,6 +188,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
   const [sharedContent, setSharedContent] = useState("");
   const [sharedLoaded, setSharedLoaded] = useState(false);
+  const [jobCwtContent, setJobCwtContent] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
@@ -324,6 +315,9 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           })
           .catch(() => {});
       }
+      invoke<string>("read_cwt_context", { folderPath: form.folder_path, jobName: jn })
+        .then(setJobCwtContent)
+        .catch(() => setJobCwtContent(null));
     }
   }, [form.folder_path, form.job_type]);
 
@@ -592,16 +586,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     return () => { unlisten.then((fn) => fn()); };
   }, [previewFile]);
 
-  const handleSharedChange = (content: string) => {
-    setSharedContent(content);
-    if (!isNew && form.folder_path) {
-      invoke("write_cwt_shared", {
-        folderPath: form.folder_path,
-        content,
-      }).catch(() => {});
-    }
-  };
-
   const renderDirectionsFields = () => {
     if (form.job_type !== "folder" || !form.folder_path) return null;
 
@@ -682,15 +666,13 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             />
           ) : (
             <HighlightedTextarea
-              value={sharedContent}
-              onChange={(e) => handleSharedChange(e.target.value)}
-              spellCheck={false}
-              placeholder="Shared project context for all jobs in this folder..."
+              value={jobCwtContent || "(no cwt.md)"}
+              readOnly
             />
           )}
         </div>
 
-        {!isNew && (
+        {!isNew && previewFile === "job.md" && (
           <button
             className="btn btn-sm"
             style={{ marginTop: 8 }}
@@ -698,8 +680,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               invoke("open_job_editor", {
                 folderPath: form.folder_path,
                 editor: preferredEditor,
-                jobName: previewFile === "cwt.md" ? "." : (form.job_name ?? "default"),
-                fileName: previewFile === "cwt.md" ? "cwt.md" : "job.md",
+                jobName: form.job_name ?? "default",
+                fileName: "job.md",
               });
             }}
           >

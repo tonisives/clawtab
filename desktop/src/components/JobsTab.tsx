@@ -2,208 +2,26 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { RemoteJob, JobStatus } from "@clawtab/shared";
+import type { RemoteJob } from "@clawtab/shared";
 import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import {
   JobListView,
-  JobDetailView,
   NotificationSection,
   AutoYesBanner,
   useJobsCore,
   useJobActions,
-  useJobDetail,
-  useLogBuffer,
-  shortenPath,
 } from "@clawtab/shared";
 import type { AutoYesEntry } from "@clawtab/shared";
-import { LogViewer } from "./LogViewer";
 import { createTauriTransport } from "../transport/tauriTransport";
 import type { AppSettings, Job } from "../types";
 import { JobEditor } from "./JobEditor";
 import { SamplePicker } from "./SamplePicker";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
-import { describeCron } from "./CronInput";
+import { DetectedProcessDetail } from "./DetectedProcessDetail";
+import { DesktopJobDetail, AgentDetail } from "./JobDetailSections";
+import { ParamsOverlay } from "./ParamsOverlay";
 
 const transport = createTauriTransport();
-
-const EDITOR_LABELS: Record<string, string> = {
-  nvim: "Neovim",
-  vim: "Vim",
-  code: "VS Code",
-  codium: "VSCodium",
-  zed: "Zed",
-  hx: "Helix",
-  subl: "Sublime Text",
-  emacs: "Emacs",
-};
-
-// Detail view for detected (non-job) Claude processes
-function DetectedProcessDetail({
-  process,
-  questions,
-  onBack,
-  onDismissQuestion,
-  autoYesActive,
-  onToggleAutoYes,
-}: {
-  process: ClaudeProcess;
-  questions: ClaudeQuestion[];
-  onBack: () => void;
-  onDismissQuestion: (questionId: string) => void;
-  autoYesActive?: boolean;
-  onToggleAutoYes?: () => void;
-}) {
-  const [logs, setLogs] = useState(process.log_lines);
-  const [inputText, setInputText] = useState("");
-  const [sending, setSending] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const processRef = useRef(process);
-  processRef.current = process;
-
-  const displayName = shortenPath(process.cwd);
-
-  // Poll logs
-  useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const result = await invoke<string>("get_detected_process_logs", {
-          tmuxSession: processRef.current.tmux_session,
-          paneId: processRef.current.pane_id,
-        });
-        if (active) setLogs(result);
-      } catch {
-        // Process may have stopped
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => { active = false; clearInterval(interval); };
-  }, [process.pane_id]);
-
-  const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
-  const options = paneQuestion?.options ?? [];
-
-  const handleSend = useCallback(async (text: string) => {
-    const t = text.trim();
-    if (!t || sending) return;
-    setSending(true);
-    try {
-      await invoke("send_detected_process_input", { paneId: process.pane_id, text: t });
-      setInputText("");
-      inputRef.current?.focus();
-      if (paneQuestion) onDismissQuestion(paneQuestion.question_id);
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  }, [process.pane_id, sending, paneQuestion, onDismissQuestion]);
-
-  const handleOpen = useCallback(() => {
-    invoke("focus_detected_process", {
-      tmuxSession: process.tmux_session,
-      windowName: process.window_name,
-    }).catch(() => {});
-  }, [process.tmux_session, process.window_name]);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-        <button className="btn btn-sm" onClick={onBack}>
-          Back
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {displayName}
-            </span>
-            <code style={{ fontSize: 11, color: "var(--text-secondary)" }}>v{process.version}</code>
-            <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
-          </div>
-        </div>
-        <div className="btn-group">
-          <button className="btn btn-sm" onClick={handleOpen} title="Open in terminal">
-            Open in Terminal
-          </button>
-        </div>
-      </div>
-
-      {/* Logs */}
-      <LogViewer
-        content={logs}
-        className="log-viewer"
-        style={{ flex: 1, minHeight: 200 }}
-      />
-
-      {/* Option buttons */}
-      {options.length > 0 && (
-        <div style={{
-          display: "flex",
-          gap: 6,
-          padding: "8px 0",
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}>
-          {options.map((opt) => (
-            <button
-              key={opt.number}
-              className="btn btn-sm"
-              style={{
-                borderColor: "var(--accent)",
-                color: "var(--accent)",
-              }}
-              disabled={sending}
-              onClick={() => handleSend(opt.number)}
-            >
-              {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
-            </button>
-          ))}
-          {onToggleAutoYes && (
-            <>
-              <div style={{ width: 1, height: 18, backgroundColor: "var(--border-color)" }} />
-              <button
-                className="btn btn-sm"
-                style={{
-                  borderColor: "var(--warning-color)",
-                  color: "var(--warning-color)",
-                  backgroundColor: autoYesActive ? "var(--warning-bg)" : undefined,
-                  fontWeight: 600,
-                }}
-                onClick={onToggleAutoYes}
-              >
-                {autoYesActive ? "! Auto ON" : "! Yes all"}
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Input bar */}
-      <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
-        <input
-          ref={inputRef}
-          className="input"
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSend(inputText); }}
-          placeholder="Send input..."
-          style={{ flex: 1 }}
-        />
-        <button
-          className="btn btn-primary btn-sm"
-          disabled={!inputText.trim() || sending}
-          onClick={() => handleSend(inputText)}
-        >
-          Send
-        </button>
-      </div>
-    </div>
-  );
-}
 
 interface JobsTabProps {
   pendingTemplateId?: string | null;
@@ -216,7 +34,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const actions = useJobActions(transport, core.reloadStatuses);
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
 
-  // Desktop-only state
+  // Navigation state
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
@@ -227,19 +45,22 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
+
+  // Question polling
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
   const questionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fastPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track recently dismissed question IDs so polls don't bring them back
   const dismissedRef = useRef<Map<string, number>>(new Map());
-  // Auto-yes state (backed by Rust backend for cross-device sync)
+
+  // Auto-yes state
   const [autoYesPaneIds, setAutoYesPaneIds] = useState<Set<string>>(new Set());
+
+  // --- Question polling ---
 
   const loadQuestions = useCallback(() => {
     invoke<ClaudeQuestion[]>("get_active_questions").then((qs) => {
       console.log("[nfn] loadQuestions got", qs.length, "questions");
       const now = Date.now();
-      // Purge stale dismissals (>10s)
       for (const [id, ts] of dismissedRef.current) {
         if (now - ts > 10000) dismissedRef.current.delete(id);
       }
@@ -247,7 +68,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     }).catch((e) => { console.error("[nfn] loadQuestions error", e); });
   }, []);
 
-  // Poll for active questions
   useEffect(() => {
     console.log("[nfn] mounting, calling loadQuestions immediately");
     loadQuestions();
@@ -258,24 +78,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     };
   }, [loadQuestions]);
 
-  // Initialize auto-yes state from backend
-  useEffect(() => {
-    invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
-      setAutoYesPaneIds(new Set(paneIds));
-    }).catch(() => {});
-  }, []);
-
-  // Listen for auto-yes-changed events (remote toggled auto-yes via relay)
-  useEffect(() => {
-    const unlistenPromise = listen("auto-yes-changed", () => {
-      invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
-        setAutoYesPaneIds(new Set(paneIds));
-      }).catch(() => {});
-    });
-    return () => { unlistenPromise.then((fn) => fn()); };
-  }, []);
-
-  // Temporarily switch to fast polling (500ms for 5s) after answering a question
   const startFastQuestionPoll = useCallback(() => {
     if (questionPollRef.current) clearInterval(questionPollRef.current);
     if (fastPollTimerRef.current) clearTimeout(fastPollTimerRef.current);
@@ -285,6 +87,23 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       questionPollRef.current = setInterval(loadQuestions, 5000);
     }, 5000);
   }, [loadQuestions]);
+
+  // --- Auto-yes ---
+
+  useEffect(() => {
+    invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
+      setAutoYesPaneIds(new Set(paneIds));
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromise = listen("auto-yes-changed", () => {
+      invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
+        setAutoYesPaneIds(new Set(paneIds));
+      }).catch(() => {});
+    });
+    return () => { unlistenPromise.then((fn) => fn()); };
+  }, []);
 
   const handleToggleAutoYes = useCallback((q: ClaudeQuestion) => {
     if (autoYesPaneIds.has(q.pane_id)) {
@@ -300,7 +119,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     next.add(q.pane_id);
     setAutoYesPaneIds(next);
     invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
-    // Rust backend will auto-answer on the next question detection tick
     startFastQuestionPoll();
   }, [autoYesPaneIds, startFastQuestionPoll]);
 
@@ -329,7 +147,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     return entries;
   }, [autoYesPaneIds, questions, core.processes]);
 
-  // Load group order from settings
+  // --- Settings & event listeners ---
+
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       if (s.group_order && s.group_order.length > 0) {
@@ -338,53 +157,43 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     }).catch(() => {});
   }, []);
 
-  // Listen for jobs-changed events to reload (supplements the shared hook's polling)
   useEffect(() => {
-    const unlistenPromise = listen("jobs-changed", () => {
-      core.reload();
-    });
+    const unlistenPromise = listen("jobs-changed", () => { core.reload(); });
     return () => { unlistenPromise.then((fn) => fn()); };
   }, [core.reload]);
 
-  // Update viewingJob when jobs reload
+  // Sync viewing state with reloaded data
   useEffect(() => {
     if (viewingJob) {
       const fresh = (core.jobs as Job[]).find((j) => j.slug === viewingJob.slug);
-      if (fresh && fresh !== viewingJob) {
-        setViewingJob(fresh);
-      }
+      if (fresh && fresh !== viewingJob) setViewingJob(fresh);
     }
   }, [core.jobs, viewingJob]);
 
-  // Update viewingProcess when processes reload
   useEffect(() => {
     if (viewingProcess) {
       const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
-      if (fresh && fresh !== viewingProcess) {
-        setViewingProcess(fresh);
-      }
+      if (fresh && fresh !== viewingProcess) setViewingProcess(fresh);
     }
   }, [core.processes, viewingProcess]);
 
   useEffect(() => {
-    if (pendingTemplateId) {
-      setShowPicker(true);
-    }
+    if (pendingTemplateId) setShowPicker(true);
   }, [pendingTemplateId]);
 
   useEffect(() => {
-    if (createJobKey && createJobKey > 0) {
-      setIsCreating(true);
-    }
+    if (createJobKey && createJobKey > 0) setIsCreating(true);
   }, [createJobKey]);
 
-  // Scroll tab-content to top when switching to editor/picker/detail views
+  // Scroll to top when entering sub-views
   useEffect(() => {
     if (editingJob || isCreating || showPicker || viewingJob || viewingProcess) {
       const tabContent = document.querySelector(".tab-content");
       if (tabContent) tabContent.scrollTop = 0;
     }
   }, [editingJob, isCreating, showPicker, viewingJob, viewingProcess]);
+
+  // --- Handlers ---
 
   const handleRunWithParams = useCallback(async () => {
     if (!paramsDialog) return;
@@ -405,9 +214,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       await core.reload();
       setEditingJob(null);
       setIsCreating(false);
-      if (wasEditing) {
-        setViewingJob(job);
-      }
+      if (wasEditing) setViewingJob(job);
     } catch (e) {
       const msg = typeof e === "string" ? e : String(e);
       setSaveError(msg);
@@ -437,7 +244,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   }, []);
 
   const handleSelectProcess = useCallback((process: ClaudeProcess) => {
-    // If this is the agent process, show agent detail view
     if (process.cwd.endsWith("/clawtab/agent")) {
       setViewingAgent(true);
       return;
@@ -459,6 +265,44 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     });
     setIsCreating(true);
   }, [core.jobs]);
+
+  // --- Question handlers ---
+
+  const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
+    if (resolvedJob) {
+      const job = (core.jobs as Job[]).find((j) => j.slug === resolvedJob);
+      if (job) { setViewingJob(job); return; }
+    }
+    const proc = core.processes.find((p) => p.pane_id === q.pane_id);
+    if (proc) {
+      setViewingProcess(proc);
+    } else {
+      invoke("focus_detected_process", {
+        tmuxSession: q.tmux_session,
+        windowName: q.window_name,
+      }).catch(() => {});
+    }
+  }, [core.jobs, core.processes]);
+
+  const handleQuestionSendOption = useCallback((q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
+    if (resolvedJob) {
+      invoke("send_job_input", { name: resolvedJob, text: optionNumber }).catch(() => {});
+    } else {
+      invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
+    }
+    dismissedRef.current.set(q.question_id, Date.now());
+    startFastQuestionPoll();
+    setTimeout(() => {
+      setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
+    }, 750);
+  }, [startFastQuestionPoll]);
+
+  const resolveQuestionJob = useCallback(
+    (q: ClaudeQuestion) => q.matched_job ?? null,
+    [],
+  );
+
+  // --- Import .cwt ---
 
   type ImportState =
     | null
@@ -483,16 +327,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     const selected = await open({ directory: true, title: "Select job folder (contains job.md)" });
     if (!selected) return;
 
-    // Validate job.md exists (will also be checked backend-side)
     const source = selected as string;
     const parts = source.replace(/\/$/, "").split("/");
     const jobName = parts[parts.length - 1];
     const parentName = parts.length >= 2 ? parts[parts.length - 2] : "";
 
     if (parentName === ".cwt") {
-      // Already inside a .cwt folder - use in place
       const destCwt = parts.slice(0, -1).join("/");
-      // Check if already registered
       const existing = (core.jobs as Job[]).find(
         (j) => j.folder_path === destCwt && j.job_name === jobName,
       );
@@ -502,7 +343,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         await doImport(source, destCwt, jobName);
       }
     } else {
-      // Not inside .cwt - ask where to put it
       setImportState({ step: "pick-dest", source, jobName });
     }
   }, [core.jobs, doImport]);
@@ -511,7 +351,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     const selected = await open({ directory: true, title: "Select project folder" });
     if (!selected) return;
     const picked = (selected as string).replace(/\/+$/, "");
-    // Allow picking either a .cwt folder or a project folder
     const destCwt = picked.endsWith("/.cwt") || picked.endsWith(".cwt")
       ? picked
       : picked + "/.cwt";
@@ -535,45 +374,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     await pickDestAndImport(importState.source, importState.jobName);
   }, [importState, pickDestAndImport]);
 
-  const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
-    if (resolvedJob) {
-      const job = (core.jobs as Job[]).find((j) => j.slug === resolvedJob);
-      if (job) { setViewingJob(job); return; }
-    }
-    const proc = core.processes.find((p) => p.pane_id === q.pane_id);
-    if (proc) {
-      setViewingProcess(proc);
-    } else {
-      // Fallback: open terminal if process not found in list
-      invoke("focus_detected_process", {
-        tmuxSession: q.tmux_session,
-        windowName: q.window_name,
-      }).catch(() => {});
-    }
-  }, [core.jobs, core.processes]);
+  // --- Notification visibility (animation delay) ---
 
-  const handleQuestionSendOption = useCallback((q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
-    if (resolvedJob) {
-      invoke("send_job_input", { name: resolvedJob, text: optionNumber }).catch(() => {});
-    } else {
-      invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
-    }
-    // Suppress re-polling from bringing it back
-    dismissedRef.current.set(q.question_id, Date.now());
-    startFastQuestionPoll();
-    // Delay removal so the card's fly-away animation (400ms delay + 300ms) can play
-    setTimeout(() => {
-      setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
-    }, 750);
-  }, [startFastQuestionPoll]);
-
-  const resolveQuestionJob = useCallback(
-    (q: ClaudeQuestion) => q.matched_job ?? null,
-    [],
-  );
-
-  // Keep rendering NotificationSection briefly after questions drop to 0 so departure
-  // animations play out before the section disappears.
   const [nfnVisible, setNfnVisible] = useState(questions.length > 0);
   const nfnHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -608,7 +410,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     );
   }, [nfnVisible, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup, autoYesPaneIds, handleToggleAutoYes, autoYesEntries, handleDisableAutoYes]);
 
-  // Editor / picker screens (React DOM, kept as-is)
+  // --- Render ---
+
   if (editingJob || isCreating) {
     return (
       <>
@@ -677,6 +480,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     const agentStatus = core.statuses["agent"] ?? { state: "idle" as const };
     return (
       <AgentDetail
+        transport={transport}
         job={agentJob}
         status={agentStatus}
         onBack={() => setViewingAgent(false)}
@@ -699,9 +503,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         autoYesActive={autoYesPaneIds.has(viewingProcess.pane_id)}
         onToggleAutoYes={() => {
           const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
-          if (paneQuestion) {
-            handleToggleAutoYes(paneQuestion);
-          }
+          if (paneQuestion) handleToggleAutoYes(paneQuestion);
         }}
       />
     );
@@ -712,6 +514,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     return (
       <>
         <DesktopJobDetail
+          transport={transport}
           job={viewingJob}
           status={core.statuses[viewingJob.slug] ?? { state: "idle" as const }}
           onBack={() => setViewingJob(null)}
@@ -737,7 +540,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     );
   }
 
-  // Main jobs list using shared component
   return (
     <div className="settings-section">
       <div className="section-header">
@@ -802,520 +604,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           confirmClassName="btn btn-sm"
         />
       )}
-    </div>
-  );
-}
-
-// Desktop job detail - wraps the shared JobDetailView with desktop-specific sections
-function DesktopJobDetail({
-  job,
-  status,
-  onBack,
-  onEdit,
-  onOpen,
-  onToggle,
-  onDuplicate,
-  onDelete,
-  options,
-  autoYesActive,
-  onToggleAutoYes,
-}: {
-  job: Job;
-  status: JobStatus;
-  onBack: () => void;
-  onEdit: () => void;
-  onOpen: () => void;
-  onToggle: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  options?: { number: string; label: string }[];
-  autoYesActive?: boolean;
-  onToggleAutoYes?: () => void;
-}) {
-  const { runs, reloadRuns } = useJobDetail(transport, job.slug);
-  const { logs } = useLogBuffer(transport, job.slug);
-  const [showConfirm, setShowConfirm] = useState(false);
-
-  const extraContent = useMemo(
-    () => <DesktopDetailSections job={job} />,
-    [job],
-  );
-
-  return (
-    <>
-      <JobDetailView
-        transport={transport}
-        job={job as unknown as RemoteJob}
-        status={status}
-        logs={logs}
-        runs={runs}
-        onBack={onBack}
-        onReloadRuns={reloadRuns}
-        onEdit={onEdit}
-        onOpen={onOpen}
-        onToggleEnabled={onToggle}
-        onDuplicate={onDuplicate}
-        onDelete={() => setShowConfirm(true)}
-        extraContent={extraContent}
-        options={options}
-        autoYesActive={autoYesActive}
-        onToggleAutoYes={onToggleAutoYes}
-      />
-      {showConfirm && (
-        <ConfirmDialog
-          message={`Delete job "${job.name}"? This cannot be undone.`}
-          onConfirm={() => { onDelete(); setShowConfirm(false); }}
-          onCancel={() => setShowConfirm(false)}
-        />
-      )}
-    </>
-  );
-}
-
-// Agent detail view - wraps shared JobDetailView for the agent
-function AgentDetail({
-  job,
-  status,
-  onBack,
-  onOpen,
-}: {
-  job: RemoteJob;
-  status: JobStatus;
-  onBack: () => void;
-  onOpen: () => void;
-}) {
-  const { runs, reloadRuns } = useJobDetail(transport, "agent");
-  const { logs } = useLogBuffer(transport, "agent");
-
-  const extraContent = useMemo(
-    () => <AgentDetailSections />,
-    [],
-  );
-
-  return (
-    <JobDetailView
-      transport={transport}
-      job={job}
-      status={status}
-      logs={logs}
-      runs={runs}
-      onBack={onBack}
-      onReloadRuns={reloadRuns}
-      onOpen={onOpen}
-      extraContent={extraContent}
-    />
-  );
-}
-
-// Agent directions - shows cwt.md context with option to open in editor
-function AgentDetailSections() {
-  const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
-  const [cwtContext, setCwtContext] = useState<string | null>(null);
-  const [preferredEditor, setPreferredEditor] = useState("nvim");
-
-  useEffect(() => {
-    invoke<AppSettings>("get_settings").then((s) => {
-      setPreferredEditor(s.preferred_editor);
-    }).catch(() => {});
-  }, []);
-
-  const reloadContext = useCallback(() => {
-    invoke<string>("read_agent_context")
-      .then(setCwtContext)
-      .catch(() => setCwtContext(null));
-  }, []);
-
-  useEffect(() => {
-    reloadContext();
-  }, [reloadContext]);
-
-  useEffect(() => {
-    const interval = setInterval(reloadContext, 2000);
-    return () => clearInterval(interval);
-  }, [reloadContext]);
-
-  useEffect(() => {
-    const onFocus = () => reloadContext();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [reloadContext]);
-
-  return (
-    <div className="field-group">
-      <button
-        onClick={() => setDirectionsCollapsed((v) => !v)}
-        style={{
-          background: "none",
-          border: "none",
-          color: "var(--text-secondary)",
-          cursor: "pointer",
-          padding: 0,
-          fontSize: 11,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          width: "100%",
-        }}
-        className="field-group-title"
-      >
-        <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-          {directionsCollapsed ? "\u25B6" : "\u25BC"}
-        </span>
-        Directions
-      </button>
-      {!directionsCollapsed && (
-        <div style={{ marginTop: 8 }}>
-          <MarkdownHighlight
-            content={cwtContext || "(no cwt.md)"}
-            style={{
-              padding: "10px 12px",
-              height: 350,
-              minHeight: 225,
-              overflowY: "auto",
-              fontFamily: "monospace",
-              fontSize: 12,
-              lineHeight: 1.5,
-              color: "var(--text-primary)",
-              background: "var(--bg-secondary)",
-              whiteSpace: "pre-wrap",
-              margin: 0,
-              border: "1px solid var(--border-color)",
-              borderRadius: 7,
-              boxSizing: "border-box",
-            }}
-          />
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-            <button
-              className="btn btn-sm"
-              onClick={() => {
-                invoke("open_agent_editor", { fileName: "cwt.md" });
-              }}
-            >
-              Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Desktop-only detail sections: Directions, Configuration, Runtime, Secrets
-function DesktopDetailSections({ job }: { job: Job }) {
-  const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
-  const [configCollapsed, setConfigCollapsed] = useState(false);
-  const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
-  const [inlineContent, setInlineContent] = useState("");
-  const [savedContent, setSavedContent] = useState("");
-  const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
-  const [preferredEditor, setPreferredEditor] = useState("nvim");
-  const savedContentRef = useRef(savedContent);
-  savedContentRef.current = savedContent;
-
-  const dirty = inlineContent !== savedContent;
-
-  useEffect(() => {
-    invoke<AppSettings>("get_settings").then((s) => {
-      setPreferredEditor(s.preferred_editor);
-    }).catch(() => {});
-  }, []);
-
-  const reloadDirections = useCallback(() => {
-    if (job.job_type !== "folder" || !job.folder_path) return;
-    const jn = job.job_name ?? "default";
-    invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
-      .then((content) => {
-        setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
-        setSavedContent(content);
-      })
-      .catch(() => {});
-  }, [job]);
-
-  useEffect(() => {
-    if (job.job_type === "folder" && job.folder_path) {
-      const jn = job.job_name ?? "default";
-      invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
-        .then((content) => {
-          setInlineContent(content);
-          setSavedContent(content);
-        })
-        .catch(() => {});
-      invoke<string>("read_cwt_context", { folderPath: job.folder_path, jobName: jn })
-        .then(setCwtContextPreview)
-        .catch(() => setCwtContextPreview(null));
-    }
-  }, [job]);
-
-  useEffect(() => {
-    if (job.job_type !== "folder" || !job.folder_path) return;
-    const interval = setInterval(reloadDirections, 2000);
-    return () => clearInterval(interval);
-  }, [job, reloadDirections]);
-
-  useEffect(() => {
-    const onFocus = () => reloadDirections();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [reloadDirections]);
-
-  const handleSaveDirections = () => {
-    if (job.folder_path) {
-      invoke("write_cwt_entry", {
-        folderPath: job.folder_path,
-        jobName: job.job_name ?? "default",
-        content: inlineContent,
-      }).then(() => {
-        setSavedContent(inlineContent);
-      }).catch(() => {});
-    }
-  };
-
-  return (
-    <>
-      {/* Directions (folder jobs only) */}
-      {job.job_type === "folder" && job.folder_path && (
-        <div className="field-group">
-          <button
-            onClick={() => setDirectionsCollapsed((v) => !v)}
-            style={{
-              background: "none",
-              border: "none",
-              color: "var(--text-secondary)",
-              cursor: "pointer",
-              padding: 0,
-              fontSize: 11,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              width: "100%",
-            }}
-            className="field-group-title"
-          >
-            <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-              {directionsCollapsed ? "\u25B6" : "\u25BC"}
-            </span>
-            Directions
-          </button>
-          {!directionsCollapsed && (
-            <div style={{ marginTop: 8 }}>
-              <div className="directions-box">
-                <div className="directions-tabs">
-                  <button
-                    className={`directions-tab ${previewFile === "job.md" ? "active" : ""}`}
-                    onClick={() => setPreviewFile("job.md")}
-                  >
-                    job.md
-                  </button>
-                  <button
-                    className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
-                    onClick={() => setPreviewFile("cwt.md")}
-                  >
-                    cwt.md
-                  </button>
-                </div>
-                {previewFile === "job.md" ? (
-                  <HighlightedTextarea
-                    value={inlineContent}
-                    onChange={(e) => setInlineContent(e.target.value)}
-                    spellCheck={false}
-                    placeholder=""
-                  />
-                ) : (
-                  <MarkdownHighlight
-                    content={cwtContextPreview || "(no cwt.md)"}
-                    className="directions-body"
-                  />
-                )}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                {dirty && (
-                  <button className="btn btn-primary btn-sm" onClick={handleSaveDirections}>
-                    Save
-                  </button>
-                )}
-                <button
-                  className="btn btn-sm"
-                  onClick={() => {
-                    invoke("open_job_editor", {
-                      folderPath: job.folder_path,
-                      editor: preferredEditor,
-                      jobName: job.job_name ?? "default",
-                      fileName: previewFile,
-                    });
-                  }}
-                >
-                  Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Configuration */}
-      <div className="field-group">
-        <button
-          onClick={() => setConfigCollapsed((v) => !v)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-secondary)",
-            cursor: "pointer",
-            padding: 0,
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            width: "100%",
-          }}
-          className="field-group-title"
-        >
-          <span style={{ fontFamily: "monospace", fontSize: 9 }}>
-            {configCollapsed ? "\u25B6" : "\u25BC"}
-          </span>
-          Configuration
-        </button>
-        {!configCollapsed && (
-          <>
-            <DetailRow label="Type" value={job.job_type} />
-            <DetailRow label="Enabled" value={job.enabled ? "Yes" : "No"} />
-            {job.cron ? (
-              <>
-                <DetailRow label="Schedule" value={describeCron(job.cron)} />
-                <DetailRow label="Cron" value={job.cron} mono />
-              </>
-            ) : (
-              <DetailRow label="Schedule" value="Manual" />
-            )}
-            {job.group && job.group !== "default" && (
-              <DetailRow label="Group" value={job.group} />
-            )}
-            {job.job_type === "folder" && job.folder_path && (
-              <DetailRow label="Folder" value={job.folder_path} mono />
-            )}
-            {job.job_type === "binary" && (
-              <DetailRow label="Path" value={job.path} mono />
-            )}
-            {job.args.length > 0 && (
-              <DetailRow label="Args" value={job.args.join(" ")} mono />
-            )}
-            {job.work_dir && (
-              <DetailRow label="Work dir" value={job.work_dir} mono />
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Runtime */}
-      {(job.tmux_session || job.aerospace_workspace || job.notify_target !== "none") && (
-        <div className="field-group">
-          <span className="field-group-title">Runtime</span>
-          {job.tmux_session && (
-            <DetailRow label="Tmux session" value={job.tmux_session} mono />
-          )}
-          {job.aerospace_workspace && (
-            <DetailRow label="Aerospace workspace" value={job.aerospace_workspace} />
-          )}
-          {job.notify_target !== "none" && (
-            <DetailRow label="Notify target" value={job.notify_target === "telegram" ? "Telegram" : "App"} />
-          )}
-          {job.notify_target === "telegram" && job.telegram_chat_id && (
-            <>
-              <DetailRow label="Telegram chat" value={String(job.telegram_chat_id)} mono />
-              <DetailRow
-                label="Notifications"
-                value={
-                  [
-                    job.telegram_notify.start && "start",
-                    job.telegram_notify.working && "working",
-                    job.telegram_notify.logs && "logs",
-                    job.telegram_notify.finish && "finish",
-                  ].filter(Boolean).join(", ") || "none"
-                }
-              />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Secrets */}
-      {job.secret_keys.length > 0 && (
-        <div className="field-group">
-          <span className="field-group-title">Secrets</span>
-          {job.secret_keys.map((key) => (
-            <DetailRow key={key} label={key} value="(set)" mono />
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
-
-function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div style={{ display: "flex", gap: 12, padding: "4px 0", fontSize: 13 }}>
-      <span style={{ color: "var(--text-secondary)", minWidth: 120, flexShrink: 0 }}>{label}</span>
-      {mono ? <code style={{ flex: 1 }}>{value}</code> : <span style={{ flex: 1 }}>{value}</span>}
-    </div>
-  );
-}
-
-function ParamsOverlay({
-  job,
-  values,
-  onChange,
-  onRun,
-  onCancel,
-}: {
-  job: Job;
-  values: Record<string, string>;
-  onChange: (values: Record<string, string>) => void;
-  onRun: () => void;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="confirm-overlay" onClick={onCancel}>
-      <div className="confirm-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
-        <h3 style={{ marginBottom: 12 }}>Run: {job.name}</h3>
-        <p className="text-secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-          Fill in all parameters before running.
-        </p>
-        {job.params.map((key) => (
-          <div key={key} style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, display: "block" }}>
-              {key}
-            </label>
-            <input
-              className="input"
-              type="text"
-              value={values[key] ?? ""}
-              onChange={(e) => onChange({ ...values, [key]: e.target.value })}
-              onKeyDown={(e) => { if (e.key === "Enter") onRun(); }}
-              placeholder={`{${key}}`}
-              autoFocus={key === job.params[0]}
-            />
-          </div>
-        ))}
-        <div className="btn-group" style={{ marginTop: 16, justifyContent: "flex-end" }}>
-          <button className="btn btn-sm" onClick={onCancel}>Cancel</button>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={onRun}
-            disabled={job.params.some((k) => !values[k]?.trim())}
-          >
-            Run
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
