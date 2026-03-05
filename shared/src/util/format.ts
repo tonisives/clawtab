@@ -39,3 +39,14 @@ export function shortenPath(path: string | null | undefined): string {
   if (!path) return "";
   return path.replace(/^\/Users\/[^/]+/, "~");
 }
+
+/** Abbreviate intermediate segments to first char: ~/w/t/clawtab */
+export function compactPath(path: string | null | undefined): string {
+  if (!path) return "";
+  const short = path.replace(/^\/Users\/[^/]+/, "~");
+  const parts = short.split("/");
+  if (parts.length <= 2) return short;
+  const last = parts[parts.length - 1];
+  const compacted = parts.slice(0, -1).map((p) => (p === "~" ? "~" : p[0] || p));
+  return [...compacted, last].join("/");
+}

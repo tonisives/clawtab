@@ -17,7 +17,7 @@ export { colors } from "./theme/colors";
 export { spacing, radius } from "./theme/spacing";
 
 // Utils
-export { formatTime, formatDuration, timeAgo, shortenPath } from "./util/format";
+export { formatTime, formatDuration, timeAgo, shortenPath, compactPath } from "./util/format";
 export { groupJobs, sortGroupNames, findYesOption, typeIcon } from "./util/jobs";
 export { collapseSeparators, stripSeparators, truncateLogLines } from "./util/logs";
 export {

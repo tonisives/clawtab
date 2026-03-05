@@ -173,7 +173,8 @@ export function JobDetailView({
     [transport, job.slug],
   );
 
-  const pathDisplay = (job.work_dir || job.path || "").replace(/^\/Users\/[^/]+/, "~");
+  const jobDir = job.work_dir || job.folder_path || "";
+  const pathDisplay = jobDir.replace(/^\/Users\/[^/]+/, "~");
 
   const detailInner = (
     <>
@@ -298,7 +299,6 @@ export function JobDetailView({
 
   return (
     <View style={styles.container}>
-      {/* Path subtitle */}
       {pathDisplay ? (
         <View style={styles.pathRow}>
           <Text style={styles.pathText} numberOfLines={1}>

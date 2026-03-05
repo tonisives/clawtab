@@ -9,6 +9,7 @@ export interface RemoteJob {
   slug: string;
   work_dir?: string;
   path?: string;
+  folder_path?: string;
   params?: string[];
 }
 
