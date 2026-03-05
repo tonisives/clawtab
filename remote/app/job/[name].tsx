@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useJob, useJobStatus } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
 import { useNotificationStore } from "../../src/store/notifications";
+import { useWsStore } from "../../src/store/ws";
 import { StatusBadge } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
@@ -25,6 +26,7 @@ export default function JobDetailScreen() {
   const runs = useRunsStore((s) => s.runs[slug]) ?? null;
   const router = useRouter();
   const [runsLoading, setRunsLoading] = useState(false);
+  const connected = useWsStore((s) => s.connected);
 
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
@@ -49,6 +51,13 @@ export default function JobDetailScreen() {
   useEffect(() => {
     loadRuns();
   }, [loadRuns]);
+
+  // Reload runs when WebSocket reconnects (e.g. after page refresh)
+  useEffect(() => {
+    if (connected) {
+      loadRuns();
+    }
+  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleAutoYes = useCallback(() => {
     if (!jobQuestion) return;
@@ -119,6 +128,7 @@ export default function JobDetailScreen() {
           runs={runs}
           runsLoading={runsLoading}
           onBack={() => router.back()}
+          showBackButton={false}
           onReloadRuns={loadRuns}
           expandRunId={run_id}
           options={jobQuestion?.options}

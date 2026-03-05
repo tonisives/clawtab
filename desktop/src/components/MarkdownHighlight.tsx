@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useRef, useMemo } from "react";
+import { forwardRef, useCallback, useRef, useMemo, useEffect } from "react";
 
 // Lightweight markdown syntax highlighter - renders colored spans inside a <pre>.
 // Supports: headings, code blocks, inline code, bold, italic, links, comments, list markers.
@@ -147,6 +147,33 @@ export function HighlightedTextarea({
       backdropRef.current.scrollLeft = e.currentTarget.scrollLeft;
     }
   }, []);
+
+  // DEBUG: log computed widths
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const ta = wrap.querySelector("textarea");
+    const bd = wrap.querySelector("pre");
+    if (ta) {
+      const wrapCS = getComputedStyle(wrap);
+      const taCS = getComputedStyle(ta);
+      console.log("[textarea-debug] wrap:", wrap.offsetWidth, "x", wrap.offsetHeight, "display:", wrapCS.display, "position:", wrapCS.position, "overflow:", wrapCS.overflow);
+      console.log("[textarea-debug] textarea:", ta.offsetWidth, "x", ta.offsetHeight, "position:", taCS.position, "width:", taCS.width, "maxWidth:", taCS.maxWidth, "left:", taCS.left, "right:", taCS.right);
+      if (bd) {
+        const bdCS = getComputedStyle(bd);
+        console.log("[textarea-debug] backdrop:", bd.offsetWidth, "x", bd.offsetHeight, "position:", bdCS.position, "width:", bdCS.width);
+      }
+      // Walk up the DOM to find any constraining parent
+      let el: HTMLElement | null = wrap;
+      while (el) {
+        const cs = getComputedStyle(el);
+        if (cs.maxWidth !== "none" || cs.overflow === "hidden" || cs.overflow === "auto") {
+          console.log("[textarea-debug] ancestor:", el.tagName, el.className || "(no class)", "width:", el.offsetWidth, "maxWidth:", cs.maxWidth, "overflow:", cs.overflow);
+        }
+        el = el.parentElement;
+      }
+    }
+  }, [value]);
 
   const handleGripDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

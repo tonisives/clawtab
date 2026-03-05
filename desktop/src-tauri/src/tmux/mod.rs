@@ -344,6 +344,20 @@ pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Send C-c (SIGINT) to a specific pane by its ID.
+pub fn send_sigint_to_pane(pane_id: &str) -> Result<(), String> {
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", pane_id, "C-c"])
+        .output()
+        .map_err(|e| format!("Failed to send C-c to pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 /// Kill a specific pane by its ID (e.g. "%42").
 pub fn kill_pane(pane_id: &str) -> Result<(), String> {
     let output = Command::new("tmux")

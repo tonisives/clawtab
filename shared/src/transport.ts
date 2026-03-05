@@ -20,4 +20,5 @@ export interface Transport {
   focusJobWindow?(name: string): Promise<void>;
   saveJob?(job: RemoteJob): Promise<void>;
   restartJob?(name: string, params?: Record<string, string>): Promise<void>;
+  sigintJob?(name: string): Promise<void>;
 }

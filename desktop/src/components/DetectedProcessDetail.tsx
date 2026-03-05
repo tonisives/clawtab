@@ -22,6 +22,7 @@ export function DetectedProcessDetail({
   const [logs, setLogs] = useState(process.log_lines);
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const processRef = useRef(process);
   processRef.current = process;
@@ -65,6 +66,27 @@ export function DetectedProcessDetail({
     }
   }, [process.pane_id, sending, paneQuestion, onDismissQuestion]);
 
+  const handleStop = useCallback(async () => {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      await invoke("sigint_detected_process", { paneId: process.pane_id });
+    } catch (e) {
+      console.error("Failed to stop process:", e);
+    } finally {
+      setTimeout(() => setStopping(false), 2000);
+    }
+  }, [process.pane_id, stopping]);
+
+  const handleKill = useCallback(async () => {
+    try {
+      await invoke("stop_detected_process", { paneId: process.pane_id });
+      onBack();
+    } catch (e) {
+      console.error("Failed to kill process:", e);
+    }
+  }, [process.pane_id, onBack]);
+
   const handleOpen = useCallback(() => {
     invoke("focus_detected_process", {
       tmuxSession: process.tmux_session,
@@ -90,6 +112,23 @@ export function DetectedProcessDetail({
         <div className="btn-group">
           <button className="btn btn-sm" onClick={handleOpen} title="Open in terminal">
             Open in Terminal
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={handleStop}
+            disabled={stopping}
+            style={{ borderColor: "var(--warning-color)", color: "var(--warning-color)" }}
+            title="Send C-c twice to gracefully stop"
+          >
+            {stopping ? "Stopping..." : "Stop (C-c)"}
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={handleKill}
+            style={{ borderColor: "var(--danger-color)", color: "var(--danger-color)" }}
+            title="Kill the tmux pane"
+          >
+            Kill
           </button>
         </div>
       </div>

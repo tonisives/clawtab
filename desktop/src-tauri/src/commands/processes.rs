@@ -191,6 +191,13 @@ pub fn set_auto_yes_panes(state: State<AppState>, pane_ids: Vec<String>) {
 }
 
 #[tauri::command]
+pub fn sigint_detected_process(pane_id: String) -> Result<(), String> {
+    crate::tmux::send_sigint_to_pane(&pane_id)?;
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    crate::tmux::send_sigint_to_pane(&pane_id)
+}
+
+#[tauri::command]
 pub fn stop_detected_process(pane_id: String) -> Result<(), String> {
     crate::tmux::kill_pane(&pane_id)
 }

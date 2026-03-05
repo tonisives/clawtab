@@ -116,6 +116,26 @@ pub fn reattach_running_jobs(
                 }
             }
 
+            // Clean up any previous incomplete reattach records for this job
+            {
+                let h = history.lock().unwrap();
+                if let Ok(old_runs) = h.get_by_job_name(&job.slug, 20) {
+                    let stale_ids: Vec<String> = old_runs
+                        .into_iter()
+                        .filter(|r| {
+                            r.trigger == "reattach"
+                                && r.finished_at.is_none()
+                                && r.stdout.is_empty()
+                                && r.stderr.is_empty()
+                        })
+                        .map(|r| r.id)
+                        .collect();
+                    if !stale_ids.is_empty() {
+                        let _ = h.delete_by_ids(&stale_ids);
+                    }
+                }
+            }
+
             let run_id = format!("reattach-{}", uuid::Uuid::new_v4());
             let started_at = Utc::now().to_rfc3339();
 

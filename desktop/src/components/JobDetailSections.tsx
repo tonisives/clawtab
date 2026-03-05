@@ -9,6 +9,14 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { describeCron } from "./CronInput";
 import type { Transport } from "@clawtab/shared";
 
+const cardSectionStyle = {
+  backgroundColor: "var(--bg-primary)",
+  borderWidth: 1,
+  borderColor: "var(--border-light)",
+  borderRadius: 8,
+  padding: 16,
+} as const;
+
 // Shared collapsible header button used by detail sections
 function CollapsibleHeader({
   collapsed,
@@ -398,6 +406,7 @@ export function DesktopJobDetail({
         options={options}
         autoYesActive={autoYesActive}
         onToggleAutoYes={onToggleAutoYes}
+        sectionStyle={cardSectionStyle}
       />
       {showConfirm && (
         <ConfirmDialog
@@ -443,6 +452,7 @@ export function AgentDetail({
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
       extraContent={extraContent}
+      sectionStyle={cardSectionStyle}
     />
   );
 }

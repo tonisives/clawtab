@@ -40,6 +40,8 @@ export interface JobDetailViewProps {
   onDuplicate?: () => void;
   onToggleEnabled?: () => void;
   onDelete?: () => void;
+  // Hide the back arrow (e.g. when the platform already provides a nav back button)
+  showBackButton?: boolean;
   // Auto-expand a specific run by ID (e.g. from notification deep link)
   expandRunId?: string;
   // Slot for platform-specific content (e.g. desktop configuration sections)
@@ -49,6 +51,8 @@ export interface JobDetailViewProps {
   // Auto-yes support for option buttons
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  // Optional style override for section cards (desktop uses card styling)
+  sectionStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
 }
 
 export function JobDetailView({
@@ -65,15 +69,18 @@ export function JobDetailView({
   onDuplicate,
   onToggleEnabled,
   onDelete,
+  showBackButton = true,
   expandRunId,
   extraContent,
   options: optionsProp,
   autoYesActive,
   onToggleAutoYes,
+  sectionStyle,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
   const isPaused = state === "paused";
+  const isManual = !job.cron;
 
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [runsCollapsed, setRunsCollapsed] = useState(false);
@@ -115,8 +122,28 @@ export function JobDetailView({
     onReloadRuns?.();
   }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [sigintPending, setSigintPending] = useState(false);
+  const [liveZoom, setLiveZoom] = useState(false);
+  const [logsHeight, setLogsHeight] = useState(400);
+  const logsContainerRef = useRef<HTMLElement | null>(null);
+
+  const handleLogsResize = useCallback((e: any) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = logsHeight;
+    const onMove = (ev: MouseEvent) => {
+      setLogsHeight(Math.max(120, startH + (ev.clientY - startY)));
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [logsHeight]);
+
   const handleAction = useCallback(
-    async (action: "run" | "stop" | "pause" | "resume" | "restart") => {
+    async (action: "run" | "stop" | "sigint" | "pause" | "resume" | "restart") => {
       if ((action === "run" || action === "restart") && job.params && job.params.length > 0) {
         setShowParamsModal(true);
         return;
@@ -125,6 +152,13 @@ export function JobDetailView({
         switch (action) {
           case "run":
             await transport.runJob(job.slug);
+            break;
+          case "sigint":
+            if (transport.sigintJob) {
+              setSigintPending(true);
+              await transport.sigintJob(job.slug);
+              setTimeout(() => setSigintPending(false), 2000);
+            }
             break;
           case "stop":
             await transport.stopJob(job.slug);
@@ -178,12 +212,20 @@ export function JobDetailView({
 
   const detailInner = (
     <>
-      {/* Header with back button */}
-      <TouchableOpacity onPress={onBack} style={styles.backRow} activeOpacity={0.6}>
-        <Text style={styles.backArrow}>{"\u2190"}</Text>
-        <Text style={styles.jobName}>{job.name}</Text>
-        <StatusBadge status={status} />
-      </TouchableOpacity>
+      {/* Header with back button (hidden when platform provides its own nav bar) */}
+      {showBackButton && (
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={onBack} style={styles.backRow} activeOpacity={0.6}>
+            <Text style={styles.backArrow}>{"\u2190"}</Text>
+            <Text style={styles.jobName}>{job.name}</Text>
+            <StatusBadge status={status} />
+          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {onEdit && <ActionButton label="Edit" color={colors.textSecondary} onPress={onEdit} />}
+            {onDuplicate && <ActionButton label="Duplicate" color={colors.textSecondary} onPress={onDuplicate} />}
+          </View>
+        </View>
+      )}
 
       {/* Info row */}
       <View style={styles.infoRow}>
@@ -195,26 +237,29 @@ export function JobDetailView({
             <Text style={styles.cronText}>{job.cron}</Text>
           </View>
         ) : null}
-        <View style={styles.infoPill}>
-          <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
-            {job.enabled ? "Enabled" : "Disabled"}
-          </Text>
-        </View>
+        {isManual ? (
+          <View style={styles.infoPill}>
+            <Text style={styles.infoLabel}>manual</Text>
+          </View>
+        ) : (
+          <View style={styles.infoPill}>
+            <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
+              {job.enabled ? "Enabled" : "Disabled"}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Action buttons */}
       <View style={styles.actions}>
         {isRunning && (
           <>
-            {onOpen && <ActionButton label="Open" color={colors.accent} onPress={() => onOpen()} />}
-            <ActionButton label="Pause" color={colors.warning} onPress={() => handleAction("pause")} />
-            <ActionButton label="Stop" color={colors.danger} onPress={() => handleAction("stop")} />
-          </>
-        )}
-        {isPaused && (
-          <>
-            <ActionButton label="Resume" color={colors.success} filled onPress={() => handleAction("resume")} />
-            <ActionButton label="Stop" color={colors.danger} onPress={() => handleAction("stop")} />
+            {onOpen && <ActionButton label="Open in Terminal" color={colors.accent} onPress={() => onOpen()} />}
+            <ActionButton
+              label={sigintPending ? "Stopping..." : "Stop"}
+              color={colors.danger}
+              onPress={() => handleAction(transport.sigintJob ? "sigint" : "stop")}
+            />
           </>
         )}
         {state === "failed" && (
@@ -226,35 +271,63 @@ export function JobDetailView({
         {state === "idle" && (
           <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
         )}
-        {onEdit && <ActionButton label="Edit" color={colors.textSecondary} onPress={onEdit} />}
-        {onToggleEnabled && (
+        {onToggleEnabled && !isManual && (
           <ActionButton
             label={job.enabled ? "Disable" : "Enable"}
             color={colors.textSecondary}
             onPress={onToggleEnabled}
           />
         )}
-        {onDuplicate && (
-          <ActionButton label="Duplicate" color={colors.textSecondary} onPress={onDuplicate} />
-        )}
-        {onDelete && (
+        {onDelete && !isRunning && (
           <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />
         )}
       </View>
 
       {/* Live Output */}
       {(isRunning || isPaused) && (
-        <View style={styles.section}>
-          <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
-            <Text style={styles.collapseArrow}>
-              {outputCollapsed ? "\u25B6" : "\u25BC"}
-            </Text>
-            <Text style={styles.sectionTitle}>Live Output</Text>
-          </TouchableOpacity>
+        <View style={[styles.section, sectionStyle]}>
+          <View style={styles.sectionHeaderRow}>
+            <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
+              <Text style={styles.collapseArrow}>
+                {outputCollapsed ? "\u25B6" : "\u25BC"}
+              </Text>
+              <Text style={styles.sectionTitle}>Live Output</Text>
+            </TouchableOpacity>
+            {!outputCollapsed && (
+              <TouchableOpacity
+                onPress={() => setLiveZoom(true)}
+                style={styles.zoomBtn}
+                activeOpacity={0.6}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.zoomIcon}>{"\u2922"}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
           {!outputCollapsed && (
-            <View style={styles.logsContainer}>
-              <LogViewer content={logs} />
-            </View>
+            <>
+              <View style={[styles.logsContainer, { height: logsHeight }]}>
+                <LogViewer content={logs} />
+              </View>
+              {isWeb && (
+                <div
+                  onMouseDown={handleLogsResize}
+                  style={{
+                    height: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "ns-resize",
+                    opacity: 0.4,
+                    color: colors.textSecondary,
+                  }}
+                >
+                  <svg width="10" height="6" viewBox="0 0 10 6">
+                    <path d="M0 1h10M0 4h10" stroke="currentColor" strokeWidth="1" />
+                  </svg>
+                </div>
+              )}
+            </>
           )}
           <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
           <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
@@ -262,7 +335,7 @@ export function JobDetailView({
       )}
 
       {/* Run History */}
-      <View style={styles.section}>
+      <View style={[styles.section, sectionStyle]}>
         <TouchableOpacity onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
           <Text style={styles.collapseArrow}>
             {runsCollapsed ? "\u25B6" : "\u25BC"}
@@ -346,6 +419,18 @@ export function JobDetailView({
           logContent={zoomRun.logContent}
           currentState={state}
           onClose={() => setZoomRun(null)}
+        />
+      )}
+
+      {/* Fullscreen live output modal */}
+      {liveZoom && (
+        <LiveZoomModal
+          logs={logs}
+          options={optionsProp ?? []}
+          onSend={handleSendInput}
+          autoYesActive={autoYesActive}
+          onToggleAutoYes={onToggleAutoYes}
+          onClose={() => setLiveZoom(false)}
         />
       )}
     </View>
@@ -504,7 +589,9 @@ function RunRow({
           <View style={[styles.statusDot, { backgroundColor: color }]} />
           <View style={styles.runInfo}>
             <Text style={[styles.runStatus, { color }]}>{label}</Text>
-            <Text style={styles.runTrigger}>{run.trigger}</Text>
+            {run.trigger !== "reattach" && (
+              <Text style={styles.runTrigger}>{run.trigger}</Text>
+            )}
           </View>
         </View>
         <View style={styles.runRight}>
@@ -635,6 +722,103 @@ function LogZoomModal({
   );
 }
 
+function LiveZoomModal({
+  logs,
+  options,
+  onSend,
+  autoYesActive,
+  onToggleAutoYes,
+  onClose,
+}: {
+  logs: string;
+  options: { number: string; label: string }[];
+  onSend: (text: string) => void;
+  autoYesActive?: boolean;
+  onToggleAutoYes?: () => void;
+  onClose: () => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const liveWebRef = useRef<HTMLElement | null>(null);
+  const prevLen = useRef(0);
+
+  const liveWebRefCb = useCallback((node: HTMLElement | null) => {
+    liveWebRef.current = node;
+    if (node) {
+      requestAnimationFrame(() => {
+        (node as any).scrollTop = (node as any).scrollHeight;
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (logs.length <= prevLen.current) {
+      prevLen.current = logs.length;
+      return;
+    }
+    prevLen.current = logs.length;
+    if (isWeb) {
+      const el = liveWebRef.current as any;
+      if (!el) return;
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    } else {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }
+  }, [logs]);
+
+  useEffect(() => {
+    if (!isWeb) {
+      const timer = setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const processed = isWeb ? collapseSeparators(logs) : truncateLogLines(collapseSeparators(logs), 120);
+
+  const logInner = hasAnsi(processed) ? (
+    <AnsiText content={processed} style={styles.zoomLogText} selectable />
+  ) : (
+    <Text style={styles.zoomLogText} selectable>{processed}</Text>
+  );
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={styles.zoomModal}>
+        <View style={styles.zoomHeader}>
+          <View style={styles.zoomHeaderLeft}>
+            <Text style={styles.zoomHeaderLabel}>Live Output</Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.zoomCloseBtn} activeOpacity={0.6}>
+            <Text style={styles.zoomCloseText}>{"\u2715"}</Text>
+          </TouchableOpacity>
+        </View>
+        {isWeb ? (
+          <div
+            ref={liveWebRefCb as any}
+            style={{
+              flex: 1,
+              overflowY: "auto" as any,
+              padding: 16,
+              minHeight: 0,
+            }}
+          >
+            {logInner}
+          </div>
+        ) : (
+          <ScrollView ref={scrollRef} style={styles.zoomLogScroll} contentContainerStyle={styles.zoomLogContent}>
+            {logInner}
+          </ScrollView>
+        )}
+        <OptionButtons options={options} onSend={onSend} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+        <MessageInput onSend={onSend} placeholder="Send input to job..." />
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -651,10 +835,21 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     gap: spacing.lg,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
   backRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+    flex: 1,
+    minWidth: 0,
   },
   backArrow: {
     color: colors.textSecondary,
@@ -722,6 +917,11 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.sm,
   },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -740,7 +940,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   logsContainer: {
-    height: 400,
+    // height set dynamically via logsHeight state
   },
   runsContainer: {
     gap: 1,

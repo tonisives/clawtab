@@ -116,5 +116,9 @@ export function createTauriTransport(): Transport {
     async restartJob(name: string, params?: Record<string, string>) {
       await invoke("restart_job", { name, params });
     },
+
+    async sigintJob(name: string) {
+      await invoke("sigint_job", { name });
+    },
   };
 }

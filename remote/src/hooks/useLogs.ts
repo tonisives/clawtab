@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getWsSend, nextId } from "./useWebSocket";
+import { useWsStore } from "../store/ws";
 
 // Global log buffer per job - survives component remounts
 const logBuffers = new Map<string, string>();
@@ -19,6 +20,7 @@ export function dispatchLogChunk(name: string, content: string) {
 export function useLogs(jobName: string) {
   const [logs, setLogs] = useState(() => logBuffers.get(jobName) || "");
   const subscribedRef = useRef(false);
+  const connected = useWsStore((s) => s.connected);
 
   useEffect(() => {
     // Register listener
@@ -30,9 +32,11 @@ export function useLogs(jobName: string) {
 
     // Subscribe via WebSocket
     const send = getWsSend();
-    if (send && !subscribedRef.current) {
+    if (send) {
       send({ type: "subscribe_logs", id: nextId(), name: jobName });
       subscribedRef.current = true;
+    } else {
+      subscribedRef.current = false;
     }
 
     return () => {
@@ -45,7 +49,7 @@ export function useLogs(jobName: string) {
         subscribedRef.current = false;
       }
     };
-  }, [jobName]);
+  }, [jobName, connected]);
 
   const clearLogs = useCallback(() => {
     logBuffers.set(jobName, "");

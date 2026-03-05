@@ -52,6 +52,13 @@ impl HistoryStore {
         )
         .ok();
 
+        // Clean up stale reattach records (unfinished with no output)
+        conn.execute(
+            "DELETE FROM runs WHERE trigger_type = 'reattach' AND finished_at IS NULL AND stdout = '' AND stderr = ''",
+            [],
+        )
+        .ok();
+
         Ok(Self { conn })
     }
 

@@ -335,6 +335,20 @@ pub fn resume_job(state: State<AppState>, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn sigint_job(state: State<AppState>, name: String) -> Result<(), String> {
+    let status = state.job_status.lock().unwrap();
+    match status.get(&name).cloned() {
+        Some(JobStatus::Running { pane_id: Some(pane_id), .. }) => {
+            drop(status);
+            crate::tmux::send_sigint_to_pane(&pane_id)?;
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            crate::tmux::send_sigint_to_pane(&pane_id)
+        }
+        _ => Err("Job is not running or has no pane".to_string()),
+    }
+}
+
+#[tauri::command]
 pub fn stop_job(state: State<AppState>, name: String) -> Result<(), String> {
     let mut status = state.job_status.lock().unwrap();
     match status.get(&name).cloned() {

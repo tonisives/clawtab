@@ -298,6 +298,7 @@ pub fn run() {
             commands::jobs::run_job_now,
             commands::jobs::pause_job,
             commands::jobs::resume_job,
+            commands::jobs::sigint_job,
             commands::jobs::stop_job,
             commands::jobs::restart_job,
             commands::jobs::run_agent,
@@ -379,6 +380,7 @@ pub fn run() {
             commands::processes::get_active_questions,
             commands::processes::get_auto_yes_panes,
             commands::processes::set_auto_yes_panes,
+            commands::processes::sigint_detected_process,
             commands::processes::stop_detected_process,
         ])
         .setup(move |app| {
