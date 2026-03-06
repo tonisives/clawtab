@@ -18,9 +18,10 @@ ClawTab is a macOS desktop app for scheduling and managing automated jobs -- she
 
 ### Remote Access
 7. [Remote Access](./remote.md) -- Control jobs from your phone via relay server
-8. [Self-Hosted Deployment](./deploy.md) -- Run your own relay, PostgreSQL, and frontend
+8. [Workspace Sharing](./sharing.md) -- Share your workspace with colleagues
+9. [Self-Hosted Deployment](./deploy.md) -- Run your own relay, PostgreSQL, and frontend
 
 ### Reference
-9. [Architecture](./architecture.md) -- System design, execution flow, IPC
-10. [Project Layout](./project-layout.md) -- Repository structure (relay, mobile, protocol)
-11. [File Reference](./file-reference.md) -- Config paths, schemas, log locations
+10. [Architecture](./architecture.md) -- System design, execution flow, IPC
+11. [Project Layout](./project-layout.md) -- Repository structure (relay, mobile, protocol)
+12. [File Reference](./file-reference.md) -- Config paths, schemas, log locations

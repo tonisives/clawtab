@@ -241,6 +241,12 @@ Optional:
 
 Run the database migrations, start the binary, and point your ClawTab desktop at your server URL during setup.
 
+## Workspace sharing
+
+You can share your workspace with other ClawTab users so they can monitor your desktop, respond to agent questions, and send commands on your behalf. See the [Workspace Sharing](./sharing.md) guide for full details.
+
+To set up sharing: go to Settings > Shared Access in the mobile app, enter a colleague's email, and tap Share. They'll see your desktop and agents on their next connection.
+
 ## Removing relay configuration
 
 The Danger Zone at the bottom of the Remote panel removes all relay configuration (device token, server URL) and disconnects. You will need to log in and pair again.
