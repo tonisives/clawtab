@@ -16,10 +16,47 @@ class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        // The relay sets the category (CLAUDE_Q2/Q3/Q4) which maps to
-        // pre-registered categories with numbered button labels.
-        // Just deliver the notification as-is.
-        contentHandler(content)
+        // Extract options from the clawtab payload to create action buttons
+        // with real labels (e.g. "1. Yes" instead of just "1")
+        guard let clawtab = content.userInfo["clawtab"] as? [String: Any],
+              let options = clawtab["options"] as? [[String: Any]],
+              !options.isEmpty else {
+            contentHandler(content)
+            return
+        }
+
+        let maxActions = min(options.count, 4)
+        var actions: [UNNotificationAction] = []
+        for i in 0..<maxActions {
+            let opt = options[i]
+            guard let number = opt["number"] as? String,
+                  let label = opt["label"] as? String else { continue }
+            actions.append(UNNotificationAction(
+                identifier: number,
+                title: "\(number). \(label)",
+                options: []
+            ))
+        }
+
+        // Use a per-question category so each notification gets its own labels
+        let categoryId = "CLAUDE_DYN_\(clawtab["question_id"] as? String ?? UUID().uuidString)"
+        let category = UNNotificationCategory(
+            identifier: categoryId,
+            actions: actions,
+            intentIdentifiers: [],
+            options: []
+        )
+
+        // Register the dynamic category and update the notification to use it
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationCategories { existing in
+            var categories = existing
+            categories.insert(category)
+            center.setNotificationCategories(categories)
+
+            content.categoryIdentifier = categoryId
+            contentHandler(content)
+        }
     }
 
     override func serviceExtensionTimeWillExpire() {
