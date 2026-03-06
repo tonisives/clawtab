@@ -291,14 +291,18 @@ input[type="password"]:disabled,
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
+  letter-spacing: normal;
+  word-spacing: normal;
   white-space: pre-wrap;
   word-wrap: break-word;
   box-sizing: border-box;
   margin: 0;
+  border: none;
   overflow-y: auto;
   color: var(--text-primary);
   pointer-events: none;
   scrollbar-width: none;
+  tab-size: 2;
   z-index: 0;
 }
 .highlighted-textarea-backdrop::-webkit-scrollbar {
@@ -306,10 +310,7 @@ input[type="password"]:disabled,
 }
 .highlighted-textarea-input {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   width: 100% !important;
   height: 100% !important;
   max-width: none !important;
@@ -318,6 +319,8 @@ input[type="password"]:disabled,
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
+  letter-spacing: normal;
+  word-spacing: normal;
   white-space: pre-wrap;
   word-wrap: break-word;
   box-sizing: border-box;
@@ -330,8 +333,12 @@ input[type="password"]:disabled,
   resize: none;
   tab-size: 2;
   overflow-y: auto;
+  scrollbar-width: none;
   -webkit-text-fill-color: transparent;
   z-index: 1;
+}
+.highlighted-textarea-input::-webkit-scrollbar {
+  display: none;
 }
 .highlighted-textarea-readonly {
   position: absolute;

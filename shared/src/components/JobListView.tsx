@@ -54,6 +54,7 @@ export function JobListView({
   onSelectJob,
   onSelectProcess,
   onRunAgent,
+  onAddJob,
   headerContent,
   showEmpty = true,
   emptyMessage = "No jobs found.",
@@ -141,6 +142,9 @@ export function JobListView({
           for (const proc of procs) {
             result.push({ kind: "process", process: proc });
           }
+          if (onRunAgent && folder) {
+            result.push({ kind: "group-agent", workDir: folder });
+          }
         }
       }
       if (ungrouped.length > 0) {
@@ -183,16 +187,27 @@ export function JobListView({
         const isCollapsed = collapsedGroups.has(item.group);
         return (
           <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-            <TouchableOpacity
-              onPress={() => onToggleGroup(item.group)}
-              style={styles.groupHeaderRow}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.groupHeaderArrow}>
-                {isCollapsed ? "\u25B6" : "\u25BC"}
-              </Text>
-              <Text style={styles.groupHeader}>{item.displayGroup}</Text>
-            </TouchableOpacity>
+            <View style={styles.groupHeaderContainer}>
+              <TouchableOpacity
+                onPress={() => onToggleGroup(item.group)}
+                style={styles.groupHeaderRow}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.groupHeaderArrow}>
+                  {isCollapsed ? "\u25B6" : "\u25BC"}
+                </Text>
+                <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+              </TouchableOpacity>
+              {onAddJob && (
+                <TouchableOpacity
+                  onPress={() => onAddJob(item.group)}
+                  style={styles.addJobBtn}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.addJobBtnText}>+</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
         );
       }
@@ -282,12 +297,30 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: "600" },
   emptyText: { color: colors.textSecondary, fontSize: 14 },
+  groupHeaderContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   groupHeaderRow: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
+  },
+  addJobBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  addJobBtnText: {
+    color: colors.textSecondary,
+    fontSize: 18,
+    fontWeight: "300",
+    lineHeight: 20,
   },
   groupHeaderArrow: { fontFamily: "monospace", fontSize: 9, color: colors.textSecondary },
   groupHeader: {

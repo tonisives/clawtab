@@ -75,7 +75,16 @@ async function request<T>(
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new Error(text || `HTTP ${resp.status}`);
+    let message = `HTTP ${resp.status}`;
+    if (text) {
+      try {
+        const json = JSON.parse(text);
+        message = json.error || json.message || text;
+      } catch {
+        message = text;
+      }
+    }
+    throw new Error(message);
   }
 
   return resp.json();
@@ -122,7 +131,16 @@ async function backendRequest<T>(
 
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new Error(text || `HTTP ${resp.status}`);
+    let message = `HTTP ${resp.status}`;
+    if (text) {
+      try {
+        const json = JSON.parse(text);
+        message = json.error || json.message || text;
+      } catch {
+        message = text;
+      }
+    }
+    throw new Error(message);
   }
 
   return resp.json();

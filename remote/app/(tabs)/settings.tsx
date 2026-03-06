@@ -102,7 +102,7 @@ export default function SettingsScreen() {
       const updated = await api.getSubscriptionStatus();
       setSub(updated);
     } catch (e) {
-      alertError("Error", String(e));
+      alertError("Error", e instanceof Error ? e.message : String(e));
     } finally {
       setActionLoading(false);
     }
@@ -116,7 +116,7 @@ export default function SettingsScreen() {
       const updated = await api.getSubscriptionStatus();
       setSub(updated);
     } catch (e) {
-      alertError("Error", String(e));
+      alertError("Error", e instanceof Error ? e.message : String(e));
     } finally {
       setActionLoading(false);
     }
@@ -131,7 +131,7 @@ export default function SettingsScreen() {
       setShareEmail("");
       await fetchShares();
     } catch (e) {
-      alertError("Error", String(e));
+      alertError("Error", e instanceof Error ? e.message : String(e));
     } finally {
       setShareAdding(false);
     }
@@ -143,7 +143,7 @@ export default function SettingsScreen() {
         await api.removeShare(shareId);
         await fetchShares();
       } catch (e) {
-        alertError("Error", String(e));
+        alertError("Error", e instanceof Error ? e.message : String(e));
       }
     });
   };
