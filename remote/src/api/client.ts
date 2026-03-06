@@ -39,10 +39,11 @@ async function request<T>(
     ...(options.headers as Record<string, string>),
   };
 
+  let originalToken: string | null = null;
   if (useAuth) {
-    const token = await storage.getItem(KEYS.accessToken);
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
+    originalToken = await storage.getItem(KEYS.accessToken);
+    if (originalToken) {
+      headers["Authorization"] = `Bearer ${originalToken}`;
     }
   }
 
@@ -54,12 +55,19 @@ async function request<T>(
   // Auto-refresh on 401 for authenticated requests
   if (resp.status === 401 && useAuth) {
     try {
-      await refreshToken();
-      const newToken = await storage.getItem(KEYS.accessToken);
-      if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        resp = await fetch(`${serverUrl}${path}`, { ...options, headers });
+      // Check if another request already refreshed the token
+      const currentToken = await storage.getItem(KEYS.accessToken);
+      if (currentToken && currentToken !== originalToken) {
+        // Token was already refreshed by a concurrent request, just retry
+        headers["Authorization"] = `Bearer ${currentToken}`;
+      } else {
+        await refreshToken();
+        const newToken = await storage.getItem(KEYS.accessToken);
+        if (newToken) {
+          headers["Authorization"] = `Bearer ${newToken}`;
+        }
       }
+      resp = await fetch(`${serverUrl}${path}`, { ...options, headers });
     } catch {
       // refresh failed, throw the original 401
     }
@@ -84,9 +92,9 @@ async function backendRequest<T>(
     ...(options.headers as Record<string, string>),
   };
 
-  const token = await storage.getItem(KEYS.accessToken);
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  const originalToken = await storage.getItem(KEYS.accessToken);
+  if (originalToken) {
+    headers["Authorization"] = `Bearer ${originalToken}`;
   }
 
   let resp = await fetch(`${backendUrl}${path}`, {
@@ -96,12 +104,17 @@ async function backendRequest<T>(
 
   if (resp.status === 401) {
     try {
-      await refreshToken();
-      const newToken = await storage.getItem(KEYS.accessToken);
-      if (newToken) {
-        headers["Authorization"] = `Bearer ${newToken}`;
-        resp = await fetch(`${backendUrl}${path}`, { ...options, headers });
+      const currentToken = await storage.getItem(KEYS.accessToken);
+      if (currentToken && currentToken !== originalToken) {
+        headers["Authorization"] = `Bearer ${currentToken}`;
+      } else {
+        await refreshToken();
+        const newToken = await storage.getItem(KEYS.accessToken);
+        if (newToken) {
+          headers["Authorization"] = `Bearer ${newToken}`;
+        }
       }
+      resp = await fetch(`${backendUrl}${path}`, { ...options, headers });
     } catch {
       // refresh failed
     }
