@@ -255,7 +255,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     await actions.runAgent(prompt);
   }, [actions]);
 
-  const handleAddJob = useCallback((group: string) => {
+  const handleAddJob = useCallback((group: string, folderPath?: string) => {
+    if (folderPath) {
+      // Folder path provided directly (e.g. from detected group header)
+      // Clean up detected group keys like "_det_/path/to/folder"
+      const cleanGroup = group.startsWith("_det_")
+        ? group.slice(5).split("/").filter(Boolean).pop() ?? group
+        : group;
+      setCreateForGroup({ group: cleanGroup, folderPath });
+      setIsCreating(true);
+      return;
+    }
     const jobs = core.jobs as Job[];
     const groupJobs = jobs.filter((j) => (j.group || "default") === group);
     const isFolderGroup = groupJobs.length > 0 && groupJobs.every((j) => j.job_type === "folder");

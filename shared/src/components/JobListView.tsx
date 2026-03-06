@@ -25,7 +25,7 @@ export interface JobListViewProps {
   // Agent
   onRunAgent?: (prompt: string, workDir?: string) => void;
   // Desktop-only slots
-  onAddJob?: (group: string) => void;
+  onAddJob?: (group: string, folderPath?: string) => void;
   onEditJob?: (job: RemoteJob) => void;
   onOpenJob?: (job: RemoteJob) => void;
   // Header content (for banners, notifications, etc.)
@@ -38,7 +38,7 @@ export interface JobListViewProps {
 }
 
 type ListItem =
-  | { kind: "header"; group: string; displayGroup: string }
+  | { kind: "header"; group: string; displayGroup: string; folderPath?: string }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: ClaudeProcess }
   | { kind: "group-agent"; workDir: string };
@@ -97,7 +97,8 @@ export function JobListView({
     for (const [group, groupJobs] of grouped) {
       const displayGroup = group === "default" ? "General" : group;
       if (hasMultipleGroups || result.length > 0) {
-        result.push({ kind: "header", group: displayGroup, displayGroup });
+        const fp = groupJobs[0]?.folder_path ?? groupJobs[0]?.work_dir;
+        result.push({ kind: "header", group: displayGroup, displayGroup, folderPath: fp });
       }
       if (!collapsedGroups.has(displayGroup)) {
         let jobIdx = 0;
@@ -137,7 +138,7 @@ export function JobListView({
       for (const [folder, procs] of folderGroups) {
         const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
         const groupKey = `_det_${folder}`;
-        result.push({ kind: "header", group: groupKey, displayGroup: folderName });
+        result.push({ kind: "header", group: groupKey, displayGroup: folderName, folderPath: folder });
         if (!collapsedGroups.has(groupKey)) {
           for (const proc of procs) {
             result.push({ kind: "process", process: proc });
@@ -187,27 +188,26 @@ export function JobListView({
         const isCollapsed = collapsedGroups.has(item.group);
         return (
           <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-            <View style={styles.groupHeaderContainer}>
-              <TouchableOpacity
-                onPress={() => onToggleGroup(item.group)}
-                style={styles.groupHeaderRow}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.groupHeaderArrow}>
-                  {isCollapsed ? "\u25B6" : "\u25BC"}
-                </Text>
-                <Text style={styles.groupHeader}>{item.displayGroup}</Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => onToggleGroup(item.group)}
+              style={styles.groupHeaderRow}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.groupHeaderArrow}>
+                {isCollapsed ? "\u25B6" : "\u25BC"}
+              </Text>
+              <Text style={styles.groupHeader}>{item.displayGroup}</Text>
               {onAddJob && (
                 <TouchableOpacity
-                  onPress={() => onAddJob(item.group)}
+                  onPress={(e) => { e.stopPropagation(); onAddJob(item.group, item.folderPath); }}
                   style={styles.addJobBtn}
                   activeOpacity={0.6}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <Text style={styles.addJobBtnText}>+</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </TouchableOpacity>
           </View>
         );
       }
@@ -297,12 +297,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: colors.text, fontSize: 18, fontWeight: "600" },
   emptyText: { color: colors.textSecondary, fontSize: 14 },
-  groupHeaderContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
   groupHeaderRow: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
