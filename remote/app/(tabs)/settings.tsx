@@ -42,6 +42,7 @@ function statusLabel(status: string | null): string {
 
 export default function SettingsScreen() {
   const userId = useAuthStore((s) => s.userId);
+  const email = useAuthStore((s) => s.email);
   const logout = useAuthStore((s) => s.logout);
   const connected = useWsStore((s) => s.connected);
   const { isWide } = useResponsive();
@@ -157,12 +158,14 @@ export default function SettingsScreen() {
         <View style={[styles.container, isWide && styles.containerWide]}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Account</Text>
-            <View style={styles.row}>
-              <Text style={styles.label}>User ID</Text>
-              <Text style={styles.value} numberOfLines={1}>
-                {userId || "N/A"}
-              </Text>
-            </View>
+            {email && (
+              <View style={styles.row}>
+                <Text style={styles.label}>Email</Text>
+                <Text style={styles.value} numberOfLines={1}>
+                  {email}
+                </Text>
+              </View>
+            )}
             <View style={styles.row}>
               <Text style={styles.label}>Connection</Text>
               <Text

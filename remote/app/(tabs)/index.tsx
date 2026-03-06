@@ -13,6 +13,7 @@ import { ContentContainer } from "../../src/components/ContentContainer"
 import { NotificationStack } from "../../src/components/NotificationStack"
 import { JobListView } from "@clawtab/shared"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
+import { registerRequest } from "../../src/lib/useRequestMap"
 import { useNotifications } from "../../src/hooks/useNotifications"
 import { useResponsive, WIDE_CONTENT_MAX_WIDTH } from "../../src/hooks/useResponsive"
 import * as api from "../../src/api/client"
@@ -108,8 +109,16 @@ export default function JobsScreen() {
   const handleRunAgent = useCallback((prompt: string, workDir?: string) => {
     const send = getWsSend()
     if (!send) return
-    send({ type: "run_agent", id: nextId(), prompt, work_dir: workDir })
-  }, [])
+    const id = nextId()
+    send({ type: "run_agent", id, prompt, work_dir: workDir })
+    if (workDir) {
+      registerRequest<{ job_name?: string }>(id).then((ack) => {
+        if (ack.job_name) {
+          router.push(`/job/${ack.job_name}`)
+        }
+      })
+    }
+  }, [router])
 
   const handleSelectJob = useCallback((job: RemoteJob) => {
     router.push(`/job/${job.name}`)

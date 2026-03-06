@@ -5,7 +5,6 @@ import type { ClaudeProcess } from "../types/process";
 import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
 import { ProcessCard } from "./ProcessCard";
-import { AgentSection } from "./AgentSection";
 import { GroupAgentRow } from "./GroupAgentRow";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
@@ -39,7 +38,6 @@ export interface JobListViewProps {
 }
 
 type ListItem =
-  | { kind: "agent" }
   | { kind: "header"; group: string; displayGroup: string }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: ClaudeProcess }
@@ -93,16 +91,11 @@ export function JobListView({
   const items = useMemo(() => {
     const result: ListItem[] = [];
 
-    // Agent section
-    if (onRunAgent) {
-      result.push({ kind: "agent" });
-    }
-
     const hasMultipleGroups = grouped.size > 1 || unmatchedProcesses.length > 0;
 
     for (const [group, groupJobs] of grouped) {
       const displayGroup = group === "default" ? "General" : group;
-      if (hasMultipleGroups || result.length > 1) {
+      if (hasMultipleGroups || result.length > 0) {
         result.push({ kind: "header", group: displayGroup, displayGroup });
       }
       if (!collapsedGroups.has(displayGroup)) {
@@ -163,13 +156,6 @@ export function JobListView({
     return result;
   }, [grouped, collapsedGroups, matchedProcessesByGroup, unmatchedProcesses, onRunAgent]);
 
-  const agentProcess = useMemo(
-    () => detectedProcesses.find((p) => p.cwd.endsWith("/clawtab/agent")) ?? null,
-    [detectedProcesses],
-  );
-
-  const agentStatus: JobStatus = statuses["agent"] ?? (agentProcess ? { state: "running", run_id: "", started_at: "" } : IDLE_STATUS);
-
   const handleRefresh = useCallback(() => {
     onRefresh?.();
   }, [onRefresh]);
@@ -185,30 +171,13 @@ export function JobListView({
     }
     return items.map((item, index) => {
       const key =
-        item.kind === "agent"
-          ? "agent"
-          : item.kind === "header"
-            ? `h_${item.group}`
-            : item.kind === "process"
-              ? `p_${item.process.pane_id}`
-              : item.kind === "group-agent"
-                ? `ga_${item.workDir}`
-                : `j_${item.job.slug || item.job.name}`;
-
-      if (item.kind === "agent") {
-        return (
-          <View key={key} style={{ marginBottom: spacing.md }}>
-            <AgentSection
-              agentStatus={agentStatus}
-              agentProcess={agentProcess}
-              collapsed={collapsedGroups.has("Agent")}
-              onToggleCollapse={() => onToggleGroup("Agent")}
-              onRunAgent={onRunAgent!}
-              onSelectProcess={onSelectProcess ? () => onSelectProcess(agentProcess!) : undefined}
-            />
-          </View>
-        );
-      }
+        item.kind === "header"
+          ? `h_${item.group}`
+          : item.kind === "process"
+            ? `p_${item.process.pane_id}`
+            : item.kind === "group-agent"
+              ? `ga_${item.workDir}`
+              : `j_${item.job.slug || item.job.name}`;
 
       if (item.kind === "header") {
         const isCollapsed = collapsedGroups.has(item.group);

@@ -5,6 +5,7 @@ import { clearCache } from "../lib/jobCache"
 interface AuthState {
   isAuthenticated: boolean
   userId: string | null
+  email: string | null
   loading: boolean
 
   init: () => Promise<void>
@@ -20,16 +21,26 @@ interface AuthState {
   refreshToken: () => Promise<boolean>
 }
 
+function emailFromToken(token: string): string | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]))
+    return payload.email ?? null
+  } catch {
+    return null
+  }
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   userId: null,
+  email: null,
   loading: true,
 
   init: async () => {
     try {
       const { accessToken, userId } = await api.getStoredTokens()
       if (accessToken && userId) {
-        set({ isAuthenticated: true, userId, loading: false })
+        set({ isAuthenticated: true, userId, email: emailFromToken(accessToken), loading: false })
       } else {
         set({ loading: false })
       }
@@ -40,23 +51,23 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (email, password, serverUrl) => {
     const resp = await api.login(email, password, serverUrl)
-    set({ isAuthenticated: true, userId: resp.user_id })
+    set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   register: async (email, password, displayName, serverUrl) => {
     const resp = await api.register(email, password, displayName, serverUrl)
-    set({ isAuthenticated: true, userId: resp.user_id })
+    set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   googleLogin: async (idToken) => {
     const resp = await api.googleAuth(idToken)
-    set({ isAuthenticated: true, userId: resp.user_id })
+    set({ isAuthenticated: true, userId: resp.user_id, email: emailFromToken(resp.access_token) })
   },
 
   logout: async () => {
     await api.clearTokens()
     await clearCache()
-    set({ isAuthenticated: false, userId: null })
+    set({ isAuthenticated: false, userId: null, email: null })
   },
 
   refreshToken: async () => {
@@ -64,7 +75,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       await api.refreshToken()
       return true
     } catch {
-      set({ isAuthenticated: false, userId: null })
+      set({ isAuthenticated: false, userId: null, email: null })
       return false
     }
   },

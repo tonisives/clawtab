@@ -14,13 +14,28 @@ import { createWsTransport } from "../../src/transport/wsTransport";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { colors } from "@clawtab/shared";
-import type { RunRecord } from "@clawtab/shared";
+import type { RemoteJob, RunRecord } from "@clawtab/shared";
 
 const wsTransport = createWsTransport();
 
+function agentJobFromSlug(slug: string): RemoteJob {
+  const folder = slug.replace(/^agent-/, "");
+  return {
+    name: slug,
+    job_type: "claude",
+    enabled: true,
+    cron: "",
+    group: "agent",
+    slug,
+    work_dir: folder,
+  };
+}
+
 export default function JobDetailScreen() {
   const { name, run_id } = useLocalSearchParams<{ name: string; run_id?: string }>();
-  const job = useJob(name);
+  const storeJob = useJob(name);
+  const isAgent = !storeJob && name.startsWith("agent-");
+  const job = storeJob ?? (isAgent ? agentJobFromSlug(name) : undefined);
   const slug = job?.slug ?? name;
   const status = useJobStatus(name);
   const { logs } = useLogs(slug);

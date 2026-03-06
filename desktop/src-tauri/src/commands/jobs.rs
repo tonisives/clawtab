@@ -1044,11 +1044,16 @@ fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
 /// Build a synthetic `Job` for running Claude as an ad-hoc interactive agent.
 /// Writes enriched prompt (with @.cwt references) to `~/.config/clawtab/agent/.agent-prompt.md`
 /// and returns a Job that can be passed to `execute_job`.
+///
+/// When `target_dir` is provided, the agent runs in that directory instead of the
+/// default agent dir. The job name/slug become `agent-<folder>` so multiple
+/// per-folder agents can coexist.
 pub fn build_agent_job(
     prompt: &str,
     chat_id: Option<i64>,
     settings: &AppSettings,
     jobs: &[Job],
+    target_dir: Option<&str>,
 ) -> Result<Job, String> {
     let agent_dir = agent_dir_path();
     std::fs::create_dir_all(&agent_dir)
@@ -1063,12 +1068,26 @@ pub fn build_agent_job(
     // Build the enriched prompt: absolute @cwt.md reference + user prompt
     let enriched = format!("@{}\n\n{}", cwt_md_path.display(), prompt);
 
-    let prompt_path = agent_dir.join(".agent-prompt.md");
+    // Derive name/slug and work_dir from target_dir
+    let (job_name, job_slug, work_dir) = if let Some(dir) = target_dir {
+        let folder = std::path::Path::new(dir)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("agent");
+        let slug = format!("agent-{}", folder);
+        (slug.clone(), slug, dir.to_string())
+    } else {
+        ("agent".to_string(), "agent".to_string(), agent_dir.display().to_string())
+    };
+
+    // Write prompt to a per-agent file to avoid collisions
+    let prompt_filename = format!(".agent-prompt-{}.md", job_slug);
+    let prompt_path = agent_dir.join(&prompt_filename);
     std::fs::write(&prompt_path, &enriched)
         .map_err(|e| format!("Failed to write agent prompt: {}", e))?;
 
     Ok(Job {
-        name: "agent".to_string(),
+        name: job_name,
         job_type: crate::config::jobs::JobType::Claude,
         enabled: true,
         path: prompt_path.display().to_string(),
@@ -1076,7 +1095,7 @@ pub fn build_agent_job(
         cron: String::new(),
         secret_keys: Vec::new(),
         env: std::collections::HashMap::new(),
-        work_dir: Some(agent_dir.display().to_string()),
+        work_dir: Some(work_dir),
         tmux_session: None,
         aerospace_workspace: None,
         folder_path: None,
@@ -1090,7 +1109,7 @@ pub fn build_agent_job(
             crate::config::jobs::NotifyTarget::None
         },
         group: "agent".to_string(),
-        slug: "agent".to_string(),
+        slug: job_slug,
         skill_paths: Vec::new(),
         params: Vec::new(),
         kill_on_end: true,
@@ -1104,7 +1123,7 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(),
         let j = state.jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = build_agent_job(&prompt, None, &settings, &jobs)?;
+    let job = build_agent_job(&prompt, None, &settings, &jobs, None)?;
 
     let secrets = Arc::clone(&state.secrets);
     let history = Arc::clone(&state.history);
