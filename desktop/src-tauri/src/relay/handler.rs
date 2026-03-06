@@ -142,9 +142,10 @@ pub async fn handle_incoming(
             Some(DesktopMessage::RunHistory { id, runs })
         }
 
-        ClientMessage::RunAgent { id, prompt } => {
+        ClientMessage::RunAgent { id, prompt, work_dir } => {
             let result = run_agent(
                 &prompt,
+                work_dir.as_deref(),
                 jobs_config,
                 secrets,
                 history,
@@ -397,6 +398,7 @@ fn get_run_history(
 
 fn run_agent(
     prompt: &str,
+    work_dir: Option<&str>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     secrets: &Arc<Mutex<SecretsManager>>,
     history: &Arc<Mutex<HistoryStore>>,
@@ -410,7 +412,10 @@ fn run_agent(
         let j = jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs)?;
+    let mut job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs)?;
+    if let Some(dir) = work_dir {
+        job.work_dir = Some(dir.to_string());
+    }
     let job_name = job.name.clone();
 
     let secrets = Arc::clone(secrets);

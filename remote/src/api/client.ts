@@ -277,6 +277,41 @@ export async function getPaymentLink(): Promise<{ url: string }> {
   return resp.json();
 }
 
+export interface ShareInfo {
+  id: string;
+  email: string;
+  display_name: string | null;
+  created_at: string;
+}
+
+export interface SharedWithMeInfo {
+  id: string;
+  owner_email: string;
+  owner_display_name: string | null;
+  created_at: string;
+}
+
+export interface SharesResponse {
+  shared_by_me: ShareInfo[];
+  shared_with_me: SharedWithMeInfo[];
+}
+
+export async function getShares(): Promise<SharesResponse> {
+  return request<SharesResponse>("/shares", { method: "GET" }, true);
+}
+
+export async function addShare(email: string): Promise<ShareInfo> {
+  return request<ShareInfo>(
+    "/shares",
+    { method: "POST", body: JSON.stringify({ email }) },
+    true,
+  );
+}
+
+export async function removeShare(shareId: string): Promise<void> {
+  await request(`/shares/${shareId}`, { method: "DELETE" }, true);
+}
+
 export async function postAnswer(
   questionId: string,
   paneId: string,

@@ -105,10 +105,10 @@ export default function JobsScreen() {
     }
   }
 
-  const handleRunAgent = useCallback((prompt: string) => {
+  const handleRunAgent = useCallback((prompt: string, workDir?: string) => {
     const send = getWsSend()
     if (!send) return
-    send({ type: "run_agent", id: nextId(), prompt })
+    send({ type: "run_agent", id: nextId(), prompt, work_dir: workDir })
   }, [])
 
   const handleSelectJob = useCallback((job: RemoteJob) => {

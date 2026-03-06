@@ -50,6 +50,8 @@ pub enum ClientMessage {
     RunAgent {
         id: String,
         prompt: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        work_dir: Option<String>,
     },
     CreateJob {
         id: String,

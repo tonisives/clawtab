@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, TextInput } from "react-native";
 import { useAuthStore } from "../../src/store/auth";
 import { useWsStore } from "../../src/store/ws";
 import { ContentContainer } from "../../src/components/ContentContainer";
@@ -53,6 +53,11 @@ export default function SettingsScreen() {
   const [devicesLoading, setDevicesLoading] = useState(true);
   const subscriptionRequired = useWsStore((s) => s.subscriptionRequired);
 
+  const [shares, setShares] = useState<api.SharesResponse>({ shared_by_me: [], shared_with_me: [] });
+  const [sharesLoading, setSharesLoading] = useState(true);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareAdding, setShareAdding] = useState(false);
+
   const fetchDevices = useCallback(async () => {
     try {
       const d = await api.getDevices();
@@ -69,13 +74,24 @@ export default function SettingsScreen() {
       .finally(() => setSubLoading(false));
   }, []);
 
+  const fetchShares = useCallback(async () => {
+    try {
+      const s = await api.getShares();
+      setShares(s);
+    } catch (e) {
+      console.error("Failed to fetch shares:", e);
+    }
+  }, []);
+
   useEffect(() => {
     if (!subscriptionRequired) {
       fetchDevices().finally(() => setDevicesLoading(false));
+      fetchShares().finally(() => setSharesLoading(false));
     } else {
       setDevicesLoading(false);
+      setSharesLoading(false);
     }
-  }, [fetchDevices, subscriptionRequired]);
+  }, [fetchDevices, fetchShares, subscriptionRequired]);
 
   const handleSubscribe = async () => {
     setActionLoading(true);
@@ -103,6 +119,32 @@ export default function SettingsScreen() {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleAddShare = async () => {
+    const email = shareEmail.trim();
+    if (!email) return;
+    setShareAdding(true);
+    try {
+      await api.addShare(email);
+      setShareEmail("");
+      await fetchShares();
+    } catch (e) {
+      alertError("Error", String(e));
+    } finally {
+      setShareAdding(false);
+    }
+  };
+
+  const handleRemoveShare = (shareId: string, email: string) => {
+    confirm("Remove access", `Remove shared access for ${email}?`, async () => {
+      try {
+        await api.removeShare(shareId);
+        await fetchShares();
+      } catch (e) {
+        alertError("Error", String(e));
+      }
+    });
   };
 
   const handleLogout = () => {
@@ -205,6 +247,81 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Shared Access</Text>
+            {sharesLoading ? (
+              <View style={styles.row}>
+                <ActivityIndicator size="small" color={colors.textMuted} />
+              </View>
+            ) : subscriptionRequired ? (
+              <View style={styles.row}>
+                <Text style={styles.label}>Subscribe to manage sharing</Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.shareInputRow}>
+                  <TextInput
+                    style={styles.shareInput}
+                    placeholder="Email address"
+                    placeholderTextColor={colors.textMuted}
+                    value={shareEmail}
+                    onChangeText={setShareEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onSubmitEditing={handleAddShare}
+                  />
+                  <Pressable
+                    style={[styles.shareAddBtn, (shareAdding || !shareEmail.trim()) && styles.btnDisabled]}
+                    onPress={handleAddShare}
+                    disabled={shareAdding || !shareEmail.trim()}
+                  >
+                    <Text style={styles.shareAddBtnText}>
+                      {shareAdding ? "..." : "Share"}
+                    </Text>
+                  </Pressable>
+                </View>
+                {shares.shared_by_me.length > 0 && (
+                  <View style={styles.devicesList}>
+                    {shares.shared_by_me.map((share) => (
+                      <View key={share.id} style={styles.shareRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.shareEmail}>{share.email}</Text>
+                          {share.display_name && (
+                            <Text style={styles.shareDisplayName}>{share.display_name}</Text>
+                          )}
+                        </View>
+                        <Pressable onPress={() => handleRemoveShare(share.id, share.email)}>
+                          <Text style={styles.shareRemove}>Remove</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {shares.shared_with_me.length > 0 && (
+                  <>
+                    <Text style={styles.shareSubTitle}>Shared with me</Text>
+                    <View style={styles.devicesList}>
+                      {shares.shared_with_me.map((share) => (
+                        <View key={share.id} style={styles.shareRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.shareEmail}>{share.owner_email}</Text>
+                            {share.owner_display_name && (
+                              <Text style={styles.shareDisplayName}>{share.owner_display_name}</Text>
+                            )}
+                          </View>
+                          <Pressable onPress={() => handleRemoveShare(share.id, share.owner_email)}>
+                            <Text style={styles.shareRemove}>Leave</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+          </View>
+
+          <View style={styles.section}>
             <Pressable style={[styles.dangerBtn, isWide && styles.btnConstrained]} onPress={handleLogout}>
               <Text style={styles.dangerText}>Log Out</Text>
             </Pressable>
@@ -293,6 +410,66 @@ const styles = StyleSheet.create({
   btnConstrained: {
     alignSelf: "flex-start",
     paddingHorizontal: 48,
+  },
+  shareInputRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  shareInput: {
+    flex: 1,
+    height: 44,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
+    fontSize: 14,
+  },
+  shareAddBtn: {
+    height: 44,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  shareAddBtnText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  shareRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  shareEmail: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  shareDisplayName: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  shareSubTitle: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginTop: spacing.sm,
+  },
+  shareRemove: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "500",
   },
   dangerBtn: {
     height: 44,

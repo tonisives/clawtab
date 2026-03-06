@@ -8,6 +8,7 @@ mod debug;
 mod google_auth;
 mod google_callback;
 mod notifications;
+mod share;
 mod subscription;
 
 use std::sync::Arc;
@@ -73,6 +74,9 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/notifications/history", get(notifications::history))
         .route("/debug/test-push", post(debug::test_push))
         .route("/api/answer", post(answer::answer))
+        .route("/shares", post(share::add))
+        .route("/shares", get(share::list))
+        .route("/shares/{id}", delete(share::remove))
         .layer(middleware::from_fn_with_state(state, auth_middleware));
 
     public

@@ -205,6 +205,31 @@ impl Hub {
             .is_some_and(|panes| panes.contains(pane_id))
     }
 
+    /// Replay desktop status and cached state to a specific sender (used for shared access).
+    pub fn replay_desktop_state_to(&self, owner_id: Uuid, tx: &mpsc::UnboundedSender<String>) {
+        if let Some(desktops) = self.desktops.get(&owner_id) {
+            for desktop in desktops {
+                if let Ok(json) = serde_json::to_string(&ServerMessage::DesktopStatus {
+                    device_id: desktop.device_id.to_string(),
+                    device_name: desktop.device_name.clone(),
+                    online: true,
+                }) {
+                    let _ = tx.send(json);
+                }
+            }
+        }
+        if let Some(questions_json) = self.last_questions.get(&owner_id) {
+            let _ = tx.send(questions_json.clone());
+        }
+        if let Some(auto_yes_json) = self.last_auto_yes_panes.get(&owner_id) {
+            let _ = tx.send(auto_yes_json.clone());
+        }
+    }
+
+    pub fn send_to_mobiles_pub(&self, user_id: Uuid, msg: &ServerMessage) {
+        self.send_to_mobiles(user_id, msg);
+    }
+
     fn send_to_mobiles(&self, user_id: Uuid, msg: &ServerMessage) {
         let Ok(json) = serde_json::to_string(msg) else {
             return;

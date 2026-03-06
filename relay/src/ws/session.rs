@@ -97,9 +97,17 @@ async fn handle_mobile(state: AppState, socket: WebSocket, user_id: Uuid) {
     let (mut ws_sink, mut ws_stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
+    // Look up owners who shared their workspace with this user
+    let shared_owner_ids = get_shared_owner_ids(&state.pool, user_id).await;
+
     {
         let mut hub = state.hub.write().await;
         hub.add_mobile(user_id, MobileConnection { connection_id, tx: tx.clone() });
+
+        // Replay shared owners' desktop status and cached state
+        for &owner_id in &shared_owner_ids {
+            hub.replay_desktop_state_to(owner_id, &tx);
+        }
     }
 
     let Ok(welcome) = serde_json::to_string(&ServerMessage::Welcome {
@@ -182,19 +190,29 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
         _ => {}
     }
 
+    // Try own desktop first, then shared owners' desktops
+    let shared_owner_ids = get_shared_owner_ids(&state.pool, user_id).await;
+
     let hub = state.hub.read().await;
 
-    if !hub.has_desktop(user_id) {
+    // Find which user_id has an online desktop (own or shared)
+    let target_user_id = if hub.has_desktop(user_id) {
+        Some(user_id)
+    } else {
+        shared_owner_ids.iter().copied().find(|&oid| hub.has_desktop(oid))
+    };
+
+    let Some(target) = target_user_id else {
         let error = ServerMessage::Error {
             id: extract_id(&msg),
             code: error_codes::DESKTOP_OFFLINE.into(),
-            message: "your desktop app is not connected".into(),
+            message: "no desktop app is connected".into(),
         };
         if let Ok(json) = serde_json::to_string(&error) {
             hub.send_raw_to_mobiles(user_id, &json);
         }
         return;
-    }
+    };
 
     // AnswerQuestion: forward to desktop AND mark as answered in DB
     if let ClientMessage::AnswerQuestion {
@@ -219,7 +237,7 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
         });
     }
 
-    hub.forward_to_desktop(user_id, &msg);
+    hub.forward_to_desktop(target, &msg);
 }
 
 async fn handle_register_push_token(
@@ -316,6 +334,9 @@ async fn handle_desktop(
     let (mut ws_sink, mut ws_stream) = socket.split();
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
+    // Notify shared guests that this desktop came online
+    let guest_ids = get_shared_guest_ids(&state.pool, user_id).await;
+
     {
         let mut hub = state.hub.write().await;
         hub.add_desktop(user_id, DesktopConnection {
@@ -323,6 +344,13 @@ async fn handle_desktop(
             device_name: device_name.clone(),
             tx: tx.clone(),
         });
+        for &gid in &guest_ids {
+            hub.send_to_mobiles_pub(gid, &ServerMessage::DesktopStatus {
+                device_id: device_id.to_string(),
+                device_name: device_name.clone(),
+                online: true,
+            });
+        }
     }
 
     let Ok(welcome) = serde_json::to_string(&ServerMessage::Welcome {
@@ -372,6 +400,14 @@ async fn handle_desktop(
     {
         let mut hub = state.hub.write().await;
         hub.remove_desktop(user_id, device_id);
+        // Notify shared guests that this desktop went offline
+        for &gid in &guest_ids {
+            hub.send_to_mobiles_pub(gid, &ServerMessage::DesktopStatus {
+                device_id: device_id.to_string(),
+                device_name: device_name.clone(),
+                online: false,
+            });
+        }
     }
 
     sqlx::query("UPDATE devices SET last_seen = now() WHERE id = $1")
@@ -390,12 +426,18 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
         return;
     };
 
+    // Look up shared guest IDs so we can forward desktop messages to them too
+    let guest_ids = get_shared_guest_ids(&state.pool, user_id).await;
+
     // If this is a ClaudeQuestions message, cache it for replay and trigger push
     if let DesktopMessage::ClaudeQuestions { ref questions } = msg {
         {
             let mut hub = state.hub.write().await;
             hub.cache_questions(user_id, text);
             hub.send_raw_to_mobiles(user_id, text);
+            for &gid in &guest_ids {
+                hub.send_raw_to_mobiles(gid, text);
+            }
         }
         if !questions.is_empty() {
             let state = state.clone();
@@ -411,10 +453,16 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
         hub.set_auto_yes_panes(user_id, pane_set);
         hub.cache_auto_yes_panes(user_id, text);
         hub.send_raw_to_mobiles(user_id, text);
+        for &gid in &guest_ids {
+            hub.send_raw_to_mobiles(gid, text);
+        }
     } else {
         // Forward raw JSON to all mobile clients (avoids re-serialization)
         let hub = state.hub.read().await;
         hub.send_raw_to_mobiles(user_id, text);
+        for &gid in &guest_ids {
+            hub.send_raw_to_mobiles(gid, text);
+        }
     }
 
     // If this is a JobNotification message, send APNs push
@@ -612,6 +660,26 @@ async fn handle_job_notification_push(
     }
 }
 
+
+async fn get_shared_guest_ids(pool: &sqlx::PgPool, owner_id: Uuid) -> Vec<Uuid> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT guest_id FROM workspace_shares WHERE owner_id = $1",
+    )
+    .bind(owner_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
+
+async fn get_shared_owner_ids(pool: &sqlx::PgPool, guest_id: Uuid) -> Vec<Uuid> {
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT owner_id FROM workspace_shares WHERE guest_id = $1",
+    )
+    .bind(guest_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default()
+}
 
 fn extract_id(msg: &ClientMessage) -> Option<String> {
     match msg {

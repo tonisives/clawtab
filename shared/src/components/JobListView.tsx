@@ -6,6 +6,7 @@ import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
 import { ProcessCard } from "./ProcessCard";
 import { AgentSection } from "./AgentSection";
+import { GroupAgentRow } from "./GroupAgentRow";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
 
@@ -23,7 +24,7 @@ export interface JobListViewProps {
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
   // Agent
-  onRunAgent?: (prompt: string) => void;
+  onRunAgent?: (prompt: string, workDir?: string) => void;
   // Desktop-only slots
   onAddJob?: (group: string) => void;
   onEditJob?: (job: RemoteJob) => void;
@@ -41,7 +42,8 @@ type ListItem =
   | { kind: "agent" }
   | { kind: "header"; group: string; displayGroup: string }
   | { kind: "job"; job: RemoteJob; idx: number }
-  | { kind: "process"; process: ClaudeProcess };
+  | { kind: "process"; process: ClaudeProcess }
+  | { kind: "group-agent"; workDir: string };
 
 export function JobListView({
   jobs,
@@ -110,6 +112,13 @@ export function JobListView({
         }
         for (const proc of matchedProcessesByGroup.get(group) ?? []) {
           result.push({ kind: "process", process: proc });
+        }
+        // Per-group agent input
+        if (onRunAgent) {
+          const groupWorkDir = groupJobs[0]?.folder_path ?? groupJobs[0]?.work_dir;
+          if (groupWorkDir) {
+            result.push({ kind: "group-agent", workDir: groupWorkDir });
+          }
         }
       }
     }
@@ -182,7 +191,9 @@ export function JobListView({
             ? `h_${item.group}`
             : item.kind === "process"
               ? `p_${item.process.pane_id}`
-              : `j_${item.job.slug || item.job.name}`;
+              : item.kind === "group-agent"
+                ? `ga_${item.workDir}`
+                : `j_${item.job.slug || item.job.name}`;
 
       if (item.kind === "agent") {
         return (
@@ -223,6 +234,16 @@ export function JobListView({
             <ProcessCard
               process={item.process}
               onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
+            />
+          </View>
+        );
+      }
+
+      if (item.kind === "group-agent") {
+        return (
+          <View key={key} style={{ marginTop: spacing.sm }}>
+            <GroupAgentRow
+              onRunAgent={(prompt) => onRunAgent!(prompt, item.workDir)}
             />
           </View>
         );

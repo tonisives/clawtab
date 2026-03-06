@@ -251,7 +251,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     setViewingProcess(process);
   }, []);
 
-  const handleRunAgent = useCallback(async (prompt: string) => {
+  const handleRunAgent = useCallback(async (prompt: string, _workDir?: string) => {
     await actions.runAgent(prompt);
   }, [actions]);
 
