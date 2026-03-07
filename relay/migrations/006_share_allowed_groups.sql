@@ -1,1 +1,1 @@
-ALTER TABLE workspace_shares ADD COLUMN allowed_groups TEXT[] DEFAULT NULL;
+ALTER TABLE workspace_shares ADD COLUMN IF NOT EXISTS allowed_groups TEXT[] DEFAULT NULL;

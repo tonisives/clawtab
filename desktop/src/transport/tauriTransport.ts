@@ -101,8 +101,8 @@ export function createTauriTransport(): Transport {
       };
     },
 
-    async runAgent(prompt: string) {
-      await invoke("run_agent", { prompt });
+    async runAgent(prompt: string, workDir?: string) {
+      await invoke("run_agent", { prompt, workDir });
     },
 
     async focusJobWindow(name: string) {

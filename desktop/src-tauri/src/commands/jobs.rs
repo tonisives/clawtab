@@ -1059,14 +1059,17 @@ pub fn build_agent_job(
     std::fs::create_dir_all(&agent_dir)
         .map_err(|e| format!("Failed to create agent dir: {}", e))?;
 
-    // Regenerate the auto-generated context with the specific chat_id
-    let context = generate_agent_cwt_context(settings, jobs, chat_id);
-    let cwt_md_path = agent_dir.join("cwt.md");
-    std::fs::write(&cwt_md_path, &context)
-        .map_err(|e| format!("Failed to write agent cwt.md: {}", e))?;
-
-    // Build the enriched prompt: absolute @cwt.md reference + user prompt
-    let enriched = format!("@{}\n\n{}", cwt_md_path.display(), prompt);
+    // For group/folder agents, skip the agent cwt.md - just run claude in that folder
+    let enriched = if target_dir.is_some() {
+        prompt.to_string()
+    } else {
+        // Regenerate the auto-generated context with the specific chat_id
+        let context = generate_agent_cwt_context(settings, jobs, chat_id);
+        let cwt_md_path = agent_dir.join("cwt.md");
+        std::fs::write(&cwt_md_path, &context)
+            .map_err(|e| format!("Failed to write agent cwt.md: {}", e))?;
+        format!("@{}\n\n{}", cwt_md_path.display(), prompt)
+    };
 
     // Derive name/slug and work_dir from target_dir
     let (job_name, job_slug, work_dir) = if let Some(dir) = target_dir {
@@ -1117,13 +1120,13 @@ pub fn build_agent_job(
 }
 
 #[tauri::command]
-pub async fn run_agent(state: State<'_, AppState>, prompt: String) -> Result<(), String> {
+pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Option<String>) -> Result<(), String> {
     let (settings, jobs) = {
         let s = state.settings.lock().unwrap().clone();
         let j = state.jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = build_agent_job(&prompt, None, &settings, &jobs, None)?;
+    let job = build_agent_job(&prompt, None, &settings, &jobs, work_dir.as_deref())?;
 
     let secrets = Arc::clone(&state.secrets);
     let history = Arc::clone(&state.history);

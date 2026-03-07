@@ -251,8 +251,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     setViewingProcess(process);
   }, []);
 
-  const handleRunAgent = useCallback(async (prompt: string, _workDir?: string) => {
-    await actions.runAgent(prompt);
+  const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
+    await actions.runAgent(prompt, workDir);
   }, [actions]);
 
   const handleAddJob = useCallback((group: string, folderPath?: string) => {
