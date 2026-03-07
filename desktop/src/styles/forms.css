@@ -284,86 +284,17 @@ input[type="password"]:disabled,
 .textarea-resize-grip:hover {
   opacity: 0.8;
 }
-.highlighted-textarea-backdrop {
+/* CodeMirror editor container */
+.cm-editor-container {
   position: absolute;
   inset: 0;
-  padding: 10px 12px;
-  font-family: monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  letter-spacing: normal;
-  word-spacing: normal;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  box-sizing: border-box;
-  margin: 0;
-  border: none;
-  overflow-y: auto;
-  color: var(--text-primary);
-  pointer-events: none;
-  scrollbar-width: none;
-  tab-size: 2;
-  z-index: 0;
 }
-.highlighted-textarea-backdrop::-webkit-scrollbar {
-  display: none;
+.cm-editor-container .cm-editor {
+  height: 100%;
 }
-.highlighted-textarea-input {
-  position: absolute;
-  inset: 0;
-  width: 100% !important;
-  height: 100% !important;
-  max-width: none !important;
-  min-width: 0;
-  padding: 10px 12px;
-  font-family: monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  letter-spacing: normal;
-  word-spacing: normal;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  box-sizing: border-box;
-  margin: 0;
-  color: transparent !important;
-  caret-color: var(--text-primary);
-  background: transparent !important;
-  border: none !important;
-  outline: none !important;
-  resize: none;
-  tab-size: 2;
-  overflow-y: auto;
-  scrollbar-width: none;
-  -webkit-text-fill-color: transparent;
-  z-index: 1;
-}
-.highlighted-textarea-input::-webkit-scrollbar {
-  display: none;
-}
-.highlighted-textarea-readonly {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 10px 12px;
-  font-family: monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  box-sizing: border-box;
-  margin: 0;
-  overflow-y: auto;
-  color: var(--text-primary);
-}
-.highlighted-textarea-input::selection {
-  background: var(--accent-hover);
-  -webkit-text-fill-color: var(--text-primary);
-}
-.highlighted-textarea-input:focus {
-  box-shadow: none !important;
-  border: none !important;
+.cm-editor-container .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-secondary) transparent;
 }
 
 /* Terminal-style preview (used in TelegramPanel commands) */

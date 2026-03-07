@@ -1,7 +1,12 @@
-import { forwardRef, useCallback, useRef, useMemo } from "react";
+import { forwardRef, useCallback, useRef, useMemo, useEffect } from "react";
+import { EditorView, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
+import { markdown } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 
-// Lightweight markdown syntax highlighter - renders colored spans inside a <pre>.
-// Supports: headings, code blocks, inline code, bold, italic, links, comments, list markers.
+// Lightweight markdown syntax highlighter for read-only display.
 
 interface Props {
   content: string;
@@ -13,12 +18,10 @@ interface Props {
 type Segment = { text: string; cls?: string };
 
 function highlightLine(line: string): Segment[] {
-  // HTML/XML comments
   if (/^\s*<!--/.test(line)) {
     return [{ text: line, cls: "md-comment" }];
   }
 
-  // Headings
   const headingMatch = line.match(/^(#{1,6}\s)/);
   if (headingMatch) {
     return [
@@ -27,9 +30,7 @@ function highlightLine(line: string): Segment[] {
     ];
   }
 
-  // List markers: -, *, numbered
   const listMatch = line.match(/^(\s*(?:[-*]|\d+\.)\s)/);
-
   const segments: Segment[] = [];
   let rest = line;
 
@@ -38,14 +39,11 @@ function highlightLine(line: string): Segment[] {
     rest = line.slice(listMatch[1].length);
   }
 
-  // Inline patterns
   highlightInline(rest, segments);
-
   return segments;
 }
 
 function highlightInline(text: string, out: Segment[]) {
-  // Match: `code`, **bold**, *italic*, [link](url)
   const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)]+\))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -120,33 +118,213 @@ export const MarkdownHighlight = forwardRef<HTMLPreElement, Props>(function Mark
   );
 });
 
-// Overlay-based highlighted textarea: renders highlighting behind a transparent textarea.
+// Theme matching the app's dark UI
+const appHighlightStyle = HighlightStyle.define([
+  { tag: tags.heading, color: "var(--text-primary)" },
+  { tag: tags.processingInstruction, color: "var(--accent-color)" }, // heading markers
+  { tag: tags.monospace, color: "var(--success-color)" }, // inline code
+  { tag: tags.emphasis, color: "var(--text-primary)", fontStyle: "italic" },
+  { tag: tags.strong, color: "var(--text-primary)" },
+  { tag: tags.link, color: "var(--accent-color)" },
+  { tag: tags.url, color: "var(--accent-color)" },
+  { tag: tags.list, color: "var(--accent-color)" },
+  { tag: tags.comment, color: "var(--text-secondary)", opacity: 0.6 },
+  { tag: tags.string, color: "var(--success-color)" },
+]);
+
+const appTheme = EditorView.theme({
+  "&": {
+    backgroundColor: "transparent",
+    color: "var(--text-primary)",
+    fontSize: "12px",
+    fontFamily: "monospace",
+    height: "100%",
+  },
+  ".cm-content": {
+    padding: "10px 12px",
+    fontFamily: "monospace",
+    fontSize: "12px",
+    lineHeight: "1.5",
+    caretColor: "var(--text-primary)",
+    minHeight: "100%",
+  },
+  "&.cm-focused .cm-content": {
+    outline: "none",
+  },
+  "&.cm-focused": {
+    outline: "none",
+  },
+  ".cm-scroller": {
+    overflow: "auto",
+    fontFamily: "monospace",
+    lineHeight: "1.5",
+  },
+  ".cm-gutters": {
+    display: "none",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "transparent",
+  },
+  ".cm-selectionBackground": {
+    backgroundColor: "var(--accent-hover) !important",
+  },
+  "&.cm-focused .cm-selectionBackground": {
+    backgroundColor: "var(--accent-hover) !important",
+  },
+  ".cm-cursor": {
+    borderLeftColor: "var(--text-primary)",
+  },
+  ".cm-placeholder": {
+    color: "var(--text-secondary)",
+    fontStyle: "normal",
+  },
+  ".cm-line": {
+    padding: "0",
+  },
+});
+
+const readOnlyTheme = EditorView.theme({
+  "&": {
+    backgroundColor: "transparent",
+    color: "var(--text-primary)",
+    fontSize: "12px",
+    fontFamily: "monospace",
+    height: "100%",
+  },
+  ".cm-content": {
+    padding: "10px 12px",
+    fontFamily: "monospace",
+    fontSize: "12px",
+    lineHeight: "1.5",
+    minHeight: "100%",
+  },
+  ".cm-scroller": {
+    overflow: "auto",
+    fontFamily: "monospace",
+    lineHeight: "1.5",
+  },
+  ".cm-gutters": {
+    display: "none",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "transparent",
+  },
+  ".cm-cursor": {
+    display: "none !important",
+  },
+  ".cm-line": {
+    padding: "0",
+  },
+});
+
+// CodeMirror-based highlighted textarea with proper cursor alignment.
 export function HighlightedTextarea({
   value,
   onChange,
-  spellCheck,
+  spellCheck: _spellCheck,
   placeholder,
   textareaRef,
   wrapClassName,
   readOnly,
 }: {
   value: string;
-  onChange?: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onChange?: (e: { target: { value: string } }) => void;
   spellCheck?: boolean;
   placeholder?: string;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
   wrapClassName?: string;
   readOnly?: boolean;
 }) {
-  const backdropRef = useRef<HTMLPreElement>(null);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const isExternalUpdate = useRef(false);
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
-    if (backdropRef.current) {
-      backdropRef.current.scrollTop = e.currentTarget.scrollTop;
-      backdropRef.current.scrollLeft = e.currentTarget.scrollLeft;
+  // Expose a minimal ref for drag-drop (selectionStart)
+  useEffect(() => {
+    if (!textareaRef) return;
+    const proxy = new Proxy({} as HTMLTextAreaElement, {
+      get(_target, prop) {
+        const view = viewRef.current;
+        if (!view) return undefined;
+        if (prop === "selectionStart") return view.state.selection.main.head;
+        if (prop === "selectionEnd") return view.state.selection.main.head;
+        if (prop === "getBoundingClientRect") return () => view.dom.getBoundingClientRect();
+        if (prop === "value") return view.state.doc.toString();
+        return undefined;
+      },
+    });
+    (textareaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = proxy;
+    return () => {
+      (textareaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = null;
+    };
+  }, [textareaRef]);
+
+  // Create editor
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const extensions = [
+      markdown({ codeLanguages: languages }),
+      syntaxHighlighting(appHighlightStyle),
+      readOnly ? readOnlyTheme : appTheme,
+      EditorView.lineWrapping,
+      keymap.of([]),
+    ];
+
+    if (readOnly) {
+      extensions.push(EditorState.readOnly.of(true));
+      extensions.push(EditorView.editable.of(false));
     }
-  }, []);
+
+    if (placeholder) {
+      extensions.push(cmPlaceholder(placeholder));
+    }
+
+    if (!readOnly) {
+      extensions.push(
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged && !isExternalUpdate.current) {
+            onChangeRef.current?.({ target: { value: update.state.doc.toString() } });
+          }
+        }),
+      );
+    }
+
+    const state = EditorState.create({
+      doc: value,
+      extensions,
+    });
+
+    const view = new EditorView({
+      state,
+      parent: containerRef.current,
+    });
+
+    viewRef.current = view;
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [readOnly]); // Only recreate on readOnly change
+
+  // Sync external value changes
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== value) {
+      isExternalUpdate.current = true;
+      view.dispatch({
+        changes: { from: 0, to: current.length, insert: value },
+      });
+      isExternalUpdate.current = false;
+    }
+  }, [value]);
+
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   const handleGripDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -169,22 +347,7 @@ export function HighlightedTextarea({
 
   return (
     <div ref={wrapRef} className={`highlighted-textarea-wrap ${readOnly ? "readonly" : ""} ${wrapClassName || ""}`}>
-      <MarkdownHighlight
-        ref={backdropRef}
-        content={value || placeholder || ""}
-        className={readOnly ? "highlighted-textarea-readonly" : "highlighted-textarea-backdrop"}
-      />
-      {!readOnly && (
-        <textarea
-          ref={textareaRef}
-          className="highlighted-textarea-input"
-          value={value}
-          onChange={onChange}
-          onScroll={handleScroll}
-          spellCheck={spellCheck}
-          placeholder={placeholder}
-        />
-      )}
+      <div ref={containerRef} className="cm-editor-container" />
       <div className="textarea-resize-grip" onMouseDown={handleGripDown}>
         <svg width="10" height="6" viewBox="0 0 10 6">
           <path d="M0 1h10M0 4h10" stroke="currentColor" strokeWidth="1" />
