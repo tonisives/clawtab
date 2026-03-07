@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, TextInput } from "react-native";
 import { useAuthStore } from "../../src/store/auth";
 import { useWsStore } from "../../src/store/ws";
+import { useJobsStore } from "../../src/store/jobs";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { DeviceCard } from "../../src/components/DeviceCard";
 import { useResponsive } from "../../src/hooks/useResponsive";
@@ -58,6 +59,13 @@ export default function SettingsScreen() {
   const [sharesLoading, setSharesLoading] = useState(true);
   const [shareEmail, setShareEmail] = useState("");
   const [shareAdding, setShareAdding] = useState(false);
+  const [editingShareId, setEditingShareId] = useState<string | null>(null);
+
+  const jobs = useJobsStore((s) => s.jobs);
+  const availableGroups = useMemo(() => {
+    const groups = new Set(jobs.map((j) => j.group || "default"));
+    return [...groups].sort();
+  }, [jobs]);
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -134,6 +142,41 @@ export default function SettingsScreen() {
       alertError("Error", e instanceof Error ? e.message : String(e));
     } finally {
       setShareAdding(false);
+    }
+  };
+
+  const handleToggleGroup = async (shareId: string, group: string) => {
+    const share = shares.shared_by_me.find((s) => s.id === shareId);
+    if (!share) return;
+
+    let newGroups: string[] | null;
+    if (share.allowed_groups === null) {
+      // Switching from "all" to restricted: select all except the toggled one
+      newGroups = availableGroups.filter((g) => g !== group);
+    } else if (share.allowed_groups.includes(group)) {
+      newGroups = share.allowed_groups.filter((g) => g !== group);
+      if (newGroups.length === 0) newGroups = null;
+    } else {
+      newGroups = [...share.allowed_groups, group];
+      // If all groups are now selected, set to null (unrestricted)
+      if (availableGroups.every((g) => newGroups!.includes(g))) {
+        newGroups = null;
+      }
+    }
+
+    // Optimistic update
+    setShares((prev) => ({
+      ...prev,
+      shared_by_me: prev.shared_by_me.map((s) =>
+        s.id === shareId ? { ...s, allowed_groups: newGroups } : s,
+      ),
+    }));
+
+    try {
+      await api.updateShare(shareId, newGroups);
+    } catch (e) {
+      alertError("Error", e instanceof Error ? e.message : String(e));
+      await fetchShares();
     }
   };
 
@@ -286,16 +329,49 @@ export default function SettingsScreen() {
                 {shares.shared_by_me.length > 0 && (
                   <View style={styles.devicesList}>
                     {shares.shared_by_me.map((share) => (
-                      <View key={share.id} style={styles.shareRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.shareEmail}>{share.email}</Text>
-                          {share.display_name && (
-                            <Text style={styles.shareDisplayName}>{share.display_name}</Text>
-                          )}
+                      <View key={share.id}>
+                        <View style={[
+                          styles.shareRow,
+                          editingShareId === share.id && styles.shareRowExpanded,
+                        ]}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.shareEmail}>{share.email}</Text>
+                            {share.display_name && (
+                              <Text style={styles.shareDisplayName}>{share.display_name}</Text>
+                            )}
+                            <Text style={styles.shareGroupsSummary}>
+                              {share.allowed_groups === null
+                                ? "All groups"
+                                : `${share.allowed_groups.length} group${share.allowed_groups.length === 1 ? "" : "s"}`}
+                            </Text>
+                          </View>
+                          <View style={styles.shareActions}>
+                            <Pressable onPress={() => setEditingShareId(editingShareId === share.id ? null : share.id)}>
+                              <Text style={styles.shareEdit}>Groups</Text>
+                            </Pressable>
+                            <Pressable onPress={() => handleRemoveShare(share.id, share.email)}>
+                              <Text style={styles.shareRemove}>Remove</Text>
+                            </Pressable>
+                          </View>
                         </View>
-                        <Pressable onPress={() => handleRemoveShare(share.id, share.email)}>
-                          <Text style={styles.shareRemove}>Remove</Text>
-                        </Pressable>
+                        {editingShareId === share.id && availableGroups.length > 0 && (
+                          <View style={styles.groupPicker}>
+                            {availableGroups.map((group) => {
+                              const isSelected = share.allowed_groups === null || share.allowed_groups.includes(group);
+                              return (
+                                <Pressable
+                                  key={group}
+                                  style={[styles.groupChip, isSelected && styles.groupChipSelected]}
+                                  onPress={() => handleToggleGroup(share.id, group)}
+                                >
+                                  <Text style={[styles.groupChipText, isSelected && styles.groupChipTextSelected]}>
+                                    {group}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                        )}
                       </View>
                     ))}
                   </View>
@@ -469,9 +545,62 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginTop: spacing.sm,
   },
+  shareRowExpanded: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    borderBottomWidth: 0,
+  },
+  shareActions: {
+    flexDirection: "row",
+    gap: spacing.md,
+    alignItems: "center",
+  },
+  shareEdit: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "500",
+  },
   shareRemove: {
     color: colors.danger,
     fontSize: 13,
+    fontWeight: "500",
+  },
+  shareGroupsSummary: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  groupPicker: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    backgroundColor: colors.surface,
+    borderBottomLeftRadius: radius.md,
+    borderBottomRightRadius: radius.md,
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: colors.border,
+  },
+  groupChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  groupChipSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentBg,
+  },
+  groupChipText: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  groupChipTextSelected: {
+    color: colors.accent,
     fontWeight: "500",
   },
   dangerBtn: {

@@ -335,7 +335,8 @@ async fn handle_desktop(
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
 
     // Notify shared guests that this desktop came online
-    let guest_ids = get_shared_guest_ids(&state.pool, user_id).await;
+    let guests = get_shared_guests(&state.pool, user_id).await;
+    let guest_ids: Vec<Uuid> = guests.iter().map(|g| g.guest_id).collect();
 
     {
         let mut hub = state.hub.write().await;
@@ -426,8 +427,8 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
         return;
     };
 
-    // Look up shared guest IDs so we can forward desktop messages to them too
-    let guest_ids = get_shared_guest_ids(&state.pool, user_id).await;
+    // Look up shared guests so we can forward desktop messages with group filtering
+    let guests = get_shared_guests(&state.pool, user_id).await;
 
     // If this is a ClaudeQuestions message, cache it for replay and trigger push
     if let DesktopMessage::ClaudeQuestions { ref questions } = msg {
@@ -435,8 +436,16 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
             let mut hub = state.hub.write().await;
             hub.cache_questions(user_id, text);
             hub.send_raw_to_mobiles(user_id, text);
-            for &gid in &guest_ids {
-                hub.send_raw_to_mobiles(gid, text);
+            for guest in &guests {
+                match filter_questions_for_groups(questions, &guest.allowed_groups) {
+                    None => hub.send_raw_to_mobiles(guest.guest_id, text),
+                    Some(filtered) => {
+                        let filtered_msg = DesktopMessage::ClaudeQuestions { questions: filtered };
+                        if let Ok(json) = serde_json::to_string(&filtered_msg) {
+                            hub.send_raw_to_mobiles(guest.guest_id, &json);
+                        }
+                    }
+                }
             }
         }
         if !questions.is_empty() {
@@ -453,15 +462,85 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
         hub.set_auto_yes_panes(user_id, pane_set);
         hub.cache_auto_yes_panes(user_id, text);
         hub.send_raw_to_mobiles(user_id, text);
-        for &gid in &guest_ids {
-            hub.send_raw_to_mobiles(gid, text);
+        for guest in &guests {
+            hub.send_raw_to_mobiles(guest.guest_id, text);
+        }
+    } else if let DesktopMessage::JobsList { ref id, ref jobs, ref statuses } = msg {
+        // Filter jobs list by allowed groups for each guest
+        let hub = state.hub.read().await;
+        hub.send_raw_to_mobiles(user_id, text);
+        for guest in &guests {
+            if let Some(ref groups) = guest.allowed_groups {
+                let filtered_jobs: Vec<_> = jobs.iter()
+                    .filter(|j| groups.contains(&j.group))
+                    .cloned()
+                    .collect();
+                let filtered_statuses: std::collections::HashMap<_, _> = filtered_jobs.iter()
+                    .filter_map(|j| statuses.get(&j.name).map(|s| (j.name.clone(), s.clone())))
+                    .collect();
+                let filtered_msg = DesktopMessage::JobsList {
+                    id: id.clone(),
+                    jobs: filtered_jobs,
+                    statuses: filtered_statuses,
+                };
+                if let Ok(json) = serde_json::to_string(&filtered_msg) {
+                    hub.send_raw_to_mobiles(guest.guest_id, &json);
+                }
+            } else {
+                hub.send_raw_to_mobiles(guest.guest_id, text);
+            }
+        }
+    } else if let DesktopMessage::JobsChanged { ref jobs, ref statuses } = msg {
+        // Filter jobs changed by allowed groups for each guest
+        let hub = state.hub.read().await;
+        hub.send_raw_to_mobiles(user_id, text);
+        for guest in &guests {
+            if let Some(ref groups) = guest.allowed_groups {
+                let filtered_jobs: Vec<_> = jobs.iter()
+                    .filter(|j| groups.contains(&j.group))
+                    .cloned()
+                    .collect();
+                let filtered_statuses: std::collections::HashMap<_, _> = filtered_jobs.iter()
+                    .filter_map(|j| statuses.get(&j.name).map(|s| (j.name.clone(), s.clone())))
+                    .collect();
+                let filtered_msg = DesktopMessage::JobsChanged {
+                    jobs: filtered_jobs,
+                    statuses: filtered_statuses,
+                };
+                if let Ok(json) = serde_json::to_string(&filtered_msg) {
+                    hub.send_raw_to_mobiles(guest.guest_id, &json);
+                }
+            } else {
+                hub.send_raw_to_mobiles(guest.guest_id, text);
+            }
+        }
+    } else if let DesktopMessage::DetectedProcesses { ref id, ref processes } = msg {
+        // Filter detected processes by allowed groups
+        let hub = state.hub.read().await;
+        hub.send_raw_to_mobiles(user_id, text);
+        for guest in &guests {
+            if let Some(ref groups) = guest.allowed_groups {
+                let filtered: Vec<_> = processes.iter()
+                    .filter(|p| p.matched_group.as_ref().is_some_and(|g| groups.contains(g)))
+                    .cloned()
+                    .collect();
+                let filtered_msg = DesktopMessage::DetectedProcesses {
+                    id: id.clone(),
+                    processes: filtered,
+                };
+                if let Ok(json) = serde_json::to_string(&filtered_msg) {
+                    hub.send_raw_to_mobiles(guest.guest_id, &json);
+                }
+            } else {
+                hub.send_raw_to_mobiles(guest.guest_id, text);
+            }
         }
     } else {
         // Forward raw JSON to all mobile clients (avoids re-serialization)
         let hub = state.hub.read().await;
         hub.send_raw_to_mobiles(user_id, text);
-        for &gid in &guest_ids {
-            hub.send_raw_to_mobiles(gid, text);
+        for guest in &guests {
+            hub.send_raw_to_mobiles(guest.guest_id, text);
         }
     }
 
@@ -661,14 +740,23 @@ async fn handle_job_notification_push(
 }
 
 
-async fn get_shared_guest_ids(pool: &sqlx::PgPool, owner_id: Uuid) -> Vec<Uuid> {
-    sqlx::query_scalar::<_, Uuid>(
-        "SELECT guest_id FROM workspace_shares WHERE owner_id = $1",
+/// A share with optional group restrictions.
+struct SharedGuest {
+    guest_id: Uuid,
+    allowed_groups: Option<Vec<String>>,
+}
+
+async fn get_shared_guests(pool: &sqlx::PgPool, owner_id: Uuid) -> Vec<SharedGuest> {
+    sqlx::query_as::<_, (Uuid, Option<Vec<String>>)>(
+        "SELECT guest_id, allowed_groups FROM workspace_shares WHERE owner_id = $1",
     )
     .bind(owner_id)
     .fetch_all(pool)
     .await
     .unwrap_or_default()
+    .into_iter()
+    .map(|(guest_id, allowed_groups)| SharedGuest { guest_id, allowed_groups })
+    .collect()
 }
 
 async fn get_shared_owner_ids(pool: &sqlx::PgPool, guest_id: Uuid) -> Vec<Uuid> {
@@ -679,6 +767,26 @@ async fn get_shared_owner_ids(pool: &sqlx::PgPool, guest_id: Uuid) -> Vec<Uuid> 
     .fetch_all(pool)
     .await
     .unwrap_or_default()
+}
+
+/// Filter ClaudeQuestions by allowed groups. Returns None if all questions pass (no filtering needed).
+fn filter_questions_for_groups(
+    questions: &[ClaudeQuestion],
+    allowed_groups: &Option<Vec<String>>,
+) -> Option<Vec<ClaudeQuestion>> {
+    let Some(groups) = allowed_groups else {
+        return None; // No restriction
+    };
+    let filtered: Vec<ClaudeQuestion> = questions
+        .iter()
+        .filter(|q| {
+            q.matched_group
+                .as_ref()
+                .is_some_and(|g| groups.contains(g))
+        })
+        .cloned()
+        .collect();
+    Some(filtered)
 }
 
 fn extract_id(msg: &ClientMessage) -> Option<String> {

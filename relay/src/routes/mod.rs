@@ -16,7 +16,7 @@ use std::sync::Arc;
 use axum::extract::Request;
 use axum::middleware::{self, Next};
 use axum::response::Response;
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 use http_body_util::BodyExt;
 use tower_governor::governor::GovernorConfigBuilder;
@@ -77,6 +77,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/shares", post(share::add))
         .route("/shares", get(share::list))
         .route("/shares/{id}", delete(share::remove))
+        .route("/shares/{id}", patch(share::update))
         .layer(middleware::from_fn_with_state(state, auth_middleware));
 
     public

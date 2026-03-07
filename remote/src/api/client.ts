@@ -312,6 +312,7 @@ export interface ShareInfo {
   id: string;
   email: string;
   display_name: string | null;
+  allowed_groups: string[] | null;
   created_at: string;
 }
 
@@ -319,6 +320,7 @@ export interface SharedWithMeInfo {
   id: string;
   owner_email: string;
   owner_display_name: string | null;
+  allowed_groups: string[] | null;
   created_at: string;
 }
 
@@ -331,12 +333,19 @@ export async function getShares(): Promise<SharesResponse> {
   return request<SharesResponse>("/shares", { method: "GET" }, true);
 }
 
-export async function addShare(email: string): Promise<ShareInfo> {
+export async function addShare(email: string, allowedGroups?: string[]): Promise<ShareInfo> {
   return request<ShareInfo>(
     "/shares",
-    { method: "POST", body: JSON.stringify({ email }) },
+    { method: "POST", body: JSON.stringify({ email, allowed_groups: allowedGroups ?? null }) },
     true,
   );
+}
+
+export async function updateShare(shareId: string, allowedGroups: string[] | null): Promise<void> {
+  await request(`/shares/${shareId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ allowed_groups: allowedGroups }),
+  }, true);
 }
 
 export async function removeShare(shareId: string): Promise<void> {
