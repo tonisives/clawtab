@@ -1073,12 +1073,19 @@ pub fn build_agent_job(
 
     // Derive name/slug and work_dir from target_dir
     let (job_name, job_slug, work_dir) = if let Some(dir) = target_dir {
-        let folder = std::path::Path::new(dir)
+        // If target_dir ends in .cwt, use its parent as the project root
+        let dir_path = std::path::Path::new(dir);
+        let project_dir = if dir_path.file_name().and_then(|n| n.to_str()) == Some(".cwt") {
+            dir_path.parent().unwrap_or(dir_path)
+        } else {
+            dir_path
+        };
+        let folder = project_dir
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("agent");
         let slug = format!("agent-{}", folder);
-        (slug.clone(), slug, dir.to_string())
+        (slug.clone(), slug, project_dir.to_string_lossy().to_string())
     } else {
         ("agent".to_string(), "agent".to_string(), agent_dir.display().to_string())
     };

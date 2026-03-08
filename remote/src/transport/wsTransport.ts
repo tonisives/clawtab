@@ -105,9 +105,9 @@ export function createWsTransport(): Transport {
       };
     },
 
-    async runAgent(prompt: string) {
+    async runAgent(prompt: string, workDir?: string) {
       const id = nextId();
-      send({ type: "run_agent", id, prompt });
+      send({ type: "run_agent", id, prompt, work_dir: workDir });
     },
   };
 }

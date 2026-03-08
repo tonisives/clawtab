@@ -55,13 +55,13 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Collect tracked pane_ids from job_status Running entries.
-    // Exclude the "agent" job so its pane appears as a detected process
-    // (AgentSection needs the ClaudeProcess to render the process card).
+    // Exclude agent jobs so their panes appear as detected processes
+    // (AgentSection / group matching needs the ClaudeProcess to render).
     let tracked_panes: HashSet<String> = {
         let statuses = state.job_status.lock().unwrap();
         statuses
             .iter()
-            .filter(|(name, _)| name.as_str() != "agent")
+            .filter(|(name, _)| !name.starts_with("agent"))
             .filter_map(|(_, s)| match s {
                 JobStatus::Running { pane_id: Some(pid), .. } => Some(pid.clone()),
                 _ => None,

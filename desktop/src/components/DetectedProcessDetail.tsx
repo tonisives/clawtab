@@ -22,7 +22,8 @@ export function DetectedProcessDetail({
   const [logs, setLogs] = useState(process.log_lines);
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
-  const [stopping, setStopping] = useState(false);
+  const [killMenuOpen, setKillMenuOpen] = useState(false);
+  const killMenuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const processRef = useRef(process);
   processRef.current = process;
@@ -66,19 +67,17 @@ export function DetectedProcessDetail({
     }
   }, [process.pane_id, sending, paneQuestion, onDismissQuestion]);
 
-  const handleStop = useCallback(async () => {
-    if (stopping) return;
-    setStopping(true);
+  const handleSigint = useCallback(async () => {
+    setKillMenuOpen(false);
     try {
       await invoke("sigint_detected_process", { paneId: process.pane_id });
     } catch (e) {
-      console.error("Failed to stop process:", e);
-    } finally {
-      setTimeout(() => setStopping(false), 2000);
+      console.error("Failed to send C-c:", e);
     }
-  }, [process.pane_id, stopping]);
+  }, [process.pane_id]);
 
-  const handleKill = useCallback(async () => {
+  const handleKillShell = useCallback(async () => {
+    setKillMenuOpen(false);
     try {
       await invoke("stop_detected_process", { paneId: process.pane_id });
       onBack();
@@ -86,6 +85,17 @@ export function DetectedProcessDetail({
       console.error("Failed to kill process:", e);
     }
   }, [process.pane_id, onBack]);
+
+  useEffect(() => {
+    if (!killMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (killMenuRef.current && !killMenuRef.current.contains(e.target as Node)) {
+        setKillMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [killMenuOpen]);
 
   const handleOpen = useCallback(() => {
     invoke("focus_detected_process", {
@@ -113,23 +123,57 @@ export function DetectedProcessDetail({
           <button className="btn btn-sm" onClick={handleOpen} title="Open in terminal">
             Open in Terminal
           </button>
-          <button
-            className="btn btn-sm"
-            onClick={handleStop}
-            disabled={stopping}
-            style={{ borderColor: "var(--warning-color)", color: "var(--warning-color)" }}
-            title="Send C-c twice to gracefully stop"
-          >
-            {stopping ? "Stopping..." : "Stop (C-c)"}
-          </button>
-          <button
-            className="btn btn-sm"
-            onClick={handleKill}
-            style={{ borderColor: "var(--danger-color)", color: "var(--danger-color)" }}
-            title="Kill the tmux pane"
-          >
-            Kill
-          </button>
+          <div ref={killMenuRef} style={{ position: "relative" }}>
+            <button
+              className="btn btn-sm"
+              onClick={() => setKillMenuOpen((v) => !v)}
+              style={{ borderColor: "var(--danger-color)", color: "var(--danger-color)" }}
+            >
+              Kill
+            </button>
+            {killMenuOpen && (
+              <div style={{
+                position: "absolute",
+                top: "100%",
+                right: 0,
+                marginTop: 4,
+                backgroundColor: "var(--surface)",
+                border: "1px solid var(--border-color)",
+                borderRadius: 6,
+                overflow: "hidden",
+                zIndex: 100,
+                minWidth: 140,
+                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+              }}>
+                <button
+                  className="btn btn-sm"
+                  onClick={handleSigint}
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    borderRadius: 0,
+                    justifyContent: "flex-start",
+                    color: "var(--warning-color)",
+                  }}
+                >
+                  C-c
+                </button>
+                <button
+                  className="btn btn-sm"
+                  onClick={handleKillShell}
+                  style={{
+                    width: "100%",
+                    border: "none",
+                    borderRadius: 0,
+                    justifyContent: "flex-start",
+                    color: "var(--danger-color)",
+                  }}
+                >
+                  shell
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -45,6 +45,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
+  const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
 
   // Question polling
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
@@ -177,6 +178,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     }
   }, [core.processes, viewingProcess]);
 
+  // Wait for agent process to appear after launching from group
+  useEffect(() => {
+    if (!pendingAgentWorkDir) return;
+    const { dir, startedAt } = pendingAgentWorkDir;
+    const match = core.processes.find((p) => p.cwd === dir);
+    if (match) {
+      setPendingAgentWorkDir(null);
+      setViewingProcess(match);
+      return;
+    }
+    if (Date.now() - startedAt > 15000) {
+      setPendingAgentWorkDir(null);
+    }
+  }, [core.processes, pendingAgentWorkDir]);
+
   useEffect(() => {
     if (pendingTemplateId) setShowPicker(true);
   }, [pendingTemplateId]);
@@ -253,6 +269,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
 
   const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
     await actions.runAgent(prompt, workDir);
+    if (workDir) {
+      // Strip /.cwt suffix to match the actual CWD the agent will run in
+      const dir = workDir.endsWith("/.cwt") ? workDir.slice(0, -5) : workDir;
+      setPendingAgentWorkDir({ dir, startedAt: Date.now() });
+    }
   }, [actions]);
 
   const handleAddJob = useCallback((group: string, folderPath?: string) => {
@@ -496,6 +517,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         onBack={() => setViewingAgent(false)}
         onOpen={() => handleOpen("agent")}
       />
+    );
+  }
+
+  if (pendingAgentWorkDir) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button className="btn btn-sm" onClick={() => setPendingAgentWorkDir(null)}>
+            Back
+          </button>
+          <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+            Waiting for agent to start...
+          </span>
+        </div>
+      </div>
     );
   }
 
