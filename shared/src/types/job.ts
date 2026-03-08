@@ -28,7 +28,7 @@ export interface DesktopJob extends RemoteJob {
   env: Record<string, string>;
   tmux_session: string | null;
   aerospace_workspace: string | null;
-  folder_path: string | null;
+  folder_path: string | undefined;
   job_name: string | null;
   telegram_chat_id: number | null;
   telegram_log_mode: TelegramLogMode;

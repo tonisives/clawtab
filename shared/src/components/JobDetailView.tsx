@@ -125,7 +125,6 @@ export function JobDetailView({
   const [sigintPending, setSigintPending] = useState(false);
   const [liveZoom, setLiveZoom] = useState(false);
   const [logsHeight, setLogsHeight] = useState(400);
-  const logsContainerRef = useRef<HTMLElement | null>(null);
 
   const handleLogsResize = useCallback((e: any) => {
     e.preventDefault();

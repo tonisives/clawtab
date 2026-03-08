@@ -45,6 +45,8 @@ export { AutoYesBanner } from "./components/AutoYesBanner";
 export type { AutoYesEntry } from "./components/AutoYesBanner";
 export { JobListView } from "./components/JobListView";
 export { JobDetailView } from "./components/JobDetailView";
+export { ShareSection } from "./components/ShareSection";
+export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
 
 // Hooks
 export { useJobsCore } from "./hooks/useJobsCore";

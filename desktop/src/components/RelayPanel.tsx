@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ShareSection } from "@clawtab/shared";
+import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
 
 const GOOGLE_CLIENT_ID =
   "186596496380-dp282va1mvdhrr2q7qrlbgmn3ak2mq07.apps.googleusercontent.com";
@@ -32,6 +34,11 @@ interface PairDeviceResponse {
   device_token: string;
 }
 
+interface SharesResponse {
+  shared_by_me: ShareInfo[];
+  shared_with_me: SharedWithMeInfo[];
+}
+
 interface RelayPanelProps {
   externalAccessToken?: string | null;
   externalRefreshToken?: string | null;
@@ -55,6 +62,12 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   const [pairing, setPairing] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Sharing state
+  const [shares, setShares] = useState<SharesResponse>({ shared_by_me: [], shared_with_me: [] });
+  const [sharesLoading, setSharesLoading] = useState(false);
+  const [groups, setGroups] = useState<string[]>([]);
+  const [removingShare, setRemovingShare] = useState<{ id: string; email: string } | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -99,6 +112,25 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   }, [loaded]);
 
   const isConfigured = settings && settings.device_token && settings.server_url;
+
+  // Load shares and groups when configured
+  useEffect(() => {
+    if (!isConfigured) return;
+    loadShares();
+    invoke<string[]>("relay_get_groups").then(setGroups).catch(() => {});
+  }, [isConfigured]);
+
+  const loadShares = async () => {
+    setSharesLoading(true);
+    try {
+      const resp = await invoke<SharesResponse>("relay_get_shares");
+      setShares(resp);
+    } catch (e) {
+      console.error("Failed to load shares:", e);
+    } finally {
+      setSharesLoading(false);
+    }
+  };
 
   const handleLogin = async () => {
     if (!email || !password) return;
@@ -154,13 +186,11 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       await invoke("set_relay_settings", { settings: newSettings });
       setSettings(newSettings);
       setAccessToken(null);
-      // Connect to relay
       try {
         await invoke("relay_connect");
       } catch {
         // will retry on next app start
       }
-      // Refresh status
       const st = await invoke<RelayStatus>("get_relay_status");
       setStatus(st);
     } catch (e) {
@@ -204,6 +234,48 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       console.error("Failed to toggle relay:", e);
     }
   };
+
+  const handleAddShare = useCallback(async (shareEmail: string) => {
+    await invoke<ShareInfo>("relay_add_share", {
+      email: shareEmail,
+      allowedGroups: null,
+    });
+    await loadShares();
+  }, []);
+
+  const handleToggleGroup = useCallback((shareId: string, group: string) => {
+    const share = shares.shared_by_me.find((s) => s.id === shareId);
+    if (!share) return;
+
+    let newGroups: string[] | null;
+    if (share.allowed_groups === null) {
+      newGroups = groups.filter((g) => g !== group);
+    } else if (share.allowed_groups.includes(group)) {
+      newGroups = share.allowed_groups.filter((g) => g !== group);
+      if (newGroups.length === 0) newGroups = null;
+    } else {
+      newGroups = [...share.allowed_groups, group];
+      if (groups.every((g) => newGroups!.includes(g))) {
+        newGroups = null;
+      }
+    }
+
+    // Optimistic update
+    setShares((prev) => ({
+      ...prev,
+      shared_by_me: prev.shared_by_me.map((s) =>
+        s.id === shareId ? { ...s, allowed_groups: newGroups } : s,
+      ),
+    }));
+
+    invoke("relay_update_share", { shareId, allowedGroups: newGroups }).catch(() => loadShares());
+  }, [shares, groups]);
+
+  const handleRemoveShare = useCallback(async (id: string) => {
+    await invoke("relay_remove_share", { shareId: id });
+    setRemovingShare(null);
+    await loadShares();
+  }, []);
 
   if (!loaded) {
     return (
@@ -439,11 +511,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                       onClick={async () => {
                         setRefreshing(true);
                         try {
-                          // Disconnect any stale connection first
                           await invoke("relay_disconnect");
-                          // Clear subscription-required flag and reconnect
                           await invoke("relay_connect");
-                          // Wait a moment for the connection to establish
                           await new Promise((r) => setTimeout(r, 2000));
                         } catch {}
                         const st = await invoke<RelayStatus>("get_relay_status");
@@ -484,6 +553,22 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
             </div>
           </div>
 
+          <div className="field-group">
+            <span className="field-group-title">Sharing</span>
+            <p className="section-description" style={{ marginTop: 0 }}>
+              Share access to your jobs with other users.
+            </p>
+            <ShareSection
+              sharedByMe={shares.shared_by_me}
+              sharedWithMe={shares.shared_with_me}
+              availableGroups={groups}
+              loading={sharesLoading}
+              onAdd={handleAddShare}
+              onToggleGroup={handleToggleGroup}
+              onRemove={(id, shareEmail) => setRemovingShare({ id, email: shareEmail })}
+            />
+          </div>
+
           <div className="field-group" style={{ borderColor: "var(--danger-color)" }}>
             <span className="field-group-title" style={{ color: "var(--danger-color)" }}>Danger Zone</span>
             <p className="section-description" style={{ marginTop: 0 }}>
@@ -501,6 +586,14 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
               />
             )}
           </div>
+
+          {removingShare && (
+            <ConfirmDialog
+              message={`Remove shared access for ${removingShare.email}?`}
+              onConfirm={() => handleRemoveShare(removingShare.id)}
+              onCancel={() => setRemovingShare(null)}
+            />
+          )}
         </>
       )}
     </div>
