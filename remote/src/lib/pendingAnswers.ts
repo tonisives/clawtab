@@ -7,6 +7,9 @@ type AnswerMessage = Extract<ClientMessage, { type: "answer_question" }>;
 
 let queue: AnswerMessage[] = [];
 
+// Registered by useWebSocket on connect so late-arriving enqueues can flush immediately.
+let registeredSend: ((msg: ClientMessage) => void) | null = null;
+
 export async function loadPendingAnswers(): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(KEY);
@@ -16,16 +19,24 @@ export async function loadPendingAnswers(): Promise<void> {
   }
 }
 
-export function enqueueAnswer(msg: AnswerMessage) {
+export async function enqueueAnswer(msg: AnswerMessage) {
   queue.push(msg);
-  AsyncStorage.setItem(KEY, JSON.stringify(queue)).catch((e) =>
-    console.log("[pending] failed to persist:", e),
-  );
+  // If WS is already connected, flush immediately instead of waiting.
+  if (registeredSend) {
+    flushPendingAnswers(registeredSend);
+    return;
+  }
+  try {
+    await AsyncStorage.setItem(KEY, JSON.stringify(queue));
+  } catch (e) {
+    console.log("[pending] failed to persist:", e);
+  }
 }
 
 export function flushPendingAnswers(
   send: (msg: ClientMessage) => void,
 ): void {
+  registeredSend = send;
   if (queue.length === 0) return;
   console.log("[pending] flushing", queue.length, "queued answers");
   for (const msg of queue) {
@@ -35,4 +46,8 @@ export function flushPendingAnswers(
   AsyncStorage.removeItem(KEY).catch((e) =>
     console.log("[pending] failed to clear:", e),
   );
+}
+
+export function clearRegisteredSend() {
+  registeredSend = null;
 }

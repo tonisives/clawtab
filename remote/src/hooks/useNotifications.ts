@@ -16,38 +16,40 @@ function responseKey(response: Notifications.NotificationResponse): string {
   return `${response.notification.request.identifier}_${response.actionIdentifier}`;
 }
 
-function sendAnswer(questionId: string, paneId: string, actionId: string) {
-  console.log("[notif] answering via HTTP:", questionId, actionId);
-  // Eagerly refresh JWT since the access token is likely expired on cold launch.
-  // This is deduplicated in client.ts so concurrent callers share one refresh.
-  refreshToken().catch(() => {}).then(() => postAnswer(questionId, paneId, actionId))
-    .then((res) => console.log("[notif] HTTP answer sent, desktop:", res.sent))
-    .catch((err) => {
-      console.log("[notif] HTTP answer failed:", err, "- falling back");
-      const send = getWsSend();
-      if (send) {
-        console.log("[notif] fallback: sending via WS");
-        send({
-          type: "answer_question" as const,
-          id: nextId(),
-          question_id: questionId,
-          pane_id: paneId,
-          answer: actionId,
-        });
-      } else {
-        console.log("[notif] fallback: queuing to AsyncStorage");
-        enqueueAnswer({
-          type: "answer_question" as const,
-          id: nextId(),
-          question_id: questionId,
-          pane_id: paneId,
-          answer: actionId,
-        });
-      }
-    });
+async function sendAnswer(questionId: string, paneId: string, actionId: string) {
+  console.log("[notif] answering:", questionId, actionId);
+  const msg = {
+    type: "answer_question" as const,
+    id: nextId(),
+    question_id: questionId,
+    pane_id: paneId,
+    answer: actionId,
+  };
+
+  // Try WS first since it's already authenticated and avoids JWT refresh issues.
+  const send = getWsSend();
+  if (send) {
+    console.log("[notif] sending via WS");
+    send(msg);
+    return;
+  }
+
+  // Try HTTP with token refresh.
+  try {
+    await refreshToken().catch(() => {});
+    const res = await postAnswer(questionId, paneId, actionId);
+    console.log("[notif] HTTP answer sent, desktop:", res.sent);
+    return;
+  } catch (err) {
+    console.log("[notif] HTTP answer failed:", err);
+  }
+
+  // Both failed - queue for later. The queue is also checked after WS connects.
+  console.log("[notif] queuing answer to AsyncStorage");
+  await enqueueAnswer(msg);
 }
 
-function handleNotificationResponse(
+async function handleNotificationResponse(
   response: Notifications.NotificationResponse,
   answerQuestion: (id: string) => void,
   navigate?: (path: string) => void,
@@ -98,7 +100,8 @@ function handleNotificationResponse(
   const actionId = response.actionIdentifier;
 
   if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
-    sendAnswer(clawtab.question_id, clawtab.pane_id, actionId);
+    // Await the answer so iOS keeps the background task alive until it completes.
+    await sendAnswer(clawtab.question_id, clawtab.pane_id, actionId);
     answerQuestion(clawtab.question_id);
     Notifications.dismissNotificationAsync(
       response.notification.request.identifier,

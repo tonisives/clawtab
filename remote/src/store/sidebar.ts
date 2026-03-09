@@ -8,7 +8,7 @@ if (Platform.OS === "web" && typeof localStorage !== "undefined") {
 }
 
 const DEFAULT_WIDTH = 180;
-const MIN_WIDTH = 72;
+const MIN_WIDTH = 58;
 const MAX_WIDTH = 300;
 
 type SidebarStore = {

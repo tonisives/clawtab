@@ -572,18 +572,6 @@ async fn handle_claude_questions_push(
         return;
     }
 
-    // Per-question dedup: skip if we already pushed for this question.
-    // No per-user rate limit - questions are already debounced on the desktop
-    // side and per-question dedup prevents duplicates.
-    if let Some(ref redis) = state.redis {
-        let mut conn = redis.clone();
-        let q_id = &questions[0].question_id;
-        if crate::push_limiter::is_question_pushed(&mut conn, q_id).await {
-            tracing::debug!("push already sent for question {q_id}");
-            return;
-        }
-    }
-
     // Save to notification_history
     for q in &questions {
         let options_json = serde_json::to_value(&q.options).unwrap_or_default();
@@ -603,6 +591,26 @@ async fn handle_claude_questions_push(
         .ok();
     }
 
+    // Find the first question that hasn't been pushed yet (per-question dedup).
+    let unpushed = if let Some(ref redis) = state.redis {
+        let mut conn = redis.clone();
+        let mut found = None;
+        for q in &questions {
+            if !crate::push_limiter::is_question_pushed(&mut conn, &q.question_id).await {
+                found = Some(q);
+                break;
+            }
+        }
+        found
+    } else {
+        Some(&questions[0])
+    };
+
+    let Some(q) = unpushed else {
+        tracing::debug!("all questions already pushed");
+        return;
+    };
+
     // Send push notifications
     let Some(ref apns) = state.apns else {
         return;
@@ -619,10 +627,7 @@ async fn handle_claude_questions_push(
 
     if tokens.is_empty() {
         return;
-    }
-
-    // Use the first question for the push notification
-    let q = &questions[0];
+    };
 
     // Compact the path: keep the last folder (most important) plus a
     // shortened prefix. e.g. "/Users/tonis/workspace/tgs/clawtab/public"

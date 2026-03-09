@@ -61,7 +61,7 @@ export function ResizableSidebar({ children }: { children: React.ReactNode }) {
       <View style={[styles.sidebar, { width }]}>
         <Pressable
           onPress={() => Linking.openURL("https://clawtab.cc")}
-          style={styles.brand}
+          style={[styles.brand, collapsed && styles.brandCollapsed]}
         >
           <Image
             source={require("../../assets/clawtab-icon.png")}
@@ -70,19 +70,20 @@ export function ResizableSidebar({ children }: { children: React.ReactNode }) {
           {!collapsed && <Text style={styles.brandText}>ClawTab</Text>}
         </Pressable>
 
-        <View style={styles.nav}>
+        <View style={[styles.nav, collapsed && styles.navCollapsed]}>
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.route);
             return (
               <Pressable
                 key={item.route}
-                style={[styles.navItem, active && styles.navItemActive]}
+                style={[styles.navItem, active && styles.navItemActive, collapsed && styles.navItemCollapsed]}
                 onPress={() => router.push(item.route as any)}
               >
                 <Ionicons
                   name={active ? item.iconFocused : item.icon}
                   size={20}
                   color={active ? colors.accent : colors.textMuted}
+                  style={collapsed ? { alignSelf: "center" } : undefined}
                 />
                 {!collapsed && (
                   <Text style={[styles.navLabel, active && styles.navLabelActive]}>
@@ -115,6 +116,7 @@ const styles = StyleSheet.create({
     borderRightColor: colors.border,
     paddingTop: 12,
     paddingBottom: 12,
+    overflow: "hidden" as const,
   },
   brand: {
     flexDirection: "row",
@@ -129,6 +131,10 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 6,
   },
+  brandCollapsed: {
+    paddingHorizontal: 0,
+    justifyContent: "center" as const,
+  },
   brandText: {
     color: colors.text,
     fontSize: 16,
@@ -138,6 +144,10 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
     paddingHorizontal: 8,
+  },
+  navCollapsed: {
+    paddingHorizontal: 4,
+    alignItems: "center" as const,
   },
   navItem: {
     flexDirection: "row",
@@ -149,6 +159,9 @@ const styles = StyleSheet.create({
   },
   navItemActive: {
     backgroundColor: colors.accentBg,
+  },
+  navItemCollapsed: {
+    justifyContent: "center" as const,
   },
   navLabel: {
     color: colors.textMuted,

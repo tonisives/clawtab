@@ -9,7 +9,7 @@ import { getPushToken } from "../lib/notifications";
 import { dispatchLogChunk } from "./useLogs";
 import { resolveRequest } from "../lib/useRequestMap";
 import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
-import { flushPendingAnswers } from "../lib/pendingAnswers";
+import { flushPendingAnswers, clearRegisteredSend } from "../lib/pendingAnswers";
 import type { ClientMessage, IncomingMessage } from "../types/messages";
 
 let globalWs: WebSocket | null = null;
@@ -174,6 +174,7 @@ export function useWebSocket() {
       console.log("[ws] closed, code:", e.code, "reason:", e.reason);
       globalWs = null;
       globalSend = null;
+      clearRegisteredSend();
       if (!mountedRef.current) return;
       setConnected(false);
 
