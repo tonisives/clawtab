@@ -132,6 +132,13 @@ async function handleNotificationResponse(
     answeredResponses.add(key);
   }
 
+  // Action button taps: answer only (handled natively), no navigation.
+  const isActionButton = response.actionIdentifier && response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER;
+  if (isActionButton) {
+    console.log("[notif] action button tap, skip navigation");
+    return;
+  }
+
   // Navigate to the job/process screen
   if (navigate && !alreadyNavigated) {
     navigatedResponses.add(key);
@@ -160,15 +167,19 @@ export function handleColdStartAnswer() {
       const source = contentData?.clawtab ? contentData : trigger?.payload;
       const ct = (source as { clawtab?: { question_id?: string; pane_id?: string; matched_job?: string; job_name?: string; run_id?: string } } | undefined)?.clawtab;
       if (ct) {
-        if (ct.job_name && !ct.question_id) {
-          const params = ct.run_id ? `?run_id=${ct.run_id}` : "";
-          pendingNavigation = `/job/${ct.job_name}${params}`;
-        } else if (ct.matched_job) {
-          pendingNavigation = `/job/${ct.matched_job}`;
-        } else if (ct.pane_id) {
-          pendingNavigation = `/process/${ct.pane_id.replace(/%/g, "_pct_")}`;
+        // Only set pending navigation for body taps, not action button taps
+        const isBodyTap = response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER;
+        if (isBodyTap) {
+          if (ct.job_name && !ct.question_id) {
+            const params = ct.run_id ? `?run_id=${ct.run_id}` : "";
+            pendingNavigation = `/job/${ct.job_name}${params}`;
+          } else if (ct.matched_job) {
+            pendingNavigation = `/job/${ct.matched_job}`;
+          } else if (ct.pane_id) {
+            pendingNavigation = `/process/${ct.pane_id.replace(/%/g, "_pct_")}`;
+          }
         }
-        console.log("[notif] cold-start pending: " + pendingNavigation);
+        console.log("[notif] cold-start pending: " + pendingNavigation + " (bodyTap=" + isBodyTap + ")");
       } else {
         console.log("[notif] cold-start no clawtab, data=" + JSON.stringify(response.notification.request.content.data));
       }

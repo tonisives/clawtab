@@ -217,11 +217,14 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
     // AnswerQuestion: forward to desktop AND mark as answered in DB
     if let ClientMessage::AnswerQuestion {
         question_id,
+        pane_id,
         answer,
         ..
     } = &msg
     {
-        tracing::info!(%question_id, %answer, "answer received via WS, forwarding to desktop");
+        tracing::info!(%question_id, %pane_id, %answer, %target, "answer via WS");
+        let sent = hub.forward_to_desktop(target, &msg);
+        tracing::info!(%question_id, %answer, sent, "answer via WS forwarded");
         let qid = question_id.clone();
         let ans = answer.clone();
         let pool = state.pool.clone();
@@ -235,6 +238,7 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
             .await
             .ok();
         });
+        return;
     }
 
     hub.forward_to_desktop(target, &msg);

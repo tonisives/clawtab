@@ -23,8 +23,9 @@ pub async fn answer(
     tracing::info!(
         user_id = %claims.sub,
         question_id = %req.question_id,
+        pane_id = %req.pane_id,
         answer = %req.answer,
-        "answer received via HTTP"
+        "answer via HTTP"
     );
 
     let msg = ClientMessage::AnswerQuestion {
@@ -40,7 +41,12 @@ pub async fn answer(
         hub.forward_to_desktop(claims.sub, &msg)
     };
 
-    tracing::info!(sent, "answer forwarded to desktop");
+    tracing::info!(
+        question_id = %req.question_id,
+        answer = %req.answer,
+        sent,
+        "answer via HTTP forwarded"
+    );
 
     // Mark answered in DB (fire and forget)
     let pool = state.pool.clone();
