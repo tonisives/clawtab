@@ -52,8 +52,24 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
       return false
     }
 
-    NSLog("[ClawTab] action tapped: question=%@ answer=%@", questionId, actionId)
-    postAnswer(questionId: questionId, paneId: paneId, answer: actionId, completion: completionHandler)
+    // For text input actions, the user typed their answer
+    let answer: String
+    if let textResponse = response as? UNTextInputNotificationResponse {
+      answer = textResponse.userText.trimmingCharacters(in: .whitespacesAndNewlines)
+      NSLog("[ClawTab] text input: question=%@ text=%@", questionId, answer)
+    } else {
+      answer = actionId
+      NSLog("[ClawTab] action tapped: question=%@ answer=%@", questionId, answer)
+    }
+
+    if !answer.isEmpty {
+      postAnswer(questionId: questionId, paneId: paneId, answer: answer, completion: completionHandler)
+    } else {
+      completionHandler()
+    }
+
+    // Return true so iOS keeps the process alive for the HTTP call.
+    // Action button taps don't need to flow to JS (no navigation needed).
     return true
   }
 

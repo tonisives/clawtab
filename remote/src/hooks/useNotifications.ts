@@ -118,24 +118,19 @@ async function handleNotificationResponse(
       matched_group: null,
     });
 
-    const actionId = response.actionIdentifier;
-
-    if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
-      const answer = (response as { userText?: string }).userText?.trim() || actionId;
-      await sendAnswer(clawtab.question_id, clawtab.pane_id, answer);
-      answerQuestion(clawtab.question_id);
-      Notifications.dismissNotificationAsync(
-        response.notification.request.identifier,
-      ).catch(() => {});
-    }
-
     answeredResponses.add(key);
   }
 
-  // Action button taps: answer only (handled natively), no navigation.
-  const isActionButton = response.actionIdentifier && response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER;
-  if (isActionButton) {
-    console.log("[notif] action button tap, skip navigation");
+  // Action button taps are fully handled by native NativeAnswerHandler
+  // (returns true, iOS keeps process alive for HTTP). When app is in
+  // foreground, this JS code also runs - just update local state, no nav.
+  const actionId = response.actionIdentifier;
+  if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
+    console.log("[notif] action button tap, native handler sends answer");
+    answerQuestion(clawtab.question_id);
+    Notifications.dismissNotificationAsync(
+      response.notification.request.identifier,
+    ).catch(() => {});
     return;
   }
 
