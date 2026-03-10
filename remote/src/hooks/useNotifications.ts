@@ -8,16 +8,25 @@ import { getWsSend, nextId } from "./useWebSocket";
 import { enqueueAnswer } from "../lib/pendingAnswers";
 import { postAnswer, refreshToken } from "../api/client";
 
-// Track which responses we've already handled to avoid double-processing
-// between getLastNotificationResponseAsync and the listener.
-const handledResponses = new Set<string>();
+// Track which responses we've already sent answers for / navigated for,
+// to avoid double-processing between cold-start and the listener.
+const answeredResponses = new Set<string>();
+const navigatedResponses = new Set<string>();
+
+// Pending navigation target from cold start (set before router is ready)
+let pendingNavigation: string | null = null;
+export function consumePendingNavigation(): string | null {
+  const target = pendingNavigation;
+  pendingNavigation = null;
+  return target;
+}
 
 function responseKey(response: Notifications.NotificationResponse): string {
   return `${response.notification.request.identifier}_${response.actionIdentifier}`;
 }
 
 async function sendAnswer(questionId: string, paneId: string, actionId: string) {
-  console.log("[notif] answering:", questionId, actionId);
+  console.log("[notif] answering: " + questionId + " " + actionId);
   const msg = {
     type: "answer_question" as const,
     id: nextId(),
@@ -26,7 +35,6 @@ async function sendAnswer(questionId: string, paneId: string, actionId: string) 
     answer: actionId,
   };
 
-  // Try WS first since it's already authenticated and avoids JWT refresh issues.
   const send = getWsSend();
   if (send) {
     console.log("[notif] sending via WS");
@@ -34,17 +42,15 @@ async function sendAnswer(questionId: string, paneId: string, actionId: string) 
     return;
   }
 
-  // Try HTTP with token refresh.
   try {
     await refreshToken().catch(() => {});
     const res = await postAnswer(questionId, paneId, actionId);
-    console.log("[notif] HTTP answer sent, desktop:", res.sent);
+    console.log("[notif] HTTP answer sent, desktop: " + res.sent);
     return;
   } catch (err) {
-    console.log("[notif] HTTP answer failed:", err);
+    console.log("[notif] HTTP answer failed: " + err);
   }
 
-  // Both failed - queue for later. The queue is also checked after WS connects.
   console.log("[notif] queuing answer to AsyncStorage");
   await enqueueAnswer(msg);
 }
@@ -55,66 +61,88 @@ async function handleNotificationResponse(
   navigate?: (path: string) => void,
 ) {
   const key = responseKey(response);
-  if (handledResponses.has(key)) return;
-  handledResponses.add(key);
+  const alreadyAnswered = answeredResponses.has(key);
+  const alreadyNavigated = navigatedResponses.has(key);
+  console.log("[notif] handle key=" + key + " action=" + response.actionIdentifier + " nav=" + !!navigate + " answered=" + alreadyAnswered + " navigated=" + alreadyNavigated);
+  if (alreadyAnswered && (alreadyNavigated || !navigate)) {
+    console.log("[notif] skipping (already handled)");
+    return;
+  }
 
-  const data = response.notification.request.content.data as {
-    clawtab?: {
-      question_id?: string;
-      pane_id?: string;
-      matched_job?: string;
-      options?: { number: string; label: string }[];
-      job_name?: string;
-      run_id?: string;
-    };
-  } | undefined;
+  // For remote notifications, Expo puts content.data = userInfo["body"] which
+  // we don't use. The full APNs userInfo is at trigger.payload instead.
+  const trigger = response.notification.request.trigger as { payload?: Record<string, unknown> } | null;
+  const contentData = response.notification.request.content.data;
+  const source = contentData?.clawtab ? contentData : trigger?.payload;
 
-  const clawtab = data?.clawtab;
-  if (!clawtab) return;
+  const clawtab = (source as { clawtab?: {
+    question_id?: string;
+    pane_id?: string;
+    matched_job?: string;
+    options?: { number: string; label: string }[];
+    job_name?: string;
+    run_id?: string;
+  } } | undefined)?.clawtab;
+
+  if (!clawtab) {
+    console.log("[notif] no clawtab data, content.data=" + JSON.stringify(contentData) + " trigger.payload=" + JSON.stringify(trigger?.payload));
+
+    return;
+  }
+  console.log("[notif] clawtab q=" + clawtab.question_id + " pane=" + clawtab.pane_id + " job=" + clawtab.matched_job);
 
   // Job notification (no question_id means it's a job status push)
   if (clawtab.job_name && !clawtab.question_id) {
-    const params = clawtab.run_id ? `?run_id=${clawtab.run_id}` : "";
-    navigate?.(`/job/${clawtab.job_name}${params}`);
+    if (navigate && !alreadyNavigated) {
+      navigatedResponses.add(key);
+      const params = clawtab.run_id ? `?run_id=${clawtab.run_id}` : "";
+      navigate(`/job/${clawtab.job_name}${params}`);
+    }
     return;
   }
 
   // Question notification
   if (!clawtab.question_id || !clawtab.pane_id) return;
 
-  // Inject the question from the notification payload so it's
-  // visible immediately, even if WS hasn't connected yet.
-  const notifContent = response.notification.request.content;
-  useNotificationStore.getState().injectFromNotification({
-    pane_id: clawtab.pane_id,
-    cwd: "",
-    tmux_session: "",
-    window_name: "",
-    question_id: clawtab.question_id,
-    context_lines: typeof notifContent.body === "string" ? notifContent.body : "",
-    options: clawtab.options ?? [],
-    matched_job: clawtab.matched_job ?? null,
-    matched_group: null,
-  });
+  if (!alreadyAnswered) {
+    const notifContent = response.notification.request.content;
+    useNotificationStore.getState().injectFromNotification({
+      pane_id: clawtab.pane_id,
+      cwd: "",
+      tmux_session: "",
+      window_name: "",
+      question_id: clawtab.question_id,
+      context_lines: typeof notifContent.body === "string" ? notifContent.body : "",
+      options: clawtab.options ?? [],
+      matched_job: clawtab.matched_job ?? null,
+      matched_group: null,
+    });
 
-  const actionId = response.actionIdentifier;
+    const actionId = response.actionIdentifier;
 
-  if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
-    // Await the answer so iOS keeps the background task alive until it completes.
-    await sendAnswer(clawtab.question_id, clawtab.pane_id, actionId);
-    answerQuestion(clawtab.question_id);
-    Notifications.dismissNotificationAsync(
-      response.notification.request.identifier,
-    ).catch(() => {});
+    if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
+      const answer = (response as { userText?: string }).userText?.trim() || actionId;
+      await sendAnswer(clawtab.question_id, clawtab.pane_id, answer);
+      answerQuestion(clawtab.question_id);
+      Notifications.dismissNotificationAsync(
+        response.notification.request.identifier,
+      ).catch(() => {});
+    }
+
+    answeredResponses.add(key);
   }
 
   // Navigate to the job/process screen
-  if (navigate) {
-    if (clawtab.matched_job) {
-      navigate(`/job/${clawtab.matched_job}`);
-    } else {
-      navigate(`/process/${clawtab.pane_id.replace(/%/g, "_pct_")}`);
-    }
+  if (navigate && !alreadyNavigated) {
+    navigatedResponses.add(key);
+    const target = clawtab.matched_job
+      ? `/job/${clawtab.matched_job}`
+      : `/process/${clawtab.pane_id.replace(/%/g, "_pct_")}`;
+    console.log("[notif] navigating to: " + target);
+
+    navigate(target);
+  } else {
+    console.log("[notif] skip nav: navigate=" + !!navigate + " navigated=" + alreadyNavigated);
   }
 }
 
@@ -122,11 +150,32 @@ async function handleNotificationResponse(
 // before the router is ready. Only sends the answer, no navigation.
 export function handleColdStartAnswer() {
   if (Platform.OS === "web") return;
+  console.log("[notif] handleColdStartAnswer called");
   const answerQuestion = useNotificationStore.getState().answerQuestion;
   Notifications.getLastNotificationResponseAsync().then((response) => {
+    console.log("[notif] cold-start getLast: " + (response ? response.actionIdentifier : "null"));
     if (response) {
-      console.log("[notif] cold-start response:", response.actionIdentifier);
+      const trigger = response.notification.request.trigger as { payload?: Record<string, unknown> } | null;
+      const contentData = response.notification.request.content.data;
+      const source = contentData?.clawtab ? contentData : trigger?.payload;
+      const ct = (source as { clawtab?: { question_id?: string; pane_id?: string; matched_job?: string; job_name?: string; run_id?: string } } | undefined)?.clawtab;
+      if (ct) {
+        if (ct.job_name && !ct.question_id) {
+          const params = ct.run_id ? `?run_id=${ct.run_id}` : "";
+          pendingNavigation = `/job/${ct.job_name}${params}`;
+        } else if (ct.matched_job) {
+          pendingNavigation = `/job/${ct.matched_job}`;
+        } else if (ct.pane_id) {
+          pendingNavigation = `/process/${ct.pane_id.replace(/%/g, "_pct_")}`;
+        }
+        console.log("[notif] cold-start pending: " + pendingNavigation);
+      } else {
+        console.log("[notif] cold-start no clawtab, data=" + JSON.stringify(response.notification.request.content.data));
+      }
+
       handleNotificationResponse(response, answerQuestion);
+    } else {
+
     }
   });
 }
@@ -140,20 +189,32 @@ export function useNotifications() {
   useEffect(() => {
     if (Platform.OS === "web") return;
 
-    const navigate = (path: string) => router.push(path as never);
+    const navigate = (path: string) => {
+      console.log("[notif] router.push: " + path);
+      router.push(path as never);
+    };
 
-    // Re-check cold start response now that router is available for navigation.
-    // The answer was already sent by handleColdStartAnswer, but navigation
-    // was skipped; the dedup set prevents double-sending.
+    // Check if cold-start stored a pending navigation target
+    const pending = consumePendingNavigation();
+    if (pending) {
+      console.log("[notif] consuming pending: " + pending);
+      navigate(pending);
+    }
+
+    console.log("[notif] useNotifications effect, checking getLast");
     Notifications.getLastNotificationResponseAsync().then((response) => {
+      console.log("[notif] useNotif getLast: " + (response ? response.actionIdentifier : "null"));
       if (response) {
         handleNotificationResponse(response, answerQuestion, navigate);
       }
     });
 
-    // Listen for notification responses (user taps notification or action button)
+    console.log("[notif] registering listener");
     responseListener.current = Notifications.addNotificationResponseReceivedListener(
-      (response) => handleNotificationResponse(response, answerQuestion, navigate),
+      (response) => {
+        console.log("[notif] listener fired: " + response.actionIdentifier);
+        handleNotificationResponse(response, answerQuestion, navigate);
+      },
     );
 
     return () => {

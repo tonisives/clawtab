@@ -6,6 +6,7 @@ import { useNotificationStore } from "../../src/store/notifications";
 import { LogViewer, MessageInput, findYesOption, colors, radius, spacing } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
+import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { confirm } from "../../src/lib/platform";
@@ -54,6 +55,14 @@ export default function ProcessDetailScreen() {
       }
     }
   }, [process, pane_id, questions, jobs, statuses, router]);
+
+  const connected = useWsStore((s) => s.connected);
+  const desktopOnline = useWsStore((s) => s.desktopOnline);
+  const loaded = useJobsStore((s) => s.loaded);
+
+  // Cold start from notification: waiting for relay data
+  const waitingForData = !process && !questions.some((q) => q.pane_id === pane_id) && (!connected || !desktopOnline || !loaded);
+
   const lastProcessRef = useRef(process);
   if (process) lastProcessRef.current = process;
   const lastProcess = lastProcessRef.current;
@@ -245,6 +254,20 @@ export default function ProcessDetailScreen() {
       </View>
     </ContentContainer>
   );
+
+  if (waitingForData) {
+    return (
+      <View style={styles.container}>
+        <Stack.Screen options={{ title: pane_id }} />
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.loadingText}>
+            {!connected ? "Connecting..." : "Loading..."}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

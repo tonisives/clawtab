@@ -14,7 +14,6 @@ import { NotificationStack } from "../../src/components/NotificationStack"
 import { JobListView } from "@clawtab/shared"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
 import { registerRequest } from "../../src/lib/useRequestMap"
-import { useNotifications } from "../../src/hooks/useNotifications"
 import { useResponsive, WIDE_CONTENT_MAX_WIDTH } from "../../src/hooks/useResponsive"
 import * as api from "../../src/api/client"
 import { alertError, openUrl } from "../../src/lib/platform"
@@ -71,7 +70,6 @@ export default function JobsScreen() {
   const { isWide } = useResponsive()
   const router = useRouter()
 
-  useNotifications()
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {

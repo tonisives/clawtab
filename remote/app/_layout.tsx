@@ -8,7 +8,7 @@ import { useJobsStore } from "../src/store/jobs";
 import { useNotificationStore } from "../src/store/notifications";
 import { loadCache } from "../src/lib/jobCache";
 import { loadPendingAnswers } from "../src/lib/pendingAnswers";
-import { handleColdStartAnswer } from "../src/hooks/useNotifications";
+import { handleColdStartAnswer, useNotifications } from "../src/hooks/useNotifications";
 import { colors } from "../src/theme/colors";
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
@@ -25,6 +25,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useWebSocket();
+  useNotifications();
   return <>{children}</>;
 }
 

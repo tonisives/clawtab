@@ -340,6 +340,8 @@ async fn run_session<S, R>(
     R: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
     let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
+    let mut last_pong = tokio::time::Instant::now();
+    let pong_timeout = Duration::from_secs(90); // 3 missed pings
 
     loop {
         tokio::select! {
@@ -370,11 +372,18 @@ async fn run_session<S, R>(
                     Ok(Message::Ping(data)) => {
                         let _ = ws_sink.send(Message::Pong(data)).await;
                     }
+                    Ok(Message::Pong(_)) => {
+                        last_pong = tokio::time::Instant::now();
+                    }
                     Ok(Message::Close(_)) | Err(_) => break,
                     _ => {}
                 }
             }
             _ = heartbeat.tick() => {
+                if last_pong.elapsed() > pong_timeout {
+                    log::warn!("Relay: no pong received in {:?}, reconnecting", last_pong.elapsed());
+                    break;
+                }
                 if ws_sink.send(Message::Ping(vec![].into())).await.is_err() {
                     break;
                 }

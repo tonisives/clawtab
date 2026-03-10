@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, View, Text, StyleSheet } from "react-native";
+import { ActivityIndicator, Alert, View, Text, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { BackTitle } from "./_layout";
-import { useJob, useJobStatus } from "../../src/store/jobs";
+import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
 import { useNotificationStore } from "../../src/store/notifications";
 import { useWsStore } from "../../src/store/ws";
@@ -116,12 +116,25 @@ export default function JobDetailScreen() {
     );
   }, [jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, slug]);
 
+  const loaded = useJobsStore((s) => s.loaded);
+
   if (!job) {
+    // If jobs haven't loaded yet (cold start from notification), show loading state
+    const waiting = !loaded || !connected;
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ title: "", headerLeft: () => <BackTitle title={name} /> }} />
         <View style={styles.center}>
-          <Text style={styles.notFound}>Job not found</Text>
+          {waiting ? (
+            <>
+              <ActivityIndicator color={colors.accent} />
+              <Text style={styles.loadingText}>
+                {!connected ? "Connecting..." : "Loading..."}
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.notFound}>Job not found</Text>
+          )}
         </View>
       </View>
     );
@@ -170,5 +183,10 @@ const styles = StyleSheet.create({
   notFound: {
     color: colors.textMuted,
     fontSize: 16,
+  },
+  loadingText: {
+    color: colors.textMuted,
+    fontSize: 14,
+    marginTop: 8,
   },
 });

@@ -32,7 +32,12 @@ export function registerNotificationCategories() {
     { identifier: "1", buttonTitle: "Option 1", options: { opensAppToForeground: false } },
     { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },
     { identifier: "3", buttonTitle: "Option 3", options: { opensAppToForeground: false } },
-    { identifier: "4", buttonTitle: "Option 4", options: { opensAppToForeground: false } },
+    {
+      identifier: "TEXT_INPUT",
+      buttonTitle: "Type answer...",
+      textInput: { submitButtonTitle: "Send", placeholder: "Option number or text" },
+      options: { opensAppToForeground: false },
+    },
   ]).catch(() => {});
 }
 

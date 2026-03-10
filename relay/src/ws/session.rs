@@ -635,11 +635,12 @@ async fn handle_claude_questions_push(
     let title = crate::notification_fmt::compact_cwd(&q.cwd);
     let body = crate::notification_fmt::format_body(&q.context_lines, &q.options);
 
-    // iOS allows max 4 action buttons
+    // Send all options in the payload so the NSE can build text-input actions
+    // for overflow options (iOS only shows max 4 buttons, but we add a text
+    // input action when there are more).
     let options: Vec<(String, String)> = q
         .options
         .iter()
-        .take(4)
         .map(|o| (o.number.clone(), o.label.clone()))
         .collect();
 
