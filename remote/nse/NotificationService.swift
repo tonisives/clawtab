@@ -27,7 +27,7 @@ class NotificationService: UNNotificationServiceExtension {
 
         var actions: [UNNotificationAction] = []
 
-        // Show up to 4 button actions
+        // Show up to 4 button actions (iOS limit)
         let buttonCount = min(options.count, 4)
         for i in 0..<buttonCount {
             let opt = options[i]
@@ -37,31 +37,6 @@ class NotificationService: UNNotificationServiceExtension {
                 identifier: number,
                 title: "\(number). \(label)",
                 options: []
-            ))
-        }
-
-        // If there are more than 4 options, add a text input action so the
-        // user can type their choice number (e.g. "5") or a freeform answer
-        // (e.g. "3 my custom response").
-        if options.count > 4 {
-            // Build a hint showing the remaining options
-            var hint = "Type option number"
-            let overflow = options[4...]
-            let labels = overflow.compactMap { opt -> String? in
-                guard let n = opt["number"] as? String,
-                      let l = opt["label"] as? String else { return nil }
-                return "\(n). \(l)"
-            }
-            if !labels.isEmpty {
-                hint = labels.joined(separator: ", ")
-            }
-
-            actions.append(UNTextInputNotificationAction(
-                identifier: "TEXT_INPUT",
-                title: "More...",
-                options: [],
-                textInputButtonTitle: "Send",
-                textInputPlaceholder: hint
             ))
         }
 
