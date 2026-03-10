@@ -121,9 +121,8 @@ async function handleNotificationResponse(
     answeredResponses.add(key);
   }
 
-  // Action button taps are fully handled by native NativeAnswerHandler
-  // (returns true, iOS keeps process alive for HTTP). When app is in
-  // foreground, this JS code also runs - just update local state, no nav.
+  // Action button taps are handled by native NativeAnswerHandler (HTTP).
+  // JS just updates local state and dismisses the notification.
   const actionId = response.actionIdentifier;
   if (actionId && actionId !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
     console.log("[notif] action button tap, native handler sends answer");

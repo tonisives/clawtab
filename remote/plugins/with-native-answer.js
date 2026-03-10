@@ -53,10 +53,20 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
     }
 
     NSLog("[ClawTab] action tapped: question=%@ answer=%@", questionId, actionId)
-    postAnswer(questionId: questionId, paneId: paneId, answer: actionId, completion: completionHandler)
 
-    // Return true so iOS keeps the process alive for the HTTP call.
-    // Action button taps don't need to flow to JS (no navigation needed).
+    // Request our own background execution time. The shared completionHandler
+    // gets called immediately by EmitterModule and NotificationCenterManager,
+    // so we can't rely on it to keep the process alive for our HTTP request.
+    let taskId = UIApplication.shared.beginBackgroundTask(withName: "ClawTabAnswer") {
+      NSLog("[ClawTab] background task expired")
+    }
+    NSLog("[ClawTab] background task started: %d", taskId.rawValue)
+
+    postAnswer(questionId: questionId, paneId: paneId, answer: actionId) {
+      NSLog("[ClawTab] ending background task: %d", taskId.rawValue)
+      UIApplication.shared.endBackgroundTask(taskId)
+    }
+
     return true
   }
 
