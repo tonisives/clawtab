@@ -52,15 +52,35 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
       return false
     }
 
-    // For text input actions, use the typed text as the answer
+    // For text input actions, find the "Type something" option number and send as freetext
     let answer: String
+    var freetext: String? = nil
     if let textResponse = response as? UNTextInputNotificationResponse {
-      answer = textResponse.userText
+      let userText = textResponse.userText
+      // Find the "Type something" option number from the notification payload
+      if let options = clawtab["options"] as? [[String: Any]] {
+        var typeSomethingNumber: String? = nil
+        for opt in options {
+          if let label = opt["label"] as? String,
+             label.lowercased().hasPrefix("type something") {
+            typeSomethingNumber = opt["number"] as? String
+            break
+          }
+        }
+        if let num = typeSomethingNumber {
+          answer = num
+          freetext = userText
+        } else {
+          answer = userText
+        }
+      } else {
+        answer = userText
+      }
     } else {
       answer = actionId
     }
 
-    NSLog("[ClawTab] action tapped: question=%@ answer=%@", questionId, answer)
+    NSLog("[ClawTab] action tapped: question=%@ answer=%@ freetext=%@", questionId, answer, freetext ?? "(nil)")
 
     // Request our own background execution time. The shared completionHandler
     // gets called immediately by EmitterModule and NotificationCenterManager,
@@ -70,7 +90,7 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
     }
     NSLog("[ClawTab] background task started: %d", taskId.rawValue)
 
-    postAnswer(questionId: questionId, paneId: paneId, answer: answer) {
+    postAnswer(questionId: questionId, paneId: paneId, answer: answer, freetext: freetext) {
       NSLog("[ClawTab] ending background task: %d", taskId.rawValue)
       UIApplication.shared.endBackgroundTask(taskId)
     }
@@ -78,17 +98,17 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
     return true
   }
 
-  private func postAnswer(questionId: String, paneId: String, answer: String, completion: @escaping () -> Void) {
+  private func postAnswer(questionId: String, paneId: String, answer: String, freetext: String? = nil, completion: @escaping () -> Void) {
     let serverUrl = readKeychain("clawtab_server_url") ?? "https://relay.clawtab.cc"
     guard let token = readKeychain("clawtab_access_token") else {
       NSLog("[ClawTab] no access token, trying refresh")
-      refreshAndPost(serverUrl: serverUrl, questionId: questionId, paneId: paneId, answer: answer, completion: completion)
+      refreshAndPost(serverUrl: serverUrl, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext, completion: completion)
       return
     }
-    doPost(serverUrl: serverUrl, token: token, questionId: questionId, paneId: paneId, answer: answer) { status in
+    doPost(serverUrl: serverUrl, token: token, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext) { status in
       if status == 401 {
         NSLog("[ClawTab] 401, refreshing")
-        self.refreshAndPost(serverUrl: serverUrl, questionId: questionId, paneId: paneId, answer: answer, completion: completion)
+        self.refreshAndPost(serverUrl: serverUrl, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext, completion: completion)
       } else {
         NSLog("[ClawTab] answer posted, status=%d", status ?? 0)
         completion()
@@ -96,7 +116,7 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
     }
   }
 
-  private func refreshAndPost(serverUrl: String, questionId: String, paneId: String, answer: String, completion: @escaping () -> Void) {
+  private func refreshAndPost(serverUrl: String, questionId: String, paneId: String, answer: String, freetext: String? = nil, completion: @escaping () -> Void) {
     guard let rt = readKeychain("clawtab_refresh_token") else {
       NSLog("[ClawTab] no refresh token")
       completion()
@@ -119,22 +139,26 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
       }
       self.writeKeychain("clawtab_access_token", value: newAccess)
       self.writeKeychain("clawtab_refresh_token", value: newRefresh)
-      self.doPost(serverUrl: serverUrl, token: newAccess, questionId: questionId, paneId: paneId, answer: answer) { status in
+      self.doPost(serverUrl: serverUrl, token: newAccess, questionId: questionId, paneId: paneId, answer: answer, freetext: freetext) { status in
         NSLog("[ClawTab] answer after refresh, status=%d", status ?? 0)
         completion()
       }
     }.resume()
   }
 
-  private func doPost(serverUrl: String, token: String, questionId: String, paneId: String, answer: String, completion: @escaping (Int?) -> Void) {
+  private func doPost(serverUrl: String, token: String, questionId: String, paneId: String, answer: String, freetext: String? = nil, completion: @escaping (Int?) -> Void) {
     let url = URL(string: "\\(serverUrl)/api/answer")!
     var req = URLRequest(url: url)
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
     req.setValue("Bearer \\(token)", forHTTPHeaderField: "Authorization")
-    req.httpBody = try? JSONSerialization.data(withJSONObject: [
+    var body: [String: Any] = [
       "question_id": questionId, "pane_id": paneId, "answer": answer,
-    ])
+    ]
+    if let ft = freetext {
+      body["freetext"] = ft
+    }
+    req.httpBody = try? JSONSerialization.data(withJSONObject: body)
     URLSession.shared.dataTask(with: req) { _, response, error in
       if let error = error { NSLog("[ClawTab] POST error: %@", error.localizedDescription) }
       completion((response as? HTTPURLResponse)?.statusCode)

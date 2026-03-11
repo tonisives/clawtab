@@ -13,6 +13,9 @@ pub struct AnswerRequest {
     question_id: String,
     pane_id: String,
     answer: String,
+    /// For "Type something" answers: the option number that opens freetext input.
+    /// When set, `answer` is the keystroke and `freetext` is the typed text.
+    freetext: Option<String>,
 }
 
 pub async fn answer(
@@ -25,6 +28,7 @@ pub async fn answer(
         question_id = %req.question_id,
         pane_id = %req.pane_id,
         answer = %req.answer,
+        freetext = ?req.freetext,
         "answer via HTTP"
     );
 
@@ -33,7 +37,7 @@ pub async fn answer(
         question_id: req.question_id.clone(),
         pane_id: req.pane_id,
         answer: req.answer.clone(),
-        freetext: None,
+        freetext: req.freetext.clone(),
     };
 
     // Forward to desktop
