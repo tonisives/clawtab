@@ -211,6 +211,42 @@ pub fn send_keys_to_tui_pane(pane_id: &str, text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Send a keystroke to select a "Type something" option, then type freetext and press Enter.
+/// The keystroke is sent without -l so it acts as navigation, then the freetext is sent literally.
+pub fn send_keys_to_tui_pane_freetext(pane_id: &str, keystroke: &str, freetext: &str) -> Result<(), String> {
+    // Send the option number as a keystroke (navigates to the option)
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", pane_id, keystroke])
+        .output()
+        .map_err(|e| format!("Failed to send keystroke to pane: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    // Type the freetext literally
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", pane_id, "-l", freetext])
+        .output()
+        .map_err(|e| format!("Failed to send freetext to pane: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    // Press Enter to submit
+    let output = Command::new("tmux")
+        .args(["send-keys", "-t", pane_id, "Enter"])
+        .output()
+        .map_err(|e| format!("Failed to send Enter to pane: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(())
+}
+
 /// Capture the last N lines from a specific pane.
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String, String> {

@@ -22,6 +22,7 @@ import { AnsiText, hasAnsi } from "./AnsiText";
 import { formatTime, formatDuration } from "../util/format";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
+import { isFreetextOption } from "../util/jobs";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -86,6 +87,7 @@ export function JobDetailView({
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
+  const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
   // Scroll to bottom when new logs arrive
   const scrollRef = useRef<ScrollView>(null);
   const webDivRef = useRef<HTMLElement | null>(null);
@@ -198,12 +200,17 @@ export function JobDetailView({
   const handleSendInput = useCallback(
     async (text: string) => {
       try {
-        await transport.sendInput(job.slug, text);
+        if (freetextOptionNumber) {
+          await transport.sendInput(job.slug, freetextOptionNumber, text);
+          setFreetextOptionNumber(null);
+        } else {
+          await transport.sendInput(job.slug, text);
+        }
       } catch (e) {
         console.error("Failed to send input:", e);
       }
     },
-    [transport, job.slug],
+    [transport, job.slug, freetextOptionNumber],
   );
 
   const jobDir = job.work_dir || job.folder_path || "";
@@ -328,8 +335,8 @@ export function JobDetailView({
               )}
             </>
           )}
-          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
-          <MessageInput onSend={handleSendInput} placeholder="Send input to job..." />
+          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+          <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
         </View>
       )}
 
@@ -427,6 +434,8 @@ export function JobDetailView({
           logs={logs}
           options={optionsProp ?? []}
           onSend={handleSendInput}
+          onFreetextOption={setFreetextOptionNumber}
+          freetextOptionNumber={freetextOptionNumber}
           autoYesActive={autoYesActive}
           onToggleAutoYes={onToggleAutoYes}
           onClose={() => setLiveZoom(false)}
@@ -465,9 +474,10 @@ function ActionButton({
   );
 }
 
-function OptionButtons({ options, onSend, autoYesActive, onToggleAutoYes }: {
+function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onToggleAutoYes }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
+  onFreetextOption?: (optionNumber: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
 }) {
@@ -484,7 +494,13 @@ function OptionButtons({ options, onSend, autoYesActive, onToggleAutoYes }: {
         <TouchableOpacity
           key={opt.number}
           style={styles.optionBtn}
-          onPress={() => onSend(opt.number)}
+          onPress={() => {
+            if (isFreetextOption(opt.label) && onFreetextOption) {
+              onFreetextOption(opt.number);
+            } else {
+              onSend(opt.number);
+            }
+          }}
           activeOpacity={0.6}
         >
           <Text style={styles.optionBtnText}>
@@ -725,6 +741,8 @@ function LiveZoomModal({
   logs,
   options,
   onSend,
+  onFreetextOption,
+  freetextOptionNumber,
   autoYesActive,
   onToggleAutoYes,
   onClose,
@@ -732,6 +750,8 @@ function LiveZoomModal({
   logs: string;
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
+  onFreetextOption?: (optionNumber: string) => void;
+  freetextOptionNumber?: string | null;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
   onClose: () => void;
@@ -811,8 +831,8 @@ function LiveZoomModal({
             {logInner}
           </ScrollView>
         )}
-        <OptionButtons options={options} onSend={onSend} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
-        <MessageInput onSend={onSend} placeholder="Send input to job..." />
+        <OptionButtons options={options} onSend={onSend} onFreetextOption={onFreetextOption} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+        <MessageInput onSend={onSend} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
       </SafeAreaView>
     </Modal>
   );

@@ -33,6 +33,7 @@ pub async fn answer(
         question_id: req.question_id.clone(),
         pane_id: req.pane_id,
         answer: req.answer.clone(),
+        freetext: None,
     };
 
     // Forward to desktop

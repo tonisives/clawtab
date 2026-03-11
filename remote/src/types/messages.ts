@@ -7,7 +7,7 @@ export type ClientMessage =
   | { type: "pause_job"; id: string; name: string }
   | { type: "resume_job"; id: string; name: string }
   | { type: "stop_job"; id: string; name: string }
-  | { type: "send_input"; id: string; name: string; text: string }
+  | { type: "send_input"; id: string; name: string; text: string; freetext?: string }
   | { type: "subscribe_logs"; id: string; name: string }
   | { type: "unsubscribe_logs"; name: string }
   | { type: "get_run_history"; id: string; name: string; limit: number }
@@ -28,7 +28,7 @@ export type ClientMessage =
   | { type: "send_detected_process_input"; id: string; pane_id: string; text: string }
   | { type: "stop_detected_process"; id: string; pane_id: string }
   | { type: "register_push_token"; id: string; push_token: string; platform: string }
-  | { type: "answer_question"; id: string; question_id: string; pane_id: string; answer: string }
+  | { type: "answer_question"; id: string; question_id: string; pane_id: string; answer: string; freetext?: string }
   | { type: "set_auto_yes_panes"; id: string; pane_ids: string[] }
   | { type: "get_notification_history"; id: string; limit: number };
 

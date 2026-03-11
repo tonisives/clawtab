@@ -73,9 +73,9 @@ export function createWsTransport(): Transport {
       return useJobsStore.getState().detectedProcesses;
     },
 
-    async sendInput(name: string, text: string) {
+    async sendInput(name: string, text: string, freetext?: string) {
       const id = nextId();
-      send({ type: "send_input", id, name, text });
+      send({ type: "send_input", id, name, text, freetext });
     },
 
     subscribeLogs(name: string, onChunk: (content: string) => void) {

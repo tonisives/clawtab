@@ -58,8 +58,8 @@ export function createTauriTransport(): Transport {
       return invoke<ClaudeProcess[]>("detect_claude_processes");
     },
 
-    async sendInput(name: string, text: string) {
-      await invoke("send_job_input", { name, text });
+    async sendInput(name: string, text: string, freetext?: string) {
+      await invoke("send_job_input", { name, text, freetext: freetext ?? null });
     },
 
     subscribeLogs(name: string, onChunk: (content: string) => void) {

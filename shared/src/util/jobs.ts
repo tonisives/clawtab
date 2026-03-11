@@ -40,6 +40,11 @@ export function findYesOption(q: ClaudeQuestion): string | null {
   return null;
 }
 
+/** Check if an option label is a "Type something" freetext option */
+export function isFreetextOption(label: string): boolean {
+  return /^type something/i.test(label.trim());
+}
+
 export function typeIcon(jobType: string): { letter: string; bg: string } {
   switch (jobType) {
     case "claude":

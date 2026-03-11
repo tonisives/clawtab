@@ -30,7 +30,7 @@ pub fn get_running_job_logs(state: State<AppState>, name: String) -> Result<Stri
 }
 
 #[tauri::command]
-pub fn send_job_input(state: State<AppState>, name: String, text: String) -> Result<(), String> {
+pub fn send_job_input(state: State<AppState>, name: String, text: String, freetext: Option<String>) -> Result<(), String> {
     let statuses = state.job_status.lock().unwrap();
     let status = statuses.get(&name).ok_or("Job not found")?;
 
@@ -39,7 +39,11 @@ pub fn send_job_input(state: State<AppState>, name: String, text: String) -> Res
             pane_id: Some(pane_id),
             ..
         } => {
-            crate::tmux::send_keys_to_tui_pane(pane_id, &text)
+            if let Some(ref ft) = freetext {
+                crate::tmux::send_keys_to_tui_pane_freetext(pane_id, &text, ft)
+            } else {
+                crate::tmux::send_keys_to_tui_pane(pane_id, &text)
+            }
         }
         JobStatus::Running { .. } => Err("Job has no tmux pane".to_string()),
         _ => Err("Job is not running".to_string()),

@@ -107,8 +107,12 @@ pub async fn handle_incoming(
             })
         }
 
-        ClientMessage::SendInput { id, name, text } => {
-            let result = send_input(&name, &text, job_status);
+        ClientMessage::SendInput { id, name, text, freetext } => {
+            let result = if let Some(ref ft) = freetext {
+                send_input_freetext(&name, &text, ft, job_status)
+            } else {
+                send_input(&name, &text, job_status)
+            };
             Some(DesktopMessage::SendInputAck {
                 id,
                 success: result.is_ok(),
@@ -216,8 +220,12 @@ pub async fn handle_incoming(
             })
         }
 
-        ClientMessage::AnswerQuestion { id, pane_id, answer, .. } => {
-            let result = crate::tmux::send_keys_to_tui_pane(&pane_id, &answer);
+        ClientMessage::AnswerQuestion { id, pane_id, answer, freetext, .. } => {
+            let result = if let Some(ref text) = freetext {
+                crate::tmux::send_keys_to_tui_pane_freetext(&pane_id, &answer, text)
+            } else {
+                crate::tmux::send_keys_to_tui_pane(&pane_id, &answer)
+            };
             Some(DesktopMessage::SendDetectedProcessInputAck {
                 id,
                 success: result.is_ok(),
@@ -366,6 +374,23 @@ fn send_input(
             pane_id: Some(pane_id),
             ..
         }) => crate::tmux::send_keys_to_tui_pane(pane_id, text),
+        Some(JobStatus::Running { .. }) => Err("job has no tmux pane".to_string()),
+        _ => Err("job is not running".to_string()),
+    }
+}
+
+fn send_input_freetext(
+    name: &str,
+    keystroke: &str,
+    freetext: &str,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+) -> Result<(), String> {
+    let statuses = job_status.lock().unwrap();
+    match statuses.get(name) {
+        Some(JobStatus::Running {
+            pane_id: Some(pane_id),
+            ..
+        }) => crate::tmux::send_keys_to_tui_pane_freetext(pane_id, keystroke, freetext),
         Some(JobStatus::Running { .. }) => Err("job has no tmux pane".to_string()),
         _ => Err("job is not running".to_string()),
     }

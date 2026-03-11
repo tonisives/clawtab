@@ -14,6 +14,7 @@ import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { AnsiText, hasAnsi } from "./AnsiText";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
+import { isFreetextOption } from "../util/jobs";
 
 const isWeb = Platform.OS === "web";
 
@@ -88,7 +89,12 @@ export function NotificationCard({
     return () => clearTimeout(timer);
   }, [answered]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleOptionPress = (optionNumber: string) => {
+  const handleOptionPress = (optionNumber: string, label: string) => {
+    // "Type something" options need freetext input - navigate to detail view
+    if (isFreetextOption(label)) {
+      onNavigate(question, resolvedJob);
+      return;
+    }
     onSendOption(question, resolvedJob, optionNumber);
     setAnswered(true);
     setFlying(false);
@@ -153,7 +159,7 @@ export function NotificationCard({
               <TouchableOpacity
                 key={opt.number}
                 style={styles.optionBtn}
-                onPress={() => handleOptionPress(opt.number)}
+                onPress={() => handleOptionPress(opt.number, opt.label)}
                 activeOpacity={0.6}
               >
                 <Text style={styles.optionBtnText} numberOfLines={1}>

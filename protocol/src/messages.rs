@@ -34,6 +34,8 @@ pub enum ClientMessage {
         id: String,
         name: String,
         text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        freetext: Option<String>,
     },
     SubscribeLogs {
         id: String,
@@ -97,6 +99,10 @@ pub enum ClientMessage {
         question_id: String,
         pane_id: String,
         answer: String,
+        /// For "Type something" options: send the option number as a keystroke,
+        /// then type this freetext literally, then press Enter.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        freetext: Option<String>,
     },
     /// Tell relay which pane_ids have auto-yes enabled (suppresses push notifications)
     SetAutoYesPanes {

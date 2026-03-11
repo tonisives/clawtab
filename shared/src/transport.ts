@@ -13,7 +13,7 @@ export interface Transport {
   getRunHistory(name: string): Promise<RunRecord[]>;
   getRunDetail(runId: string): Promise<RunDetail | null>;
   detectProcesses(): Promise<ClaudeProcess[]>;
-  sendInput(name: string, text: string): Promise<void>;
+  sendInput(name: string, text: string, freetext?: string): Promise<void>;
   subscribeLogs(name: string, onChunk: (content: string) => void): () => void;
   runAgent(prompt: string, workDir?: string): Promise<void>;
   // Desktop-only (optional)

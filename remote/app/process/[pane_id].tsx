@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Activit
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { LogViewer, MessageInput, findYesOption, colors, radius, spacing } from "@clawtab/shared";
+import { LogViewer, MessageInput, findYesOption, isFreetextOption, colors, radius, spacing } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { useWsStore } from "../../src/store/ws";
@@ -117,6 +117,15 @@ export default function ProcessDetailScreen() {
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
   const options = paneQuestion?.options ?? [];
 
+  // "Type something" mode: when a freetext option is selected, the next
+  // MessageInput submission sends keystroke + freetext instead of literal text.
+  const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
+
+  // Reset freetext mode when the question changes
+  useEffect(() => {
+    setFreetextOptionNumber(null);
+  }, [paneQuestion?.question_id]);
+
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
   const enableAutoYes = useNotificationStore((s) => s.enableAutoYes);
@@ -161,7 +170,20 @@ export default function ProcessDetailScreen() {
       const proc = process ?? lastProcess;
       if (!proc) return;
       const send = getWsSend();
-      if (send && text.trim()) {
+      if (!send || !text.trim()) return;
+
+      if (freetextOptionNumber) {
+        // In freetext mode: send keystroke for option number + typed text via answer_question
+        send({
+          type: "answer_question",
+          id: nextId(),
+          question_id: paneQuestion?.question_id ?? "",
+          pane_id: proc.pane_id,
+          answer: freetextOptionNumber,
+          freetext: text.trim(),
+        });
+        setFreetextOptionNumber(null);
+      } else {
         send({
           type: "send_detected_process_input",
           id: nextId(),
@@ -174,7 +196,7 @@ export default function ProcessDetailScreen() {
         answerQuestion(paneQuestion.question_id);
       }
     },
-    [process?.pane_id, paneQuestion, answerQuestion],
+    [process?.pane_id, paneQuestion, answerQuestion, freetextOptionNumber],
   );
 
   const doStop = async () => {
@@ -310,8 +332,13 @@ export default function ProcessDetailScreen() {
         </ScrollView>
       )}
 
-      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
-      {(isAlive || paneQuestion) && <MessageInput onSend={handleSend} placeholder="Send input..." />}
+      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
+      {(isAlive || paneQuestion) && (
+        <MessageInput
+          onSend={handleSend}
+          placeholder={freetextOptionNumber ? "Type your answer..." : "Send input..."}
+        />
+      )}
     </View>
   );
 }
@@ -319,11 +346,13 @@ export default function ProcessDetailScreen() {
 function OptionButtons({
   options,
   onSend,
+  onFreetextOption,
   autoYesActive,
   onToggleAutoYes,
 }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
+  onFreetextOption?: (optionNumber: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
 }) {
@@ -339,7 +368,13 @@ function OptionButtons({
         <TouchableOpacity
           key={opt.number}
           style={styles.optionBtn}
-          onPress={() => onSend(opt.number)}
+          onPress={() => {
+            if (isFreetextOption(opt.label) && onFreetextOption) {
+              onFreetextOption(opt.number);
+            } else {
+              onSend(opt.number);
+            }
+          }}
           activeOpacity={0.6}
         >
           <Text style={styles.optionBtnText}>
