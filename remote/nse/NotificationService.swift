@@ -27,7 +27,7 @@ class NotificationService: UNNotificationServiceExtension {
 
         var actions: [UNNotificationAction] = []
 
-        // Show up to 4 button actions (iOS limit)
+        // Show up to 4 button actions (iOS limit for regular actions)
         let buttonCount = min(options.count, 4)
         for i in 0..<buttonCount {
             let opt = options[i]
@@ -39,6 +39,15 @@ class NotificationService: UNNotificationServiceExtension {
                 options: []
             ))
         }
+
+        // Add a text input action so the user can type an answer
+        actions.append(UNTextInputNotificationAction(
+            identifier: "TEXT_INPUT",
+            title: "Type answer...",
+            options: [],
+            textInputButtonTitle: "Send",
+            textInputPlaceholder: "Your answer"
+        ))
 
         // Use a per-question category so each notification gets its own labels
         let categoryId = "CLAUDE_DYN_\(clawtab["question_id"] as? String ?? UUID().uuidString)"

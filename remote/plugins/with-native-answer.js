@@ -52,7 +52,15 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
       return false
     }
 
-    NSLog("[ClawTab] action tapped: question=%@ answer=%@", questionId, actionId)
+    // For text input actions, use the typed text as the answer
+    let answer: String
+    if let textResponse = response as? UNTextInputNotificationResponse {
+      answer = textResponse.userText
+    } else {
+      answer = actionId
+    }
+
+    NSLog("[ClawTab] action tapped: question=%@ answer=%@", questionId, answer)
 
     // Request our own background execution time. The shared completionHandler
     // gets called immediately by EmitterModule and NotificationCenterManager,
@@ -62,7 +70,7 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
     }
     NSLog("[ClawTab] background task started: %d", taskId.rawValue)
 
-    postAnswer(questionId: questionId, paneId: paneId, answer: actionId) {
+    postAnswer(questionId: questionId, paneId: paneId, answer: answer) {
       NSLog("[ClawTab] ending background task: %d", taskId.rawValue)
       UIApplication.shared.endBackgroundTask(taskId)
     }

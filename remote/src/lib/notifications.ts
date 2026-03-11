@@ -17,15 +17,24 @@ export function registerNotificationCategories() {
   // Pre-register fallback categories for different option counts.
   // The NSE dynamically creates per-question categories with real labels,
   // but these serve as fallbacks if the NSE doesn't run.
+  const textInput = {
+    identifier: "TEXT_INPUT",
+    buttonTitle: "Type answer...",
+    textInput: { submitButtonTitle: "Send", placeholder: "Your answer" },
+    options: { opensAppToForeground: false },
+  };
+
   Notifications.setNotificationCategoryAsync("CLAUDE_Q2", [
-    { identifier: "1", buttonTitle: "1. Yes", options: { opensAppToForeground: false } },
-    { identifier: "2", buttonTitle: "2. No", options: { opensAppToForeground: false } },
+    { identifier: "1", buttonTitle: "Option 1", options: { opensAppToForeground: false } },
+    { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },
+    textInput,
   ]).catch(() => {});
 
   Notifications.setNotificationCategoryAsync("CLAUDE_Q3", [
-    { identifier: "1", buttonTitle: "1. Yes", options: { opensAppToForeground: false } },
-    { identifier: "2", buttonTitle: "2. No", options: { opensAppToForeground: false } },
-    { identifier: "3", buttonTitle: "3. Skip", options: { opensAppToForeground: false } },
+    { identifier: "1", buttonTitle: "Option 1", options: { opensAppToForeground: false } },
+    { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },
+    { identifier: "3", buttonTitle: "Option 3", options: { opensAppToForeground: false } },
+    textInput,
   ]).catch(() => {});
 
   Notifications.setNotificationCategoryAsync("CLAUDE_Q4", [
@@ -33,6 +42,7 @@ export function registerNotificationCategories() {
     { identifier: "2", buttonTitle: "Option 2", options: { opensAppToForeground: false } },
     { identifier: "3", buttonTitle: "Option 3", options: { opensAppToForeground: false } },
     { identifier: "4", buttonTitle: "Option 4", options: { opensAppToForeground: false } },
+    textInput,
   ]).catch(() => {});
 }
 
