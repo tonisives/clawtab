@@ -67,7 +67,14 @@ Initial release:
 
 ## App Store Screenshots - Suggested Scenes
 
-### iPhone 6.7" (required) and 6.1"
+### iPhone 6.5" / 6.7" / 6.9" (required)
+
+**Screenshot sizes (any of):**
+- 1290 x 2796px or 2796 x 1290px
+- 1320 x 2868px or 2868 x 1320px
+- 1260 x 2736px or 2736 x 1260px
+
+**App Preview size:** 886 x 1920px or 1920 x 886px
 
 1. **Jobs List** - Show the main jobs tab with several jobs in different states (running with green indicator, idle, completed with checkmark, failed with red indicator). Caption: "All your Mac jobs at a glance"
 
