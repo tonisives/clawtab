@@ -16,8 +16,12 @@ class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        // Extract options from the clawtab payload to create action buttons
-        // with real labels (e.g. "1. Yes" instead of just "1")
+        // Keep the relay-assigned static category (CLAUDE_Q2/Q3/Q4) which is
+        // pre-registered by the main app at startup. Dynamic category registration
+        // from the NSE races with notification display and loses reliably.
+        //
+        // Instead, append the option labels to the body so the user can see them
+        // in the notification itself (long press or expanded view).
         guard let clawtab = content.userInfo["clawtab"] as? [String: Any],
               let options = clawtab["options"] as? [[String: Any]],
               !options.isEmpty else {
@@ -25,49 +29,21 @@ class NotificationService: UNNotificationServiceExtension {
             return
         }
 
-        var actions: [UNNotificationAction] = []
-
-        // Show up to 4 button actions (iOS limit for regular actions)
         let buttonCount = min(options.count, 4)
+        var labels: [String] = []
         for i in 0..<buttonCount {
             let opt = options[i]
             guard let number = opt["number"] as? String,
                   let label = opt["label"] as? String else { continue }
-            actions.append(UNNotificationAction(
-                identifier: number,
-                title: "\(number). \(label)",
-                options: []
-            ))
+            labels.append("\(number). \(label)")
         }
 
-        // Add a text input action so the user can type an answer
-        actions.append(UNTextInputNotificationAction(
-            identifier: "TEXT_INPUT",
-            title: "Type answer...",
-            options: [],
-            textInputButtonTitle: "Send",
-            textInputPlaceholder: "Your answer"
-        ))
-
-        // Use a per-question category so each notification gets its own labels
-        let categoryId = "CLAUDE_DYN_\(clawtab["question_id"] as? String ?? UUID().uuidString)"
-        let category = UNNotificationCategory(
-            identifier: categoryId,
-            actions: actions,
-            intentIdentifiers: [],
-            options: []
-        )
-
-        // Register the dynamic category and update the notification to use it
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationCategories { existing in
-            var categories = existing
-            categories.insert(category)
-            center.setNotificationCategories(categories)
-
-            content.categoryIdentifier = categoryId
-            contentHandler(content)
+        if !labels.isEmpty {
+            let existing = content.body
+            content.body = existing + "\n" + labels.joined(separator: "  |  ")
         }
+
+        contentHandler(content)
     }
 
     override func serviceExtensionTimeWillExpire() {

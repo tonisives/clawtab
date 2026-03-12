@@ -23,7 +23,7 @@
       "backgroundColor": "#0a0a0a"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "cc.clawtab",
       "entitlements": {
         "keychain-access-groups": ["$(AppIdentifierPrefix)cc.clawtab"],
