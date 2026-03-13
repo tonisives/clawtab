@@ -336,7 +336,8 @@ pub async fn question_detection_loop(
 /// Includes numbered options and their descriptions so the card mirrors the terminal.
 /// Only strips interactive instruction lines (e.g. "Enter to select").
 fn last_context_lines(text: &str) -> String {
-    let lines: Vec<&str> = text.lines().collect();
+    let clean = strip_ansi(text);
+    let lines: Vec<&str> = clean.lines().collect();
     let tail = if lines.len() > 30 { &lines[lines.len() - 30..] } else { &lines };
     let mut context = Vec::new();
     for line in tail {

@@ -338,11 +338,7 @@ export function JobDetailView({
               )}
             </>
           )}
-          {questionContext ? (
-            <View style={styles.questionContext}>
-              <Text style={styles.questionContextText}>{questionContext}</Text>
-            </View>
-          ) : null}
+          <QuestionContextBlock context={questionContext} />
           <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
           <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
         </View>
@@ -480,6 +476,20 @@ function ActionButton({
         {label}
       </Text>
     </TouchableOpacity>
+  );
+}
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE_STRIP = /\x1b\[[0-9;]*[A-Za-z]/g;
+
+function QuestionContextBlock({ context }: { context?: string }) {
+  if (!context) return null;
+  const stripped = context.replace(ANSI_RE_STRIP, "").trim();
+  if (!stripped) return null;
+  return (
+    <ScrollView style={styles.questionContext} nestedScrollEnabled>
+      <Text style={styles.questionContextText}>{stripped}</Text>
+    </ScrollView>
   );
 }
 
@@ -842,11 +852,7 @@ function LiveZoomModal({
             {logInner}
           </ScrollView>
         )}
-        {questionContext ? (
-          <View style={styles.questionContext}>
-            <Text style={styles.questionContextText}>{questionContext}</Text>
-          </View>
-        ) : null}
+        <QuestionContextBlock context={questionContext} />
         <OptionButtons options={options} onSend={onSend} onFreetextOption={onFreetextOption} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
         <MessageInput onSend={onSend} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
       </SafeAreaView>
@@ -982,13 +988,14 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 10,
-    maxHeight: 160,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    maxHeight: 140,
   },
   questionContextText: {
     fontFamily: "monospace",
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 16,
     color: colors.textSecondary,
   },
   runsContainer: {
