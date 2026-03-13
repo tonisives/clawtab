@@ -233,6 +233,7 @@ pub async fn handle_incoming(
         }
 
         ClientMessage::SetAutoYesPanes { pane_ids, .. } => {
+            log::info!("[handler] SetAutoYesPanes received: {:?}", pane_ids);
             let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
             *auto_yes_panes.lock().unwrap() = pane_set;
             let _ = app_handle.emit("auto-yes-changed", ());

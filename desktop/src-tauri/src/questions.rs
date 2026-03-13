@@ -36,7 +36,7 @@ fn strip_ansi(text: &str) -> String {
 pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     let text = &strip_ansi(text);
     let lines: Vec<&str> = text.lines().collect();
-    let tail = if lines.len() > 20 { &lines[lines.len() - 20..] } else { &lines };
+    let tail = if lines.len() > 30 { &lines[lines.len() - 30..] } else { &lines };
 
     // Collect all contiguous groups of numbered items, keep only the last group.
     // This avoids picking up numbered plans/lists that appear before the actual prompt.
@@ -50,8 +50,14 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
             if let Some(dot_pos) = digit_end {
                 let number_str = &trimmed[..trimmed.len() - rest.len() + dot_pos];
                 if number_str.chars().all(|c| c.is_ascii_digit()) {
-                    let label = rest[dot_pos + 2..].trim().to_string();
+                    let mut label = rest[dot_pos + 2..].trim().to_string();
                     if !label.is_empty() {
+                        // Truncate long labels (e.g. "Yes, and don't ask again: mkdir -p ...")
+                        if label.len() > 60 {
+                            let mut end = 60;
+                            while end > 0 && !label.is_char_boundary(end) { end -= 1; }
+                            label = format!("{}...", label[..end].trim_end());
+                        }
                         current_group.push(QuestionOption {
                             number: number_str.to_string(),
                             label,
@@ -174,7 +180,7 @@ pub async fn question_detection_loop(
         for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in &processes {
             let options = parse_numbered_options(log_lines);
             if options.is_empty() {
-                log::trace!("[questions] pane {} ({}): no options parsed", pane_id, cwd);
+                log::info!("[questions] pane {} ({}): no options parsed, last_line={}", pane_id, cwd, log_lines.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or(""));
                 continue;
             }
             log::info!("[questions] pane {} ({}): {} options", pane_id, cwd, options.len());
@@ -224,15 +230,28 @@ pub async fn question_detection_loop(
         {
             let yes_panes = auto_yes_panes.lock().unwrap().clone();
             if !yes_panes.is_empty() {
+                log::info!("[questions] auto-yes panes: {:?}, questions: {}", yes_panes, questions.len());
                 for q in &questions {
-                    if !yes_panes.contains(&q.pane_id) { continue; }
-                    if auto_answered_ids.contains(&q.question_id) { continue; }
+                    if !yes_panes.contains(&q.pane_id) {
+                        log::debug!("[questions] pane {} not in auto-yes set, skipping", q.pane_id);
+                        continue;
+                    }
+                    if auto_answered_ids.contains(&q.question_id) {
+                        log::debug!("[questions] question {} already auto-answered, skipping", q.question_id);
+                        continue;
+                    }
+                    let options_summary: Vec<String> = q.options.iter()
+                        .map(|o| format!("{}={}", o.number, o.label))
+                        .collect();
+                    log::info!("[questions] checking auto-yes for pane {} question {} options: {:?}", q.pane_id, q.question_id, options_summary);
                     if let Some(opt) = find_yes_option(&q.options) {
                         log::info!("[questions] auto-answering pane {} question {} with option {}", q.pane_id, q.question_id, opt);
                         if let Err(e) = crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt) {
                             log::error!("[questions] auto-answer send_keys failed: {}", e);
                         }
                         auto_answered_ids.insert(q.question_id.clone());
+                    } else {
+                        log::warn!("[questions] no yes option found for pane {} question {}, options: {:?}", q.pane_id, q.question_id, options_summary);
                     }
                 }
             }
@@ -266,7 +285,10 @@ pub async fn question_detection_loop(
             }
         }
 
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        // Poll faster when auto-yes is active so questions are answered promptly
+        let has_auto_yes = !auto_yes_panes.lock().unwrap().is_empty();
+        let sleep_ms = if has_auto_yes { 500 } else { 2000 };
+        tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
     }
 }
 
@@ -379,7 +401,7 @@ fn detect_question_processes(
             (mg, None)
         };
 
-        let log_lines = crate::tmux::capture_pane(session, pane_id, 20)
+        let log_lines = crate::tmux::capture_pane(session, pane_id, 30)
             .unwrap_or_default().trim().to_string();
 
         results.push((
