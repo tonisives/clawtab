@@ -162,6 +162,7 @@ export default function JobDetailScreen() {
           onReloadRuns={loadRuns}
           expandRunId={run_id}
           options={jobQuestion?.options}
+          questionContext={jobQuestion?.context_lines}
           autoYesActive={autoYesActive}
           onToggleAutoYes={jobQuestion ? handleToggleAutoYes : undefined}
         />

@@ -362,6 +362,7 @@ export function DesktopJobDetail({
   onDuplicate,
   onDelete,
   options,
+  questionContext,
   autoYesActive,
   onToggleAutoYes,
 }: {
@@ -375,6 +376,7 @@ export function DesktopJobDetail({
   onDuplicate: () => void;
   onDelete: () => void;
   options?: { number: string; label: string }[];
+  questionContext?: string;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
 }) {
@@ -404,6 +406,7 @@ export function DesktopJobDetail({
         onDelete={() => setShowConfirm(true)}
         extraContent={extraContent}
         options={options}
+        questionContext={questionContext}
         autoYesActive={autoYesActive}
         onToggleAutoYes={onToggleAutoYes}
         sectionStyle={cardSectionStyle}

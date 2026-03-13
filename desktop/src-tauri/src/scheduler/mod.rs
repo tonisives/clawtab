@@ -5,7 +5,7 @@ pub mod reattach;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use cron::Schedule;
 
 use crate::config::jobs::{JobStatus, JobsConfig};
@@ -43,6 +43,67 @@ async fn run_loop(
     active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: Arc<Mutex<Option<RelayHandle>>>,
 ) {
+    // Catch up on missed cron triggers since the last run of each job.
+    // This handles the case where the app was not running when a job was scheduled.
+    {
+        let now = Utc::now();
+        let lookback_limit = now - Duration::hours(24);
+        let jobs = {
+            let config = jobs_config.lock().unwrap();
+            config.jobs.clone()
+        };
+
+        for job in &jobs {
+            if !job.enabled || job.cron.is_empty() {
+                continue;
+            }
+
+            let schedule = match parse_cron(&job.cron) {
+                Some(s) => s,
+                None => {
+                    log::warn!("Invalid cron expression for job '{}': {}", job.name, job.cron);
+                    continue;
+                }
+            };
+
+            // Determine the earliest point to look back from: last run or 24h ago
+            let since = {
+                let h = history.lock().unwrap();
+                h.get_by_job_name(&job.slug, 1)
+                    .ok()
+                    .and_then(|runs| runs.into_iter().next())
+                    .and_then(|r| chrono::DateTime::parse_from_rfc3339(&r.started_at).ok())
+                    .map(|t| t.with_timezone(&Utc))
+                    .filter(|t| *t > lookback_limit)
+                    .unwrap_or(lookback_limit)
+            };
+
+            let missed = schedule
+                .after(&since)
+                .take_while(|t| *t <= now)
+                .next()
+                .is_some();
+
+            if missed {
+                log::info!("Catchup trigger for missed job '{}'", job.name);
+                let job = job.clone();
+                let secrets = Arc::clone(&secrets);
+                let history = Arc::clone(&history);
+                let settings = Arc::clone(&settings);
+                let job_status = Arc::clone(&job_status);
+                let active_agents = Arc::clone(&active_agents);
+                let relay = Arc::clone(&relay);
+                tauri::async_runtime::spawn(async move {
+                    executor::execute_job(
+                        &job, &secrets, &history, &settings, &job_status, "cron",
+                        &active_agents, &relay, &std::collections::HashMap::new(),
+                    )
+                    .await;
+                });
+            }
+        }
+    }
+
     let mut last_check = Utc::now();
 
     loop {
@@ -59,19 +120,10 @@ async fn run_loop(
                 continue;
             }
 
-            // The cron crate expects 6-7 fields (sec min hour dom month dow [year]).
-            // Standard crontab uses 5 fields (min hour dom month dow).
-            // Auto-prepend "0" seconds field if the expression has exactly 5 fields.
-            let cron_expr = if job.cron.split_whitespace().count() == 5 {
-                format!("0 {}", job.cron)
-            } else {
-                job.cron.clone()
-            };
-
-            let schedule: Schedule = match cron_expr.parse() {
-                Ok(s) => s,
-                Err(e) => {
-                    log::warn!("Invalid cron expression for job '{}': {}", job.name, e);
+            let schedule = match parse_cron(&job.cron) {
+                Some(s) => s,
+                None => {
+                    log::warn!("Invalid cron expression for job '{}': {}", job.name, job.cron);
                     continue;
                 }
             };
@@ -104,4 +156,13 @@ async fn run_loop(
 
         last_check = now;
     }
+}
+
+fn parse_cron(cron: &str) -> Option<Schedule> {
+    let expr = if cron.split_whitespace().count() == 5 {
+        format!("0 {}", cron)
+    } else {
+        cron.to_string()
+    };
+    expr.parse().ok()
 }

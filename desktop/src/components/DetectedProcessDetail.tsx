@@ -183,6 +183,26 @@ export function DetectedProcessDetail({
         style={{ flex: 1, minHeight: 200 }}
       />
 
+      {paneQuestion && paneQuestion.context_lines && (
+        <pre style={{
+          margin: 0,
+          padding: "8px 12px",
+          background: "var(--bg-primary)",
+          border: "1px solid var(--border-color)",
+          borderRadius: 6,
+          fontSize: 12,
+          lineHeight: 1.5,
+          fontFamily: "'SF Mono', 'Menlo', 'Monaco', monospace",
+          color: "var(--text-secondary)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+          maxHeight: 160,
+          overflowY: "auto",
+        }}>
+          {paneQuestion.context_lines}
+        </pre>
+      )}
+
       {options.length > 0 && (
         <div style={{
           display: "flex",

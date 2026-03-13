@@ -49,6 +49,8 @@ export interface JobDetailViewProps {
   extraContent?: ReactNode;
   // Pre-parsed question options from Rust backend (avoids TS re-parsing)
   options?: { number: string; label: string }[];
+  // Context lines from the detected question (shown above option buttons)
+  questionContext?: string;
   // Auto-yes support for option buttons
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
@@ -74,6 +76,7 @@ export function JobDetailView({
   expandRunId,
   extraContent,
   options: optionsProp,
+  questionContext,
   autoYesActive,
   onToggleAutoYes,
   sectionStyle,
@@ -335,6 +338,11 @@ export function JobDetailView({
               )}
             </>
           )}
+          {questionContext ? (
+            <View style={styles.questionContext}>
+              <Text style={styles.questionContextText}>{questionContext}</Text>
+            </View>
+          ) : null}
           <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
           <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
         </View>
@@ -433,6 +441,7 @@ export function JobDetailView({
         <LiveZoomModal
           logs={logs}
           options={optionsProp ?? []}
+          questionContext={questionContext}
           onSend={handleSendInput}
           onFreetextOption={setFreetextOptionNumber}
           freetextOptionNumber={freetextOptionNumber}
@@ -740,6 +749,7 @@ function LogZoomModal({
 function LiveZoomModal({
   logs,
   options,
+  questionContext,
   onSend,
   onFreetextOption,
   freetextOptionNumber,
@@ -749,6 +759,7 @@ function LiveZoomModal({
 }: {
   logs: string;
   options: { number: string; label: string }[];
+  questionContext?: string;
   onSend: (text: string) => void;
   onFreetextOption?: (optionNumber: string) => void;
   freetextOptionNumber?: string | null;
@@ -831,6 +842,11 @@ function LiveZoomModal({
             {logInner}
           </ScrollView>
         )}
+        {questionContext ? (
+          <View style={styles.questionContext}>
+            <Text style={styles.questionContextText}>{questionContext}</Text>
+          </View>
+        ) : null}
         <OptionButtons options={options} onSend={onSend} onFreetextOption={onFreetextOption} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
         <MessageInput onSend={onSend} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
       </SafeAreaView>
@@ -960,6 +976,20 @@ const styles = StyleSheet.create({
   },
   logsContainer: {
     // height set dynamically via logsHeight state
+  },
+  questionContext: {
+    backgroundColor: "#111",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 10,
+    maxHeight: 160,
+  },
+  questionContextText: {
+    fontFamily: "monospace",
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.textSecondary,
   },
   runsContainer: {
     gap: 1,

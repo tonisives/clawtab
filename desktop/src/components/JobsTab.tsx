@@ -570,6 +570,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           onDuplicate={() => handleDuplicate(viewingJob)}
           onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
           options={jobQuestion?.options}
+          questionContext={jobQuestion?.context_lines}
           autoYesActive={jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false}
           onToggleAutoYes={jobQuestion ? () => handleToggleAutoYes(jobQuestion) : undefined}
         />

@@ -12,15 +12,32 @@ fn strip_ansi(text: &str) -> String {
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\x1b' {
-            // Skip ESC [ ... (letter) sequences
-            if chars.peek() == Some(&'[') {
-                chars.next();
-                while let Some(&next) = chars.peek() {
+            match chars.peek() {
+                // CSI sequences: ESC [ ... (letter)
+                Some(&'[') => {
                     chars.next();
-                    if next.is_ascii_alphabetic() {
-                        break;
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next.is_ascii_alphabetic() {
+                            break;
+                        }
                     }
                 }
+                // OSC sequences: ESC ] ... (ST or BEL)
+                Some(&']') => {
+                    chars.next();
+                    while let Some(&next) = chars.peek() {
+                        chars.next();
+                        if next == '\x07' { break; } // BEL
+                        if next == '\x1b' {
+                            if chars.peek() == Some(&'\\') { chars.next(); }
+                            break;
+                        }
+                    }
+                }
+                // Other ESC sequences (ESC + single char like ESC ( B)
+                Some(_) => { chars.next(); }
+                None => {}
             }
         } else {
             result.push(c);
@@ -104,15 +121,23 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
 ///   Option menus: "Enter to select · ↑/↓ to navigate · Esc to cancel"
 ///   Tool permissions: "Esc to cancel · Tab to amend · ctrl+e to explain"
 /// Both should be detected so notification cards appear for all interactive prompts.
+/// Checks the last 5 non-empty lines (not just the very last) to handle trailing
+/// whitespace or invisible characters left by TUI rendering.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
-    let last_line = text.lines().rev()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("")
-        .to_lowercase();
-    last_line.contains("enter to select")
-        || last_line.contains("to navigate")
-        || last_line.contains("tab to amend")
-        || last_line.contains("esc to cancel")
+    for line in text.lines().rev()
+        .filter(|l| !l.trim().is_empty())
+        .take(5)
+    {
+        let lower = line.to_lowercase();
+        if lower.contains("enter to select")
+            || lower.contains("to navigate")
+            || lower.contains("tab to amend")
+            || lower.contains("esc to cancel")
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.
@@ -167,8 +192,8 @@ pub async fn question_detection_loop(
     let mut last_sent_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     // Re-send unchanged questions periodically so newly connected clients get them
     let mut ticks_since_send: u32 = 0;
-    // Track which question IDs have been auto-answered to avoid double-sending
-    let mut auto_answered_ids: HashSet<String> = HashSet::new();
+    // Track which question IDs have been auto-answered, with tick count for retry
+    let mut auto_answered_ids: HashMap<String, u32> = HashMap::new();
 
     loop {
         let processes = detect_question_processes(&jobs_config, &job_status);
@@ -236,9 +261,13 @@ pub async fn question_detection_loop(
                         log::debug!("[questions] pane {} not in auto-yes set, skipping", q.pane_id);
                         continue;
                     }
-                    if auto_answered_ids.contains(&q.question_id) {
-                        log::debug!("[questions] question {} already auto-answered, skipping", q.question_id);
-                        continue;
+                    if let Some(ticks) = auto_answered_ids.get(&q.question_id) {
+                        // Retry after 6 ticks (3s) if the question is still present
+                        if *ticks < 6 {
+                            log::debug!("[questions] question {} already auto-answered ({} ticks ago), skipping", q.question_id, ticks);
+                            continue;
+                        }
+                        log::info!("[questions] question {} still present after {} ticks, retrying auto-answer", q.question_id, ticks);
                     }
                     let options_summary: Vec<String> = q.options.iter()
                         .map(|o| format!("{}={}", o.number, o.label))
@@ -246,10 +275,15 @@ pub async fn question_detection_loop(
                     log::info!("[questions] checking auto-yes for pane {} question {} options: {:?}", q.pane_id, q.question_id, options_summary);
                     if let Some(opt) = find_yes_option(&q.options) {
                         log::info!("[questions] auto-answering pane {} question {} with option {}", q.pane_id, q.question_id, opt);
-                        if let Err(e) = crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt) {
-                            log::error!("[questions] auto-answer send_keys failed: {}", e);
+                        match crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt) {
+                            Ok(()) => {
+                                auto_answered_ids.insert(q.question_id.clone(), 0);
+                            }
+                            Err(e) => {
+                                log::error!("[questions] auto-answer send_keys failed: {}", e);
+                                // Don't mark as answered so it retries next tick
+                            }
                         }
-                        auto_answered_ids.insert(q.question_id.clone());
                     } else {
                         log::warn!("[questions] no yes option found for pane {} question {}, options: {:?}", q.pane_id, q.question_id, options_summary);
                     }
@@ -257,9 +291,15 @@ pub async fn question_detection_loop(
             }
         }
 
-        // Clean up stale auto-answered IDs (questions no longer in cache)
+        // Increment tick counts for auto-answered questions still present, remove stale
         let current_qids: HashSet<String> = questions.iter().map(|q| q.question_id.clone()).collect();
-        auto_answered_ids.retain(|id| current_qids.contains(id));
+        auto_answered_ids.retain(|id, ticks| {
+            if !current_qids.contains(id) {
+                return false;
+            }
+            *ticks += 1;
+            true
+        });
 
         // Store for desktop frontend
         log::info!("[questions] storing {} active questions", questions.len());
