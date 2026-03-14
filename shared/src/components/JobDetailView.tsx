@@ -292,6 +292,46 @@ export function JobDetailView({
         )}
       </View>
 
+      {/* Auto-yes toggle for running jobs */}
+      {isRunning && onToggleAutoYes && (
+        <TouchableOpacity
+          onPress={onToggleAutoYes}
+          activeOpacity={0.6}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            marginBottom: 8,
+            borderRadius: 6,
+            borderWidth: 1,
+            borderColor: autoYesActive ? colors.warning : colors.border,
+            backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
+          }}
+        >
+          <Text style={{ fontSize: 13, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
+            Auto-yes
+          </Text>
+          <View style={{
+            width: 36,
+            height: 20,
+            borderRadius: 10,
+            backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
+            justifyContent: "center",
+            paddingHorizontal: 2,
+          }}>
+            <View style={{
+              width: 16,
+              height: 16,
+              borderRadius: 8,
+              backgroundColor: "#fff",
+              alignSelf: autoYesActive ? "flex-end" : "flex-start",
+            }} />
+          </View>
+        </TouchableOpacity>
+      )}
+
       {/* Live Output */}
       {(isRunning || isPaused) && (
         <View style={[styles.section, sectionStyle]}>

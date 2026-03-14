@@ -55,6 +55,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
 
   // Auto-yes state
   const [autoYesPaneIds, setAutoYesPaneIds] = useState<Set<string>>(new Set());
+  const [pendingAutoYes, setPendingAutoYes] = useState<{ paneId: string; title: string } | null>(null);
 
   // --- Question polling ---
 
@@ -115,13 +116,29 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
       return;
     }
     const title = q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~");
-    if (!confirm(`Enable auto-yes for "${title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`)) return;
+    setPendingAutoYes({ paneId: q.pane_id, title });
+  }, [autoYesPaneIds]);
+
+  const confirmAutoYes = useCallback(() => {
+    if (!pendingAutoYes) return;
     const next = new Set(autoYesPaneIds);
-    next.add(q.pane_id);
+    next.add(pendingAutoYes.paneId);
     setAutoYesPaneIds(next);
     invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
     startFastQuestionPoll();
-  }, [autoYesPaneIds, startFastQuestionPoll]);
+    setPendingAutoYes(null);
+  }, [pendingAutoYes, autoYesPaneIds, startFastQuestionPoll]);
+
+  const handleToggleAutoYesByPaneId = useCallback((paneId: string, title: string) => {
+    if (autoYesPaneIds.has(paneId)) {
+      const next = new Set(autoYesPaneIds);
+      next.delete(paneId);
+      setAutoYesPaneIds(next);
+      invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
+      return;
+    }
+    setPendingAutoYes({ paneId, title });
+  }, [autoYesPaneIds]);
 
   const handleDisableAutoYes = useCallback((paneId: string) => {
     const next = new Set(autoYesPaneIds);
@@ -571,8 +588,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
           options={jobQuestion?.options}
           questionContext={jobQuestion?.context_lines}
-          autoYesActive={jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false}
-          onToggleAutoYes={jobQuestion ? () => handleToggleAutoYes(jobQuestion) : undefined}
+          autoYesActive={(() => {
+            const paneId = jobQuestion?.pane_id ?? (core.statuses[viewingJob.slug]?.state === "running" ? (core.statuses[viewingJob.slug] as { pane_id?: string }).pane_id : undefined);
+            return paneId ? autoYesPaneIds.has(paneId) : false;
+          })()}
+          onToggleAutoYes={(() => {
+            if (jobQuestion) return () => handleToggleAutoYes(jobQuestion);
+            const status = core.statuses[viewingJob.slug];
+            if (status?.state === "running") {
+              const paneId = (status as { pane_id?: string }).pane_id;
+              if (paneId) return () => handleToggleAutoYesByPaneId(paneId, viewingJob.name);
+            }
+            return undefined;
+          })()}
         />
         {paramsDialog && (
           <ParamsOverlay
@@ -619,6 +647,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
           onChange={(values) => setParamsDialog({ ...paramsDialog, values })}
           onRun={handleRunWithParams}
           onCancel={() => setParamsDialog(null)}
+        />
+      )}
+
+      {pendingAutoYes && (
+        <ConfirmDialog
+          message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
+          onConfirm={confirmAutoYes}
+          onCancel={() => setPendingAutoYes(null)}
+          confirmLabel="Enable"
+          confirmClassName="btn btn-sm"
         />
       )}
 
