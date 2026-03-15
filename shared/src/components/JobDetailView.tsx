@@ -96,7 +96,9 @@ export function JobDetailView({
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [showDuplicateMenu, setShowDuplicateMenu] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const dupMenuRef = useRef<View>(null);
+  const settingsMenuRef = useRef<View>(null);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
   // Scroll to bottom when new logs arrive
@@ -147,6 +149,19 @@ export function JobDetailView({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showDuplicateMenu]);
+
+  // Close settings menu on outside click (web only)
+  useEffect(() => {
+    if (!showSettingsMenu || !isWeb) return;
+    const handler = (e: MouseEvent) => {
+      const el = (settingsMenuRef.current as any);
+      if (el && !el.contains(e.target as Node)) {
+        setShowSettingsMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showSettingsMenu]);
 
   const [sigintPending, setSigintPending] = useState(false);
   const [liveZoom, setLiveZoom] = useState(false);
@@ -250,45 +265,6 @@ export function JobDetailView({
             <Text style={styles.jobName}>{job.name}</Text>
             <StatusBadge status={status} />
           </TouchableOpacity>
-          <View style={styles.headerActions}>
-            {onEdit && <ActionButton label="Edit" color={colors.textSecondary} onPress={onEdit} />}
-            {onDuplicate && (
-              <View ref={dupMenuRef} style={{ zIndex: 100 }}>
-                <ActionButton label="Duplicate" color={colors.textSecondary} onPress={() => setShowDuplicateMenu((v) => !v)} />
-                {showDuplicateMenu && groups && groups.length > 0 && (
-                  <View style={styles.dropdownMenu}>
-                    {groups.map((g) => (
-                      <TouchableOpacity
-                        key={g}
-                        style={[styles.dropdownItem, g === currentGroup && styles.dropdownItemActive]}
-                        onPress={() => { onDuplicate(g); setShowDuplicateMenu(false); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={[styles.dropdownItemText, g === currentGroup && styles.dropdownItemTextActive]}>
-                          {g}{g === currentGroup ? " (current)" : ""}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                    {onDuplicateToFolder && (
-                      <>
-                        <View style={styles.dropdownSeparator} />
-                        <TouchableOpacity
-                          style={styles.dropdownItem}
-                          onPress={() => { setShowDuplicateMenu(false); onDuplicateToFolder(); }}
-                          activeOpacity={0.6}
-                        >
-                          <Text style={[styles.dropdownItemText, { color: colors.accent }]}>
-                            Choose folder...
-                          </Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-                )}
-              </View>
-            )}
-            {onDelete && !isRunning && <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />}
-          </View>
         </View>
       )}
 
@@ -335,12 +311,95 @@ export function JobDetailView({
           {state === "idle" && (
             <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
           )}
-          {onToggleEnabled && !isManual && (
-            <ActionButton
-              label={job.enabled ? "Disable" : "Enable"}
-              color={colors.textSecondary}
-              onPress={onToggleEnabled}
-            />
+          {/* Settings "..." menu */}
+          {(onEdit || onDuplicate || onDelete || (onToggleEnabled && !isManual)) && (
+            <View ref={settingsMenuRef} style={{ zIndex: 100 }}>
+              <TouchableOpacity
+                style={styles.moreBtn}
+                onPress={() => setShowSettingsMenu((v) => !v)}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+              </TouchableOpacity>
+              {showSettingsMenu && (
+                <View style={styles.dropdownMenu}>
+                  {onEdit && (
+                    <TouchableOpacity
+                      style={styles.dropdownItem}
+                      onPress={() => { onEdit(); setShowSettingsMenu(false); }}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.dropdownItemText}>Edit</Text>
+                    </TouchableOpacity>
+                  )}
+                  {onDuplicate && (
+                    <TouchableOpacity
+                      style={styles.dropdownItem}
+                      onPress={() => { setShowSettingsMenu(false); setShowDuplicateMenu(true); }}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.dropdownItemText}>Duplicate</Text>
+                    </TouchableOpacity>
+                  )}
+                  {onToggleEnabled && !isManual && (
+                    <TouchableOpacity
+                      style={styles.dropdownItem}
+                      onPress={() => { onToggleEnabled(); setShowSettingsMenu(false); }}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.dropdownItemText}>
+                        {job.enabled ? "Disable" : "Enable"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {onDelete && !isRunning && (
+                    <>
+                      <View style={styles.dropdownSeparator} />
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { onDelete(); setShowSettingsMenu(false); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={[styles.dropdownItemText, { color: colors.danger }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+          {/* Duplicate sub-menu (shown after selecting Duplicate from settings menu) */}
+          {showDuplicateMenu && onDuplicate && (
+            <View ref={dupMenuRef} style={{ position: "absolute", right: 0, top: "100%", zIndex: 101 }}>
+              <View style={styles.dropdownMenu}>
+                {groups && groups.map((g) => (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.dropdownItem, g === currentGroup && styles.dropdownItemActive]}
+                    onPress={() => { onDuplicate(g); setShowDuplicateMenu(false); }}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={[styles.dropdownItemText, g === currentGroup && styles.dropdownItemTextActive]}>
+                      {g}{g === currentGroup ? " (current)" : ""}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+                {onDuplicateToFolder && (
+                  <>
+                    <View style={styles.dropdownSeparator} />
+                    <TouchableOpacity
+                      style={styles.dropdownItem}
+                      onPress={() => { setShowDuplicateMenu(false); onDuplicateToFolder(); }}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={[styles.dropdownItemText, { color: colors.accent }]}>
+                        Choose folder...
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </View>
           )}
         </View>
       </View>
@@ -1271,6 +1330,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "monospace",
     lineHeight: 18,
+  },
+  moreBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  moreBtnText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 16,
   },
   dropdownMenu: {
     position: "absolute",
