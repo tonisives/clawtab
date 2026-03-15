@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
 import type { ClaudeProcess } from "../types/process";
@@ -25,27 +25,57 @@ function getStatusTimestamp(status: JobStatus | undefined): string | null {
   return null;
 }
 
-function sortJobs(
-  jobs: RemoteJob[],
+function sortGroupKeys(
+  keys: string[],
+  grouped: Map<string, RemoteJob[]>,
   mode: JobSortMode,
   statuses: Record<string, JobStatus>,
-): RemoteJob[] {
-  if (mode === "name") return jobs;
-  const sorted = [...jobs];
-  if (mode === "recent") {
+): string[] {
+  const sorted = [...keys];
+  if (mode === "name") {
     sorted.sort((a, b) => {
-      const tsA = getStatusTimestamp(statuses[a.slug]) ?? "";
-      const tsB = getStatusTimestamp(statuses[b.slug]) ?? "";
-      return tsB.localeCompare(tsA);
+      const da = a === "default" ? "General" : a;
+      const db = b === "default" ? "General" : b;
+      return da.localeCompare(db);
+    });
+  } else if (mode === "recent") {
+    sorted.sort((a, b) => {
+      const bestA = bestTimestamp(grouped.get(a) ?? [], statuses);
+      const bestB = bestTimestamp(grouped.get(b) ?? [], statuses);
+      if (bestA && bestB) return bestB.localeCompare(bestA);
+      if (bestA) return -1;
+      if (bestB) return 1;
+      return a.localeCompare(b);
     });
   } else if (mode === "added") {
     sorted.sort((a, b) => {
-      const addedA = a.added_at ?? "";
-      const addedB = b.added_at ?? "";
-      return addedB.localeCompare(addedA);
+      const bestA = newestAdded(grouped.get(a) ?? []);
+      const bestB = newestAdded(grouped.get(b) ?? []);
+      if (bestA && bestB) return bestB.localeCompare(bestA);
+      if (bestA) return -1;
+      if (bestB) return 1;
+      return a.localeCompare(b);
     });
   }
   return sorted;
+}
+
+function bestTimestamp(jobs: RemoteJob[], statuses: Record<string, JobStatus>): string | null {
+  let best: string | null = null;
+  for (const job of jobs) {
+    const ts = getStatusTimestamp(statuses[job.slug]);
+    if (ts && (!best || ts > best)) best = ts;
+  }
+  return best;
+}
+
+function newestAdded(jobs: RemoteJob[]): string | null {
+  let best: string | null = null;
+  for (const job of jobs) {
+    const ts = job.added_at;
+    if (ts && (!best || ts > best)) best = ts;
+  }
+  return best;
 }
 
 export interface JobListViewProps {
@@ -103,6 +133,7 @@ export function JobListView({
   contentContainerStyle,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
+  const [sortOpen, setSortOpen] = useState(false);
 
   const grouped = useMemo(() => {
     const map = new Map<string, RemoteJob[]>();
@@ -111,12 +142,13 @@ export function JobListView({
       if (!map.has(group)) map.set(group, []);
       map.get(group)!.push(job);
     }
-    // Sort within each group
-    for (const [key, groupJobs] of map) {
-      map.set(key, sortJobs(groupJobs, sortMode, statuses));
-    }
     return map;
-  }, [jobs, sortMode, statuses]);
+  }, [jobs]);
+
+  const sortedGroupKeys = useMemo(
+    () => sortGroupKeys([...grouped.keys()], grouped, sortMode, statuses),
+    [grouped, sortMode, statuses],
+  );
 
   const matchedProcessesByGroup = useMemo(() => {
     const map = new Map<string, ClaudeProcess[]>();
@@ -140,7 +172,8 @@ export function JobListView({
 
     const hasMultipleGroups = grouped.size > 1 || unmatchedProcesses.length > 0;
 
-    for (const [group, groupJobs] of grouped) {
+    for (const group of sortedGroupKeys) {
+      const groupJobs = grouped.get(group) ?? [];
       const displayGroup = group === "default" ? "General" : group;
       if (hasMultipleGroups || result.length > 0) {
         const fp = groupJobs[0]?.folder_path ?? groupJobs[0]?.work_dir;
@@ -205,7 +238,7 @@ export function JobListView({
     }
 
     return result;
-  }, [grouped, collapsedGroups, matchedProcessesByGroup, unmatchedProcesses, onRunAgent]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, matchedProcessesByGroup, unmatchedProcesses, onRunAgent]);
 
   const handleRefresh = useCallback(() => {
     onRefresh?.();
@@ -306,20 +339,45 @@ export function JobListView({
     });
   };
 
-  const sortBar = onSortChange && jobs.length > 1 ? (
-    <View style={styles.sortBar}>
-      {SORT_OPTIONS.map((opt) => (
+  const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Name";
+
+  const handleSelectSort = useCallback((mode: JobSortMode) => {
+    onSortChange?.(mode);
+    setSortOpen(false);
+  }, [onSortChange]);
+
+  const sortControl = onSortChange && jobs.length > 1 ? (
+    <View style={styles.sortRow}>
+      <View style={{ flex: 1 }} />
+      <View>
         <TouchableOpacity
-          key={opt.value}
-          onPress={() => onSortChange(opt.value)}
-          style={[styles.sortBtn, sortMode === opt.value && styles.sortBtnActive]}
+          onPress={() => setSortOpen(!sortOpen)}
+          style={styles.sortTrigger}
           activeOpacity={0.6}
         >
-          <Text style={[styles.sortBtnText, sortMode === opt.value && styles.sortBtnTextActive]}>
-            {opt.label}
-          </Text>
+          <Text style={styles.sortTriggerText}>{currentSortLabel}</Text>
+          <Text style={styles.sortTriggerArrow}>{sortOpen ? "\u25B4" : "\u25BE"}</Text>
         </TouchableOpacity>
-      ))}
+        {sortOpen && (
+          <View style={styles.dropdownMenu}>
+            {SORT_OPTIONS.map((opt) => (
+              <TouchableOpacity
+                key={opt.value}
+                onPress={() => handleSelectSort(opt.value)}
+                style={[styles.dropdownItem, sortMode === opt.value && styles.dropdownItemActive]}
+                activeOpacity={0.6}
+              >
+                <Text style={[
+                  styles.dropdownItemText,
+                  sortMode === opt.value && styles.dropdownItemTextActive,
+                ]}>
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
     </View>
   ) : null;
 
@@ -339,7 +397,7 @@ export function JobListView({
       }
     >
       {headerContent}
-      {sortBar}
+      {sortControl}
       {renderItems()}
     </ScrollView>
   );
@@ -389,26 +447,60 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  sortBar: {
+  sortRow: {
     flexDirection: "row",
-    gap: 6,
-    marginBottom: spacing.sm,
+    alignItems: "center",
+    marginBottom: spacing.xs,
+    zIndex: 10,
   },
-  sortBtn: {
-    paddingHorizontal: 10,
+  sortTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 10,
-    backgroundColor: "transparent",
+    borderRadius: 6,
   },
-  sortBtnActive: {
-    backgroundColor: colors.accentBg,
-  },
-  sortBtnText: {
-    color: colors.textMuted,
+  sortTriggerText: {
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "500",
   },
-  sortBtnTextActive: {
+  sortTriggerArrow: {
+    color: colors.textSecondary,
+    fontSize: 10,
+  },
+  dropdownMenu: {
+    position: "absolute",
+    top: "100%",
+    right: 0,
+    marginTop: 4,
+    minWidth: 120,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 10,
+  },
+  dropdownItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  dropdownItemActive: {
+    backgroundColor: colors.accentBg,
+  },
+  dropdownItemText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  dropdownItemTextActive: {
     color: colors.accent,
+    fontWeight: "500",
   },
 });
