@@ -69,15 +69,10 @@ export function createTauriTransport(): Transport {
       const poll = async () => {
         try {
           const result = await invoke<string>("get_running_job_logs", { name });
-          if (active) {
-            // Send only the new content since last poll
-            if (result.length > lastContent.length) {
-              onChunk(result.slice(lastContent.length));
-            } else if (result !== lastContent) {
-              // Content changed completely (e.g., job restarted)
-              onChunk(result);
-            }
+          if (active && result !== lastContent) {
             lastContent = result;
+            // Send full snapshot as replacement (prefix with \x00 to signal replace)
+            onChunk("\x00" + result);
           }
         } catch {
           // Job may have stopped
@@ -87,10 +82,11 @@ export function createTauriTransport(): Transport {
       poll();
       const interval = setInterval(poll, 3000);
 
-      // Also listen for tauri events
+      // Also listen for tauri events for faster updates
       const unlistenPromise = listen<{ name: string; content: string }>("log-chunk", (event) => {
         if (active && event.payload.name === name) {
-          onChunk(event.payload.content);
+          // Trigger an immediate poll to get the full consistent state
+          poll();
         }
       });
 

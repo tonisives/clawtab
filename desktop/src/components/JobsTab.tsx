@@ -637,6 +637,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onCancel={() => setParamsDialog(null)}
           />
         )}
+        {pendingAutoYes && (
+          <ConfirmDialog
+            message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
+            onConfirm={confirmAutoYes}
+            onCancel={() => setPendingAutoYes(null)}
+            confirmLabel="Enable"
+            confirmClassName="btn btn-sm"
+          />
+        )}
       </>
     );
   }

@@ -52,8 +52,9 @@ interface Span {
   style: TextStyle;
 }
 
+// Matches all ANSI escape sequences: SGR (\x1b[...m) and others (\x1b[...A-Z/a-z)
 // eslint-disable-next-line no-control-regex
-const ANSI_RE = /\x1b\[([0-9;]*)m/g;
+const ANSI_RE = /\x1b\[([0-9;]*?)([A-Za-z])/g;
 
 function parseAnsi(raw: string): Span[] {
   const spans: Span[] = [];
@@ -79,6 +80,9 @@ function parseAnsi(raw: string): Span[] {
       }
     }
     lastIndex = match.index + match[0].length;
+
+    // Only process SGR (m) sequences; skip all others (cursor movement, erase, etc.)
+    if (match[2] !== "m") continue;
 
     // Parse SGR codes
     const codes = match[1] ? match[1].split(";").map(Number) : [0];

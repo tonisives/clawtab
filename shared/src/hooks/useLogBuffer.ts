@@ -7,7 +7,12 @@ export function useLogBuffer(transport: Transport, jobName: string) {
 
   useEffect(() => {
     unsubRef.current = transport.subscribeLogs(jobName, (content) => {
-      setLogs((prev) => (prev + content).trimEnd());
+      if (content.startsWith("\x00")) {
+        // Full snapshot replacement
+        setLogs(content.slice(1).trimEnd());
+      } else {
+        setLogs((prev) => (prev + content).trimEnd());
+      }
     });
     return () => {
       unsubRef.current?.();

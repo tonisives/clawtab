@@ -431,7 +431,6 @@ export function JobDetailView({
               )}
             </>
           )}
-          <QuestionContextBlock context={questionContext} />
           <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
           <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
         </View>
@@ -458,7 +457,7 @@ export function JobDetailView({
                   run={run}
                   transport={transport}
                   currentState={state}
-                  defaultExpanded={expandRunId ? run.id === expandRunId : i === 0}
+                  defaultExpanded={expandRunId ? run.id === expandRunId : (!isRunning && i === 0)}
                   onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
                 />
               ))
