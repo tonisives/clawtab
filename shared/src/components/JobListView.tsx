@@ -136,7 +136,6 @@ export function JobListView({
   const searchRef = useRef<TextInput>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchVisible, setSearchVisible] = useState(false);
 
   // Keyboard shortcut: Cmd+F (desktop) or / (web) to focus search
   useEffect(() => {
@@ -144,23 +143,17 @@ export function JobListView({
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
-        setSearchVisible(true);
-        setTimeout(() => searchRef.current?.focus(), 50);
-      } else if (e.key === "/" && !searchVisible) {
+        searchRef.current?.focus();
+      } else if (e.key === "/") {
         const tag = (e.target as HTMLElement)?.tagName;
         if (tag === "INPUT" || tag === "TEXTAREA") return;
         e.preventDefault();
-        setSearchVisible(true);
-        setTimeout(() => searchRef.current?.focus(), 50);
-      } else if (e.key === "Escape" && searchVisible) {
-        (document.activeElement as HTMLElement)?.blur();
-        setSearchQuery("");
-        setSearchVisible(false);
+        searchRef.current?.focus();
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [searchVisible]);
+  }, []);
 
   const query = searchQuery.toLowerCase().trim();
 
@@ -388,42 +381,32 @@ export function JobListView({
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery("");
-    setSearchVisible(false);
+    (document.activeElement as HTMLElement)?.blur();
   }, []);
 
   const toolbar = (onSortChange && jobs.length > 1) || jobs.length > 0 ? (
     <View style={styles.sortRow}>
-      {searchVisible ? (
-        <View style={styles.searchBar}>
-          <Text style={styles.searchIcon}>{"\u2315"}</Text>
-          <TextInput
-            ref={searchRef}
-            style={styles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Filter jobs..."
-            placeholderTextColor={colors.textMuted}
-            autoFocus
-            onSubmitEditing={() => {
-              if (!searchQuery) handleClearSearch();
-            }}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={handleClearSearch} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.searchClear}>x</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <TouchableOpacity
-          onPress={() => { setSearchVisible(true); setTimeout(() => searchRef.current?.focus(), 50); }}
-          style={styles.searchTrigger}
-          activeOpacity={0.6}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={styles.searchIcon}>{"\u2315"}</Text>
-        </TouchableOpacity>
-      )}
+      <View style={styles.searchBar}>
+        <Text style={styles.searchIcon}>{"\u2315"}</Text>
+        <TextInput
+          ref={searchRef}
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Filter jobs..."
+          placeholderTextColor={colors.textMuted}
+          onKeyPress={(e) => {
+            if (e.nativeEvent.key === "Escape") {
+              handleClearSearch();
+            }
+          }}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={handleClearSearch} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={styles.searchClear}>x</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <View style={{ flex: 1 }} />
       {onSortChange && jobs.length > 1 && (
         <View>
@@ -524,9 +507,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
-  },
-  searchTrigger: {
-    padding: 4,
   },
   searchIcon: {
     color: colors.textSecondary,

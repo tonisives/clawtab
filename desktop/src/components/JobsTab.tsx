@@ -261,7 +261,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [editingJob, core.reload]);
 
-  const handleDuplicate = useCallback(async (job: Job) => {
+  const handleDuplicate = useCallback(async (job: Job, targetGroup: string) => {
     const existingNames = new Set(core.jobs.map((j) => j.name));
     let copyName = `${job.name}-copy`;
     let i = 2;
@@ -269,10 +269,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       copyName = `${job.name}-copy-${i}`;
       i++;
     }
-    const dup: Job = { ...job, name: copyName, slug: "", enabled: false };
+    const dup: Job = { ...job, name: copyName, slug: "", enabled: false, group: targetGroup };
     await invoke("save_job", { job: dup });
     await core.reload();
   }, [core.jobs, core.reload]);
+
+  const handleDuplicateToFolder = useCallback(async (job: Job) => {
+    const selected = await open({ directory: true, title: "Choose folder for duplicated job" });
+    if (!selected) return;
+    const folder = typeof selected === "string" ? selected : selected[0];
+    if (!folder) return;
+    const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
+    await handleDuplicate(job, folderName);
+  }, [handleDuplicate]);
 
   const handleOpen = useCallback(async (name: string) => {
     await invoke("focus_job_window", { name });
@@ -590,8 +599,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
           onOpen={() => handleOpen(viewingJob.slug)}
           onToggle={() => { actions.toggleJob(viewingJob.slug); core.reload(); }}
-          onDuplicate={() => handleDuplicate(viewingJob)}
+          onDuplicate={(group: string) => handleDuplicate(viewingJob, group)}
+          onDuplicateToFolder={() => handleDuplicateToFolder(viewingJob)}
           onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
+          groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
           options={jobQuestion?.options}
           questionContext={jobQuestion?.context_lines}
           autoYesActive={(() => {

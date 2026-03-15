@@ -360,7 +360,9 @@ export function DesktopJobDetail({
   onOpen,
   onToggle,
   onDuplicate,
+  onDuplicateToFolder,
   onDelete,
+  groups,
   options,
   questionContext,
   autoYesActive,
@@ -373,8 +375,10 @@ export function DesktopJobDetail({
   onEdit: () => void;
   onOpen: () => void;
   onToggle: () => void;
-  onDuplicate: () => void;
+  onDuplicate: (group: string) => void;
+  onDuplicateToFolder: () => void;
   onDelete: () => void;
+  groups: string[];
   options?: { number: string; label: string }[];
   questionContext?: string;
   autoYesActive?: boolean;
@@ -403,6 +407,9 @@ export function DesktopJobDetail({
         onOpen={onOpen}
         onToggleEnabled={onToggle}
         onDuplicate={onDuplicate}
+        onDuplicateToFolder={onDuplicateToFolder}
+        groups={groups}
+        currentGroup={job.group || "default"}
         onDelete={() => setShowConfirm(true)}
         extraContent={extraContent}
         options={options}

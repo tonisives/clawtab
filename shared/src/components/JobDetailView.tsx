@@ -38,9 +38,12 @@ export interface JobDetailViewProps {
   // Desktop-only slots
   onEdit?: () => void;
   onOpen?: () => void;
-  onDuplicate?: () => void;
+  onDuplicate?: (group: string) => void;
   onToggleEnabled?: () => void;
   onDelete?: () => void;
+  groups?: string[];
+  currentGroup?: string;
+  onDuplicateToFolder?: () => void;
   // Hide the back arrow (e.g. when the platform already provides a nav back button)
   showBackButton?: boolean;
   // Auto-expand a specific run by ID (e.g. from notification deep link)
@@ -72,6 +75,9 @@ export function JobDetailView({
   onDuplicate,
   onToggleEnabled,
   onDelete,
+  groups,
+  currentGroup,
+  onDuplicateToFolder,
   showBackButton = true,
   expandRunId,
   extraContent,
@@ -89,6 +95,8 @@ export function JobDetailView({
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
+  const [showDuplicateMenu, setShowDuplicateMenu] = useState(false);
+  const dupMenuRef = useRef<View>(null);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
   // Scroll to bottom when new logs arrive
@@ -126,6 +134,19 @@ export function JobDetailView({
   useEffect(() => {
     onReloadRuns?.();
   }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close duplicate menu on outside click (web only)
+  useEffect(() => {
+    if (!showDuplicateMenu || !isWeb) return;
+    const handler = (e: MouseEvent) => {
+      const el = (dupMenuRef.current as any);
+      if (el && !el.contains(e.target as Node)) {
+        setShowDuplicateMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showDuplicateMenu]);
 
   const [sigintPending, setSigintPending] = useState(false);
   const [liveZoom, setLiveZoom] = useState(false);
@@ -231,65 +252,97 @@ export function JobDetailView({
           </TouchableOpacity>
           <View style={styles.headerActions}>
             {onEdit && <ActionButton label="Edit" color={colors.textSecondary} onPress={onEdit} />}
-            {onDuplicate && <ActionButton label="Duplicate" color={colors.textSecondary} onPress={onDuplicate} />}
+            {onDuplicate && (
+              <View ref={dupMenuRef} style={{ zIndex: 100 }}>
+                <ActionButton label="Duplicate" color={colors.textSecondary} onPress={() => setShowDuplicateMenu((v) => !v)} />
+                {showDuplicateMenu && groups && groups.length > 0 && (
+                  <View style={styles.dropdownMenu}>
+                    {groups.map((g) => (
+                      <TouchableOpacity
+                        key={g}
+                        style={[styles.dropdownItem, g === currentGroup && styles.dropdownItemActive]}
+                        onPress={() => { onDuplicate(g); setShowDuplicateMenu(false); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={[styles.dropdownItemText, g === currentGroup && styles.dropdownItemTextActive]}>
+                          {g}{g === currentGroup ? " (current)" : ""}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                    {onDuplicateToFolder && (
+                      <>
+                        <View style={styles.dropdownSeparator} />
+                        <TouchableOpacity
+                          style={styles.dropdownItem}
+                          onPress={() => { setShowDuplicateMenu(false); onDuplicateToFolder(); }}
+                          activeOpacity={0.6}
+                        >
+                          <Text style={[styles.dropdownItemText, { color: colors.accent }]}>
+                            Choose folder...
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
+            {onDelete && !isRunning && <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />}
           </View>
         </View>
       )}
 
-      {/* Info row */}
+      {/* Info row with actions */}
       <View style={styles.infoRow}>
-        <View style={styles.infoPill}>
-          <Text style={styles.infoLabel}>{job.job_type}</Text>
+        <View style={styles.infoPills}>
+          <View style={styles.infoPill}>
+            <Text style={styles.infoLabel}>{job.job_type}</Text>
+          </View>
+          {job.cron ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.cronText}>{job.cron}</Text>
+            </View>
+          ) : null}
+          {isManual ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.infoLabel}>manual</Text>
+            </View>
+          ) : (
+            <View style={styles.infoPill}>
+              <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
+                {job.enabled ? "Enabled" : "Disabled"}
+              </Text>
+            </View>
+          )}
         </View>
-        {job.cron ? (
-          <View style={styles.infoPill}>
-            <Text style={styles.cronText}>{job.cron}</Text>
-          </View>
-        ) : null}
-        {isManual ? (
-          <View style={styles.infoPill}>
-            <Text style={styles.infoLabel}>manual</Text>
-          </View>
-        ) : (
-          <View style={styles.infoPill}>
-            <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
-              {job.enabled ? "Enabled" : "Disabled"}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Action buttons */}
-      <View style={styles.actions}>
-        {isRunning && (
-          <>
-            {onOpen && <ActionButton label="Open in Terminal" color={colors.accent} onPress={() => onOpen()} />}
+        <View style={styles.actions}>
+          {isRunning && (
+            <>
+              {onOpen && <ActionButton label="Open in Terminal" color={colors.accent} onPress={() => onOpen()} />}
+              <ActionButton
+                label={sigintPending ? "Stopping..." : "Stop"}
+                color={colors.danger}
+                onPress={() => handleAction(transport.sigintJob ? "sigint" : "stop")}
+              />
+            </>
+          )}
+          {state === "failed" && (
+            <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} />
+          )}
+          {state === "success" && (
+            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} />
+          )}
+          {state === "idle" && (
+            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
+          )}
+          {onToggleEnabled && !isManual && (
             <ActionButton
-              label={sigintPending ? "Stopping..." : "Stop"}
-              color={colors.danger}
-              onPress={() => handleAction(transport.sigintJob ? "sigint" : "stop")}
+              label={job.enabled ? "Disable" : "Enable"}
+              color={colors.textSecondary}
+              onPress={onToggleEnabled}
             />
-          </>
-        )}
-        {state === "failed" && (
-          <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} />
-        )}
-        {state === "success" && (
-          <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} />
-        )}
-        {state === "idle" && (
-          <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
-        )}
-        {onToggleEnabled && !isManual && (
-          <ActionButton
-            label={job.enabled ? "Disable" : "Enable"}
-            color={colors.textSecondary}
-            onPress={onToggleEnabled}
-          />
-        )}
-        {onDelete && !isRunning && (
-          <ActionButton label="Delete" color={colors.danger} onPress={onDelete} />
-        )}
+          )}
+        </View>
       </View>
 
       {/* Auto-yes toggle for running jobs */}
@@ -920,10 +973,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    zIndex: 100,
   },
   headerActions: {
     flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
+    zIndex: 100,
   },
   backRow: {
     flexDirection: "row",
@@ -958,6 +1014,13 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
+  infoPills: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
@@ -1209,5 +1272,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "monospace",
     lineHeight: 18,
+  },
+  dropdownMenu: {
+    position: "absolute",
+    top: "100%",
+    right: 0,
+    marginTop: 4,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    minWidth: 160,
+    zIndex: 100,
+    ...(isWeb ? { boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } : {}),
+  },
+  dropdownSeparator: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.sm,
+  },
+  dropdownItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  dropdownItemActive: {
+    backgroundColor: `${colors.accent}18`,
+  },
+  dropdownItemText: {
+    color: colors.text,
+    fontSize: 13,
+  },
+  dropdownItemTextActive: {
+    color: colors.accent,
+    fontWeight: "600",
   },
 });
