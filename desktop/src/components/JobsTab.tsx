@@ -142,6 +142,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     setPendingAutoYes({ paneId, title });
   }, [autoYesPaneIds]);
 
+  const handleAutoYesPress = useCallback((entry: AutoYesEntry) => {
+    if (entry.jobSlug) {
+      const job = (core.jobs as Job[]).find((j) => j.slug === entry.jobSlug);
+      if (job) { setViewingJob(job); return; }
+    }
+    const proc = core.processes.find((p) => p.pane_id === entry.paneId);
+    if (proc) { setViewingProcess(proc); }
+  }, [core.jobs, core.processes]);
+
   const handleDisableAutoYes = useCallback((paneId: string) => {
     const next = new Set(autoYesPaneIds);
     next.delete(paneId);
@@ -154,12 +163,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     for (const paneId of autoYesPaneIds) {
       const q = questions.find((q) => q.pane_id === paneId);
       if (q) {
-        entries.push({ paneId, label: q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~") });
+        entries.push({ paneId, label: q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~"), jobSlug: q.matched_job });
         continue;
       }
       const proc = core.processes.find((p) => p.pane_id === paneId);
       if (proc) {
-        entries.push({ paneId, label: proc.matched_job ?? proc.cwd.replace(/^\/Users\/[^/]+/, "~") });
+        entries.push({ paneId, label: proc.matched_job ?? proc.cwd.replace(/^\/Users\/[^/]+/, "~"), jobSlug: proc.matched_job });
         continue;
       }
       entries.push({ paneId, label: paneId });
@@ -456,7 +465,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (!nfnVisible && autoYesEntries.length === 0) return undefined;
     return (
       <>
-        <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} />
+        <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} onPress={handleAutoYesPress} />
         {nfnVisible && (
           <NotificationSection
             questions={questions}
@@ -471,7 +480,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         )}
       </>
     );
-  }, [nfnVisible, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup, autoYesPaneIds, handleToggleAutoYes, autoYesEntries, handleDisableAutoYes]);
+  }, [nfnVisible, questions, resolveQuestionJob, handleQuestionNavigate, handleQuestionSendOption, core.collapsedGroups, core.toggleGroup, autoYesPaneIds, handleToggleAutoYes, autoYesEntries, handleDisableAutoYes, handleAutoYesPress]);
 
   // --- Render ---
 

@@ -5,29 +5,38 @@ import { radius, spacing } from "../theme/spacing";
 export interface AutoYesEntry {
   paneId: string;
   label: string;
+  /** Job slug if this pane belongs to a known job */
+  jobSlug?: string | null;
 }
 
 export interface AutoYesBannerProps {
   entries: AutoYesEntry[];
   onDisable: (paneId: string) => void;
+  onPress?: (entry: AutoYesEntry) => void;
 }
 
-export function AutoYesBanner({ entries, onDisable }: AutoYesBannerProps) {
+export function AutoYesBanner({ entries, onDisable, onPress }: AutoYesBannerProps) {
   if (entries.length === 0) return null;
 
   return (
     <View style={styles.container}>
       {entries.map((e) => (
-        <View key={e.paneId} style={styles.row}>
-          <Text style={styles.label}>! Auto-yes: {e.label}</Text>
+        <TouchableOpacity
+          key={e.paneId}
+          style={styles.row}
+          onPress={onPress ? () => onPress(e) : undefined}
+          activeOpacity={onPress ? 0.7 : 1}
+          disabled={!onPress}
+        >
+          <Text style={styles.label} numberOfLines={1}>! Auto-yes: {e.label}</Text>
           <TouchableOpacity
             style={styles.disableBtn}
-            onPress={() => onDisable(e.paneId)}
+            onPress={(ev) => { ev.stopPropagation(); onDisable(e.paneId); }}
             activeOpacity={0.6}
           >
             <Text style={styles.disableBtnText}>Disable</Text>
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       ))}
     </View>
   );

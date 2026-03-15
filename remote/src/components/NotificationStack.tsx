@@ -165,20 +165,31 @@ export function NotificationStack() {
       const q = questions.find((q) => q.pane_id === paneId);
       if (q) {
         const label = q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~");
-        entries.push({ paneId, label });
+        entries.push({ paneId, label, jobSlug: q.matched_job });
         continue;
       }
       // Try detected processes
       const proc = processMap.get(paneId);
       if (proc) {
         const label = proc.matched_job ?? proc.cwd.replace(/^\/Users\/[^/]+/, "~");
-        entries.push({ paneId, label });
+        entries.push({ paneId, label, jobSlug: proc.matched_job });
         continue;
       }
       entries.push({ paneId, label: paneId });
     }
     return entries;
   }, [autoYesPaneIds, questions, processMap]);
+
+  const handleAutoYesPress = useCallback(
+    (entry: AutoYesEntry) => {
+      if (entry.jobSlug) {
+        router.push(`/job/${entry.jobSlug}`);
+      } else {
+        router.push(`/process/${entry.paneId.replace(/%/g, "_pct_")}`);
+      }
+    },
+    [router],
+  );
 
   const handleDisableAutoYes = useCallback(
     (paneId: string) => {
@@ -210,7 +221,7 @@ export function NotificationStack() {
 
   return (
     <View style={styles.container}>
-      <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} />
+      <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} onPress={handleAutoYesPress} />
       {activeQuestions.length > 0 && (
         <NotificationSection
           questions={activeQuestions}
