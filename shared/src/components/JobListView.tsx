@@ -277,7 +277,7 @@ export function JobListView({
 
     for (const entry of allGroups) {
       if (entry.type === "job") {
-        if (hasMultipleGroups || result.length > 0) {
+        if (hasMultipleGroups || result.length > 0 || query) {
           result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath });
         }
         if (!collapsedGroups.has(entry.displayGroup)) {

@@ -716,3 +716,48 @@ input[type="password"]:disabled,
 .skill-editor {
   margin-top: 4px;
 }
+
+/* Search bar */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.search-bar .search-icon {
+  font-size: 14px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.search-bar .search-input {
+  flex: 1;
+  border: none !important;
+  background: transparent;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.search-bar .search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.search-bar .search-clear {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.search-bar .search-clear:hover {
+  color: var(--text-primary);
+}

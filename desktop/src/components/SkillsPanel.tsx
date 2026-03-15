@@ -16,6 +16,7 @@ export function SkillsPanel() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const loadSkills = async () => {
     setLoading(true);
@@ -99,6 +100,13 @@ export function SkillsPanel() {
     }
   };
 
+  const filteredSkills = searchQuery.trim()
+    ? skills.filter((s) => {
+        const q = searchQuery.trim().toLowerCase();
+        return s.name.toLowerCase().includes(q);
+      })
+    : skills;
+
   return (
     <div className="settings-section">
       <div className="section-header">
@@ -119,6 +127,30 @@ export function SkillsPanel() {
         <code>~/.claude/skills/</code>. Reference them in jobs with{" "}
         <code>{"@~/.claude/skills/<name>/SKILL.md"}</code>
       </p>
+
+      {skills.length > 0 && (
+        <div className="search-bar" style={{ marginBottom: 12 }}>
+          <span className="search-icon">{"\u2315"}</span>
+          <input
+            type="text"
+            className="search-input"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter skills..."
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setSearchQuery("");
+            }}
+          />
+          {searchQuery.length > 0 && (
+            <button
+              className="search-clear"
+              onClick={() => setSearchQuery("")}
+            >
+              x
+            </button>
+          )}
+        </div>
+      )}
 
       {creating && (
         <div className="field-group" style={{ marginBottom: 16 }}>
@@ -166,9 +198,13 @@ export function SkillsPanel() {
         <div className="empty-state">
           <p>No skills found. Create one to get started.</p>
         </div>
+      ) : filteredSkills.length === 0 && searchQuery.trim() ? (
+        <div className="empty-state">
+          <p>No skills matching "{searchQuery.trim()}"</p>
+        </div>
       ) : (
         <div className="skills-list">
-          {skills.map((skill) => (
+          {filteredSkills.map((skill) => (
             <div key={skill.name} className="field-group skill-row">
               <div className="skill-row-header">
                 <div className="skill-row-info">

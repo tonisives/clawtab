@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     Emitter, Manager,
 };
 
@@ -429,18 +429,20 @@ pub fn run() {
                 });
             }
 
-            // App menu bar - default menus + custom File items
+            // App menu bar - add Import .cwt to default File menu
             let import_item =
                 MenuItem::with_id(app, "import_cwt", "Import .cwt...", true, None::<&str>)?;
-            let file_menu = Submenu::with_id_and_items(
-                app,
-                "file",
-                "File",
-                true,
-                &[&import_item],
-            )?;
             let app_menu = Menu::default(app.handle())?;
-            app_menu.insert(&file_menu, 1)?;
+            // Find the default File submenu and append our item
+            for item in app_menu.items()? {
+                if let Some(submenu) = item.as_submenu() {
+                    if submenu.text().unwrap_or_default() == "File" {
+                        submenu.append(&PredefinedMenuItem::separator(app)?)?;
+                        submenu.append(&import_item)?;
+                        break;
+                    }
+                }
+            }
             app.set_menu(app_menu)?;
             app.on_menu_event(|app, event| {
                 if event.id.as_ref() == "import_cwt" {
