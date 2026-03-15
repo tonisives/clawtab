@@ -170,8 +170,13 @@ export function JobListView({
       if (!map.has(group)) map.set(group, []);
       map.get(group)!.push(job);
     }
+    if (sortMode === "name") {
+      for (const [, groupJobs] of map) {
+        groupJobs.sort((a, b) => a.name.localeCompare(b.name));
+      }
+    }
     return map;
-  }, [jobs, query]);
+  }, [jobs, query, sortMode]);
 
   const sortedGroupKeys = useMemo(
     () => sortGroupKeys([...grouped.keys()], grouped, sortMode, statuses),
@@ -203,67 +208,107 @@ export function JobListView({
   const items = useMemo(() => {
     const result: ListItem[] = [];
 
-    const hasMultipleGroups = grouped.size > 1 || unmatchedProcesses.length > 0;
-
-    for (const group of sortedGroupKeys) {
-      const groupJobs = grouped.get(group) ?? [];
-      const displayGroup = group === "default" ? "General" : group;
-      if (hasMultipleGroups || result.length > 0) {
-        const fp = groupJobs[0]?.folder_path ?? groupJobs[0]?.work_dir;
-        result.push({ kind: "header", group: displayGroup, displayGroup, folderPath: fp });
-      }
-      if (!collapsedGroups.has(displayGroup)) {
-        let jobIdx = 0;
-        for (const job of groupJobs) {
-          result.push({ kind: "job", job, idx: jobIdx++ });
-        }
-        for (const proc of matchedProcessesByGroup.get(group) ?? []) {
-          result.push({ kind: "process", process: proc });
-        }
-        // Per-group agent input
-        if (onRunAgent) {
-          const groupWorkDir = groupJobs[0]?.folder_path ?? groupJobs[0]?.work_dir;
-          if (groupWorkDir) {
-            result.push({ kind: "group-agent", workDir: groupWorkDir });
-          }
-        }
-      }
-    }
-
+    // Build detected-process folder groups and ungrouped list
+    const detFolderGroups: [string, ClaudeProcess[]][] = [];
+    const detUngrouped: ClaudeProcess[] = [];
     if (unmatchedProcesses.length > 0) {
-      // Group unmatched processes by CWD: folders with 2+ get their own group
       const byFolder = new Map<string, ClaudeProcess[]>();
       for (const proc of unmatchedProcesses) {
         const list = byFolder.get(proc.cwd) ?? [];
         list.push(proc);
         byFolder.set(proc.cwd, list);
       }
-      const folderGroups: [string, ClaudeProcess[]][] = [];
-      const ungrouped: ClaudeProcess[] = [];
       for (const [folder, procs] of byFolder) {
         if (procs.length >= 2 && folder) {
-          folderGroups.push([folder, procs]);
+          detFolderGroups.push([folder, procs]);
         } else {
-          ungrouped.push(...procs);
+          detUngrouped.push(...procs);
         }
       }
-      for (const [folder, procs] of folderGroups) {
-        const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
-        const groupKey = `_det_${folder}`;
-        result.push({ kind: "header", group: groupKey, displayGroup: folderName, folderPath: folder });
-        if (!collapsedGroups.has(groupKey)) {
-          for (const proc of procs) {
+    }
+
+    // Unified group entries for interleaved sorting
+    type GroupEntry =
+      | { type: "job"; group: string; displayGroup: string; folderPath?: string; jobs: RemoteJob[]; procs: ClaudeProcess[] }
+      | { type: "detected"; groupKey: string; displayGroup: string; folderPath: string; procs: ClaudeProcess[] }
+      | { type: "ungrouped"; procs: ClaudeProcess[] };
+
+    const allGroups: GroupEntry[] = [];
+
+    for (const group of sortedGroupKeys) {
+      const gJobs = grouped.get(group) ?? [];
+      const displayGroup = group === "default" ? "General" : group;
+      const fp = gJobs[0]?.folder_path ?? gJobs[0]?.work_dir;
+      allGroups.push({
+        type: "job",
+        group,
+        displayGroup,
+        folderPath: fp,
+        jobs: gJobs,
+        procs: matchedProcessesByGroup.get(group) ?? [],
+      });
+    }
+
+    for (const [folder, procs] of detFolderGroups) {
+      const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
+      allGroups.push({
+        type: "detected",
+        groupKey: `_det_${folder}`,
+        displayGroup: folderName,
+        folderPath: folder,
+        procs,
+      });
+    }
+
+    // When sorting by name, interleave all groups alphabetically
+    if (sortMode === "name") {
+      allGroups.sort((a, b) => {
+        const da = a.displayGroup === "General" ? "General" : a.displayGroup;
+        const db = b.displayGroup === "General" ? "General" : b.displayGroup;
+        return da.localeCompare(db, undefined, { sensitivity: "base" });
+      });
+    }
+
+    if (detUngrouped.length > 0) {
+      allGroups.push({ type: "ungrouped", procs: detUngrouped });
+    }
+
+    const hasMultipleGroups = allGroups.length > 1;
+
+    for (const entry of allGroups) {
+      if (entry.type === "job") {
+        if (hasMultipleGroups || result.length > 0) {
+          result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath });
+        }
+        if (!collapsedGroups.has(entry.displayGroup)) {
+          let jobIdx = 0;
+          for (const job of entry.jobs) {
+            result.push({ kind: "job", job, idx: jobIdx++ });
+          }
+          for (const proc of entry.procs) {
             result.push({ kind: "process", process: proc });
           }
-          if (onRunAgent && folder) {
-            result.push({ kind: "group-agent", workDir: folder });
+          if (onRunAgent) {
+            const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
+            if (groupWorkDir) {
+              result.push({ kind: "group-agent", workDir: groupWorkDir });
+            }
           }
         }
-      }
-      if (ungrouped.length > 0) {
+      } else if (entry.type === "detected") {
+        result.push({ kind: "header", group: entry.groupKey, displayGroup: entry.displayGroup, folderPath: entry.folderPath });
+        if (!collapsedGroups.has(entry.groupKey)) {
+          for (const proc of entry.procs) {
+            result.push({ kind: "process", process: proc });
+          }
+          if (onRunAgent && entry.folderPath) {
+            result.push({ kind: "group-agent", workDir: entry.folderPath });
+          }
+        }
+      } else {
         result.push({ kind: "header", group: "Detected", displayGroup: "Detected" });
         if (!collapsedGroups.has("Detected")) {
-          for (const proc of ungrouped) {
+          for (const proc of entry.procs) {
             result.push({ kind: "process", process: proc });
           }
         }

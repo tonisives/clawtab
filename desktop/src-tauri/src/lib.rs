@@ -429,7 +429,7 @@ pub fn run() {
                 });
             }
 
-            // App menu bar (File > Import .cwt...)
+            // App menu bar - default menus + custom File items
             let import_item =
                 MenuItem::with_id(app, "import_cwt", "Import .cwt...", true, None::<&str>)?;
             let file_menu = Submenu::with_id_and_items(
@@ -439,7 +439,8 @@ pub fn run() {
                 true,
                 &[&import_item],
             )?;
-            let app_menu = Menu::with_items(app, &[&file_menu])?;
+            let app_menu = Menu::default(app.handle())?;
+            app_menu.insert(&file_menu, 1)?;
             app.set_menu(app_menu)?;
             app.on_menu_event(|app, event| {
                 if event.id.as_ref() == "import_cwt" {
