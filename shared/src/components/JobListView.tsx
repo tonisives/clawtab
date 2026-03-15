@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, Platform, type StyleProp, type ViewStyle } from "react-native";
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
 import type { ClaudeProcess } from "../types/process";
 import { JobCard } from "./JobCard";
@@ -133,17 +133,52 @@ export function JobListView({
   contentContainerStyle,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
+  const searchRef = useRef<TextInput>(null);
   const [sortOpen, setSortOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchVisible, setSearchVisible] = useState(false);
+
+  // Keyboard shortcut: Cmd+F (desktop) or / (web) to focus search
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        setSearchVisible(true);
+        setTimeout(() => searchRef.current?.focus(), 50);
+      } else if (e.key === "/" && !searchVisible) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        setSearchVisible(true);
+        setTimeout(() => searchRef.current?.focus(), 50);
+      } else if (e.key === "Escape" && searchVisible) {
+        (document.activeElement as HTMLElement)?.blur();
+        setSearchQuery("");
+        setSearchVisible(false);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [searchVisible]);
+
+  const query = searchQuery.toLowerCase().trim();
 
   const grouped = useMemo(() => {
     const map = new Map<string, RemoteJob[]>();
     for (const job of jobs) {
       const group = job.group || "default";
+      const displayGroup = group === "default" ? "general" : group.toLowerCase();
+      if (query) {
+        const nameMatch = job.name.toLowerCase().includes(query);
+        const groupMatch = displayGroup.includes(query);
+        if (!nameMatch && !groupMatch) continue;
+      }
       if (!map.has(group)) map.set(group, []);
       map.get(group)!.push(job);
     }
     return map;
-  }, [jobs]);
+  }, [jobs, query]);
 
   const sortedGroupKeys = useMemo(
     () => sortGroupKeys([...grouped.keys()], grouped, sortMode, statuses),
@@ -163,8 +198,13 @@ export function JobListView({
   }, [detectedProcesses]);
 
   const unmatchedProcesses = useMemo(
-    () => detectedProcesses.filter((p) => !p.matched_group),
-    [detectedProcesses],
+    () => detectedProcesses.filter((p) => {
+      if (p.matched_group) return false;
+      if (!query) return true;
+      const folderName = p.cwd.split("/").filter(Boolean).pop() ?? "";
+      return folderName.toLowerCase().includes(query) || p.cwd.toLowerCase().includes(query);
+    }),
+    [detectedProcesses, query],
   );
 
   const items = useMemo(() => {
@@ -245,11 +285,11 @@ export function JobListView({
   }, [onRefresh]);
 
   const renderItems = () => {
-    if (items.length === 0 && showEmpty) {
+    if (items.length === 0 && (showEmpty || query)) {
       return (
         <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>No jobs</Text>
-          <Text style={styles.emptyText}>{emptyMessage}</Text>
+          <Text style={styles.emptyTitle}>{query ? "No matches" : "No jobs"}</Text>
+          <Text style={styles.emptyText}>{query ? `No jobs or groups matching "${searchQuery}"` : emptyMessage}</Text>
         </View>
       );
     }
@@ -346,38 +386,76 @@ export function JobListView({
     setSortOpen(false);
   }, [onSortChange]);
 
-  const sortControl = onSortChange && jobs.length > 1 ? (
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchVisible(false);
+  }, []);
+
+  const toolbar = (onSortChange && jobs.length > 1) || jobs.length > 0 ? (
     <View style={styles.sortRow}>
-      <View style={{ flex: 1 }} />
-      <View>
+      {searchVisible ? (
+        <View style={styles.searchBar}>
+          <Text style={styles.searchIcon}>{"\u2315"}</Text>
+          <TextInput
+            ref={searchRef}
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Filter jobs..."
+            placeholderTextColor={colors.textMuted}
+            autoFocus
+            onSubmitEditing={() => {
+              if (!searchQuery) handleClearSearch();
+            }}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={handleClearSearch} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.searchClear}>x</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : (
         <TouchableOpacity
-          onPress={() => setSortOpen(!sortOpen)}
-          style={styles.sortTrigger}
+          onPress={() => { setSearchVisible(true); setTimeout(() => searchRef.current?.focus(), 50); }}
+          style={styles.searchTrigger}
           activeOpacity={0.6}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.sortTriggerText}>{currentSortLabel}</Text>
-          <Text style={styles.sortTriggerArrow}>{sortOpen ? "\u25B4" : "\u25BE"}</Text>
+          <Text style={styles.searchIcon}>{"\u2315"}</Text>
         </TouchableOpacity>
-        {sortOpen && (
-          <View style={styles.dropdownMenu}>
-            {SORT_OPTIONS.map((opt) => (
-              <TouchableOpacity
-                key={opt.value}
-                onPress={() => handleSelectSort(opt.value)}
-                style={[styles.dropdownItem, sortMode === opt.value && styles.dropdownItemActive]}
-                activeOpacity={0.6}
-              >
-                <Text style={[
-                  styles.dropdownItemText,
-                  sortMode === opt.value && styles.dropdownItemTextActive,
-                ]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </View>
+      )}
+      <View style={{ flex: 1 }} />
+      {onSortChange && jobs.length > 1 && (
+        <View>
+          <TouchableOpacity
+            onPress={() => setSortOpen(!sortOpen)}
+            style={styles.sortTrigger}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.sortTriggerText}>{currentSortLabel}</Text>
+            <Text style={styles.sortTriggerArrow}>{sortOpen ? "\u25B4" : "\u25BE"}</Text>
+          </TouchableOpacity>
+          {sortOpen && (
+            <View style={styles.dropdownMenu}>
+              {SORT_OPTIONS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.value}
+                  onPress={() => handleSelectSort(opt.value)}
+                  style={[styles.dropdownItem, sortMode === opt.value && styles.dropdownItemActive]}
+                  activeOpacity={0.6}
+                >
+                  <Text style={[
+                    styles.dropdownItemText,
+                    sortMode === opt.value && styles.dropdownItemTextActive,
+                  ]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
     </View>
   ) : null;
 
@@ -397,7 +475,7 @@ export function JobListView({
       }
     >
       {headerContent}
-      {sortControl}
+      {toolbar}
       {renderItems()}
     </ScrollView>
   );
@@ -446,6 +524,39 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+  searchTrigger: {
+    padding: 4,
+  },
+  searchIcon: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    maxWidth: 240,
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    paddingVertical: 4,
+    outlineStyle: "none",
+  } as any,
+  searchClear: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
+    paddingHorizontal: 4,
   },
   sortRow: {
     flexDirection: "row",
