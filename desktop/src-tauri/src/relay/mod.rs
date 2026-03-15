@@ -414,6 +414,7 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         work_dir,
         path: Some(job.path.clone()),
         params: job.params.clone(),
+        added_at: job.added_at.clone(),
     }
 }
 

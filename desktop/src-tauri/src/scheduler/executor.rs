@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
@@ -29,6 +29,36 @@ pub async fn execute_job(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
+) {
+    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None).await;
+}
+
+pub async fn execute_job_with_auto_yes(
+    job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    history: &Arc<Mutex<HistoryStore>>,
+    settings: &Arc<Mutex<AppSettings>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    trigger: &str,
+    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    params: &HashMap<String, String>,
+    auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
+) {
+    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, auto_yes_panes).await;
+}
+
+async fn execute_job_inner(
+    job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    history: &Arc<Mutex<HistoryStore>>,
+    settings: &Arc<Mutex<AppSettings>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    trigger: &str,
+    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    params: &HashMap<String, String>,
+    auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
@@ -97,6 +127,14 @@ pub async fn execute_job(
                     status.insert(job.slug.clone(), new_status.clone());
                     drop(status);
                     crate::relay::push_status_update(relay, &job.slug, &new_status);
+                }
+                // If job has auto_yes enabled, add this pane to auto_yes_panes
+                if job.auto_yes {
+                    if let Some(ay_panes) = auto_yes_panes {
+                        let mut panes = ay_panes.lock().unwrap();
+                        panes.insert(handle.pane_id.clone());
+                        log::info!("Auto-yes enabled for job '{}' pane '{}'", job.name, handle.pane_id);
+                    }
                 }
                 // Register in active_agents so Telegram replies can be relayed
                 // (only needed when using Telegram notifications)

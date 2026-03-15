@@ -123,6 +123,10 @@ pub struct Job {
     pub params: Vec<String>,
     #[serde(default = "default_true")]
     pub kill_on_end: bool,
+    #[serde(default)]
+    pub auto_yes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -263,6 +267,9 @@ impl JobsConfig {
 
         let mut job_to_save = job.clone();
         job_to_save.slug = slug;
+        if job_to_save.added_at.is_none() {
+            job_to_save.added_at = Some(chrono::Utc::now().to_rfc3339());
+        }
 
         let contents = serde_yml::to_string(&job_to_save)
             .map_err(|e| format!("Failed to serialize job: {}", e))?;

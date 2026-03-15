@@ -19,7 +19,7 @@ import * as api from "../../src/api/client"
 import { alertError, openUrl } from "../../src/lib/platform"
 import { colors } from "@clawtab/shared"
 import { radius, spacing } from "@clawtab/shared"
-import type { RemoteJob } from "@clawtab/shared"
+import type { RemoteJob, JobSortMode } from "@clawtab/shared"
 import type { ClaudeProcess } from "@clawtab/shared"
 
 const DEMO_JOBS = [
@@ -67,6 +67,7 @@ export default function JobsScreen() {
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const [subLoading, setSubLoading] = useState(false)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [sortMode, setSortMode] = useState<JobSortMode>("name")
   const { isWide } = useResponsive()
   const router = useRouter()
 
@@ -213,6 +214,8 @@ export default function JobsScreen() {
             collapsedGroups={collapsedGroups}
             onToggleGroup={toggleGroup}
             onRefresh={handleRefresh}
+            sortMode={sortMode}
+            onSortChange={setSortMode}
             onSelectJob={handleSelectJob}
             onSelectProcess={handleSelectProcess}
             onRunAgent={desktopOnline ? handleRunAgent : undefined}

@@ -141,6 +141,7 @@ export function SetupWizard({ onComplete }: Props) {
         skill_paths: [],
         params: [],
         kill_on_end: true,
+        auto_yes: false,
       };
       await invoke("save_job", { job });
       await invoke("run_job_now", { name: "hello-world" });
@@ -200,6 +201,7 @@ export function SetupWizard({ onComplete }: Props) {
         skill_paths: [],
         params: [],
         kill_on_end: true,
+        auto_yes: false,
       };
       await invoke("save_job", { job });
       await invoke("run_job_now", { name: "Hacker News" });

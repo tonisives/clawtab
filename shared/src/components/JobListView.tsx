@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef } from "react";
 import { View, Text, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import type { RemoteJob, JobStatus } from "../types/job";
+import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
 import type { ClaudeProcess } from "../types/process";
 import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
@@ -11,6 +11,43 @@ import { spacing } from "../theme/spacing";
 
 const IDLE_STATUS: JobStatus = { state: "idle" };
 
+const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "recent", label: "Recent" },
+  { value: "added", label: "Added" },
+];
+
+function getStatusTimestamp(status: JobStatus | undefined): string | null {
+  if (!status) return null;
+  if (status.state === "running") return status.started_at;
+  if (status.state === "success") return status.last_run;
+  if (status.state === "failed") return status.last_run;
+  return null;
+}
+
+function sortJobs(
+  jobs: RemoteJob[],
+  mode: JobSortMode,
+  statuses: Record<string, JobStatus>,
+): RemoteJob[] {
+  if (mode === "name") return jobs;
+  const sorted = [...jobs];
+  if (mode === "recent") {
+    sorted.sort((a, b) => {
+      const tsA = getStatusTimestamp(statuses[a.slug]) ?? "";
+      const tsB = getStatusTimestamp(statuses[b.slug]) ?? "";
+      return tsB.localeCompare(tsA);
+    });
+  } else if (mode === "added") {
+    sorted.sort((a, b) => {
+      const addedA = a.added_at ?? "";
+      const addedB = b.added_at ?? "";
+      return addedB.localeCompare(addedA);
+    });
+  }
+  return sorted;
+}
+
 export interface JobListViewProps {
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
@@ -19,6 +56,9 @@ export interface JobListViewProps {
   onToggleGroup: (group: string) => void;
   groupOrder?: string[];
   onRefresh?: () => void;
+  // Sorting
+  sortMode?: JobSortMode;
+  onSortChange?: (mode: JobSortMode) => void;
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
@@ -51,6 +91,8 @@ export function JobListView({
   onToggleGroup,
   groupOrder: _groupOrder = [],
   onRefresh,
+  sortMode = "name",
+  onSortChange,
   onSelectJob,
   onSelectProcess,
   onRunAgent,
@@ -69,8 +111,12 @@ export function JobListView({
       if (!map.has(group)) map.set(group, []);
       map.get(group)!.push(job);
     }
+    // Sort within each group
+    for (const [key, groupJobs] of map) {
+      map.set(key, sortJobs(groupJobs, sortMode, statuses));
+    }
     return map;
-  }, [jobs]);
+  }, [jobs, sortMode, statuses]);
 
   const matchedProcessesByGroup = useMemo(() => {
     const map = new Map<string, ClaudeProcess[]>();
@@ -260,6 +306,23 @@ export function JobListView({
     });
   };
 
+  const sortBar = onSortChange && jobs.length > 1 ? (
+    <View style={styles.sortBar}>
+      {SORT_OPTIONS.map((opt) => (
+        <TouchableOpacity
+          key={opt.value}
+          onPress={() => onSortChange(opt.value)}
+          style={[styles.sortBtn, sortMode === opt.value && styles.sortBtnActive]}
+          activeOpacity={0.6}
+        >
+          <Text style={[styles.sortBtnText, sortMode === opt.value && styles.sortBtnTextActive]}>
+            {opt.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  ) : null;
+
   return (
     <ScrollView
       ref={scrollRef}
@@ -276,6 +339,7 @@ export function JobListView({
       }
     >
       {headerContent}
+      {sortBar}
       {renderItems()}
     </ScrollView>
   );
@@ -324,5 +388,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+  sortBar: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  sortBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: "transparent",
+  },
+  sortBtnActive: {
+    backgroundColor: colors.accentBg,
+  },
+  sortBtnText: {
+    color: colors.textMuted,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  sortBtnTextActive: {
+    color: colors.accent,
   },
 });

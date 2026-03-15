@@ -1,5 +1,7 @@
 export type JobType = "binary" | "claude" | "folder";
 
+export type JobSortMode = "name" | "recent" | "added";
+
 export interface RemoteJob {
   name: string;
   job_type: string;
@@ -11,6 +13,7 @@ export interface RemoteJob {
   path?: string;
   folder_path?: string;
   params?: string[];
+  added_at?: string;
 }
 
 export type TelegramLogMode = "off" | "on_prompt" | "always";

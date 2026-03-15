@@ -20,8 +20,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    Manager,
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
+    Emitter, Manager,
 };
 
 use clawtab_protocol::ClaudeQuestion;
@@ -241,6 +241,7 @@ pub fn run() {
     let job_status_for_scheduler = Arc::clone(&job_status);
     let active_agents_for_scheduler = Arc::clone(&active_agents);
     let relay_for_scheduler = Arc::clone(&relay_handle);
+    let auto_yes_for_scheduler = Arc::clone(&auto_yes_panes);
 
     // Clones for reattach
     let jobs_for_reattach = Arc::clone(&jobs_config);
@@ -392,6 +393,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            // Tray menu
             let settings_item =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
@@ -401,7 +403,7 @@ pub fn run() {
                 MenuItem::with_id(app, "usage_week", "Week: --%", false, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(
+            let tray_menu = Menu::with_items(
                 app,
                 &[&settings_item, &sep1, &session_item, &week_item, &sep2, &quit_item],
             )?;
@@ -410,7 +412,7 @@ pub fn run() {
             let week_handle = week_item.clone();
 
             if let Some(tray) = app.tray_by_id("main") {
-                tray.set_menu(Some(menu))?;
+                tray.set_menu(Some(tray_menu))?;
                 tray.on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
                         if let Some(window) = app.get_webview_window("settings") {
@@ -426,6 +428,26 @@ pub fn run() {
                     _ => {}
                 });
             }
+
+            // App menu bar (File > Import .cwt...)
+            let import_item =
+                MenuItem::with_id(app, "import_cwt", "Import .cwt...", true, None::<&str>)?;
+            let file_menu = Submenu::with_id_and_items(
+                app,
+                "file",
+                "File",
+                true,
+                &[&import_item],
+            )?;
+            let app_menu = Menu::with_items(app, &[&file_menu])?;
+            app.set_menu(app_menu)?;
+            app.on_menu_event(|app, event| {
+                if event.id.as_ref() == "import_cwt" {
+                    if let Some(window) = app.get_webview_window("settings") {
+                        let _ = window.emit("import-cwt", ());
+                    }
+                }
+            });
 
             // Background task: refresh Claude usage stats every 5 minutes
             tauri::async_runtime::spawn(async move {
@@ -492,6 +514,7 @@ pub fn run() {
                 job_status_for_scheduler,
                 active_agents_for_scheduler,
                 relay_for_scheduler,
+                auto_yes_for_scheduler,
             );
             {
                 let state: tauri::State<AppState> = app.state();

@@ -139,6 +139,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
           skill_paths: [],
           params: [],
           kill_on_end: true,
+          auto_yes: false,
         };
         await invoke("save_job", { job });
       } else {
@@ -165,6 +166,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
           skill_paths: [],
           params: [],
           kill_on_end: true,
+          auto_yes: false,
         };
         await invoke("save_job", { job });
       }
@@ -213,6 +215,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
         skill_paths: [],
         params: [],
         kill_on_end: true,
+          auto_yes: false,
       };
       await invoke("save_job", { job });
       onCreated();

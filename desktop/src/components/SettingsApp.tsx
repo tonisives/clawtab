@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { JobsTab } from "./JobsTab";
 import { SecretsPanel } from "./SecretsPanel";
@@ -70,6 +71,7 @@ export function SettingsApp() {
   const [createJobKey, setCreateJobKey] = useState(0);
   const [authCallbackToken, setAuthCallbackToken] = useState<string | null>(null);
   const [authCallbackRefreshToken, setAuthCallbackRefreshToken] = useState<string | null>(null);
+  const [importCwtKey, setImportCwtKey] = useState(0);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -80,6 +82,14 @@ export function SettingsApp() {
       })
       .catch((e) => console.error("Failed to load settings:", e))
       .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    const unlistenPromise = listen("import-cwt", () => {
+      setActiveTab("jobs");
+      setImportCwtKey((k) => k + 1);
+    });
+    return () => { unlistenPromise.then((fn) => fn()); };
   }, []);
 
   const handleDeepLinks = (urls: string[]) => {
@@ -203,6 +213,7 @@ export function SettingsApp() {
             pendingTemplateId={pendingTemplateId}
             onTemplateHandled={() => setPendingTemplateId(null)}
             createJobKey={createJobKey}
+            importCwtKey={importCwtKey}
           />
         </div>
         {activeTab === "secrets" && <SecretsPanel />}

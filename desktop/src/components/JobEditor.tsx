@@ -7,6 +7,7 @@ import { HighlightedTextarea } from "./MarkdownHighlight";
 import { CronInput, describeCron } from "./CronInput";
 import { SAMPLE_TEMPLATES, TEMPLATE_CATEGORIES } from "../data/sampleTemplates";
 import { EDITOR_LABELS } from "../constants";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
 
@@ -42,19 +43,20 @@ const emptyJob: Job = {
   secret_keys: [],
   env: {},
   work_dir: null,
-  tmux_session: null,
+  tmux_session: "tgs",
   aerospace_workspace: null,
   folder_path: null,
   job_name: null,
   telegram_chat_id: null,
   telegram_log_mode: "on_prompt",
-  telegram_notify: { start: true, working: true, logs: true, finish: true },
+  telegram_notify: { start: false, working: false, logs: false, finish: false },
   notify_target: "none",
-  group: "default",
+  group: "dog-free",
   slug: "",
   skill_paths: [],
   params: [],
-  kill_on_end: true,
+  kill_on_end: false,
+  auto_yes: false,
 };
 
 type WizardStep = "identity" | "settings";
@@ -102,33 +104,39 @@ function CollapsibleFieldGroup({ title, expanded, onToggle, children }: { title:
   );
 }
 
-/** Parse a cron expression into weekly picker state, or return null if not parseable as weekly. */
-function parseCronToWeekly(cron: string): { days: string[]; time: string } | null {
+/** Parse a single cron expression into days + time, or null. */
+function parseSingleCronToWeekly(cron: string): { days: string[]; time: string } | null {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return null;
   const [min, hour, dom, mon, dow] = parts;
   if (dom !== "*" || mon !== "*") return null;
-  if (dow === "*") {
-    // daily -- all days
-    if (hour === "*" || min === "*") return null;
-    const h = parseInt(hour, 10);
-    const m = parseInt(min, 10);
-    if (isNaN(h) || isNaN(m)) return null;
-    return {
-      days: [...DAYS],
-      time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
-    };
-  }
-  // Specific days
+  if (hour === "*" || min === "*") return null;
   const h = parseInt(hour, 10);
   const m = parseInt(min, 10);
   if (isNaN(h) || isNaN(m)) return null;
+  const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  if (dow === "*") {
+    return { days: [...DAYS], time };
+  }
   const dayNums = dow.split(",");
   const dayNames = dayNums.map((d) => CRON_DAY_MAP[d.trim()]).filter(Boolean);
   if (dayNames.length === 0) return null;
+  return { days: dayNames, time };
+}
+
+/** Parse a cron expression (possibly |-separated) into weekly picker state. */
+function parseCronToWeekly(cron: string): { days: string[]; times: string[] } | null {
+  const cronParts = cron.split("|").map((s) => s.trim()).filter(Boolean);
+  if (cronParts.length === 0) return null;
+  const parsed = cronParts.map(parseSingleCronToWeekly);
+  if (parsed.some((p) => p === null)) return null;
+  const valid = parsed as { days: string[]; time: string }[];
+  // All parts must share the same days
+  const firstDays = valid[0].days.sort().join(",");
+  if (!valid.every((p) => p.days.sort().join(",") === firstDays)) return null;
   return {
-    days: dayNames,
-    time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`,
+    days: valid[0].days,
+    times: valid.map((p) => p.time),
   };
 }
 
@@ -213,7 +221,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [manualOnly, setManualOnly] = useState(!isNew ? form.cron === "" : false);
   const [useWeekly, setUseWeekly] = useState(!isNew ? (form.cron === "" || initWeekly !== null) : true);
   const [weeklyDays, setWeeklyDays] = useState<string[]>(initWeekly?.days ?? ["Mon"]);
-  const [weeklyTime, setWeeklyTime] = useState(initWeekly?.time ?? "09:00");
+  const [weeklyTimes, setWeeklyTimes] = useState<string[]>(initWeekly?.times ?? ["09:00"]);
+
+  // Auto-yes confirm dialog
+  const [pendingAutoYes, setPendingAutoYes] = useState(false);
 
   // Force manual-only when params are present
   const hasParams = form.params.length > 0;
@@ -417,12 +428,15 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     return !!form.name;
   };
 
-  // Build cron from weekly mode
-  const buildWeeklyCron = (days: string[], time: string): string => {
-    if (days.length === 0) return "0 0 * * *";
-    const [h, m] = time.split(":").map(Number);
+  // Build cron from weekly mode (supports multiple times via | separator)
+  const buildWeeklyCron = (days: string[], times: string[]): string => {
+    if (days.length === 0 || times.length === 0) return "0 0 * * *";
     const dowList = days.map((d) => DAY_CRON_MAP[d]).join(",");
-    return `${m ?? 0} ${h ?? 0} * * ${dowList}`;
+    const crons = times.map((time) => {
+      const [h, m] = time.split(":").map(Number);
+      return `${m ?? 0} ${h ?? 0} * * ${dowList}`;
+    });
+    return crons.join(" | ");
   };
 
   const toggleWeeklyDay = (day: string) => {
@@ -430,12 +444,27 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       ? weeklyDays.filter((d) => d !== day)
       : [...weeklyDays, day];
     setWeeklyDays(next);
-    setForm({ ...form, cron: buildWeeklyCron(next, weeklyTime) });
+    setForm({ ...form, cron: buildWeeklyCron(next, weeklyTimes) });
   };
 
-  const setWeeklyTimeValue = (time: string) => {
-    setWeeklyTime(time);
-    setForm({ ...form, cron: buildWeeklyCron(weeklyDays, time) });
+  const setWeeklyTimeAtIndex = (index: number, time: string) => {
+    const next = [...weeklyTimes];
+    next[index] = time;
+    setWeeklyTimes(next);
+    setForm({ ...form, cron: buildWeeklyCron(weeklyDays, next) });
+  };
+
+  const addWeeklyTime = () => {
+    const next = [...weeklyTimes, "09:00"];
+    setWeeklyTimes(next);
+    setForm({ ...form, cron: buildWeeklyCron(weeklyDays, next) });
+  };
+
+  const removeWeeklyTime = (index: number) => {
+    if (weeklyTimes.length <= 1) return;
+    const next = weeklyTimes.filter((_, i) => i !== index);
+    setWeeklyTimes(next);
+    setForm({ ...form, cron: buildWeeklyCron(weeklyDays, next) });
   };
 
   // ---- Shared field renderers ----
@@ -804,7 +833,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                 setForm({ ...form, cron: "" });
               } else {
                 if (useWeekly) {
-                  setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
+                  setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTimes) });
                 } else {
                   setForm({ ...form, cron: "0 0 * * *" });
                 }
@@ -825,7 +854,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                 checked={useWeekly}
                 onChange={() => {
                   setUseWeekly(true);
-                  setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTime) });
+                  setForm({ ...form, cron: buildWeeklyCron(weeklyDays, weeklyTimes) });
                 }}
               />
               Daily schedule
@@ -843,14 +872,38 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                   </button>
                 ))}
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <label style={{ margin: 0, fontSize: 13 }}>Time:</label>
-                <input
-                  type="time"
-                  value={weeklyTime}
-                  onChange={(e) => setWeeklyTimeValue(e.target.value)}
-                  style={{ maxWidth: 120 }}
-                />
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {weeklyTimes.map((time, idx) => (
+                  <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <label style={{ margin: 0, fontSize: 13 }}>{idx === 0 ? "Time:" : ""}</label>
+                    <input
+                      type="time"
+                      value={time}
+                      onChange={(e) => setWeeklyTimeAtIndex(idx, e.target.value)}
+                      style={{ maxWidth: 120 }}
+                    />
+                    {weeklyTimes.length > 1 && (
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => removeWeeklyTime(idx)}
+                        title="Remove time"
+                        style={{ padding: "2px 8px", fontSize: 14, lineHeight: 1 }}
+                      >
+                        -
+                      </button>
+                    )}
+                    {idx === weeklyTimes.length - 1 && (
+                      <button
+                        className="btn btn-sm"
+                        onClick={addWeeklyTime}
+                        title="Add another time"
+                        style={{ padding: "2px 8px", fontSize: 14, lineHeight: 1 }}
+                      >
+                        +
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
               {useWeekly && (
                 <span className="hint" style={{ marginTop: 4, display: "block" }}>
@@ -993,20 +1046,43 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const renderConfigFields = () => (
     <>
       {form.job_type === "folder" && (
-        <div className="form-group">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={form.kill_on_end}
-              onChange={(e) => setForm({ ...form, kill_on_end: e.target.checked })}
-              style={{ margin: 0 }}
-            />
-            Kill on end
-          </label>
-          <span className="hint">
-            When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
-          </span>
-        </div>
+        <>
+          <div className="form-group">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.kill_on_end}
+                onChange={(e) => setForm({ ...form, kill_on_end: e.target.checked })}
+                style={{ margin: 0 }}
+              />
+              Kill on end
+            </label>
+            <span className="hint">
+              When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
+            </span>
+          </div>
+
+          <div className="form-group">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.auto_yes}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setPendingAutoYes(true);
+                  } else {
+                    setForm({ ...form, auto_yes: false });
+                  }
+                }}
+                style={{ margin: 0 }}
+              />
+              Auto-yes on start
+            </label>
+            <span className="hint">
+              Automatically enable auto-yes when this job starts running. All questions will be accepted.
+            </span>
+          </div>
+        </>
       )}
 
       <div className="form-group">
@@ -1164,20 +1240,43 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const renderAdvancedFields = () => (
     <>
       {form.job_type === "folder" && (
-        <div className="form-group">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={form.kill_on_end}
-              onChange={(e) => setForm({ ...form, kill_on_end: e.target.checked })}
-              style={{ margin: 0 }}
-            />
-            Kill on end
-          </label>
-          <span className="hint">
-            When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
-          </span>
-        </div>
+        <>
+          <div className="form-group">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.kill_on_end}
+                onChange={(e) => setForm({ ...form, kill_on_end: e.target.checked })}
+                style={{ margin: 0 }}
+              />
+              Kill on end
+            </label>
+            <span className="hint">
+              When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
+            </span>
+          </div>
+
+          <div className="form-group">
+            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.auto_yes}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setPendingAutoYes(true);
+                  } else {
+                    setForm({ ...form, auto_yes: false });
+                  }
+                }}
+                style={{ margin: 0 }}
+              />
+              Auto-yes on start
+            </label>
+            <span className="hint">
+              Automatically enable auto-yes when this job starts running. All questions will be accepted.
+            </span>
+          </div>
+        </>
       )}
 
       <div className="form-group">
@@ -1382,6 +1481,19 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             </div>
           )}
         </div>
+
+        {pendingAutoYes && (
+          <ConfirmDialog
+            message="Enable auto-yes for this job? All future questions will be automatically accepted with 'Yes' whenever this job is running."
+            onConfirm={() => {
+              setForm({ ...form, auto_yes: true });
+              setPendingAutoYes(false);
+            }}
+            onCancel={() => setPendingAutoYes(false)}
+            confirmLabel="Enable"
+            confirmClassName="btn btn-sm"
+          />
+        )}
       </div>
     );
   }
@@ -1436,6 +1548,19 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       <FieldGroup title="Runtime">
         {renderRuntimeFields()}
       </FieldGroup>
+
+      {pendingAutoYes && (
+        <ConfirmDialog
+          message="Enable auto-yes for this job? All future questions will be automatically accepted with 'Yes' whenever this job is running."
+          onConfirm={() => {
+            setForm({ ...form, auto_yes: true });
+            setPendingAutoYes(false);
+          }}
+          onCancel={() => setPendingAutoYes(false)}
+          confirmLabel="Enable"
+          confirmClassName="btn btn-sm"
+        />
+      )}
     </div>
   );
 }

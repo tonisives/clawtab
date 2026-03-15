@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { RemoteJob } from "@clawtab/shared";
+import type { RemoteJob, JobSortMode } from "@clawtab/shared";
 import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import {
   JobListView,
@@ -27,12 +27,14 @@ interface JobsTabProps {
   pendingTemplateId?: string | null;
   onTemplateHandled?: () => void;
   createJobKey?: number;
+  importCwtKey?: number;
 }
 
-export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: JobsTabProps) {
+export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey }: JobsTabProps) {
   const core = useJobsCore(transport);
   const actions = useJobActions(transport, core.reloadStatuses);
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
+  const [sortMode, setSortMode] = useState<JobSortMode>("name");
 
   // Navigation state
   const [editingJob, setEditingJob] = useState<Job | null>(null);
@@ -217,6 +219,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
   useEffect(() => {
     if (createJobKey && createJobKey > 0) setIsCreating(true);
   }, [createJobKey]);
+
+  useEffect(() => {
+    if (importCwtKey && importCwtKey > 0) handleImportCwt();
+  }, [importCwtKey]);
 
   // Scroll to top when entering sub-views
   useEffect(() => {
@@ -619,9 +625,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
     <div className="settings-section">
       <div className="section-header">
         <h2>Jobs</h2>
-        <button className="btn btn-sm" onClick={handleImportCwt} style={{ marginLeft: "auto" }}>
-          Import .cwt
-        </button>
       </div>
 
       <JobListView
@@ -631,6 +634,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey }: 
         collapsedGroups={core.collapsedGroups}
         onToggleGroup={core.toggleGroup}
         groupOrder={groupOrder}
+        sortMode={sortMode}
+        onSortChange={setSortMode}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
         onRunAgent={handleRunAgent}

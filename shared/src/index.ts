@@ -4,6 +4,7 @@ export type {
   DesktopJob,
   JobType,
   JobStatus,
+  JobSortMode,
   RunRecord,
   RunDetail,
   TelegramLogMode,

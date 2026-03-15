@@ -197,6 +197,8 @@ pub fn import_job_folder(
         skill_paths: Vec::new(),
         params: Vec::new(),
         kill_on_end: true,
+        auto_yes: false,
+        added_at: Some(chrono::Utc::now().to_rfc3339()),
     };
 
     let slug = crate::config::jobs::derive_slug(
@@ -290,10 +292,11 @@ pub async fn run_job_now(
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
+    let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job(
+        scheduler::executor::execute_job_with_auto_yes(
             &job,
             &secrets,
             &history,
@@ -303,6 +306,7 @@ pub async fn run_job_now(
             &active_agents,
             &relay,
             &params,
+            Some(&auto_yes_panes),
         )
         .await;
     });
@@ -387,10 +391,11 @@ pub async fn restart_job(
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
+    let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job(
+        scheduler::executor::execute_job_with_auto_yes(
             &job,
             &secrets,
             &history,
@@ -400,6 +405,7 @@ pub async fn restart_job(
             &active_agents,
             &relay,
             &params,
+            Some(&auto_yes_panes),
         )
         .await;
     });
@@ -1123,6 +1129,8 @@ pub fn build_agent_job(
         skill_paths: Vec::new(),
         params: Vec::new(),
         kill_on_end: true,
+        auto_yes: false,
+        added_at: Some(chrono::Utc::now().to_rfc3339()),
     })
 }
 
