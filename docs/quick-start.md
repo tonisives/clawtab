@@ -8,14 +8,22 @@
 
 ## Installation
 
-Build from source:
+### Homebrew (recommended)
+
+```bash
+brew install clawtab
+```
+
+This installs the `clawtab` GUI app, `cwtctl` CLI, and `cwttui` terminal UI.
+
+### Build from source
 
 ```bash
 pnpm install
 cargo tauri build
 ```
 
-This produces three binaries:
+Both methods produce three binaries:
 
 | Binary | Purpose |
 |--------|---------|

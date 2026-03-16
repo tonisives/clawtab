@@ -22,7 +22,7 @@ The hosted relay is at `https://relay.clawtab.cc`. You can also self-host the re
 
 ## Agent Question Detection
 
-![Remote question answering](remote-demo.gif)
+![Remote question answering](assets/remote-demo.gif)
 
 When running multiple Claude Code agents across tmux panes, each agent may pause to ask questions (file permissions, approach decisions, clarifications). ClawTab detects these automatically by parsing the terminal output of each pane.
 
