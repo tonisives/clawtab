@@ -40,6 +40,45 @@ export function shortenPath(path: string | null | undefined): string {
   return path.replace(/^\/Users\/[^/]+/, "~");
 }
 
+/**
+ * Compact multi-schedule cron expressions that share the same day fields.
+ * e.g. "0 18 * * 5,1,6,0,4,2,3 | 0 12 * * 5,1,6,0,4,2,3" -> "12:00, 18:00 * * 5,1,6,0,4,2,3"
+ * Single cron or non-matching schedules are returned as-is.
+ */
+export function compactCron(cron: string): string {
+  const parts = cron.split("|").map((s) => s.trim());
+  if (parts.length <= 1) return cron;
+
+  // Parse each part into [min, hour, dom, month, dow]
+  const parsed = parts.map((p) => p.split(/\s+/));
+  if (parsed.some((p) => p.length < 5)) return cron;
+
+  // Group by day fields (dom + month + dow)
+  const groups = new Map<string, { min: string; hour: string }[]>();
+  for (const p of parsed) {
+    const dayKey = p.slice(2).join(" ");
+    const entry = { min: p[0], hour: p[1] };
+    const existing = groups.get(dayKey);
+    if (existing) existing.push(entry);
+    else groups.set(dayKey, [entry]);
+  }
+
+  // If everything is one group, compact it
+  if (groups.size === 1) {
+    const [dayFields, times] = [...groups.entries()][0];
+    const sorted = times
+      .map((t) => ({ h: parseInt(t.hour, 10), m: parseInt(t.min, 10), raw: t }))
+      .sort((a, b) => a.h - b.h || a.m - b.m);
+    const timeStr = sorted
+      .map((t) => `${String(t.h).padStart(2, "0")}:${String(t.m).padStart(2, "0")}`)
+      .join(", ");
+    return `${timeStr}  ${dayFields}`;
+  }
+
+  // Multiple different day groups - just return original
+  return cron;
+}
+
 /** Abbreviate intermediate segments to first char: ~/w/t/clawtab */
 export function compactPath(path: string | null | undefined): string {
   if (!path) return "";

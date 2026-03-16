@@ -2,7 +2,7 @@ import { TouchableOpacity, View, Text, StyleSheet } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { typeIcon } from "../util/jobs";
-import { timeAgo } from "../util/format";
+import { timeAgo, compactCron } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -41,7 +41,7 @@ export function JobCard({
             {job.name}
           </Text>
           <View style={styles.meta}>
-            {job.cron ? <Text style={styles.cronText}>{job.cron}</Text> : null}
+            {job.cron ? <Text style={styles.cronText}>{compactCron(job.cron)}</Text> : null}
             {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
           </View>
         </View>

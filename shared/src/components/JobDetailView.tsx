@@ -19,7 +19,7 @@ import { LogViewer } from "./LogViewer";
 import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
-import { formatTime, formatDuration } from "../util/format";
+import { formatTime, formatDuration, compactCron } from "../util/format";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
 import { isFreetextOption } from "../util/jobs";
@@ -276,7 +276,7 @@ export function JobDetailView({
           </View>
           {job.cron ? (
             <View style={styles.infoPill}>
-              <Text style={styles.cronText}>{job.cron}</Text>
+              <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
             </View>
           ) : null}
           {isManual ? (

@@ -93,7 +93,15 @@ impl Hub {
     pub fn add_mobile(&mut self, user_id: Uuid, conn: MobileConnection) {
         // Send current desktop status to the newly connected mobile
         if let Some(desktops) = self.desktops.get(&user_id) {
+            tracing::info!(
+                "add_mobile: user={user_id} found {} desktop(s)",
+                desktops.len()
+            );
             for desktop in desktops {
+                tracing::info!(
+                    "add_mobile: sending desktop_status online=true for device={}",
+                    desktop.device_id
+                );
                 if let Ok(json) = serde_json::to_string(&ServerMessage::DesktopStatus {
                     device_id: desktop.device_id.to_string(),
                     device_name: desktop.device_name.clone(),
@@ -102,6 +110,10 @@ impl Hub {
                     let _ = conn.tx.send(json);
                 }
             }
+        } else {
+            tracing::warn!(
+                "add_mobile: user={user_id} has NO desktops in hub"
+            );
         }
 
         // Replay last claude_questions so the mobile sees active notifications

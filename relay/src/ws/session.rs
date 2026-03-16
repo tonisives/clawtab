@@ -203,6 +203,10 @@ async fn handle_mobile_message(state: &AppState, user_id: Uuid, text: &str) {
     };
 
     let Some(target) = target_user_id else {
+        tracing::warn!(
+            "DESKTOP_OFFLINE: user={user_id} msg_type={} - no desktop in hub",
+            &text[..text.len().min(80)]
+        );
         let error = ServerMessage::Error {
             id: extract_id(&msg),
             code: error_codes::DESKTOP_OFFLINE.into(),
