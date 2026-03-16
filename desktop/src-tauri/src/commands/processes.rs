@@ -90,6 +90,7 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
     };
 
     let mut seen_panes = HashSet::new();
+    let mut seen_cwds = HashSet::new();
     let mut results = Vec::new();
 
     for line in stdout.lines() {
@@ -113,6 +114,11 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
         }
 
         if tracked_panes.contains(pane_id) {
+            continue;
+        }
+
+        // Deduplicate by CWD: split panes in the same window show as one process
+        if !seen_cwds.insert(cwd.to_string()) {
             continue;
         }
 

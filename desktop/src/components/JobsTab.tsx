@@ -578,21 +578,32 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   if (viewingProcess) {
     return (
-      <DetectedProcessDetail
-        process={viewingProcess}
-        questions={questions}
-        onBack={() => setViewingProcess(null)}
-        onDismissQuestion={(qId) => {
-          dismissedRef.current.set(qId, Date.now());
-          setQuestions((prev) => prev.filter((q) => q.question_id !== qId));
-          startFastQuestionPoll();
-        }}
-        autoYesActive={autoYesPaneIds.has(viewingProcess.pane_id)}
-        onToggleAutoYes={() => {
-          const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
-          if (paneQuestion) handleToggleAutoYes(paneQuestion);
-        }}
-      />
+      <>
+        <DetectedProcessDetail
+          process={viewingProcess}
+          questions={questions}
+          onBack={() => setViewingProcess(null)}
+          onDismissQuestion={(qId) => {
+            dismissedRef.current.set(qId, Date.now());
+            setQuestions((prev) => prev.filter((q) => q.question_id !== qId));
+            startFastQuestionPoll();
+          }}
+          autoYesActive={autoYesPaneIds.has(viewingProcess.pane_id)}
+          onToggleAutoYes={() => {
+            const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
+            if (paneQuestion) handleToggleAutoYes(paneQuestion);
+          }}
+        />
+        {pendingAutoYes && (
+          <ConfirmDialog
+            message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
+            onConfirm={confirmAutoYes}
+            onCancel={() => setPendingAutoYes(null)}
+            confirmLabel="Enable"
+            confirmClassName="btn btn-sm"
+          />
+        )}
+      </>
     );
   }
 
