@@ -105,7 +105,7 @@ export function DetectedProcessDetail({
   }, [process.tmux_session, process.window_name]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%", minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <button className="btn btn-sm" onClick={onBack}>
           Back
@@ -180,7 +180,7 @@ export function DetectedProcessDetail({
       <LogViewer
         content={logs}
         className="log-viewer"
-        style={{ flex: 1, minHeight: 200 }}
+        style={{ flex: 1, minHeight: 0, height: 0, maxHeight: "none", overflowY: "auto" }}
       />
 
       {options.length > 0 && (
