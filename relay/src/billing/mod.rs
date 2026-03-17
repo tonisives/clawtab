@@ -8,6 +8,7 @@ use crate::error::AppError;
 pub struct SubscriptionInfo {
     pub status: String,
     pub current_period_end: Option<DateTime<Utc>>,
+    pub provider: Option<String>,
 }
 
 /// Returns true if the user has an active subscription (or server is self-hosted).
@@ -41,15 +42,26 @@ pub async fn is_subscribed(pool: &PgPool, config: &Config, user_id: Uuid) -> Res
 }
 
 pub async fn get_subscription(pool: &PgPool, user_id: Uuid) -> Result<Option<SubscriptionInfo>, AppError> {
-    let row: Option<(String, Option<DateTime<Utc>>)> = sqlx::query_as(
-        "SELECT status, current_period_end FROM subscriptions WHERE user_id = $1"
+    let row: Option<(String, Option<DateTime<Utc>>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT status, current_period_end, stripe_subscription_id, apple_original_transaction_id \
+         FROM subscriptions WHERE user_id = $1"
     )
     .bind(user_id)
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(|(status, end)| SubscriptionInfo {
-        status,
-        current_period_end: end,
+    Ok(row.map(|(status, end, stripe_id, apple_id)| {
+        let provider = if apple_id.is_some() {
+            Some("apple".to_string())
+        } else if stripe_id.is_some() {
+            Some("stripe".to_string())
+        } else {
+            None
+        };
+        SubscriptionInfo {
+            status,
+            current_period_end: end,
+            provider,
+        }
     }))
 }

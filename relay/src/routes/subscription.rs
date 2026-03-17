@@ -12,6 +12,7 @@ pub struct SubscriptionStatus {
     pub subscribed: bool,
     pub status: Option<String>,
     pub current_period_end: Option<String>,
+    pub provider: Option<String>,
 }
 
 pub async fn status(
@@ -27,5 +28,6 @@ pub async fn status(
         current_period_end: sub
             .as_ref()
             .and_then(|s| s.current_period_end.map(|e| e.to_rfc3339())),
+        provider: sub.as_ref().and_then(|s| s.provider.clone()),
     }))
 }

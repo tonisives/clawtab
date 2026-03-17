@@ -316,6 +316,7 @@ export interface SubscriptionStatus {
   subscribed: boolean;
   status: string | null;
   current_period_end: string | null;
+  provider: string | null;
 }
 
 export async function getSubscriptionStatus(): Promise<SubscriptionStatus> {

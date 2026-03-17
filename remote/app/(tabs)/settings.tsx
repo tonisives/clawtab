@@ -145,8 +145,7 @@ export default function SettingsScreen() {
   const handleManageBilling = async () => {
     setActionLoading(true);
     try {
-      if (Platform.OS === "ios") {
-        // On iOS, open the App Store subscription management
+      if (sub?.provider === "apple") {
         await openUrl("https://apps.apple.com/account/subscriptions");
       } else {
         const { url } = await api.createPortal();
