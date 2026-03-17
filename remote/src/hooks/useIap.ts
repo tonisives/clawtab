@@ -22,11 +22,13 @@ export function useIap() {
     if (!RNIap || Platform.OS !== "ios") return;
 
     let mounted = true;
+    let connected = false;
     const iap = RNIap;
 
     (async () => {
       try {
         await iap.initConnection();
+        connected = true;
         const products = await iap.getSubscriptions({ skus: [IAP_PRODUCT_ID] });
         if (!mounted) return;
         if (products.length > 0) {
@@ -35,13 +37,20 @@ export function useIap() {
           setPrice(product.localizedPrice ?? product.price ?? null);
         }
       } catch (e) {
-        console.log("[iap] init error:", e);
+        // E_IAP_NOT_AVAILABLE is normal on dev builds without IAP capability
+        if (String(e).includes("E_IAP_NOT_AVAILABLE")) {
+          console.log("[iap] not available (expected on dev builds)");
+        } else {
+          console.log("[iap] init error:", e);
+        }
       }
     })();
 
     return () => {
       mounted = false;
-      iap.endConnection();
+      if (connected) {
+        iap.endConnection();
+      }
     };
   }, []);
 
