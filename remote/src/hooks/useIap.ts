@@ -29,15 +29,14 @@ export function useIap() {
       try {
         await iap.initConnection();
         connected = true;
-        const products = await iap.getSubscriptions({ skus: [IAP_PRODUCT_ID] });
+        const products = await iap.fetchProducts({ skus: [IAP_PRODUCT_ID], type: "subs" });
         if (!mounted) return;
         if (products.length > 0) {
           setAvailable(true);
           const product = products[0];
-          setPrice(product.localizedPrice ?? product.price ?? null);
+          setPrice(product.displayPrice ?? product.price ?? null);
         }
       } catch (e) {
-        // E_IAP_NOT_AVAILABLE is normal on dev builds without IAP capability
         if (String(e).includes("E_IAP_NOT_AVAILABLE")) {
           console.log("[iap] not available (expected on dev builds)");
         } else {
@@ -60,7 +59,6 @@ export function useIap() {
 
     setPurchasing(true);
     try {
-      // Clean up any previous listener
       if (purchaseListenerRef.current) {
         purchaseListenerRef.current.remove();
         purchaseListenerRef.current = null;
@@ -72,24 +70,19 @@ export function useIap() {
         const listener = iap.purchaseUpdatedListener(async (purchase) => {
           if (resolved) return;
 
-          const receipt = purchase.transactionReceipt;
-          if (!receipt) {
+          if (!purchase.transactionId) {
             resolved = true;
             resolve(false);
             return;
           }
 
           try {
-            // Send to our server to activate subscription
             await api.verifyIapReceipt({
               original_transaction_id: purchase.originalTransactionIdentifierIOS ?? purchase.transactionId ?? "",
               product_id: purchase.productId,
-              expires_date_ms: purchase.transactionDate
-                ? purchase.transactionDate + 30 * 24 * 60 * 60 * 1000
-                : undefined,
+              expires_date_ms: purchase.expirationDateIOS ?? undefined,
             });
 
-            // Finish the transaction so Apple knows we delivered
             await iap.finishTransaction({ purchase, isConsumable: false });
 
             resolved = true;
@@ -110,15 +103,13 @@ export function useIap() {
           resolve(false);
         });
 
-        // Store error listener for cleanup too
         const originalRemove = listener.remove;
         listener.remove = () => {
           originalRemove();
           errorListener.remove();
         };
 
-        // Initiate the purchase
-        iap.requestSubscription({ sku: IAP_PRODUCT_ID }).catch((e) => {
+        iap.requestPurchase({ request: { sku: IAP_PRODUCT_ID } }).catch((e) => {
           if (resolved) return;
           console.log("[iap] request error:", e);
           resolved = true;
@@ -147,9 +138,7 @@ export function useIap() {
       await api.verifyIapReceipt({
         original_transaction_id: sub.originalTransactionIdentifierIOS ?? sub.transactionId ?? "",
         product_id: sub.productId,
-        expires_date_ms: sub.transactionDate
-          ? sub.transactionDate + 30 * 24 * 60 * 60 * 1000
-          : undefined,
+        expires_date_ms: sub.expirationDateIOS ?? undefined,
       });
 
       return true;
