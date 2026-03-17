@@ -7,6 +7,8 @@ mod device;
 mod debug;
 mod google_auth;
 mod google_callback;
+mod apple_auth;
+mod iap;
 mod notifications;
 mod share;
 mod subscription;
@@ -64,6 +66,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/refresh", post(refresh::refresh))
         .route("/auth/google", post(google_auth::google_auth))
         .route("/auth/google/callback", get(google_callback::google_callback))
+        .route("/auth/apple", post(apple_auth::apple_auth))
+        .route("/iap/app-store-notification", post(iap::app_store_notification))
         .layer(GovernorLayer { config: rate_limit_config });
 
     let authenticated = Router::new()
@@ -71,6 +75,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/devices", get(device::list))
         .route("/devices/{id}", delete(device::remove))
         .route("/subscription/status", get(subscription::status))
+        .route("/iap/verify-receipt", post(iap::verify_receipt))
         .route("/notifications/history", get(notifications::history))
         .route("/debug/test-push", post(debug::test_push))
         .route("/api/answer", post(answer::answer))

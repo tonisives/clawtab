@@ -25,6 +25,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "cc.clawtab",
+      "usesAppleSignIn": true,
       "entitlements": {
         "keychain-access-groups": ["$(AppIdentifierPrefix)cc.clawtab"],
         "aps-environment": "production"
@@ -47,6 +48,7 @@
       "expo-router",
       "expo-secure-store",
       "expo-web-browser",
+      "expo-apple-authentication",
       [
         "expo-notifications",
         {

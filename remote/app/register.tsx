@@ -16,12 +16,18 @@ import { useAuthStore } from "../src/store/auth";
 import { colors } from "../src/theme/colors";
 import { radius, spacing } from "../src/theme/spacing";
 
+let AppleAuthentication: any = null;
+if (Platform.OS === "ios") {
+  AppleAuthentication = require("expo-apple-authentication");
+}
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function RegisterScreen() {
   const router = useRouter();
   const register = useAuthStore((s) => s.register);
   const googleLogin = useAuthStore((s) => s.googleLogin);
+  const appleLogin = useAuthStore((s) => s.appleLogin);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,6 +46,7 @@ export default function RegisterScreen() {
     setError(null);
     try {
       await register(email.trim(), password, displayName.trim() || undefined);
+      router.replace("/(tabs)");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -60,6 +67,35 @@ export default function RegisterScreen() {
       }
     } catch (e) {
       setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAppleSignUp = async () => {
+    if (!AppleAuthentication) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (credential.identityToken) {
+        const name = [credential.fullName?.givenName, credential.fullName?.familyName]
+          .filter(Boolean)
+          .join(" ") || undefined;
+        await appleLogin(credential.identityToken, name, credential.email ?? undefined);
+        router.replace("/(tabs)");
+      } else {
+        setError("No identity token received from Apple");
+      }
+    } catch (e: any) {
+      if (e.code !== "ERR_REQUEST_CANCELED") {
+        setError(e.message || "Apple sign-up failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -146,6 +182,16 @@ export default function RegisterScreen() {
           >
             <Text style={styles.googleBtnText}>Sign up with Google</Text>
           </Pressable>
+
+          {Platform.OS === "ios" && (
+            <Pressable
+              style={[styles.appleBtn, loading && styles.btnDisabled]}
+              onPress={handleAppleSignUp}
+              disabled={loading}
+            >
+              <Text style={styles.appleBtnText}>Sign up with Apple</Text>
+            </Pressable>
+          )}
 
           <Pressable
             style={styles.backLink}
@@ -247,6 +293,18 @@ const styles = StyleSheet.create({
   },
   googleBtnText: {
     color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  appleBtn: {
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  appleBtnText: {
+    color: "#000",
     fontSize: 16,
     fontWeight: "600",
   },

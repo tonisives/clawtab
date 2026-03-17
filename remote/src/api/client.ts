@@ -282,6 +282,36 @@ export async function googleAuth(idToken: string): Promise<AuthResponse> {
   return resp;
 }
 
+export async function appleAuth(
+  idToken: string,
+  displayName?: string,
+  email?: string,
+): Promise<AuthResponse> {
+  const resp = await request<AuthResponse>("/auth/apple", {
+    method: "POST",
+    body: JSON.stringify({ id_token: idToken, display_name: displayName, email }),
+  });
+
+  await storage.setItem(KEYS.accessToken, resp.access_token);
+  await storage.setItem(KEYS.refreshToken, resp.refresh_token);
+  await storage.setItem(KEYS.userId, resp.user_id);
+
+  return resp;
+}
+
+export interface VerifyReceiptRequest {
+  original_transaction_id: string;
+  product_id: string;
+  expires_date_ms?: number;
+}
+
+export async function verifyIapReceipt(req: VerifyReceiptRequest): Promise<{ subscribed: boolean }> {
+  return request<{ subscribed: boolean }>("/iap/verify-receipt", {
+    method: "POST",
+    body: JSON.stringify(req),
+  }, true);
+}
+
 export interface SubscriptionStatus {
   subscribed: boolean;
   status: string | null;

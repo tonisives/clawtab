@@ -1,6 +1,7 @@
 mod password;
 mod jwt;
 pub mod google;
+pub mod apple;
 
 pub use password::{hash_password, verify_password};
 pub use jwt::{Claims, create_access_token, validate_access_token};

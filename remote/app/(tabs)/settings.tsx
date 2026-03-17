@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, Platform } from "react-native";
 import { useAuthStore } from "../../src/store/auth";
 import { useWsStore } from "../../src/store/ws";
 import { useJobsStore } from "../../src/store/jobs";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { DeviceCard } from "../../src/components/DeviceCard";
 import { useResponsive } from "../../src/hooks/useResponsive";
+import { useIap } from "../../src/hooks/useIap";
 import { ShareSection } from "@clawtab/shared";
 import * as api from "../../src/api/client";
 import { confirm, alertError, openUrl } from "../../src/lib/platform";
@@ -56,6 +57,8 @@ export default function SettingsScreen() {
   const [devicesLoading, setDevicesLoading] = useState(true);
   const subscriptionRequired = useWsStore((s) => s.subscriptionRequired);
 
+  const iap = useIap();
+
   const [shares, setShares] = useState<api.SharesResponse>({ shared_by_me: [], shared_with_me: [] });
   const [sharesLoading, setSharesLoading] = useState(true);
 
@@ -103,10 +106,35 @@ export default function SettingsScreen() {
   const handleSubscribe = async () => {
     setActionLoading(true);
     try {
-      const { url } = await api.createCheckout();
-      await openUrl(url);
-      const updated = await api.getSubscriptionStatus();
-      setSub(updated);
+      if (iap.available) {
+        const success = await iap.purchase();
+        if (success) {
+          const updated = await api.getSubscriptionStatus();
+          setSub(updated);
+        }
+      } else {
+        const { url } = await api.createCheckout();
+        await openUrl(url);
+        const updated = await api.getSubscriptionStatus();
+        setSub(updated);
+      }
+    } catch (e) {
+      alertError("Error", e instanceof Error ? e.message : String(e));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRestorePurchases = async () => {
+    setActionLoading(true);
+    try {
+      const success = await iap.restore();
+      if (success) {
+        const updated = await api.getSubscriptionStatus();
+        setSub(updated);
+      } else {
+        alertError("Restore", "No active subscription found");
+      }
     } catch (e) {
       alertError("Error", e instanceof Error ? e.message : String(e));
     } finally {
@@ -117,8 +145,13 @@ export default function SettingsScreen() {
   const handleManageBilling = async () => {
     setActionLoading(true);
     try {
-      const { url } = await api.createPortal();
-      await openUrl(url);
+      if (Platform.OS === "ios") {
+        // On iOS, open the App Store subscription management
+        await openUrl("https://apps.apple.com/account/subscriptions");
+      } else {
+        const { url } = await api.createPortal();
+        await openUrl(url);
+      }
       const updated = await api.getSubscriptionStatus();
       setSub(updated);
     } catch (e) {
@@ -237,19 +270,34 @@ export default function SettingsScreen() {
                     disabled={actionLoading}
                   >
                     <Text style={styles.billingBtnText}>
-                      {actionLoading ? "Loading..." : "Manage Billing"}
+                      {actionLoading ? "Loading..." : "Manage Subscription"}
                     </Text>
                   </Pressable>
                 ) : (
-                  <Pressable
-                    style={[styles.subscribeBtn, actionLoading && styles.btnDisabled]}
-                    onPress={handleSubscribe}
-                    disabled={actionLoading}
-                  >
-                    <Text style={styles.subscribeBtnText}>
-                      {actionLoading ? "Loading..." : "Subscribe"}
-                    </Text>
-                  </Pressable>
+                  <>
+                    <Pressable
+                      style={[styles.subscribeBtn, (actionLoading || iap.purchasing) && styles.btnDisabled]}
+                      onPress={handleSubscribe}
+                      disabled={actionLoading || iap.purchasing}
+                    >
+                      <Text style={styles.subscribeBtnText}>
+                        {actionLoading || iap.purchasing
+                          ? "Loading..."
+                          : iap.price
+                            ? `Subscribe - ${iap.price}/mo`
+                            : "Subscribe"}
+                      </Text>
+                    </Pressable>
+                    {iap.available && (
+                      <Pressable
+                        style={[styles.billingBtn, actionLoading && styles.btnDisabled]}
+                        onPress={handleRestorePurchases}
+                        disabled={actionLoading || iap.purchasing}
+                      >
+                        <Text style={styles.billingBtnText}>Restore Purchases</Text>
+                      </Pressable>
+                    )}
+                  </>
                 )}
               </>
             )}

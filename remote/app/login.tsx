@@ -33,12 +33,19 @@ if (Platform.OS !== "web") {
   }
 }
 
+// Native-only: conditionally import Apple Authentication
+let AppleAuthentication: any = null;
+if (Platform.OS === "ios") {
+  AppleAuthentication = require("expo-apple-authentication");
+}
+
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
   const login = useAuthStore((s) => s.login);
   const googleLogin = useAuthStore((s) => s.googleLogin);
+  const appleLogin = useAuthStore((s) => s.appleLogin);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -105,6 +112,35 @@ export default function LoginScreen() {
     } catch (e: any) {
       console.log("[google] error:", e.message, e.code);
       setError(e.message || "Google sign-in failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    if (!AppleAuthentication) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (credential.identityToken) {
+        const name = [credential.fullName?.givenName, credential.fullName?.familyName]
+          .filter(Boolean)
+          .join(" ") || undefined;
+        await appleLogin(credential.identityToken, name, credential.email ?? undefined);
+        router.replace("/(tabs)");
+      } else {
+        setError("No identity token received from Apple");
+      }
+    } catch (e: any) {
+      if (e.code !== "ERR_REQUEST_CANCELED") {
+        setError(e.message || "Apple sign-in failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -196,6 +232,16 @@ export default function LoginScreen() {
           >
             <Text style={styles.googleBtnText}>Sign in with Google</Text>
           </Pressable>
+
+          {Platform.OS === "ios" && (
+            <Pressable
+              style={[styles.appleBtn, loading && styles.btnDisabled]}
+              onPress={handleAppleLogin}
+              disabled={loading}
+            >
+              <Text style={styles.appleBtnText}>Sign in with Apple</Text>
+            </Pressable>
+          )}
 
           <View style={styles.links}>
             <Pressable onPress={() => router.push("/register")}>
@@ -306,6 +352,18 @@ const styles = StyleSheet.create({
   },
   googleBtnText: {
     color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  appleBtn: {
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  appleBtnText: {
+    color: "#000",
     fontSize: 16,
     fontWeight: "600",
   },
