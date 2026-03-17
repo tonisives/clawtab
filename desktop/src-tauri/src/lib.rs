@@ -510,6 +510,7 @@ pub fn run() {
 
             // Start scheduler
             let handle = scheduler::start(
+                app.handle().clone(),
                 jobs_for_scheduler,
                 secrets_for_scheduler,
                 history_for_scheduler,

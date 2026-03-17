@@ -59,6 +59,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [autoYesPaneIds, setAutoYesPaneIds] = useState<Set<string>>(new Set());
   const [pendingAutoYes, setPendingAutoYes] = useState<{ paneId: string; title: string } | null>(null);
 
+  // Missed cron jobs
+  const [missedCronJobs, setMissedCronJobs] = useState<string[]>([]);
+
   // --- Question polling ---
 
   const loadQuestions = useCallback(() => {
@@ -190,6 +193,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     const unlistenPromise = listen("jobs-changed", () => { core.reload(); });
     return () => { unlistenPromise.then((fn) => fn()); };
   }, [core.reload]);
+
+  useEffect(() => {
+    const unlistenPromise = listen<string[]>("missed-cron-jobs", (event) => {
+      if (event.payload.length > 0) setMissedCronJobs(event.payload);
+    });
+    return () => { unlistenPromise.then((fn) => fn()); };
+  }, []);
 
   // Sync viewing state with reloaded data
   useEffect(() => {
@@ -445,6 +455,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (!importState || importState.step !== "confirm-duplicate") return;
     await pickDestAndImport(importState.source, importState.jobName);
   }, [importState, pickDestAndImport]);
+
+  const handleRunMissedJobs = useCallback(async () => {
+    const jobNames = missedCronJobs;
+    setMissedCronJobs([]);
+    for (const name of jobNames) {
+      const job = (core.jobs as Job[]).find((j) => j.name === name);
+      if (job) {
+        await actions.runJob(job.slug);
+      }
+    }
+  }, [missedCronJobs, core.jobs, actions]);
 
   // --- Notification visibility (animation delay) ---
 
@@ -732,6 +753,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onCancel={() => setImportError(null)}
           confirmLabel="OK"
           confirmClassName="btn btn-sm"
+        />
+      )}
+
+      {missedCronJobs.length > 0 && (
+        <ConfirmDialog
+          message={`${missedCronJobs.length} missed cron job${missedCronJobs.length > 1 ? "s" : ""} detected:\n\n${missedCronJobs.map((n) => "  - " + n).join("\n")}\n\nRun them now?`}
+          onConfirm={handleRunMissedJobs}
+          onCancel={() => setMissedCronJobs([])}
+          confirmLabel="Run All"
+          confirmClassName="btn btn-primary btn-sm"
         />
       )}
     </div>

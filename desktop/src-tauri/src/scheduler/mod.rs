@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use chrono::{Duration, Utc};
 use cron::Schedule;
 
+use tauri::Emitter;
+
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
@@ -20,6 +22,7 @@ pub struct SchedulerHandle {
 }
 
 pub fn start(
+    app_handle: tauri::AppHandle,
     jobs_config: Arc<Mutex<JobsConfig>>,
     secrets: Arc<Mutex<SecretsManager>>,
     history: Arc<Mutex<HistoryStore>>,
@@ -30,12 +33,13 @@ pub fn start(
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
 ) -> SchedulerHandle {
     let handle = tauri::async_runtime::spawn(async move {
-        run_loop(jobs_config, secrets, history, settings, job_status, active_agents, relay, auto_yes_panes).await;
+        run_loop(app_handle, jobs_config, secrets, history, settings, job_status, active_agents, relay, auto_yes_panes).await;
     });
     SchedulerHandle { _handle: handle }
 }
 
 async fn run_loop(
+    app_handle: tauri::AppHandle,
     jobs_config: Arc<Mutex<JobsConfig>>,
     secrets: Arc<Mutex<SecretsManager>>,
     history: Arc<Mutex<HistoryStore>>,
@@ -45,8 +49,8 @@ async fn run_loop(
     relay: Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
 ) {
-    // Catch up on missed cron triggers since the last run of each job.
-    // This handles the case where the app was not running when a job was scheduled.
+    // Check for missed cron triggers since the last run of each job.
+    // Emits an event to the frontend so the user can decide whether to run them.
     {
         let now = Utc::now();
         let lookback_limit = now - Duration::hours(24);
@@ -54,6 +58,8 @@ async fn run_loop(
             let config = jobs_config.lock().unwrap();
             config.jobs.clone()
         };
+
+        let mut missed_jobs: Vec<String> = Vec::new();
 
         for job in &jobs {
             if !job.enabled || job.cron.is_empty() {
@@ -89,24 +95,14 @@ async fn run_loop(
             });
 
             if missed {
-                log::info!("Catchup trigger for missed job '{}'", job.name);
-                let job = job.clone();
-                let secrets = Arc::clone(&secrets);
-                let history = Arc::clone(&history);
-                let settings = Arc::clone(&settings);
-                let job_status = Arc::clone(&job_status);
-                let active_agents = Arc::clone(&active_agents);
-                let relay = Arc::clone(&relay);
-                let auto_yes_panes = Arc::clone(&auto_yes_panes);
-                tauri::async_runtime::spawn(async move {
-                    executor::execute_job_with_auto_yes(
-                        &job, &secrets, &history, &settings, &job_status, "cron",
-                        &active_agents, &relay, &std::collections::HashMap::new(),
-                        Some(&auto_yes_panes),
-                    )
-                    .await;
-                });
+                log::info!("Missed cron job detected: '{}'", job.name);
+                missed_jobs.push(job.name.clone());
             }
+        }
+
+        if !missed_jobs.is_empty() {
+            log::info!("Emitting missed-cron-jobs event with {} jobs", missed_jobs.len());
+            let _ = app_handle.emit("missed-cron-jobs", missed_jobs);
         }
     }
 
@@ -169,12 +165,46 @@ async fn run_loop(
 }
 
 fn parse_single_cron(cron: &str) -> Option<Schedule> {
-    let expr = if cron.split_whitespace().count() == 5 {
-        format!("0 {}", cron)
+    let parts: Vec<&str> = cron.split_whitespace().collect();
+    let expr = if parts.len() == 5 {
+        // 5-field cron: min hour dom month dow - prepend seconds
+        let dow = translate_dow(parts[4]);
+        format!("0 {} {} {} {} {}", parts[0], parts[1], parts[2], parts[3], dow)
+    } else if parts.len() == 6 {
+        // 6-field cron: sec min hour dom month dow
+        let dow = translate_dow(parts[5]);
+        format!("{} {} {} {} {} {}", parts[0], parts[1], parts[2], parts[3], parts[4], dow)
     } else {
         cron.to_string()
     };
     expr.parse().ok()
+}
+
+/// Translate day-of-week values from standard cron (0=Sun, 1-6=Mon-Sat)
+/// to the `cron` crate format (1=Sun, 2-7=Mon-Sat). Handles comma-separated
+/// lists and ranges.
+fn translate_dow(dow: &str) -> String {
+    if dow == "*" || dow == "?" {
+        return dow.to_string();
+    }
+    dow.split(',')
+        .map(|part| {
+            if part.contains('-') {
+                // Handle ranges like 0-5
+                let bounds: Vec<&str> = part.split('-').collect();
+                if bounds.len() == 2 {
+                    let lo = bounds[0].parse::<u8>().map(|v| if v <= 6 { v + 1 } else { v }).map(|v| v.to_string()).unwrap_or_else(|_| bounds[0].to_string());
+                    let hi = bounds[1].parse::<u8>().map(|v| if v <= 6 { v + 1 } else { v }).map(|v| v.to_string()).unwrap_or_else(|_| bounds[1].to_string());
+                    format!("{}-{}", lo, hi)
+                } else {
+                    part.to_string()
+                }
+            } else {
+                part.parse::<u8>().map(|v| if v <= 6 { v + 1 } else { v }).map(|v| v.to_string()).unwrap_or_else(|_| part.to_string())
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn parse_cron(cron: &str) -> Option<Vec<Schedule>> {

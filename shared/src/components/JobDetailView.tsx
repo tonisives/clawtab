@@ -92,6 +92,7 @@ export function JobDetailView({
   const isPaused = state === "paused";
   const isManual = !job.cron;
 
+  const [runPending, setRunPending] = useState(false);
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
@@ -131,6 +132,14 @@ export function JobDetailView({
       scrollRef.current?.scrollToEnd({ animated: true });
     }
   }, [logs, isRunning, outputCollapsed]);
+
+  // Clear run-pending spinner once the job actually starts (or timeout after 10s)
+  useEffect(() => {
+    if (!runPending) return;
+    if (state === "running") { setRunPending(false); return; }
+    const timer = setTimeout(() => setRunPending(false), 10000);
+    return () => clearTimeout(timer);
+  }, [runPending, state]);
 
   // Reload runs when status changes
   useEffect(() => {
@@ -189,6 +198,7 @@ export function JobDetailView({
         return;
       }
       try {
+        if (action === "run" || action === "restart") setRunPending(true);
         switch (action) {
           case "run":
             await transport.runJob(job.slug);
@@ -218,6 +228,7 @@ export function JobDetailView({
             break;
         }
       } catch (e) {
+        setRunPending(false);
         console.error(`Failed to ${action} job:`, e);
       }
     },
@@ -227,8 +238,10 @@ export function JobDetailView({
   const handleRunWithParams = useCallback(
     async (values: Record<string, string>) => {
       try {
+        setRunPending(true);
         await transport.runJob(job.slug, values);
       } catch (e) {
+        setRunPending(false);
         console.error("Failed to run job with params:", e);
       }
       setShowParamsModal(false);
@@ -302,18 +315,21 @@ export function JobDetailView({
               />
             </>
           )}
-          {state === "failed" && (
+          {runPending && !isRunning && (
+            <ActionButton label="Starting..." color={colors.accent} filled onPress={() => {}} disabled />
+          )}
+          {!runPending && state === "failed" && (
             <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} />
           )}
-          {state === "success" && (
+          {!runPending && state === "success" && (
             <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} />
           )}
-          {state === "idle" && (
+          {!runPending && state === "idle" && (
             <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
           )}
           {/* Settings "..." menu */}
           {(onEdit || onDuplicate || onDelete || (onToggleEnabled && !isManual)) && (
-            <View ref={settingsMenuRef} style={{ zIndex: 100 }}>
+            <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 style={styles.moreBtn}
                 onPress={() => setShowSettingsMenu((v) => !v)}
@@ -370,7 +386,7 @@ export function JobDetailView({
           )}
           {/* Duplicate sub-menu (shown after selecting Duplicate from settings menu) */}
           {showDuplicateMenu && onDuplicate && (
-            <View ref={dupMenuRef} style={{ position: "absolute", right: 0, top: "100%", zIndex: 101 }}>
+            <View ref={dupMenuRef} style={{ position: "absolute", right: 0, top: "100%", zIndex: 9999 }}>
               <View style={styles.dropdownMenu}>
                 {groups && groups.map((g) => (
                   <TouchableOpacity
@@ -606,11 +622,13 @@ function ActionButton({
   color,
   onPress,
   filled,
+  disabled,
 }: {
   label: string;
   color: string;
   onPress: () => void;
   filled?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <TouchableOpacity
@@ -619,9 +637,11 @@ function ActionButton({
         filled
           ? { backgroundColor: color }
           : { borderColor: color, borderWidth: 1 },
+        disabled ? { opacity: 0.6 } : undefined,
       ]}
-      onPress={onPress}
-      activeOpacity={0.7}
+      onPress={disabled ? undefined : onPress}
+      activeOpacity={disabled ? 1 : 0.7}
+      disabled={disabled}
     >
       <Text style={[styles.actionText, { color: filled ? "#fff" : color }]}>
         {label}
@@ -1031,13 +1051,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    zIndex: 100,
+    zIndex: 200,
   },
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    zIndex: 100,
+    zIndex: 200,
   },
   backRow: {
     flexDirection: "row",
@@ -1077,6 +1097,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.sm,
     flexWrap: "wrap",
+    zIndex: 200,
+    ...(isWeb ? { position: "relative" as const } : {}),
   },
   infoPills: {
     flexDirection: "row",
@@ -1354,7 +1376,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.sm,
     minWidth: 160,
-    zIndex: 100,
+    zIndex: 9999,
     ...(isWeb ? { boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } : {}),
   },
   dropdownSeparator: {

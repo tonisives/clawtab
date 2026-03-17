@@ -201,6 +201,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
   const [paramInput, setParamInput] = useState("");
+  const [secretSearch, setSecretSearch] = useState("");
+  const [addSecretKey, setAddSecretKey] = useState("");
+  const [addSecretValue, setAddSecretValue] = useState("");
+  const [addSecretVisible, setAddSecretVisible] = useState(false);
 
   // Template categories for wizard
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
@@ -935,29 +939,95 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     </div>
   );
 
-  const renderSecretsFields = () => (
-    <div className="form-group">
-      <label>Secrets (injected as env vars)</label>
-      {availableSecrets === null ? (
-        <p className="text-secondary">Loading secrets...</p>
-      ) : availableSecrets.length === 0 ? (
-        <p className="text-secondary">No secrets configured. Add them in the Secrets tab.</p>
-      ) : (
-        <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 4, padding: 8 }}>
-          {availableSecrets.map((s) => (
-            <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
+  const handleAddSecretInline = async () => {
+    if (!addSecretKey.trim() || !addSecretValue.trim()) return;
+    try {
+      await invoke("set_secret", { key: addSecretKey.trim(), value: addSecretValue.trim() });
+      setAddSecretKey("");
+      setAddSecretValue("");
+      setAddSecretVisible(false);
+      const loaded = await invoke<SecretEntry[]>("list_secrets");
+      setAvailableSecrets(loaded);
+    } catch (e) {
+      console.error("Failed to add secret:", e);
+    }
+  };
+
+  const renderSecretsFields = () => {
+    const filtered = availableSecrets?.filter((s) =>
+      !secretSearch || s.key.toLowerCase().includes(secretSearch.toLowerCase())
+    ) ?? [];
+
+    return (
+      <div className="form-group">
+        <label>Secrets (injected as env vars)</label>
+        {availableSecrets === null ? (
+          <p className="text-secondary">Loading secrets...</p>
+        ) : (
+          <>
+            {availableSecrets.length > 0 && (
               <input
-                type="checkbox"
-                checked={form.secret_keys.includes(s.key)}
-                onChange={() => toggleSecret(s.key)}
+                type="text"
+                value={secretSearch}
+                onChange={(e) => setSecretSearch(e.target.value)}
+                placeholder="Search secrets..."
+                style={{ marginBottom: 6, maxWidth: "100%" }}
               />
-              <span>{s.key}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+            )}
+            {filtered.length === 0 && !secretSearch ? (
+              <p className="text-secondary">No secrets configured.</p>
+            ) : filtered.length === 0 ? (
+              <p className="text-secondary">No secrets matching "{secretSearch}".</p>
+            ) : (
+              <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 4, padding: 8 }}>
+                {filtered.map((s) => (
+                  <label key={s.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "2px 0", cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={form.secret_keys.includes(s.key)}
+                      onChange={() => toggleSecret(s.key)}
+                    />
+                    <span>{s.key}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            {addSecretVisible ? (
+              <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    type="text"
+                    value={addSecretKey}
+                    onChange={(e) => setAddSecretKey(e.target.value)}
+                    placeholder="SECRET_NAME"
+                    style={{ flex: 1 }}
+                  />
+                  <input
+                    type="password"
+                    value={addSecretValue}
+                    onChange={(e) => setAddSecretValue(e.target.value)}
+                    placeholder="secret value"
+                    style={{ flex: 2 }}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleAddSecretInline(); }}
+                  />
+                  <button className="btn btn-primary btn-sm" onClick={handleAddSecretInline} disabled={!addSecretKey.trim() || !addSecretValue.trim()}>
+                    Add
+                  </button>
+                  <button className="btn btn-sm" onClick={() => { setAddSecretVisible(false); setAddSecretKey(""); setAddSecretValue(""); }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => setAddSecretVisible(true)}>
+                + Add Secret
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   const renderSkillsFields = () => (
     <div className="form-group">
@@ -989,6 +1059,12 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     </div>
   );
 
+  const persistTmuxSession = (val: string) => {
+    invoke<AppSettings>("get_settings").then((s) => {
+      invoke("set_settings", { newSettings: { ...s, default_tmux_session: val } }).catch(() => {});
+    }).catch(() => {});
+  };
+
   const renderRuntimeFields = () => (
     <>
       {(form.job_type === "claude" || form.job_type === "folder") && (
@@ -998,9 +1074,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             <input
               type="text"
               value={form.tmux_session ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, tmux_session: e.target.value || null })
-              }
+              onChange={(e) => setForm({ ...form, tmux_session: e.target.value || null })}
+              onBlur={(e) => { if (isNew) persistTmuxSession(e.target.value); }}
               placeholder=""
             />
           </div>
@@ -1284,9 +1359,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         <input
           type="text"
           value={form.tmux_session ?? ""}
-          onChange={(e) =>
-            setForm({ ...form, tmux_session: e.target.value || null })
-          }
+          onChange={(e) => setForm({ ...form, tmux_session: e.target.value || null })}
+          onBlur={(e) => { if (isNew) persistTmuxSession(e.target.value); }}
           placeholder=""
         />
       </div>
@@ -1301,26 +1375,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         />
         <span className="hint">Jobs are grouped by this label in the list</span>
       </div>
-
-      {aerospaceAvailable && (
-        <div className="form-group">
-          <label>Aerospace Workspace</label>
-          <select
-            value={form.aerospace_workspace ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, aerospace_workspace: e.target.value || null })
-            }
-          >
-            <option value="">None</option>
-            {aerospaceWorkspaces.map((ws) => (
-              <option key={ws.name} value={ws.name}>
-                {ws.name}
-              </option>
-            ))}
-          </select>
-          <span className="hint">Move tmux window to this workspace after creation</span>
-        </div>
-      )}
     </>
   );
 
@@ -1329,7 +1383,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   if (isWizard) {
     return (
       <div className="settings-section">
-        <div className="section-header" onClick={onCancel} style={{ cursor: "pointer" }} title="Back to jobs">
+        <div className="section-header" onClick={() => { if (currentIdx > 0) { goBack(); } else { onCancel(); } }} style={{ cursor: "pointer" }} title={currentIdx > 0 ? "Back to previous step" : "Back to jobs"}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
             <path d="M15 18l-6-6 6-6" />
           </svg>
