@@ -118,6 +118,9 @@ pub async fn monitor_pane(params: MonitorParams) {
     let mut tick_counter = 0u32;
     // Accumulate diffs so we only send new content when the pane goes stale.
     let mut pending_diff = String::new();
+    // Accumulate all captured content as a fallback for log saving.
+    // If capture_pane_full fails at the end, we use this instead.
+    let mut accumulated_log = String::new();
     // Track how many ticks since the last substantial content change.
     // "Substantial" means at least one diff line with 5+ non-whitespace chars,
     // filtering out spinner/animation updates that constantly change the pane.
@@ -185,6 +188,14 @@ pub async fn monitor_pane(params: MonitorParams) {
                 idle_ticks = 0;
             } else {
                 idle_ticks += 1;
+            }
+
+            // Accumulate for fallback log
+            if !new_content.is_empty() {
+                if !accumulated_log.is_empty() {
+                    accumulated_log.push('\n');
+                }
+                accumulated_log.push_str(&new_content);
             }
 
             // Push log diffs to relay
@@ -309,9 +320,22 @@ pub async fn monitor_pane(params: MonitorParams) {
         }
     }
 
-    // Capture full scrollback for history (not sent to Telegram)
-    let full_output = tmux::capture_pane_full(&params.pane_id).unwrap_or_default();
-    let full_output = full_output.trim().to_string();
+    // Capture full scrollback for history (not sent to Telegram).
+    // Fall back to accumulated incremental log if full capture fails or is empty.
+    let full_output = tmux::capture_pane_full(&params.pane_id)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let full_output = if full_output.is_empty() && !accumulated_log.is_empty() {
+        log::info!(
+            "[{}] Full pane capture was empty, using accumulated log ({} bytes)",
+            params.run_id,
+            accumulated_log.len(),
+        );
+        accumulated_log
+    } else {
+        full_output
+    };
 
     // Save log file to disk
     save_log_file(&params.slug, &params.run_id, &full_output);

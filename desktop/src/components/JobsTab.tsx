@@ -28,9 +28,11 @@ interface JobsTabProps {
   onTemplateHandled?: () => void;
   createJobKey?: number;
   importCwtKey?: number;
+  pendingPaneId?: string | null;
+  onPaneHandled?: () => void;
 }
 
-export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey }: JobsTabProps) {
+export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled }: JobsTabProps) {
   const core = useJobsCore(transport);
   const actions = useJobActions(transport, core.reloadStatuses);
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
@@ -230,6 +232,34 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       setPendingAgentWorkDir(null);
     }
   }, [core.processes, pendingAgentWorkDir]);
+
+  useEffect(() => {
+    if (!pendingPaneId) return;
+    // Try to find a job whose running status matches this pane
+    for (const job of core.jobs as Job[]) {
+      const status = core.statuses[job.slug];
+      if (status?.state === "running") {
+        const paneId = (status as { pane_id?: string }).pane_id;
+        if (paneId === pendingPaneId) {
+          setViewingJob(job);
+          onPaneHandled?.();
+          return;
+        }
+      }
+    }
+    // Try detected processes
+    const proc = core.processes.find((p) => p.pane_id === pendingPaneId);
+    if (proc) {
+      setViewingProcess(proc);
+      onPaneHandled?.();
+      return;
+    }
+    // If not found yet and data is loaded, clear it
+    if (core.loaded) {
+      console.warn("No job or process found for pane:", pendingPaneId);
+      onPaneHandled?.();
+    }
+  }, [pendingPaneId, core.jobs, core.statuses, core.processes, core.loaded, onPaneHandled]);
 
   useEffect(() => {
     if (pendingTemplateId) setShowPicker(true);

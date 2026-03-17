@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AerospaceWorkspace, AppSettings, Job, JobType, NotifyTarget, SecretEntry } from "../types";
+import type { AppSettings, Job, JobType, NotifyTarget, SecretEntry } from "../types";
 import { HighlightedTextarea } from "./MarkdownHighlight";
 import { CronInput, describeCron } from "./CronInput";
 import { SAMPLE_TEMPLATES, TEMPLATE_CATEGORIES } from "../data/sampleTemplates";
@@ -44,7 +44,6 @@ const emptyJob: Job = {
   env: {},
   work_dir: null,
   tmux_session: "tgs",
-  aerospace_workspace: null,
   folder_path: null,
   job_name: null,
   telegram_chat_id: null,
@@ -191,15 +190,12 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   // Lazy-loaded data
   const [availableSkills, setAvailableSkills] = useState<{ name: string }[] | null>(null);
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
-  const [aerospaceAvailable, setAerospaceAvailable] = useState(false);
-  const [aerospaceWorkspaces, setAerospaceWorkspaces] = useState<AerospaceWorkspace[]>([]);
   const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
   const [sharedContent, setSharedContent] = useState("");
   const [sharedLoaded, setSharedLoaded] = useState(false);
   const [jobCwtContent, setJobCwtContent] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
-  const [aerospaceExpanded, setAerospaceExpanded] = useState(false);
   const [paramInput, setParamInput] = useState("");
   const [secretSearch, setSecretSearch] = useState("");
   const [addSecretKey, setAddSecretKey] = useState("");
@@ -292,22 +288,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       }
     }
   }, [currentStep, isWizard, availableSecrets, availableSkills]);
-
-  // Load aerospace when entering settings step (or on mount for edit mode)
-  useEffect(() => {
-    if (!isWizard || currentStep === "settings") {
-      invoke<boolean>("aerospace_available")
-        .then((avail) => {
-          setAerospaceAvailable(avail);
-          if (avail) {
-            invoke<AerospaceWorkspace[]>("list_aerospace_workspaces")
-              .then(setAerospaceWorkspaces)
-              .catch(() => {});
-          }
-        })
-        .catch(() => setAerospaceAvailable(false));
-    }
-  }, [currentStep, isWizard]);
 
   // Load existing content for edit mode (not new wizard)
   useEffect(() => {
@@ -1080,37 +1060,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             />
           </div>
 
-          {aerospaceAvailable && (
-            <div className="form-group">
-              <label
-                style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-                onClick={() => setAerospaceExpanded(!aerospaceExpanded)}
-              >
-                <span style={{ fontSize: 10, transform: aerospaceExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.15s" }}>
-                  &#9660;
-                </span>
-                Aerospace Workspace
-              </label>
-              {aerospaceExpanded && (
-                <>
-                  <select
-                    value={form.aerospace_workspace ?? ""}
-                    onChange={(e) =>
-                      setForm({ ...form, aerospace_workspace: e.target.value || null })
-                    }
-                  >
-                    <option value="">None</option>
-                    {aerospaceWorkspaces.map((ws) => (
-                      <option key={ws.name} value={ws.name}>
-                        {ws.name}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="hint">Move tmux window to this workspace after creation</span>
-                </>
-              )}
-            </div>
-          )}
         </>
       )}
 

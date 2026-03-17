@@ -72,6 +72,7 @@ export function SettingsApp() {
   const [authCallbackToken, setAuthCallbackToken] = useState<string | null>(null);
   const [authCallbackRefreshToken, setAuthCallbackRefreshToken] = useState<string | null>(null);
   const [importCwtKey, setImportCwtKey] = useState(0);
+  const [pendingPaneId, setPendingPaneId] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -96,6 +97,13 @@ export function SettingsApp() {
     for (const url of urls) {
       console.log("deep-link received:", url);
       invoke("show_settings_window");
+
+      const paneMatch = url.match(/^clawtab:\/\/pane\/(.+)/);
+      if (paneMatch) {
+        setActiveTab("jobs");
+        setPendingPaneId(paneMatch[1]);
+        continue;
+      }
 
       const templateMatch = url.match(/^clawtab:\/\/template\/(.+)/);
       if (templateMatch) {
@@ -214,6 +222,8 @@ export function SettingsApp() {
             onTemplateHandled={() => setPendingTemplateId(null)}
             createJobKey={createJobKey}
             importCwtKey={importCwtKey}
+            pendingPaneId={pendingPaneId}
+            onPaneHandled={() => setPendingPaneId(null)}
           />
         </div>
         {activeTab === "secrets" && <SecretsPanel />}

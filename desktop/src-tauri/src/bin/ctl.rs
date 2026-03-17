@@ -3,7 +3,7 @@ use std::env;
 use clawtab_lib::ipc::{self, IpcCommand, IpcResponse};
 
 fn print_usage() {
-    eprintln!("cwtctl -- CLI for ClawTab");
+    eprintln!("cwtctl - CLI for ClawTab");
     eprintln!();
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
@@ -15,6 +15,7 @@ fn print_usage() {
     eprintln!("  resume <name>     Resume a paused job");
     eprintln!("  restart <name>    Restart a job");
     eprintln!("  status            Show job statuses");
+    eprintln!("  open [pane_id]    Open current tmux pane in ClawTab (uses $TMUX_PANE if omitted)");
 }
 
 fn require_name(args: &[String], cmd_name: &str) -> String {
@@ -36,6 +37,44 @@ async fn main() {
 
     let command = args[1].as_str();
 
+    // Commands that don't use IPC
+    match command {
+        "open" => {
+            let pane_id = if args.len() >= 3 {
+                args[2].clone()
+            } else {
+                env::var("TMUX_PANE").unwrap_or_else(|_| {
+                    eprintln!("Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly.");
+                    std::process::exit(1);
+                })
+            };
+            let url = format!("clawtab://pane/{}", pane_id);
+            let status = std::process::Command::new("open")
+                .arg(&url)
+                .status()
+                .map_err(|e| format!("Failed to open URL: {}", e));
+            match status {
+                Ok(s) if s.success() => {
+                    println!("Opening pane {} in ClawTab", pane_id);
+                    std::process::exit(0);
+                }
+                Ok(s) => {
+                    eprintln!("open exited with: {}", s);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        "help" | "-h" | "--help" => {
+            print_usage();
+            std::process::exit(0);
+        }
+        _ => {}
+    }
+
     let ipc_cmd = match command {
         "ping" => IpcCommand::Ping,
         "list" | "ls" => IpcCommand::ListJobs,
@@ -52,10 +91,6 @@ async fn main() {
             name: require_name(&args, "restart"),
         },
         "status" => IpcCommand::GetStatus,
-        "help" | "-h" | "--help" => {
-            print_usage();
-            std::process::exit(0);
-        }
         _ => {
             eprintln!("Unknown command: {}", command);
             print_usage();

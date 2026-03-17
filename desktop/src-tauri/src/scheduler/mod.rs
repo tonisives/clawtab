@@ -49,6 +49,8 @@ async fn run_loop(
     relay: Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
 ) {
+    log::info!("Scheduler started");
+
     // Check for missed cron triggers since the last run of each job.
     // Emits an event to the frontend so the user can decide whether to run them.
     {
@@ -107,6 +109,28 @@ async fn run_loop(
     }
 
     let mut last_check = Utc::now();
+
+    // Log cron-enabled jobs and their next fire times at startup
+    {
+        let jobs = {
+            let config = jobs_config.lock().unwrap();
+            config.jobs.clone()
+        };
+        let cron_jobs: Vec<_> = jobs.iter().filter(|j| j.enabled && !j.cron.is_empty()).collect();
+        log::info!("Scheduler tracking {} cron-enabled job(s)", cron_jobs.len());
+        for job in &cron_jobs {
+            if let Some(schedules) = parse_cron(&job.cron) {
+                let next: Vec<String> = schedules
+                    .iter()
+                    .filter_map(|s| s.upcoming(Utc).next())
+                    .map(|t| t.to_rfc3339())
+                    .collect();
+                log::info!("  '{}' cron='{}' next={:?}", job.name, job.cron, next);
+            } else {
+                log::warn!("  '{}' cron='{}' FAILED TO PARSE", job.name, job.cron);
+            }
+        }
+    }
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
