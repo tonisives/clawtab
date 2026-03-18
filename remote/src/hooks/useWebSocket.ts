@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { AppState as RNAppState, Platform } from "react-native";
-import { getWsUrl, getSubscriptionStatus } from "../api/client";
+import { getWsUrl } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
@@ -28,7 +28,6 @@ export function useWebSocket() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const setConnected = useWsStore((s) => s.setConnected);
-  const setSubscriptionRequired = useWsStore((s) => s.setSubscriptionRequired);
   const setDesktopStatus = useWsStore((s) => s.setDesktopStatus);
   const resetWs = useWsStore((s) => s.reset);
   const setJobs = useJobsStore((s) => s.setJobs);
@@ -56,18 +55,6 @@ export function useWebSocket() {
   const doConnect = useCallback(async () => {
     if (globalWs && globalWs.readyState <= WebSocket.OPEN) return;
 
-    // Check subscription before attempting WS connection
-    try {
-      const sub = await getSubscriptionStatus();
-      if (!sub.subscribed) {
-        console.log("[ws] subscription required, skipping WS connect");
-        setSubscriptionRequired(true);
-        return;
-      }
-    } catch (e) {
-      console.log("[ws] subscription check failed, proceeding:", e);
-    }
-
     let url: string;
     try {
       url = await getWsUrl();
@@ -84,7 +71,6 @@ export function useWebSocket() {
       console.log("[ws] connected");
       if (!mountedRef.current) return;
       setConnected(true);
-      setSubscriptionRequired(false);
       backoffRef.current = 1000;
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
@@ -179,8 +165,8 @@ export function useWebSocket() {
       setConnected(false);
 
       if (e.reason?.includes("403")) {
-        setSubscriptionRequired(true);
-        return; // don't reconnect
+        scheduleReconnect();
+        return;
       }
 
       if (e.reason?.includes("401")) {
@@ -196,29 +182,17 @@ export function useWebSocket() {
       }
 
       // On web, a rejected WS upgrade (403/401) shows as code 1006 with empty reason.
-      // Check subscription status via HTTP to determine the cause.
+      // Try token refresh then reconnect.
       if (Platform.OS === "web" && e.code === 1006 && !e.reason) {
-        getSubscriptionStatus()
-          .then((sub) => {
-            if (!mountedRef.current) return;
-            if (!sub.subscribed) {
-              setSubscriptionRequired(true);
-            } else {
-              scheduleReconnect();
-            }
-          })
-          .catch(() => {
-            if (!mountedRef.current) return;
-            // HTTP request also failed - try token refresh then reconnect
-            refreshToken().then((ok) => {
-              if (ok) {
-                backoffRef.current = 1000;
-                scheduleReconnect();
-              } else {
-                useAuthStore.getState().logout();
-              }
-            });
-          });
+        refreshToken().then((ok) => {
+          if (!mountedRef.current) return;
+          if (ok) {
+            backoffRef.current = 1000;
+            scheduleReconnect();
+          } else {
+            useAuthStore.getState().logout();
+          }
+        });
         return;
       }
 
@@ -234,7 +208,7 @@ export function useWebSocket() {
         ws.send(JSON.stringify(msg));
       }
     };
-  }, [setConnected, setSubscriptionRequired, setDesktopStatus, setJobs, updateStatus, refreshToken, scheduleReconnect]);
+  }, [setConnected, setDesktopStatus, setJobs, updateStatus, refreshToken, scheduleReconnect]);
 
   // Keep ref in sync
   connectRef.current = doConnect;

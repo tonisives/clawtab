@@ -8,6 +8,7 @@ mod debug;
 mod google_auth;
 mod google_callback;
 mod apple_auth;
+mod apple_callback;
 mod iap;
 mod notifications;
 mod share;
@@ -67,6 +68,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/google", post(google_auth::google_auth))
         .route("/auth/google/callback", get(google_callback::google_callback))
         .route("/auth/apple", post(apple_auth::apple_auth))
+        .route("/auth/apple/callback", post(apple_callback::apple_callback))
         .route("/iap/app-store-notification", post(iap::app_store_notification))
         .layer(GovernorLayer { config: rate_limit_config });
 

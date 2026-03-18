@@ -55,8 +55,6 @@ export default function SettingsScreen() {
   const [actionLoading, setActionLoading] = useState(false);
   const [devices, setDevices] = useState<api.DeviceInfo[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(true);
-  const subscriptionRequired = useWsStore((s) => s.subscriptionRequired);
-
   const iap = useIap();
 
   const [shares, setShares] = useState<api.SharesResponse>({ shared_by_me: [], shared_with_me: [] });
@@ -94,14 +92,9 @@ export default function SettingsScreen() {
   }, []);
 
   useEffect(() => {
-    if (!subscriptionRequired) {
-      fetchDevices().finally(() => setDevicesLoading(false));
-      fetchShares().finally(() => setSharesLoading(false));
-    } else {
-      setDevicesLoading(false);
-      setSharesLoading(false);
-    }
-  }, [fetchDevices, fetchShares, subscriptionRequired]);
+    fetchDevices().finally(() => setDevicesLoading(false));
+    fetchShares().finally(() => setSharesLoading(false));
+  }, [fetchDevices, fetchShares]);
 
   const handleSubscribe = async () => {
     setActionLoading(true);
@@ -308,10 +301,6 @@ export default function SettingsScreen() {
               <View style={styles.row}>
                 <ActivityIndicator size="small" color={colors.textMuted} />
               </View>
-            ) : subscriptionRequired ? (
-              <View style={styles.row}>
-                <Text style={styles.label}>Subscribe to view devices</Text>
-              </View>
             ) : devices.length === 0 ? (
               <View style={styles.row}>
                 <Text style={styles.label}>No devices paired</Text>
@@ -330,10 +319,6 @@ export default function SettingsScreen() {
             {sharesLoading ? (
               <View style={styles.row}>
                 <ActivityIndicator size="small" color={colors.textMuted} />
-              </View>
-            ) : subscriptionRequired ? (
-              <View style={styles.row}>
-                <Text style={styles.label}>Subscribe to manage sharing</Text>
               </View>
             ) : (
               <ShareSection

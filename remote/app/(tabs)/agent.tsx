@@ -13,31 +13,18 @@ import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { useWsStore } from "../../src/store/ws";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
-import * as api from "../../src/api/client";
-import { alertError, openUrl } from "../../src/lib/platform";
+import { openUrl } from "../../src/lib/platform";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
 
 export default function AgentScreen() {
   const router = useRouter();
-  const subscriptionRequired = useWsStore((s) => s.subscriptionRequired);
+  const desktopOnline = useWsStore((s) => s.desktopOnline);
+  const connected = useWsStore((s) => s.connected);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [subLoading, setSubLoading] = useState(false);
   const { isWide } = useResponsive();
-
-  const handleSubscribe = async () => {
-    setSubLoading(true);
-    try {
-      const { url } = await api.createCheckout();
-      await openUrl(url);
-    } catch (e) {
-      alertError("Error", String(e));
-    } finally {
-      setSubLoading(false);
-    }
-  };
 
   const handleRun = () => {
     if (!prompt.trim()) return;
@@ -64,21 +51,17 @@ export default function AgentScreen() {
     >
       <ContentContainer fill>
         <View style={[styles.inner, isWide && styles.innerWide]}>
-          {subscriptionRequired && (
-            <View style={styles.subBanner}>
-              <Text style={styles.subTitle}>Subscription required</Text>
-              <Text style={styles.subText}>Subscribe to connect to your desktop and run agents remotely.</Text>
-              <Pressable
-                style={[styles.subBtn, subLoading && styles.btnDisabled]}
-                onPress={handleSubscribe}
-                disabled={subLoading}
-              >
-                <Text style={styles.subBtnText}>{subLoading ? "Loading..." : "Subscribe"}</Text>
+          {connected && !desktopOnline && (
+            <View style={styles.offlineBanner}>
+              <Text style={styles.offlineTitle}>Desktop not connected</Text>
+              <Text style={styles.offlineText}>Please install ClawTab desktop and sign in to same account.</Text>
+              <Pressable onPress={() => openUrl("https://clawtab.cc/docs#quick-start")}>
+                <Text style={styles.linkText}>Quick Start Guide</Text>
               </Pressable>
             </View>
           )}
 
-          <View style={[subscriptionRequired ? styles.demoOverlay : undefined, { pointerEvents: subscriptionRequired ? "none" as const : "auto" as const }]}>
+          <View>
             <Text style={styles.heading}>Run Agent</Text>
             <Text style={styles.description}>
               Send a prompt to run a Claude agent on your desktop.
@@ -86,21 +69,21 @@ export default function AgentScreen() {
 
             <TextInput
               style={[styles.input, isWide && styles.inputWide]}
-              value={subscriptionRequired ? "" : prompt}
+              value={prompt}
               onChangeText={setPrompt}
               placeholder="What would you like the agent to do?"
               placeholderTextColor={colors.textMuted}
               multiline
               textAlignVertical="top"
-              editable={!sending && !subscriptionRequired}
+              editable={!sending && desktopOnline}
             />
 
             {error && <Text style={styles.error}>{error}</Text>}
 
             <Pressable
-              style={[styles.btn, (!prompt.trim() || sending || subscriptionRequired) && styles.btnDisabled, isWide && styles.btnWide]}
+              style={[styles.btn, (!prompt.trim() || sending || !desktopOnline) && styles.btnDisabled, isWide && styles.btnWide]}
               onPress={handleRun}
-              disabled={!prompt.trim() || sending || subscriptionRequired}
+              disabled={!prompt.trim() || sending || !desktopOnline}
             >
               <Text style={styles.btnText}>
                 {sending ? "Sending..." : "Run Agent"}
@@ -175,36 +158,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  subBanner: {
+  offlineBanner: {
     alignItems: "center",
     gap: spacing.md,
     paddingBottom: spacing.xl,
   },
-  demoOverlay: {
-    opacity: 0.35,
-    gap: spacing.lg,
-  },
-  subTitle: {
-    color: colors.text,
-    fontSize: 18,
+  offlineTitle: {
+    color: colors.warning,
+    fontSize: 15,
     fontWeight: "600",
   },
-  subText: {
-    color: colors.textSecondary,
-    fontSize: 14,
+  offlineText: {
+    color: colors.textMuted,
+    fontSize: 13,
     textAlign: "center",
   },
-  subBtn: {
-    height: 44,
-    paddingHorizontal: spacing.xl,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  subBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+  linkText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: "500",
   },
 });

@@ -15,6 +15,8 @@ pub struct Config {
 
     // Apple Sign In (optional - defaults to bundle ID)
     pub apple_client_id: Option<String>,
+    // Apple Services ID for web-based Sign in with Apple
+    pub apple_web_client_id: Option<String>,
 
     // APNs (optional)
     pub apns_key_path: Option<String>,
@@ -49,6 +51,7 @@ impl Config {
             google_client_id: env::var("GOOGLE_CLIENT_ID").ok(),
             google_client_secret: env::var("GOOGLE_CLIENT_SECRET").ok(),
             apple_client_id: env::var("APPLE_CLIENT_ID").ok(),
+            apple_web_client_id: env::var("APPLE_WEB_CLIENT_ID").ok(),
             apns_key_path: env::var("APNS_KEY_PATH").ok(),
             apns_key_id: env::var("APNS_KEY_ID").ok(),
             apns_team_id: env::var("APNS_TEAM_ID").ok(),

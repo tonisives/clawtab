@@ -8,6 +8,8 @@ import type { ShareInfo, SharedWithMeInfo } from "@clawtab/shared";
 const GOOGLE_CLIENT_ID =
   "186596496380-dp282va1mvdhrr2q7qrlbgmn3ak2mq07.apps.googleusercontent.com";
 
+const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
+
 interface RelaySettings {
   enabled: boolean;
   server_url: string;
@@ -166,6 +168,20 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       prompt: "consent",
     });
     await openUrl(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+  };
+
+  const handleAppleSignIn = async () => {
+    const state = btoa("clawtab");
+    const redirectUri = `${serverUrl}/auth/apple/callback`;
+    const params = new URLSearchParams({
+      client_id: APPLE_WEB_CLIENT_ID,
+      redirect_uri: redirectUri,
+      response_type: "code id_token",
+      response_mode: "form_post",
+      scope: "name email",
+      state,
+    });
+    await openUrl(`https://appleid.apple.com/auth/authorize?${params}`);
   };
 
   const handlePairDevice = async () => {
@@ -387,35 +403,14 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                   Sign in with Google
                 </button>
 
-                {location.port && (
-                  <div className="form-group" style={{ marginTop: 12 }}>
-                    <label>Paste access token (dev)</label>
-                    <div style={{ display: "flex", gap: 8, maxWidth: 400 }}>
-                      <input
-                        id="dev-token-input"
-                        type="text"
-                        placeholder="access_token from callback URL"
-                        style={{ flex: 1 }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            const val = (e.target as HTMLInputElement).value.trim();
-                            if (val) setAccessToken(val);
-                          }
-                        }}
-                      />
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                          const el = document.getElementById("dev-token-input") as HTMLInputElement;
-                          const val = el?.value.trim();
-                          if (val) setAccessToken(val);
-                        }}
-                      >
-                        OK
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <button
+                  className="btn"
+                  onClick={handleAppleSignIn}
+                  disabled={loggingIn}
+                  style={{ width: "100%", maxWidth: 400, boxSizing: "border-box", marginTop: 8 }}
+                >
+                  Sign in with Apple
+                </button>
               </>
             )}
           </div>

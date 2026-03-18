@@ -19,7 +19,7 @@ pub struct AppleAuthRequest {
 }
 
 /// Shared logic: find or create a user from Apple info, issue tokens.
-async fn authenticate_apple_user(
+pub async fn authenticate_apple_user(
     state: &AppState,
     info: &AppleUserInfo,
     req_display_name: Option<&str>,
