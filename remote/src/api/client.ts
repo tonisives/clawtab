@@ -146,49 +146,6 @@ async function backendRequest<T>(
   return resp.json();
 }
 
-export async function login(
-  email: string,
-  password: string,
-  serverUrl?: string,
-): Promise<AuthResponse> {
-  if (serverUrl) {
-    await storage.setItem(KEYS.serverUrl, serverUrl);
-  }
-
-  const resp = await request<AuthResponse>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-
-  await storage.setItem(KEYS.accessToken, resp.access_token);
-  await storage.setItem(KEYS.refreshToken, resp.refresh_token);
-  await storage.setItem(KEYS.userId, resp.user_id);
-
-  return resp;
-}
-
-export async function register(
-  email: string,
-  password: string,
-  displayName?: string,
-  serverUrl?: string,
-): Promise<AuthResponse> {
-  if (serverUrl) {
-    await storage.setItem(KEYS.serverUrl, serverUrl);
-  }
-
-  const resp = await request<AuthResponse>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ email, password, display_name: displayName }),
-  });
-
-  await storage.setItem(KEYS.accessToken, resp.access_token);
-  await storage.setItem(KEYS.refreshToken, resp.refresh_token);
-  await storage.setItem(KEYS.userId, resp.user_id);
-
-  return resp;
-}
-
 // Deduplicate concurrent refresh calls to prevent refresh token reuse,
 // which triggers stolen-token detection and revokes all tokens.
 let refreshInFlight: Promise<AuthResponse> | null = null;

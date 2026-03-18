@@ -5,9 +5,9 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
@@ -43,36 +43,20 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
   const router = useRouter();
-  const login = useAuthStore((s) => s.login);
   const googleLogin = useAuthStore((s) => s.googleLogin);
   const appleLogin = useAuthStore((s) => s.appleLogin);
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
-  const [showServer, setShowServer] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showServer, setShowServer] = useState(false);
+  const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
+  const [tempServerUrl, setTempServerUrl] = useState("");
 
   // Web: Google auth via expo-auth-session provider
-  const [, googleResponse, promptAsync] = Google.useIdTokenAuthRequest({
+  const [, , promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
   });
-
-  const handleLogin = async () => {
-    if (!email.trim() || !password) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await login(email.trim(), password, serverUrl || undefined);
-      router.replace("/(tabs)");
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -147,91 +131,18 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    <ScrollView
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled"
     >
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.card}>
+      <View style={styles.card}>
         <View style={styles.header}>
           <Text style={styles.title}>ClawTab</Text>
           <Text style={styles.subtitle}>Remote job control</Text>
         </View>
 
         <View style={styles.form}>
-          <View style={styles.field}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoCorrect={false}
-              editable={!loading}
-            />
-          </View>
-
-          <View style={styles.field}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="your password"
-              placeholderTextColor={colors.textMuted}
-              secureTextEntry
-              editable={!loading}
-              onSubmitEditing={handleLogin}
-            />
-          </View>
-
-          {showServer && (
-            <View style={styles.field}>
-              <Text style={styles.label}>Server URL</Text>
-              <TextInput
-                style={styles.input}
-                value={serverUrl}
-                onChangeText={setServerUrl}
-                placeholder="https://relay.clawtab.cc"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!loading}
-              />
-            </View>
-          )}
-
           {error && <Text style={styles.error}>{error}</Text>}
-
-          <Pressable
-            style={[styles.btn, loading && styles.btnDisabled]}
-            onPress={handleLogin}
-            disabled={loading || !email.trim() || !password}
-          >
-            <Text style={styles.btnText}>
-              {loading ? "Logging in..." : "Log in"}
-            </Text>
-          </Pressable>
-
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <Pressable
-            style={[styles.googleBtn, loading && styles.btnDisabled]}
-            onPress={handleGoogleLogin}
-            disabled={loading}
-          >
-            <Text style={styles.googleBtnText}>Sign in with Google</Text>
-          </Pressable>
 
           {Platform.OS === "ios" && (
             <Pressable
@@ -243,30 +154,69 @@ export default function LoginScreen() {
             </Pressable>
           )}
 
-          <View style={styles.links}>
-            <Pressable onPress={() => router.push("/register")}>
-              <Text style={styles.link}>Create account</Text>
-            </Pressable>
-            <Pressable onPress={() => setShowServer(!showServer)}>
-              <Text style={styles.linkMuted}>
-                {showServer ? "Hide server" : "Custom server"}
-              </Text>
-            </Pressable>
+          <Pressable
+            style={[styles.googleBtn, loading && styles.btnDisabled]}
+            onPress={handleGoogleLogin}
+            disabled={loading}
+          >
+            <Text style={styles.googleBtnText}>Sign in with Google</Text>
+          </Pressable>
+
+          <Pressable onPress={() => { setTempServerUrl(serverUrl); setShowServer(true); }}>
+            <Text style={styles.serverText}>
+              Server: {serverUrl}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <Modal
+        visible={showServer}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowServer(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowServer(false)}>
+          <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>Server URL</Text>
+            <TextInput
+              style={styles.input}
+              value={tempServerUrl}
+              onChangeText={setTempServerUrl}
+              placeholder="https://relay.clawtab.cc"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+            />
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={styles.modalBtn}
+                onPress={() => setShowServer(false)}
+              >
+                <Text style={styles.modalBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, styles.modalBtnPrimary]}
+                onPress={() => { setServerUrl(tempServerUrl); setShowServer(false); }}
+              >
+                <Text style={[styles.modalBtnText, styles.modalBtnPrimaryText]}>Save</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.bg },
   container: {
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: spacing.xl,
+    backgroundColor: colors.bg,
   },
   card: {
     width: "100%",
@@ -289,56 +239,8 @@ const styles = StyleSheet.create({
   form: {
     gap: spacing.lg,
   },
-  field: {
-    gap: spacing.xs,
-  },
-  label: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  input: {
-    height: 44,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    color: colors.text,
-    fontSize: 15,
-  },
   error: {
     color: colors.danger,
-    fontSize: 13,
-  },
-  btn: {
-    height: 44,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accent,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: spacing.sm,
-  },
-  btnDisabled: {
-    opacity: 0.5,
-  },
-  btnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  divider: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    color: colors.textMuted,
     fontSize: 13,
   },
   googleBtn: {
@@ -367,17 +269,63 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  links: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: spacing.sm,
+  btnDisabled: {
+    opacity: 0.5,
   },
-  link: {
-    color: colors.accent,
-    fontSize: 14,
-  },
-  linkMuted: {
+  serverText: {
     color: colors.textMuted,
+    fontSize: 13,
+    textAlign: "center",
+  },
+  input: {
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
+    fontSize: 15,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.xl,
+  },
+  modalContent: {
+    width: "100%",
+    maxWidth: 400,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.xl,
+    gap: spacing.lg,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.md,
+  },
+  modalBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.sm,
+  },
+  modalBtnText: {
+    color: colors.textSecondary,
     fontSize: 14,
+    fontWeight: "500",
+  },
+  modalBtnPrimary: {
+    backgroundColor: colors.accent,
+  },
+  modalBtnPrimaryText: {
+    color: "#fff",
   },
 });

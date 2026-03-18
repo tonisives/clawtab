@@ -26,11 +26,6 @@ interface RelayStatus {
   device_name: string;
 }
 
-interface LoginResponse {
-  access_token: string;
-  refresh_token: string;
-}
-
 interface PairDeviceResponse {
   device_id: string;
   device_token: string;
@@ -55,11 +50,10 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
   // Setup form state
   const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [deviceName, setDeviceName] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
-  const [loggingIn, setLoggingIn] = useState(false);
+  const [editingServerUrl, setEditingServerUrl] = useState(false);
+  const [tempServerUrl, setTempServerUrl] = useState("");
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   const [pairError, setPairError] = useState<string | null>(null);
@@ -134,27 +128,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     }
   };
 
-  const handleLogin = async () => {
-    if (!email || !password) return;
-    setLoggingIn(true);
-    setLoginError(null);
-    try {
-      const resp = await invoke<LoginResponse>("relay_login", {
-        req: { server_url: serverUrl, email, password },
-      });
-      await invoke("relay_save_tokens", {
-        accessToken: resp.access_token,
-        refreshToken: resp.refresh_token,
-      });
-      setAccessToken(resp.access_token);
-      setPassword("");
-    } catch (e) {
-      setLoginError(String(e));
-    } finally {
-      setLoggingIn(false);
-    }
-  };
-
   const handleGoogleSignIn = async () => {
     const state = btoa("clawtab");
     const redirectUri = `${serverUrl}/auth/google/callback`;
@@ -224,8 +197,6 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       });
       setSettings(null);
       setAccessToken(null);
-      setEmail("");
-      setPassword("");
       const st = await invoke<RelayStatus>("get_relay_status");
       setStatus(st);
     } catch (e) {
@@ -336,81 +307,79 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
             {!accessToken && (
               <>
-                <div className="form-group">
-                  <label>Server URL</label>
-                  <input
-                    type="text"
-                    value={serverUrl}
-                    onChange={(e) => setServerUrl(e.target.value)}
-                    placeholder="https://relay.clawtab.cc"
-                  />
-                  <span className="hint">
-                    Use the hosted relay or your own self-hosted instance
-                  </span>
-                </div>
-
-                <div className="form-group">
-                  <label>Email</label>
-                  <input
-                    type="text"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    disabled={loggingIn}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Password</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="your password"
-                    disabled={loggingIn}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleLogin();
-                    }}
-                  />
-                </div>
-
                 {loginError && (
                   <div style={{ color: "var(--danger-color)", fontSize: 12, marginBottom: 12 }}>
                     {loginError}
                   </div>
                 )}
 
-                <button
-                  className="btn btn-primary"
-                  onClick={handleLogin}
-                  disabled={loggingIn || !email || !password}
-                >
-                  {loggingIn ? "Logging in..." : "Log in"}
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 400 }}>
+                  <button
+                    className="btn"
+                    onClick={handleAppleSignIn}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "12px 0", maxWidth: 400 }}>
-                  <div style={{ flex: 1, height: 1, background: "var(--border-color)" }} />
-                  <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>or</span>
-                  <div style={{ flex: 1, height: 1, background: "var(--border-color)" }} />
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  >
+                    Sign in with Apple
+                  </button>
+
+                  <button
+                    className="btn"
+                    onClick={handleGoogleSignIn}
+
+                    style={{ width: "100%", boxSizing: "border-box" }}
+                  >
+                    Sign in with Google
+                  </button>
                 </div>
 
-                <button
-                  className="btn"
-                  onClick={handleGoogleSignIn}
-                  disabled={loggingIn}
-                  style={{ width: "100%", maxWidth: 400, boxSizing: "border-box" }}
-                >
-                  Sign in with Google
-                </button>
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                      Server: {serverUrl}
+                    </span>
+                    <button
+                      className="btn"
+                      style={{ fontSize: 11, padding: "2px 8px", minHeight: 0 }}
+                      onClick={() => { setTempServerUrl(serverUrl); setEditingServerUrl(true); }}
+                    >
+                      Edit
+                    </button>
+                  </div>
 
-                <button
-                  className="btn"
-                  onClick={handleAppleSignIn}
-                  disabled={loggingIn}
-                  style={{ width: "100%", maxWidth: 400, boxSizing: "border-box", marginTop: 8 }}
-                >
-                  Sign in with Apple
-                </button>
+                  {editingServerUrl && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, maxWidth: 400 }}>
+                      <input
+                        type="text"
+                        value={tempServerUrl}
+                        onChange={(e) => setTempServerUrl(e.target.value)}
+                        placeholder="https://relay.clawtab.cc"
+                        style={{ flex: 1 }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            setServerUrl(tempServerUrl);
+                            setEditingServerUrl(false);
+                          } else if (e.key === "Escape") {
+                            setEditingServerUrl(false);
+                          }
+                        }}
+                        autoFocus
+                      />
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => { setServerUrl(tempServerUrl); setEditingServerUrl(false); }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="btn"
+                        onClick={() => setEditingServerUrl(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>

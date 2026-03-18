@@ -76,11 +76,12 @@ export default function SettingsScreen() {
   }, []);
 
   useEffect(() => {
+    if (!userId) { setSubLoading(false); return; }
     api.getSubscriptionStatus()
       .then(setSub)
       .catch(() => setSub(null))
       .finally(() => setSubLoading(false));
-  }, []);
+  }, [userId]);
 
   const fetchShares = useCallback(async () => {
     try {
@@ -92,9 +93,10 @@ export default function SettingsScreen() {
   }, []);
 
   useEffect(() => {
+    if (!userId) { setDevicesLoading(false); setSharesLoading(false); return; }
     fetchDevices().finally(() => setDevicesLoading(false));
     fetchShares().finally(() => setSharesLoading(false));
-  }, [fetchDevices, fetchShares]);
+  }, [userId, fetchDevices, fetchShares]);
 
   const handleSubscribe = async () => {
     setActionLoading(true);

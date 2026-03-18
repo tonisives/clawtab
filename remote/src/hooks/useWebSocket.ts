@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { AppState as RNAppState, Platform } from "react-native";
-import { getWsUrl } from "../api/client";
+import { getWsUrl, getSubscriptionStatus } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
@@ -165,7 +165,8 @@ export function useWebSocket() {
       setConnected(false);
 
       if (e.reason?.includes("403")) {
-        scheduleReconnect();
+        // No subscription - show "Desktop not connected" UI instead of "Connecting..."
+        setConnected(true);
         return;
       }
 
@@ -182,17 +183,29 @@ export function useWebSocket() {
       }
 
       // On web, a rejected WS upgrade (403/401) shows as code 1006 with empty reason.
-      // Try token refresh then reconnect.
+      // Check subscription to distinguish 403 (no sub) from 401 (auth issue).
       if (Platform.OS === "web" && e.code === 1006 && !e.reason) {
-        refreshToken().then((ok) => {
-          if (!mountedRef.current) return;
-          if (ok) {
-            backoffRef.current = 1000;
-            scheduleReconnect();
-          } else {
-            useAuthStore.getState().logout();
-          }
-        });
+        getSubscriptionStatus()
+          .then((sub) => {
+            if (!mountedRef.current) return;
+            if (!sub.subscribed) {
+              // 403 - no subscription, show "Desktop not connected"
+              setConnected(true);
+            } else {
+              scheduleReconnect();
+            }
+          })
+          .catch(() => {
+            if (!mountedRef.current) return;
+            refreshToken().then((ok) => {
+              if (ok) {
+                backoffRef.current = 1000;
+                scheduleReconnect();
+              } else {
+                useAuthStore.getState().logout();
+              }
+            });
+          });
         return;
       }
 
