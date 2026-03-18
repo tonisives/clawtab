@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, Platform } from "react-native";
+import { useRouter } from "expo-router";
 import { useAuthStore } from "../../src/store/auth";
 import { useWsStore } from "../../src/store/ws";
 import { useJobsStore } from "../../src/store/jobs";
@@ -101,7 +102,11 @@ export default function SettingsScreen() {
   const handleSubscribe = async () => {
     setActionLoading(true);
     try {
-      if (iap.available) {
+      if (Platform.OS === "ios") {
+        if (!iap.available) {
+          alertError("Error", "In-app purchases are not available. Please try again later.");
+          return;
+        }
         const success = await iap.purchase();
         if (success) {
           const updated = await api.getSubscriptionStatus();
@@ -204,8 +209,12 @@ export default function SettingsScreen() {
     });
   }, [fetchShares]);
 
+  const router = useRouter();
   const handleLogout = () => {
-    confirm("Log out", "Are you sure you want to log out?", () => logout());
+    confirm("Log out", "Are you sure you want to log out?", async () => {
+      await logout();
+      router.replace("/login");
+    });
   };
 
   return (

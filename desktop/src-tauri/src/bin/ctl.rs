@@ -48,7 +48,9 @@ async fn main() {
                     std::process::exit(1);
                 })
             };
-            let url = format!("clawtab://pane/{}", pane_id);
+            // URL-encode the pane_id since tmux pane IDs contain % (e.g. %42)
+            let encoded = pane_id.replace('%', "%25");
+            let url = format!("clawtab://pane/{}", encoded);
             let status = std::process::Command::new("open")
                 .arg(&url)
                 .status()
