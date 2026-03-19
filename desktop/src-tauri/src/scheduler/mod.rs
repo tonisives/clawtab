@@ -5,7 +5,7 @@ pub mod reattach;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use chrono::{Duration, Utc};
+use chrono::{Duration, Local};
 use cron::Schedule;
 
 use tauri::Emitter;
@@ -54,7 +54,7 @@ async fn run_loop(
     // Check for missed cron triggers since the last run of each job.
     // Emits an event to the frontend so the user can decide whether to run them.
     {
-        let now = Utc::now();
+        let now = Local::now();
         let lookback_limit = now - Duration::hours(24);
         let jobs = {
             let config = jobs_config.lock().unwrap();
@@ -83,7 +83,7 @@ async fn run_loop(
                     .ok()
                     .and_then(|runs| runs.into_iter().next())
                     .and_then(|r| chrono::DateTime::parse_from_rfc3339(&r.started_at).ok())
-                    .map(|t| t.with_timezone(&Utc))
+                    .map(|t| t.with_timezone(&Local))
                     .filter(|t| *t > lookback_limit)
                     .unwrap_or(lookback_limit)
             };
@@ -108,7 +108,7 @@ async fn run_loop(
         }
     }
 
-    let mut last_check = Utc::now();
+    let mut last_check = Local::now();
 
     // Log cron-enabled jobs and their next fire times at startup
     {
@@ -122,7 +122,7 @@ async fn run_loop(
             if let Some(schedules) = parse_cron(&job.cron) {
                 let next: Vec<String> = schedules
                     .iter()
-                    .filter_map(|s| s.upcoming(Utc).next())
+                    .filter_map(|s| s.upcoming(Local).next())
                     .map(|t| t.to_rfc3339())
                     .collect();
                 log::info!("  '{}' cron='{}' next={:?}", job.name, job.cron, next);
@@ -135,7 +135,7 @@ async fn run_loop(
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
 
-        let now = Utc::now();
+        let now = Local::now();
         let jobs = {
             let config = jobs_config.lock().unwrap();
             config.jobs.clone()

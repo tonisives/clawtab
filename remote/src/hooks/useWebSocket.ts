@@ -28,6 +28,7 @@ export function useWebSocket() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const setConnected = useWsStore((s) => s.setConnected);
+  const setSubscriptionRequired = useWsStore((s) => s.setSubscriptionRequired);
   const setDesktopStatus = useWsStore((s) => s.setDesktopStatus);
   const resetWs = useWsStore((s) => s.reset);
   const setJobs = useJobsStore((s) => s.setJobs);
@@ -71,6 +72,7 @@ export function useWebSocket() {
       console.log("[ws] connected");
       if (!mountedRef.current) return;
       setConnected(true);
+      setSubscriptionRequired(false);
       backoffRef.current = 1000;
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
@@ -165,8 +167,8 @@ export function useWebSocket() {
       setConnected(false);
 
       if (e.reason?.includes("403")) {
-        // No subscription - show "Desktop not connected" UI instead of "Connecting..."
         setConnected(true);
+        setSubscriptionRequired(true);
         return;
       }
 
@@ -189,8 +191,8 @@ export function useWebSocket() {
           .then((sub) => {
             if (!mountedRef.current) return;
             if (!sub.subscribed) {
-              // 403 - no subscription, show "Desktop not connected"
               setConnected(true);
+              setSubscriptionRequired(true);
             } else {
               scheduleReconnect();
             }
@@ -221,7 +223,7 @@ export function useWebSocket() {
         ws.send(JSON.stringify(msg));
       }
     };
-  }, [setConnected, setDesktopStatus, setJobs, updateStatus, refreshToken, scheduleReconnect]);
+  }, [setConnected, setSubscriptionRequired, setDesktopStatus, setJobs, updateStatus, refreshToken, scheduleReconnect]);
 
   // Keep ref in sync
   connectRef.current = doConnect;
