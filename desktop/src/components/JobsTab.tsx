@@ -646,6 +646,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onToggleAutoYes={() => {
             const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
             if (paneQuestion) handleToggleAutoYes(paneQuestion);
+            else handleToggleAutoYesByPaneId(viewingProcess.pane_id, viewingProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
           }}
         />
         {pendingAutoYes && (

@@ -336,6 +336,10 @@ export async function updateShare(shareId: string, allowedGroups: string[] | nul
   }, true);
 }
 
+export async function deleteAccount(): Promise<void> {
+  await request("/account", { method: "DELETE" }, true);
+}
+
 export async function removeShare(shareId: string): Promise<void> {
   await request(`/shares/${shareId}`, { method: "DELETE" }, true);
 }

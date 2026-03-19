@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -48,6 +48,25 @@ export default function LoginScreen() {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [appleReady, setAppleReady] = useState(Platform.OS !== "web");
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const clientId = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID;
+    if (!clientId) return;
+    const script = document.createElement("script");
+    script.src = "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js";
+    script.onload = () => {
+      (window as any).AppleID.auth.init({
+        clientId,
+        scope: "name email",
+        redirectURI: window.location.origin,
+        usePopup: true,
+      });
+      setAppleReady(true);
+    };
+    document.head.appendChild(script);
+  }, []);
   const [showServer, setShowServer] = useState(false);
   const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
   const [tempServerUrl, setTempServerUrl] = useState("");
@@ -102,24 +121,43 @@ export default function LoginScreen() {
   };
 
   const handleAppleLogin = async () => {
-    if (!AppleAuthentication) return;
     setLoading(true);
     setError(null);
     try {
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-      });
-      if (credential.identityToken) {
-        const name = [credential.fullName?.givenName, credential.fullName?.familyName]
-          .filter(Boolean)
-          .join(" ") || undefined;
-        await appleLogin(credential.identityToken, name, credential.email ?? undefined);
-        router.replace("/(tabs)");
+      if (Platform.OS === "web") {
+        const AppleID = (window as any).AppleID;
+        if (!AppleID) {
+          setError("Apple Sign In not available");
+          return;
+        }
+        const response = await AppleID.auth.signIn();
+        const idToken = response.authorization?.id_token;
+        if (idToken) {
+          const name = [response.user?.name?.firstName, response.user?.name?.lastName]
+            .filter(Boolean)
+            .join(" ") || undefined;
+          await appleLogin(idToken, name, response.user?.email ?? undefined);
+          router.replace("/(tabs)");
+        } else {
+          setError("No identity token received from Apple");
+        }
       } else {
-        setError("No identity token received from Apple");
+        if (!AppleAuthentication) return;
+        const credential = await AppleAuthentication.signInAsync({
+          requestedScopes: [
+            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+            AppleAuthentication.AppleAuthenticationScope.EMAIL,
+          ],
+        });
+        if (credential.identityToken) {
+          const name = [credential.fullName?.givenName, credential.fullName?.familyName]
+            .filter(Boolean)
+            .join(" ") || undefined;
+          await appleLogin(credential.identityToken, name, credential.email ?? undefined);
+          router.replace("/(tabs)");
+        } else {
+          setError("No identity token received from Apple");
+        }
       }
     } catch (e: any) {
       if (e.code !== "ERR_REQUEST_CANCELED") {
@@ -144,7 +182,7 @@ export default function LoginScreen() {
         <View style={styles.form}>
           {error && <Text style={styles.error}>{error}</Text>}
 
-          {Platform.OS === "ios" && (
+          {(Platform.OS === "ios" || (Platform.OS === "web" && appleReady)) && (
             <Pressable
               style={[styles.appleBtn, loading && styles.btnDisabled]}
               onPress={handleAppleLogin}

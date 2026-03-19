@@ -134,12 +134,38 @@ export default function SettingsScreen() {
     }
   }, [fetchShares]);
 
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const router = useRouter();
   const handleLogout = () => {
     confirm("Log out", "Are you sure you want to log out?", async () => {
       await logout();
       router.replace("/login");
     });
+  };
+
+  const handleDeleteAccount = () => {
+    confirm(
+      "Delete Account",
+      "This will permanently delete your account and all associated data. This action cannot be undone.",
+      () => {
+        confirm(
+          "Are you sure?",
+          "All your devices, shares, subscription, and notification history will be permanently deleted.",
+          async () => {
+            setDeleteLoading(true);
+            try {
+              await api.deleteAccount();
+              await logout();
+              router.replace("/login");
+            } catch (e) {
+              alertError("Error", e instanceof Error ? e.message : String(e));
+            } finally {
+              setDeleteLoading(false);
+            }
+          },
+        );
+      },
+    );
   };
 
   return (
@@ -246,9 +272,18 @@ export default function SettingsScreen() {
             )}
           </View>
 
-          <View style={styles.section}>
+          <View style={[styles.section, { gap: spacing.sm }]}>
             <Pressable style={[styles.dangerBtn, isWide && styles.btnConstrained]} onPress={handleLogout}>
               <Text style={styles.dangerText}>Log Out</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.deleteBtn, isWide && styles.btnConstrained, deleteLoading && styles.btnDisabled]}
+              onPress={handleDeleteAccount}
+              disabled={deleteLoading}
+            >
+              <Text style={styles.deleteBtnText}>
+                {deleteLoading ? "Deleting..." : "Delete Account"}
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -369,6 +404,18 @@ offlineCard: {
   },
   dangerText: {
     color: colors.danger,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  deleteBtn: {
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: colors.danger,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteBtnText: {
+    color: "#fff",
     fontSize: 16,
     fontWeight: "600",
   },

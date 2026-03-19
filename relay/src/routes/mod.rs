@@ -1,3 +1,4 @@
+mod account;
 mod answer;
 mod auth_session;
 mod health;
@@ -90,6 +91,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/shares", get(share::list))
         .route("/shares/{id}", delete(share::remove))
         .route("/shares/{id}", patch(share::update))
+        .route("/account", delete(account::delete_account))
         .layer(middleware::from_fn_with_state(state, auth_middleware));
 
     public

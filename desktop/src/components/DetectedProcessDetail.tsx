@@ -119,6 +119,38 @@ export function DetectedProcessDetail({
             <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
           </div>
         </div>
+        {onToggleAutoYes && (
+          <div
+            role="switch"
+            aria-checked={!!autoYesActive}
+            onClick={onToggleAutoYes}
+            style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", marginRight: 4, WebkitAppRegion: "no-drag" as never }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 600, color: autoYesActive ? "var(--warning-color)" : "var(--text-secondary)", whiteSpace: "nowrap" }}>
+              Auto-yes
+            </span>
+            <div style={{
+              position: "relative",
+              width: 36,
+              height: 20,
+              borderRadius: 10,
+              background: autoYesActive ? "var(--warning-color)" : "var(--border-color)",
+              transition: "background 0.2s",
+              flexShrink: 0,
+            }}>
+              <div style={{
+                position: "absolute",
+                top: 2,
+                left: autoYesActive ? 18 : 2,
+                width: 16,
+                height: 16,
+                borderRadius: "50%",
+                background: "white",
+                transition: "left 0.2s",
+              }} />
+            </div>
+          </div>
+        )}
         <div className="btn-group">
           <button className="btn btn-sm" onClick={handleOpen} title="Open in terminal">
             Open in Terminal
@@ -208,18 +240,36 @@ export function DetectedProcessDetail({
           {onToggleAutoYes && (
             <>
               <div style={{ width: 1, height: 18, backgroundColor: "var(--border-color)" }} />
-              <button
-                className="btn btn-sm"
-                style={{
-                  borderColor: "var(--warning-color)",
-                  color: "var(--warning-color)",
-                  backgroundColor: autoYesActive ? "var(--warning-bg)" : undefined,
-                  fontWeight: 600,
-                }}
+              <div
+                role="switch"
+                aria-checked={!!autoYesActive}
                 onClick={onToggleAutoYes}
+                style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}
               >
-                {autoYesActive ? "! Auto ON" : "! Yes all"}
-              </button>
+                <span style={{ fontSize: 11, fontWeight: 600, color: autoYesActive ? "var(--warning-color)" : "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                  Auto-yes
+                </span>
+                <div style={{
+                  position: "relative",
+                  width: 36,
+                  height: 20,
+                  borderRadius: 10,
+                  background: autoYesActive ? "var(--warning-color)" : "var(--border-color)",
+                  transition: "background 0.2s",
+                  flexShrink: 0,
+                }}>
+                  <div style={{
+                    position: "absolute",
+                    top: 2,
+                    left: autoYesActive ? 18 : 2,
+                    width: 16,
+                    height: 16,
+                    borderRadius: "50%",
+                    background: "white",
+                    transition: "left 0.2s",
+                  }} />
+                </div>
+              </div>
             </>
           )}
         </div>
