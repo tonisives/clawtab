@@ -19,7 +19,6 @@ export default function SettingsScreen() {
   const email = useAuthStore((s) => s.email);
   const logout = useAuthStore((s) => s.logout);
   const connected = useWsStore((s) => s.connected);
-  const subscriptionRequired = useWsStore((s) => s.subscriptionRequired);
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const desktopDeviceName = useWsStore((s) => s.desktopDeviceName);
   const { isWide } = useResponsive();
@@ -27,7 +26,6 @@ export default function SettingsScreen() {
   const [sub, setSub] = useState<SubStatus>(null);
   const [subLoading, setSubLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [hasDevices, setHasDevices] = useState(false);
 
   const [shares, setShares] = useState<api.SharesResponse>({ shared_by_me: [], shared_with_me: [] });
   const [sharesLoading, setSharesLoading] = useState(true);
@@ -53,9 +51,6 @@ export default function SettingsScreen() {
       .then(setSub)
       .catch(() => setSub(null))
       .finally(() => setSubLoading(false));
-    api.getDevices()
-      .then((d) => setHasDevices(d.length > 0))
-      .catch(() => setHasDevices(false));
     fetchShares().finally(() => setSharesLoading(false));
   }, [userId, fetchShares]);
 
@@ -131,7 +126,6 @@ export default function SettingsScreen() {
     try {
       const [newSub] = await Promise.all([
         api.getSubscriptionStatus().catch(() => null),
-        api.getDevices().then((d) => setHasDevices(d.length > 0)).catch(() => {}),
         fetchShares(),
       ]);
       if (newSub !== null) setSub(newSub);
@@ -191,19 +185,13 @@ export default function SettingsScreen() {
             </View>
             {!desktopOnline && (
               <View style={styles.offlineCard}>
-                <Text style={styles.offlineTitle}>
-                  {subscriptionRequired && hasDevices ? "Subscription required" : "Desktop not connected"}
-                </Text>
+                <Text style={styles.offlineTitle}>Desktop not connected</Text>
                 <Text style={styles.offlineText}>
-                  {subscriptionRequired && hasDevices
-                    ? "Please set up a subscription in the desktop app to use the hosted relay."
-                    : "Please install ClawTab desktop and sign in to the same account."}
+                  Please install ClawTab desktop and sign in to the same account.
                 </Text>
-                {!(subscriptionRequired && hasDevices) && (
-                  <Pressable onPress={() => openUrl("https://clawtab.cc/docs#quick-start")}>
-                    <Text style={styles.linkText}>Quick Start Guide</Text>
-                  </Pressable>
-                )}
+                <Pressable onPress={() => openUrl("https://clawtab.cc/docs#quick-start")}>
+                  <Text style={styles.linkText}>Quick Start Guide</Text>
+                </Pressable>
                 <Pressable onPress={() => openUrl("https://clawtab.cc/docs#self-hosted-relay")}>
                   <Text style={styles.linkText}>Or use a self-hosted relay server</Text>
                 </Pressable>
