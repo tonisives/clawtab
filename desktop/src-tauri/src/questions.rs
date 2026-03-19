@@ -305,19 +305,28 @@ pub async fn question_detection_loop(
         log::info!("[questions] storing {} active questions", questions.len());
         *active_questions.lock().unwrap() = questions.clone();
 
+        // Filter out auto-yes panes before sending to relay - no need to notify
+        // mobile about questions that will be auto-answered locally
+        let relay_questions: Vec<ClaudeQuestion> = {
+            let yes_panes = auto_yes_panes.lock().unwrap();
+            questions.into_iter()
+                .filter(|q| !yes_panes.contains(&q.pane_id))
+                .collect()
+        };
+
         // Send to relay when questions change, or periodically (every 6 ticks = 30s)
         // so newly connected clients get them without waiting for a change
-        let current_ids: std::collections::HashSet<String> = questions
+        let current_ids: std::collections::HashSet<String> = relay_questions
             .iter()
             .map(|q| q.question_id.clone())
             .collect();
         ticks_since_send += 1;
         let changed = current_ids != last_sent_ids;
-        let periodic_resend = !questions.is_empty() && ticks_since_send >= 2;
+        let periodic_resend = !relay_questions.is_empty() && ticks_since_send >= 2;
         if changed || periodic_resend {
             last_sent_ids = current_ids;
             ticks_since_send = 0;
-            let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions };
+            let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions: relay_questions };
             if let Ok(guard) = relay.lock() {
                 if let Some(handle) = guard.as_ref() {
                     handle.send_message(&msg);

@@ -23,7 +23,7 @@
       "backgroundColor": "#0a0a0a"
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "cc.clawtab",
       "usesAppleSignIn": true,
       "entitlements": {
