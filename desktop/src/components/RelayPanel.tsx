@@ -136,8 +136,36 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     }
   };
 
+  const pollForAuthResult = useCallback(async (sessionId: string) => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const resp = await fetch(`${serverUrl}/auth/session/${sessionId}`);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        if (data.status === "complete") {
+          setAccessToken(data.access_token);
+          setLoginError(null);
+          invoke("relay_save_tokens", {
+            accessToken: data.access_token,
+            refreshToken: data.refresh_token,
+          }).catch((e) => console.error("Failed to save tokens:", e));
+          return;
+        }
+      } catch {
+        // network error, keep polling
+      }
+    }
+  }, [serverUrl]);
+
   const handleGoogleSignIn = async () => {
-    const state = btoa("clawtab");
+    const sessionId = crypto.randomUUID();
+    const state = btoa(`clawtab:${sessionId}`);
+    await fetch(`${serverUrl}/auth/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {});
     const redirectUri = `${serverUrl}/auth/google/callback`;
     const params = new URLSearchParams({
       client_id: GOOGLE_CLIENT_ID,
@@ -149,10 +177,17 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       prompt: "consent",
     });
     await openUrl(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+    pollForAuthResult(sessionId);
   };
 
   const handleAppleSignIn = async () => {
-    const state = btoa("clawtab");
+    const sessionId = crypto.randomUUID();
+    const state = btoa(`clawtab:${sessionId}`);
+    await fetch(`${serverUrl}/auth/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    }).catch(() => {});
     const redirectUri = `${serverUrl}/auth/apple/callback`;
     const params = new URLSearchParams({
       client_id: APPLE_WEB_CLIENT_ID,
@@ -163,6 +198,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       state,
     });
     await openUrl(`https://appleid.apple.com/auth/authorize?${params}`);
+    pollForAuthResult(sessionId);
   };
 
   const handlePairDevice = async () => {

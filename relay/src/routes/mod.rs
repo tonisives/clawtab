@@ -1,4 +1,5 @@
 mod answer;
+mod auth_session;
 mod health;
 mod register;
 mod login;
@@ -69,6 +70,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/google/callback", get(google_callback::google_callback))
         .route("/auth/apple", post(apple_auth::apple_auth))
         .route("/auth/apple/callback", post(apple_callback::apple_callback))
+        .route("/auth/session", post(auth_session::create_session))
+        .route("/auth/session/{id}", get(auth_session::poll_session))
         .route("/iap/app-store-notification", post(iap::app_store_notification))
         .layer(GovernorLayer { config: rate_limit_config });
 

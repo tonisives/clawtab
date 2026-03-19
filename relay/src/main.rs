@@ -10,6 +10,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod apns;
 mod auth;
+pub mod auth_session;
 mod billing;
 mod config;
 mod db;
@@ -26,6 +27,7 @@ pub struct AppState {
     pub hub: Arc<RwLock<ws::Hub>>,
     pub apns: Option<Arc<apns::ApnsClient>>,
     pub redis: Option<redis::aio::ConnectionManager>,
+    pub auth_sessions: Arc<auth_session::AuthSessionStore>,
 }
 
 #[tokio::main]
@@ -83,12 +85,16 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    let auth_sessions = Arc::new(auth_session::AuthSessionStore::new());
+    auth_session::spawn_cleanup(Arc::clone(&auth_sessions));
+
     let state = AppState {
         config: Arc::new(config),
         pool,
         hub,
         apns: apns_client,
         redis: redis_conn,
+        auth_sessions,
     };
 
     let cors = CorsLayer::new()

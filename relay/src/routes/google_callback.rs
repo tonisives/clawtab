@@ -81,13 +81,21 @@ pub async fn google_callback(
     headers: HeaderMap,
     Query(params): Query<CallbackParams>,
 ) -> Result<Html<String>, AppError> {
-    // Decode the redirect scheme from the state parameter
-    let scheme = params
-        .state
-        .as_deref()
-        .and_then(|s| URL_SAFE_NO_PAD.decode(s).ok())
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .unwrap_or_else(|| "clawtab".into());
+    // Decode the redirect scheme (and optional session_id) from the state parameter
+    let scheme_and_session = {
+        let decoded = params
+            .state
+            .as_deref()
+            .and_then(|s| URL_SAFE_NO_PAD.decode(s).ok())
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .unwrap_or_else(|| "clawtab".into());
+        if let Some((s, sid)) = decoded.split_once(':') {
+            (s.to_string(), Some(sid.to_string()))
+        } else {
+            (decoded, None)
+        }
+    };
+    let scheme = &scheme_and_session.0;
 
     let client_id = state
         .config
@@ -125,7 +133,7 @@ pub async fn google_callback(
     if !token_resp.status().is_success() {
         let body = token_resp.text().await.unwrap_or_default();
         tracing::error!("google token exchange error: {body}");
-        return Ok(error_page(&scheme, "Failed to exchange authorization code"));
+        return Ok(error_page(scheme, "Failed to exchange authorization code"));
     }
 
     let tokens: GoogleTokenResponse = token_resp
@@ -138,7 +146,7 @@ pub async fn google_callback(
         Ok(info) => info,
         Err(e) => {
             tracing::error!("google token verification failed: {e}");
-            return Ok(error_page(&scheme, "Google authentication failed"));
+            return Ok(error_page(scheme, "Google authentication failed"));
         }
     };
 
@@ -147,7 +155,7 @@ pub async fn google_callback(
         Ok(auth) => auth,
         Err(e) => {
             tracing::error!("google user authentication failed: {e}");
-            return Ok(error_page(&scheme, "Authentication failed"));
+            return Ok(error_page(scheme, "Authentication failed"));
         }
     };
 
@@ -157,6 +165,17 @@ pub async fn google_callback(
         urlencoding::encode(&auth.refresh_token),
         auth.user_id,
     );
+
+    if let Some(session_id) = scheme_and_session.1 {
+        state.auth_sessions.complete(
+            &session_id,
+            crate::auth_session::AuthResult {
+                access_token: auth.access_token,
+                refresh_token: auth.refresh_token,
+                user_id: auth.user_id,
+            },
+        ).await;
+    }
 
     Ok(redirect_page(&deep_link))
 }

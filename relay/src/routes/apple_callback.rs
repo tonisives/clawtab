@@ -95,18 +95,27 @@ pub async fn apple_callback(
     State(state): State<AppState>,
     Form(params): Form<AppleCallbackParams>,
 ) -> Result<Html<String>, AppError> {
-    let scheme = params
-        .state
-        .as_deref()
-        .and_then(|s| URL_SAFE_NO_PAD.decode(s).ok())
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .unwrap_or_else(|| "clawtab".into());
+    let scheme_and_session = {
+        let decoded = params
+            .state
+            .as_deref()
+            .and_then(|s| URL_SAFE_NO_PAD.decode(s).ok())
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .unwrap_or_else(|| "clawtab".into());
+        // Format: "scheme" or "scheme:session_id"
+        if let Some((s, sid)) = decoded.split_once(':') {
+            (s.to_string(), Some(sid.to_string()))
+        } else {
+            (decoded, None)
+        }
+    };
+    let scheme = &scheme_and_session.0;
 
     let id_token = match params.id_token {
         Some(t) => t,
         None => {
             tracing::error!("apple callback missing id_token, code={:?}", params.code);
-            return Ok(error_page(&scheme, "Apple authentication failed - no token received"));
+            return Ok(error_page(scheme, "Apple authentication failed - no token received"));
         }
     };
 
@@ -122,7 +131,7 @@ pub async fn apple_callback(
         Ok(info) => info,
         Err(e) => {
             tracing::error!("apple token verification failed: {e}");
-            return Ok(error_page(&scheme, "Apple authentication failed"));
+            return Ok(error_page(scheme, "Apple authentication failed"));
         }
     };
 
@@ -156,7 +165,7 @@ pub async fn apple_callback(
         Ok(auth) => auth,
         Err(e) => {
             tracing::error!("apple user authentication failed: {e}");
-            return Ok(error_page(&scheme, "Authentication failed"));
+            return Ok(error_page(scheme, "Authentication failed"));
         }
     };
 
@@ -166,6 +175,20 @@ pub async fn apple_callback(
         urlencoding::encode(&auth.refresh_token),
         auth.user_id,
     );
+
+    // If state contains a session_id (format: "scheme:session_id"), store
+    // the result so the desktop app can poll for it instead of relying on
+    // the deep link.
+    if let Some(session_id) = scheme_and_session.1 {
+        state.auth_sessions.complete(
+            &session_id,
+            crate::auth_session::AuthResult {
+                access_token: auth.access_token,
+                refresh_token: auth.refresh_token,
+                user_id: auth.user_id,
+            },
+        ).await;
+    }
 
     Ok(redirect_page(&deep_link))
 }
