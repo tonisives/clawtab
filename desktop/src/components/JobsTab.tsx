@@ -235,6 +235,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   useEffect(() => {
     if (!pendingPaneId) return;
+    console.log("[open-pane] looking for pane:", pendingPaneId,
+      "jobs:", (core.jobs as Job[]).map((j) => ({ slug: j.slug, pane: (core.statuses[j.slug] as { pane_id?: string })?.pane_id })),
+      "processes:", core.processes.map((p) => p.pane_id));
     // Try to find a job whose running status matches this pane
     for (const job of core.jobs as Job[]) {
       const status = core.statuses[job.slug];
@@ -256,7 +259,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
     // If not found yet and data is loaded, clear it
     if (core.loaded) {
-      console.warn("No job or process found for pane:", pendingPaneId);
+      console.warn("[open-pane] no job or process found for pane:", pendingPaneId);
       onPaneHandled?.();
     }
   }, [pendingPaneId, core.jobs, core.statuses, core.processes, core.loaded, onPaneHandled]);
