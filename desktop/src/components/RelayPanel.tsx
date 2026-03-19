@@ -137,8 +137,8 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
   };
 
   const pollForAuthResult = useCallback(async (sessionId: string) => {
-    for (let i = 0; i < 60; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
       try {
         const resp = await fetch(`${serverUrl}/auth/session/${sessionId}`);
         if (!resp.ok) continue;
@@ -158,9 +158,12 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     }
   }, [serverUrl]);
 
+  const toBase64Url = (s: string) =>
+    btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
   const handleGoogleSignIn = async () => {
     const sessionId = crypto.randomUUID();
-    const state = btoa(`clawtab:${sessionId}`);
+    const state = toBase64Url(`clawtab:${sessionId}`);
     await fetch(`${serverUrl}/auth/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -182,7 +185,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
 
   const handleAppleSignIn = async () => {
     const sessionId = crypto.randomUUID();
-    const state = btoa(`clawtab:${sessionId}`);
+    const state = toBase64Url(`clawtab:${sessionId}`);
     await fetch(`${serverUrl}/auth/session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -70,10 +70,12 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/auth/google/callback", get(google_callback::google_callback))
         .route("/auth/apple", post(apple_auth::apple_auth))
         .route("/auth/apple/callback", post(apple_callback::apple_callback))
-        .route("/auth/session", post(auth_session::create_session))
-        .route("/auth/session/{id}", get(auth_session::poll_session))
         .route("/iap/app-store-notification", post(iap::app_store_notification))
         .layer(GovernorLayer { config: rate_limit_config });
+
+    let auth_session_routes = Router::new()
+        .route("/auth/session", post(auth_session::create_session))
+        .route("/auth/session/{id}", get(auth_session::poll_session));
 
     let authenticated = Router::new()
         .route("/devices/pair", post(device::pair))
@@ -92,6 +94,7 @@ pub fn router(state: AppState) -> Router<AppState> {
 
     public
         .merge(rate_limited_auth)
+        .merge(auth_session_routes)
         .merge(authenticated)
         .layer(middleware::from_fn(log_errors))
 }
