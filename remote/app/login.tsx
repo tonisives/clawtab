@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -13,8 +13,11 @@ import { useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { useAuthStore } from "../src/store/auth";
+import * as api from "../src/api/client";
 import { colors } from "../src/theme/colors";
 import { radius, spacing } from "../src/theme/spacing";
+
+const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
 
 // Native-only: conditionally import Google Sign-In
 let GoogleSignin: any = null;
@@ -48,25 +51,6 @@ export default function LoginScreen() {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [appleReady, setAppleReady] = useState(Platform.OS !== "web");
-
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    const clientId = process.env.EXPO_PUBLIC_APPLE_SERVICE_ID;
-    if (!clientId) return;
-    const script = document.createElement("script");
-    script.src = "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js";
-    script.onload = () => {
-      (window as any).AppleID.auth.init({
-        clientId,
-        scope: "name email",
-        redirectURI: window.location.origin,
-        usePopup: true,
-      });
-      setAppleReady(true);
-    };
-    document.head.appendChild(script);
-  }, []);
   const [showServer, setShowServer] = useState(false);
   const [serverUrl, setServerUrl] = useState("https://relay.clawtab.cc");
   const [tempServerUrl, setTempServerUrl] = useState("");
@@ -120,27 +104,55 @@ export default function LoginScreen() {
     }
   };
 
+  const toBase64Url = (s: string) =>
+    btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+  const setAuth = useAuthStore((s) => s.setAuth);
+
+  const pollForAuthResult = useCallback(async (sessionId: string) => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const resp = await fetch(`${serverUrl}/auth/session/${sessionId}`);
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        if (data.status === "complete") {
+          await api.storeTokens(data.access_token, data.refresh_token, data.user_id);
+          setAuth(data.user_id, data.access_token);
+          router.replace("/(tabs)");
+          return true;
+        }
+      } catch {
+        // keep polling
+      }
+    }
+    return false;
+  }, [serverUrl, router, setAuth]);
+
   const handleAppleLogin = async () => {
     setLoading(true);
     setError(null);
     try {
       if (Platform.OS === "web") {
-        const AppleID = (window as any).AppleID;
-        if (!AppleID) {
-          setError("Apple Sign In not available");
-          return;
-        }
-        const response = await AppleID.auth.signIn();
-        const idToken = response.authorization?.id_token;
-        if (idToken) {
-          const name = [response.user?.name?.firstName, response.user?.name?.lastName]
-            .filter(Boolean)
-            .join(" ") || undefined;
-          await appleLogin(idToken, name, response.user?.email ?? undefined);
-          router.replace("/(tabs)");
-        } else {
-          setError("No identity token received from Apple");
-        }
+        const sessionId = crypto.randomUUID();
+        const state = toBase64Url(`clawtab:${sessionId}`);
+        await fetch(`${serverUrl}/auth/session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId }),
+        }).catch(() => {});
+        const redirectUri = `${serverUrl}/auth/apple/callback`;
+        const params = new URLSearchParams({
+          client_id: APPLE_WEB_CLIENT_ID,
+          redirect_uri: redirectUri,
+          response_type: "code id_token",
+          response_mode: "form_post",
+          scope: "name email",
+          state,
+        });
+        window.open(`https://appleid.apple.com/auth/authorize?${params}`, "_blank");
+        const ok = await pollForAuthResult(sessionId);
+        if (!ok) setError("Apple sign-in timed out");
       } else {
         if (!AppleAuthentication) return;
         const credential = await AppleAuthentication.signInAsync({
@@ -182,7 +194,7 @@ export default function LoginScreen() {
         <View style={styles.form}>
           {error && <Text style={styles.error}>{error}</Text>}
 
-          {(Platform.OS === "ios" || (Platform.OS === "web" && appleReady)) && (
+          {(Platform.OS === "ios" || Platform.OS === "web") && (
             <Pressable
               style={[styles.appleBtn, loading && styles.btnDisabled]}
               onPress={handleAppleLogin}

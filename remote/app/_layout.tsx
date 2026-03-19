@@ -13,6 +13,10 @@ import { colors } from "../src/theme/colors";
 
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
+    // Reset stores to clear any stale data from a previous account
+    useJobsStore.setState({ jobs: [], statuses: {}, detectedProcesses: [], loaded: false, cachedLoad: false });
+    useNotificationStore.getState().reset();
+
     loadCache().then((cached) => {
       if (cached) {
         useJobsStore.getState().hydrateFromCache(cached.jobs, cached.statuses);

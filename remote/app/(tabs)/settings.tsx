@@ -218,7 +218,7 @@ export default function SettingsScreen() {
                 <Pressable onPress={() => openUrl("https://clawtab.cc/docs#quick-start")}>
                   <Text style={styles.linkText}>Quick Start Guide</Text>
                 </Pressable>
-                <Pressable onPress={() => openUrl("https://clawtab.cc/docs#self-hosted-relay")}>
+                <Pressable onPress={() => openUrl("https://clawtab.cc/docs#deploy")}>
                   <Text style={styles.linkText}>Or use a self-hosted relay server</Text>
                 </Pressable>
               </View>
@@ -272,10 +272,15 @@ export default function SettingsScreen() {
             )}
           </View>
 
-          <View style={[styles.section, { gap: spacing.sm }]}>
+          <View style={styles.section}>
             <Pressable style={[styles.dangerBtn, isWide && styles.btnConstrained]} onPress={handleLogout}>
               <Text style={styles.dangerText}>Log Out</Text>
             </Pressable>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.section}>
             <Pressable
               style={[styles.deleteBtn, isWide && styles.btnConstrained, deleteLoading && styles.btnDisabled]}
               onPress={handleDeleteAccount}
@@ -413,6 +418,11 @@ offlineCard: {
     backgroundColor: colors.danger,
     justifyContent: "center",
     alignItems: "center",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.md,
   },
   deleteBtnText: {
     color: "#fff",

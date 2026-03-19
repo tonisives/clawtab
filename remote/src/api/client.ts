@@ -226,6 +226,12 @@ function isTokenExpiringSoon(token: string): boolean {
   }
 }
 
+export async function storeTokens(accessToken: string, refreshToken: string, userId: string) {
+  await storage.setItem(KEYS.accessToken, accessToken);
+  await storage.setItem(KEYS.refreshToken, refreshToken);
+  await storage.setItem(KEYS.userId, userId);
+}
+
 export async function googleAuth(idToken: string): Promise<AuthResponse> {
   const resp = await request<AuthResponse>("/auth/google", {
     method: "POST",
