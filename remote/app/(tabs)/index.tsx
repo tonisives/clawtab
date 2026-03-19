@@ -11,10 +11,11 @@ import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
 import { NotificationStack } from "../../src/components/NotificationStack"
 import { DemoNotificationStack } from "../../src/components/DemoNotificationStack"
+import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { JobListView } from "@clawtab/shared"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
 import { registerRequest } from "../../src/lib/useRequestMap"
-import { useResponsive, WIDE_CONTENT_MAX_WIDTH } from "../../src/hooks/useResponsive"
+import { useResponsive } from "../../src/hooks/useResponsive"
 import { DemoBanner } from "../../src/components/DemoOverlay"
 import { openUrl } from "../../src/lib/platform"
 import { DEMO_JOBS, DEMO_STATUSES } from "../../src/demo/data"
@@ -32,13 +33,13 @@ export default function JobsScreen() {
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
+  const [selectedJob, setSelectedJob] = useState<string | null>(null)
   const { isWide } = useResponsive()
   const router = useRouter()
 
   const isDemo = connected && !desktopOnline && realJobs.length === 0
   const jobs = isDemo ? DEMO_JOBS : realJobs
   const statuses = isDemo ? DEMO_STATUSES : realStatuses
-
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {
@@ -64,15 +65,23 @@ export default function JobsScreen() {
     if (workDir) {
       registerRequest<{ job_name?: string }>(id).then((ack) => {
         if (ack.job_name) {
-          router.push(`/job/${ack.job_name}`)
+          if (isWide) {
+            setSelectedJob(ack.job_name)
+          } else {
+            router.push(`/job/${ack.job_name}`)
+          }
         }
       })
     }
-  }, [router])
+  }, [router, isWide])
 
   const handleSelectJob = useCallback((job: RemoteJob) => {
-    router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
-  }, [router, isDemo])
+    if (isWide) {
+      setSelectedJob(job.name)
+    } else {
+      router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
+    }
+  }, [router, isDemo, isWide])
 
   const handleSelectProcess = useCallback((process: ClaudeProcess) => {
     router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
@@ -110,36 +119,78 @@ export default function JobsScreen() {
     </>
   )
 
-  return (
-    <View style={styles.container}>
+  const jobList = (
+    <View style={isWide ? styles.listPane : styles.container}>
       {isDemo && <DemoBanner />}
       <JobListView
-            jobs={jobs}
-            statuses={statuses}
-            detectedProcesses={detectedProcesses}
-            collapsedGroups={collapsedGroups}
-            onToggleGroup={toggleGroup}
-            onRefresh={handleRefresh}
-            sortMode={sortMode}
-            onSortChange={setSortMode}
-            onSelectJob={handleSelectJob}
-            onSelectProcess={handleSelectProcess}
-            onRunAgent={desktopOnline ? handleRunAgent : undefined}
-            headerContent={bannerContent}
-            showEmpty={loaded || isDemo}
-            emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
-            contentContainerStyle={isWide ? styles.wideContent : undefined}
+        jobs={jobs}
+        statuses={statuses}
+        detectedProcesses={detectedProcesses}
+        collapsedGroups={collapsedGroups}
+        onToggleGroup={toggleGroup}
+        onRefresh={handleRefresh}
+        sortMode={sortMode}
+        onSortChange={setSortMode}
+        onSelectJob={handleSelectJob}
+        onSelectProcess={handleSelectProcess}
+        onRunAgent={desktopOnline ? handleRunAgent : undefined}
+        headerContent={bannerContent}
+        showEmpty={loaded || isDemo}
+        emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+      />
+    </View>
+  )
+
+  if (!isWide) {
+    return <View style={styles.container}>{jobList}</View>
+  }
+
+  return (
+    <View style={styles.splitContainer}>
+      {jobList}
+      <View style={styles.detailPane}>
+        {selectedJob ? (
+          <JobDetailPane
+            key={selectedJob}
+            jobName={selectedJob}
+            isDemo={isDemo}
+            onClose={() => setSelectedJob(null)}
           />
+        ) : (
+          <View style={styles.emptyDetail}>
+            <Text style={styles.emptyDetailText}>Select a job to view details</Text>
+          </View>
+        )}
+      </View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  wideContent: {
-    maxWidth: WIDE_CONTENT_MAX_WIDTH,
-    width: "100%",
-    alignSelf: "center" as const,
+  splitContainer: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: colors.bg,
+  },
+  listPane: {
+    width: 340,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  detailPane: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  emptyDetail: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyDetailText: {
+    color: colors.textMuted,
+    fontSize: 15,
   },
   loadingContainer: {
     justifyContent: "center",

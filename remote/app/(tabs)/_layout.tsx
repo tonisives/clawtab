@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Platform } from "react-native";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
@@ -97,12 +98,14 @@ function TabsContent({ isWide }: { isWide: boolean }) {
 
 export default function TabLayout() {
   const { isWide } = useResponsive();
+  const isWeb = Platform.OS === "web";
+  const useSidebar = isWide && isWeb;
 
   useEffect(() => {
     registerNotificationCategories();
   }, []);
 
-  if (isWide) {
+  if (useSidebar) {
     return (
       <ResizableSidebar>
         <TabsContent isWide />

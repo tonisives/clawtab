@@ -6,7 +6,6 @@ import {
   Pressable,
   StyleSheet,
   Platform,
-  ScrollView,
   Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -181,10 +180,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled"
-    >
+    <View style={styles.container}>
       <View style={styles.card}>
         <View style={styles.header}>
           <Text style={styles.title}>ClawTab</Text>
@@ -256,13 +252,13 @@ export default function LoginScreen() {
           </View>
         </Pressable>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: spacing.xl,
