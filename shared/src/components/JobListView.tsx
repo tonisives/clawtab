@@ -440,6 +440,8 @@ export function JobListView({
           onChangeText={setSearchQuery}
           placeholder="Filter jobs..."
           placeholderTextColor={colors.textMuted}
+          returnKeyType="done"
+          inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
           onKeyPress={(e) => {
             if (e.nativeEvent.key === "Escape") {
               handleClearSearch();
@@ -492,6 +494,7 @@ export function JobListView({
       ref={scrollRef}
       style={styles.scroll}
       contentContainerStyle={[styles.list, contentContainerStyle]}
+      automaticallyAdjustKeyboardInsets
       refreshControl={
         onRefresh ? (
           <RefreshControl

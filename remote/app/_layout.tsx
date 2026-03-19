@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet, Platform, InputAccessoryView, TouchableOpacity, Text, Keyboard } from "react-native";
 import { useAuthStore } from "../src/store/auth";
 import { useWebSocket } from "../src/hooks/useWebSocket";
 import { useJobsStore } from "../src/store/jobs";
@@ -52,6 +52,16 @@ export default function RootLayout() {
     <View style={styles.root}>
       <Stack screenOptions={{ headerShown: false }} />
       <StatusBar style="light" />
+      {Platform.OS === "ios" && (
+        <InputAccessoryView nativeID="keyboard-dismiss">
+          <View style={styles.keyboardBar}>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={() => Keyboard.dismiss()} activeOpacity={0.6}>
+              <Text style={styles.keyboardDone}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
     </View>
   );
 
@@ -70,6 +80,19 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  keyboardBar: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  keyboardDone: {
+    color: colors.accent,
+    fontSize: 16,
+    fontWeight: "600",
   },
   loading: {
     flex: 1,

@@ -11,7 +11,7 @@ function BackTitle({ title }: { title: string }) {
         if (router.canGoBack()) router.back();
         else router.replace("/");
       }}
-      style={{ flexDirection: "row", alignItems: "center", gap: 4, marginLeft: 4 }}
+      style={{ flexDirection: "row", alignItems: "center", gap: 4, marginLeft: 4, paddingRight: 12 }}
       activeOpacity={0.6}
     >
       <Ionicons name="chevron-back" size={24} color={colors.text} />

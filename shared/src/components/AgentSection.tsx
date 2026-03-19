@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { JobStatus } from "../types/job";
 import type { ClaudeProcess } from "../types/process";
 import { StatusBadge } from "./StatusBadge";
@@ -63,6 +63,7 @@ export function AgentSection({
                   placeholder="Enter a prompt for the agent..."
                   placeholderTextColor={colors.textMuted}
                   returnKeyType="send"
+                  inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
                   onSubmitEditing={handleRun}
                   editable={!sending}
                 />

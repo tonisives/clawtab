@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { View, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -28,6 +28,7 @@ export function GroupAgentRow({
         placeholder="Run agent in this folder..."
         placeholderTextColor={colors.textMuted}
         returnKeyType="send"
+        inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
         onSubmitEditing={handleRun}
         editable={!sending}
       />

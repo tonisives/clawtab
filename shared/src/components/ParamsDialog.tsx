@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -45,6 +45,7 @@ export function ParamsDialog({
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
+                inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
               />
             </View>
           ))}

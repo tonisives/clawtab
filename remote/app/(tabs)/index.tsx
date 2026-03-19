@@ -10,19 +10,22 @@ import { useRouter } from "expo-router"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
 import { NotificationStack } from "../../src/components/NotificationStack"
+import { DemoNotificationStack } from "../../src/components/DemoNotificationStack"
 import { JobListView } from "@clawtab/shared"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive, WIDE_CONTENT_MAX_WIDTH } from "../../src/hooks/useResponsive"
+import { DemoBanner } from "../../src/components/DemoOverlay"
 import { openUrl } from "../../src/lib/platform"
+import { DEMO_JOBS, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
 import type { RemoteJob, JobSortMode } from "@clawtab/shared"
 import type { ClaudeProcess } from "@clawtab/shared"
 
 export default function JobsScreen() {
-  const jobs = useJobsStore((s) => s.jobs)
-  const statuses = useJobsStore((s) => s.statuses)
+  const realJobs = useJobsStore((s) => s.jobs)
+  const realStatuses = useJobsStore((s) => s.statuses)
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses)
   const loaded = useJobsStore((s) => s.loaded)
   const connected = useWsStore((s) => s.connected)
@@ -31,6 +34,10 @@ export default function JobsScreen() {
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
   const { isWide } = useResponsive()
   const router = useRouter()
+
+  const isDemo = connected && !desktopOnline && realJobs.length === 0
+  const jobs = isDemo ? DEMO_JOBS : realJobs
+  const statuses = isDemo ? DEMO_STATUSES : realStatuses
 
 
   const toggleGroup = useCallback((group: string) => {
@@ -64,8 +71,8 @@ export default function JobsScreen() {
   }, [router])
 
   const handleSelectJob = useCallback((job: RemoteJob) => {
-    router.push(`/job/${job.name}`)
-  }, [router])
+    router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
+  }, [router, isDemo])
 
   const handleSelectProcess = useCallback((process: ClaudeProcess) => {
     router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
@@ -78,12 +85,12 @@ export default function JobsScreen() {
           <Text style={styles.bannerText}>Connecting to relay...</Text>
         </View>
       )}
-      {connected && !desktopOnline && jobs.length > 0 && (
+      {connected && !desktopOnline && !isDemo && realJobs.length > 0 && (
         <View style={[styles.banner, styles.bannerWarn]}>
           <Text style={styles.bannerText}>Desktop not connected</Text>
         </View>
       )}
-      {connected && !loaded && (
+      {connected && !loaded && !isDemo && (
         desktopOnline ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator color={colors.accent} />
@@ -99,12 +106,13 @@ export default function JobsScreen() {
           </View>
         )
       )}
-      <NotificationStack />
+      {isDemo ? <DemoNotificationStack /> : <NotificationStack />}
     </>
   )
 
   return (
     <View style={styles.container}>
+      {isDemo && <DemoBanner />}
       <JobListView
             jobs={jobs}
             statuses={statuses}
@@ -118,7 +126,7 @@ export default function JobsScreen() {
             onSelectProcess={handleSelectProcess}
             onRunAgent={desktopOnline ? handleRunAgent : undefined}
             headerContent={bannerContent}
-            showEmpty={loaded}
+            showEmpty={loaded || isDemo}
             emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
             contentContainerStyle={isWide ? styles.wideContent : undefined}
           />

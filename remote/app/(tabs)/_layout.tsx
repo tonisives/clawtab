@@ -71,6 +71,12 @@ function TabsContent({ isWide }: { isWide: boolean }) {
         }}
       />
       <Tabs.Screen
+        name="connection"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="devices"
         options={{
           href: null,

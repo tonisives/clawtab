@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
-import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
+import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
 import { JobsTab } from "./JobsTab";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
@@ -93,6 +93,14 @@ export function SettingsApp() {
     return () => { unlistenPromise.then((fn) => fn()); };
   }, []);
 
+  useEffect(() => {
+    const unlistenPromise = listen<string>("open-pane", (event) => {
+      setActiveTab("jobs");
+      setPendingPaneId(event.payload);
+    });
+    return () => { unlistenPromise.then((fn) => fn()); };
+  }, []);
+
   const handleDeepLinks = (urls: string[]) => {
     for (const url of urls) {
       console.log("deep-link received:", url);
@@ -101,7 +109,7 @@ export function SettingsApp() {
       const paneMatch = url.match(/^clawtab:\/\/pane\/(.+)/);
       if (paneMatch) {
         setActiveTab("jobs");
-        setPendingPaneId(paneMatch[1]);
+        setPendingPaneId(decodeURIComponent(paneMatch[1]));
         continue;
       }
 
@@ -133,6 +141,14 @@ export function SettingsApp() {
   };
 
   useEffect(() => {
+    // Check for deep links that arrived before listener was registered
+    getCurrent().then((urls) => {
+      if (urls && urls.length > 0) {
+        console.log("getCurrent deep links:", urls);
+        handleDeepLinks(urls);
+      }
+    }).catch((e) => console.error("getCurrent failed:", e));
+
     let unlisten: ReturnType<typeof onOpenUrl> | null = null;
     try {
       unlisten = onOpenUrl((urls) => {

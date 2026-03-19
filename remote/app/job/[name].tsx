@@ -9,14 +9,35 @@ import { useWsStore } from "../../src/store/ws";
 import { StatusBadge } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
+import { DemoBanner } from "../../src/components/DemoOverlay";
 import { useLogs } from "../../src/hooks/useLogs";
 import { createWsTransport } from "../../src/transport/wsTransport";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { registerRequest } from "../../src/lib/useRequestMap";
+import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
 import { colors } from "@clawtab/shared";
+import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 
 const wsTransport = createWsTransport();
+
+const noop = async () => {};
+const demoTransport: Transport = {
+  listJobs: async () => ({ jobs: [], statuses: {} }),
+  getStatuses: async () => ({}),
+  runJob: noop,
+  stopJob: noop,
+  pauseJob: noop,
+  resumeJob: noop,
+  toggleJob: noop,
+  deleteJob: noop,
+  getRunHistory: async () => [],
+  getRunDetail: async () => null,
+  detectProcesses: async () => [],
+  sendInput: noop,
+  subscribeLogs: () => () => {},
+  runAgent: noop,
+};
 
 function agentJobFromSlug(slug: string): RemoteJob {
   const folder = slug.replace(/^agent-/, "");
@@ -32,12 +53,15 @@ function agentJobFromSlug(slug: string): RemoteJob {
 }
 
 export default function JobDetailScreen() {
-  const { name, run_id } = useLocalSearchParams<{ name: string; run_id?: string }>();
+  const { name, run_id, demo } = useLocalSearchParams<{ name: string; run_id?: string; demo?: string }>();
   const storeJob = useJob(name);
   const isAgent = !storeJob && name.startsWith("agent-");
-  const job = storeJob ?? (isAgent ? agentJobFromSlug(name) : undefined);
+  const isDemo = demo === "1" || (!storeJob && !isAgent && isDemoJob(name));
+  const demoJob = isDemo ? DEMO_JOBS.find((j) => j.name === name || j.slug === name) : undefined;
+  const job = storeJob ?? (isAgent ? agentJobFromSlug(name) : demoJob);
   const slug = job?.slug ?? name;
-  const status = useJobStatus(name);
+  const realStatus = useJobStatus(name);
+  const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus;
   const { logs } = useLogs(slug);
   const runs = useRunsStore((s) => s.runs[slug]) ?? null;
   const router = useRouter();
@@ -53,6 +77,7 @@ export default function JobDetailScreen() {
   const autoYesActive = jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false;
 
   const loadRuns = useCallback(() => {
+    if (isDemo) return;
     const send = getWsSend();
     if (!send || !name) return;
     const id = nextId();
@@ -62,7 +87,7 @@ export default function JobDetailScreen() {
       useRunsStore.getState().setRuns(slug, result);
       setRunsLoading(false);
     });
-  }, [slug]);
+  }, [slug, isDemo]);
 
   useEffect(() => {
     loadRuns();
@@ -70,10 +95,10 @@ export default function JobDetailScreen() {
 
   // Reload runs when WebSocket reconnects (e.g. after page refresh)
   useEffect(() => {
-    if (connected) {
+    if (connected && !isDemo) {
       loadRuns();
     }
-  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connected, isDemo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleAutoYes = useCallback(() => {
     if (!jobQuestion) return;
@@ -149,22 +174,23 @@ export default function JobDetailScreen() {
           headerRight: () => <StatusBadge status={status} />,
         }}
       />
+      {isDemo && <DemoBanner />}
       <ContentContainer wide>
         <JobDetailView
-          transport={wsTransport}
+          transport={isDemo ? demoTransport : wsTransport}
           job={job}
           status={status}
-          logs={logs}
-          runs={runs}
-          runsLoading={runsLoading}
+          logs={isDemo ? (DEMO_LOGS[slug] ?? "") : logs}
+          runs={isDemo ? (DEMO_RUNS[slug] ?? []) : runs}
+          runsLoading={isDemo ? false : runsLoading}
           onBack={() => router.back()}
           showBackButton={false}
-          onReloadRuns={loadRuns}
+          onReloadRuns={isDemo ? undefined : loadRuns}
           expandRunId={run_id}
-          options={jobQuestion?.options}
-          questionContext={jobQuestion?.context_lines}
-          autoYesActive={autoYesActive}
-          onToggleAutoYes={jobQuestion ? handleToggleAutoYes : undefined}
+          options={isDemo ? undefined : jobQuestion?.options}
+          questionContext={isDemo ? undefined : jobQuestion?.context_lines}
+          autoYesActive={isDemo ? false : autoYesActive}
+          onToggleAutoYes={isDemo ? undefined : (jobQuestion ? handleToggleAutoYes : undefined)}
         />
       </ContentContainer>
     </View>

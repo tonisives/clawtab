@@ -79,6 +79,8 @@ export function ShareSection({
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
+          returnKeyType="done"
+          inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
           onSubmitEditing={handleAdd}
         />
         <Pressable

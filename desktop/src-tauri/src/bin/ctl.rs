@@ -37,8 +37,12 @@ async fn main() {
 
     let command = args[1].as_str();
 
-    // Commands that don't use IPC
-    match command {
+    if matches!(command, "help" | "-h" | "--help") {
+        print_usage();
+        std::process::exit(0);
+    }
+
+    let ipc_cmd = match command {
         "open" => {
             let pane_id = if args.len() >= 3 {
                 args[2].clone()
@@ -48,36 +52,8 @@ async fn main() {
                     std::process::exit(1);
                 })
             };
-            // URL-encode the pane_id since tmux pane IDs contain % (e.g. %42)
-            let encoded = pane_id.replace('%', "%25");
-            let url = format!("clawtab://pane/{}", encoded);
-            let status = std::process::Command::new("open")
-                .arg(&url)
-                .status()
-                .map_err(|e| format!("Failed to open URL: {}", e));
-            match status {
-                Ok(s) if s.success() => {
-                    println!("Opening pane {} in ClawTab", pane_id);
-                    std::process::exit(0);
-                }
-                Ok(s) => {
-                    eprintln!("open exited with: {}", s);
-                    std::process::exit(1);
-                }
-                Err(e) => {
-                    eprintln!("{}", e);
-                    std::process::exit(1);
-                }
-            }
+            IpcCommand::OpenPane { pane_id }
         }
-        "help" | "-h" | "--help" => {
-            print_usage();
-            std::process::exit(0);
-        }
-        _ => {}
-    }
-
-    let ipc_cmd = match command {
         "ping" => IpcCommand::Ping,
         "list" | "ls" => IpcCommand::ListJobs,
         "run" => IpcCommand::RunJob {

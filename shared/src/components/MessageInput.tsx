@@ -49,6 +49,7 @@ export function MessageInput({
           placeholder={placeholder}
           placeholderTextColor={colors.textMuted}
           returnKeyType="send"
+          inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
           onSubmitEditing={handleSend}
           blurOnSubmit={false}
           editable={!sending}

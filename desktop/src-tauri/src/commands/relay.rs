@@ -257,6 +257,14 @@ pub fn relay_save_tokens(
     Ok(())
 }
 
+#[tauri::command]
+pub fn relay_get_pending_token(
+    state: State<AppState>,
+) -> Result<Option<String>, String> {
+    let secrets = state.secrets.lock().unwrap();
+    Ok(secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).cloned().filter(|t| !t.is_empty()))
+}
+
 #[derive(Serialize)]
 pub struct SubscriptionCheckResult {
     pub subscribed: bool,

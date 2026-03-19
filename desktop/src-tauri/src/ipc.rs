@@ -16,6 +16,7 @@ pub enum IpcCommand {
     RestartJob { name: String },
     GetStatus,
     OpenSettings,
+    OpenPane { pane_id: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

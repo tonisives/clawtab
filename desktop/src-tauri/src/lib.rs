@@ -45,6 +45,7 @@ pub struct AppState {
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
+    pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -145,6 +146,20 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             // GUI-only command, handled by the Tauri app
             IpcResponse::Ok
         }
+        IpcCommand::OpenPane { pane_id } => {
+            if let Some(handle) = state.app_handle.lock().unwrap().as_ref() {
+                // Show the window
+                if let Some(window) = handle.get_webview_window("settings") {
+                    #[cfg(target_os = "macos")]
+                    let _ = handle.set_activation_policy(tauri::ActivationPolicy::Regular);
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                // Emit event to frontend
+                let _ = handle.emit("open-pane", &pane_id);
+            }
+            IpcResponse::Ok
+        }
     }
 }
 
@@ -204,6 +219,8 @@ pub fn run() {
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
         Arc::new(Mutex::new(HashSet::new()));
 
+    let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
+
     let app_state = AppState {
         settings: Arc::clone(&settings),
         jobs_config: Arc::clone(&jobs_config),
@@ -216,6 +233,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        app_handle: Arc::clone(&ipc_app_handle),
     };
 
     // Clones for IPC handler
@@ -231,6 +249,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        app_handle: Arc::clone(&ipc_app_handle),
     };
 
     // Clones for scheduler
@@ -373,6 +392,7 @@ pub fn run() {
             commands::relay::relay_disconnect,
             commands::relay::relay_connect,
             commands::relay::relay_save_tokens,
+            commands::relay::relay_get_pending_token,
             commands::relay::relay_check_subscription,
             commands::relay::relay_get_shares,
             commands::relay::relay_add_share,
@@ -392,6 +412,9 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+            // Set app handle for IPC
+            *ipc_app_handle.lock().unwrap() = Some(app.handle().clone());
 
             // Tray menu
             let settings_item =

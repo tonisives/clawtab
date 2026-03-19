@@ -31,6 +31,8 @@ export interface NotificationCardProps {
   onFlyStart?: () => void;
   /** True when this is the only card - skip fly-away, just collapse section */
   isLast?: boolean;
+  /** Override the auto-reset delay (ms) for the "Sent" indicator. Default: 10000 */
+  answerResetMs?: number;
 }
 
 export function NotificationCard({
@@ -43,6 +45,7 @@ export function NotificationCard({
   autoAnswered,
   onFlyStart,
   isLast,
+  answerResetMs = 10000,
 }: NotificationCardProps) {
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
@@ -66,7 +69,7 @@ export function NotificationCard({
       setAnswered(false);
       setFlying(false);
       flyAnim.setValue(0);
-    }, 10000);
+    }, answerResetMs);
     return () => clearTimeout(timer);
   }, [answered, flyAnim]);
 

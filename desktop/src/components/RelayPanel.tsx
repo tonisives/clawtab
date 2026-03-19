@@ -83,6 +83,14 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     });
   }, []);
 
+  // Restore access token from keychain if user signed in but didn't pair yet
+  useEffect(() => {
+    if (!loaded || settings?.device_token) return;
+    invoke<string | null>("relay_get_pending_token").then((token) => {
+      if (token) setAccessToken(token);
+    }).catch(() => {});
+  }, [loaded, settings]);
+
   // Accept access token from deep link callback
   useEffect(() => {
     if (externalAccessToken) {

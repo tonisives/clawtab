@@ -133,11 +133,11 @@ export function JobDetailView({
     }
   }, [logs, isRunning, outputCollapsed]);
 
-  // Clear run-pending spinner once the job actually starts (or timeout after 10s)
+  // Clear run-pending spinner once the job actually starts (or timeout after 1s)
   useEffect(() => {
     if (!runPending) return;
     if (state === "running") { setRunPending(false); return; }
-    const timer = setTimeout(() => setRunPending(false), 10000);
+    const timer = setTimeout(() => setRunPending(false), 1000);
     return () => clearTimeout(timer);
   }, [runPending, state]);
 
@@ -571,7 +571,7 @@ export function JobDetailView({
           </View>
         </div>
       ) : (
-        <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+        <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} automaticallyAdjustKeyboardInsets>
           <View style={styles.content}>
             {detailInner}
           </View>
