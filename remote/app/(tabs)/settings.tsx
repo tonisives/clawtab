@@ -281,6 +281,7 @@ export default function SettingsScreen() {
           <View style={styles.divider} />
 
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Danger Zone</Text>
             <Pressable
               style={[styles.deleteBtn, isWide && styles.btnConstrained, deleteLoading && styles.btnDisabled]}
               onPress={handleDeleteAccount}
@@ -397,7 +398,7 @@ offlineCard: {
   },
   btnConstrained: {
     alignSelf: "flex-start",
-    paddingHorizontal: 48,
+    width: 220,
   },
   dangerBtn: {
     height: 44,
