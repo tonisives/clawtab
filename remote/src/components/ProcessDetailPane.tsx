@@ -1,0 +1,455 @@
+import { useCallback, useEffect, useRef, useState } from "react"
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, ActivityIndicator } from "react-native"
+import { useJobsStore } from "../store/jobs"
+import { useNotificationStore } from "../store/notifications"
+import { LogViewer, MessageInput, findYesOption, isFreetextOption, colors, radius, spacing } from "@clawtab/shared"
+import { useWsStore } from "../store/ws"
+import { getWsSend, nextId } from "../hooks/useWebSocket"
+import { registerRequest } from "../lib/useRequestMap"
+import { confirm } from "../lib/platform"
+import type { ClaudeProcess } from "@clawtab/shared"
+
+interface ProcessDetailPaneProps {
+  paneId: string
+  onClose: () => void
+}
+
+export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
+  const process = useJobsStore((s) =>
+    s.detectedProcesses.find((p) => p.pane_id === paneId),
+  )
+
+  const connected = useWsStore((s) => s.connected)
+  const desktopOnline = useWsStore((s) => s.desktopOnline)
+  const loaded = useJobsStore((s) => s.loaded)
+
+  const lastProcessRef = useRef(process)
+  if (process) lastProcessRef.current = process
+  const lastProcess = lastProcessRef.current
+
+  const [logs, setLogs] = useState(process?.log_lines ?? "")
+  const [logsLoaded, setLogsLoaded] = useState(!!process?.log_lines)
+  const [stopping, setStopping] = useState(false)
+
+  const displayName = (process ?? lastProcess)
+    ? (process ?? lastProcess)!.cwd.replace(/^\/Users\/[^/]+/, "~")
+    : paneId
+
+  const questions = useNotificationStore((s) => s.questions)
+  const paneQuestion = questions.find((q) => q.pane_id === paneId)
+  const options = paneQuestion?.options ?? []
+
+  const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null)
+
+  useEffect(() => {
+    setFreetextOptionNumber(null)
+  }, [paneQuestion?.question_id])
+
+  const answerQuestion = useNotificationStore((s) => s.answerQuestion)
+  const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds)
+  const enableAutoYes = useNotificationStore((s) => s.enableAutoYes)
+  const disableAutoYes = useNotificationStore((s) => s.disableAutoYes)
+  const autoYesActive = autoYesPaneIds.has(paneId)
+
+  // Poll logs
+  const activeProcess = process ?? lastProcess
+  useEffect(() => {
+    if (!activeProcess) return
+    let active = true
+    let polling = false
+    const poll = async () => {
+      if (polling) return
+      polling = true
+      try {
+        const send = getWsSend()
+        if (!send) return
+        const id = nextId()
+        send({
+          type: "get_detected_process_logs",
+          id,
+          tmux_session: activeProcess.tmux_session,
+          pane_id: activeProcess.pane_id,
+        })
+        const timeout = new Promise<{ logs?: string }>((resolve) =>
+          setTimeout(() => resolve({}), 5000),
+        )
+        const resp = await Promise.race([registerRequest<{ logs?: string }>(id), timeout])
+        if (active && resp.logs != null) {
+          setLogs(resp.logs.trimEnd())
+          setLogsLoaded(true)
+        }
+      } finally {
+        polling = false
+      }
+    }
+    poll()
+    const interval = setInterval(poll, 3000)
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [activeProcess?.pane_id, activeProcess?.tmux_session])
+
+  const handleToggleAutoYes = useCallback(() => {
+    if (autoYesPaneIds.has(paneId)) {
+      disableAutoYes(paneId)
+      const send = getWsSend()
+      if (send) {
+        const next = new Set(autoYesPaneIds)
+        next.delete(paneId)
+        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
+      }
+      return
+    }
+    confirm("Enable auto-yes?", `All future questions for "${displayName}" will be automatically accepted with "Yes". This stays active until you disable it.`, () => {
+      enableAutoYes(paneId)
+      const send = getWsSend()
+      if (send) {
+        const next = new Set(autoYesPaneIds)
+        next.add(paneId)
+        send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
+      }
+      if (paneQuestion) {
+        const yesOpt = findYesOption(paneQuestion)
+        if (yesOpt) {
+          const s = getWsSend()
+          if (s) {
+            s({ type: "send_detected_process_input", id: nextId(), pane_id: paneId, text: yesOpt })
+          }
+          setTimeout(() => answerQuestion(paneQuestion.question_id), 1500)
+        }
+      }
+    })
+  }, [paneId, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion])
+
+  const handleSend = useCallback(
+    (text: string) => {
+      const proc = process ?? lastProcess
+      if (!proc) return
+      const send = getWsSend()
+      if (!send || !text.trim()) return
+
+      if (freetextOptionNumber) {
+        send({
+          type: "answer_question",
+          id: nextId(),
+          question_id: paneQuestion?.question_id ?? "",
+          pane_id: proc.pane_id,
+          answer: freetextOptionNumber,
+          freetext: text.trim(),
+        })
+        setFreetextOptionNumber(null)
+      } else {
+        send({
+          type: "send_detected_process_input",
+          id: nextId(),
+          pane_id: proc.pane_id,
+          text: text.trim(),
+        })
+      }
+      if (paneQuestion) {
+        answerQuestion(paneQuestion.question_id)
+      }
+    },
+    [process?.pane_id, paneQuestion, answerQuestion, freetextOptionNumber],
+  )
+
+  const doStop = async () => {
+    const proc = process ?? lastProcess
+    if (!proc) return
+    const send = getWsSend()
+    if (!send || stopping) return
+    setStopping(true)
+    const id = nextId()
+    send({ type: "stop_detected_process", id, pane_id: proc.pane_id })
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
+    await Promise.race([registerRequest(id), timeout])
+    setStopping(false)
+  }
+
+  const handleStop = () => {
+    confirm("Stop process", `Kill the Claude process in ${displayName}?`, doStop)
+  }
+
+  const isAlive = !!process
+  const isWeb = Platform.OS === "web"
+  const outerScrollRef = useRef<ScrollView>(null)
+  const outerWebRef = useRef<HTMLElement | null>(null)
+  const prevLogsLenRef = useRef(0)
+
+  const outerWebRefCb = useCallback((node: HTMLElement | null) => {
+    outerWebRef.current = node
+  }, [])
+
+  useEffect(() => {
+    if (logs.length <= prevLogsLenRef.current) {
+      prevLogsLenRef.current = logs.length
+      return
+    }
+    prevLogsLenRef.current = logs.length
+
+    if (isWeb) {
+      const el = outerWebRef.current
+      if (!el) return
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.scrollTop = el.scrollHeight
+        })
+      })
+    } else {
+      outerScrollRef.current?.scrollToEnd({ animated: true })
+    }
+  }, [logs, isWeb])
+
+  const waitingForData = !process && !questions.some((q) => q.pane_id === paneId) && (!connected || !desktopOnline || !loaded)
+
+  if (waitingForData) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={styles.loadingText}>
+          {!connected ? "Connecting..." : "Loading..."}
+        </Text>
+      </View>
+    )
+  }
+
+  if (!process && !lastProcess) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.notFound}>Process not found</Text>
+      </View>
+    )
+  }
+
+  const logsContent = (
+    <View style={styles.logsContent}>
+      {isAlive && (
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={[styles.stopBtn, stopping && { opacity: 0.5 }]}
+            onPress={handleStop}
+            disabled={stopping}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={styles.logsContainer}>
+        {!logsLoaded ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.loadingText}>Loading logs...</Text>
+          </View>
+        ) : (
+          <LogViewer content={logs} />
+        )}
+      </View>
+    </View>
+  )
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
+        <View style={isAlive ? styles.runningBadge : styles.endedBadge}>
+          <Text style={isAlive ? styles.runningText : styles.endedText}>
+            {isAlive ? "running" : "ended"}
+          </Text>
+        </View>
+      </View>
+
+      {(process ?? lastProcess) && (
+        <View style={styles.pathRow}>
+          <Text style={styles.pathText} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <Text style={styles.versionText}>v{(process ?? lastProcess)!.version}</Text>
+        </View>
+      )}
+
+      {isWeb ? (
+        <div
+          ref={outerWebRefCb as any}
+          style={{
+            flex: 1,
+            overflowY: "auto" as any,
+            minHeight: 0,
+          }}
+        >
+          {logsContent}
+        </div>
+      ) : (
+        <ScrollView ref={outerScrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+          {logsContent}
+        </ScrollView>
+      )}
+
+      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
+      {(isAlive || paneQuestion) && (
+        <MessageInput
+          onSend={handleSend}
+          placeholder={freetextOptionNumber ? "Type your answer..." : "Send input..."}
+        />
+      )}
+    </View>
+  )
+}
+
+function OptionButtons({
+  options,
+  onSend,
+  onFreetextOption,
+  autoYesActive,
+  onToggleAutoYes,
+}: {
+  options: { number: string; label: string }[]
+  onSend: (text: string) => void
+  onFreetextOption?: (optionNumber: string) => void
+  autoYesActive?: boolean
+  onToggleAutoYes?: () => void
+}) {
+  if (options.length === 0) return null
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.optionBar}
+      contentContainerStyle={styles.optionBarContent}
+    >
+      {options.map((opt) => (
+        <TouchableOpacity
+          key={opt.number}
+          style={styles.optionBtn}
+          onPress={() => {
+            if (isFreetextOption(opt.label) && onFreetextOption) {
+              onFreetextOption(opt.number)
+            } else {
+              onSend(opt.number)
+            }
+          }}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.optionBtnText}>
+            {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
+          </Text>
+        </TouchableOpacity>
+      ))}
+      {onToggleAutoYes && (
+        <>
+          <View style={styles.autoYesSeparator} />
+          <TouchableOpacity
+            style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
+            onPress={onToggleAutoYes}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.autoYesBtnText} numberOfLines={1}>
+              {autoYesActive ? "! Auto ON" : "! Yes all"}
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </ScrollView>
+  )
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.bg },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "600",
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  scroll: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
+  logsContent: { padding: spacing.lg, gap: spacing.lg, flex: 1 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  notFound: { color: colors.textMuted, fontSize: 16 },
+  runningBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: colors.accentBg,
+  },
+  runningText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.accent },
+  endedBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 10,
+    backgroundColor: "rgba(152, 152, 157, 0.12)",
+  },
+  endedText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.textMuted },
+  pathRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 4,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  pathText: { flex: 1, color: colors.textMuted, fontSize: 11, fontFamily: "monospace" },
+  versionText: { color: colors.textSecondary, fontSize: 11 },
+  actions: { flexDirection: "row", gap: spacing.sm },
+  stopBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.dangerBg,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  stopBtnText: { color: colors.danger, fontSize: 14, fontWeight: "600" },
+  logsContainer: { flex: 1, minHeight: 300 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  loadingText: { color: colors.textMuted, fontSize: 13 },
+  optionBar: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.bg,
+    maxHeight: 44,
+  },
+  optionBarContent: {
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    alignItems: "center",
+  },
+  optionBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  optionBtnText: { color: colors.accent, fontSize: 12, fontWeight: "500" },
+  autoYesSeparator: { width: 1, height: 18, backgroundColor: colors.border },
+  autoYesBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  autoYesBtnActive: { backgroundColor: colors.warningBg },
+  autoYesBtnText: { color: colors.warning, fontSize: 12, fontWeight: "600" },
+})

@@ -12,6 +12,7 @@ import { useWsStore } from "../../src/store/ws"
 import { NotificationStack } from "../../src/components/NotificationStack"
 import { DemoNotificationStack } from "../../src/components/DemoNotificationStack"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
+import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
 import { JobListView } from "@clawtab/shared"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
 import { registerRequest } from "../../src/lib/useRequestMap"
@@ -34,6 +35,7 @@ export default function JobsScreen() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
   const [selectedJob, setSelectedJob] = useState<string | null>(null)
+  const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
   const { isWide } = useResponsive()
   const router = useRouter()
 
@@ -78,14 +80,20 @@ export default function JobsScreen() {
   const handleSelectJob = useCallback((job: RemoteJob) => {
     if (isWide) {
       setSelectedJob(job.name)
+      setSelectedProcess(null)
     } else {
       router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
     }
   }, [router, isDemo, isWide])
 
   const handleSelectProcess = useCallback((process: ClaudeProcess) => {
-    router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
-  }, [router])
+    if (isWide) {
+      setSelectedProcess(process.pane_id)
+      setSelectedJob(null)
+    } else {
+      router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
+    }
+  }, [router, isWide])
 
   const bannerContent = (
     <>
@@ -155,6 +163,12 @@ export default function JobsScreen() {
             jobName={selectedJob}
             isDemo={isDemo}
             onClose={() => setSelectedJob(null)}
+          />
+        ) : selectedProcess ? (
+          <ProcessDetailPane
+            key={selectedProcess}
+            paneId={selectedProcess}
+            onClose={() => setSelectedProcess(null)}
           />
         ) : (
           <View style={styles.emptyDetail}>

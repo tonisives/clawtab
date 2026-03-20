@@ -11,6 +11,22 @@ import { loadPendingAnswers } from "../src/lib/pendingAnswers";
 import { handleColdStartAnswer, useNotifications } from "../src/hooks/useNotifications";
 import { colors } from "../src/theme/colors";
 
+function useWebDarkScrollbars() {
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const style = document.createElement("style");
+    style.textContent = `
+      html { color-scheme: dark; }
+      ::-webkit-scrollbar { width: 8px; height: 8px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+    `;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
+}
+
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Reset stores to clear any stale data from a previous account
@@ -34,6 +50,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
+  useWebDarkScrollbars();
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
