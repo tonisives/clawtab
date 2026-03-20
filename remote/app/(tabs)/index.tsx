@@ -121,7 +121,7 @@ export default function JobsScreen() {
 
   const jobList = (
     <View style={isWide ? styles.listPane : styles.container}>
-      {isDemo && <DemoBanner />}
+      {/* isDemo && <DemoBanner /> */}
       <JobListView
         jobs={jobs}
         statuses={statuses}

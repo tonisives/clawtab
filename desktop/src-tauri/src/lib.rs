@@ -160,6 +160,32 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             }
             IpcResponse::Ok
         }
+        IpcCommand::GetAutoYesPanes => {
+            let panes: Vec<String> = state.auto_yes_panes.lock().unwrap().iter().cloned().collect();
+            IpcResponse::AutoYesPanes(panes)
+        }
+        IpcCommand::ToggleAutoYes { pane_id } => {
+            let mut panes = state.auto_yes_panes.lock().unwrap();
+            let was_enabled = panes.contains(&pane_id);
+            if was_enabled {
+                panes.remove(&pane_id);
+            } else {
+                panes.insert(pane_id.clone());
+            }
+            let pane_ids: Vec<String> = panes.iter().cloned().collect();
+            drop(panes);
+
+            // Push to relay for cross-device sync
+            if let Ok(guard) = state.relay.lock() {
+                if let Some(handle) = guard.as_ref() {
+                    handle.send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes {
+                        pane_ids,
+                    });
+                }
+            }
+
+            IpcResponse::Ok
+        }
     }
 }
 
