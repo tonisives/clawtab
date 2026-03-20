@@ -12,4 +12,13 @@ if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 0
 fi
 
+# Toggle pane-local option (read instantly by border format, no shell cache delay)
+current=$(tmux show-option -pqvt "$pane_id" @clawtab-auto-yes)
+if [ "$current" = "1" ]; then
+    tmux set-option -pt "$pane_id" @clawtab-auto-yes 0
+else
+    tmux set-option -pt "$pane_id" @clawtab-auto-yes 1
+fi
+
+# Sync state with desktop app in background
 cwtctl auto-yes toggle "$pane_id" &>/dev/null &

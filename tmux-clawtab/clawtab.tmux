@@ -33,9 +33,10 @@ tmux bind-key "$skills_key" display-popup -E -w 60 -h 80% "$CURRENT_DIR/scripts/
 tmux bind-key "$fork_key" run-shell "$CURRENT_DIR/scripts/fork-session.sh"
 
 # Append auto-yes indicator to pane-border-format (right-aligned)
+# Uses pane option @clawtab-auto-yes for instant toggle feedback (no shell cache delay)
 current_border=$(tmux show-option -gqv pane-border-format)
-if [[ "$current_border" != *"status-auto-yes"* ]]; then
-    clawtab_part="#[align=right]#($CURRENT_DIR/scripts/status-auto-yes.sh '#{pane_id}' '#{pane_current_command}')"
+if [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
+    clawtab_part="#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{m:*.*.*,#{pane_current_command}},#[fg=colour240][y]#[default],}}"
     tmux set-option -g pane-border-format "${current_border}${clawtab_part}"
 fi
 

@@ -13,9 +13,10 @@ if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 0
 fi
 
-# Get the shell PID for this pane, then find Claude as its child
-shell_pid=$(tmux display-message -t "$pane_id" -p '#{pane_pid}')
-claude_pid=$(pgrep -P "$shell_pid" | head -1)
+# Find Claude process by matching the pane's TTY
+pane_tty=$(tmux display-message -t "$pane_id" -p '#{pane_tty}')
+tty_short="${pane_tty#/dev/}"
+claude_pid=$(ps -o pid=,tty=,comm= | grep "$tty_short" | grep claude | awk '{print $1}' | head -1)
 
 if [ -z "$claude_pid" ]; then
     tmux display-message "Could not find Claude process"

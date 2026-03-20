@@ -14,11 +14,9 @@ if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 0
 fi
 
-if ! command -v cwtctl &>/dev/null; then
-    exit 0
-fi
-
-if cwtctl auto-yes check "$pane_id" &>/dev/null; then
+# Use local flag file for instant response (avoids cwtctl/tokio startup overhead)
+flag_file="/tmp/clawtab-auto-yes/${pane_id//\%/}"
+if [ -f "$flag_file" ]; then
     echo "#[fg=green,bold][Y]#[default]"
 else
     echo "#[fg=colour240][y]#[default]"

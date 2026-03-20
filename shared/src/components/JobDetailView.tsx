@@ -59,6 +59,10 @@ export interface JobDetailViewProps {
   onToggleAutoYes?: () => void;
   // Optional style override for section cards (desktop uses card styling)
   sectionStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
+  // Hide run history section (e.g. for detected processes)
+  hideRuns?: boolean;
+  // Expand live output to fill available space (no fixed height)
+  expandOutput?: boolean;
 }
 
 export function JobDetailView({
@@ -86,6 +90,8 @@ export function JobDetailView({
   autoYesActive,
   onToggleAutoYes,
   sectionStyle,
+  hideRuns,
+  expandOutput,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -294,7 +300,7 @@ export function JobDetailView({
           ) : null}
           {isManual ? (
             <View style={styles.infoPill}>
-              <Text style={styles.infoLabel}>manual</Text>
+              <Text style={styles.infoLabel}>{expandOutput ? "detected" : "manual"}</Text>
             </View>
           ) : (
             <View style={styles.infoPill}>
@@ -461,7 +467,7 @@ export function JobDetailView({
       )}
 
       {/* Live Output */}
-      {(isRunning || isPaused) && (
+      {(isRunning || isPaused) && !expandOutput && (
         <View style={[styles.section, sectionStyle]}>
           <View style={styles.sectionHeaderRow}>
             <TouchableOpacity onPress={() => setOutputCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
@@ -512,40 +518,110 @@ export function JobDetailView({
       )}
 
       {/* Run History */}
-      <View style={[styles.section, sectionStyle]}>
-        <TouchableOpacity onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
-          <Text style={styles.collapseArrow}>
-            {runsCollapsed ? "\u25B6" : "\u25BC"}
-          </Text>
-          <Text style={styles.sectionTitle}>Runs</Text>
-        </TouchableOpacity>
-        {!runsCollapsed && (
-          <View style={styles.runsContainer}>
-            {runsLoading && !runs ? (
-              <Text style={styles.runsEmpty}>Loading...</Text>
-            ) : !runs || runs.length === 0 ? (
-              <Text style={styles.runsEmpty}>No run history</Text>
-            ) : (
-              runs.map((run, i) => (
-                <RunRow
-                  key={run.id}
-                  run={run}
-                  transport={transport}
-                  currentState={state}
-                  defaultExpanded={expandRunId ? run.id === expandRunId : (!isRunning && i === 0)}
-                  onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
-                />
-              ))
-            )}
-          </View>
-        )}
-      </View>
+      {!hideRuns && (
+        <View style={[styles.section, sectionStyle]}>
+          <TouchableOpacity onPress={() => setRunsCollapsed((v) => !v)} style={styles.sectionHeader} activeOpacity={0.6}>
+            <Text style={styles.collapseArrow}>
+              {runsCollapsed ? "\u25B6" : "\u25BC"}
+            </Text>
+            <Text style={styles.sectionTitle}>Runs</Text>
+          </TouchableOpacity>
+          {!runsCollapsed && (
+            <View style={styles.runsContainer}>
+              {runsLoading && !runs ? (
+                <Text style={styles.runsEmpty}>Loading...</Text>
+              ) : !runs || runs.length === 0 ? (
+                <Text style={styles.runsEmpty}>No run history</Text>
+              ) : (
+                runs.map((run, i) => (
+                  <RunRow
+                    key={run.id}
+                    run={run}
+                    transport={transport}
+                    currentState={state}
+                    defaultExpanded={expandRunId ? run.id === expandRunId : (!isRunning && i === 0)}
+                    onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
+                  />
+                ))
+              )}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Platform-specific extra content */}
       {extraContent}
 
     </>
   );
+
+  if (expandOutput && (isRunning || isPaused)) {
+    return (
+      <View style={styles.container}>
+        {pathDisplay ? (
+          <View style={styles.pathRow}>
+            <Text style={styles.pathText} numberOfLines={1}>
+              {pathDisplay}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={styles.content}>
+          {detailInner}
+        </View>
+
+        <View style={styles.expandOutputHeader}>
+          <Text style={styles.sectionTitle}>Live Output</Text>
+          <TouchableOpacity
+            onPress={() => setLiveZoom(true)}
+            style={styles.zoomBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.zoomIcon}>{"\u2922"}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ flex: 1, minHeight: 0 }}>
+          {isWeb ? (
+            <div
+              ref={webRefCb as any}
+              style={{
+                flex: 1,
+                overflowY: "auto" as any,
+                minHeight: 0,
+              }}
+            >
+              <View style={{ padding: spacing.lg }}>
+                <LogViewer content={logs} />
+              </View>
+            </div>
+          ) : (
+            <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ flexGrow: 1, padding: spacing.lg }}>
+              <LogViewer content={logs} />
+            </ScrollView>
+          )}
+        </View>
+
+        <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+        <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
+
+        {liveZoom && (
+          <LiveZoomModal
+            logs={logs}
+            options={optionsProp ?? []}
+            questionContext={questionContext}
+            onSend={handleSendInput}
+            onFreetextOption={setFreetextOptionNumber}
+            freetextOptionNumber={freetextOptionNumber}
+            autoYesActive={autoYesActive}
+            onToggleAutoYes={onToggleAutoYes}
+            onClose={() => setLiveZoom(false)}
+          />
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -1162,6 +1238,15 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     fontSize: 9,
     color: colors.textSecondary,
+  },
+  expandOutputHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   logsContainer: {
     // height set dynamically via logsHeight state

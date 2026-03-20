@@ -314,17 +314,34 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [editingJob, core.reload]);
 
   const handleDuplicate = useCallback(async (job: Job, targetGroup: string) => {
-    const existingNames = new Set(core.jobs.map((j) => j.name));
-    let copyName = `${job.name}-copy`;
+    // Fetch full job data from backend (viewingJob may only have RemoteJob fields)
+    const allJobs = await invoke<Job[]>("get_jobs");
+    const fullJob = allJobs.find((j) => j.slug === job.slug) ?? job;
+    const existingNames = new Set(allJobs.map((j) => j.name));
+    let copyName = `${fullJob.name}-copy`;
     let i = 2;
     while (existingNames.has(copyName)) {
-      copyName = `${job.name}-copy-${i}`;
+      copyName = `${fullJob.name}-copy-${i}`;
       i++;
     }
-    const dup: Job = { ...job, name: copyName, slug: "", enabled: false, group: targetGroup };
+    // When duplicating to a different group, use that group's folder_path if it's a folder group
+    let folderPath = fullJob.folder_path;
+    if (targetGroup !== (fullJob.group || "default")) {
+      const targetJobs = allJobs.filter((j) => (j.group || "default") === targetGroup);
+      const isTargetFolderGroup = targetJobs.length > 0 && targetJobs.every((j) => j.job_type === "folder");
+      if (isTargetFolderGroup) {
+        folderPath = targetJobs[0].folder_path;
+      } else {
+        folderPath = null;
+      }
+    }
+    const dup: Job = { ...fullJob, name: copyName, slug: "", enabled: false, group: targetGroup, folder_path: folderPath };
     await invoke("save_job", { job: dup });
     await core.reload();
-  }, [core.jobs, core.reload]);
+    const freshJobs = await invoke<Job[]>("get_jobs");
+    const newJob = freshJobs.find((j) => j.name === copyName);
+    if (newJob) setViewingJob(newJob);
+  }, [core.reload]);
 
   const handleDuplicateToFolder = useCallback(async (job: Job) => {
     const selected = await open({ directory: true, title: "Choose folder for duplicated job" });
