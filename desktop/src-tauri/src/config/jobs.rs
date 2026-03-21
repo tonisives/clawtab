@@ -502,52 +502,199 @@ impl JobsConfig {
                 log::warn!("Failed to remove old flat slug dir: {}", e);
             }
 
-            // Also migrate .cwt/job.md -> .cwt/default/job.md if needed
-            if let Some(ref fp) = migrated_job.folder_path {
-                migrate_cwt_root(std::path::Path::new(fp));
+            // Migrate job.md to central location if applicable
+            // (handled by migrate_job_md_to_central at startup)
+        }
+    }
+}
+
+/// Migrate job.md files from `.cwt/{job_name}/job.md` to the central config location
+/// `~/.config/clawtab/jobs/{slug}/job.md`, and update `folder_path` from `.cwt` dir
+/// to project root.
+pub fn migrate_job_md_to_central(jobs: &mut [Job]) {
+    let jobs_dir = match JobsConfig::jobs_dir() {
+        Some(d) => d,
+        None => return,
+    };
+
+    for job in jobs.iter_mut() {
+        if job.job_type != JobType::Folder {
+            continue;
+        }
+        let folder_path = match job.folder_path.as_ref() {
+            Some(fp) => fp.clone(),
+            None => continue,
+        };
+
+        let fp_path = std::path::Path::new(&folder_path);
+        let job_name = job.job_name.as_deref().unwrap_or("default");
+
+        // Check if folder_path still ends in .cwt (old format)
+        let is_old_format = fp_path.file_name().map(|n| n == ".cwt").unwrap_or(false);
+
+        if is_old_format {
+            // Old path: {folder_path}/{job_name}/job.md (where folder_path was .cwt dir)
+            let old_job_md = fp_path.join(job_name).join("job.md");
+            let central_dir = jobs_dir.join(&job.slug);
+            let central_job_md = central_dir.join("job.md");
+
+            // Copy job.md to central location if old exists and central doesn't
+            if old_job_md.exists() && !central_job_md.exists() {
+                let _ = std::fs::create_dir_all(&central_dir);
+                if let Err(e) = std::fs::copy(&old_job_md, &central_job_md) {
+                    log::warn!("Failed to copy job.md to central for '{}': {}", job.slug, e);
+                } else {
+                    log::info!("Migrated job.md to central for '{}'", job.slug);
+                }
+            }
+
+            // Update folder_path: strip /.cwt suffix to make it project root
+            if let Some(project_root) = fp_path.parent() {
+                let new_fp = project_root.to_string_lossy().to_string();
+                job.folder_path = Some(new_fp);
+                // Save the updated job
+                let job_dir = jobs_dir.join(&job.slug);
+                let _ = std::fs::create_dir_all(&job_dir);
+                if let Ok(yaml) = serde_yml::to_string(&job) {
+                    let _ = std::fs::write(job_dir.join("job.yaml"), yaml);
+                }
+            }
+        } else {
+            // folder_path is already project root - just check if job.md needs migration
+            // from .cwt subdir to central
+            let cwt_dir = fp_path.join(".cwt");
+            let old_job_md = cwt_dir.join(job_name).join("job.md");
+            let central_dir = jobs_dir.join(&job.slug);
+            let central_job_md = central_dir.join("job.md");
+
+            if old_job_md.exists() && !central_job_md.exists() {
+                let _ = std::fs::create_dir_all(&central_dir);
+                if let Err(e) = std::fs::copy(&old_job_md, &central_job_md) {
+                    log::warn!("Failed to copy job.md to central for '{}': {}", job.slug, e);
+                } else {
+                    log::info!("Migrated job.md to central for '{}'", job.slug);
+                }
             }
         }
     }
 }
 
-/// Migrate a legacy .cwt/ folder: if job.md exists at root, move it to default/job.md.
-pub fn migrate_cwt_root(cwt_path: &std::path::Path) {
-    let root_job_md = cwt_path.join("job.md");
-    if !root_job_md.exists() {
-        return;
-    }
+/// Return the path to a job's job.md in the central config location.
+pub fn central_job_md_path(slug: &str) -> Option<std::path::PathBuf> {
+    JobsConfig::jobs_dir().map(|d| d.join(slug).join("job.md"))
+}
 
-    // Check if there's already a subfolder with a job.md (not a legacy layout)
-    if let Ok(entries) = std::fs::read_dir(cwt_path) {
+/// Scan project .cwt folders and register any unregistered jobs.
+#[allow(dead_code)]
+pub fn scan_and_register_cwt_jobs(jobs: &mut Vec<Job>) {
+    let jobs_dir = match JobsConfig::jobs_dir() {
+        Some(d) => d,
+        None => return,
+    };
+
+    // Collect unique folder_path values from existing jobs
+    let folder_paths: Vec<String> = jobs
+        .iter()
+        .filter_map(|j| j.folder_path.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    for folder_path in folder_paths {
+        let cwt_dir = std::path::Path::new(&folder_path).join(".cwt");
+        if !cwt_dir.is_dir() {
+            continue;
+        }
+
+        let entries = match std::fs::read_dir(&cwt_dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
         for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir() && p.join("job.md").exists() {
-                // Already has subfolder jobs, root job.md is the shared context or leftover
-                return;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
             }
+            let job_name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            // Check if job.md exists either in .cwt subdir or central location
+            let has_local_job_md = path.join("job.md").exists();
+            let would_be_slug = derive_slug(&folder_path, Some(&job_name), &[]);
+            let has_central_job_md = jobs_dir.join(&would_be_slug).join("job.md").exists();
+
+            if !has_local_job_md && !has_central_job_md {
+                continue;
+            }
+
+            // Check if this job is already registered
+            let already_registered = jobs.iter().any(|j| {
+                j.folder_path.as_deref() == Some(&folder_path)
+                    && j.job_name.as_deref() == Some(&job_name)
+            });
+
+            if already_registered {
+                continue;
+            }
+
+            // Derive group from project dir name
+            let group = std::path::Path::new(&folder_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "default".to_string());
+
+            let slug = derive_slug(&folder_path, Some(&job_name), jobs);
+
+            log::info!("Discovered unregistered .cwt job: {} ({})", job_name, slug);
+
+            // If local job.md exists but central doesn't, copy it
+            if has_local_job_md && !has_central_job_md {
+                let central_dir = jobs_dir.join(&slug);
+                let _ = std::fs::create_dir_all(&central_dir);
+                let _ = std::fs::copy(path.join("job.md"), central_dir.join("job.md"));
+            }
+
+            let new_job = Job {
+                name: job_name.clone(),
+                job_type: JobType::Folder,
+                enabled: false,
+                path: String::new(),
+                args: Vec::new(),
+                cron: String::new(),
+                secret_keys: Vec::new(),
+                env: std::collections::HashMap::new(),
+                work_dir: None,
+                tmux_session: None,
+                aerospace_workspace: None,
+                folder_path: Some(folder_path.clone()),
+                job_name: Some(job_name),
+                telegram_chat_id: None,
+                telegram_log_mode: TelegramLogMode::OnPrompt,
+                telegram_notify: TelegramNotify::default(),
+                notify_target: NotifyTarget::None,
+                group,
+                slug: slug.clone(),
+                skill_paths: Vec::new(),
+                params: Vec::new(),
+                kill_on_end: true,
+                auto_yes: false,
+                added_at: Some(chrono::Utc::now().to_rfc3339()),
+            };
+
+            // Save to disk
+            let job_dir = jobs_dir.join(&slug);
+            let _ = std::fs::create_dir_all(&job_dir);
+            if let Ok(yaml) = serde_yml::to_string(&new_job) {
+                let _ = std::fs::write(job_dir.join("job.yaml"), yaml);
+            }
+
+            jobs.push(new_job);
         }
     }
-
-    let default_dir = cwt_path.join("default");
-    if let Err(e) = std::fs::create_dir_all(&default_dir) {
-        log::warn!("Failed to create default job dir: {}", e);
-        return;
-    }
-
-    let dest = default_dir.join("job.md");
-    if let Err(e) = std::fs::rename(&root_job_md, &dest) {
-        log::warn!("Failed to migrate job.md to default/: {}", e);
-        return;
-    }
-
-    // Also move cwt.md (auto-generated context) if it exists
-    let root_cwt_md = cwt_path.join("cwt.md");
-    if root_cwt_md.exists() {
-        let dest_cwt = default_dir.join("cwt.md");
-        let _ = std::fs::rename(&root_cwt_md, &dest_cwt);
-    }
-
-    log::info!("Migrated .cwt/job.md to .cwt/default/job.md at {}", cwt_path.display());
 }
 
 /// Derive a slug from a folder path or name + optional job_name.

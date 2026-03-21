@@ -476,26 +476,30 @@ async fn execute_folder_job(
         .ok_or("Folder job requires folder_path")?;
 
     let job_name = job.job_name.as_deref().unwrap_or("default");
-    let cwt_root = std::path::Path::new(folder_path);
+    let project_root = std::path::Path::new(folder_path);
 
-    // Lazy migration: move .cwt/job.md -> .cwt/default/job.md if needed
-    crate::config::jobs::migrate_cwt_root(cwt_root);
+    let _folder = CwtFolder::from_path_with_job(project_root, job_name)?;
 
-    let folder = CwtFolder::from_path_with_job(cwt_root, job_name)?;
+    // Read job.md from central location (~/.config/clawtab/jobs/{slug}/job.md)
+    let central_job_md = crate::config::jobs::central_job_md_path(&job.slug)
+        .ok_or("Could not determine config directory")?;
 
-    if !folder.has_entry_point {
+    if !central_job_md.exists() {
         return Err(format!(
-            "No job.md entry point found in {}/{}",
-            folder_path, job_name
+            "No job.md found for '{}' at {}",
+            job.slug,
+            central_job_md.display()
         ));
     }
 
-    let raw_prompt = folder.read_entry_point()?;
+    let raw_prompt = std::fs::read_to_string(&central_job_md)
+        .map_err(|e| format!("Failed to read {}: {}", central_job_md.display(), e))?;
 
     // Replace {key} placeholders with param values
     let raw_prompt = apply_params(raw_prompt, params);
 
     // Build prompt: shared context, then per-job context, then skills, then per-job instructions
+    // job.md content is inlined via raw_prompt, not referenced as @.cwt/{}/job.md
     let skill_refs = job
         .skill_paths
         .iter()
@@ -508,16 +512,9 @@ async fn execute_folder_job(
         format!(" {}", skill_refs)
     };
     let prompt_content = format!(
-        "@.cwt/cwt.md @.cwt/{}/cwt.md @.cwt/{}/job.md{}\n\n{}",
-        job_name, job_name, skill_part, raw_prompt
+        "@.cwt/cwt.md @.cwt/{}/cwt.md{}\n\n{}",
+        job_name, skill_part, raw_prompt
     );
-
-    // Run from the project root (parent of .cwt), not the .cwt dir itself
-    let project_root = cwt_root
-        .parent()
-        .ok_or_else(|| format!("Cannot determine project root from {}", folder_path))?
-        .to_string_lossy()
-        .to_string();
 
     let (tmux_session, claude_path) = {
         let s = settings.lock().unwrap();
@@ -531,7 +528,7 @@ async fn execute_folder_job(
 
     let env_vars = collect_env_vars(job, secrets, settings);
 
-    let work_dir = project_root;
+    let work_dir = folder_path.clone();
     let window_name = project_window_name(job);
 
     if !tmux::is_available() {

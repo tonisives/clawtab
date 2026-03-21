@@ -2,32 +2,33 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-/// A `.cwt` folder job. Represents a single job within a `.cwt/` directory.
-/// The job lives at `{cwt_root}/{job_name}/job.md`.
+/// A `.cwt` folder job. Represents a single job within a project's `.cwt/` directory.
+/// Scripts live at `{project_root}/.cwt/` and `{project_root}/.cwt/{job_name}/`.
 #[derive(Debug, Clone, Serialize)]
 pub struct CwtFolder {
-    /// The .cwt/ root directory
+    /// The project root directory
     pub path: PathBuf,
     /// The job subfolder name (e.g., "deploy", "lint", "default")
     pub job_name: String,
-    pub has_entry_point: bool,
     pub scripts: Vec<String>,
 }
 
 impl CwtFolder {
-    /// Create from a .cwt root path + job name.
-    /// The job directory is at `{cwt_root}/{job_name}/`.
-    pub fn from_path_with_job(cwt_root: &Path, job_name: &str) -> Result<Self, String> {
-        if !cwt_root.is_dir() {
-            return Err(format!("Not a directory: {}", cwt_root.display()));
+    /// Create from a project root path + job name.
+    /// Looks for scripts in `{project_root}/.cwt/` and `{project_root}/.cwt/{job_name}/`.
+    pub fn from_path_with_job(project_root: &Path, job_name: &str) -> Result<Self, String> {
+        if !project_root.is_dir() {
+            return Err(format!("Not a directory: {}", project_root.display()));
         }
 
-        let job_dir = cwt_root.join(job_name);
-        let entry_point = job_dir.join("job.md");
-        let has_entry_point = entry_point.exists();
+        let cwt_dir = project_root.join(".cwt");
+        let job_dir = cwt_dir.join(job_name);
 
-        // Collect scripts from both the root .cwt/ and the job subfolder
-        let mut scripts = list_scripts(cwt_root);
+        // Collect scripts from both the .cwt/ root and the job subfolder
+        let mut scripts = Vec::new();
+        if cwt_dir.is_dir() {
+            scripts = list_scripts(&cwt_dir);
+        }
         if job_dir.is_dir() {
             let job_scripts = list_scripts(&job_dir);
             for s in job_scripts {
@@ -39,23 +40,10 @@ impl CwtFolder {
         scripts.sort();
 
         Ok(Self {
-            path: cwt_root.to_path_buf(),
+            path: project_root.to_path_buf(),
             job_name: job_name.to_string(),
-            has_entry_point,
             scripts,
         })
-    }
-
-    /// Path to this job's entry point (job.md)
-    pub fn entry_point(&self) -> PathBuf {
-        self.path.join(&self.job_name).join("job.md")
-    }
-
-    /// Read the entry point content
-    pub fn read_entry_point(&self) -> Result<String, String> {
-        let path = self.entry_point();
-        std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))
     }
 }
 

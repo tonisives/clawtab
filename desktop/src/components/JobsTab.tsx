@@ -314,33 +314,28 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [editingJob, core.reload]);
 
   const handleDuplicate = useCallback(async (job: Job, targetGroup: string) => {
-    // Fetch full job data from backend (viewingJob may only have RemoteJob fields)
+    // Determine target project path from the group's existing folder jobs
     const allJobs = await invoke<Job[]>("get_jobs");
-    const fullJob = allJobs.find((j) => j.slug === job.slug) ?? job;
-    const existingNames = new Set(allJobs.map((j) => j.name));
-    let copyName = `${fullJob.name}-copy`;
-    let i = 2;
-    while (existingNames.has(copyName)) {
-      copyName = `${fullJob.name}-copy-${i}`;
-      i++;
+    const targetJobs = allJobs.filter((j) => (j.group || "default") === targetGroup && j.folder_path);
+    const targetProjectPath = targetJobs.length > 0
+      ? targetJobs[0].folder_path
+      : job.folder_path;
+
+    if (!targetProjectPath) {
+      // No folder path available - caller should use handleDuplicateToFolder instead
+      return;
     }
-    // When duplicating to a different group, use that group's folder_path if it's a folder group
-    let folderPath = fullJob.folder_path;
-    if (targetGroup !== (fullJob.group || "default")) {
-      const targetJobs = allJobs.filter((j) => (j.group || "default") === targetGroup);
-      const isTargetFolderGroup = targetJobs.length > 0 && targetJobs.every((j) => j.job_type === "folder");
-      if (isTargetFolderGroup) {
-        folderPath = targetJobs[0].folder_path;
-      } else {
-        folderPath = null;
-      }
+
+    try {
+      const newJob = await invoke<Job>("duplicate_job", {
+        sourceSlug: job.slug,
+        targetProjectPath,
+      });
+      await core.reload();
+      setViewingJob(newJob);
+    } catch (e) {
+      console.error("Failed to duplicate job:", e);
     }
-    const dup: Job = { ...fullJob, name: copyName, slug: "", enabled: false, group: targetGroup, folder_path: folderPath };
-    await invoke("save_job", { job: dup });
-    await core.reload();
-    const freshJobs = await invoke<Job[]>("get_jobs");
-    const newJob = freshJobs.find((j) => j.name === copyName);
-    if (newJob) setViewingJob(newJob);
   }, [core.reload]);
 
   const handleDuplicateToFolder = useCallback(async (job: Job) => {
@@ -348,9 +343,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (!selected) return;
     const folder = typeof selected === "string" ? selected : selected[0];
     if (!folder) return;
-    const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
-    await handleDuplicate(job, folderName);
-  }, [handleDuplicate]);
+    try {
+      const newJob = await invoke<Job>("duplicate_job", {
+        sourceSlug: job.slug,
+        targetProjectPath: folder,
+      });
+      await core.reload();
+      setViewingJob(newJob);
+    } catch (e) {
+      console.error("Failed to duplicate job:", e);
+    }
+  }, [core.reload]);
 
   const handleOpen = useCallback(async (name: string) => {
     await invoke("focus_job_window", { name });

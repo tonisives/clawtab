@@ -19,6 +19,8 @@ fn print_usage() {
     eprintln!("  auto-yes          Show auto-yes panes");
     eprintln!("  auto-yes toggle [pane_id]  Toggle auto-yes for pane (uses $TMUX_PANE if omitted)");
     eprintln!("  auto-yes check [pane_id]   Check if pane has auto-yes (exit 0=on, 1=off)");
+    eprintln!("  secrets           List secret key names");
+    eprintln!("  secrets get <k1> [k2 ...]  Get secret values as KEY=VALUE lines");
 }
 
 fn require_name(args: &[String], cmd_name: &str) -> String {
@@ -72,6 +74,19 @@ async fn main() {
             name: require_name(&args, "restart"),
         },
         "status" => IpcCommand::GetStatus,
+        "secrets" => {
+            if args.len() >= 3 && args[2] == "get" {
+                if args.len() < 4 {
+                    eprintln!("Error: 'secrets get' requires at least one key");
+                    std::process::exit(1);
+                }
+                IpcCommand::GetSecretValues {
+                    keys: args[3..].to_vec(),
+                }
+            } else {
+                IpcCommand::ListSecretKeys
+            }
+        }
         "auto-yes" => {
             if args.len() >= 3 && args[2] == "toggle" {
                 let pane_id = if args.len() >= 4 {
@@ -136,6 +151,20 @@ async fn main() {
                         let state = serde_json::to_string(status).unwrap_or_default();
                         println!("{}: {}", name, state);
                     }
+                }
+            }
+            IpcResponse::SecretKeys(keys) => {
+                if keys.is_empty() {
+                    println!("No secrets stored");
+                } else {
+                    for key in keys {
+                        println!("{}", key);
+                    }
+                }
+            }
+            IpcResponse::SecretValues(pairs) => {
+                for (k, v) in pairs {
+                    println!("{}={}", k, v);
                 }
             }
             IpcResponse::AutoYesPanes(panes) => {

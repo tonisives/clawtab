@@ -19,6 +19,8 @@ pub enum IpcCommand {
     OpenPane { pane_id: String },
     GetAutoYesPanes,
     ToggleAutoYes { pane_id: String },
+    ListSecretKeys,
+    GetSecretValues { keys: Vec<String> },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -28,6 +30,8 @@ pub enum IpcResponse {
     Jobs(Vec<String>),
     Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
     AutoYesPanes(Vec<String>),
+    SecretKeys(Vec<String>),
+    SecretValues(Vec<(String, String)>),
     Error(String),
 }
 

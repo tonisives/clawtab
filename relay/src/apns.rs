@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use a2::{
     Client, ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder,
-    NotificationOptions, Priority,
+    NotificationOptions, Priority, PushType,
 };
 use serde::Serialize;
 
@@ -153,7 +153,7 @@ impl ApnsClient {
                 apns_priority: Some(Priority::High),
                 apns_topic: Some(&self.topic),
                 apns_collapse_id: None,
-                apns_push_type: None,
+                apns_push_type: Some(PushType::Alert),
             };
 
             let mut payload = builder.build(device_token, options_obj);
@@ -230,7 +230,7 @@ impl ApnsClient {
                 apns_priority: Some(Priority::High),
                 apns_topic: Some(&self.topic),
                 apns_collapse_id: None,
-                apns_push_type: None,
+                apns_push_type: Some(PushType::Alert),
             };
 
             let mut payload = builder.build(device_token, options_obj);

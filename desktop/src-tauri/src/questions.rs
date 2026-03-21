@@ -413,8 +413,7 @@ fn detect_question_processes(
         let config = jobs_config.lock().unwrap();
         config.jobs.iter().filter_map(|job| {
             if let Some(ref fp) = job.folder_path {
-                let root = fp.strip_suffix("/.cwt").unwrap_or(fp);
-                Some((root.to_string(), job.group.clone(), job.slug.clone()))
+                Some((fp.clone(), job.group.clone(), job.slug.clone()))
             } else if let Some(ref wd) = job.work_dir {
                 Some((wd.clone(), job.group.clone(), job.slug.clone()))
             } else {

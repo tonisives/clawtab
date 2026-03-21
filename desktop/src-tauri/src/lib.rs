@@ -186,6 +186,18 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
 
             IpcResponse::Ok
         }
+        IpcCommand::ListSecretKeys => {
+            let secrets = state.secrets.lock().unwrap();
+            IpcResponse::SecretKeys(secrets.list_keys())
+        }
+        IpcCommand::GetSecretValues { keys } => {
+            let secrets = state.secrets.lock().unwrap();
+            let pairs: Vec<(String, String)> = keys
+                .iter()
+                .filter_map(|k| secrets.get(k).map(|v| (k.clone(), v.clone())))
+                .collect();
+            IpcResponse::SecretValues(pairs)
+        }
     }
 }
 
@@ -225,6 +237,14 @@ pub fn run() {
     let history = Arc::new(Mutex::new(
         HistoryStore::new().expect("failed to initialize history database"),
     ));
+
+    // Run startup migrations and scan for unregistered .cwt jobs
+    {
+        let mut j = jobs_config.lock().unwrap();
+        config::jobs::migrate_job_md_to_central(&mut j.jobs);
+        // Disabled: scan was too aggressive, re-registering deleted/junk .cwt subdirs
+        // config::jobs::scan_and_register_cwt_jobs(&mut j.jobs);
+    }
 
     // Ensure agent + per-job cwt.md context files are fresh on startup
     {
@@ -339,6 +359,7 @@ pub fn run() {
             commands::jobs::save_job,
             commands::jobs::rename_job,
             commands::jobs::import_job_folder,
+            commands::jobs::duplicate_job,
             commands::jobs::delete_job,
             commands::jobs::toggle_job,
             commands::jobs::run_job_now,
