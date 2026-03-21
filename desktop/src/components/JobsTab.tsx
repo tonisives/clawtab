@@ -153,8 +153,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       if (job) { setViewingJob(job); return; }
     }
     const proc = core.processes.find((p) => p.pane_id === entry.paneId);
-    if (proc) { setViewingProcess(proc); }
-  }, [core.jobs, core.processes]);
+    if (proc) { setViewingProcess(proc); return; }
+    // No job or detected process found - try focusing the tmux pane via a matching question
+    const q = questions.find((q) => q.pane_id === entry.paneId);
+    if (q) {
+      invoke("focus_detected_process", {
+        tmuxSession: q.tmux_session,
+        windowName: q.window_name,
+      }).catch(() => {});
+    }
+  }, [core.jobs, core.processes, questions]);
 
   const handleDisableAutoYes = useCallback((paneId: string) => {
     const next = new Set(autoYesPaneIds);

@@ -13,31 +13,12 @@ if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     exit 0
 fi
 
-# Find Claude process by matching the pane's TTY
-pane_tty=$(tmux display-message -t "$pane_id" -p '#{pane_tty}')
-tty_short="${pane_tty#/dev/}"
-claude_pid=$(ps -o pid=,tty=,comm= | grep "$tty_short" | grep claude | awk '{print $1}' | head -1)
-
-if [ -z "$claude_pid" ]; then
-    tmux display-message "Could not find Claude process"
-    exit 0
-fi
-
-# Read session ID from Claude's session file
-session_file="$HOME/.claude/sessions/${claude_pid}.json"
-if [ ! -f "$session_file" ]; then
-    tmux display-message "No session file for PID $claude_pid"
-    exit 0
-fi
-
-session_id=$(python3 -c "import json; print(json.load(open('$session_file'))['sessionId'])" 2>/dev/null)
-if [ -z "$session_id" ]; then
-    tmux display-message "Could not read session ID"
-    exit 0
-fi
-
 # Get the working directory of the current pane
 pane_path=$(tmux display-message -t "$pane_id" -p '#{pane_current_path}')
 
-# Split below and resume with fork
-tmux split-window -v -c "$pane_path" "claude --resume '$session_id' --fork-session"
+# Touch the JSONL by sending "forking" + ESC ESC to make this the most recent session
+tmux send-keys -t "$pane_id" "forking" Enter Escape Escape
+sleep 0.5
+
+# Fork using --continue (picks up the most recent session in cwd)
+tmux split-window -v -c "$pane_path" "claude --continue --fork-session"

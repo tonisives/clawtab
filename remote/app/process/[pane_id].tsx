@@ -71,14 +71,18 @@ export default function ProcessDetailScreen() {
   const [logsLoaded, setLogsLoaded] = useState(!!process?.log_lines);
   const [stopping, setStopping] = useState(false);
 
+  // Derive tmux info from process or question (for panes not in detectedProcesses)
+  const paneQuestion = questions.find((q) => q.pane_id === pane_id);
+  const tmuxSession = (process ?? lastProcess)?.tmux_session ?? paneQuestion?.tmux_session;
+
   const displayName = (process ?? lastProcess)
     ? (process ?? lastProcess)!.cwd.replace(/^\/Users\/[^/]+/, "~")
-    : pane_id;
+    : paneQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? pane_id;
 
-  // Poll logs - use lastProcess as fallback for tmux_session
+  // Poll logs - use lastProcess as fallback, then question for tmux_session
   const activeProcess = process ?? lastProcess;
   useEffect(() => {
-    if (!activeProcess) return;
+    if (!tmuxSession) return;
     let active = true;
     let polling = false;
     const poll = async () => {
@@ -91,8 +95,8 @@ export default function ProcessDetailScreen() {
         send({
           type: "get_detected_process_logs",
           id,
-          tmux_session: activeProcess.tmux_session,
-          pane_id: activeProcess.pane_id,
+          tmux_session: tmuxSession,
+          pane_id: pane_id,
         });
         const timeout = new Promise<{ logs?: string }>((resolve) =>
           setTimeout(() => resolve({}), 5000),
@@ -112,9 +116,8 @@ export default function ProcessDetailScreen() {
       active = false;
       clearInterval(interval);
     };
-  }, [activeProcess?.pane_id, activeProcess?.tmux_session]);
+  }, [pane_id, tmuxSession]);
 
-  const paneQuestion = questions.find((q) => q.pane_id === pane_id);
   const options = paneQuestion?.options ?? [];
 
   // "Type something" mode: when a freetext option is selected, the next
@@ -167,8 +170,6 @@ export default function ProcessDetailScreen() {
 
   const handleSend = useCallback(
     (text: string) => {
-      const proc = process ?? lastProcess;
-      if (!proc) return;
       const send = getWsSend();
       if (!send || !text.trim()) return;
 
@@ -178,7 +179,7 @@ export default function ProcessDetailScreen() {
           type: "answer_question",
           id: nextId(),
           question_id: paneQuestion?.question_id ?? "",
-          pane_id: proc.pane_id,
+          pane_id,
           answer: freetextOptionNumber,
           freetext: text.trim(),
         });
@@ -187,7 +188,7 @@ export default function ProcessDetailScreen() {
         send({
           type: "send_detected_process_input",
           id: nextId(),
-          pane_id: proc.pane_id,
+          pane_id,
           text: text.trim(),
         });
       }
@@ -196,17 +197,15 @@ export default function ProcessDetailScreen() {
         answerQuestion(paneQuestion.question_id);
       }
     },
-    [process?.pane_id, paneQuestion, answerQuestion, freetextOptionNumber],
+    [pane_id, paneQuestion, answerQuestion, freetextOptionNumber],
   );
 
   const doStop = async () => {
-    const proc = process ?? lastProcess;
-    if (!proc) return;
     const send = getWsSend();
     if (!send || stopping) return;
     setStopping(true);
     const id = nextId();
-    send({ type: "stop_detected_process", id, pane_id: proc.pane_id });
+    send({ type: "stop_detected_process", id, pane_id });
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
     await Promise.race([registerRequest(id), timeout]);
     setStopping(false);
@@ -216,7 +215,7 @@ export default function ProcessDetailScreen() {
     confirm("Stop process", `Kill the Claude process in ${displayName}?`, doStop);
   };
 
-  const isAlive = !!process;
+  const isAlive = !!process || !!paneQuestion;
   const isWeb = Platform.OS === "web";
   const outerScrollRef = useRef<ScrollView>(null);
   const outerWebRef = useRef<HTMLElement | null>(null);
@@ -264,7 +263,11 @@ export default function ProcessDetailScreen() {
         )}
 
         <View style={styles.logsContainer}>
-          {!logsLoaded ? (
+          {!logsLoaded && !tmuxSession ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Process not in detected list</Text>
+            </View>
+          ) : !logsLoaded ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator color={colors.accent} />
               <Text style={styles.loadingText}>Loading logs...</Text>
