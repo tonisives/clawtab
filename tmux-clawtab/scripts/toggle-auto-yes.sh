@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Toggle auto-yes for the current tmux pane (only if it's a Claude Code pane)
 
-pane_id="$TMUX_PANE"
+pane_id="${1:-$TMUX_PANE}"
 if [ -z "$pane_id" ]; then
     pane_id=$(tmux display-message -p '#{pane_id}')
 fi
