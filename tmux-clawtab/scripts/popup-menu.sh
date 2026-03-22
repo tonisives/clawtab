@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Unified ClawTab popup - lazygit-style TUI
-# Tabs: 1=Auto-yes  2=Secrets  3=Skills
+# Tabs: 1=Shortcuts  2=Secrets  3=Skills
 # Navigation: tab/S-tab switch tabs, j/k or up/down scroll, / to search
 # Actions: enter to select, space to toggle, esc to close
 
@@ -35,7 +35,7 @@ trap 'rm -f "$META_FILE"' EXIT
 
 # State
 TAB=0
-TABS=("Auto-yes" "Secrets" "Skills")
+TABS=("Shortcuts" "Secrets" "Skills")
 CURSOR=0
 SCROLL=0
 SEARCH=""
@@ -118,8 +118,15 @@ apply_filter() {
 
 # Terminal size
 get_size() {
-    TERM_ROWS=$(tput lines 2>/dev/null || echo 24)
-    TERM_COLS=$(tput cols 2>/dev/null || echo 60)
+    local sz
+    sz=$(stty size 2>/dev/null)
+    if [ -n "$sz" ]; then
+        TERM_ROWS=${sz%% *}
+        TERM_COLS=${sz##* }
+    else
+        TERM_ROWS=$(tput lines 2>/dev/null || echo 24)
+        TERM_COLS=$(tput cols 2>/dev/null || echo 60)
+    fi
 }
 
 # Drawing helpers
@@ -147,7 +154,7 @@ draw_tabs() {
 
     move_to 2 1
     clear_line
-    dim "  tab switch  j/k scroll  space toggle  / search  enter confirm"
+    dim "  tab switch  j/k scroll  space toggle  / search  enter run"
 }
 
 # Draw search bar for secrets/skills tabs
@@ -165,31 +172,49 @@ draw_search_bar() {
     fi
 }
 
-# Draw auto-yes tab
-draw_auto_yes() {
+# Shortcuts tab items and cursor
+SHORTCUT_CURSOR=0
+SHORTCUT_ITEMS=("Toggle auto-yes" "Fork session")
+
+# Draw shortcuts tab
+draw_shortcuts() {
     local current row
-    current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-auto-yes)
 
     row=4
-    move_to $row 1; clear_line
+    for ((i=0; i<${#SHORTCUT_ITEMS[@]}; i++)); do
+        move_to $row 1; clear_line
+        local label="${SHORTCUT_ITEMS[$i]}"
+        local suffix=""
 
-    if [ "$current" = "1" ]; then
-        printf '  Auto-yes: ' >&3
-        green "ON"
-    else
-        printf '  Auto-yes: ' >&3
-        dim "OFF"
-    fi
+        # Add status info
+        if [ $i -eq 0 ]; then
+            current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-auto-yes)
+            if [ "$current" = "1" ]; then
+                suffix="  $(printf '\033[32mON\033[0m')"
+            else
+                suffix="  $(printf '\033[2mOFF\033[0m')"
+            fi
+        fi
 
-    row=6
-    move_to $row 1; clear_line
-    printf '  ' >&3
-    printf '\033[7m Enter \033[0m' >&3
-    printf ' toggle auto-yes' >&3
+        # Key hint
+        local hint=""
+        if [ $i -eq 0 ]; then hint="y"; fi
+        if [ $i -eq 1 ]; then hint="f"; fi
 
-    row=8
+        if [ $i -eq $SHORTCUT_CURSOR ]; then
+            printf '  \033[7m %s \033[0m%s' "$label" "$suffix" >&3
+        else
+            printf '   %s %s' "$label" "$suffix" >&3
+        fi
+        if [ -n "$hint" ]; then
+            printf '  \033[2m(%s)\033[0m' "$hint" >&3
+        fi
+        ((row++))
+    done
+
+    row=$((4 + ${#SHORTCUT_ITEMS[@]} + 1))
     move_to $row 1; clear_line
-    dim "  When ON, permission prompts are automatically accepted."
+    dim "  enter to run"
 
     for ((r=row+1; r<=TERM_ROWS; r++)); do
         move_to $r 1; clear_line
@@ -225,8 +250,8 @@ draw_list() {
     fi
 
     # List fills from list_start to TERM_ROWS-1 (last row = status)
-    local visible=$((TERM_ROWS - list_start))
-    # Reserve 1 row for scroll indicator if needed, 1 for status
+    local visible=$((TERM_ROWS - list_start - 1))
+    # Reserve 1 row for scroll indicator if items overflow
     if [ $count -gt $visible ]; then
         visible=$((visible - 1))
     fi
@@ -333,8 +358,21 @@ do_enter() {
     local sel_count secret_count
     case $TAB in
         0)
-            "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
-            draw_auto_yes
+            case $SHORTCUT_CURSOR in
+                0)
+                    "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
+                    draw_shortcuts
+                    return 0
+                    ;;
+                1)
+                    # Fork session
+                    tmux send-keys -t "$PANE_ID" "forking" Enter Escape Escape
+                    sleep 0.3
+                    resolve_pane_path
+                    tmux split-window -v -t "$PANE_ID" -c "$pane_path" "claude --continue --fork-session"
+                    return 1
+                    ;;
+            esac
             return 0
             ;;
         1|2)
@@ -389,8 +427,10 @@ EOF
 do_space() {
     case $TAB in
         0)
-            "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
-            draw_auto_yes
+            if [ $SHORTCUT_CURSOR -eq 0 ]; then
+                "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
+                draw_shortcuts
+            fi
             ;;
         1)
             apply_filter
@@ -449,7 +489,7 @@ draw() {
     for ((c=0; c<TERM_COLS-4; c++)); do printf '\033[2m-\033[0m' >&3; done
 
     case $TAB in
-        0) draw_auto_yes ;;
+        0) draw_shortcuts ;;
         1) draw_secrets ;;
         2) draw_skills ;;
     esac
@@ -481,6 +521,8 @@ read_key() {
         "j") echo "down" ;;
         "k") echo "up" ;;
         "q") echo "esc" ;;
+        "y") echo "shortcut_y" ;;
+        "f") echo "shortcut_f" ;;
         "/") echo "search" ;;
         $'\x7f') echo "backspace" ;;
         *) echo "char:$key" ;;
@@ -622,32 +664,52 @@ while true; do
             fi
             ;;
         up)
-            max=$(tab_count)
-            if [ $max -gt 0 ]; then
-                if [ $CURSOR -gt 0 ]; then
-                    ((CURSOR--))
+            if [ $TAB -eq 0 ]; then
+                max=${#SHORTCUT_ITEMS[@]}
+                if [ $SHORTCUT_CURSOR -gt 0 ]; then
+                    ((SHORTCUT_CURSOR--))
                 else
-                    CURSOR=$((max - 1))
+                    SHORTCUT_CURSOR=$((max - 1))
                 fi
-                case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
-                esac
+                draw_shortcuts
+            else
+                max=$(tab_count)
+                if [ $max -gt 0 ]; then
+                    if [ $CURSOR -gt 0 ]; then
+                        ((CURSOR--))
+                    else
+                        CURSOR=$((max - 1))
+                    fi
+                    case $TAB in
+                        1) draw_secrets ;;
+                        2) draw_skills ;;
+                    esac
+                fi
             fi
             ;;
         down)
-            max=$(tab_count)
-            if [ $max -gt 0 ]; then
-                if [ $CURSOR -lt $((max - 1)) ]; then
-                    ((CURSOR++))
+            if [ $TAB -eq 0 ]; then
+                max=${#SHORTCUT_ITEMS[@]}
+                if [ $SHORTCUT_CURSOR -lt $((max - 1)) ]; then
+                    ((SHORTCUT_CURSOR++))
                 else
-                    CURSOR=0
-                    SCROLL=0
+                    SHORTCUT_CURSOR=0
                 fi
-                case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
-                esac
+                draw_shortcuts
+            else
+                max=$(tab_count)
+                if [ $max -gt 0 ]; then
+                    if [ $CURSOR -lt $((max - 1)) ]; then
+                        ((CURSOR++))
+                    else
+                        CURSOR=0
+                        SCROLL=0
+                    fi
+                    case $TAB in
+                        1) draw_secrets ;;
+                        2) draw_skills ;;
+                    esac
+                fi
             fi
             ;;
         space)
@@ -661,6 +723,17 @@ while true; do
             if ! do_enter; then
                 break
             fi
+            ;;
+        shortcut_y)
+            "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
+            if [ $TAB -eq 0 ]; then draw_shortcuts; fi
+            ;;
+        shortcut_f)
+            tmux send-keys -t "$PANE_ID" "forking" Enter Escape Escape
+            sleep 0.3
+            resolve_pane_path
+            tmux split-window -v -t "$PANE_ID" -c "$pane_path" "claude --continue --fork-session"
+            break
             ;;
     esac
 done
