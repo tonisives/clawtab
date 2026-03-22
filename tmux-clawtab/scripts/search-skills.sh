@@ -13,7 +13,5 @@ fi
 skill=$(ls -1 "$SKILLS_DIR" 2>/dev/null | fzf --prompt="/ " --reverse --no-info)
 
 if [ -n "$skill" ]; then
-    # Ensure Claude Code is in insert mode (vi mode support)
-    tmux send-keys -t "$PANE_ID" "i" Delete
     tmux send-keys -t "$PANE_ID" "/$skill" Enter
 fi
