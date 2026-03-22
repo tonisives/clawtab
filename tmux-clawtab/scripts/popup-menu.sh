@@ -383,16 +383,32 @@ do_enter() {
             secret_count=0
             for s in "${SECRET_SELECTED[@]}"; do [ "$s" = "1" ] && ((secret_count++)); done
 
-            # If on skills tab with nothing selected, do nothing
-            if [ $TAB -eq 2 ] && [ $sel_count -eq 0 ] && [ $secret_count -eq 0 ]; then return 0; fi
-            # If on secrets tab with nothing selected, do nothing
-            if [ $TAB -eq 1 ] && [ $secret_count -eq 0 ] && [ $sel_count -eq 0 ]; then return 0; fi
+            # Auto-select single filtered result if nothing is selected
+            apply_filter
+            if [ $sel_count -eq 0 ] && [ $secret_count -eq 0 ] && [ ${#FILTERED_INDICES[@]} -eq 1 ]; then
+                local auto_idx=${FILTERED_INDICES[0]}
+                if [ $TAB -eq 2 ]; then
+                    SKILL_SELECTED[$auto_idx]=1
+                    sel_count=1
+                elif [ $TAB -eq 1 ]; then
+                    SECRET_SELECTED[$auto_idx]=1
+                    secret_count=1
+                fi
+            fi
 
-            # Send selected skills
+            # If nothing selected, do nothing
+            if [ $sel_count -eq 0 ] && [ $secret_count -eq 0 ]; then return 0; fi
+
+            # Send selected skills (without Enter - let user confirm)
             if [ $sel_count -gt 0 ]; then
+                local first_skill=1
                 for i in "${!SKILLS_LIST[@]}"; do
                     if [ "${SKILL_SELECTED[$i]}" = "1" ]; then
-                        tmux send-keys -t "$PANE_ID" "/${SKILLS_LIST[$i]}" Enter
+                        if [ $first_skill -eq 0 ]; then
+                            tmux send-keys -t "$PANE_ID" " "
+                        fi
+                        tmux send-keys -t "$PANE_ID" "/${SKILLS_LIST[$i]}"
+                        first_skill=0
                     fi
                 done
             fi

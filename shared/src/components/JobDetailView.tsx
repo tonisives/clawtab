@@ -20,6 +20,7 @@ import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
 import { formatTime, formatDuration, compactCron } from "../util/format";
+import { nextCronDate, formatNextRun, describeCron, cronTooltip } from "../util/cron";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
 import { isFreetextOption } from "../util/jobs";
@@ -294,10 +295,18 @@ export function JobDetailView({
             <Text style={styles.infoLabel}>{job.job_type}</Text>
           </View>
           {job.cron ? (
-            <View style={styles.infoPill}>
+            <View style={styles.infoPill} {...(isWeb ? { title: cronTooltip(job.cron) } as any : {})}>
               <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
             </View>
           ) : null}
+          {job.cron && job.enabled ? (() => {
+            const next = nextCronDate(job.cron);
+            return next ? (
+              <View style={styles.infoPill}>
+                <Text style={styles.nextRunText}>next: {formatNextRun(next)}</Text>
+              </View>
+            ) : null;
+          })() : null}
           {isManual ? (
             <View style={styles.infoPill}>
               <Text style={styles.infoLabel}>{expandOutput ? "detected" : "manual"}</Text>
@@ -1199,6 +1208,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontFamily: "monospace",
+  },
+  nextRunText: {
+    color: colors.textSecondary,
+    fontSize: 11,
   },
   actions: {
     flexDirection: "row",

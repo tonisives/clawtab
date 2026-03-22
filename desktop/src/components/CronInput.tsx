@@ -1,4 +1,7 @@
 import { useMemo } from "react";
+import { describeCron } from "@clawtab/shared/src/util/cron";
+
+export { describeCron };
 
 interface Props {
   value: string;
@@ -15,54 +18,6 @@ const CRON_PRESETS: { label: string; value: string }[] = [
   { label: "Daily at 9am", value: "0 9 * * *" },
   { label: "Weekly (Mon 9am)", value: "0 9 * * 1" },
 ];
-
-function describeSingleCron(expr: string): string {
-  const parts = expr.trim().split(/\s+/);
-  if (parts.length !== 5) return "Invalid cron expression";
-
-  const [min, hour, dom, mon, dow] = parts;
-
-  if (min === "*" && hour === "*") return "Every minute";
-  if (min.startsWith("*/") && hour === "*") return `Every ${min.slice(2)} minutes`;
-  if (hour.startsWith("*/") && min === "0") return `Every ${hour.slice(2)} hours`;
-  if (min === "0" && hour === "*") return "Every hour";
-  if (dom === "*" && mon === "*" && dow === "*") {
-    if (hour !== "*" && min !== "*") return `Daily at ${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
-  }
-  if (dow !== "*" && dom === "*" && mon === "*") {
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const dayNums = dow.split(",");
-    const dayNames = dayNums.map((d) => days[parseInt(d)] ?? d);
-    const dayStr = dayNames.length === 7 ? "Daily" : dayNames.join(", ");
-    if (hour !== "*" && min !== "*") return `${dayStr} at ${hour.padStart(2, "0")}:${min.padStart(2, "0")}`;
-  }
-
-  return expr;
-}
-
-export function describeCron(expr: string): string {
-  const cronParts = expr.split("|").map((s) => s.trim()).filter(Boolean);
-  if (cronParts.length <= 1) return describeSingleCron(expr);
-
-  // Multiple crons - try to combine into a readable description
-  const descriptions = cronParts.map(describeSingleCron);
-  // Check if all share the same days, just different times
-  const parsed = cronParts.map((c) => {
-    const p = c.trim().split(/\s+/);
-    if (p.length !== 5) return null;
-    return { min: p[0], hour: p[1], dow: p[4] };
-  });
-  if (parsed.every((p) => p !== null) && parsed.every((p) => p!.dow === parsed[0]!.dow)) {
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const dow = parsed[0]!.dow;
-    const dayNums = dow === "*" ? [] : dow.split(",");
-    const dayStr = dow === "*" ? "Daily" : dayNums.map((d) => days[parseInt(d)] ?? d).join(", ");
-    const times = parsed.map((p) => `${p!.hour.padStart(2, "0")}:${p!.min.padStart(2, "0")}`);
-    return `${dayStr} at ${times.join(", ")}`;
-  }
-
-  return descriptions.join("; ");
-}
 
 export function CronInput({ value, onChange }: Props) {
   const description = useMemo(() => describeCron(value), [value]);

@@ -19,6 +19,7 @@ export { spacing, radius } from "./theme/spacing";
 
 // Utils
 export { formatTime, formatDuration, timeAgo, shortenPath, compactPath, compactCron } from "./util/format";
+export { nextCronDate, formatNextRun, describeCron, cronTooltip } from "./util/cron";
 export { groupJobs, sortGroupNames, findYesOption, isFreetextOption, typeIcon } from "./util/jobs";
 export { collapseSeparators, stripSeparators, truncateLogLines } from "./util/logs";
 export {

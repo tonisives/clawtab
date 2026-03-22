@@ -3,6 +3,7 @@ import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { typeIcon } from "../util/jobs";
 import { timeAgo, compactCron } from "../util/format";
+import { cronTooltip } from "../util/cron";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -41,7 +42,7 @@ export function JobCard({
             {job.name}
           </Text>
           <View style={styles.meta}>
-            {job.cron ? <Text style={styles.cronText}>{compactCron(job.cron)}</Text> : null}
+            {job.cron ? <Text style={styles.cronText} {...({ title: cronTooltip(job.cron) } as any)}>{compactCron(job.cron)}</Text> : null}
             {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
           </View>
         </View>
