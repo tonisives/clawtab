@@ -124,7 +124,7 @@ export function DetectedProcessDetail({
             role="switch"
             aria-checked={!!autoYesActive}
             onClick={onToggleAutoYes}
-            style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", marginRight: 4, WebkitAppRegion: "no-drag" as never }}
+            style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", marginRight: 4, ...({ WebkitAppRegion: "no-drag" } as Record<string, string>) }}
           >
             <span style={{ fontSize: 11, fontWeight: 600, color: autoYesActive ? "var(--warning-color)" : "var(--text-secondary)", whiteSpace: "nowrap" }}>
               Auto-yes

@@ -56,6 +56,7 @@ const emptyJob: Job = {
   params: [],
   kill_on_end: false,
   auto_yes: false,
+  aerospace_workspace: null,
 };
 
 type WizardStep = "identity" | "settings";

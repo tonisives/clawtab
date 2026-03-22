@@ -263,8 +263,8 @@ export function JobListView({
     // When sorting by name, interleave all groups alphabetically
     if (sortMode === "name") {
       allGroups.sort((a, b) => {
-        const da = a.displayGroup === "General" ? "General" : a.displayGroup;
-        const db = b.displayGroup === "General" ? "General" : b.displayGroup;
+        const da = "displayGroup" in a ? a.displayGroup : "";
+        const db = "displayGroup" in b ? b.displayGroup : "";
         return da.localeCompare(db, undefined, { sensitivity: "base" });
       });
     }

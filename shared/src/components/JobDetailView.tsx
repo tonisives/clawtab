@@ -20,7 +20,7 @@ import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
 import { formatTime, formatDuration, compactCron } from "../util/format";
-import { nextCronDate, formatNextRun, describeCron, cronTooltip } from "../util/cron";
+import { nextCronDate, formatNextRun, cronTooltip } from "../util/cron";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
 import { isFreetextOption } from "../util/jobs";
