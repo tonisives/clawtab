@@ -47,7 +47,7 @@ Desktop (Tauri) -> Relay Server (Rust/Axum) -> Web/Mobile Client
 
 ## How It Works
 
-1. **Define Jobs** -- Create jobs in the GUI: shell scripts, Claude Code prompts, or project folders with `.cwt` instructions.
+1. **Define Jobs** -- Create jobs in the GUI: shell scripts, Claude Code prompts, or project-based folder agents with centralized instructions.
 2. **ClawTab Schedules** -- Jobs run on cron in tmux windows. Secrets are injected, output is captured, and status is tracked.
 3. **Monitor Anywhere** -- Watch from the GUI, CLI, TUI, or Telegram. Get notifications on success or failure.
 

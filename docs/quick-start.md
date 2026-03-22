@@ -66,14 +66,14 @@ The wizard auto-detects tools and shows version + path for each. Missing tools c
 ### Folder job (project-based AI agent)
 
 1. In ClawTab, click "New Job" and set type to **Folder**
-2. Browse to your project root -- a `.cwt/` directory is created automatically
-3. Enter a **Job Name** (e.g., "deploy", "lint") -- this creates a subfolder within `.cwt/`
-4. Edit `.cwt/{job-name}/job.md` with your agent instructions
-5. ClawTab auto-generates `.cwt/{job-name}/cwt.md` (job context)
+2. Browse to your project root -- a `.cwt/` directory is created for context files
+3. Enter a **Job Name** (e.g., "deploy", "lint")
+4. Edit `job.md` with your agent instructions (stored centrally at `~/.config/clawtab/jobs/<slug>/job.md`)
+5. ClawTab auto-generates `.cwt/{job-name}/cwt.md` (job context) in the project
 6. Optionally add shared context in `.cwt/cwt.md` (applies to all jobs in the project)
 7. The job runs Claude from the project root with shared + per-job context
 
-Multiple jobs can share the same `.cwt/` directory, each in its own subfolder.
+Job instructions (`job.md`) live in the central config. The `.cwt/` directory in your project holds shared context and auto-generated per-job context only.
 
 ## Running a Job
 

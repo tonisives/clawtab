@@ -22,7 +22,7 @@ All configuration lives under `~/.config/clawtab/`.
 default_tmux_session: tgs        # tmux session for job windows
 default_work_dir: ~/workspace    # fallback working directory
 claude_path: claude              # path to claude binary
-preferred_editor: nvim           # editor for job.md files
+preferred_editor: nvim           # editor for job files
 preferred_terminal: auto         # terminal emulator (auto-detected)
 setup_completed: true
 secrets_backend: both            # "keychain", "gopass", or "both"
@@ -58,8 +58,8 @@ env:                              # static env vars
 work_dir: null                    # overrides default_work_dir
 tmux_session: main               # overrides default_tmux_session
 aerospace_workspace: "3"         # move tmux window to this workspace
-folder_path: /project/.cwt       # .cwt directory (folder jobs)
-job_name: deploy                  # subfolder within .cwt/ (folder jobs)
+folder_path: /project             # project root directory (folder jobs)
+job_name: deploy                  # job identifier (folder jobs)
 telegram_chat_id: 12345678       # per-job notification routing
 group: default                   # grouping label
 slug: myapp/deploy               # auto-generated identifier
@@ -69,7 +69,7 @@ slug: myapp/deploy               # auto-generated identifier
 
 Slugs are derived from `folder_path` (or `name`) + `job_name`:
 
-1. Project part: last path component (excluding `.cwt`), slugified
+1. Project part: last path component of `folder_path`, slugified
 2. Job part: `job_name` field (defaults to `"default"`), slugified
 3. Combined as `project-slug/job-name`
 4. Slugify: lowercase, keep `[a-z0-9-]`, collapse dashes, truncate at 20 chars
