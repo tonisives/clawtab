@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { describeCron } from "@clawtab/shared/src/util/cron";
+import { describeCron } from "@clawtab/shared";
 
 export { describeCron };
 
