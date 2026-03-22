@@ -401,6 +401,9 @@ do_enter() {
 
             # Send selected skills (without Enter - let user confirm)
             if [ $sel_count -gt 0 ]; then
+                # Ensure Claude Code is in insert mode (vi mode support)
+                # 'i' enters insert mode, Delete removes the 'i' if already in insert mode
+                tmux send-keys -t "$PANE_ID" "i" Delete
                 local first_skill=1
                 for i in "${!SKILLS_LIST[@]}"; do
                     if [ "${SKILL_SELECTED[$i]}" = "1" ]; then
