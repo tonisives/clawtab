@@ -30,6 +30,7 @@ pub struct MonitorParams {
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub notify_on_success: bool,
     pub relay: Arc<Mutex<Option<RelayHandle>>>,
+    pub app_handle: Option<tauri::AppHandle>,
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -60,6 +61,9 @@ pub async fn monitor_pane(params: MonitorParams) {
         }
         if use_app {
             crate::relay::push_job_notification(&params.relay, &params.slug, "started", &params.run_id);
+            if let Some(ref handle) = params.app_handle {
+                crate::notifications::notify_job(handle, &params.job_name, "started");
+            }
         }
     }
 
@@ -385,6 +389,9 @@ pub async fn monitor_pane(params: MonitorParams) {
         }
         if use_app {
             crate::relay::push_job_notification(&params.relay, &params.slug, "completed", &params.run_id);
+            if let Some(ref handle) = params.app_handle {
+                crate::notifications::notify_job(handle, &params.job_name, "completed");
+            }
         }
     }
 

@@ -185,6 +185,8 @@ pub async fn question_detection_loop(
     relay: Arc<Mutex<Option<RelayHandle>>>,
     active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
+    app_handle: tauri::AppHandle,
+    notification_state: Arc<Mutex<crate::notifications::NotificationState>>,
 ) {
     // Cache full question data per pane so transient detection misses don't flicker
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
@@ -304,6 +306,14 @@ pub async fn question_detection_loop(
         // Store for desktop frontend
         log::info!("[questions] storing {} active questions", questions.len());
         *active_questions.lock().unwrap() = questions.clone();
+
+        // Fire local macOS notifications for new questions
+        crate::notifications::notify_new_questions(
+            &app_handle,
+            &questions,
+            &notification_state,
+            &auto_yes_panes,
+        );
 
         // Filter out auto-yes panes before sending to relay - no need to notify
         // mobile about questions that will be auto-answered locally

@@ -177,7 +177,7 @@ async fn run_loop(
                     executor::execute_job_with_auto_yes(
                         &job, &secrets, &history, &settings, &job_status, "cron",
                         &active_agents, &relay, &std::collections::HashMap::new(),
-                        Some(&auto_yes_panes),
+                        Some(&auto_yes_panes), None,
                     )
                     .await;
                 });

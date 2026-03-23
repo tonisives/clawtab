@@ -411,6 +411,7 @@ pub fn toggle_job(state: State<AppState>, name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn run_job_now(
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
     name: String,
     params: Option<std::collections::HashMap<String, String>>,
@@ -434,6 +435,7 @@ pub async fn run_job_now(
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
+    let app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job_with_auto_yes(
             &job,
@@ -446,6 +448,7 @@ pub async fn run_job_now(
             &relay,
             &params,
             Some(&auto_yes_panes),
+            Some(app_handle),
         )
         .await;
     });
@@ -510,6 +513,7 @@ pub fn stop_job(state: State<AppState>, name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn restart_job(
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
     name: String,
     params: Option<std::collections::HashMap<String, String>>,
@@ -533,6 +537,7 @@ pub async fn restart_job(
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
+    let app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job_with_auto_yes(
             &job,
@@ -545,6 +550,7 @@ pub async fn restart_job(
             &relay,
             &params,
             Some(&auto_yes_panes),
+            Some(app_handle),
         )
         .await;
     });
@@ -1284,7 +1290,7 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Opt
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
-            &relay, &std::collections::HashMap::new(),
+            &relay, &std::collections::HashMap::new(), None,
         )
         .await;
     });

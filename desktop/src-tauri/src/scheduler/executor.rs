@@ -29,8 +29,9 @@ pub async fn execute_job(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
+    app_handle: Option<tauri::AppHandle>,
 ) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None).await;
+    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None, app_handle).await;
 }
 
 pub async fn execute_job_with_auto_yes(
@@ -44,8 +45,9 @@ pub async fn execute_job_with_auto_yes(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
+    app_handle: Option<tauri::AppHandle>,
 ) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, auto_yes_panes).await;
+    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, auto_yes_panes, app_handle).await;
 }
 
 async fn execute_job_inner(
@@ -59,6 +61,7 @@ async fn execute_job_inner(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
+    app_handle: Option<tauri::AppHandle>,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
@@ -190,6 +193,7 @@ async fn execute_job_inner(
                     job_status: Arc::clone(job_status),
                     notify_on_success,
                     relay: Arc::clone(relay),
+                    app_handle: app_handle.clone(),
                 };
                 tokio::spawn(super::monitor::monitor_pane(params));
                 return;
@@ -243,6 +247,9 @@ async fn execute_job_inner(
                 NotifyTarget::App => {
                     let event = if success { "completed" } else { "failed" };
                     crate::relay::push_job_notification(relay, &job.slug, event, &run_id);
+                    if let Some(ref handle) = app_handle {
+                        crate::notifications::notify_job(handle, &job.name, event);
+                    }
                 }
                 NotifyTarget::None => {}
             }
@@ -279,6 +286,9 @@ async fn execute_job_inner(
                 }
                 NotifyTarget::App => {
                     crate::relay::push_job_notification(relay, &job.slug, "failed", &run_id);
+                    if let Some(ref handle) = app_handle {
+                        crate::notifications::notify_job(handle, &job.name, "failed");
+                    }
                 }
                 NotifyTarget::None => {}
             }

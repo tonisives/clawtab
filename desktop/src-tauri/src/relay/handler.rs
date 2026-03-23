@@ -307,6 +307,7 @@ fn run_job(
             &active_agents,
             &relay,
             &params,
+            None,
         )
         .await;
     });
@@ -459,6 +460,7 @@ fn run_agent(
             &active_agents,
             &relay,
             &HashMap::new(),
+            None,
         )
         .await;
     });

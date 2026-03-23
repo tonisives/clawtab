@@ -6,6 +6,7 @@ mod config;
 mod cwt;
 mod history;
 pub mod ipc;
+mod notifications;
 mod questions;
 mod relay;
 mod scheduler;
@@ -45,6 +46,7 @@ pub struct AppState {
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
+    pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
 }
 
@@ -79,6 +81,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &active_agents,
                             &relay,
                             &std::collections::HashMap::new(),
+                            None,
                         )
                         .await;
                     });
@@ -130,6 +133,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &active_agents,
                             &relay,
                             &std::collections::HashMap::new(),
+                            None,
                         )
                         .await;
                     });
@@ -264,6 +268,8 @@ pub fn run() {
         Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
         Arc::new(Mutex::new(HashSet::new()));
+    let notification_state: Arc<Mutex<notifications::NotificationState>> =
+        Arc::new(Mutex::new(notifications::NotificationState::new()));
 
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
 
@@ -279,6 +285,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
     };
 
@@ -295,6 +302,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
     };
 
@@ -333,6 +341,7 @@ pub fn run() {
     let relay_for_questions = Arc::clone(&relay_handle);
     let active_questions_for_loop = Arc::clone(&active_questions);
     let auto_yes_for_questions = Arc::clone(&auto_yes_panes);
+    let notification_state_for_questions = Arc::clone(&notification_state);
 
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
@@ -352,6 +361,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
@@ -652,6 +662,7 @@ pub fn run() {
             }
 
             // Start question detection loop
+            let app_handle_for_questions = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 questions::question_detection_loop(
                     jobs_for_questions,
@@ -659,6 +670,8 @@ pub fn run() {
                     relay_for_questions,
                     active_questions_for_loop,
                     auto_yes_for_questions,
+                    app_handle_for_questions,
+                    notification_state_for_questions,
                 )
                 .await;
             });
