@@ -751,5 +751,18 @@ while true; do
             tmux split-window -v -t "$PANE_ID" -c "$pane_path" "claude --continue --fork-session"
             break
             ;;
+        char:*)
+            # Auto-search: typing on secrets/skills tabs enters search mode
+            if [ $TAB -ne 0 ]; then
+                SEARCHING=1
+                SEARCH="${local_key#char:}"
+                CURSOR=0
+                SCROLL=0
+                case $TAB in
+                    1) draw_secrets ;;
+                    2) draw_skills ;;
+                esac
+            fi
+            ;;
     esac
 done
