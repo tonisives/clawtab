@@ -191,7 +191,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   // Lazy-loaded data
   const [availableSkills, setAvailableSkills] = useState<{ name: string }[] | null>(null);
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
-  const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
+  const [previewFile, setPreviewFile] = useState<"job.md" | "context.md">("job.md");
   const [sharedContent, setSharedContent] = useState("");
   const [sharedLoaded, setSharedLoaded] = useState(false);
   const [jobCwtContent, setJobCwtContent] = useState<string | null>(null);
@@ -614,10 +614,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               job.md
             </button>
             <button
-              className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
-              onClick={() => setPreviewFile("cwt.md")}
+              className={`directions-tab ${previewFile === "context.md" ? "active" : ""}`}
+              onClick={() => setPreviewFile("context.md")}
             >
-              cwt.md
+              context.md
             </button>
             {isNew && importableJobs.length > 0 && (
               <div style={{ position: "relative", marginLeft: "auto" }}>
@@ -680,7 +680,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             />
           ) : (
             <HighlightedTextarea
-              value={jobCwtContent || "(no cwt.md)"}
+              value={jobCwtContent || "(no context.md)"}
               readOnly
             />
           )}
@@ -1083,7 +1083,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               Kill on end
             </label>
             <span className="hint">
-              When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
+              When enabled, the generated context.md instructs Claude to run `kill $PPID` when the task is complete.
             </span>
           </div>
 
@@ -1277,7 +1277,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               Kill on end
             </label>
             <span className="hint">
-              When enabled, the generated cwt.md instructs Claude to run `kill $PPID` when the task is complete.
+              When enabled, the generated context.md instructs Claude to run `kill $PPID` when the task is complete.
             </span>
           </div>
 

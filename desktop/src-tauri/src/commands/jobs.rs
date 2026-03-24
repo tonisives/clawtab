@@ -129,11 +129,10 @@ pub fn rename_job(
     Ok(())
 }
 
-/// Import a job folder (containing job.md) into a .cwt directory.
-/// `source` is the folder with job.md/cwt.md.
-/// `dest_cwt` is the target .cwt directory.
-/// `job_name` is the subfolder name inside .cwt.
-/// If source is already inside dest_cwt, files are used in place (no copy).
+/// Import a job folder (containing job.md) into central config.
+/// `source` is the folder with job.md.
+/// `dest_cwt` is the project root directory.
+/// `job_name` is the job identifier.
 #[tauri::command]
 pub fn import_job_folder(
     app: tauri::AppHandle,
@@ -312,10 +311,6 @@ pub fn duplicate_job(
             let _ = std::fs::write(central_dir.join("job.md"), &job_md_content);
         }
     }
-
-    // Create .cwt/{job_name}/ in target project for context
-    let cwt_job_dir = target_path.join(".cwt").join(&job_name);
-    let _ = std::fs::create_dir_all(&cwt_job_dir);
 
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
@@ -547,14 +542,19 @@ pub fn open_job_editor(
     let jn = job_name.as_deref().unwrap_or("default");
     let target_file = file_name.as_deref().unwrap_or("job.md");
 
-    // For job.md, read/write from central location
-    // For other files (cwt.md, scripts), use project's .cwt/ dir
+    // Read/write from central location
+    let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
     let file_path = if target_file == "job.md" {
-        let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
         crate::config::jobs::central_job_md_path(&slug)
             .ok_or("Could not determine config directory")?
+    } else if target_file == "context.md" {
+        crate::config::jobs::central_job_context_path(&slug)
+            .ok_or("Could not determine config directory")?
     } else {
-        std::path::Path::new(&folder_path).join(".cwt").join(jn).join(target_file)
+        // Other files (scripts) live in the central job dir
+        let jobs_dir = crate::config::jobs::JobsConfig::jobs_dir_public()
+            .ok_or("Could not determine config directory")?;
+        jobs_dir.join(&slug).join(target_file)
     };
 
     // Create job.md with template if it doesn't exist (only for job.md)
@@ -749,7 +749,7 @@ pub fn derive_job_slug(
     crate::config::jobs::derive_slug(&folder_path, job_name.as_deref(), &config.jobs)
 }
 
-/// Generate the auto-generated cwt.md for the agent's .cwt/default/ directory.
+/// Generate the auto-generated context for the agent directory.
 /// Contains workspace info, available tools, and Telegram communication instructions.
 fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Option<i64>) -> String {
     let mut out = String::new();
@@ -1151,7 +1151,7 @@ fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
 }
 
 /// Build a synthetic `Job` for running Claude as an ad-hoc interactive agent.
-/// Writes enriched prompt (with @.cwt references) to `~/.config/clawtab/agent/.agent-prompt.md`
+/// Writes enriched prompt to `~/.config/clawtab/agent/.agent-prompt.md`
 /// and returns a Job that can be passed to `execute_job`.
 ///
 /// When `target_dir` is provided, the agent runs in that directory instead of the
@@ -1182,13 +1182,7 @@ pub fn build_agent_job(
 
     // Derive name/slug and work_dir from target_dir
     let (job_name, job_slug, work_dir) = if let Some(dir) = target_dir {
-        // If target_dir ends in .cwt, use its parent as the project root
-        let dir_path = std::path::Path::new(dir);
-        let project_dir = if dir_path.file_name().and_then(|n| n.to_str()) == Some(".cwt") {
-            dir_path.parent().unwrap_or(dir_path)
-        } else {
-            dir_path
-        };
+        let project_dir = std::path::Path::new(dir);
         let folder = project_dir
             .file_name()
             .and_then(|n| n.to_str())

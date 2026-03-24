@@ -345,12 +345,12 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
           />
         </div>
         <div className="form-group">
-          <label>.cwt folder path</label>
+          <label>Project folder path</label>
           <input
             type="text"
             value={quickFolderPath}
             onChange={(e) => setQuickFolderPath(e.target.value)}
-            placeholder="~/projects/.cwt"
+            placeholder="~/projects"
           />
         </div>
         <div className="form-group">

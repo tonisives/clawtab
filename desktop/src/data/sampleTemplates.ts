@@ -124,7 +124,7 @@ Check [YOUR_WEBSITE] for changes since last run and report findings.
    - Pricing page (plan changes, new tiers)
    - Blog/changelog (new posts, feature announcements)
    - Product pages (new features, UI changes)
-3. Compare with previous observations (check .cwt/notes/ if available)
+3. Compare with previous observations (check notes/ if available)
 4. Document any changes found
 
 ## Output Format
@@ -596,7 +596,7 @@ Monitor prices for [YOUR_PRODUCT] and alert on significant changes.
    - Amazon or relevant marketplace
    - Alternative sellers
 2. Record current prices
-3. Compare with previous run's prices (check .cwt/notes/)
+3. Compare with previous run's prices (check notes/)
 4. Alert if price dropped more than 5% or increased significantly
 
 ## Output Format
@@ -978,16 +978,16 @@ Track upcoming crypto airdrops and eligibility requirements.
 Draft responses for emails that need attention.
 
 ## Context
-This agent reads email subjects/summaries you've saved to .cwt/inbox/ and drafts replies.
+This agent reads email subjects/summaries you've saved to inbox/ and drafts replies.
 Save emails you need help with as text files in the inbox folder.
 
 ## Steps
-1. Check .cwt/inbox/ for new email files
+1. Check inbox/ for new email files
 2. For each email:
    - Understand the context and what's being asked
    - Draft a professional response
    - Match the tone (formal/casual based on sender)
-3. Save drafts to .cwt/drafts/
+3. Save drafts to drafts/
 
 ## Output Format
 For each email:

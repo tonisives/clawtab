@@ -382,8 +382,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
     await actions.runAgent(prompt, workDir);
     if (workDir) {
-      // Strip /.cwt suffix to match the actual CWD the agent will run in
-      const dir = workDir.endsWith("/.cwt") ? workDir.slice(0, -5) : workDir;
+      const dir = workDir;
       setPendingAgentWorkDir({ dir, startedAt: Date.now() });
     }
   }, [actions]);
@@ -445,7 +444,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     [],
   );
 
-  // --- Import .cwt ---
+  // --- Import job folder ---
 
   type ImportState =
     | null
@@ -467,26 +466,22 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const handleImportCwt = useCallback(async () => {
     setImportError(null);
-    const selected = await open({ directory: true, title: "Select job folder (contains job.md)" });
+    const selected = await open({ directory: true, title: "Select project folder (contains job.md)" });
     if (!selected) return;
 
     const source = selected as string;
     const parts = source.replace(/\/$/, "").split("/");
     const jobName = parts[parts.length - 1];
-    const parentName = parts.length >= 2 ? parts[parts.length - 2] : "";
 
-    if (parentName === ".cwt") {
-      const destCwt = parts.slice(0, -1).join("/");
-      const existing = (core.jobs as Job[]).find(
-        (j) => j.folder_path === destCwt && j.job_name === jobName,
-      );
-      if (existing) {
-        setImportState({ step: "confirm-duplicate", source, destCwt, jobName });
-      } else {
-        await doImport(source, destCwt, jobName);
-      }
+    // dest_cwt is now the project root directly
+    const dest = source.replace(/\/$/, "");
+    const existing = (core.jobs as Job[]).find(
+      (j) => j.folder_path === dest && j.job_name === jobName,
+    );
+    if (existing) {
+      setImportState({ step: "confirm-duplicate", source, destCwt: dest, jobName });
     } else {
-      setImportState({ step: "pick-dest", source, jobName });
+      await doImport(source, dest, jobName);
     }
   }, [core.jobs, doImport]);
 
@@ -494,16 +489,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     const selected = await open({ directory: true, title: "Select project folder" });
     if (!selected) return;
     const picked = (selected as string).replace(/\/+$/, "");
-    const destCwt = picked.endsWith("/.cwt") || picked.endsWith(".cwt")
-      ? picked
-      : picked + "/.cwt";
     const existing = (core.jobs as Job[]).find(
-      (j) => j.folder_path === destCwt && j.job_name === jobName,
+      (j) => j.folder_path === picked && j.job_name === jobName,
     );
     if (existing) {
-      setImportState({ step: "confirm-duplicate", source, destCwt, jobName });
+      setImportState({ step: "confirm-duplicate", source, destCwt: picked, jobName });
     } else {
-      await doImport(source, destCwt, jobName);
+      await doImport(source, picked, jobName);
     }
   }, [core.jobs, doImport]);
 
@@ -790,7 +782,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
       {importState?.step === "pick-dest" && (
         <ConfirmDialog
-          message={`"${importState.jobName}" is not inside a .cwt folder. Select a project folder to import into.`}
+          message={`"${importState.jobName}" was not auto-detected. Select a project folder to import into.`}
           onConfirm={handleImportPickDest}
           onCancel={() => setImportState(null)}
           confirmLabel="Select folder"
