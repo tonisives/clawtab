@@ -242,12 +242,11 @@ pub fn run() {
         HistoryStore::new().expect("failed to initialize history database"),
     ));
 
-    // Run startup migrations and scan for unregistered .cwt jobs
+    // Run startup migrations
     {
         let mut j = jobs_config.lock().unwrap();
         config::jobs::migrate_job_md_to_central(&mut j.jobs);
-        // Disabled: scan was too aggressive, re-registering deleted/junk .cwt subdirs
-        // config::jobs::scan_and_register_cwt_jobs(&mut j.jobs);
+        config::jobs::migrate_cwt_to_central(&j.jobs);
     }
 
     // Ensure agent + per-job cwt.md context files are fresh on startup
@@ -509,9 +508,9 @@ pub fn run() {
                 });
             }
 
-            // App menu bar - add Import .cwt to default File menu
+            // App menu bar - add Import Job to default File menu
             let import_item =
-                MenuItem::with_id(app, "import_cwt", "Import .cwt...", true, None::<&str>)?;
+                MenuItem::with_id(app, "import_cwt", "Import Job...", true, None::<&str>)?;
             let app_menu = Menu::default(app.handle())?;
             // Find the default File submenu and append our item
             for item in app_menu.items()? {

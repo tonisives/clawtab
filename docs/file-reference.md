@@ -10,8 +10,8 @@
 | `~/.config/clawtab/jobs/<project>/<job-name>/job.yaml` | Individual job config |
 | `~/.config/clawtab/jobs/<project>/<job-name>/logs/<run-id>.log` | Tmux job output log |
 | `~/.config/clawtab/jobs/<project>/<job-name>/job.md` | Job-specific prompt/instructions |
-| `<project>/.cwt/cwt.md` | User-written shared context for all jobs in a project |
-| `<project>/.cwt/<job-name>/cwt.md` | Auto-generated per-job context |
+| `~/.config/clawtab/jobs/<project>/context.md` | User-written shared context for all jobs in a project |
+| `~/.config/clawtab/jobs/<project>/<job-name>/context.md` | Auto-generated per-job context |
 | `/tmp/clawtab.sock` | IPC Unix socket |
 
 ## Job Status Values

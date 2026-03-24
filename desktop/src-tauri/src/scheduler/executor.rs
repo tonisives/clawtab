@@ -509,7 +509,14 @@ async fn execute_folder_job(
     let raw_prompt = apply_params(raw_prompt, params);
 
     // Build prompt: shared context, then per-job context, then skills, then per-job instructions
-    // job.md content is inlined via raw_prompt, not referenced as @.cwt/{}/job.md
+    // All context is inlined from central config, not referenced via @.cwt/ paths
+    let shared_context = crate::config::jobs::central_project_context_path(&job.slug)
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .unwrap_or_default();
+    let job_context = crate::config::jobs::central_job_context_path(&job.slug)
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .unwrap_or_default();
+
     let skill_refs = job
         .skill_paths
         .iter()
@@ -521,10 +528,19 @@ async fn execute_folder_job(
     } else {
         format!(" {}", skill_refs)
     };
-    let prompt_content = format!(
-        "@.cwt/cwt.md @.cwt/{}/cwt.md{}\n\n{}",
-        job_name, skill_part, raw_prompt
-    );
+
+    let mut prompt_parts = Vec::new();
+    if !shared_context.is_empty() {
+        prompt_parts.push(shared_context);
+    }
+    if !job_context.is_empty() {
+        prompt_parts.push(job_context);
+    }
+    if !skill_part.is_empty() {
+        prompt_parts.push(skill_part.trim().to_string());
+    }
+    prompt_parts.push(raw_prompt);
+    let prompt_content = prompt_parts.join("\n\n");
 
     let (tmux_session, claude_path) = {
         let s = settings.lock().unwrap();

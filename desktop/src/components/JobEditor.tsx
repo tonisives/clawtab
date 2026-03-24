@@ -253,10 +253,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
-      // Auto-set folder_path for new wizard jobs to default_work_dir/.cwt
+      // Auto-set folder_path for new wizard jobs to default_work_dir
       if (isWizard && !form.folder_path) {
         const workDir = (s.default_work_dir || "~").replace(/\/+$/, "");
-        setForm((prev) => ({ ...prev, folder_path: workDir + "/.cwt" }));
+        setForm((prev) => ({ ...prev, folder_path: workDir }));
       }
       if (isNew && s.default_tmux_session) {
         setForm((prev) => ({ ...prev, tmux_session: s.default_tmux_session }));
@@ -363,7 +363,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         env[line.slice(0, eqIdx).trim()] = line.slice(eqIdx + 1).trim();
       }
     }
-    // For new folder jobs, create the .cwt directory and write files now
+    // For new folder jobs, create the job directory and write files now
     if (isNew && form.job_type === "folder" && form.folder_path) {
       const jn = form.job_name ?? "default";
       await invoke("init_cwt_folder", { folderPath: form.folder_path, jobName: jn });
@@ -398,9 +398,9 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     const selected = await open({ directory: true, multiple: false, title: "Choose project folder" });
     if (selected) {
       const projectDir = typeof selected === "string" ? selected : selected;
-      const cwtPath = projectDir.replace(/\/+$/, "") + "/.cwt";
-      const folderName = projectDir.replace(/\/+$/, "").split("/").pop() || "default";
-      setForm({ ...form, folder_path: cwtPath, group: folderName });
+      const cleanDir = projectDir.replace(/\/+$/, "");
+      const folderName = cleanDir.split("/").pop() || "default";
+      setForm({ ...form, folder_path: cleanDir, group: folderName });
     }
   };
 
@@ -465,7 +465,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               setForm({ ...form, job_type: e.target.value as JobType })
             }
           >
-            <option value="folder">Folder (.cwt)</option>
+            <option value="folder">Folder</option>
             <option value="claude">Claude</option>
             <option value="binary">Binary</option>
           </select>
@@ -498,7 +498,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             </div>
             <span className="hint">
               {isNew
-                ? "Pick a project folder. A .cwt/ directory will be created inside it."
+                ? "Pick a project folder. Job config is stored centrally in ~/.config/clawtab/jobs/."
                 : "Directory cannot be changed after creation."}
             </span>
           </div>
@@ -518,7 +518,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             />
             {form.name && (
               <span className="hint">
-                Folder: .cwt/{slugifyName(form.name) || "default"}/
+                Job: {slugifyName(form.name) || "default"}
               </span>
             )}
           </div>
@@ -660,7 +660,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                       >
                         <div>{j.name}</div>
                         <div style={{ fontSize: 10, color: "var(--text-secondary)", fontFamily: "monospace" }}>
-                          {j.folder_path?.replace(/\/\.cwt$/, "").split("/").pop()}
+                          {j.folder_path?.split("/").pop()}
                         </div>
                       </button>
                     ))}

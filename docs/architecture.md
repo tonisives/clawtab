@@ -154,7 +154,7 @@ src-tauri/src/
     polling.rs              # Long-poll getUpdates loop
     types.rs                # Telegram API types
   tmux/mod.rs               # tmux command wrappers
-  cwt/mod.rs                # .cwt folder handling
+  cwt/mod.rs                # Job context management
   aerospace/mod.rs          # AeroSpace integration
   history/mod.rs            # Run history store
   tools/mod.rs              # Tool detection

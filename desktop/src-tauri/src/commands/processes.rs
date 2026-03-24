@@ -77,8 +77,7 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             .iter()
             .filter_map(|job| {
                 if let Some(ref fp) = job.folder_path {
-                    // Strip trailing /.cwt to get project root
-                    let root = fp.strip_suffix("/.cwt").unwrap_or(fp);
+                    let root = fp.as_str();
                     Some((root.to_string(), job.group.clone(), job.name.clone()))
                 } else if let Some(ref wd) = job.work_dir {
                     Some((wd.clone(), job.group.clone(), job.name.clone()))

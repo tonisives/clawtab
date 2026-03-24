@@ -37,7 +37,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       const workDir = s.default_work_dir || "~";
-      setQuickFolderPath(workDir.replace(/\/+$/, "") + "/.cwt");
+      setQuickFolderPath(workDir.replace(/\/+$/, ""));
     });
   }, []);
 
@@ -112,7 +112,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
       }
 
       if (template.job_type === "folder") {
-        const folderPath = workDir.replace(/\/+$/, "") + "/.cwt";
+        const folderPath = workDir.replace(/\/+$/, "");
         await invoke("init_cwt_folder", { folderPath, jobName });
         await invoke("write_cwt_entry", { folderPath, jobName, content: templateContent });
 

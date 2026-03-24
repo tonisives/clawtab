@@ -158,7 +158,7 @@ export function SetupWizard({ onComplete }: Props) {
     setBrowseError("");
     try {
       const workDir = settings.default_work_dir || "~";
-      const folderPath = workDir.replace(/\/+$/, "") + "/.cwt";
+      const folderPath = workDir.replace(/\/+$/, "");
       const jobName = "hacker-news";
 
       await invoke("init_cwt_folder", { folderPath, jobName });
@@ -491,7 +491,7 @@ export function SetupWizard({ onComplete }: Props) {
               <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Folder (Claude Code)</p>
               <p style={{ margin: "0 0 4px" }}>
                 <strong>Directory:</strong>{" "}
-                {(settings?.default_work_dir || "~").replace(/\/+$/, "")}/.cwt/hacker-news/
+                {(settings?.default_work_dir || "~").replace(/\/+$/, "")}/
               </p>
               <p style={{ margin: "0 0 4px" }}>
                 <strong>Notifications:</strong> {notifyLabel}
