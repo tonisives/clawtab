@@ -3,7 +3,7 @@ import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { typeIcon } from "../util/jobs";
 import { timeAgo, compactCron } from "../util/format";
-import { cronTooltip } from "../util/cron";
+import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -44,6 +44,10 @@ export function JobCard({
           <View style={styles.meta}>
             {job.cron ? <Text style={styles.cronText} {...({ title: cronTooltip(job.cron) } as any)}>{compactCron(job.cron)}</Text> : null}
             {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
+            {job.cron && job.enabled ? (() => {
+              const next = nextCronDate(job.cron);
+              return next ? <Text style={styles.nextRunText}>next: {formatNextRun(next)}</Text> : null;
+            })() : null}
           </View>
         </View>
         <StatusBadge status={status} />
@@ -100,6 +104,10 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   metaText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  nextRunText: {
     color: colors.textSecondary,
     fontSize: 12,
   },
