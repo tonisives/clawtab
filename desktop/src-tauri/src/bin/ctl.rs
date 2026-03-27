@@ -97,7 +97,44 @@ async fn main() {
                     std::process::exit(1);
                 })
             };
-            IpcCommand::GetPaneInfo { pane_id }
+            // Resolve locally - no IPC needed
+            let pane_pid = std::process::Command::new("tmux")
+                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_id} #{pane_pid}"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                        stdout.lines()
+                            .find(|l| l.starts_with(&format!("{} ", pane_id)))
+                            .and_then(|l| l.split_whitespace().nth(1))
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if pane_pid.is_empty() {
+                eprintln!("Could not resolve pane PID");
+                std::process::exit(1);
+            }
+
+            let info = clawtab_lib::claude_session::resolve_session_info(&pane_pid);
+            if let Some(ref date) = info.session_started_at {
+                println!("started_at={}", date);
+            }
+            if let Some(epoch) = info.started_epoch {
+                println!("started_epoch={}", epoch);
+            }
+            if let Some(ref query) = info.first_query {
+                println!("first_query={}", query);
+            }
+            if info.session_started_at.is_none() && info.first_query.is_none() {
+                eprintln!("No session info found");
+                std::process::exit(1);
+            }
+            return;
         }
         "auto-yes" => {
             if args.len() >= 3 && args[2] == "toggle" {

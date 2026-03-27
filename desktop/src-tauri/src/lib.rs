@@ -1,6 +1,6 @@
 mod aerospace;
 mod browser;
-mod claude_session;
+pub mod claude_session;
 mod claude_usage;
 mod commands;
 mod config;
@@ -206,12 +206,16 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
         IpcCommand::GetPaneInfo { pane_id } => {
             // Resolve pane_pid from tmux
             let pane_pid = std::process::Command::new("tmux")
-                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_pid}"])
+                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_id} #{pane_pid}"])
                 .output()
                 .ok()
                 .and_then(|o| {
                     if o.status.success() {
-                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                        let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                        stdout.lines()
+                            .find(|l| l.starts_with(&format!("{} ", pane_id)))
+                            .and_then(|l| l.split_whitespace().nth(1))
+                            .map(|s| s.to_string())
                     } else {
                         None
                     }

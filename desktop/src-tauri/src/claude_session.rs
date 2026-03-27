@@ -20,6 +20,8 @@ struct JsonlUserMessage {
     msg_type: Option<String>,
     message: Option<JsonlMessageContent>,
     timestamp: Option<String>,
+    #[serde(rename = "isMeta")]
+    is_meta: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +34,7 @@ struct JsonlMessageContent {
 pub struct SessionInfo {
     pub first_query: Option<String>,
     pub session_started_at: Option<String>,
+    pub started_epoch: Option<u64>,
 }
 
 /// Resolve session info for a Claude Code pane.
@@ -40,10 +43,14 @@ pub struct SessionInfo {
 pub fn resolve_session_info(pane_pid: &str) -> SessionInfo {
     let mut info = SessionInfo::default();
 
-    // Find claude PID among children of pane_pid
-    let claude_pid = match find_claude_child(pane_pid) {
-        Some(pid) => pid,
-        None => return info,
+    // The pane_pid might be claude itself (e.g. forked sessions), or a shell with claude as child
+    let claude_pid = if has_session_file(pane_pid) {
+        pane_pid.to_string()
+    } else {
+        match find_claude_child(pane_pid) {
+            Some(pid) => pid,
+            None => return info,
+        }
     };
 
     // Read session file
@@ -62,8 +69,10 @@ pub fn resolve_session_info(pane_pid: &str) -> SessionInfo {
 
     // Convert startedAt (epoch ms) to human-readable date
     let started_secs = session.started_at / 1000;
+    info.started_epoch = Some(started_secs);
     if let Some(dt) = chrono::DateTime::from_timestamp(started_secs as i64, 0) {
-        info.session_started_at = Some(dt.format("%Y-%m-%d %H:%M").to_string());
+        let local = dt.with_timezone(&chrono::Local);
+        info.session_started_at = Some(local.format("%Y-%m-%d %H:%M").to_string());
     }
 
     // Derive project directory name: /Users/foo/bar -> -Users-foo-bar
@@ -79,6 +88,15 @@ pub fn resolve_session_info(pane_pid: &str) -> SessionInfo {
     }
 
     info
+}
+
+/// Check if a session file exists for this PID.
+fn has_session_file(pid: &str) -> bool {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".claude/sessions")
+        .join(format!("{}.json", pid))
+        .exists()
 }
 
 /// Find a child process of the given PID that is the claude CLI binary.
@@ -152,6 +170,10 @@ fn read_first_user_message(path: &PathBuf) -> Option<String> {
             continue;
         }
 
+        if msg.is_meta == Some(true) {
+            continue;
+        }
+
         let content = msg.message?.content?;
 
         let text = match content {
@@ -172,13 +194,7 @@ fn read_first_user_message(path: &PathBuf) -> Option<String> {
         };
 
         if !text.is_empty() {
-            // Truncate long messages
-            let truncated = if text.len() > 200 {
-                format!("{}...", &text[..200])
-            } else {
-                text
-            };
-            return Some(truncated);
+            return Some(text);
         }
     }
 

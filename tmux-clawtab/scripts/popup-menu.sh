@@ -35,7 +35,7 @@ trap 'rm -f "$META_FILE"' EXIT
 
 # State
 TAB=0
-TABS=("Shortcuts" "Secrets" "Skills")
+TABS=("Home" "Secrets" "Skills")
 CURSOR=0
 SCROLL=0
 SEARCH=""
@@ -179,6 +179,32 @@ SHORTCUT_ITEMS=("Toggle auto-yes" "Fork session")
 # Session info (loaded once)
 SESSION_FIRST_QUERY=""
 SESSION_STARTED_AT=""
+SESSION_RELATIVE_TIME=""
+declare -a QUERY_LINES
+QUERY_SCROLL=0
+
+relative_time() {
+    local epoch=$1
+    local now
+    now=$(date +%s)
+    local diff=$((now - epoch))
+    if [ $diff -lt 60 ]; then
+        echo "just now"
+    elif [ $diff -lt 3600 ]; then
+        local m=$((diff / 60))
+        [ $m -eq 1 ] && echo "1m ago" || echo "${m}m ago"
+    elif [ $diff -lt 86400 ]; then
+        local h=$((diff / 3600))
+        [ $h -eq 1 ] && echo "1h ago" || echo "${h}h ago"
+    elif [ $diff -lt 604800 ]; then
+        local d=$((diff / 86400))
+        [ $d -eq 1 ] && echo "1d ago" || echo "${d}d ago"
+    else
+        local w=$((diff / 604800))
+        [ $w -eq 1 ] && echo "1w ago" || echo "${w}w ago"
+    fi
+}
+
 load_session_info() {
     if command -v cwtctl &>/dev/null; then
         local raw
@@ -186,8 +212,37 @@ load_session_info() {
         if [ -n "$raw" ]; then
             SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
             SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
+            local epoch
+            epoch=$(echo "$raw" | grep '^started_epoch=' | cut -d= -f2-)
+            if [ -n "$epoch" ]; then
+                SESSION_RELATIVE_TIME=$(relative_time "$epoch")
+            fi
         fi
     fi
+}
+# Word-wrap query into QUERY_LINES array for the current terminal width
+wrap_query_lines() {
+    QUERY_LINES=()
+    [ -z "$SESSION_FIRST_QUERY" ] && return
+    local indent="    "
+    local max_len=$((TERM_COLS - ${#indent} - 2))
+    [ $max_len -lt 10 ] && max_len=10
+    local query="$SESSION_FIRST_QUERY"
+    while [ ${#query} -gt 0 ]; do
+        if [ ${#query} -le $max_len ]; then
+            QUERY_LINES+=("$query")
+            break
+        fi
+        local chunk="${query:0:$max_len}"
+        local break_at=$max_len
+        local last_space="${chunk% *}"
+        if [ ${#last_space} -gt 0 ] && [ ${#last_space} -lt ${#chunk} ]; then
+            break_at=${#last_space}
+        fi
+        QUERY_LINES+=("${query:0:$break_at}")
+        query="${query:$break_at}"
+        query="${query# }"
+    done
 }
 load_session_info
 
@@ -242,19 +297,46 @@ draw_shortcuts() {
             ((row++))
             move_to $row 1; clear_line
             dim "  Started: "; printf '%s' "$SESSION_STARTED_AT" >&3
+            if [ -n "$SESSION_RELATIVE_TIME" ]; then
+                dim "  ($SESSION_RELATIVE_TIME)"
+            fi
         fi
 
         if [ -n "$SESSION_FIRST_QUERY" ]; then
             ((row++))
             move_to $row 1; clear_line
-            dim "  Query:   "
-            # Truncate to fit terminal width
-            local max_len=$((TERM_COLS - 13))
-            local query="$SESSION_FIRST_QUERY"
-            if [ ${#query} -gt $max_len ]; then
-                query="${query:0:$max_len}..."
+            dim "  Query:"
+
+            wrap_query_lines
+            local total_lines=${#QUERY_LINES[@]}
+            local avail=$((TERM_ROWS - row - 1))
+            [ $avail -lt 1 ] && avail=1
+
+            # Clamp scroll
+            if [ $QUERY_SCROLL -gt $((total_lines - avail)) ]; then
+                QUERY_SCROLL=$((total_lines - avail))
             fi
-            printf '%s' "$query" >&3
+            [ $QUERY_SCROLL -lt 0 ] && QUERY_SCROLL=0
+
+            local indent="    "
+            local shown=0
+            if [ $QUERY_SCROLL -gt 0 ]; then
+                ((row++))
+                move_to $row 1; clear_line
+                dim "    ... scroll up for more ..."
+                ((avail--))
+            fi
+            for ((qi=QUERY_SCROLL; qi<total_lines && shown<avail; qi++)); do
+                ((row++))
+                move_to $row 1; clear_line
+                printf '%s%s' "$indent" "${QUERY_LINES[$qi]}" >&3
+                ((shown++))
+            done
+            if [ $((QUERY_SCROLL + shown)) -lt $total_lines ]; then
+                ((row++))
+                move_to $row 1; clear_line
+                dim "    ... scroll down for more ..."
+            fi
         fi
     fi
 
@@ -529,6 +611,7 @@ switch_tab() {
         SCROLL=0
         SEARCH=""
         SEARCHING=0
+        QUERY_SCROLL=0
         get_size
         for ((r=3; r<=TERM_ROWS; r++)); do
             move_to $r 1; clear_line
@@ -723,11 +806,10 @@ while true; do
             ;;
         up)
             if [ $TAB -eq 0 ]; then
-                max=${#SHORTCUT_ITEMS[@]}
-                if [ $SHORTCUT_CURSOR -gt 0 ]; then
+                if [ $QUERY_SCROLL -gt 0 ]; then
+                    ((QUERY_SCROLL--))
+                elif [ $SHORTCUT_CURSOR -gt 0 ]; then
                     ((SHORTCUT_CURSOR--))
-                else
-                    SHORTCUT_CURSOR=$((max - 1))
                 fi
                 draw_shortcuts
             else
@@ -751,7 +833,14 @@ while true; do
                 if [ $SHORTCUT_CURSOR -lt $((max - 1)) ]; then
                     ((SHORTCUT_CURSOR++))
                 else
-                    SHORTCUT_CURSOR=0
+                    # Scroll query if there are more lines
+                    wrap_query_lines
+                    local q_total=${#QUERY_LINES[@]}
+                    local q_avail=$((TERM_ROWS - 4 - ${#SHORTCUT_ITEMS[@]} - 6))
+                    [ $q_avail -lt 1 ] && q_avail=1
+                    if [ $((QUERY_SCROLL + q_avail)) -lt $q_total ]; then
+                        ((QUERY_SCROLL++))
+                    fi
                 fi
                 draw_shortcuts
             else

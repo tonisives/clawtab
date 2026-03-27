@@ -194,6 +194,7 @@ async fn execute_job_inner(
                     notify_on_success,
                     relay: Arc::clone(relay),
                     app_handle: app_handle.clone(),
+                    is_reattach: false,
                 };
                 tokio::spawn(super::monitor::monitor_pane(params));
                 return;

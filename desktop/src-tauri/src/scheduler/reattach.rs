@@ -238,6 +238,7 @@ pub fn reattach_running_jobs(
                 notify_on_success,
                 relay: Arc::clone(relay),
                 app_handle: None,
+                is_reattach: true,
             };
             tokio::spawn(super::monitor::monitor_pane(params));
 
