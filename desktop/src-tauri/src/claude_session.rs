@@ -75,8 +75,9 @@ pub fn resolve_session_info(pane_pid: &str) -> SessionInfo {
         info.session_started_at = Some(local.format("%Y-%m-%d %H:%M").to_string());
     }
 
-    // Derive project directory name: /Users/foo/bar -> -Users-foo-bar
-    let project_dir = session.cwd.replace('/', "-");
+    // Derive project directory name to match Claude Code's convention:
+    // /Users/foo/.bar -> -Users-foo-bar (slashes and tildes become dashes, dots removed)
+    let project_dir = session.cwd.replace('/', "-").replace('~', "-").replace('.', "");
     let jsonl_path = dirs::home_dir()
         .unwrap_or_default()
         .join(".claude/projects")
