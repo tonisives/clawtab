@@ -176,6 +176,21 @@ draw_search_bar() {
 SHORTCUT_CURSOR=0
 SHORTCUT_ITEMS=("Toggle auto-yes" "Fork session")
 
+# Session info (loaded once)
+SESSION_FIRST_QUERY=""
+SESSION_STARTED_AT=""
+load_session_info() {
+    if command -v cwtctl &>/dev/null; then
+        local raw
+        raw=$(cwtctl pane-info "$PANE_ID" 2>/dev/null)
+        if [ -n "$raw" ]; then
+            SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
+            SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
+        fi
+    fi
+}
+load_session_info
+
 # Draw shortcuts tab
 draw_shortcuts() {
     local current row
@@ -215,6 +230,33 @@ draw_shortcuts() {
     row=$((4 + ${#SHORTCUT_ITEMS[@]} + 1))
     move_to $row 1; clear_line
     dim "  enter to run"
+
+    # Session info
+    if [ -n "$SESSION_STARTED_AT" ] || [ -n "$SESSION_FIRST_QUERY" ]; then
+        ((row += 2))
+        move_to $row 1; clear_line
+        printf '  ' >&3
+        for ((c=0; c<TERM_COLS-4; c++)); do printf '\033[2m-\033[0m' >&3; done
+
+        if [ -n "$SESSION_STARTED_AT" ]; then
+            ((row++))
+            move_to $row 1; clear_line
+            dim "  Started: "; printf '%s' "$SESSION_STARTED_AT" >&3
+        fi
+
+        if [ -n "$SESSION_FIRST_QUERY" ]; then
+            ((row++))
+            move_to $row 1; clear_line
+            dim "  Query:   "
+            # Truncate to fit terminal width
+            local max_len=$((TERM_COLS - 13))
+            local query="$SESSION_FIRST_QUERY"
+            if [ ${#query} -gt $max_len ]; then
+                query="${query:0:$max_len}..."
+            fi
+            printf '%s' "$query" >&3
+        fi
+    fi
 
     for ((r=row+1; r<=TERM_ROWS; r++)); do
         move_to $r 1; clear_line

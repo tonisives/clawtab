@@ -7,6 +7,8 @@ export interface ClaudeProcess {
   matched_group: string | null;
   matched_job: string | null;
   log_lines: string;
+  first_query: string | null;
+  session_started_at: string | null;
 }
 
 export interface QuestionOption {

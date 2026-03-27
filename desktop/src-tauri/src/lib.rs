@@ -1,5 +1,6 @@
 mod aerospace;
 mod browser;
+mod claude_session;
 mod claude_usage;
 mod commands;
 mod config;
@@ -201,6 +202,34 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                 .filter_map(|k| secrets.get(k).map(|v| (k.clone(), v.clone())))
                 .collect();
             IpcResponse::SecretValues(pairs)
+        }
+        IpcCommand::GetPaneInfo { pane_id } => {
+            // Resolve pane_pid from tmux
+            let pane_pid = std::process::Command::new("tmux")
+                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_pid}"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if pane_pid.is_empty() {
+                IpcResponse::PaneInfo {
+                    first_query: None,
+                    session_started_at: None,
+                }
+            } else {
+                let info = claude_session::resolve_session_info(&pane_pid);
+                IpcResponse::PaneInfo {
+                    first_query: info.first_query,
+                    session_started_at: info.session_started_at,
+                }
+            }
         }
     }
 }

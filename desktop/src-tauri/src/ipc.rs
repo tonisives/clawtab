@@ -21,6 +21,7 @@ pub enum IpcCommand {
     ToggleAutoYes { pane_id: String },
     ListSecretKeys,
     GetSecretValues { keys: Vec<String> },
+    GetPaneInfo { pane_id: String },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -32,6 +33,10 @@ pub enum IpcResponse {
     AutoYesPanes(Vec<String>),
     SecretKeys(Vec<String>),
     SecretValues(Vec<(String, String)>),
+    PaneInfo {
+        first_query: Option<String>,
+        session_started_at: Option<String>,
+    },
     Error(String),
 }
 
