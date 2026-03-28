@@ -209,11 +209,12 @@ draw_status_bar() {
     local text_len=0
     move_to "$TERM_ROWS" 1
     clear_line
-    printf "${C_BORDER}${BOX_BL}${BOX_H}" >&3
+    printf "${C_BORDER}${BOX_BL}${BOX_H} " >&3
     case $TAB in
         0)
+            # "tab switch  j/k scroll  enter run" = 33 visible chars
             printf "${C_DIM}tab${C_RESET}${C_STATUS} switch  ${C_DIM}j/k${C_RESET}${C_STATUS} scroll  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}" >&3
-            text_len=27
+            text_len=33
             ;;
         1|2)
             local sel_count=0
@@ -225,16 +226,20 @@ draw_status_bar() {
             if [ $sel_count -gt 0 ]; then
                 local action="fork with secrets"
                 [ $TAB -eq 2 ] && action="send skills"
+                # "N selected - enter to ACTION"
                 printf "${C_CHECK_ON}%d selected${C_RESET}${C_STATUS} - ${C_DIM}enter${C_RESET}${C_STATUS} to %s${C_RESET}" "$sel_count" "$action" >&3
                 local num_str="$sel_count"
-                text_len=$((${#num_str} + 9 + 3 + 5 + 4 + ${#action}))
+                # N + " selected - enter to " + action
+                text_len=$((${#num_str} + 21 + ${#action}))
             else
+                # "space select  / search  enter run" = 33 visible chars
                 printf "${C_DIM}space${C_RESET}${C_STATUS} select  ${C_DIM}/${C_RESET}${C_STATUS} search  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}" >&3
-                text_len=29
+                text_len=33
             fi
             ;;
     esac
-    local fill=$((TERM_COLS - 2 - 1 - text_len - 1))
+    # Total: ╰(1) + ─(1) + space(1) + text + space(1) + fill + ╯(1) = TERM_COLS
+    local fill=$((TERM_COLS - 5 - text_len))
     [ $fill -lt 0 ] && fill=0
     printf "${C_BORDER} %s%s${C_RESET}" "$(hfill $fill)" "$BOX_BR" >&3
 }
@@ -505,13 +510,18 @@ draw_list() {
             prefix="/${SKILLS_LIST[$real_idx]}"
         fi
 
-        local check_color="${C_DIM}"
-        [ "$mark" = "x" ] && check_color="${C_CHECK_ON}"
-
         if [ $idx -eq $CURSOR ]; then
-            printf "${C_SELECTED} > ${C_RESET}%s[%s]${C_RESET} ${C_SELECTED}%s${C_RESET}" "$check_color" "$mark" "$prefix" >&3
+            if [ "$mark" = "x" ]; then
+                printf "${C_SELECTED} > ${C_CHECK_ON}[%s]${C_RESET} ${C_SELECTED}%s${C_RESET}" "$mark" "$prefix" >&3
+            else
+                printf "${C_SELECTED} > ${C_DIM}[%s]${C_RESET} ${C_SELECTED}%s${C_RESET}" "$mark" "$prefix" >&3
+            fi
         else
-            printf "${C_NORMAL}   %s[%s]${C_RESET} ${C_NORMAL}%s${C_RESET}" "$check_color" "$mark" "$prefix" >&3
+            if [ "$mark" = "x" ]; then
+                printf "${C_NORMAL}   ${C_CHECK_ON}[%s]${C_RESET} ${C_NORMAL}%s${C_RESET}" "$mark" "$prefix" >&3
+            else
+                printf "${C_NORMAL}   ${C_DIM}[%s]${C_RESET} ${C_NORMAL}%s${C_RESET}" "$mark" "$prefix" >&3
+            fi
         fi
         draw_row_end $((list_start + i))
     done
