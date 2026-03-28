@@ -146,76 +146,89 @@ C_RESET='\033[0m'
 BOX_TL='╭' BOX_TR='╮' BOX_BL='╰' BOX_BR='╯'
 BOX_H='─' BOX_V='│' BOX_ML='├' BOX_MR='┤'
 
-# Pre-compute horizontal fill for performance
-HFILL=$(printf '─%.0s' $(seq 1 300))
-
 # --- Drawing helpers ---
 move_to() { printf '\033[%d;%dH' "$1" "$2" >&3; }
 clear_line() { printf '\033[2K' >&3; }
 
-# Draw horizontal border: draw_hline <row> <left> <right> [label_text] [label_display_len]
-# label_text may contain ANSI codes; label_display_len is the visible character count
-draw_hline() {
-    local row=$1 lc=$2 rc=$3 label=${4:-} label_len=${5:-0}
-    local w=$TERM_COLS
+# Generate n horizontal box-drawing characters
+hfill() {
+    local n=$1 i
+    for ((i=0; i<n; i++)); do printf '%s' "$BOX_H"; done
+}
+
+# Draw horizontal border line with optional label
+# draw_hline <row> <left_corner> <right_corner> [label_display_len]
+# Caller prints label content between left corner and fill
+draw_hline_plain() {
+    local row=$1 lc=$2 rc=$3 used=${4:-0}
+    local fill=$((TERM_COLS - 2 - used))
+    [ $fill -lt 0 ] && fill=0
     move_to "$row" 1
     clear_line
-    if [ -n "$label" ]; then
-        local fill=$((w - 2 - 1 - label_len - 1))
-        [ $fill -lt 0 ] && fill=0
-        printf "${C_BORDER}%s${BOX_H}${C_RESET}%s${C_BORDER} %s%s${C_RESET}" \
-            "$lc" "$label" "${HFILL:0:$fill}" "$rc" >&3
-    else
-        local fill=$((w - 2))
-        printf "${C_BORDER}%s%s%s${C_RESET}" "$lc" "${HFILL:0:$fill}" "$rc" >&3
-    fi
+    printf "${C_BORDER}%s" "$lc" >&3
+}
+
+draw_hline_finish() {
+    local rc=$1 fill=$2
+    [ $fill -lt 0 ] && fill=0
+    printf "${C_BORDER}%s%s${C_RESET}" "$(hfill "$fill")" "$rc" >&3
 }
 
 # Draw left border at start of content row
 draw_row_start() {
-    local row=$1
-    move_to "$row" 1
+    move_to "$1" 1
     clear_line
     printf "${C_BORDER}${BOX_V}${C_RESET} " >&3
 }
 
 # Draw right border at end of content row
 draw_row_end() {
-    local row=$1
-    move_to "$row" "$TERM_COLS"
-    printf " ${C_BORDER}${BOX_V}${C_RESET}" >&3
+    move_to "$1" "$TERM_COLS"
+    printf "${C_BORDER}${BOX_V}${C_RESET}" >&3
 }
 
 # Draw an empty bordered row
 draw_empty_row() {
-    draw_row_start "$1"
-    draw_row_end "$1"
+    local row=$1 pad=$((TERM_COLS - 2))
+    move_to "$row" 1
+    printf "\033[2K${C_BORDER}${BOX_V}${C_RESET}%${pad}s${C_BORDER}${BOX_V}${C_RESET}" "" >&3
 }
 
 # --- Tab bar (top border) ---
 draw_tabs() {
-    local label="" label_len=0
+    local label_len=0
     for i in 0 1 2; do
-        if [ $i -gt 0 ]; then
-            label+=$(printf "${C_BORDER} | ${C_RESET}")
-            label_len=$((label_len + 3))
-        fi
-        if [ $i -eq $TAB ]; then
-            label+=$(printf "${C_TAB_ACTIVE} %s ${C_RESET}" "${TABS[$i]}")
-        else
-            label+=$(printf "${C_TAB_INACTIVE} %s ${C_RESET}" "${TABS[$i]}")
-        fi
+        if [ $i -gt 0 ]; then label_len=$((label_len + 3)); fi
         label_len=$((label_len + ${#TABS[$i]} + 2))
     done
-    draw_hline 1 "$BOX_TL" "$BOX_TR" "$label" "$label_len"
+    local fill=$((TERM_COLS - 2 - 1 - label_len - 1))
+    [ $fill -lt 0 ] && fill=0
+
+    move_to 1 1
+    clear_line
+    printf "${C_BORDER}${BOX_TL}${BOX_H}" >&3
+    for i in 0 1 2; do
+        if [ $i -gt 0 ]; then
+            printf "${C_BORDER} | " >&3
+        fi
+        if [ $i -eq $TAB ]; then
+            printf "${C_TAB_ACTIVE} %s ${C_RESET}" "${TABS[$i]}" >&3
+        else
+            printf "${C_TAB_INACTIVE} %s ${C_RESET}" "${TABS[$i]}" >&3
+        fi
+    done
+    printf "${C_BORDER} %s%s${C_RESET}" "${HFILL:0:$fill}" "$BOX_TR" >&3
 }
 
 # --- Status bar (bottom border) ---
 draw_status_bar() {
-    local text="" text_len=0
+    local text_len=0
+    move_to "$TERM_ROWS" 1
+    clear_line
+    printf "${C_BORDER}${BOX_BL}${BOX_H}" >&3
     case $TAB in
         0)
-            text=$(printf "${C_DIM}tab${C_RESET}${C_STATUS} switch  ${C_DIM}j/k${C_RESET}${C_STATUS} scroll  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}")
+            printf "${C_DIM}tab${C_RESET}${C_STATUS} switch  ${C_DIM}j/k${C_RESET}${C_STATUS} scroll  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}" >&3
             text_len=27
             ;;
         1|2)
@@ -228,16 +241,18 @@ draw_status_bar() {
             if [ $sel_count -gt 0 ]; then
                 local action="fork with secrets"
                 [ $TAB -eq 2 ] && action="send skills"
-                text=$(printf "${C_CHECK_ON}%d selected${C_RESET}${C_STATUS} - ${C_DIM}enter${C_RESET}${C_STATUS} to %s${C_RESET}" "$sel_count" "$action")
+                printf "${C_CHECK_ON}%d selected${C_RESET}${C_STATUS} - ${C_DIM}enter${C_RESET}${C_STATUS} to %s${C_RESET}" "$sel_count" "$action" >&3
                 local num_str="$sel_count"
                 text_len=$((${#num_str} + 9 + 3 + 5 + 4 + ${#action}))
             else
-                text=$(printf "${C_DIM}space${C_RESET}${C_STATUS} select  ${C_DIM}/${C_RESET}${C_STATUS} search  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}")
+                printf "${C_DIM}space${C_RESET}${C_STATUS} select  ${C_DIM}/${C_RESET}${C_STATUS} search  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}" >&3
                 text_len=29
             fi
             ;;
     esac
-    draw_hline "$TERM_ROWS" "$BOX_BL" "$BOX_BR" "$text" "$text_len"
+    local fill=$((TERM_COLS - 2 - 1 - text_len - 1))
+    [ $fill -lt 0 ] && fill=0
+    printf "${C_BORDER} %s%s${C_RESET}" "${HFILL:0:$fill}" "$BOX_BR" >&3
 }
 
 # Draw search bar for secrets/skills tabs (row 2)
@@ -340,25 +355,25 @@ draw_shortcuts() {
         local label="${SHORTCUT_ITEMS[$i]}"
         local suffix=""
 
-        # Add status info
-        if [ $i -eq 0 ]; then
-            current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-auto-yes)
-            if [ "$current" = "1" ]; then
-                suffix=$(printf "  ${C_CHECK_ON}ON${C_RESET}")
-            else
-                suffix=$(printf "  ${C_DIM}OFF${C_RESET}")
-            fi
-        fi
-
         # Key hint
         local hint=""
         if [ $i -eq 0 ]; then hint="y"; fi
         if [ $i -eq 1 ]; then hint="f"; fi
 
         if [ $i -eq $SHORTCUT_CURSOR ]; then
-            printf "${C_SELECTED} > %s ${C_RESET}%s" "$label" "$suffix" >&3
+            printf "${C_SELECTED} > %s ${C_RESET}" "$label" >&3
         else
-            printf "${C_NORMAL}   %s ${C_RESET}%s" "$label" "$suffix" >&3
+            printf "${C_NORMAL}   %s ${C_RESET}" "$label" >&3
+        fi
+
+        # Add status info
+        if [ $i -eq 0 ]; then
+            current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-auto-yes)
+            if [ "$current" = "1" ]; then
+                printf " ${C_CHECK_ON}ON${C_RESET}" >&3
+            else
+                printf " ${C_DIM}OFF${C_RESET}" >&3
+            fi
         fi
         if [ -n "$hint" ]; then
             printf "  ${C_DIM}(%s)${C_RESET}" "$hint" >&3
@@ -372,9 +387,10 @@ draw_shortcuts() {
 
     # Session info
     if [ -n "$SESSION_STARTED_AT" ] || [ -n "$SESSION_FIRST_QUERY" ]; then
-        local session_label
-        session_label=$(printf "${C_HEADER} Session ${C_RESET}")
-        draw_hline $row "$BOX_ML" "$BOX_MR" "$session_label" 9
+        local fill=$((TERM_COLS - 2 - 1 - 9 - 1))
+        [ $fill -lt 0 ] && fill=0
+        move_to $row 1; clear_line
+        printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} Session ${C_BORDER} %s${BOX_MR}${C_RESET}" "${HFILL:0:$fill}" >&3
         ((row++))
 
         if [ -n "$SESSION_STARTED_AT" ]; then
@@ -687,10 +703,6 @@ switch_tab() {
         SEARCH=""
         SEARCHING=0
         QUERY_SCROLL=0
-        get_size
-        for ((r=2; r<TERM_ROWS; r++)); do
-            draw_empty_row $r
-        done
     fi
 }
 
