@@ -225,12 +225,14 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             if pane_pid.is_empty() {
                 IpcResponse::PaneInfo {
                     first_query: None,
+                    last_query: None,
                     session_started_at: None,
                 }
             } else {
                 let info = claude_session::resolve_session_info(&pane_pid);
                 IpcResponse::PaneInfo {
                     first_query: info.first_query,
+                    last_query: info.last_query,
                     session_started_at: info.session_started_at,
                 }
             }

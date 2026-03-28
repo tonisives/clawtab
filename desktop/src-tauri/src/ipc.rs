@@ -35,6 +35,7 @@ pub enum IpcResponse {
     SecretValues(Vec<(String, String)>),
     PaneInfo {
         first_query: Option<String>,
+        last_query: Option<String>,
         session_started_at: Option<String>,
     },
     Error(String),

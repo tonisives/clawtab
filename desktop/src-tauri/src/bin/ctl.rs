@@ -130,6 +130,9 @@ async fn main() {
             if let Some(ref query) = info.first_query {
                 println!("first_query={}", query);
             }
+            if let Some(ref query) = info.last_query {
+                println!("last_query={}", query);
+            }
             if info.session_started_at.is_none() && info.first_query.is_none() {
                 eprintln!("No session info found");
                 std::process::exit(1);
@@ -216,12 +219,15 @@ async fn main() {
                     println!("{}={}", k, v);
                 }
             }
-            IpcResponse::PaneInfo { first_query, session_started_at } => {
+            IpcResponse::PaneInfo { first_query, last_query, session_started_at } => {
                 if let Some(ref date) = session_started_at {
                     println!("started_at={}", date);
                 }
                 if let Some(ref query) = first_query {
                     println!("first_query={}", query);
+                }
+                if let Some(ref query) = last_query {
+                    println!("last_query={}", query);
                 }
                 if session_started_at.is_none() && first_query.is_none() {
                     eprintln!("No session info found");

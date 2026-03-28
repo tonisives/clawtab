@@ -262,6 +262,15 @@ export default function ProcessDetailScreen() {
           </View>
         )}
 
+        {(process ?? lastProcess)?.first_query && (
+          <View style={styles.queryRow}>
+            <Text style={styles.queryLabel}>Query</Text>
+            <Text style={styles.queryText} numberOfLines={3}>
+              {(process ?? lastProcess)!.first_query}
+            </Text>
+          </View>
+        )}
+
         <View style={styles.logsContainer}>
           {!logsLoaded && !tmuxSession ? (
             <View style={styles.loadingContainer}>
@@ -447,6 +456,15 @@ const styles = StyleSheet.create({
     borderColor: colors.danger,
   },
   stopBtnText: { color: colors.danger, fontSize: 14, fontWeight: "600" },
+  queryRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  queryLabel: { color: colors.textMuted, fontSize: 11, fontWeight: "600", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 },
+  queryText: { color: colors.text, fontSize: 13, fontFamily: "monospace" },
   logsContainer: { flex: 1, minHeight: 300 },
   loadingContainer: {
     flex: 1,

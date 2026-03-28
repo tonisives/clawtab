@@ -263,6 +263,7 @@ SHORTCUT_ITEMS=("Toggle auto-yes" "Fork session")
 
 # Session info (loaded once)
 SESSION_FIRST_QUERY=""
+SESSION_LAST_QUERY=""
 SESSION_STARTED_AT=""
 SESSION_RELATIVE_TIME=""
 declare -a QUERY_LINES
@@ -297,6 +298,7 @@ load_session_info() {
         if [ -n "$raw" ]; then
             SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
             SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
+            SESSION_LAST_QUERY=$(echo "$raw" | grep '^last_query=' | cut -d= -f2-)
             local epoch
             epoch=$(echo "$raw" | grep '^started_epoch=' | cut -d= -f2-)
             if [ -n "$epoch" ]; then
@@ -306,13 +308,15 @@ load_session_info() {
     fi
 }
 
-# Word-wrap query into QUERY_LINES array for the current terminal width
+# Word-wrap a text string into QUERY_LINES array for the current terminal width
+# Usage: wrap_query_lines [text]  (defaults to SESSION_FIRST_QUERY)
 wrap_query_lines() {
     QUERY_LINES=()
-    [ -z "$SESSION_FIRST_QUERY" ] && return
+    local text="${1:-$SESSION_FIRST_QUERY}"
+    [ -z "$text" ] && return
     local max_len=$((TERM_COLS - 8))
     [ $max_len -lt 10 ] && max_len=10
-    local query="$SESSION_FIRST_QUERY"
+    local query="$text"
     while [ ${#query} -gt 0 ]; do
         if [ ${#query} -le $max_len ]; then
             QUERY_LINES+=("$query")
@@ -382,6 +386,9 @@ draw_shortcuts() {
         printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} Session ${C_BORDER} %s${BOX_MR}${C_RESET}" "$(hfill $fill)" >&3
         ((row++))
 
+        draw_empty_row $row
+        ((row++))
+
         if [ -n "$SESSION_STARTED_AT" ]; then
             draw_row_start $row
             printf "${C_DIM}Started:${C_RESET} ${C_NORMAL}%s${C_RESET}" "$SESSION_STARTED_AT" >&3
@@ -394,16 +401,34 @@ draw_shortcuts() {
 
         if [ -n "$SESSION_FIRST_QUERY" ]; then
             draw_row_start $row
-            printf "${C_DIM}Query:${C_RESET}" >&3
+            printf "${C_DIM}First query:${C_RESET}" >&3
             draw_row_end $row
             ((row++))
 
-            wrap_query_lines
+            wrap_query_lines "$SESSION_FIRST_QUERY"
+            for ((qi=0; qi<${#QUERY_LINES[@]}; qi++)); do
+                if [ $row -ge $((TERM_ROWS - 1)) ]; then break; fi
+                draw_row_start $row
+                printf "${C_NORMAL}  %s${C_RESET}" "${QUERY_LINES[$qi]}" >&3
+                draw_row_end $row
+                ((row++))
+            done
+        fi
+
+        if [ -n "$SESSION_LAST_QUERY" ]; then
+            draw_empty_row $row
+            ((row++))
+
+            draw_row_start $row
+            printf "${C_DIM}Latest query:${C_RESET}" >&3
+            draw_row_end $row
+            ((row++))
+
+            wrap_query_lines "$SESSION_LAST_QUERY"
             local total_lines=${#QUERY_LINES[@]}
             local avail=$((TERM_ROWS - row - 1))
             [ $avail -lt 1 ] && avail=1
 
-            # Clamp scroll
             if [ $QUERY_SCROLL -gt $((total_lines - avail)) ]; then
                 QUERY_SCROLL=$((total_lines - avail))
             fi
@@ -892,8 +917,7 @@ while true; do
                 elif [ $SHORTCUT_CURSOR -gt 0 ]; then
                     ((SHORTCUT_CURSOR--))
                 fi
-                draw_shortcuts
-                draw_status_bar
+                draw_tabs; draw_shortcuts; draw_status_bar
             else
                 max=$(tab_count)
                 if [ $max -gt 0 ]; then
@@ -915,8 +939,8 @@ while true; do
                 if [ $SHORTCUT_CURSOR -lt $((max - 1)) ]; then
                     ((SHORTCUT_CURSOR++))
                 else
-                    # Scroll query if there are more lines
-                    wrap_query_lines
+                    # Scroll last query if there are more lines
+                    wrap_query_lines "$SESSION_LAST_QUERY"
                     local q_total=${#QUERY_LINES[@]}
                     local q_avail=$((TERM_ROWS - 4 - ${#SHORTCUT_ITEMS[@]} - 6))
                     [ $q_avail -lt 1 ] && q_avail=1
@@ -924,8 +948,7 @@ while true; do
                         ((QUERY_SCROLL++))
                     fi
                 fi
-                draw_shortcuts
-                draw_status_bar
+                draw_tabs; draw_shortcuts; draw_status_bar
             else
                 max=$(tab_count)
                 if [ $max -gt 0 ]; then
