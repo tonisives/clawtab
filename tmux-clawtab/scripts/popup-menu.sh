@@ -156,23 +156,6 @@ hfill() {
     for ((i=0; i<n; i++)); do printf '%s' "$BOX_H"; done
 }
 
-# Draw horizontal border line with optional label
-# draw_hline <row> <left_corner> <right_corner> [label_display_len]
-# Caller prints label content between left corner and fill
-draw_hline_plain() {
-    local row=$1 lc=$2 rc=$3 used=${4:-0}
-    local fill=$((TERM_COLS - 2 - used))
-    [ $fill -lt 0 ] && fill=0
-    move_to "$row" 1
-    clear_line
-    printf "${C_BORDER}%s" "$lc" >&3
-}
-
-draw_hline_finish() {
-    local rc=$1 fill=$2
-    [ $fill -lt 0 ] && fill=0
-    printf "${C_BORDER}%s%s${C_RESET}" "$(hfill "$fill")" "$rc" >&3
-}
 
 # Draw left border at start of content row
 draw_row_start() {
@@ -196,17 +179,18 @@ draw_empty_row() {
 
 # --- Tab bar (top border) ---
 draw_tabs() {
-    local label_len=0
+    local label_len=1  # 1 for the dash after corner
     for i in 0 1 2; do
         if [ $i -gt 0 ]; then label_len=$((label_len + 3)); fi
         label_len=$((label_len + ${#TABS[$i]} + 2))
     done
-    local fill=$((TERM_COLS - 2 - 1 - label_len - 1))
+    label_len=$((label_len + 1))  # trailing space before fill
+    local fill=$((TERM_COLS - 2 - label_len))
     [ $fill -lt 0 ] && fill=0
 
     move_to 1 1
     clear_line
-    printf "${C_BORDER}${BOX_TL}${BOX_H}" >&3
+    printf "${C_BORDER}%s%s" "$BOX_TL" "$BOX_H" >&3
     for i in 0 1 2; do
         if [ $i -gt 0 ]; then
             printf "${C_BORDER} | " >&3
@@ -217,7 +201,7 @@ draw_tabs() {
             printf "${C_TAB_INACTIVE} %s ${C_RESET}" "${TABS[$i]}" >&3
         fi
     done
-    printf "${C_BORDER} %s%s${C_RESET}" "${HFILL:0:$fill}" "$BOX_TR" >&3
+    printf "${C_BORDER} %s%s${C_RESET}" "$(hfill $fill)" "$BOX_TR" >&3
 }
 
 # --- Status bar (bottom border) ---
@@ -252,7 +236,7 @@ draw_status_bar() {
     esac
     local fill=$((TERM_COLS - 2 - 1 - text_len - 1))
     [ $fill -lt 0 ] && fill=0
-    printf "${C_BORDER} %s%s${C_RESET}" "${HFILL:0:$fill}" "$BOX_BR" >&3
+    printf "${C_BORDER} %s%s${C_RESET}" "$(hfill $fill)" "$BOX_BR" >&3
 }
 
 # Draw search bar for secrets/skills tabs (row 2)
@@ -390,7 +374,7 @@ draw_shortcuts() {
         local fill=$((TERM_COLS - 2 - 1 - 9 - 1))
         [ $fill -lt 0 ] && fill=0
         move_to $row 1; clear_line
-        printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} Session ${C_BORDER} %s${BOX_MR}${C_RESET}" "${HFILL:0:$fill}" >&3
+        printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} Session ${C_BORDER} %s${BOX_MR}${C_RESET}" "$(hfill $fill)" >&3
         ((row++))
 
         if [ -n "$SESSION_STARTED_AT" ]; then
@@ -457,7 +441,10 @@ draw_list() {
     local list_start=4
 
     draw_search_bar
-    draw_hline 3 "$BOX_ML" "$BOX_MR"
+    # Mid-separator between search bar and list
+    local sep_fill=$((TERM_COLS - 2))
+    move_to 3 1; clear_line
+    printf "${C_BORDER}%s%s%s${C_RESET}" "$BOX_ML" "$(hfill $sep_fill)" "$BOX_MR" >&3
 
     if [ $count -eq 0 ]; then
         draw_row_start $list_start
