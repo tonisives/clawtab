@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Unified ClawTab popup - lazygit-style TUI
-# Tabs: 1=Shortcuts  2=Secrets  3=Skills
+# ClawTab popup - lazygit-style TUI with box-drawing borders
+# Tabs: 1=Home  2=Secrets  3=Skills
 # Navigation: tab/S-tab switch tabs, j/k or up/down scroll, / to search
 # Actions: enter to select, space to toggle, esc to close
 
@@ -129,47 +129,128 @@ get_size() {
     fi
 }
 
-# Drawing helpers
+# --- Color palette (256-color, tmux-safe) ---
+C_BORDER='\033[38;5;240m'
+C_TAB_ACTIVE='\033[1;48;5;31m\033[38;5;255m'
+C_TAB_INACTIVE='\033[38;5;245m'
+C_SELECTED='\033[48;5;236m\033[1;38;5;48m'
+C_NORMAL='\033[38;5;252m'
+C_DIM='\033[38;5;242m'
+C_STATUS='\033[38;5;245m'
+C_SEARCH='\033[38;5;220m'
+C_CHECK_ON='\033[38;5;48m'
+C_HEADER='\033[1;38;5;75m'
+C_RESET='\033[0m'
+
+# --- Box drawing ---
+BOX_TL='╭' BOX_TR='╮' BOX_BL='╰' BOX_BR='╯'
+BOX_H='─' BOX_V='│' BOX_ML='├' BOX_MR='┤'
+
+# Pre-compute horizontal fill for performance
+HFILL=$(printf '─%.0s' $(seq 1 300))
+
+# --- Drawing helpers ---
 move_to() { printf '\033[%d;%dH' "$1" "$2" >&3; }
 clear_line() { printf '\033[2K' >&3; }
-bold() { printf '\033[1m%s\033[0m' "$1" >&3; }
-dim() { printf '\033[2m%s\033[0m' "$1" >&3; }
-green() { printf '\033[32m%s\033[0m' "$1" >&3; }
 
-# Draw the tab bar with pill-style tabs
-draw_tabs() {
-    move_to 1 1
+# Draw horizontal border: draw_hline <row> <left> <right> [label_text] [label_display_len]
+# label_text may contain ANSI codes; label_display_len is the visible character count
+draw_hline() {
+    local row=$1 lc=$2 rc=$3 label=${4:-} label_len=${5:-0}
+    local w=$TERM_COLS
+    move_to "$row" 1
     clear_line
-    printf '  ' >&3
-    for i in 0 1 2; do
-        if [ $i -eq $TAB ]; then
-            printf '\033[1;7m %s \033[0m' "${TABS[$i]}" >&3
-        else
-            printf '\033[2m %s \033[0m' "${TABS[$i]}" >&3
-        fi
-        if [ $i -lt 2 ]; then
-            printf '\033[2m|\033[0m' >&3
-        fi
-    done
-
-    move_to 2 1
-    clear_line
-    dim "  tab switch  j/k scroll  space toggle  / search  enter run"
+    if [ -n "$label" ]; then
+        local fill=$((w - 2 - 1 - label_len - 1))
+        [ $fill -lt 0 ] && fill=0
+        printf "${C_BORDER}%s${BOX_H}${C_RESET}%s${C_BORDER} %s%s${C_RESET}" \
+            "$lc" "$label" "${HFILL:0:$fill}" "$rc" >&3
+    else
+        local fill=$((w - 2))
+        printf "${C_BORDER}%s%s%s${C_RESET}" "$lc" "${HFILL:0:$fill}" "$rc" >&3
+    fi
 }
 
-# Draw search bar for secrets/skills tabs
+# Draw left border at start of content row
+draw_row_start() {
+    local row=$1
+    move_to "$row" 1
+    clear_line
+    printf "${C_BORDER}${BOX_V}${C_RESET} " >&3
+}
+
+# Draw right border at end of content row
+draw_row_end() {
+    local row=$1
+    move_to "$row" "$TERM_COLS"
+    printf " ${C_BORDER}${BOX_V}${C_RESET}" >&3
+}
+
+# Draw an empty bordered row
+draw_empty_row() {
+    draw_row_start "$1"
+    draw_row_end "$1"
+}
+
+# --- Tab bar (top border) ---
+draw_tabs() {
+    local label="" label_len=0
+    for i in 0 1 2; do
+        if [ $i -gt 0 ]; then
+            label+=$(printf "${C_BORDER} | ${C_RESET}")
+            label_len=$((label_len + 3))
+        fi
+        if [ $i -eq $TAB ]; then
+            label+=$(printf "${C_TAB_ACTIVE} %s ${C_RESET}" "${TABS[$i]}")
+        else
+            label+=$(printf "${C_TAB_INACTIVE} %s ${C_RESET}" "${TABS[$i]}")
+        fi
+        label_len=$((label_len + ${#TABS[$i]} + 2))
+    done
+    draw_hline 1 "$BOX_TL" "$BOX_TR" "$label" "$label_len"
+}
+
+# --- Status bar (bottom border) ---
+draw_status_bar() {
+    local text="" text_len=0
+    case $TAB in
+        0)
+            text=$(printf "${C_DIM}tab${C_RESET}${C_STATUS} switch  ${C_DIM}j/k${C_RESET}${C_STATUS} scroll  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}")
+            text_len=27
+            ;;
+        1|2)
+            local sel_count=0
+            if [ $TAB -eq 1 ]; then
+                for s in "${SECRET_SELECTED[@]}"; do [ "$s" = "1" ] && ((sel_count++)); done
+            else
+                for s in "${SKILL_SELECTED[@]}"; do [ "$s" = "1" ] && ((sel_count++)); done
+            fi
+            if [ $sel_count -gt 0 ]; then
+                local action="fork with secrets"
+                [ $TAB -eq 2 ] && action="send skills"
+                text=$(printf "${C_CHECK_ON}%d selected${C_RESET}${C_STATUS} - ${C_DIM}enter${C_RESET}${C_STATUS} to %s${C_RESET}" "$sel_count" "$action")
+                local num_str="$sel_count"
+                text_len=$((${#num_str} + 9 + 3 + 5 + 4 + ${#action}))
+            else
+                text=$(printf "${C_DIM}space${C_RESET}${C_STATUS} select  ${C_DIM}/${C_RESET}${C_STATUS} search  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}")
+                text_len=29
+            fi
+            ;;
+    esac
+    draw_hline "$TERM_ROWS" "$BOX_BL" "$BOX_BR" "$text" "$text_len"
+}
+
+# Draw search bar for secrets/skills tabs (row 2)
 draw_search_bar() {
-    move_to 4 1; clear_line
+    draw_row_start 2
     if [ $SEARCHING -eq 1 ]; then
-        printf '\033[1m  / \033[0m' >&3
-        printf '%s' "$SEARCH" >&3
-        printf '\033[2m|\033[0m' >&3
+        printf "${C_SEARCH}/${C_RESET} %s${C_DIM}|${C_RESET}" "$SEARCH" >&3
     elif [ -n "$SEARCH" ]; then
-        printf '\033[2m  / \033[0m' >&3
-        printf '%s' "$SEARCH" >&3
+        printf "${C_DIM}/${C_RESET} %s" "$SEARCH" >&3
     else
-        printf '\033[2m  / search...\033[0m' >&3
+        printf "${C_DIM}/ search...${C_RESET}" >&3
     fi
+    draw_row_end 2
 }
 
 # Shortcuts tab items and cursor
@@ -220,12 +301,12 @@ load_session_info() {
         fi
     fi
 }
+
 # Word-wrap query into QUERY_LINES array for the current terminal width
 wrap_query_lines() {
     QUERY_LINES=()
     [ -z "$SESSION_FIRST_QUERY" ] && return
-    local indent="    "
-    local max_len=$((TERM_COLS - ${#indent} - 2))
+    local max_len=$((TERM_COLS - 8))
     [ $max_len -lt 10 ] && max_len=10
     local query="$SESSION_FIRST_QUERY"
     while [ ${#query} -gt 0 ]; do
@@ -246,13 +327,16 @@ wrap_query_lines() {
 }
 load_session_info
 
-# Draw shortcuts tab
+# Draw shortcuts (Home) tab
 draw_shortcuts() {
     local current row
 
-    row=4
+    row=2
+    draw_empty_row $row
+
+    row=3
     for ((i=0; i<${#SHORTCUT_ITEMS[@]}; i++)); do
-        move_to $row 1; clear_line
+        draw_row_start $row
         local label="${SHORTCUT_ITEMS[$i]}"
         local suffix=""
 
@@ -260,9 +344,9 @@ draw_shortcuts() {
         if [ $i -eq 0 ]; then
             current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-auto-yes)
             if [ "$current" = "1" ]; then
-                suffix="  $(printf '\033[32mON\033[0m')"
+                suffix=$(printf "  ${C_CHECK_ON}ON${C_RESET}")
             else
-                suffix="  $(printf '\033[2mOFF\033[0m')"
+                suffix=$(printf "  ${C_DIM}OFF${C_RESET}")
             fi
         fi
 
@@ -272,40 +356,42 @@ draw_shortcuts() {
         if [ $i -eq 1 ]; then hint="f"; fi
 
         if [ $i -eq $SHORTCUT_CURSOR ]; then
-            printf '  \033[7m %s \033[0m%s' "$label" "$suffix" >&3
+            printf "${C_SELECTED} > %s ${C_RESET}%s" "$label" "$suffix" >&3
         else
-            printf '   %s %s' "$label" "$suffix" >&3
+            printf "${C_NORMAL}   %s ${C_RESET}%s" "$label" "$suffix" >&3
         fi
         if [ -n "$hint" ]; then
-            printf '  \033[2m(%s)\033[0m' "$hint" >&3
+            printf "  ${C_DIM}(%s)${C_RESET}" "$hint" >&3
         fi
+        draw_row_end $row
         ((row++))
     done
 
-    row=$((4 + ${#SHORTCUT_ITEMS[@]} + 1))
-    move_to $row 1; clear_line
-    dim "  enter to run"
+    draw_empty_row $row
+    ((row++))
 
     # Session info
     if [ -n "$SESSION_STARTED_AT" ] || [ -n "$SESSION_FIRST_QUERY" ]; then
-        ((row += 2))
-        move_to $row 1; clear_line
-        printf '  ' >&3
-        for ((c=0; c<TERM_COLS-4; c++)); do printf '\033[2m-\033[0m' >&3; done
+        local session_label
+        session_label=$(printf "${C_HEADER} Session ${C_RESET}")
+        draw_hline $row "$BOX_ML" "$BOX_MR" "$session_label" 9
+        ((row++))
 
         if [ -n "$SESSION_STARTED_AT" ]; then
-            ((row++))
-            move_to $row 1; clear_line
-            dim "  Started: "; printf '%s' "$SESSION_STARTED_AT" >&3
+            draw_row_start $row
+            printf "${C_DIM}Started:${C_RESET} ${C_NORMAL}%s${C_RESET}" "$SESSION_STARTED_AT" >&3
             if [ -n "$SESSION_RELATIVE_TIME" ]; then
-                dim "  ($SESSION_RELATIVE_TIME)"
+                printf "  ${C_DIM}(%s)${C_RESET}" "$SESSION_RELATIVE_TIME" >&3
             fi
+            draw_row_end $row
+            ((row++))
         fi
 
         if [ -n "$SESSION_FIRST_QUERY" ]; then
+            draw_row_start $row
+            printf "${C_DIM}Query:${C_RESET}" >&3
+            draw_row_end $row
             ((row++))
-            move_to $row 1; clear_line
-            dim "  Query:"
 
             wrap_query_lines
             local total_lines=${#QUERY_LINES[@]}
@@ -318,30 +404,32 @@ draw_shortcuts() {
             fi
             [ $QUERY_SCROLL -lt 0 ] && QUERY_SCROLL=0
 
-            local indent="    "
             local shown=0
             if [ $QUERY_SCROLL -gt 0 ]; then
+                draw_row_start $row
+                printf "${C_DIM}  ... scroll up for more ...${C_RESET}" >&3
+                draw_row_end $row
                 ((row++))
-                move_to $row 1; clear_line
-                dim "    ... scroll up for more ..."
                 ((avail--))
             fi
             for ((qi=QUERY_SCROLL; qi<total_lines && shown<avail; qi++)); do
+                draw_row_start $row
+                printf "${C_NORMAL}  %s${C_RESET}" "${QUERY_LINES[$qi]}" >&3
+                draw_row_end $row
                 ((row++))
-                move_to $row 1; clear_line
-                printf '%s%s' "$indent" "${QUERY_LINES[$qi]}" >&3
                 ((shown++))
             done
             if [ $((QUERY_SCROLL + shown)) -lt $total_lines ]; then
+                draw_row_start $row
+                printf "${C_DIM}  ... scroll down for more ...${C_RESET}" >&3
+                draw_row_end $row
                 ((row++))
-                move_to $row 1; clear_line
-                dim "    ... scroll down for more ..."
             fi
         fi
     fi
 
-    for ((r=row+1; r<=TERM_ROWS; r++)); do
-        move_to $r 1; clear_line
+    for ((r=row; r<TERM_ROWS; r++)); do
+        draw_empty_row $r
     done
 }
 
@@ -350,30 +438,32 @@ draw_list() {
     local tab_type=$1  # "secrets" or "skills"
     apply_filter
     local count=${#FILTERED_INDICES[@]}
-    local list_start=5
+    local list_start=4
 
     draw_search_bar
+    draw_hline 3 "$BOX_ML" "$BOX_MR"
 
     if [ $count -eq 0 ]; then
-        move_to $list_start 1; clear_line
+        draw_row_start $list_start
         if [ -n "$SEARCH" ]; then
-            dim "  No matches"
+            printf "${C_DIM}No matches${C_RESET}" >&3
         elif [ "$tab_type" = "secrets" ]; then
             if ! command -v cwtctl &>/dev/null; then
-                dim "  cwtctl not found"
+                printf "${C_DIM}cwtctl not found${C_RESET}" >&3
             else
-                dim "  No secrets available"
+                printf "${C_DIM}No secrets available${C_RESET}" >&3
             fi
         else
-            dim "  No skills found in ~/.claude/skills"
+            printf "${C_DIM}No skills found in ~/.claude/skills${C_RESET}" >&3
         fi
-        for ((r=list_start+1; r<=TERM_ROWS; r++)); do
-            move_to $r 1; clear_line
+        draw_row_end $list_start
+        for ((r=list_start+1; r<TERM_ROWS; r++)); do
+            draw_empty_row $r
         done
         return
     fi
 
-    # List fills from list_start to TERM_ROWS-1 (last row = status)
+    # List fills from list_start to TERM_ROWS-2 (last content row before bottom border)
     local visible=$((TERM_ROWS - list_start - 1))
     # Reserve 1 row for scroll indicator if items overflow
     if [ $count -gt $visible ]; then
@@ -395,8 +485,9 @@ draw_list() {
     local idx real_idx mark prefix
     for ((i=0; i<visible; i++)); do
         idx=$((SCROLL + i))
-        move_to $((list_start + i)) 1; clear_line
+        draw_row_start $((list_start + i))
         if [ $idx -ge $count ]; then
+            draw_row_end $((list_start + i))
             continue
         fi
 
@@ -411,53 +502,35 @@ draw_list() {
             prefix="/${SKILLS_LIST[$real_idx]}"
         fi
 
+        local check_color="${C_DIM}"
+        [ "$mark" = "x" ] && check_color="${C_CHECK_ON}"
+
         if [ $idx -eq $CURSOR ]; then
-            printf '  \033[7m[%s] %s\033[0m' "$mark" "$prefix" >&3
+            printf "${C_SELECTED} > ${C_RESET}%s[%s]${C_RESET} ${C_SELECTED}%s${C_RESET}" "$check_color" "$mark" "$prefix" >&3
         else
-            printf '  [%s] %s' "$mark" "$prefix" >&3
+            printf "${C_NORMAL}   %s[%s]${C_RESET} ${C_NORMAL}%s${C_RESET}" "$check_color" "$mark" "$prefix" >&3
         fi
+        draw_row_end $((list_start + i))
     done
 
     # Scroll indicator row (only if there are hidden items)
     local next_row=$((list_start + visible))
     if [ $count -gt $visible ]; then
-        move_to $next_row 1; clear_line
+        draw_row_start $next_row
         if [ $SCROLL -gt 0 ] && [ $((SCROLL + visible)) -lt $count ]; then
-            dim "  ... more above and below ..."
+            printf "${C_DIM}... more above and below ...${C_RESET}" >&3
         elif [ $SCROLL -gt 0 ]; then
-            dim "  ... more above ..."
+            printf "${C_DIM}... more above ...${C_RESET}" >&3
         elif [ $((SCROLL + visible)) -lt $count ]; then
-            dim "  ... more below ..."
+            printf "${C_DIM}... more below ...${C_RESET}" >&3
         fi
+        draw_row_end $next_row
         ((next_row++))
     fi
 
-    # Status line at bottom
-    local status_row=$TERM_ROWS
-    move_to $status_row 1; clear_line
-
-    local sel_count=0
-    if [ "$tab_type" = "secrets" ]; then
-        for s in "${SECRET_SELECTED[@]}"; do [ "$s" = "1" ] && ((sel_count++)); done
-        if [ $sel_count -gt 0 ]; then
-            printf '  ' >&3; green "$sel_count selected"
-            printf ' - ' >&3; bold "enter"; printf ' to fork with secrets' >&3
-        else
-            dim "  space to select, enter to fork with selected"
-        fi
-    else
-        for s in "${SKILL_SELECTED[@]}"; do [ "$s" = "1" ] && ((sel_count++)); done
-        if [ $sel_count -gt 0 ]; then
-            printf '  ' >&3; green "$sel_count selected"
-            printf ' - ' >&3; bold "enter"; printf ' to send skills' >&3
-        else
-            dim "  space to select, enter to send selected"
-        fi
-    fi
-
-    # Clear gap between list end and status
-    for ((r=next_row; r<status_row; r++)); do
-        move_to $r 1; clear_line
+    # Fill gap between list end and bottom border
+    for ((r=next_row; r<TERM_ROWS; r++)); do
+        draw_empty_row $r
     done
 }
 
@@ -486,6 +559,7 @@ do_enter() {
                 0)
                     "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
                     draw_shortcuts
+                    draw_status_bar
                     return 0
                     ;;
                 1)
@@ -570,6 +644,7 @@ do_space() {
             if [ $SHORTCUT_CURSOR -eq 0 ]; then
                 "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
                 draw_shortcuts
+                draw_status_bar
             fi
             ;;
         1)
@@ -613,8 +688,8 @@ switch_tab() {
         SEARCHING=0
         QUERY_SCROLL=0
         get_size
-        for ((r=3; r<=TERM_ROWS; r++)); do
-            move_to $r 1; clear_line
+        for ((r=2; r<TERM_ROWS; r++)); do
+            draw_empty_row $r
         done
     fi
 }
@@ -624,16 +699,13 @@ draw() {
     get_size
     draw_tabs
 
-    # Separator
-    move_to 3 1; clear_line
-    printf '  ' >&3
-    for ((c=0; c<TERM_COLS-4; c++)); do printf '\033[2m-\033[0m' >&3; done
-
     case $TAB in
         0) draw_shortcuts ;;
         1) draw_secrets ;;
         2) draw_skills ;;
     esac
+
+    draw_status_bar
 }
 
 # Read a single keypress (handles escape sequences)
@@ -733,8 +805,8 @@ while true; do
                     SCROLL=0
                 fi
                 case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
+                    1) draw_secrets; draw_status_bar ;;
+                    2) draw_skills; draw_status_bar ;;
                 esac
                 ;;
             char:*)
@@ -742,22 +814,22 @@ while true; do
                 CURSOR=0
                 SCROLL=0
                 case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
+                    1) draw_secrets; draw_status_bar ;;
+                    2) draw_skills; draw_status_bar ;;
                 esac
                 ;;
             up)
                 SEARCHING=0
                 case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
+                    1) draw_secrets; draw_status_bar ;;
+                    2) draw_skills; draw_status_bar ;;
                 esac
                 ;;
             down)
                 SEARCHING=0
                 case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
+                    1) draw_secrets; draw_status_bar ;;
+                    2) draw_skills; draw_status_bar ;;
                 esac
                 ;;
             next_tab)
@@ -799,8 +871,8 @@ while true; do
                 CURSOR=0
                 SCROLL=0
                 case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
+                    1) draw_secrets; draw_status_bar ;;
+                    2) draw_skills; draw_status_bar ;;
                 esac
             fi
             ;;
@@ -812,6 +884,7 @@ while true; do
                     ((SHORTCUT_CURSOR--))
                 fi
                 draw_shortcuts
+                draw_status_bar
             else
                 max=$(tab_count)
                 if [ $max -gt 0 ]; then
@@ -821,8 +894,8 @@ while true; do
                         CURSOR=$((max - 1))
                     fi
                     case $TAB in
-                        1) draw_secrets ;;
-                        2) draw_skills ;;
+                        1) draw_secrets; draw_status_bar ;;
+                        2) draw_skills; draw_status_bar ;;
                     esac
                 fi
             fi
@@ -843,6 +916,7 @@ while true; do
                     fi
                 fi
                 draw_shortcuts
+                draw_status_bar
             else
                 max=$(tab_count)
                 if [ $max -gt 0 ]; then
@@ -853,8 +927,8 @@ while true; do
                         SCROLL=0
                     fi
                     case $TAB in
-                        1) draw_secrets ;;
-                        2) draw_skills ;;
+                        1) draw_secrets; draw_status_bar ;;
+                        2) draw_skills; draw_status_bar ;;
                     esac
                 fi
             fi
@@ -862,8 +936,8 @@ while true; do
         space)
             do_space
             case $TAB in
-                1) draw_secrets ;;
-                2) draw_skills ;;
+                1) draw_secrets; draw_status_bar ;;
+                2) draw_skills; draw_status_bar ;;
             esac
             ;;
         enter)
@@ -873,7 +947,7 @@ while true; do
             ;;
         shortcut_y)
             "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
-            if [ $TAB -eq 0 ]; then draw_shortcuts; fi
+            if [ $TAB -eq 0 ]; then draw_shortcuts; draw_status_bar; fi
             ;;
         shortcut_f)
             tmux send-keys -t "$PANE_ID" "forking" Enter Escape Escape
@@ -890,8 +964,8 @@ while true; do
                 CURSOR=0
                 SCROLL=0
                 case $TAB in
-                    1) draw_secrets ;;
-                    2) draw_skills ;;
+                    1) draw_secrets; draw_status_bar ;;
+                    2) draw_skills; draw_status_bar ;;
                 esac
             fi
             ;;
