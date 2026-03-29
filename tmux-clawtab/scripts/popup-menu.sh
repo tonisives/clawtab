@@ -395,6 +395,7 @@ draw_shortcuts() {
             if [ -n "$SESSION_RELATIVE_TIME" ]; then
                 printf "  ${C_DIM}(%s)${C_RESET}" "$SESSION_RELATIVE_TIME" >&3
             fi
+            printf "  ${C_DIM}%s${C_RESET}" "$PANE_ID" >&3
             draw_row_end $row
             ((row++))
         fi

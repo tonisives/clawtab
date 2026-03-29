@@ -51,6 +51,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
   const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
 
+  // Scroll position retention
+  const scrollOffsetRef = useRef(0);
+
   // Question polling
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
   const questionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -284,13 +287,27 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (importCwtKey && importCwtKey > 0) handleImportCwt();
   }, [importCwtKey]);
 
-  // Scroll to top when entering sub-views
+  // Track scroll position on .tab-content and restore when returning to list
+  const isSubView = !!(editingJob || isCreating || showPicker || viewingJob || viewingProcess);
   useEffect(() => {
-    if (editingJob || isCreating || showPicker || viewingJob || viewingProcess) {
-      const tabContent = document.querySelector(".tab-content");
-      if (tabContent) tabContent.scrollTop = 0;
+    const tabContent = document.querySelector(".tab-content");
+    if (!tabContent) return;
+    if (isSubView) {
+      tabContent.scrollTop = 0;
+      return;
     }
-  }, [editingJob, isCreating, showPicker, viewingJob, viewingProcess]);
+    // Restore scroll when returning to list
+    const saved = scrollOffsetRef.current;
+    if (saved > 0) {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        tabContent.scrollTop = saved;
+      }));
+    }
+    // Track scroll while on list view
+    const onScroll = () => { scrollOffsetRef.current = tabContent.scrollTop; };
+    tabContent.addEventListener("scroll", onScroll, { passive: true });
+    return () => tabContent.removeEventListener("scroll", onScroll);
+  }, [isSubView]);
 
   // --- Handlers ---
 

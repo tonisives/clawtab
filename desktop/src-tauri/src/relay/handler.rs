@@ -517,7 +517,7 @@ fn detect_processes(
     let output = match Command::new("tmux")
         .args([
             "list-panes", "-a", "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}",
+            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
         ])
         .output()
     {
@@ -552,11 +552,11 @@ fn detect_processes(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(5, '\t').collect();
-        if parts.len() < 5 { continue; }
+        let parts: Vec<&str> = line.splitn(6, '\t').collect();
+        if parts.len() < 6 { continue; }
 
-        let (pane_id, command, cwd, session, window) =
-            (parts[0], parts[1], parts[2], parts[3], parts[4]);
+        let (pane_id, command, cwd, session, window, pane_pid) =
+            (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
 
         if !is_semver(command) { continue; }
         if !seen.insert(pane_id.to_string()) { continue; }
@@ -574,6 +574,8 @@ fn detect_processes(
         let log_lines = crate::tmux::capture_pane(session, pane_id, 5)
             .unwrap_or_default().trim().to_string();
 
+        let session_info = crate::claude_session::resolve_session_info(pane_pid);
+
         results.push(RemoteClaudeProcess {
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
@@ -583,6 +585,9 @@ fn detect_processes(
             matched_group,
             matched_job,
             log_lines,
+            first_query: session_info.first_query,
+            last_query: session_info.last_query,
+            session_started_at: session_info.session_started_at,
         });
     }
 

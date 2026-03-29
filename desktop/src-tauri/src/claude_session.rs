@@ -238,6 +238,34 @@ fn read_user_messages(path: &PathBuf) -> (Option<String>, Option<String>) {
 
         let trimmed = text.trim();
 
+        // Extract skill name from command messages (e.g. <command-name>/c-xcwt</command-name>)
+        if trimmed.starts_with("<command-name>") {
+            if let Some(end) = trimmed.find("</") {
+                let inner = trimmed["<command-name>".len()..end].trim().to_string();
+                if !inner.is_empty() {
+                    if first.is_none() {
+                        first = Some(inner);
+                    } else {
+                        last = Some(inner);
+                    }
+                }
+            }
+            continue;
+        }
+        if trimmed.starts_with("<command-message>") {
+            if let Some(end) = trimmed.find("</") {
+                let inner = trimmed["<command-message>".len()..end].trim().to_string();
+                if !inner.is_empty() {
+                    if first.is_none() {
+                        first = Some(inner);
+                    } else {
+                        last = Some(inner);
+                    }
+                }
+            }
+            continue;
+        }
+
         // Skip system/command outputs (XML-like tags)
         if trimmed.starts_with('<') && trimmed.contains("command") {
             continue;

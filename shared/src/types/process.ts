@@ -8,6 +8,7 @@ export interface ClaudeProcess {
   matched_job: string | null;
   log_lines: string;
   first_query: string | null;
+  last_query: string | null;
   session_started_at: string | null;
 }
 

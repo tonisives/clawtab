@@ -92,6 +92,7 @@ export interface JobListViewProps {
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
+  onSendProcessInput?: (paneId: string, text: string) => void;
   // Agent
   onRunAgent?: (prompt: string, workDir?: string) => void;
   // Desktop-only slots
@@ -105,6 +106,10 @@ export interface JobListViewProps {
   emptyMessage?: string;
   // Extra style for scroll content container
   contentContainerStyle?: StyleProp<ViewStyle>;
+  // Restore scroll position (web only)
+  initialScrollOffset?: number;
+  // Report scroll position changes (web only)
+  onScrollOffsetChange?: (offset: number) => void;
 }
 
 type ListItem =
@@ -125,12 +130,15 @@ export function JobListView({
   onSortChange,
   onSelectJob,
   onSelectProcess,
+  onSendProcessInput,
   onRunAgent,
   onAddJob,
   headerContent,
   showEmpty = true,
   emptyMessage = "No jobs found.",
   contentContainerStyle,
+  initialScrollOffset,
+  onScrollOffsetChange,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -489,12 +497,24 @@ export function JobListView({
     </View>
   ) : null;
 
+  // Restore scroll position on mount
+  useEffect(() => {
+    if (!initialScrollOffset) return;
+    // Double rAF to wait for layout, plus a fallback timeout
+    const restore = () => scrollRef.current?.scrollTo({ y: initialScrollOffset, animated: false });
+    requestAnimationFrame(() => requestAnimationFrame(restore));
+    const t = setTimeout(restore, 100);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <ScrollView
       ref={scrollRef}
       style={styles.scroll}
       contentContainerStyle={[styles.list, contentContainerStyle]}
       automaticallyAdjustKeyboardInsets
+      onScroll={(e) => { onScrollOffsetChange?.(e.nativeEvent.contentOffset.y); }}
+      scrollEventThrottle={100}
       refreshControl={
         onRefresh ? (
           <RefreshControl

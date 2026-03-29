@@ -116,6 +116,7 @@ export function DetectedProcessDetail({
               {displayName}
             </span>
             <code style={{ fontSize: 11, color: "var(--text-secondary)" }}>v{process.version}</code>
+            <code style={{ fontSize: 11, color: "var(--text-secondary)" }}>{process.pane_id}</code>
             <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
           </div>
         </div>
