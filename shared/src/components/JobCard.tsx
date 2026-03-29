@@ -29,12 +29,12 @@ export function JobCard({
   const icon = typeIcon(job.job_type);
 
   return (
-    <View style={[styles.card, !job.enabled && styles.cardDisabled]}>
-      <TouchableOpacity
-        style={styles.row}
-        onPress={onPress}
-        activeOpacity={0.7}
-      >
+    <TouchableOpacity
+      style={[styles.card, !job.enabled && styles.cardDisabled]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.row}>
         <View style={[styles.typeIcon, { backgroundColor: icon.bg }]}>
           <Text style={[styles.typeIconText, job.job_type === "claude" && { color: colors.accent }]}>{icon.letter}</Text>
         </View>
@@ -43,17 +43,17 @@ export function JobCard({
             {job.name}
           </Text>
           <View style={styles.meta}>
-            {job.cron ? <Tooltip label={cronTooltip(job.cron)}><Text style={styles.cronText}>{compactCron(job.cron)}</Text></Tooltip> : null}
-            {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
             {job.cron && job.enabled ? (() => {
               const next = nextCronDate(job.cron);
-              return next ? <Text style={styles.nextRunText}>next: {formatNextRun(next)}</Text> : null;
+              return next ? <Text style={styles.nextRunText} numberOfLines={1}>{formatNextRun(next)}</Text> : null;
             })() : null}
+            {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
+            {job.cron ? <Tooltip label={cronTooltip(job.cron)}><Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text></Tooltip> : null}
           </View>
         </View>
         <StatusBadge status={status} />
-      </TouchableOpacity>
-    </View>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -99,19 +99,25 @@ const styles = StyleSheet.create({
   },
   meta: {
     flexDirection: "row",
+    flexWrap: "nowrap",
     gap: spacing.sm,
+    alignItems: "center",
+    overflow: "hidden",
   },
   cronText: {
     color: colors.textSecondary,
     fontSize: 12,
     fontFamily: "monospace",
+    flexShrink: 1,
   },
   metaText: {
     color: colors.textSecondary,
     fontSize: 12,
+    flexShrink: 0,
   },
   nextRunText: {
     color: colors.textSecondary,
     fontSize: 12,
+    flexShrink: 0,
   },
 });

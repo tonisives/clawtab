@@ -169,18 +169,18 @@ pub fn get_detected_process_logs(tmux_session: String, pane_id: String) -> Resul
 }
 
 #[tauri::command]
-pub fn resize_pane(pane_id: String, cols: u32) -> Result<(), String> {
-    crate::tmux::resize_pane_width(&pane_id, cols)
-}
-
-#[tauri::command]
 pub fn send_detected_process_input(pane_id: String, text: String) -> Result<(), String> {
     crate::tmux::send_keys_to_tui_pane(&pane_id, &text)
 }
 
 #[tauri::command]
 pub fn get_active_questions(state: State<AppState>) -> Vec<clawtab_protocol::ClaudeQuestion> {
-    state.active_questions.lock().unwrap().clone()
+    let yes_panes = state.auto_yes_panes.lock().unwrap();
+    state.active_questions.lock().unwrap()
+        .iter()
+        .filter(|q| !yes_panes.contains(&q.pane_id))
+        .cloned()
+        .collect()
 }
 
 #[tauri::command]

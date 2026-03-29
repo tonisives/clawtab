@@ -461,6 +461,7 @@ export function JobDetailView({
               <Text style={styles.runtimeDim}>{status.pane_id}</Text>
             </View>
           ) : null}
+          {onToggleAutoYes && <View style={{ flex: 1 }} />}
           {onToggleAutoYes && (
             <TouchableOpacity
               onPress={onToggleAutoYes}
@@ -1299,6 +1300,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: radius.sm,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   actionBtnCompact: {
     paddingHorizontal: spacing.md,
@@ -1470,10 +1473,13 @@ const styles = StyleSheet.create({
   zoomOverlay: {
     position: "absolute",
     top: 8,
-    right: 8,
-    padding: 4,
+    right: 10,
+    width: 28,
+    height: 28,
     borderRadius: 4,
     backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   zoomIcon: {
     color: colors.textMuted,

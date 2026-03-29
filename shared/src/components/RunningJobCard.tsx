@@ -17,12 +17,12 @@ export function RunningJobCard({
   const startedAt = status.state === "running" ? status.started_at : null;
 
   return (
-    <View style={styles.card}>
-      <TouchableOpacity
-        style={styles.row}
-        onPress={onPress}
-        activeOpacity={0.7}
-      >
+    <TouchableOpacity
+      style={styles.card}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.row}>
         <View style={styles.typeIcon}>
           <Text style={styles.typeIconText}>C</Text>
         </View>
@@ -33,8 +33,8 @@ export function RunningJobCard({
           )}
         </View>
         <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} />
-      </TouchableOpacity>
-    </View>
+      </View>
+    </TouchableOpacity>
   );
 }
 

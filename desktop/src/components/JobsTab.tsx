@@ -292,33 +292,25 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   });
   const listWidthRef = useRef(listWidth);
   listWidthRef.current = listWidth;
-  const handleRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = handleRef.current;
-    if (!el) return;
-    const onMouseDown = (e: MouseEvent) => {
-      e.preventDefault();
-      const startX = e.pageX;
-      const startW = listWidthRef.current;
-      const onMouseMove = (ev: MouseEvent) => {
-        const w = Math.max(260, Math.min(600, startW + (ev.pageX - startX)));
-        setListWidth(w);
-        localStorage.setItem("desktop_list_pane_width", String(w));
-      };
-      const onMouseUp = () => {
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
+  const onResizeHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.pageX;
+    const startW = listWidthRef.current;
+    const onMouseMove = (ev: MouseEvent) => {
+      const w = Math.max(260, Math.min(600, startW + (ev.pageX - startX)));
+      setListWidth(w);
+      localStorage.setItem("desktop_list_pane_width", String(w));
     };
-    el.addEventListener("mousedown", onMouseDown);
-    return () => el.removeEventListener("mousedown", onMouseDown);
+    const onMouseUp = () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
   }, []);
 
   // Responsive: narrow window shows list-only view
@@ -335,13 +327,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     const tabContent = document.querySelector(".tab-content") as HTMLElement | null;
     if (!tabContent) return;
-    if (isFullScreenView || !isWide) {
-      tabContent.style.overflow = "";
-      if (isFullScreenView) tabContent.scrollTop = 0;
+    if (isFullScreenView) {
+      tabContent.style.overflowY = "auto";
+      tabContent.scrollTop = 0;
     } else {
-      tabContent.style.overflow = "hidden";
+      tabContent.style.overflowY = "";
     }
-    return () => { tabContent.style.overflow = ""; };
+    return () => { tabContent.style.overflowY = ""; };
   }, [isFullScreenView, isWide]);
 
   // --- Handlers ---
@@ -420,14 +412,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, []);
 
   const handleSelectJob = useCallback((job: RemoteJob) => {
+    setViewingProcess(null);
+    setViewingAgent(false);
     setViewingJob(job as Job);
   }, []);
 
   const handleSelectProcess = useCallback((process: ClaudeProcess) => {
+    setViewingJob(null);
     if (process.cwd.endsWith("/clawtab/agent")) {
+      setViewingProcess(null);
       setViewingAgent(true);
       return;
     }
+    setViewingAgent(false);
     setViewingProcess(process);
   }, []);
 
@@ -905,12 +902,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   // Wide window: split pane
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px)", margin: -20, overflow: "hidden" }}>
-      <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column" }}>
+      <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {jobListView}
       </div>
       <div
-        ref={handleRef}
-        style={{ width: 5, backgroundColor: "transparent", marginLeft: -3, marginRight: -2, zIndex: 10, cursor: "col-resize", flexShrink: 0 }}
+        onMouseDown={onResizeHandleMouseDown}
+        style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }}
       />
       <div className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)" }}>
         {detailPane}

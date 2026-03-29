@@ -272,20 +272,6 @@ pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String,
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Resize a tmux pane to the given width (columns).
-pub fn resize_pane_width(pane_id: &str, cols: u32) -> Result<(), String> {
-    let output = Command::new("tmux")
-        .args(["resize-pane", "-t", pane_id, "-x", &cols.to_string()])
-        .output()
-        .map_err(|e| format!("Failed to resize pane: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("tmux resize error: {}", stderr.trim()));
-    }
-    Ok(())
-}
-
 /// Check if a specific pane has an active (non-shell) process running.
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {

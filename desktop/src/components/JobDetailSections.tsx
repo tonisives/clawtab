@@ -397,11 +397,6 @@ export function DesktopJobDetail({
   const { logs } = useLogBuffer(transport, job.slug);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const paneId = status.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
-  const handleLogColumnsChange = useCallback((cols: number) => {
-    if (paneId) invoke("resize_pane", { paneId, cols }).catch(() => {});
-  }, [paneId]);
-
   const extraContent = useMemo(
     () => <DesktopDetailSections job={job} />,
     [job],
@@ -434,7 +429,6 @@ export function DesktopJobDetail({
         sectionStyle={cardSectionStyle}
         containerStyle={desktopContainerStyle}
         expandOutput
-        onLogColumnsChange={paneId ? handleLogColumnsChange : undefined}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
       />
