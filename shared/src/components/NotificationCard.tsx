@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.warning,
     minHeight: 120,
-    maxHeight: 280,
+    maxHeight: 360,
     overflow: "hidden",
   },
   cardBody: {
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     padding: spacing.sm,
     marginTop: 2,
-    maxHeight: 160,
+    maxHeight: 240,
     overflow: "hidden",
   },
   logText: {

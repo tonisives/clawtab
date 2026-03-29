@@ -396,10 +396,16 @@ export function DesktopJobDetail({
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => { cancelAnimationFrame(id); setReady(false); };
+  }, [job.slug]);
 
   const extraContent = useMemo(
-    () => <DesktopDetailSections job={job} />,
-    [job],
+    () => ready ? <DesktopDetailSections job={job} /> : null,
+    [job, ready],
   );
 
   return (
@@ -410,6 +416,7 @@ export function DesktopJobDetail({
         status={status}
         logs={logs}
         runs={runs}
+        runsLoading={!runs}
         onBack={onBack}
         showBackButton={false}
         onReloadRuns={reloadRuns}
@@ -428,7 +435,6 @@ export function DesktopJobDetail({
         onToggleAutoYes={onToggleAutoYes}
         sectionStyle={cardSectionStyle}
         containerStyle={desktopContainerStyle}
-        expandOutput
         firstQuery={firstQuery}
         lastQuery={lastQuery}
       />

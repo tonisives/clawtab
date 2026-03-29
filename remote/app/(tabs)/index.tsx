@@ -96,6 +96,13 @@ export default function JobsScreen() {
     }
   }, [router, isWide])
 
+  // Clear selection when a detected process disappears (e.g. killed)
+  useEffect(() => {
+    if (selectedProcess && !detectedProcesses.find((p) => p.pane_id === selectedProcess)) {
+      setSelectedProcess(null)
+    }
+  }, [detectedProcesses, selectedProcess])
+
   const bannerContent = (
     <>
       {!connected && (
@@ -206,6 +213,7 @@ export default function JobsScreen() {
           onSortChange={setSortMode}
           onSelectJob={handleSelectJob}
           onSelectProcess={handleSelectProcess}
+          selectedSlug={selectedJob ?? selectedProcess ?? null}
           onRunAgent={desktopOnline ? handleRunAgent : undefined}
           headerContent={bannerContent}
           showEmpty={loaded || isDemo}

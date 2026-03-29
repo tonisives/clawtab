@@ -9,16 +9,18 @@ export function RunningJobCard({
   jobName,
   status,
   onPress,
+  selected,
 }: {
   jobName: string;
   status: JobStatus;
   onPress?: () => void;
+  selected?: boolean;
 }) {
   const startedAt = status.state === "running" ? status.started_at : null;
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, selected && styles.cardSelected]}
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -45,6 +47,9 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  cardSelected: {
+    borderColor: colors.accent,
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 0 },
   typeIcon: {

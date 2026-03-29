@@ -222,7 +222,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     if (viewingProcess) {
       const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
-      if (fresh && fresh !== viewingProcess) setViewingProcess(fresh);
+      if (!fresh) setViewingProcess(null);
+      else if (fresh !== viewingProcess) setViewingProcess(fresh);
     }
   }, [core.processes, viewingProcess]);
 
@@ -874,6 +875,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       onSortChange={setSortMode}
       onSelectJob={handleSelectJob}
       onSelectProcess={handleSelectProcess}
+      selectedSlug={viewingJob?.slug ?? viewingProcess?.pane_id ?? null}
       onRunAgent={handleRunAgent}
       onAddJob={handleAddJob}
       headerContent={notificationSection}

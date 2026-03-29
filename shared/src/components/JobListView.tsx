@@ -92,6 +92,8 @@ export interface JobListViewProps {
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
+  // Slug or pane_id of the currently selected item (for highlighting)
+  selectedSlug?: string | null;
   // Agent
   onRunAgent?: (prompt: string, workDir?: string) => void;
   // Desktop-only slots
@@ -129,6 +131,7 @@ export function JobListView({
   onSortChange,
   onSelectJob,
   onSelectProcess,
+  selectedSlug,
   onRunAgent,
   onAddJob,
   headerContent,
@@ -387,6 +390,7 @@ export function JobListView({
               process={item.process}
               onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
               inGroup={item.inGroup}
+              selected={selectedSlug === item.process.pane_id}
             />
           </View>
         );
@@ -417,12 +421,14 @@ export function JobListView({
               jobName={item.job.name}
               status={status}
               onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
+              selected={selectedSlug === item.job.slug || selectedSlug === item.job.name}
             />
           ) : (
             <JobCard
               job={item.job}
               status={status}
               onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
+              selected={selectedSlug === item.job.slug || selectedSlug === item.job.name}
             />
           )}
         </View>
@@ -511,6 +517,30 @@ export function JobListView({
     const t = setTimeout(restore, 100);
     return () => clearTimeout(t);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On macOS WebKit, elastic bounce won't re-trigger when scroll is pinned at
+  // the exact boundary (0 or scrollHeight). Keep 1px of scroll room so the
+  // rubber-band effect can fire repeatedly.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const node = (scrollRef.current as any)?.getScrollableNode?.() as HTMLElement | undefined;
+    if (!node) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const nudge = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (node.scrollTop <= 0) {
+          node.scrollTop = 1;
+        } else if (node.scrollTop + node.clientHeight >= node.scrollHeight) {
+          node.scrollTop = node.scrollHeight - node.clientHeight - 1;
+        }
+      }, 150);
+    };
+    // Set initial 1px offset so first top-bounce works after content loads
+    requestAnimationFrame(() => { if (node.scrollTop === 0 && node.scrollHeight > node.clientHeight) node.scrollTop = 1; });
+    node.addEventListener("scroll", nudge, { passive: true });
+    return () => { node.removeEventListener("scroll", nudge); if (timer) clearTimeout(timer); };
+  }, []);
 
   return (
     <ScrollView

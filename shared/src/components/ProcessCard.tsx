@@ -9,10 +9,12 @@ export function ProcessCard({
   process,
   onPress,
   inGroup,
+  selected,
 }: {
   process: ClaudeProcess;
   onPress?: () => void;
   inGroup?: boolean;
+  selected?: boolean;
 }) {
   const displayName = inGroup
     ? (process.first_query ?? shortenPath(process.cwd))
@@ -29,7 +31,7 @@ export function ProcessCard({
   );
 
   return (
-    <View style={styles.processCard}>
+    <View style={[styles.processCard, selected && styles.processCardSelected]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={onPress}
@@ -62,6 +64,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     opacity: 0.7,
+  },
+  processCardSelected: {
+    borderColor: colors.accent,
+    opacity: 1,
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   processTypeIcon: {

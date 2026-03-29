@@ -12,10 +12,12 @@ export function JobCard({
   job,
   status,
   onPress,
+  selected,
 }: {
   job: RemoteJob;
   status: JobStatus;
   onPress?: () => void;
+  selected?: boolean;
 }) {
   const lastRun =
     status.state === "success"
@@ -30,7 +32,7 @@ export function JobCard({
 
   return (
     <TouchableOpacity
-      style={[styles.card, !job.enabled && styles.cardDisabled]}
+      style={[styles.card, !job.enabled && styles.cardDisabled, selected && styles.cardSelected]}
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -67,6 +69,9 @@ const styles = StyleSheet.create({
   },
   cardDisabled: {
     opacity: 0.5,
+  },
+  cardSelected: {
+    borderColor: colors.accent,
   },
   row: {
     flexDirection: "row",
