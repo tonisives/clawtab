@@ -739,12 +739,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
     if (viewingJob) {
       const jobQuestion = questions.find((q) => q.matched_job === viewingJob.slug);
+      const matchedProcess = core.processes.find((p) => p.matched_job === viewingJob.slug);
       return (
         <>
           <DesktopJobDetail
             transport={transport}
             job={viewingJob}
             status={core.statuses[viewingJob.slug] ?? { state: "idle" as const }}
+            firstQuery={matchedProcess?.first_query ?? undefined}
+            lastQuery={matchedProcess?.last_query ?? undefined}
             onBack={() => setViewingJob(null)}
             onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
             onOpen={() => handleOpen(viewingJob.slug)}
@@ -909,7 +912,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         ref={handleRef}
         style={{ width: 5, backgroundColor: "transparent", marginLeft: -3, marginRight: -2, zIndex: 10, cursor: "col-resize", flexShrink: 0 }}
       />
-      <div className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", padding: "20px 20px 0" }}>
+      <div className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)" }}>
         {detailPane}
       </div>
       {dialogs}

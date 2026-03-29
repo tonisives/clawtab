@@ -169,6 +169,11 @@ pub fn get_detected_process_logs(tmux_session: String, pane_id: String) -> Resul
 }
 
 #[tauri::command]
+pub fn resize_pane(pane_id: String, cols: u32) -> Result<(), String> {
+    crate::tmux::resize_pane_width(&pane_id, cols)
+}
+
+#[tauri::command]
 pub fn send_detected_process_input(pane_id: String, text: String) -> Result<(), String> {
     crate::tmux::send_keys_to_tui_pane(&pane_id, &text)
 }

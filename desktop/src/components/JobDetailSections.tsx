@@ -19,6 +19,7 @@ const cardSectionStyle = {
 
 const desktopContainerStyle = {
   backgroundColor: "var(--bg-primary)",
+  borderRadius: 0,
 } as const;
 
 // Shared collapsible header button used by detail sections
@@ -371,6 +372,8 @@ export function DesktopJobDetail({
   questionContext,
   autoYesActive,
   onToggleAutoYes,
+  firstQuery,
+  lastQuery,
 }: {
   transport: Transport;
   job: Job;
@@ -387,10 +390,17 @@ export function DesktopJobDetail({
   questionContext?: string;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  firstQuery?: string;
+  lastQuery?: string;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  const paneId = status.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+  const handleLogColumnsChange = useCallback((cols: number) => {
+    if (paneId) invoke("resize_pane", { paneId, cols }).catch(() => {});
+  }, [paneId]);
 
   const extraContent = useMemo(
     () => <DesktopDetailSections job={job} />,
@@ -424,6 +434,9 @@ export function DesktopJobDetail({
         sectionStyle={cardSectionStyle}
         containerStyle={desktopContainerStyle}
         expandOutput
+        onLogColumnsChange={paneId ? handleLogColumnsChange : undefined}
+        firstQuery={firstQuery}
+        lastQuery={lastQuery}
       />
       {showConfirm && (
         <ConfirmDialog

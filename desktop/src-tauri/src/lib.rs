@@ -493,6 +493,7 @@ pub fn run() {
             commands::processes::detect_claude_processes,
             commands::processes::focus_detected_process,
             commands::processes::get_detected_process_logs,
+            commands::processes::resize_pane,
             commands::processes::send_detected_process_input,
             commands::processes::get_active_questions,
             commands::processes::get_auto_yes_panes,

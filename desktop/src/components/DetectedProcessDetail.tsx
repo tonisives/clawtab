@@ -117,6 +117,10 @@ export function DetectedProcessDetail({
     sendInput: handleSendInput,
   }), [transport, handleSendInput]);
 
+  const handleLogColumnsChange = useCallback((cols: number) => {
+    invoke("resize_pane", { paneId: process.pane_id, cols }).catch(() => {});
+  }, [process.pane_id]);
+
   return (
     <JobDetailView
       transport={wrappedTransport}
@@ -130,11 +134,14 @@ export function DetectedProcessDetail({
       onOpen={handleOpen}
       hideRuns
       expandOutput
-      containerStyle={{ backgroundColor: "var(--bg-primary)" } as any}
+      containerStyle={{ backgroundColor: "var(--bg-primary)", borderRadius: 0 } as any}
       options={paneQuestion?.options}
       questionContext={paneQuestion?.context_lines}
       autoYesActive={autoYesActive}
       onToggleAutoYes={onToggleAutoYes}
+      onLogColumnsChange={handleLogColumnsChange}
+      firstQuery={process.first_query ?? undefined}
+      lastQuery={process.last_query ?? undefined}
     />
   );
 }

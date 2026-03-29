@@ -41,12 +41,52 @@ function useAutoScroll(dep: string) {
 
 const isNative = Platform.OS !== "web";
 
-export function LogViewer({ content, borderless }: { content: string; borderless?: boolean }) {
+// Measure monospace character width and report column count changes
+function useColumnReporter(onColumnsChange?: (cols: number) => void) {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const lastCols = useRef(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || !onColumnsChange || !containerRef.current) return;
+    const el = containerRef.current;
+
+    const measure = () => {
+      // padding: 12px on each side
+      const contentWidth = el.clientWidth - 24;
+      // Measure actual monospace char width using a hidden span
+      const span = document.createElement("span");
+      span.style.fontFamily = "monospace";
+      span.style.fontSize = "12px";
+      span.style.visibility = "hidden";
+      span.style.position = "absolute";
+      span.textContent = "M";
+      el.appendChild(span);
+      const charWidth = span.getBoundingClientRect().width;
+      el.removeChild(span);
+      if (charWidth <= 0) return;
+      const cols = Math.floor(contentWidth / charWidth);
+      if (cols > 0 && cols !== lastCols.current) {
+        lastCols.current = cols;
+        onColumnsChange(cols);
+      }
+    };
+
+    measure();
+    const observer = new ResizeObserver(() => measure());
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onColumnsChange]);
+
+  return containerRef;
+}
+
+export function LogViewer({ content, borderless, onColumnsChange }: { content: string; borderless?: boolean; onColumnsChange?: (cols: number) => void }) {
   const processed = useMemo(() => {
     const collapsed = collapseSeparators(content);
     return isNative ? truncateLogLines(collapsed, 120) : collapsed;
   }, [content]);
   const { nativeRef, webRef } = useAutoScroll(processed);
+  const colRef = useColumnReporter(onColumnsChange);
 
   if (!content) {
     return (
@@ -65,7 +105,10 @@ export function LogViewer({ content, borderless }: { content: string; borderless
   if (Platform.OS === "web") {
     return (
       <div
-        ref={webRef as any}
+        ref={(node: HTMLElement | null) => {
+          (webRef as any)(node);
+          colRef.current = node;
+        }}
         style={{
           flex: 1,
           backgroundColor: "var(--log-bg, #000)",
