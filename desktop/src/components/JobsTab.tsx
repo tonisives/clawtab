@@ -396,6 +396,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     setViewingProcess(process);
   }, []);
 
+  const handleSendProcessInput = useCallback((paneId: string, text: string) => {
+    invoke("send_detected_process_input", { paneId, text }).catch(() => {});
+  }, []);
+
+  const handleSendJobInput = useCallback((name: string, text: string) => {
+    invoke("send_job_input", { name, text, freetext: null }).catch(() => {});
+  }, []);
+
+  const handleSubscribeJobLogs = useCallback((name: string, onChunk: (content: string) => void) => {
+    return transport.subscribeLogs(name, onChunk);
+  }, []);
+
   const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
     await actions.runAgent(prompt, workDir);
     if (workDir) {
@@ -770,13 +782,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         onSortChange={setSortMode}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
-        onSendProcessInput={(paneId, text) => {
-          invoke("send_detected_process_input", { paneId, text }).catch(() => {});
-        }}
-        onSendJobInput={(name, text) => {
-          invoke("send_job_input", { name, text, freetext: null }).catch(() => {});
-        }}
-        onSubscribeJobLogs={(name, onChunk) => transport.subscribeLogs(name, onChunk)}
+        onSendProcessInput={handleSendProcessInput}
+        onSendJobInput={handleSendJobInput}
+        onSubscribeJobLogs={handleSubscribeJobLogs}
         onRunAgent={handleRunAgent}
         onAddJob={handleAddJob}
         headerContent={notificationSection}

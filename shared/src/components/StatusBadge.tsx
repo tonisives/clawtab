@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { View, StyleSheet, Animated, Platform } from "react-native";
+import { View, StyleSheet, Animated } from "react-native";
 import type { JobStatus } from "../types/job";
 import { statusLabel, statusColor } from "../util/status";
 import { Tooltip } from "./Tooltip";

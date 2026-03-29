@@ -25,35 +25,26 @@ export function RunningJobCard({
   onSubscribeLogs?: (slug: string, onChunk: (content: string) => void) => () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [showLogs, setShowLogs] = useState(false);
   const [logContent, setLogContent] = useState("");
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
-  const unsubRef = useRef<(() => void) | null>(null);
-
-  useEffect(() => {
-    if (expanded) {
-      const id = requestAnimationFrame(() => setShowLogs(true));
-      return () => cancelAnimationFrame(id);
-    }
-    setShowLogs(false);
-  }, [expanded]);
+  const subscribeRef = useRef(onSubscribeLogs);
+  subscribeRef.current = onSubscribeLogs;
+  const sendInputRef = useRef(onSendInput);
+  sendInputRef.current = onSendInput;
 
   // Subscribe to logs when expanded
   useEffect(() => {
-    if (!showLogs || !onSubscribeLogs) return;
-    unsubRef.current = onSubscribeLogs(jobSlug, (chunk) => {
+    if (!expanded || !subscribeRef.current) return;
+    const unsub = subscribeRef.current(jobSlug, (chunk) => {
       if (chunk.startsWith("\x00")) {
         setLogContent(chunk.slice(1));
       } else {
         setLogContent((prev) => prev + chunk);
       }
     });
-    return () => {
-      unsubRef.current?.();
-      unsubRef.current = null;
-    };
-  }, [showLogs, onSubscribeLogs, jobSlug]);
+    return () => unsub();
+  }, [expanded, jobSlug]);
 
   const handleReply = useCallback(() => {
     const text = replyText.trim();
@@ -116,7 +107,7 @@ export function RunningJobCard({
             </View>
           )}
 
-          {showLogs && logContent ? (() => {
+          {logContent ? (() => {
             const preview = logContent.split("\n").filter((l) => l.trim()).slice(-10).join("\n");
             return preview ? (
               <View style={styles.logBox}>
@@ -129,7 +120,7 @@ export function RunningJobCard({
             ) : null;
           })() : null}
 
-          {showLogs && onSendInput && (
+          {onSendInput && (
             <View style={styles.replyRow}>
               <TextInput
                 style={styles.replyInput}

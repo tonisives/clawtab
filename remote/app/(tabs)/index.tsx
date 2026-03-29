@@ -238,6 +238,9 @@ export default function JobsScreen() {
           onSortChange={setSortMode}
           onSelectJob={handleSelectJob}
           onSelectProcess={handleSelectProcess}
+          onSendProcessInput={handleSendProcessInput}
+          onSendJobInput={handleSendJobInput}
+          onSubscribeJobLogs={handleSubscribeJobLogs}
           onRunAgent={desktopOnline ? handleRunAgent : undefined}
           headerContent={bannerContent}
           showEmpty={loaded || isDemo}
