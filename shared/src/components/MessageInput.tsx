@@ -82,7 +82,9 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    backgroundColor: colors.bg,
+    ...(Platform.OS === "web"
+      ? { backgroundColor: "var(--input-bar-bg, " + colors.bg + ")" as any }
+      : { backgroundColor: colors.bg }),
   },
   input: {
     flex: 1,

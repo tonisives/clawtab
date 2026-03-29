@@ -51,9 +51,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
   const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
 
-  // Scroll position retention
-  const scrollOffsetRef = useRef(0);
-
   // Question polling
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
   const questionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -287,27 +284,65 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (importCwtKey && importCwtKey > 0) handleImportCwt();
   }, [importCwtKey]);
 
-  // Track scroll position on .tab-content and restore when returning to list
-  const isSubView = !!(editingJob || isCreating || showPicker || viewingJob || viewingProcess);
+  // Resizable list pane
+  const [listWidth, setListWidth] = useState(() => {
+    const v = localStorage.getItem("desktop_list_pane_width");
+    if (v) return Math.max(260, Math.min(600, parseInt(v, 10)));
+    return 380;
+  });
+  const listWidthRef = useRef(listWidth);
+  listWidthRef.current = listWidth;
+  const handleRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    const tabContent = document.querySelector(".tab-content");
+    const el = handleRef.current;
+    if (!el) return;
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault();
+      const startX = e.pageX;
+      const startW = listWidthRef.current;
+      const onMouseMove = (ev: MouseEvent) => {
+        const w = Math.max(260, Math.min(600, startW + (ev.pageX - startX)));
+        setListWidth(w);
+        localStorage.setItem("desktop_list_pane_width", String(w));
+      };
+      const onMouseUp = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    };
+    el.addEventListener("mousedown", onMouseDown);
+    return () => el.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  // Responsive: narrow window shows list-only view
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const isWide = windowWidth >= 768;
+
+  // Prevent .tab-content parent from scrolling when split-pane is active
+  const isFullScreenView = !!(editingJob || isCreating || showPicker);
+  useEffect(() => {
+    const tabContent = document.querySelector(".tab-content") as HTMLElement | null;
     if (!tabContent) return;
-    if (isSubView) {
-      tabContent.scrollTop = 0;
-      return;
+    if (isFullScreenView || !isWide) {
+      tabContent.style.overflow = "";
+      if (isFullScreenView) tabContent.scrollTop = 0;
+    } else {
+      tabContent.style.overflow = "hidden";
     }
-    // Restore scroll when returning to list
-    const saved = scrollOffsetRef.current;
-    if (saved > 0) {
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        tabContent.scrollTop = saved;
-      }));
-    }
-    // Track scroll while on list view
-    const onScroll = () => { scrollOffsetRef.current = tabContent.scrollTop; };
-    tabContent.addEventListener("scroll", onScroll, { passive: true });
-    return () => tabContent.removeEventListener("scroll", onScroll);
-  }, [isSubView]);
+    return () => { tabContent.style.overflow = ""; };
+  }, [isFullScreenView, isWide]);
 
   // --- Handlers ---
 
@@ -394,18 +429,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       return;
     }
     setViewingProcess(process);
-  }, []);
-
-  const handleSendProcessInput = useCallback((paneId: string, text: string) => {
-    invoke("send_detected_process_input", { paneId, text }).catch(() => {});
-  }, []);
-
-  const handleSendJobInput = useCallback((name: string, text: string) => {
-    invoke("send_job_input", { name, text, freetext: null }).catch(() => {});
-  }, []);
-
-  const handleSubscribeJobLogs = useCallback((name: string, onChunk: (content: string) => void) => {
-    return transport.subscribeLogs(name, onChunk);
   }, []);
 
   const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
@@ -643,156 +666,141 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     );
   }
 
-  if (viewingAgent) {
-    const agentJob: RemoteJob = {
-      name: "agent",
-      job_type: "claude",
-      enabled: true,
-      cron: "",
-      group: "",
-      slug: "agent",
-    };
-    const agentStatus = core.statuses["agent"] ?? { state: "idle" as const };
-    return (
-      <AgentDetail
-        transport={transport}
-        job={agentJob}
-        status={agentStatus}
-        onBack={() => setViewingAgent(false)}
-        onOpen={() => handleOpen("agent")}
-      />
-    );
-  }
+  // --- Detail pane content ---
 
-  if (pendingAgentWorkDir) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button className="btn btn-sm" onClick={() => setPendingAgentWorkDir(null)}>
-            Back
-          </button>
-          <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>
-            Waiting for agent to start...
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  if (viewingProcess) {
-    return (
-      <>
-        <DetectedProcessDetail
-          process={viewingProcess}
-          questions={questions}
-          onBack={() => setViewingProcess(null)}
-          onDismissQuestion={(qId) => {
-            dismissedRef.current.set(qId, Date.now());
-            setQuestions((prev) => prev.filter((q) => q.question_id !== qId));
-            startFastQuestionPoll();
-          }}
-          autoYesActive={autoYesPaneIds.has(viewingProcess.pane_id)}
-          onToggleAutoYes={() => {
-            const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
-            if (paneQuestion) handleToggleAutoYes(paneQuestion);
-            else handleToggleAutoYesByPaneId(viewingProcess.pane_id, viewingProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
-          }}
-        />
-        {pendingAutoYes && (
-          <ConfirmDialog
-            message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
-            onConfirm={confirmAutoYes}
-            onCancel={() => setPendingAutoYes(null)}
-            confirmLabel="Enable"
-            confirmClassName="btn btn-sm"
-          />
-        )}
-      </>
-    );
-  }
-
-  if (viewingJob) {
-    const jobQuestion = questions.find((q) => q.matched_job === viewingJob.slug);
-    return (
-      <>
-        <DesktopJobDetail
+  const detailPane = (() => {
+    if (viewingAgent) {
+      const agentJob: RemoteJob = {
+        name: "agent",
+        job_type: "claude",
+        enabled: true,
+        cron: "",
+        group: "",
+        slug: "agent",
+      };
+      const agentStatus = core.statuses["agent"] ?? { state: "idle" as const };
+      return (
+        <AgentDetail
           transport={transport}
-          job={viewingJob}
-          status={core.statuses[viewingJob.slug] ?? { state: "idle" as const }}
-          onBack={() => setViewingJob(null)}
-          onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
-          onOpen={() => handleOpen(viewingJob.slug)}
-          onToggle={() => { actions.toggleJob(viewingJob.slug); core.reload(); }}
-          onDuplicate={(group: string) => handleDuplicate(viewingJob, group)}
-          onDuplicateToFolder={() => handleDuplicateToFolder(viewingJob)}
-          onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
-          groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
-          options={jobQuestion?.options}
-          questionContext={jobQuestion?.context_lines}
-          autoYesActive={(() => {
-            const paneId = jobQuestion?.pane_id ?? (core.statuses[viewingJob.slug]?.state === "running" ? (core.statuses[viewingJob.slug] as { pane_id?: string }).pane_id : undefined);
-            return paneId ? autoYesPaneIds.has(paneId) : false;
-          })()}
-          onToggleAutoYes={(() => {
-            if (jobQuestion) return () => handleToggleAutoYes(jobQuestion);
-            const status = core.statuses[viewingJob.slug];
-            if (status?.state === "running") {
-              const paneId = (status as { pane_id?: string }).pane_id;
-              if (paneId) return () => handleToggleAutoYesByPaneId(paneId, viewingJob.name);
-            }
-            return undefined;
-          })()}
+          job={agentJob}
+          status={agentStatus}
+          onBack={() => setViewingAgent(false)}
+          onOpen={() => handleOpen("agent")}
         />
-        {paramsDialog && (
-          <ParamsOverlay
-            job={paramsDialog.job}
-            values={paramsDialog.values}
-            onChange={(values) => setParamsDialog({ ...paramsDialog, values })}
-            onRun={handleRunWithParams}
-            onCancel={() => setParamsDialog(null)}
-          />
-        )}
-        {pendingAutoYes && (
-          <ConfirmDialog
-            message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
-            onConfirm={confirmAutoYes}
-            onCancel={() => setPendingAutoYes(null)}
-            confirmLabel="Enable"
-            confirmClassName="btn btn-sm"
-          />
-        )}
-      </>
-    );
-  }
+      );
+    }
 
-  return (
-    <div className="settings-section">
-      <div className="section-header">
-        <h2>Jobs</h2>
+    if (pendingAgentWorkDir) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button className="btn btn-sm" onClick={() => setPendingAgentWorkDir(null)}>
+              Back
+            </button>
+            <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>
+              Waiting for agent to start...
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    if (viewingProcess) {
+      return (
+        <>
+          <DetectedProcessDetail
+            process={viewingProcess}
+            questions={questions}
+            onBack={() => setViewingProcess(null)}
+            onDismissQuestion={(qId) => {
+              dismissedRef.current.set(qId, Date.now());
+              setQuestions((prev) => prev.filter((q) => q.question_id !== qId));
+              startFastQuestionPoll();
+            }}
+            autoYesActive={autoYesPaneIds.has(viewingProcess.pane_id)}
+            onToggleAutoYes={() => {
+              const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
+              if (paneQuestion) handleToggleAutoYes(paneQuestion);
+              else handleToggleAutoYesByPaneId(viewingProcess.pane_id, viewingProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
+            }}
+          />
+          {pendingAutoYes && (
+            <ConfirmDialog
+              message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
+              onConfirm={confirmAutoYes}
+              onCancel={() => setPendingAutoYes(null)}
+              confirmLabel="Enable"
+              confirmClassName="btn btn-sm"
+            />
+          )}
+        </>
+      );
+    }
+
+    if (viewingJob) {
+      const jobQuestion = questions.find((q) => q.matched_job === viewingJob.slug);
+      return (
+        <>
+          <DesktopJobDetail
+            transport={transport}
+            job={viewingJob}
+            status={core.statuses[viewingJob.slug] ?? { state: "idle" as const }}
+            onBack={() => setViewingJob(null)}
+            onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
+            onOpen={() => handleOpen(viewingJob.slug)}
+            onToggle={() => { actions.toggleJob(viewingJob.slug); core.reload(); }}
+            onDuplicate={(group: string) => handleDuplicate(viewingJob, group)}
+            onDuplicateToFolder={() => handleDuplicateToFolder(viewingJob)}
+            onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
+            groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
+            options={jobQuestion?.options}
+            questionContext={jobQuestion?.context_lines}
+            autoYesActive={(() => {
+              const paneId = jobQuestion?.pane_id ?? (core.statuses[viewingJob.slug]?.state === "running" ? (core.statuses[viewingJob.slug] as { pane_id?: string }).pane_id : undefined);
+              return paneId ? autoYesPaneIds.has(paneId) : false;
+            })()}
+            onToggleAutoYes={(() => {
+              if (jobQuestion) return () => handleToggleAutoYes(jobQuestion);
+              const status = core.statuses[viewingJob.slug];
+              if (status?.state === "running") {
+                const paneId = (status as { pane_id?: string }).pane_id;
+                if (paneId) return () => handleToggleAutoYesByPaneId(paneId, viewingJob.name);
+              }
+              return undefined;
+            })()}
+          />
+          {paramsDialog && (
+            <ParamsOverlay
+              job={paramsDialog.job}
+              values={paramsDialog.values}
+              onChange={(values) => setParamsDialog({ ...paramsDialog, values })}
+              onRun={handleRunWithParams}
+              onCancel={() => setParamsDialog(null)}
+            />
+          )}
+          {pendingAutoYes && (
+            <ConfirmDialog
+              message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
+              onConfirm={confirmAutoYes}
+              onCancel={() => setPendingAutoYes(null)}
+              confirmLabel="Enable"
+              confirmClassName="btn btn-sm"
+            />
+          )}
+        </>
+      );
+    }
+
+    return (
+      <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Select a job to view details</span>
       </div>
+    );
+  })();
 
-      <JobListView
-        jobs={core.jobs}
-        statuses={core.statuses}
-        detectedProcesses={core.processes}
-        collapsedGroups={core.collapsedGroups}
-        onToggleGroup={core.toggleGroup}
-        groupOrder={groupOrder}
-        sortMode={sortMode}
-        onSortChange={setSortMode}
-        onSelectJob={handleSelectJob}
-        onSelectProcess={handleSelectProcess}
-        onSendProcessInput={handleSendProcessInput}
-        onSendJobInput={handleSendJobInput}
-        onSubscribeJobLogs={handleSubscribeJobLogs}
-        onRunAgent={handleRunAgent}
-        onAddJob={handleAddJob}
-        headerContent={notificationSection}
-        showEmpty={core.loaded}
-        emptyMessage="No jobs configured yet."
-      />
-
-      {paramsDialog && (
+  const dialogs = (
+    <>
+      {paramsDialog && !viewingJob && (
         <ParamsOverlay
           job={paramsDialog.job}
           values={paramsDialog.values}
@@ -802,7 +810,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         />
       )}
 
-      {pendingAutoYes && (
+      {pendingAutoYes && !viewingJob && !viewingProcess && (
         <ConfirmDialog
           message={`Enable auto-yes for "${pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
           onConfirm={confirmAutoYes}
@@ -851,6 +859,60 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           confirmClassName="btn btn-primary btn-sm"
         />
       )}
+    </>
+  );
+
+  const jobListView = (
+    <JobListView
+      jobs={core.jobs}
+      statuses={core.statuses}
+      detectedProcesses={core.processes}
+      collapsedGroups={core.collapsedGroups}
+      onToggleGroup={core.toggleGroup}
+      groupOrder={groupOrder}
+      sortMode={sortMode}
+      onSortChange={setSortMode}
+      onSelectJob={handleSelectJob}
+      onSelectProcess={handleSelectProcess}
+      onRunAgent={handleRunAgent}
+      onAddJob={handleAddJob}
+      headerContent={notificationSection}
+      showEmpty={core.loaded}
+      emptyMessage="No jobs configured yet."
+    />
+  );
+
+  // Narrow window: list-only with full-screen detail navigation
+  if (!isWide) {
+    // Full-screen detail views for narrow mode
+    if (viewingAgent || pendingAgentWorkDir || viewingProcess || viewingJob) {
+      return <>{detailPane}{dialogs}</>;
+    }
+    return (
+      <div className="settings-section">
+        <div className="section-header">
+          <h2>Jobs</h2>
+        </div>
+        {jobListView}
+        {dialogs}
+      </div>
+    );
+  }
+
+  // Wide window: split pane
+  return (
+    <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px)", margin: -20, overflow: "hidden" }}>
+      <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column" }}>
+        {jobListView}
+      </div>
+      <div
+        ref={handleRef}
+        style={{ width: 5, backgroundColor: "transparent", marginLeft: -3, marginRight: -2, zIndex: 10, cursor: "col-resize", flexShrink: 0 }}
+      />
+      <div className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", padding: "20px 20px 0" }}>
+        {detailPane}
+      </div>
+      {dialogs}
     </div>
   );
 }

@@ -41,7 +41,7 @@ function useAutoScroll(dep: string) {
 
 const isNative = Platform.OS !== "web";
 
-export function LogViewer({ content }: { content: string }) {
+export function LogViewer({ content, borderless }: { content: string; borderless?: boolean }) {
   const processed = useMemo(() => {
     const collapsed = collapseSeparators(content);
     return isNative ? truncateLogLines(collapsed, 120) : collapsed;
@@ -68,9 +68,9 @@ export function LogViewer({ content }: { content: string }) {
         ref={webRef as any}
         style={{
           flex: 1,
-          backgroundColor: "#000",
-          borderRadius: 8,
-          border: `1px solid ${colors.border}`,
+          backgroundColor: "var(--log-bg, #000)",
+          borderRadius: borderless ? 0 : 8,
+          border: borderless ? "none" : `1px solid ${colors.border}`,
           padding: 12,
           overflow: "auto",
           minHeight: 0,

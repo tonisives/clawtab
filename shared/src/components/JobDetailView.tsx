@@ -64,6 +64,8 @@ export interface JobDetailViewProps {
   hideRuns?: boolean;
   // Expand live output to fill available space (no fixed height)
   expandOutput?: boolean;
+  // Optional style override for the container
+  containerStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
 }
 
 export function JobDetailView({
@@ -93,6 +95,7 @@ export function JobDetailView({
   sectionStyle,
   hideRuns,
   expandOutput,
+  containerStyle,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -435,44 +438,57 @@ export function JobDetailView({
         </View>
       </View>
 
-      {/* Auto-yes toggle for running jobs */}
-      {isRunning && onToggleAutoYes && (
-        <TouchableOpacity
-          onPress={onToggleAutoYes}
-          activeOpacity={0.6}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-            marginBottom: 8,
-            borderRadius: 6,
-            borderWidth: 1,
-            borderColor: autoYesActive ? colors.warning : colors.border,
-            backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
-          }}
-        >
-          <Text style={{ fontSize: 13, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
-            Auto-yes
-          </Text>
-          <View style={{
-            width: 36,
-            height: 20,
-            borderRadius: 10,
-            backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
-            justifyContent: "center",
-            paddingHorizontal: 2,
-          }}>
-            <View style={{
-              width: 16,
-              height: 16,
-              borderRadius: 8,
-              backgroundColor: "#fff",
-              alignSelf: autoYesActive ? "flex-end" : "flex-start",
-            }} />
-          </View>
-        </TouchableOpacity>
+      {/* Runtime info + auto-yes for running jobs */}
+      {isRunning && (
+        <View style={styles.runtimeRow}>
+          {status.state === "running" && status.started_at ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.runtimeText}>{formatTime(status.started_at)}</Text>
+            </View>
+          ) : null}
+          {status.state === "running" && status.pane_id ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.runtimeDim}>{status.pane_id}</Text>
+            </View>
+          ) : null}
+          {onToggleAutoYes && (
+            <TouchableOpacity
+              onPress={onToggleAutoYes}
+              activeOpacity={0.6}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: autoYesActive ? colors.warning : colors.border,
+                backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
+              }}
+            >
+              <Text style={{ fontSize: 11, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
+                Auto-yes
+              </Text>
+              <View style={{
+                width: 28,
+                height: 16,
+                borderRadius: 8,
+                backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
+                justifyContent: "center",
+                paddingHorizontal: 1,
+              }}>
+                <View style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 6,
+                  backgroundColor: "#fff",
+                  alignSelf: autoYesActive ? "flex-end" : "flex-start",
+                }} />
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
       {/* Live Output */}
@@ -566,7 +582,7 @@ export function JobDetailView({
 
   if (expandOutput && (isRunning || isPaused)) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, containerStyle]}>
         {pathDisplay ? (
           <View style={styles.pathRow}>
             <Text style={styles.pathText} numberOfLines={1}>
@@ -601,13 +617,11 @@ export function JobDetailView({
                 minHeight: 0,
               }}
             >
-              <View style={{ padding: spacing.lg }}>
-                <LogViewer content={logs} />
-              </View>
+              <LogViewer content={logs} borderless />
             </div>
           ) : (
-            <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ flexGrow: 1, padding: spacing.lg }}>
-              <LogViewer content={logs} />
+            <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ flexGrow: 1 }}>
+              <LogViewer content={logs} borderless />
             </ScrollView>
           )}
         </View>
@@ -633,7 +647,7 @@ export function JobDetailView({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, containerStyle]}>
       {pathDisplay ? (
         <View style={styles.pathRow}>
           <Text style={styles.pathText} numberOfLines={1}>
@@ -1181,9 +1195,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.sm,
+    rowGap: spacing.sm,
     flexWrap: "wrap",
     zIndex: 200,
     ...(isWeb ? { position: "relative" as const } : {}),
+  },
+  runtimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
+  runtimeText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontFamily: "monospace",
+  },
+  runtimeDim: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: "monospace",
   },
   infoPills: {
     flexDirection: "row",

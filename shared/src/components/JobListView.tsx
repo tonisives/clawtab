@@ -92,9 +92,6 @@ export interface JobListViewProps {
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
-  onSendProcessInput?: (paneId: string, text: string) => void;
-  onSendJobInput?: (name: string, text: string) => void;
-  onSubscribeJobLogs?: (name: string, onChunk: (content: string) => void) => () => void;
   // Agent
   onRunAgent?: (prompt: string, workDir?: string) => void;
   // Desktop-only slots
@@ -117,7 +114,7 @@ export interface JobListViewProps {
 type ListItem =
   | { kind: "header"; group: string; displayGroup: string; folderPath?: string }
   | { kind: "job"; job: RemoteJob; idx: number }
-  | { kind: "process"; process: ClaudeProcess }
+  | { kind: "process"; process: ClaudeProcess; inGroup?: boolean }
   | { kind: "group-agent"; workDir: string };
 
 export function JobListView({
@@ -132,9 +129,6 @@ export function JobListView({
   onSortChange,
   onSelectJob,
   onSelectProcess,
-  onSendProcessInput,
-  onSendJobInput,
-  onSubscribeJobLogs,
   onRunAgent,
   onAddJob,
   headerContent,
@@ -298,7 +292,7 @@ export function JobListView({
             result.push({ kind: "job", job, idx: jobIdx++ });
           }
           for (const proc of entry.procs) {
-            result.push({ kind: "process", process: proc });
+            result.push({ kind: "process", process: proc, inGroup: true });
           }
           if (onRunAgent) {
             const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
@@ -392,7 +386,7 @@ export function JobListView({
             <ProcessCard
               process={item.process}
               onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
-              onSendInput={onSendProcessInput}
+              inGroup={item.inGroup}
             />
           </View>
         );
@@ -421,12 +415,8 @@ export function JobListView({
           {status.state === "running" ? (
             <RunningJobCard
               jobName={item.job.name}
-              jobSlug={item.job.slug}
               status={status}
-              workDir={item.job.folder_path || item.job.work_dir}
               onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
-              onSendInput={onSendJobInput}
-              onSubscribeLogs={onSubscribeJobLogs}
             />
           ) : (
             <JobCard

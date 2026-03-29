@@ -1,8 +1,42 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
-import { shortenPath } from "@clawtab/shared";
-import { LogViewer } from "./LogViewer";
+import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared";
+import { JobDetailView, shortenPath } from "@clawtab/shared";
+
+function createProcessTransport(process: ClaudeProcess): Transport {
+  const noop = async () => {};
+  const paneId = process.pane_id;
+  return {
+    listJobs: async () => ({ jobs: [], statuses: {} }),
+    getStatuses: async () => ({}),
+    runJob: noop,
+    stopJob: async () => {
+      await invoke("stop_detected_process", { paneId });
+    },
+    pauseJob: noop,
+    resumeJob: noop,
+    toggleJob: noop,
+    deleteJob: noop,
+    getRunHistory: async () => [],
+    getRunDetail: async () => null,
+    detectProcesses: async () => [],
+    sendInput: async (_name: string, text: string) => {
+      await invoke("send_detected_process_input", { paneId, text });
+    },
+    subscribeLogs: () => () => {},
+    runAgent: noop,
+    sigintJob: async () => {
+      await invoke("sigint_detected_process", { paneId });
+    },
+    focusJobWindow: async () => {
+      await invoke("focus_detected_process", {
+        tmuxSession: process.tmux_session,
+        windowName: process.window_name,
+      });
+    },
+  };
+}
 
 export function DetectedProcessDetail({
   process,
@@ -20,16 +54,12 @@ export function DetectedProcessDetail({
   onToggleAutoYes?: () => void;
 }) {
   const [logs, setLogs] = useState(process.log_lines);
-  const [inputText, setInputText] = useState("");
-  const [sending, setSending] = useState(false);
-  const [killMenuOpen, setKillMenuOpen] = useState(false);
-  const killMenuRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const processRef = useRef(process);
   processRef.current = process;
 
   const displayName = shortenPath(process.cwd);
 
+  // Poll logs every 3 seconds
   useEffect(() => {
     let active = true;
     const poll = async () => {
@@ -49,53 +79,25 @@ export function DetectedProcessDetail({
   }, [process.pane_id]);
 
   const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
-  const options = paneQuestion?.options ?? [];
 
-  const handleSend = useCallback(async (text: string) => {
-    const t = text.trim();
-    if (!t || sending) return;
-    setSending(true);
-    try {
-      await invoke("send_detected_process_input", { paneId: process.pane_id, text: t });
-      setInputText("");
-      inputRef.current?.focus();
-      if (paneQuestion) onDismissQuestion(paneQuestion.question_id);
-    } catch (e) {
-      console.error("Failed to send input:", e);
-    } finally {
-      setSending(false);
-    }
-  }, [process.pane_id, sending, paneQuestion, onDismissQuestion]);
+  const transport = useMemo(() => createProcessTransport(process), [process.pane_id]);
 
-  const handleSigint = useCallback(async () => {
-    setKillMenuOpen(false);
-    try {
-      await invoke("sigint_detected_process", { paneId: process.pane_id });
-    } catch (e) {
-      console.error("Failed to send C-c:", e);
-    }
-  }, [process.pane_id]);
+  const syntheticJob: RemoteJob = {
+    name: displayName,
+    job_type: "claude",
+    enabled: true,
+    cron: "",
+    group: "detected",
+    slug: process.pane_id,
+    work_dir: process.cwd,
+  };
 
-  const handleKillShell = useCallback(async () => {
-    setKillMenuOpen(false);
-    try {
-      await invoke("stop_detected_process", { paneId: process.pane_id });
-      onBack();
-    } catch (e) {
-      console.error("Failed to kill process:", e);
-    }
-  }, [process.pane_id, onBack]);
-
-  useEffect(() => {
-    if (!killMenuOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (killMenuRef.current && !killMenuRef.current.contains(e.target as Node)) {
-        setKillMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [killMenuOpen]);
+  const syntheticStatus: JobStatus = {
+    state: "running",
+    run_id: "",
+    started_at: process.session_started_at ?? "",
+    pane_id: process.pane_id,
+  };
 
   const handleOpen = useCallback(() => {
     invoke("focus_detected_process", {
@@ -104,197 +106,35 @@ export function DetectedProcessDetail({
     }).catch(() => {});
   }, [process.tmux_session, process.window_name]);
 
+  const handleSendInput = useCallback(async (_name: string, text: string) => {
+    await invoke("send_detected_process_input", { paneId: process.pane_id, text });
+    if (paneQuestion) onDismissQuestion(paneQuestion.question_id);
+  }, [process.pane_id, paneQuestion, onDismissQuestion]);
+
+  // Override transport.sendInput to also dismiss questions
+  const wrappedTransport = useMemo((): Transport => ({
+    ...transport,
+    sendInput: handleSendInput,
+  }), [transport, handleSendInput]);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "calc(100vh - 42px - 40px)", minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-        <button className="btn btn-sm" onClick={onBack}>
-          Back
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {displayName}
-            </span>
-            <code style={{ fontSize: 11, color: "var(--text-secondary)" }}>v{process.version}</code>
-            <code style={{ fontSize: 11, color: "var(--text-secondary)" }}>{process.pane_id}</code>
-            <span className="status-badge status-running" style={{ fontSize: 11 }}>running</span>
-          </div>
-        </div>
-        {onToggleAutoYes && (
-          <div
-            role="switch"
-            aria-checked={!!autoYesActive}
-            onClick={onToggleAutoYes}
-            style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", marginRight: 4, ...({ WebkitAppRegion: "no-drag" } as Record<string, string>) }}
-          >
-            <span style={{ fontSize: 11, fontWeight: 600, color: autoYesActive ? "var(--warning-color)" : "var(--text-secondary)", whiteSpace: "nowrap" }}>
-              Auto-yes
-            </span>
-            <div style={{
-              position: "relative",
-              width: 36,
-              height: 20,
-              borderRadius: 10,
-              background: autoYesActive ? "var(--warning-color)" : "var(--border-color)",
-              transition: "background 0.2s",
-              flexShrink: 0,
-            }}>
-              <div style={{
-                position: "absolute",
-                top: 2,
-                left: autoYesActive ? 18 : 2,
-                width: 16,
-                height: 16,
-                borderRadius: "50%",
-                background: "white",
-                transition: "left 0.2s",
-              }} />
-            </div>
-          </div>
-        )}
-        <div className="btn-group">
-          <button className="btn btn-sm" onClick={handleOpen} title="Open in terminal">
-            Open in Terminal
-          </button>
-          <div ref={killMenuRef} style={{ position: "relative" }}>
-            <button
-              className="btn btn-sm"
-              onClick={() => setKillMenuOpen((v) => !v)}
-              style={{ borderColor: "var(--danger-color)", color: "var(--danger-color)" }}
-            >
-              Kill
-            </button>
-            {killMenuOpen && (
-              <div style={{
-                position: "absolute",
-                top: "100%",
-                right: 0,
-                marginTop: 4,
-                backgroundColor: "var(--surface)",
-                border: "1px solid var(--border-color)",
-                borderRadius: 6,
-                overflow: "hidden",
-                zIndex: 100,
-                minWidth: 140,
-                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-              }}>
-                <button
-                  className="btn btn-sm"
-                  onClick={handleSigint}
-                  style={{
-                    width: "100%",
-                    border: "none",
-                    borderRadius: 0,
-                    justifyContent: "flex-start",
-                    color: "var(--warning-color)",
-                  }}
-                >
-                  C-c
-                </button>
-                <button
-                  className="btn btn-sm"
-                  onClick={handleKillShell}
-                  style={{
-                    width: "100%",
-                    border: "none",
-                    borderRadius: 0,
-                    justifyContent: "flex-start",
-                    color: "var(--danger-color)",
-                  }}
-                >
-                  shell
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <LogViewer
-        content={logs}
-        className="log-viewer"
-        style={{ flex: 1, minHeight: 0, height: 0, maxHeight: "none", overflowY: "auto" }}
-      />
-
-      {options.length > 0 && (
-        <div style={{
-          display: "flex",
-          gap: 6,
-          padding: "8px 0",
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}>
-          {options.map((opt) => (
-            <button
-              key={opt.number}
-              className="btn btn-sm"
-              style={{
-                borderColor: "var(--accent)",
-                color: "var(--accent)",
-              }}
-              disabled={sending}
-              onClick={() => handleSend(opt.number)}
-            >
-              {opt.number}. {opt.label.length > 30 ? opt.label.slice(0, 30) + "..." : opt.label}
-            </button>
-          ))}
-          {onToggleAutoYes && (
-            <>
-              <div style={{ width: 1, height: 18, backgroundColor: "var(--border-color)" }} />
-              <div
-                role="switch"
-                aria-checked={!!autoYesActive}
-                onClick={onToggleAutoYes}
-                style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}
-              >
-                <span style={{ fontSize: 11, fontWeight: 600, color: autoYesActive ? "var(--warning-color)" : "var(--text-secondary)", whiteSpace: "nowrap" }}>
-                  Auto-yes
-                </span>
-                <div style={{
-                  position: "relative",
-                  width: 36,
-                  height: 20,
-                  borderRadius: 10,
-                  background: autoYesActive ? "var(--warning-color)" : "var(--border-color)",
-                  transition: "background 0.2s",
-                  flexShrink: 0,
-                }}>
-                  <div style={{
-                    position: "absolute",
-                    top: 2,
-                    left: autoYesActive ? 18 : 2,
-                    width: 16,
-                    height: 16,
-                    borderRadius: "50%",
-                    background: "white",
-                    transition: "left 0.2s",
-                  }} />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
-        <input
-          ref={inputRef}
-          className="input"
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSend(inputText); }}
-          placeholder="Send input..."
-          style={{ flex: 1 }}
-        />
-        <button
-          className="btn btn-primary btn-sm"
-          disabled={!inputText.trim() || sending}
-          onClick={() => handleSend(inputText)}
-        >
-          Send
-        </button>
-      </div>
-    </div>
+    <JobDetailView
+      transport={wrappedTransport}
+      job={syntheticJob}
+      status={syntheticStatus}
+      logs={logs}
+      runs={[]}
+      runsLoading={false}
+      onBack={onBack}
+      showBackButton={false}
+      onOpen={handleOpen}
+      hideRuns
+      expandOutput
+      containerStyle={{ backgroundColor: "var(--bg-primary)" } as any}
+      options={paneQuestion?.options}
+      questionContext={paneQuestion?.context_lines}
+      autoYesActive={autoYesActive}
+      onToggleAutoYes={onToggleAutoYes}
+    />
   );
 }

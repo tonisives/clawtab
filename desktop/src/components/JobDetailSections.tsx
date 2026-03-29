@@ -17,6 +17,10 @@ const cardSectionStyle = {
   padding: 16,
 } as const;
 
+const desktopContainerStyle = {
+  backgroundColor: "var(--bg-primary)",
+} as const;
+
 // Shared collapsible header button used by detail sections
 function CollapsibleHeader({
   collapsed,
@@ -402,6 +406,7 @@ export function DesktopJobDetail({
         logs={logs}
         runs={runs}
         onBack={onBack}
+        showBackButton={false}
         onReloadRuns={reloadRuns}
         onEdit={onEdit}
         onOpen={onOpen}
@@ -417,6 +422,8 @@ export function DesktopJobDetail({
         autoYesActive={autoYesActive}
         onToggleAutoYes={onToggleAutoYes}
         sectionStyle={cardSectionStyle}
+        containerStyle={desktopContainerStyle}
+        expandOutput
       />
       {showConfirm && (
         <ConfirmDialog
@@ -459,10 +466,13 @@ export function AgentDetail({
       logs={logs}
       runs={runs}
       onBack={onBack}
+      showBackButton={false}
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
       extraContent={extraContent}
       sectionStyle={cardSectionStyle}
+      containerStyle={desktopContainerStyle}
+      expandOutput
     />
   );
 }

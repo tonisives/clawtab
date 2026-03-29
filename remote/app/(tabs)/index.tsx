@@ -16,7 +16,6 @@ import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
 import { JobListView } from "@clawtab/shared"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
-import { _getLogListeners } from "../../src/transport/wsTransport"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { DemoBanner } from "../../src/components/DemoOverlay"
@@ -97,34 +96,6 @@ export default function JobsScreen() {
     }
   }, [router, isWide])
 
-  const handleSendProcessInput = useCallback((paneId: string, text: string) => {
-    const send = getWsSend()
-    if (!send) return
-    send({ type: "send_detected_process_input", id: nextId(), pane_id: paneId, text })
-  }, [])
-
-  const handleSendJobInput = useCallback((name: string, text: string) => {
-    const send = getWsSend()
-    if (!send) return
-    send({ type: "send_input", id: nextId(), name, text })
-  }, [])
-
-  const handleSubscribeJobLogs = useCallback((name: string, onChunk: (content: string) => void) => {
-    const send = getWsSend()
-    if (send) send({ type: "subscribe_logs", id: nextId(), name })
-
-    const listeners = _getLogListeners(name)
-    listeners.add(onChunk)
-
-    return () => {
-      listeners.delete(onChunk)
-      if (listeners.size === 0) {
-        const s = getWsSend()
-        if (s) s({ type: "unsubscribe_logs", name })
-      }
-    }
-  }, [])
-
   const bannerContent = (
     <>
       {!connected && (
@@ -171,9 +142,6 @@ export default function JobsScreen() {
         onSortChange={setSortMode}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
-        onSendProcessInput={handleSendProcessInput}
-        onSendJobInput={handleSendJobInput}
-        onSubscribeJobLogs={handleSubscribeJobLogs}
         onRunAgent={desktopOnline ? handleRunAgent : undefined}
         headerContent={bannerContent}
         showEmpty={loaded || isDemo}
@@ -238,9 +206,6 @@ export default function JobsScreen() {
           onSortChange={setSortMode}
           onSelectJob={handleSelectJob}
           onSelectProcess={handleSelectProcess}
-          onSendProcessInput={handleSendProcessInput}
-          onSendJobInput={handleSendJobInput}
-          onSubscribeJobLogs={handleSubscribeJobLogs}
           onRunAgent={desktopOnline ? handleRunAgent : undefined}
           headerContent={bannerContent}
           showEmpty={loaded || isDemo}

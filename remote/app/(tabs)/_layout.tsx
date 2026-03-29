@@ -50,17 +50,14 @@ function HeaderRight() {
       <Pressable
         onPress={() => router.push("/(tabs)/settings")}
         style={{
-          flexDirection: "row",
           alignItems: "center",
-          gap: 5,
-          paddingHorizontal: 10,
+          paddingHorizontal: 8,
           paddingVertical: 6,
           borderRadius: 6,
           backgroundColor: isSettings ? colors.accentBg : "transparent",
         }}
       >
         <Ionicons name={isSettings ? "settings" : "settings-outline"} size={16} color={isSettings ? colors.accent : colors.textMuted} />
-        <Text style={{ fontSize: 13, fontWeight: "500", color: isSettings ? colors.accent : colors.textMuted }}>Settings</Text>
       </Pressable>
     </View>
   );
