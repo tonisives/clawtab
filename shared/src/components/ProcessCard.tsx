@@ -1,7 +1,9 @@
-import { useCallback, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import type { ClaudeProcess } from "../types/process";
 import { shortenPath } from "../util/format";
+import { AnsiText, hasAnsi } from "./AnsiText";
+import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -16,8 +18,18 @@ export function ProcessCard({
 }) {
   const displayName = shortenPath(process.cwd);
   const [expanded, setExpanded] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Defer log rendering to next frame so expand feels instant
+  useEffect(() => {
+    if (expanded) {
+      const id = requestAnimationFrame(() => setShowLogs(true));
+      return () => cancelAnimationFrame(id);
+    }
+    setShowLogs(false);
+  }, [expanded]);
 
   const handleReply = useCallback(() => {
     const text = replyText.trim();
@@ -30,16 +42,14 @@ export function ProcessCard({
 
   // Last 3 non-empty log lines for preview
   const logPreview = process.log_lines
-    ? process.log_lines.split("\n").filter((l) => l.trim()).slice(-3).join("\n")
+    ? process.log_lines.split("\n").filter((l) => l.trim()).slice(-10).join("\n")
     : null;
 
-  const statusDot = (
-    <View style={styles.statusDot} />
+  const statusWithTitle = (
+    <Tooltip label="Running">
+      <View style={styles.statusDot} />
+    </Tooltip>
   );
-
-  const statusWithTitle = Platform.OS === "web" ? (
-    <div title="running">{statusDot}</div>
-  ) : statusDot;
 
   return (
     <View style={styles.processCard}>
@@ -56,14 +66,11 @@ export function ProcessCard({
             <Text style={styles.processName} numberOfLines={1}>
               {displayName}
             </Text>
-            <View style={styles.processMeta}>
-              <Text style={styles.processMetaText}>v{process.version}</Text>
-              {!expanded && process.first_query && (
-                <Text style={styles.queryPreview} numberOfLines={1}>
-                  {process.first_query}
-                </Text>
-              )}
-            </View>
+            {!expanded && (
+              <Text style={styles.queryPreview} numberOfLines={1}>
+                {process.first_query ?? "-"}
+              </Text>
+            )}
           </View>
           {statusWithTitle}
         </TouchableOpacity>
@@ -100,13 +107,17 @@ export function ProcessCard({
             </View>
           )}
 
-          {logPreview && (
+          {showLogs && logPreview && (
             <View style={styles.logBox}>
-              <Text style={styles.logText} numberOfLines={3}>{logPreview}</Text>
+              {hasAnsi(logPreview) ? (
+                <AnsiText content={logPreview} style={styles.logText} />
+              ) : (
+                <Text style={styles.logText} numberOfLines={10}>{logPreview}</Text>
+              )}
             </View>
           )}
 
-          {onSendInput && (
+          {showLogs && onSendInput && (
             <View style={styles.replyRow}>
               <TextInput
                 style={styles.replyInput}
@@ -160,14 +171,10 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
   },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
-  processName: { color: colors.text, fontSize: 15, fontWeight: "500", fontStyle: "italic" },
-  processMeta: { flexDirection: "row", gap: spacing.sm, alignItems: "center", minWidth: 0 },
-  processMetaText: { color: colors.textSecondary, fontSize: 12, flexShrink: 0 },
+  processName: { color: colors.text, fontSize: 13, fontWeight: "500" },
   queryPreview: {
     color: colors.textMuted,
     fontSize: 11,
-    flex: 1,
-    minWidth: 0,
   },
   statusDot: {
     width: 8,
@@ -218,15 +225,16 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
   },
   logBox: {
-    backgroundColor: colors.bg,
+    backgroundColor: "#000",
     borderRadius: 4,
     borderWidth: 1,
     borderColor: colors.border,
     padding: 6,
     marginTop: 2,
+    overflow: "hidden",
   },
   logText: {
-    color: colors.textSecondary,
+    color: "#ccc",
     fontSize: 10,
     fontFamily: "monospace",
     lineHeight: 14,

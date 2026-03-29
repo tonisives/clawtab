@@ -1,13 +1,11 @@
 import { useRef, useEffect } from "react";
-import { View, Text, StyleSheet, Animated, Platform } from "react-native";
+import { View, StyleSheet, Animated, Platform } from "react-native";
 import type { JobStatus } from "../types/job";
-import { statusLabel, statusColor, statusBg } from "../util/status";
-
-const isNative = Platform.OS !== "web";
+import { statusLabel, statusColor } from "../util/status";
+import { Tooltip } from "./Tooltip";
 
 export function StatusBadge({ status }: { status: JobStatus }) {
   const color = statusColor(status);
-  const bg = statusBg(status);
   const label = statusLabel(status);
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -29,18 +27,12 @@ export function StatusBadge({ status }: { status: JobStatus }) {
     <Animated.View style={[styles.dot, { backgroundColor: color, opacity: status.state === "running" ? pulse : 1 }]} />
   );
 
-  if (Platform.OS === "web") {
-    return (
-      <div title={label} style={{ display: "flex", alignItems: "center" }}>
-        {dot}
-      </div>
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      {dot}
-    </View>
+    <Tooltip label={label}>
+      <View style={styles.container}>
+        {dot}
+      </View>
+    </Tooltip>
   );
 }
 

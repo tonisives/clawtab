@@ -770,6 +770,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         onSortChange={setSortMode}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
+        onSendProcessInput={(paneId, text) => {
+          invoke("send_detected_process_input", { paneId, text }).catch(() => {});
+        }}
+        onSendJobInput={(name, text) => {
+          invoke("send_job_input", { name, text, freetext: null }).catch(() => {});
+        }}
+        onSubscribeJobLogs={(name, onChunk) => transport.subscribeLogs(name, onChunk)}
         onRunAgent={handleRunAgent}
         onAddJob={handleAddJob}
         headerContent={notificationSection}

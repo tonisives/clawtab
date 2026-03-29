@@ -93,6 +93,8 @@ export interface JobListViewProps {
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
   onSendProcessInput?: (paneId: string, text: string) => void;
+  onSendJobInput?: (name: string, text: string) => void;
+  onSubscribeJobLogs?: (name: string, onChunk: (content: string) => void) => () => void;
   // Agent
   onRunAgent?: (prompt: string, workDir?: string) => void;
   // Desktop-only slots
@@ -131,6 +133,8 @@ export function JobListView({
   onSelectJob,
   onSelectProcess,
   onSendProcessInput,
+  onSendJobInput,
+  onSubscribeJobLogs,
   onRunAgent,
   onAddJob,
   headerContent,
@@ -362,6 +366,11 @@ export function JobListView({
                 {isCollapsed ? "\u25B6" : "\u25BC"}
               </Text>
               <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+              {item.folderPath && (
+                <Text style={styles.groupFolderPath} numberOfLines={1}>
+                  {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
+                </Text>
+              )}
               {onAddJob && (
                 <TouchableOpacity
                   onPress={(e) => { e.stopPropagation(); onAddJob(item.group, item.folderPath); }}
@@ -383,6 +392,7 @@ export function JobListView({
             <ProcessCard
               process={item.process}
               onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
+              onSendInput={onSendProcessInput}
             />
           </View>
         );
@@ -411,7 +421,12 @@ export function JobListView({
           {status.state === "running" ? (
             <RunningJobCard
               jobName={item.job.name}
+              jobSlug={item.job.slug}
+              status={status}
+              workDir={item.job.folder_path || item.job.work_dir}
               onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
+              onSendInput={onSendJobInput}
+              onSubscribeLogs={onSubscribeJobLogs}
             />
           ) : (
             <JobCard
@@ -575,6 +590,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
+  },
+  groupFolderPath: {
+    color: colors.textMuted,
+    fontSize: 11,
+    flex: 1,
+    minWidth: 0,
   },
   searchIcon: {
     color: colors.textSecondary,

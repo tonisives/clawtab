@@ -1,11 +1,9 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native"
 import { useRouter } from "expo-router"
+import { StatusBadge } from "./StatusBadge"
 import { colors } from "../theme/colors"
 import { radius, spacing } from "../theme/spacing"
 
-/**
- * Displays a running job card that navigates to the job detail page on tap.
- */
 export function RunningJobCard({
   jobName,
 }: {
@@ -26,9 +24,7 @@ export function RunningJobCard({
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1}>{jobName}</Text>
         </View>
-        <View style={styles.runningBadge}>
-          <Text style={styles.runningText}>running</Text>
-        </View>
+        <StatusBadge status={{ state: "running", started_at: "" }} />
       </View>
     </TouchableOpacity>
   )
@@ -59,11 +55,4 @@ const styles = StyleSheet.create({
   },
   info: { flex: 1, gap: 2 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
-  runningBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: colors.accentBg,
-  },
-  runningText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.accent },
 })
