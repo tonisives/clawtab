@@ -1,11 +1,10 @@
 import { useEffect } from "react";
-import { Platform } from "react-native";
-import { Tabs } from "expo-router";
+import { Platform, View, Text } from "react-native";
+import { Tabs, useRouter, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/hooks/useResponsive";
-import { ResizableSidebar } from "../../src/components/ResizableSidebar";
 import { registerNotificationCategories } from "../../src/lib/notifications";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
@@ -26,14 +25,41 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
   );
 }
 
-function HeaderIcon() {
+function HeaderBrand() {
   return (
-    <Pressable onPress={() => Linking.openURL("https://clawtab.cc")} style={{ marginRight: 12 }}>
+    <Pressable
+      onPress={() => Linking.openURL("https://clawtab.cc")}
+      style={{ flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 12 }}
+    >
       <Image
         source={require("../../assets/clawtab-icon.png")}
-        style={{ width: 28, height: 28, borderRadius: 6 }}
+        style={{ width: 24, height: 24, borderRadius: 5 }}
       />
+      <Text style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>ClawTab</Text>
     </Pressable>
+  );
+}
+
+function HeaderRight() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const isSettings = pathname.includes("settings");
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginRight: 12 }}>
+      <Pressable
+        onPress={() => router.push("/(tabs)/settings")}
+        style={{
+          alignItems: "center",
+          paddingHorizontal: 8,
+          paddingVertical: 6,
+          borderRadius: 6,
+          backgroundColor: isSettings ? colors.accentBg : "transparent",
+        }}
+      >
+        <Ionicons name={isSettings ? "settings" : "settings-outline"} size={16} color={isSettings ? colors.accent : colors.textMuted} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -45,7 +71,8 @@ function TabsContent({ isWide }: { isWide: boolean }) {
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: "600" },
-        headerRight: isWide ? undefined : () => <HeaderIcon />,
+        headerLeft: isWide ? () => <HeaderBrand /> : undefined,
+        headerRight: isWide ? () => <HeaderRight /> : () => <HeaderBrand />,
         tabBarStyle: isWide
           ? { display: "none" }
           : {
@@ -59,7 +86,7 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Jobs",
+          title: isWide ? "" : "Jobs",
           tabBarIcon: ({ focused }) => (
             <TabIcon label="Jobs" focused={focused} />
           ),
@@ -86,7 +113,7 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       <Tabs.Screen
         name="settings"
         options={{
-          title: "Settings",
+          title: isWide ? "" : "Settings",
           tabBarIcon: ({ focused }) => (
             <TabIcon label="Settings" focused={focused} />
           ),
@@ -98,20 +125,10 @@ function TabsContent({ isWide }: { isWide: boolean }) {
 
 export default function TabLayout() {
   const { isWide } = useResponsive();
-  const isWeb = Platform.OS === "web";
-  const useSidebar = isWide && isWeb;
 
   useEffect(() => {
     registerNotificationCategories();
   }, []);
 
-  if (useSidebar) {
-    return (
-      <ResizableSidebar>
-        <TabsContent isWide />
-      </ResizableSidebar>
-    );
-  }
-
-  return <TabsContent isWide={false} />;
+  return <TabsContent isWide={isWide} />;
 }

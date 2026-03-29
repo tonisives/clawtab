@@ -19,6 +19,7 @@ fn print_usage() {
     eprintln!("  auto-yes          Show auto-yes panes");
     eprintln!("  auto-yes toggle [pane_id]  Toggle auto-yes for pane (uses $TMUX_PANE if omitted)");
     eprintln!("  auto-yes check [pane_id]   Check if pane has auto-yes (exit 0=on, 1=off)");
+    eprintln!("  pane-info [pane_id]        Show first query and session date for a Claude pane");
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret values as KEY=VALUE lines");
 }
@@ -86,6 +87,57 @@ async fn main() {
             } else {
                 IpcCommand::ListSecretKeys
             }
+        }
+        "pane-info" => {
+            let pane_id = if args.len() >= 3 {
+                args[2].clone()
+            } else {
+                env::var("TMUX_PANE").unwrap_or_else(|_| {
+                    eprintln!("Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly.");
+                    std::process::exit(1);
+                })
+            };
+            // Resolve locally - no IPC needed
+            let pane_pid = std::process::Command::new("tmux")
+                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_id} #{pane_pid}"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                        stdout.lines()
+                            .find(|l| l.starts_with(&format!("{} ", pane_id)))
+                            .and_then(|l| l.split_whitespace().nth(1))
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if pane_pid.is_empty() {
+                eprintln!("Could not resolve pane PID");
+                std::process::exit(1);
+            }
+
+            let info = clawtab_lib::claude_session::resolve_session_info(&pane_pid);
+            if let Some(ref date) = info.session_started_at {
+                println!("started_at={}", date);
+            }
+            if let Some(epoch) = info.started_epoch {
+                println!("started_epoch={}", epoch);
+            }
+            if let Some(ref query) = info.first_query {
+                println!("first_query={}", query);
+            }
+            if let Some(ref query) = info.last_query {
+                println!("last_query={}", query);
+            }
+            if info.session_started_at.is_none() && info.first_query.is_none() {
+                eprintln!("No session info found");
+                std::process::exit(1);
+            }
+            return;
         }
         "auto-yes" => {
             if args.len() >= 3 && args[2] == "toggle" {
@@ -165,6 +217,21 @@ async fn main() {
             IpcResponse::SecretValues(pairs) => {
                 for (k, v) in pairs {
                     println!("{}={}", k, v);
+                }
+            }
+            IpcResponse::PaneInfo { first_query, last_query, session_started_at } => {
+                if let Some(ref date) = session_started_at {
+                    println!("started_at={}", date);
+                }
+                if let Some(ref query) = first_query {
+                    println!("first_query={}", query);
+                }
+                if let Some(ref query) = last_query {
+                    println!("last_query={}", query);
+                }
+                if session_started_at.is_none() && first_query.is_none() {
+                    eprintln!("No session info found");
+                    std::process::exit(1);
                 }
             }
             IpcResponse::AutoYesPanes(panes) => {

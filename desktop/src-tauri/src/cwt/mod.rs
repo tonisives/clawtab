@@ -2,8 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-/// A `.cwt` folder job. Represents a single job within a project's `.cwt/` directory.
-/// Scripts live at `{project_root}/.cwt/` and `{project_root}/.cwt/{job_name}/`.
+/// Represents a folder job's context. Scripts are found in the central config directory.
 #[derive(Debug, Clone, Serialize)]
 pub struct CwtFolder {
     /// The project root directory
@@ -15,19 +14,45 @@ pub struct CwtFolder {
 
 impl CwtFolder {
     /// Create from a project root path + job name.
-    /// Looks for scripts in `{project_root}/.cwt/` and `{project_root}/.cwt/{job_name}/`.
+    /// Looks for scripts in the central config directory:
+    /// `~/.config/clawtab/jobs/{project-slug}/` and `~/.config/clawtab/jobs/{slug}/`.
     pub fn from_path_with_job(project_root: &Path, job_name: &str) -> Result<Self, String> {
         if !project_root.is_dir() {
             return Err(format!("Not a directory: {}", project_root.display()));
         }
 
-        let cwt_dir = project_root.join(".cwt");
-        let job_dir = cwt_dir.join(job_name);
+        Ok(Self {
+            path: project_root.to_path_buf(),
+            job_name: job_name.to_string(),
+            scripts: Vec::new(),
+        })
+    }
 
-        // Collect scripts from both the .cwt/ root and the job subfolder
+    /// Create from a slug, scanning central config for scripts.
+    #[allow(dead_code)]
+    pub fn from_slug(project_root: &Path, job_name: &str, slug: &str) -> Result<Self, String> {
+        if !project_root.is_dir() {
+            return Err(format!("Not a directory: {}", project_root.display()));
+        }
+
+        let jobs_dir = match crate::config::jobs::JobsConfig::jobs_dir_public() {
+            Some(d) => d,
+            None => {
+                return Ok(Self {
+                    path: project_root.to_path_buf(),
+                    job_name: job_name.to_string(),
+                    scripts: Vec::new(),
+                })
+            }
+        };
+
+        let project_slug = slug.split('/').next().unwrap_or(slug);
+        let project_dir = jobs_dir.join(project_slug);
+        let job_dir = jobs_dir.join(slug);
+
         let mut scripts = Vec::new();
-        if cwt_dir.is_dir() {
-            scripts = list_scripts(&cwt_dir);
+        if project_dir.is_dir() {
+            scripts = list_scripts(&project_dir);
         }
         if job_dir.is_dir() {
             let job_scripts = list_scripts(&job_dir);
@@ -47,6 +72,7 @@ impl CwtFolder {
     }
 }
 
+#[allow(dead_code)]
 fn list_scripts(dir: &Path) -> Vec<String> {
     let mut scripts = Vec::new();
 
@@ -59,8 +85,8 @@ fn list_scripts(dir: &Path) -> Vec<String> {
         let path = entry.path();
         if path.is_file() {
             let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            // Skip the entry point and auto-generated context
-            if name == "job.md" || name == "cwt.md" {
+            // Skip config and context files
+            if name == "job.md" || name == "job.yaml" || name == "context.md" {
                 continue;
             }
             // Include script-like files

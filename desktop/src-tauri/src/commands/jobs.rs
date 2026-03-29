@@ -73,23 +73,13 @@ pub fn rename_job(
         .cloned()
         .ok_or_else(|| format!("Job not found: {}", old_name))?;
 
-    // Rename .cwt subfolder if the job_name changed and folder_path exists
+    // Rename in central location if the job_name changed
     let old_jn = old_job.job_name.as_deref().unwrap_or("default");
     let new_jn = job.job_name.as_deref().unwrap_or("default");
     if old_jn != new_jn {
         if let Some(ref fp) = old_job.folder_path {
-            // Rename .cwt/{old_jn} -> .cwt/{new_jn} for context files
-            let cwt_dir = std::path::Path::new(fp).join(".cwt");
-            let old_dir = cwt_dir.join(old_jn);
-            let new_dir = cwt_dir.join(new_jn);
-            if old_dir.is_dir() && !new_dir.exists() {
-                std::fs::rename(&old_dir, &new_dir)
-                    .map_err(|e| format!("Failed to rename .cwt subfolder: {}", e))?;
-            }
-            // Rename in central location too
             if let Some(jobs_dir) = crate::config::config_dir().map(|p| p.join("jobs")) {
                 let old_central = jobs_dir.join(&old_job.slug);
-                // New slug will be derived after save, just rename job.md if needed
                 let new_central_slug = crate::config::jobs::derive_slug(
                     fp,
                     Some(new_jn),
@@ -139,11 +129,10 @@ pub fn rename_job(
     Ok(())
 }
 
-/// Import a job folder (containing job.md) into a .cwt directory.
-/// `source` is the folder with job.md/cwt.md.
-/// `dest_cwt` is the target .cwt directory.
-/// `job_name` is the subfolder name inside .cwt.
-/// If source is already inside dest_cwt, files are used in place (no copy).
+/// Import a job folder (containing job.md) into central config.
+/// `source` is the folder with job.md.
+/// `dest_cwt` is the project root directory.
+/// `job_name` is the job identifier.
 #[tauri::command]
 pub fn import_job_folder(
     app: tauri::AppHandle,
@@ -157,30 +146,13 @@ pub fn import_job_folder(
         return Err("Selected folder does not contain job.md".to_string());
     }
 
-    let dest_root = std::path::Path::new(&dest_cwt);
-
-    // dest_cwt is the .cwt directory; project root is its parent
-    let project_root = dest_root
-        .parent()
-        .ok_or("Cannot determine project root from .cwt path")?;
-    let project_root_str = project_root.to_string_lossy().to_string();
-
-    // Create .cwt/{job_name}/ dir for context files
-    let dest_dir = dest_root.join(&job_name);
-    std::fs::create_dir_all(&dest_dir)
-        .map_err(|e| format!("Failed to create directory: {}", e))?;
-
-    // Copy cwt.md (context) to .cwt/{job_name}/ if source has one
-    let cwt_md = src.join("cwt.md");
-    if cwt_md.exists() {
-        std::fs::copy(&cwt_md, dest_dir.join("cwt.md"))
-            .map_err(|e| format!("Failed to copy cwt.md: {}", e))?;
-    }
+    // dest_cwt is the project root directory
+    let project_root_str = dest_cwt.clone();
 
     // Derive group from project dir name
-    let group = project_root
+    let group = std::path::Path::new(&project_root_str)
         .file_name()
-        .map(|n| n.to_string_lossy().to_string())
+        .map(|n: &std::ffi::OsStr| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "default".to_string());
 
     let mut config = state.jobs_config.lock().unwrap();
@@ -340,10 +312,6 @@ pub fn duplicate_job(
         }
     }
 
-    // Create .cwt/{job_name}/ in target project for context
-    let cwt_job_dir = target_path.join(".cwt").join(&job_name);
-    let _ = std::fs::create_dir_all(&cwt_job_dir);
-
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
     let settings = state.settings.lock().unwrap().clone();
@@ -411,6 +379,7 @@ pub fn toggle_job(state: State<AppState>, name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn run_job_now(
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
     name: String,
     params: Option<std::collections::HashMap<String, String>>,
@@ -434,6 +403,7 @@ pub async fn run_job_now(
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
+    let app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job_with_auto_yes(
             &job,
@@ -446,6 +416,7 @@ pub async fn run_job_now(
             &relay,
             &params,
             Some(&auto_yes_panes),
+            Some(app_handle),
         )
         .await;
     });
@@ -510,6 +481,7 @@ pub fn stop_job(state: State<AppState>, name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn restart_job(
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
     name: String,
     params: Option<std::collections::HashMap<String, String>>,
@@ -533,6 +505,7 @@ pub async fn restart_job(
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
+    let app_handle = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job_with_auto_yes(
             &job,
@@ -545,6 +518,7 @@ pub async fn restart_job(
             &relay,
             &params,
             Some(&auto_yes_panes),
+            Some(app_handle),
         )
         .await;
     });
@@ -568,14 +542,19 @@ pub fn open_job_editor(
     let jn = job_name.as_deref().unwrap_or("default");
     let target_file = file_name.as_deref().unwrap_or("job.md");
 
-    // For job.md, read/write from central location
-    // For other files (cwt.md, scripts), use project's .cwt/ dir
+    // Read/write from central location
+    let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
     let file_path = if target_file == "job.md" {
-        let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
         crate::config::jobs::central_job_md_path(&slug)
             .ok_or("Could not determine config directory")?
+    } else if target_file == "context.md" {
+        crate::config::jobs::central_job_context_path(&slug)
+            .ok_or("Could not determine config directory")?
     } else {
-        std::path::Path::new(&folder_path).join(".cwt").join(jn).join(target_file)
+        // Other files (scripts) live in the central job dir
+        let jobs_dir = crate::config::jobs::JobsConfig::jobs_dir_public()
+            .ok_or("Could not determine config directory")?;
+        jobs_dir.join(&slug).join(target_file)
     };
 
     // Create job.md with template if it doesn't exist (only for job.md)
@@ -687,15 +666,7 @@ pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<
     let project_root = std::path::Path::new(&folder_path);
     let job_name = job_name.as_deref().unwrap_or("default");
 
-    // Create .cwt/{job_name}/ dir in project for context files
-    let cwt_dir = project_root.join(".cwt");
-    let job_dir = cwt_dir.join(job_name);
-    if !job_dir.exists() {
-        std::fs::create_dir_all(&job_dir)
-            .map_err(|e| format!("Failed to create .cwt directory: {}", e))?;
-    }
-
-    // job.md is created in central location when the job is saved (via save_job)
+    // Central job directory is created when the job is saved (via save_job)
     // Just ensure the CwtFolder structure is valid
     CwtFolder::from_path_with_job(project_root, job_name)
 }
@@ -730,40 +701,42 @@ pub fn write_cwt_entry(folder_path: String, job_name: Option<String>, content: S
 
 #[tauri::command]
 pub fn read_cwt_context(folder_path: String, job_name: Option<String>) -> Result<String, String> {
-    // folder_path is project root; context lives at {project_root}/.cwt/{job_name}/cwt.md
-    let project_root = std::path::Path::new(&folder_path);
+    // Read auto-generated context from central: ~/.config/clawtab/jobs/{slug}/context.md
     let jn = job_name.as_deref().unwrap_or("default");
-    let cwt_md = project_root.join(".cwt").join(jn).join("cwt.md");
-    if !cwt_md.exists() {
+    let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
+    let context_md = crate::config::jobs::central_job_context_path(&slug)
+        .ok_or("Could not determine config directory")?;
+    if !context_md.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&cwt_md)
-        .map_err(|e| format!("Failed to read {}: {}", cwt_md.display(), e))
+    std::fs::read_to_string(&context_md)
+        .map_err(|e| format!("Failed to read {}: {}", context_md.display(), e))
 }
 
 #[tauri::command]
 pub fn read_cwt_shared(folder_path: String) -> Result<String, String> {
-    // folder_path is project root; shared context at {project_root}/.cwt/cwt.md
-    let project_root = std::path::Path::new(&folder_path);
-    let cwt_md = project_root.join(".cwt").join("cwt.md");
-    if !cwt_md.exists() {
+    // Read shared project context from central: ~/.config/clawtab/jobs/{project-slug}/context.md
+    let slug = crate::config::jobs::derive_slug(&folder_path, Some("default"), &[]);
+    let context_md = crate::config::jobs::central_project_context_path(&slug)
+        .ok_or("Could not determine config directory")?;
+    if !context_md.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&cwt_md)
-        .map_err(|e| format!("Failed to read {}: {}", cwt_md.display(), e))
+    std::fs::read_to_string(&context_md)
+        .map_err(|e| format!("Failed to read {}: {}", context_md.display(), e))
 }
 
 #[tauri::command]
 pub fn write_cwt_shared(folder_path: String, content: String) -> Result<(), String> {
-    // folder_path is project root; shared context at {project_root}/.cwt/cwt.md
-    let cwt_dir = std::path::Path::new(&folder_path).join(".cwt");
-    if !cwt_dir.exists() {
-        std::fs::create_dir_all(&cwt_dir)
-            .map_err(|e| format!("Failed to create directory: {}", e))?;
+    // Write shared project context to central: ~/.config/clawtab/jobs/{project-slug}/context.md
+    let slug = crate::config::jobs::derive_slug(&folder_path, Some("default"), &[]);
+    let context_md = crate::config::jobs::central_project_context_path(&slug)
+        .ok_or("Could not determine config directory")?;
+    if let Some(parent) = context_md.parent() {
+        let _ = std::fs::create_dir_all(parent);
     }
-    let cwt_md = cwt_dir.join("cwt.md");
-    std::fs::write(&cwt_md, content)
-        .map_err(|e| format!("Failed to write {}: {}", cwt_md.display(), e))
+    std::fs::write(&context_md, content)
+        .map_err(|e| format!("Failed to write {}: {}", context_md.display(), e))
 }
 
 #[tauri::command]
@@ -776,7 +749,7 @@ pub fn derive_job_slug(
     crate::config::jobs::derive_slug(&folder_path, job_name.as_deref(), &config.jobs)
 }
 
-/// Generate the auto-generated cwt.md for the agent's .cwt/default/ directory.
+/// Generate the auto-generated context for the agent directory.
 /// Contains workspace info, available tools, and Telegram communication instructions.
 fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Option<i64>) -> String {
     let mut out = String::new();
@@ -1008,7 +981,7 @@ pub fn ensure_agent_dir(settings: &AppSettings, jobs: &[Job]) {
     }
 }
 
-/// Regenerate cwt.md context file for every folder job's .cwt/{job_name}/ directory.
+/// Regenerate context.md for every folder job in central config.
 /// Also writes `.claude/settings.local.json` in each project root / work_dir.
 pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
     let mut settings_written: Vec<std::path::PathBuf> = Vec::new();
@@ -1017,20 +990,19 @@ pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
         match job.job_type {
             crate::config::jobs::JobType::Folder => {
                 if let Some(ref folder_path) = job.folder_path {
-                    let jn = job.job_name.as_deref().unwrap_or("default");
                     let content = generate_cwt_context(job, settings);
-                    // folder_path is project root; cwt.md goes into {project_root}/.cwt/{job_name}/
-                    let project_root = std::path::Path::new(folder_path);
-                    let cwt_job_dir = project_root.join(".cwt").join(jn);
-                    if !cwt_job_dir.exists() {
-                        let _ = std::fs::create_dir_all(&cwt_job_dir);
-                    }
-                    let path = cwt_job_dir.join("cwt.md");
-                    if let Err(e) = std::fs::write(&path, content) {
-                        log::warn!("Failed to write cwt.md for '{}': {}", job.name, e);
+                    // Write context.md to central: ~/.config/clawtab/jobs/{slug}/context.md
+                    if let Some(context_path) = crate::config::jobs::central_job_context_path(&job.slug) {
+                        if let Some(parent) = context_path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        if let Err(e) = std::fs::write(&context_path, content) {
+                            log::warn!("Failed to write context.md for '{}': {}", job.name, e);
+                        }
                     }
 
                     // Write Claude Code permissions in the project root
+                    let project_root = std::path::Path::new(folder_path);
                     let pr = project_root.to_path_buf();
                     if !settings_written.contains(&pr) {
                         write_claude_settings(project_root);
@@ -1148,7 +1120,7 @@ fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
     out.push_str("\n## Rules\n\n");
     out.push_str("- Only edit and look for files in the current directory.\n");
     out.push_str("- The job directions are managed by ClawTab (stored centrally).\n");
-    out.push_str("- Shared project context is in `.cwt/cwt.md` (user-managed).\n");
+    out.push_str("- Shared project context is loaded automatically from central config.\n");
     out.push_str("- Notifications are handled by ClawTab. Do not send notifications directly.\n");
     if job.kill_on_end {
         out.push_str("- When your task is fully complete and you need no further input, terminate your own process by running: `kill $PPID`\n");
@@ -1179,7 +1151,7 @@ fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
 }
 
 /// Build a synthetic `Job` for running Claude as an ad-hoc interactive agent.
-/// Writes enriched prompt (with @.cwt references) to `~/.config/clawtab/agent/.agent-prompt.md`
+/// Writes enriched prompt to `~/.config/clawtab/agent/.agent-prompt.md`
 /// and returns a Job that can be passed to `execute_job`.
 ///
 /// When `target_dir` is provided, the agent runs in that directory instead of the
@@ -1210,13 +1182,7 @@ pub fn build_agent_job(
 
     // Derive name/slug and work_dir from target_dir
     let (job_name, job_slug, work_dir) = if let Some(dir) = target_dir {
-        // If target_dir ends in .cwt, use its parent as the project root
-        let dir_path = std::path::Path::new(dir);
-        let project_dir = if dir_path.file_name().and_then(|n| n.to_str()) == Some(".cwt") {
-            dir_path.parent().unwrap_or(dir_path)
-        } else {
-            dir_path
-        };
+        let project_dir = std::path::Path::new(dir);
         let folder = project_dir
             .file_name()
             .and_then(|n| n.to_str())
@@ -1284,7 +1250,7 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Opt
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
-            &relay, &std::collections::HashMap::new(),
+            &relay, &std::collections::HashMap::new(), None,
         )
         .await;
     });

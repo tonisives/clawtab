@@ -1,11 +1,13 @@
 mod aerospace;
 mod browser;
+pub mod claude_session;
 mod claude_usage;
 mod commands;
 mod config;
 mod cwt;
 mod history;
 pub mod ipc;
+mod notifications;
 mod questions;
 mod relay;
 mod scheduler;
@@ -45,6 +47,7 @@ pub struct AppState {
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
+    pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
 }
 
@@ -79,6 +82,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &active_agents,
                             &relay,
                             &std::collections::HashMap::new(),
+                            None,
                         )
                         .await;
                     });
@@ -130,6 +134,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                             &active_agents,
                             &relay,
                             &std::collections::HashMap::new(),
+                            None,
                         )
                         .await;
                     });
@@ -198,6 +203,40 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                 .collect();
             IpcResponse::SecretValues(pairs)
         }
+        IpcCommand::GetPaneInfo { pane_id } => {
+            // Resolve pane_pid from tmux
+            let pane_pid = std::process::Command::new("tmux")
+                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_id} #{pane_pid}"])
+                .output()
+                .ok()
+                .and_then(|o| {
+                    if o.status.success() {
+                        let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+                        stdout.lines()
+                            .find(|l| l.starts_with(&format!("{} ", pane_id)))
+                            .and_then(|l| l.split_whitespace().nth(1))
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or_default();
+
+            if pane_pid.is_empty() {
+                IpcResponse::PaneInfo {
+                    first_query: None,
+                    last_query: None,
+                    session_started_at: None,
+                }
+            } else {
+                let info = claude_session::resolve_session_info(&pane_pid);
+                IpcResponse::PaneInfo {
+                    first_query: info.first_query,
+                    last_query: info.last_query,
+                    session_started_at: info.session_started_at,
+                }
+            }
+        }
     }
 }
 
@@ -238,12 +277,11 @@ pub fn run() {
         HistoryStore::new().expect("failed to initialize history database"),
     ));
 
-    // Run startup migrations and scan for unregistered .cwt jobs
+    // Run startup migrations
     {
         let mut j = jobs_config.lock().unwrap();
         config::jobs::migrate_job_md_to_central(&mut j.jobs);
-        // Disabled: scan was too aggressive, re-registering deleted/junk .cwt subdirs
-        // config::jobs::scan_and_register_cwt_jobs(&mut j.jobs);
+        config::jobs::migrate_cwt_to_central(&j.jobs);
     }
 
     // Ensure agent + per-job cwt.md context files are fresh on startup
@@ -264,6 +302,8 @@ pub fn run() {
         Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
         Arc::new(Mutex::new(HashSet::new()));
+    let notification_state: Arc<Mutex<notifications::NotificationState>> =
+        Arc::new(Mutex::new(notifications::NotificationState::new()));
 
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
 
@@ -279,6 +319,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
     };
 
@@ -295,6 +336,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
     };
 
@@ -333,6 +375,7 @@ pub fn run() {
     let relay_for_questions = Arc::clone(&relay_handle);
     let active_questions_for_loop = Arc::clone(&active_questions);
     let auto_yes_for_questions = Arc::clone(&auto_yes_panes);
+    let notification_state_for_questions = Arc::clone(&notification_state);
 
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
@@ -352,6 +395,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
@@ -499,9 +543,9 @@ pub fn run() {
                 });
             }
 
-            // App menu bar - add Import .cwt to default File menu
+            // App menu bar - add Import Job to default File menu
             let import_item =
-                MenuItem::with_id(app, "import_cwt", "Import .cwt...", true, None::<&str>)?;
+                MenuItem::with_id(app, "import_cwt", "Import Job...", true, None::<&str>)?;
             let app_menu = Menu::default(app.handle())?;
             // Find the default File submenu and append our item
             for item in app_menu.items()? {
@@ -652,6 +696,7 @@ pub fn run() {
             }
 
             // Start question detection loop
+            let app_handle_for_questions = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 questions::question_detection_loop(
                     jobs_for_questions,
@@ -659,6 +704,8 @@ pub fn run() {
                     relay_for_questions,
                     active_questions_for_loop,
                     auto_yes_for_questions,
+                    app_handle_for_questions,
+                    notification_state_for_questions,
                 )
                 .await;
             });

@@ -1,14 +1,21 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import type { JobStatus } from "../types/job";
+import { StatusBadge } from "./StatusBadge";
+import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
 export function RunningJobCard({
   jobName,
+  status,
   onPress,
 }: {
   jobName: string;
+  status: JobStatus;
   onPress?: () => void;
 }) {
+  const startedAt = status.state === "running" ? status.started_at : null;
+
   return (
     <TouchableOpacity
       style={styles.card}
@@ -21,10 +28,11 @@ export function RunningJobCard({
         </View>
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1}>{jobName}</Text>
+          {startedAt && (
+            <Text style={styles.metaText}>{timeAgo(startedAt)}</Text>
+          )}
         </View>
-        <View style={styles.runningBadge}>
-          <Text style={styles.runningText}>running</Text>
-        </View>
+        <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} />
       </View>
     </TouchableOpacity>
   );
@@ -38,7 +46,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 0 },
   typeIcon: {
     width: 32,
     height: 32,
@@ -53,13 +61,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontFamily: "monospace",
   },
-  info: { flex: 1, gap: 2 },
+  info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
-  runningBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: colors.accentBg,
-  },
-  runningText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.accent },
+  metaText: { color: colors.textSecondary, fontSize: 12 },
 });

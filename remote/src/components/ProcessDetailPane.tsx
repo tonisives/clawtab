@@ -234,6 +234,8 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
         questionContext={paneQuestion?.context_lines}
         autoYesActive={autoYesActive}
         onToggleAutoYes={paneQuestion ? handleToggleAutoYes : undefined}
+        firstQuery={activeProcess?.first_query ?? undefined}
+        lastQuery={activeProcess?.last_query ?? undefined}
       />
     </View>
   )

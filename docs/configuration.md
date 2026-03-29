@@ -10,8 +10,11 @@ All configuration lives under `~/.config/clawtab/`.
   history.db                 # Run history
   jobs/
     <project-slug>/          # grouped by project
+      context.md             # Shared project context (user-written)
       <job-name>/
         job.yaml             # Job definition
+        job.md               # Job-specific prompt (user-written)
+        context.md           # Auto-generated per-job context
         logs/
           <run-id>.log       # Captured output per run
 ```

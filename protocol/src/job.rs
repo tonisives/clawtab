@@ -69,6 +69,12 @@ pub struct ClaudeProcess {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched_job: Option<String>,
     pub log_lines: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_query: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_started_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -19,6 +19,9 @@ pub struct ClaudeProcess {
     pub matched_group: Option<String>,
     pub matched_job: Option<String>,
     pub log_lines: String,
+    pub first_query: Option<String>,
+    pub last_query: Option<String>,
+    pub session_started_at: Option<String>,
 }
 
 fn is_semver(s: &str) -> bool {
@@ -36,7 +39,7 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}",
+            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
         ])
         .output();
 
@@ -77,8 +80,7 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             .iter()
             .filter_map(|job| {
                 if let Some(ref fp) = job.folder_path {
-                    // Strip trailing /.cwt to get project root
-                    let root = fp.strip_suffix("/.cwt").unwrap_or(fp);
+                    let root = fp.as_str();
                     Some((root.to_string(), job.group.clone(), job.name.clone()))
                 } else if let Some(ref wd) = job.work_dir {
                     Some((wd.clone(), job.group.clone(), job.name.clone()))
@@ -90,12 +92,11 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
     };
 
     let mut seen_panes = HashSet::new();
-    let mut seen_cwds = HashSet::new();
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(5, '\t').collect();
-        if parts.len() < 5 {
+        let parts: Vec<&str> = line.splitn(6, '\t').collect();
+        if parts.len() < 6 {
             continue;
         }
 
@@ -104,6 +105,7 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
         let cwd = parts[2];
         let session = parts[3];
         let window = parts[4];
+        let pane_pid = parts[5];
 
         if !is_semver(command) {
             continue;
@@ -114,11 +116,6 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
         }
 
         if tracked_panes.contains(pane_id) {
-            continue;
-        }
-
-        // Deduplicate by CWD: split panes in the same window show as one process
-        if !seen_cwds.insert(cwd.to_string()) {
             continue;
         }
 
@@ -138,6 +135,8 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             .trim()
             .to_string();
 
+        let session_info = crate::claude_session::resolve_session_info(pane_pid);
+
         results.push(ClaudeProcess {
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
@@ -147,6 +146,9 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
             matched_group,
             matched_job: None,
             log_lines,
+            first_query: session_info.first_query,
+            last_query: session_info.last_query,
+            session_started_at: session_info.session_started_at,
         });
     }
 
@@ -173,7 +175,12 @@ pub fn send_detected_process_input(pane_id: String, text: String) -> Result<(), 
 
 #[tauri::command]
 pub fn get_active_questions(state: State<AppState>) -> Vec<clawtab_protocol::ClaudeQuestion> {
-    state.active_questions.lock().unwrap().clone()
+    let yes_panes = state.auto_yes_panes.lock().unwrap();
+    state.active_questions.lock().unwrap()
+        .iter()
+        .filter(|q| !yes_panes.contains(&q.pane_id))
+        .cloned()
+        .collect()
 }
 
 #[tauri::command]

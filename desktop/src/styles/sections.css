@@ -27,3 +27,9 @@
 .section-header h2 {
   margin-bottom: 0;
 }
+
+.detail-pane {
+  --log-bg: var(--bg-primary);
+  --input-bar-bg: var(--bg-primary);
+}
+

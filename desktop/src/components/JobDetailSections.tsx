@@ -17,6 +17,11 @@ const cardSectionStyle = {
   padding: 16,
 } as const;
 
+const desktopContainerStyle = {
+  backgroundColor: "var(--bg-primary)",
+  borderRadius: 0,
+} as const;
+
 // Shared collapsible header button used by detail sections
 function CollapsibleHeader({
   collapsed,
@@ -64,7 +69,7 @@ export function DetailRow({ label, value, mono }: { label: string; value: React.
   );
 }
 
-// Agent directions - shows cwt.md context with option to open in editor
+// Agent directions - shows context.md with option to open in editor
 export function AgentDetailSections() {
   const [collapsed, setCollapsed] = useState(false);
   const [cwtContext, setCwtContext] = useState<string | null>(null);
@@ -99,7 +104,7 @@ export function AgentDetailSections() {
       {!collapsed && (
         <div style={{ marginTop: 8 }}>
           <MarkdownHighlight
-            content={cwtContext || "(no cwt.md)"}
+            content={cwtContext || "(no context.md)"}
             style={{
               padding: "10px 12px",
               height: 350,
@@ -120,7 +125,7 @@ export function AgentDetailSections() {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
             <button
               className="btn btn-sm"
-              onClick={() => { invoke("open_agent_editor", { fileName: "cwt.md" }); }}
+              onClick={() => { invoke("open_agent_editor", { fileName: "context.md" }); }}
             >
               Edit in {EDITOR_LABELS[preferredEditor] ?? preferredEditor}
             </button>
@@ -135,7 +140,7 @@ export function AgentDetailSections() {
 export function DesktopDetailSections({ job }: { job: Job }) {
   const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
   const [configCollapsed, setConfigCollapsed] = useState(false);
-  const [previewFile, setPreviewFile] = useState<"job.md" | "cwt.md">("job.md");
+  const [previewFile, setPreviewFile] = useState<"job.md" | "context.md">("job.md");
   const [inlineContent, setInlineContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
   const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
@@ -222,10 +227,10 @@ export function DesktopDetailSections({ job }: { job: Job }) {
                     job.md
                   </button>
                   <button
-                    className={`directions-tab ${previewFile === "cwt.md" ? "active" : ""}`}
-                    onClick={() => setPreviewFile("cwt.md")}
+                    className={`directions-tab ${previewFile === "context.md" ? "active" : ""}`}
+                    onClick={() => setPreviewFile("context.md")}
                   >
-                    cwt.md
+                    context.md
                   </button>
                 </div>
                 {previewFile === "job.md" ? (
@@ -237,7 +242,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
                   />
                 ) : (
                   <HighlightedTextarea
-                    value={cwtContextPreview || "(no cwt.md)"}
+                    value={cwtContextPreview || "(no context.md)"}
                     readOnly
                   />
                 )}
@@ -367,6 +372,8 @@ export function DesktopJobDetail({
   questionContext,
   autoYesActive,
   onToggleAutoYes,
+  firstQuery,
+  lastQuery,
 }: {
   transport: Transport;
   job: Job;
@@ -383,6 +390,8 @@ export function DesktopJobDetail({
   questionContext?: string;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  firstQuery?: string;
+  lastQuery?: string;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
@@ -402,6 +411,7 @@ export function DesktopJobDetail({
         logs={logs}
         runs={runs}
         onBack={onBack}
+        showBackButton={false}
         onReloadRuns={reloadRuns}
         onEdit={onEdit}
         onOpen={onOpen}
@@ -417,6 +427,10 @@ export function DesktopJobDetail({
         autoYesActive={autoYesActive}
         onToggleAutoYes={onToggleAutoYes}
         sectionStyle={cardSectionStyle}
+        containerStyle={desktopContainerStyle}
+        expandOutput
+        firstQuery={firstQuery}
+        lastQuery={lastQuery}
       />
       {showConfirm && (
         <ConfirmDialog
@@ -459,10 +473,13 @@ export function AgentDetail({
       logs={logs}
       runs={runs}
       onBack={onBack}
+      showBackButton={false}
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
       extraContent={extraContent}
       sectionStyle={cardSectionStyle}
+      containerStyle={desktopContainerStyle}
+      expandOutput
     />
   );
 }

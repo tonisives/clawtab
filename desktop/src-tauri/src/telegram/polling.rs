@@ -288,7 +288,7 @@ async fn handle_message(
                             tokio::spawn(async move {
                                 crate::scheduler::executor::execute_job(
                                     &job, &secrets, &history, &settings, &job_status, "telegram",
-                                    &active_agents, &relay, &params,
+                                    &active_agents, &relay, &params, None,
                                 )
                                 .await;
                             });
@@ -305,7 +305,7 @@ async fn handle_message(
                         tokio::spawn(async move {
                             crate::scheduler::executor::execute_job(
                                 &job, &secrets, &history, &settings, &job_status, "telegram",
-                                &active_agents, &relay, &params,
+                                &active_agents, &relay, &params, None,
                             )
                             .await;
                         });
@@ -394,7 +394,7 @@ async fn handle_agent_command(
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job, &secrets, &history, &settings_arc, &job_status, "telegram",
-            &active_agents_for_exec, &relay, &std::collections::HashMap::new(),
+            &active_agents_for_exec, &relay, &std::collections::HashMap::new(), None,
         )
         .await;
     });

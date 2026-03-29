@@ -1,14 +1,11 @@
 import { useRef, useEffect } from "react";
-import { Text, StyleSheet, Animated, Platform } from "react-native";
+import { View, StyleSheet, Animated } from "react-native";
 import type { JobStatus } from "../types/job";
-import { statusLabel, statusColor, statusBg } from "../util/status";
-import { spacing } from "../theme/spacing";
-
-const isNative = Platform.OS !== "web";
+import { statusLabel, statusColor } from "../util/status";
+import { Tooltip } from "./Tooltip";
 
 export function StatusBadge({ status }: { status: JobStatus }) {
   const color = statusColor(status);
-  const bg = statusBg(status);
   const label = statusLabel(status);
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -26,24 +23,27 @@ export function StatusBadge({ status }: { status: JobStatus }) {
     pulse.setValue(1);
   }, [status.state, pulse]);
 
+  const dot = (
+    <Animated.View style={[styles.dot, { backgroundColor: color, opacity: status.state === "running" ? pulse : 1 }]} />
+  );
+
   return (
-    <Animated.View style={[styles.badge, !isNative && { backgroundColor: bg }, { opacity: status.state === "running" ? pulse : 1 }]}>
-      <Text style={[styles.label, { color }]}>{label}</Text>
-    </Animated.View>
+    <Tooltip label={label}>
+      <View style={styles.container}>
+        {dot}
+      </View>
+    </Tooltip>
   );
 }
 
 const styles = StyleSheet.create({
-  badge: {
-    flexDirection: "row",
+  container: {
+    justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
   },
-  label: {
-    fontSize: 11,
-    fontWeight: "500",
-    letterSpacing: 0.3,
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 });

@@ -1,10 +1,11 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Platform,
 } from "react-native"
 import { useRouter } from "expo-router"
 import { useJobsStore } from "../../src/store/jobs"
@@ -128,7 +129,7 @@ export default function JobsScreen() {
   )
 
   const jobList = (
-    <View style={isWide ? styles.listPane : styles.container}>
+    <View style={styles.container}>
       {isDemo && <DemoBanner />}
       <JobListView
         jobs={jobs}
@@ -149,13 +150,69 @@ export default function JobsScreen() {
     </View>
   )
 
+  // Resizable list pane (web only)
+  const [listWidth, setListWidth] = useState(() => {
+    if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+      const v = localStorage.getItem("list_pane_width")
+      if (v) return Math.max(260, Math.min(600, parseInt(v, 10)))
+    }
+    return 380
+  })
+  const handleRef = useRef<View>(null)
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || !handleRef.current || !isWide) return
+    const el = handleRef.current as unknown as HTMLElement
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault()
+      const startX = e.pageX
+      const startW = listWidth
+      const onMouseMove = (ev: MouseEvent) => {
+        const w = Math.max(260, Math.min(600, startW + (ev.pageX - startX)))
+        setListWidth(w)
+        localStorage.setItem("list_pane_width", String(w))
+      }
+      const onMouseUp = () => {
+        document.removeEventListener("mousemove", onMouseMove)
+        document.removeEventListener("mouseup", onMouseUp)
+        document.body.style.cursor = ""
+        document.body.style.userSelect = ""
+      }
+      document.addEventListener("mousemove", onMouseMove)
+      document.addEventListener("mouseup", onMouseUp)
+      document.body.style.cursor = "col-resize"
+      document.body.style.userSelect = "none"
+    }
+    el.addEventListener("mousedown", onMouseDown)
+    return () => el.removeEventListener("mousedown", onMouseDown)
+  }, [isWide, listWidth])
+
   if (!isWide) {
     return <View style={styles.container}>{jobList}</View>
   }
 
   return (
     <View style={styles.splitContainer}>
-      {jobList}
+      <View style={[styles.listPane, { width: listWidth }]}>
+        {isDemo && <DemoBanner />}
+        <JobListView
+          jobs={jobs}
+          statuses={statuses}
+          detectedProcesses={detectedProcesses}
+          collapsedGroups={collapsedGroups}
+          onToggleGroup={toggleGroup}
+          onRefresh={handleRefresh}
+          sortMode={sortMode}
+          onSortChange={setSortMode}
+          onSelectJob={handleSelectJob}
+          onSelectProcess={handleSelectProcess}
+          onRunAgent={desktopOnline ? handleRunAgent : undefined}
+          headerContent={bannerContent}
+          showEmpty={loaded || isDemo}
+          emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+        />
+      </View>
+      <View ref={handleRef} style={styles.resizeHandle} />
       <View style={styles.detailPane}>
         {selectedJob ? (
           <JobDetailPane
@@ -188,10 +245,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   listPane: {
-    width: 340,
     borderRightWidth: 1,
     borderRightColor: colors.border,
     backgroundColor: colors.bg,
+  },
+  resizeHandle: {
+    width: 5,
+    backgroundColor: "transparent",
+    marginLeft: -3,
+    marginRight: -2,
+    zIndex: 10,
+    ...(Platform.OS === "web" ? { cursor: "col-resize" as any } : {}),
   },
   detailPane: {
     flex: 1,

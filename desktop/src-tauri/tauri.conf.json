@@ -55,7 +55,6 @@
       "desktop": {
         "schemes": ["clawtab"]
       }
-    },
-    "notification": {}
+    }
   }
 }

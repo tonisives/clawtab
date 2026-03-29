@@ -30,6 +30,9 @@ pub struct MonitorParams {
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub notify_on_success: bool,
     pub relay: Arc<Mutex<Option<RelayHandle>>>,
+    pub app_handle: Option<tauri::AppHandle>,
+    /// When true, skip the "job started" notification (used for reattach).
+    pub is_reattach: bool,
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -45,8 +48,8 @@ pub async fn monitor_pane(params: MonitorParams) {
     let mut working_message_id: Option<i64> = None;
     let started_at = std::time::Instant::now();
 
-    // Send "job started" notification
-    if notify.start {
+    // Send "job started" notification (skip on reattach - job was already running)
+    if notify.start && !params.is_reattach {
         if use_telegram {
             if let Some(ref tg) = params.telegram {
                 let text = format!(
@@ -60,11 +63,14 @@ pub async fn monitor_pane(params: MonitorParams) {
         }
         if use_app {
             crate::relay::push_job_notification(&params.relay, &params.slug, "started", &params.run_id);
+            if let Some(ref handle) = params.app_handle {
+                crate::notifications::notify_job(handle, &params.job_name, "started");
+            }
         }
     }
 
-    // Send initial working status message (Telegram only)
-    if notify.working && use_telegram {
+    // Send initial working status message (Telegram only, skip on reattach)
+    if notify.working && use_telegram && !params.is_reattach {
         if let Some(ref tg) = params.telegram {
             match crate::telegram::send_message_returning_id(
                 &tg.bot_token,
@@ -385,6 +391,9 @@ pub async fn monitor_pane(params: MonitorParams) {
         }
         if use_app {
             crate::relay::push_job_notification(&params.relay, &params.slug, "completed", &params.run_id);
+            if let Some(ref handle) = params.app_handle {
+                crate::notifications::notify_job(handle, &params.job_name, "completed");
+            }
         }
     }
 

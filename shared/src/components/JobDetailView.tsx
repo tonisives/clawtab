@@ -64,6 +64,13 @@ export interface JobDetailViewProps {
   hideRuns?: boolean;
   // Expand live output to fill available space (no fixed height)
   expandOutput?: boolean;
+  // Optional style override for the container
+  containerStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
+  // Called when log viewer column count changes (for tmux pane resize)
+  onLogColumnsChange?: (cols: number) => void;
+  // Runtime query info (from detected processes)
+  firstQuery?: string;
+  lastQuery?: string;
 }
 
 export function JobDetailView({
@@ -93,6 +100,10 @@ export function JobDetailView({
   sectionStyle,
   hideRuns,
   expandOutput,
+  containerStyle,
+  onLogColumnsChange,
+  firstQuery,
+  lastQuery,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -322,25 +333,26 @@ export function JobDetailView({
         <View style={styles.actions}>
           {isRunning && (
             <>
-              {onOpen && <ActionButton label="Open in Terminal" color={colors.accent} onPress={() => onOpen()} />}
+              {onOpen && <ActionButton label="Open in Terminal" color={colors.accent} onPress={() => onOpen()} compact={expandOutput} />}
               <ActionButton
                 label={sigintPending ? "Stopping..." : "Stop"}
                 color={colors.danger}
                 onPress={() => handleAction(transport.sigintJob ? "sigint" : "stop")}
+                compact={expandOutput}
               />
             </>
           )}
           {runPending && !isRunning && (
-            <ActionButton label="Starting..." color={colors.accent} filled onPress={() => {}} disabled />
+            <ActionButton label="Starting..." color={colors.accent} filled onPress={() => {}} disabled compact={expandOutput} />
           )}
           {!runPending && state === "failed" && (
-            <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} />
+            <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} compact={expandOutput} />
           )}
           {!runPending && state === "success" && (
-            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} />
+            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact={expandOutput} />
           )}
           {!runPending && state === "idle" && (
-            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} />
+            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact={expandOutput} />
           )}
           {/* Settings "..." menu */}
           {(onEdit || onDuplicate || onDelete || (onToggleEnabled && !isManual)) && (
@@ -435,44 +447,72 @@ export function JobDetailView({
         </View>
       </View>
 
-      {/* Auto-yes toggle for running jobs */}
-      {isRunning && onToggleAutoYes && (
-        <TouchableOpacity
-          onPress={onToggleAutoYes}
-          activeOpacity={0.6}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-            marginBottom: 8,
-            borderRadius: 6,
-            borderWidth: 1,
-            borderColor: autoYesActive ? colors.warning : colors.border,
-            backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
-          }}
-        >
-          <Text style={{ fontSize: 13, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
-            Auto-yes
-          </Text>
-          <View style={{
-            width: 36,
-            height: 20,
-            borderRadius: 10,
-            backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
-            justifyContent: "center",
-            paddingHorizontal: 2,
-          }}>
-            <View style={{
-              width: 16,
-              height: 16,
-              borderRadius: 8,
-              backgroundColor: "#fff",
-              alignSelf: autoYesActive ? "flex-end" : "flex-start",
-            }} />
+      {/* Runtime info + auto-yes for running jobs */}
+      {isRunning && (
+        <>
+        <View style={styles.runtimeRow}>
+          {status.state === "running" && status.started_at ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.runtimeText}>{formatTime(status.started_at)}</Text>
+            </View>
+          ) : null}
+          {status.state === "running" && status.pane_id ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.runtimeDim}>{status.pane_id}</Text>
+            </View>
+          ) : null}
+          {onToggleAutoYes && <View style={{ flex: 1 }} />}
+          {onToggleAutoYes && (
+            <TouchableOpacity
+              onPress={onToggleAutoYes}
+              activeOpacity={0.6}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 6,
+                borderWidth: 1,
+                borderColor: autoYesActive ? colors.warning : colors.border,
+                backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
+              }}
+            >
+              <Text style={{ fontSize: 11, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
+                Auto-yes
+              </Text>
+              <View style={{
+                width: 28,
+                height: 16,
+                borderRadius: 8,
+                backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
+                justifyContent: "center",
+                paddingHorizontal: 1,
+              }}>
+                <View style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 6,
+                  backgroundColor: "#fff",
+                  alignSelf: autoYesActive ? "flex-end" : "flex-start",
+                }} />
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+        {firstQuery ? (
+          <View style={styles.queryRow}>
+            <Text style={styles.queryLabel}>Query</Text>
+            <Text style={styles.queryLine} numberOfLines={1}>{firstQuery}</Text>
           </View>
-        </TouchableOpacity>
+        ) : null}
+        {lastQuery && lastQuery !== firstQuery ? (
+          <View style={styles.queryRow}>
+            <Text style={styles.queryLabel}>Latest</Text>
+            <Text style={styles.queryLineDim} numberOfLines={1}>{lastQuery}</Text>
+          </View>
+        ) : null}
+        </>
       )}
 
       {/* Live Output */}
@@ -499,7 +539,7 @@ export function JobDetailView({
           {!outputCollapsed && (
             <>
               <View style={[styles.logsContainer, { height: logsHeight }]}>
-                <LogViewer content={logs} />
+                <LogViewer content={logs} onColumnsChange={onLogColumnsChange} />
               </View>
               {isWeb && (
                 <div
@@ -566,7 +606,7 @@ export function JobDetailView({
 
   if (expandOutput && (isRunning || isPaused)) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, containerStyle]}>
         {pathDisplay ? (
           <View style={styles.pathRow}>
             <Text style={styles.pathText} numberOfLines={1}>
@@ -579,19 +619,7 @@ export function JobDetailView({
           {detailInner}
         </View>
 
-        <View style={styles.expandOutputHeader}>
-          <Text style={styles.sectionTitle}>Live Output</Text>
-          <TouchableOpacity
-            onPress={() => setLiveZoom(true)}
-            style={styles.zoomBtn}
-            activeOpacity={0.6}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.zoomIcon}>{"\u2922"}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={{ flex: 1, minHeight: 0 }}>
+        <View style={{ flex: 1, minHeight: 0, position: "relative" as const }}>
           {isWeb ? (
             <div
               ref={webRefCb as any}
@@ -601,15 +629,21 @@ export function JobDetailView({
                 minHeight: 0,
               }}
             >
-              <View style={{ padding: spacing.lg }}>
-                <LogViewer content={logs} />
-              </View>
+              <LogViewer content={logs} borderless onColumnsChange={onLogColumnsChange} />
             </div>
           ) : (
-            <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ flexGrow: 1, padding: spacing.lg }}>
-              <LogViewer content={logs} />
+            <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ flexGrow: 1 }}>
+              <LogViewer content={logs} borderless onColumnsChange={onLogColumnsChange} />
             </ScrollView>
           )}
+          <TouchableOpacity
+            onPress={() => setLiveZoom(true)}
+            style={styles.zoomOverlay}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.zoomIcon}>{"\u2922"}</Text>
+          </TouchableOpacity>
         </View>
 
         <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
@@ -633,7 +667,7 @@ export function JobDetailView({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, containerStyle]}>
       {pathDisplay ? (
         <View style={styles.pathRow}>
           <Text style={styles.pathText} numberOfLines={1}>
@@ -708,17 +742,20 @@ function ActionButton({
   onPress,
   filled,
   disabled,
+  compact,
 }: {
   label: string;
   color: string;
   onPress: () => void;
   filled?: boolean;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   return (
     <TouchableOpacity
       style={[
         styles.actionBtn,
+        compact && styles.actionBtnCompact,
         filled
           ? { backgroundColor: color }
           : { borderColor: color, borderWidth: 1 },
@@ -728,7 +765,7 @@ function ActionButton({
       activeOpacity={disabled ? 1 : 0.7}
       disabled={disabled}
     >
-      <Text style={[styles.actionText, { color: filled ? "#fff" : color }]}>
+      <Text style={[styles.actionText, compact && styles.actionTextCompact, { color: filled ? "#fff" : color }]}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -1166,7 +1203,7 @@ const styles = StyleSheet.create({
   },
   pathRow: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: 4,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -1181,9 +1218,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.sm,
+    rowGap: spacing.sm,
     flexWrap: "wrap",
     zIndex: 200,
     ...(isWeb ? { position: "relative" as const } : {}),
+  },
+  runtimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexWrap: "wrap",
+  },
+  runtimeText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontFamily: "monospace",
+  },
+  queryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  queryLabel: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
+    width: 42,
+    flexShrink: 0,
+  },
+  queryLine: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  queryLineDim: {
+    color: colors.textMuted,
+    fontSize: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  runtimeDim: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: "monospace",
   },
   infoPills: {
     flexDirection: "row",
@@ -1222,10 +1300,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: radius.sm,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  actionBtnCompact: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
   },
   actionText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  actionTextCompact: {
+    fontSize: 12,
   },
   section: {
     gap: spacing.sm,
@@ -1382,6 +1469,17 @@ const styles = StyleSheet.create({
   },
   zoomBtn: {
     padding: 6,
+  },
+  zoomOverlay: {
+    position: "absolute",
+    top: 8,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   zoomIcon: {
     color: colors.textMuted,

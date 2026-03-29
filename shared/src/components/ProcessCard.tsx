@@ -1,25 +1,40 @@
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import type { ClaudeProcess } from "../types/process";
 import { shortenPath } from "../util/format";
+import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
 export function ProcessCard({
   process,
   onPress,
+  inGroup,
 }: {
   process: ClaudeProcess;
   onPress?: () => void;
+  inGroup?: boolean;
 }) {
-  const displayName = shortenPath(process.cwd);
+  const displayName = inGroup
+    ? (process.first_query ?? shortenPath(process.cwd))
+    : shortenPath(process.cwd);
+
+  const subtitle = inGroup
+    ? (process.last_query && process.last_query !== process.first_query ? process.last_query : null)
+    : (process.first_query ?? null);
+
+  const statusWithTitle = (
+    <Tooltip label="Running">
+      <View style={styles.statusDot} />
+    </Tooltip>
+  );
 
   return (
-    <TouchableOpacity
-      style={styles.processCard}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.processRow}>
+    <View style={styles.processCard}>
+      <TouchableOpacity
+        style={styles.processRow}
+        onPress={onPress}
+        activeOpacity={0.7}
+      >
         <View style={styles.processTypeIcon}>
           <Text style={styles.processTypeIconText}>C</Text>
         </View>
@@ -27,15 +42,15 @@ export function ProcessCard({
           <Text style={styles.processName} numberOfLines={1}>
             {displayName}
           </Text>
-          <View style={styles.processMeta}>
-            <Text style={styles.processMetaText}>v{process.version}</Text>
-          </View>
+          {subtitle ? (
+            <Text style={styles.queryPreview} numberOfLines={1}>
+              {subtitle}
+            </Text>
+          ) : null}
         </View>
-        <View style={styles.processRunningBadge}>
-          <Text style={styles.processRunningText}>running</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+        {statusWithTitle}
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -64,15 +79,17 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     fontStyle: "italic",
   },
-  processInfo: { flex: 1, gap: 2 },
-  processName: { color: colors.text, fontSize: 15, fontWeight: "500", fontStyle: "italic" },
-  processMeta: { flexDirection: "row", gap: spacing.sm },
-  processMetaText: { color: colors.textSecondary, fontSize: 12 },
-  processRunningBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: colors.accentBg,
+  processInfo: { flex: 1, gap: 2, minWidth: 0 },
+  processName: { color: colors.text, fontSize: 13, fontWeight: "500" },
+  queryPreview: {
+    color: colors.textMuted,
+    fontSize: 11,
   },
-  processRunningText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.accent },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.statusRunning,
+    flexShrink: 0,
+  },
 });
