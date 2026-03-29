@@ -115,7 +115,7 @@ export function createWsTransport(): Transport {
 // Internal log listener registry for the transport layer
 const logListenerMap = new Map<string, Set<(content: string) => void>>();
 
-function _getLogListeners(name: string): Set<(content: string) => void> {
+export function _getLogListeners(name: string): Set<(content: string) => void> {
   if (!logListenerMap.has(name)) {
     logListenerMap.set(name, new Set());
   }

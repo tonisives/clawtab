@@ -7,6 +7,7 @@ import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
 import { getPushToken } from "../lib/notifications";
 import { dispatchLogChunk } from "./useLogs";
+import { dispatchTransportLogChunk } from "../transport/wsTransport";
 import { resolveRequest } from "../lib/useRequestMap";
 import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
 import { flushPendingAnswers, clearRegisteredSend } from "../lib/pendingAnswers";
@@ -120,6 +121,7 @@ export function useWebSocket() {
           break;
         case "log_chunk":
           dispatchLogChunk(msg.name, msg.content);
+          dispatchTransportLogChunk(msg.name, msg.content);
           break;
         case "detected_processes":
           useJobsStore.getState().setDetectedProcesses(msg.processes);
