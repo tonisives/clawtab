@@ -374,6 +374,7 @@ export function DesktopJobDetail({
   onToggleAutoYes,
   firstQuery,
   lastQuery,
+  showBackButton = false,
 }: {
   transport: Transport;
   job: Job;
@@ -386,6 +387,7 @@ export function DesktopJobDetail({
   onDuplicateToFolder: () => void;
   onDelete: () => void;
   groups: string[];
+  showBackButton?: boolean;
   options?: { number: string; label: string }[];
   questionContext?: string;
   autoYesActive?: boolean;
@@ -418,7 +420,7 @@ export function DesktopJobDetail({
         runs={runs}
         runsLoading={!runs}
         onBack={onBack}
-        showBackButton={false}
+        showBackButton={showBackButton}
         onReloadRuns={reloadRuns}
         onEdit={onEdit}
         onOpen={onOpen}
@@ -456,12 +458,14 @@ export function AgentDetail({
   status,
   onBack,
   onOpen,
+  showBackButton = false,
 }: {
   transport: Transport;
   job: RemoteJob;
   status: JobStatus;
   onBack: () => void;
   onOpen: () => void;
+  showBackButton?: boolean;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, "agent");
   const { logs } = useLogBuffer(transport, "agent");
@@ -479,7 +483,7 @@ export function AgentDetail({
       logs={logs}
       runs={runs}
       onBack={onBack}
-      showBackButton={false}
+      showBackButton={showBackButton}
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
       extraContent={extraContent}

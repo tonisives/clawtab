@@ -8,6 +8,7 @@ mod cwt;
 mod history;
 pub mod ipc;
 mod notifications;
+mod pty;
 mod questions;
 mod relay;
 mod scheduler;
@@ -17,6 +18,7 @@ mod terminal;
 mod tmux;
 mod tools;
 mod updater;
+mod watcher;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -49,6 +51,7 @@ pub struct AppState {
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
+    pub pty_manager: pty::SharedPtyManager,
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -306,6 +309,8 @@ pub fn run() {
         Arc::new(Mutex::new(notifications::NotificationState::new()));
 
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
+    let pty_manager: pty::SharedPtyManager =
+        Arc::new(Mutex::new(pty::PtyManager::new()));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -321,6 +326,7 @@ pub fn run() {
         auto_yes_panes: Arc::clone(&auto_yes_panes),
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
+        pty_manager: Arc::clone(&pty_manager),
     };
 
     // Clones for IPC handler
@@ -338,6 +344,7 @@ pub fn run() {
         auto_yes_panes: Arc::clone(&auto_yes_panes),
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
+        pty_manager: Arc::clone(&pty_manager),
     };
 
     // Clones for scheduler
@@ -376,6 +383,9 @@ pub fn run() {
     let active_questions_for_loop = Arc::clone(&active_questions);
     let auto_yes_for_questions = Arc::clone(&auto_yes_panes);
     let notification_state_for_questions = Arc::clone(&notification_state);
+
+    // Clones for fs watcher
+    let jobs_for_watcher = Arc::clone(&jobs_config);
 
     // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
@@ -499,6 +509,10 @@ pub fn run() {
             commands::processes::set_auto_yes_panes,
             commands::processes::sigint_detected_process,
             commands::processes::stop_detected_process,
+            commands::pty::pty_spawn,
+            commands::pty::pty_write,
+            commands::pty::pty_resize,
+            commands::pty::pty_destroy,
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -537,6 +551,7 @@ pub fn run() {
                         }
                     }
                     "quit" => {
+                        app.state::<AppState>().pty_manager.lock().unwrap().destroy_all();
                         app.exit(0);
                     }
                     _ => {}
@@ -719,6 +734,12 @@ pub fn run() {
 
             // Start auto-update checker
             updater::start_update_checker(app.handle().clone(), settings_for_updater);
+
+            // Watch jobs config dir for external changes
+            let app_handle_for_watcher = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                watcher::watch_jobs_dir(jobs_for_watcher, app_handle_for_watcher).await;
+            });
 
             log::info!("clawtab setup complete");
             Ok(())

@@ -328,9 +328,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     const tabContent = document.querySelector(".tab-content") as HTMLElement | null;
     if (!tabContent) return;
-    if (isFullScreenView) {
+    if (isFullScreenView || !isWide) {
       tabContent.style.overflowY = "auto";
-      tabContent.scrollTop = 0;
+      if (isFullScreenView) tabContent.scrollTop = 0;
     } else {
       tabContent.style.overflowY = "";
     }
@@ -684,6 +684,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           status={agentStatus}
           onBack={() => setViewingAgent(false)}
           onOpen={() => handleOpen("agent")}
+          showBackButton={!isWide}
         />
       );
     }
@@ -721,6 +722,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               if (paneQuestion) handleToggleAutoYes(paneQuestion);
               else handleToggleAutoYesByPaneId(viewingProcess.pane_id, viewingProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
             }}
+            showBackButton={!isWide}
           />
           {pendingAutoYes && (
             <ConfirmDialog
@@ -754,6 +756,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onDuplicateToFolder={() => handleDuplicateToFolder(viewingJob)}
             onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
             groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
+            showBackButton={!isWide}
             options={jobQuestion?.options}
             questionContext={jobQuestion?.context_lines}
             autoYesActive={(() => {

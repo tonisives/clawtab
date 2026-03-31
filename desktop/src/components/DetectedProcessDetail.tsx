@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared";
 import { JobDetailView, shortenPath } from "@clawtab/shared";
+import { XtermPane } from "./XtermPane";
 
 function createProcessTransport(process: ClaudeProcess): Transport {
   const noop = async () => {};
@@ -45,6 +46,7 @@ export function DetectedProcessDetail({
   onDismissQuestion,
   autoYesActive,
   onToggleAutoYes,
+  showBackButton = false,
 }: {
   process: ClaudeProcess;
   questions: ClaudeQuestion[];
@@ -52,31 +54,12 @@ export function DetectedProcessDetail({
   onDismissQuestion: (questionId: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  showBackButton?: boolean;
 }) {
-  const [logs, setLogs] = useState(process.log_lines);
   const processRef = useRef(process);
   processRef.current = process;
 
   const displayName = shortenPath(process.cwd);
-
-  // Poll logs every 3 seconds
-  useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const result = await invoke<string>("get_detected_process_logs", {
-          tmuxSession: processRef.current.tmux_session,
-          paneId: processRef.current.pane_id,
-        });
-        if (active) setLogs(result);
-      } catch {
-        // Process may have stopped
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => { active = false; clearInterval(interval); };
-  }, [process.pane_id]);
 
   const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
 
@@ -117,16 +100,26 @@ export function DetectedProcessDetail({
     sendInput: handleSendInput,
   }), [transport, handleSendInput]);
 
+  const renderTerminal = useCallback(
+    () => (
+      <XtermPane
+        paneId={process.pane_id}
+        tmuxSession={process.tmux_session}
+      />
+    ),
+    [process.pane_id, process.tmux_session],
+  );
+
   return (
     <JobDetailView
       transport={wrappedTransport}
       job={syntheticJob}
       status={syntheticStatus}
-      logs={logs}
+      logs=""
       runs={[]}
       runsLoading={false}
       onBack={onBack}
-      showBackButton={false}
+      showBackButton={showBackButton}
       onOpen={handleOpen}
       hideRuns
       expandOutput
@@ -135,6 +128,8 @@ export function DetectedProcessDetail({
       questionContext={paneQuestion?.context_lines}
       autoYesActive={autoYesActive}
       onToggleAutoYes={onToggleAutoYes}
+      renderTerminal={renderTerminal}
+      hideMessageInput
       firstQuery={process.first_query ?? undefined}
       lastQuery={process.last_query ?? undefined}
     />

@@ -1,7 +1,7 @@
 use tauri::State;
 
-use crate::tmux;
 use crate::terminal;
+use crate::tmux;
 use crate::AppState;
 
 #[tauri::command]
@@ -57,7 +57,7 @@ pub fn focus_job_window(state: State<AppState>, name: String) -> Result<(), Stri
         ));
     }
 
-    terminal::open_tmux_in_terminal(&tmux_session, &window_name)
+    tmux::focus_window(&tmux_session, &window_name)
 }
 
 #[tauri::command]

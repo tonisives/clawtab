@@ -246,8 +246,10 @@ export function JobListView({
 
     for (const group of sortedGroupKeys) {
       const gJobs = grouped.get(group) ?? [];
-      const displayGroup = group === "default" ? "General" : group;
       const fp = gJobs[0]?.folder_path ?? gJobs[0]?.work_dir;
+      const displayGroup = group === "default"
+        ? (fp ? fp.split("/").filter(Boolean).pop() ?? "General" : "General")
+        : group;
       allGroups.push({
         type: "job",
         group,
@@ -259,14 +261,22 @@ export function JobListView({
     }
 
     for (const [folder, procs] of detFolderGroups) {
-      const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
-      allGroups.push({
-        type: "detected",
-        groupKey: `_det_${folder}`,
-        displayGroup: folderName,
-        folderPath: folder,
-        procs,
-      });
+      // Merge into existing job group if one shares this folder path
+      const existing = allGroups.find(
+        (g) => g.type === "job" && g.folderPath === folder,
+      );
+      if (existing && existing.type === "job") {
+        existing.procs = [...existing.procs, ...procs];
+      } else {
+        const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
+        allGroups.push({
+          type: "detected",
+          groupKey: `_det_${folder}`,
+          displayGroup: folderName,
+          folderPath: folder,
+          procs,
+        });
+      }
     }
 
     // When sorting by name, interleave all groups alphabetically

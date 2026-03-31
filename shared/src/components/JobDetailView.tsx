@@ -68,6 +68,10 @@ export interface JobDetailViewProps {
   containerStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
   // Called when log viewer column count changes (for tmux pane resize)
   onLogColumnsChange?: (cols: number) => void;
+  // Render a real terminal instead of LogViewer (desktop xterm.js)
+  renderTerminal?: () => ReactNode;
+  // Hide the message input (when terminal handles input directly)
+  hideMessageInput?: boolean;
   // Runtime query info (from detected processes)
   firstQuery?: string;
   lastQuery?: string;
@@ -102,6 +106,8 @@ export function JobDetailView({
   expandOutput,
   containerStyle,
   onLogColumnsChange,
+  renderTerminal,
+  hideMessageInput,
   firstQuery,
   lastQuery,
 }: JobDetailViewProps) {
@@ -620,7 +626,7 @@ export function JobDetailView({
         </View>
 
         <View style={{ flex: 1, minHeight: 0, position: "relative" as const }}>
-          {isWeb ? (
+          {renderTerminal ? renderTerminal() : isWeb ? (
             <div
               ref={webRefCb as any}
               style={{
@@ -636,18 +642,20 @@ export function JobDetailView({
               <LogViewer content={logs} borderless onColumnsChange={onLogColumnsChange} />
             </ScrollView>
           )}
-          <TouchableOpacity
-            onPress={() => setLiveZoom(true)}
-            style={styles.zoomOverlay}
-            activeOpacity={0.6}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.zoomIcon}>{"\u2922"}</Text>
-          </TouchableOpacity>
+          {!renderTerminal && (
+            <TouchableOpacity
+              onPress={() => setLiveZoom(true)}
+              style={styles.zoomOverlay}
+              activeOpacity={0.6}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.zoomIcon}>{"\u2922"}</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
-        <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
+        {!hideMessageInput && <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />}
 
         {liveZoom && (
           <LiveZoomModal

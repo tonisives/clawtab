@@ -241,11 +241,12 @@ pub fn duplicate_job(
         .and_then(|p| std::fs::read_to_string(p).ok())
         .unwrap_or_default();
 
-    // Derive group from target project dir name
-    let target_path = std::path::Path::new(&target_project_path);
-    let group = target_path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
+    // Use the group from existing jobs in the target project, falling back to "default"
+    let group = config
+        .jobs
+        .iter()
+        .find(|j| j.folder_path.as_deref() == Some(&target_project_path))
+        .map(|j| j.group.clone())
         .unwrap_or_else(|| "default".to_string());
 
     // Generate unique name

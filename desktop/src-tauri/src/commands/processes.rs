@@ -160,7 +160,7 @@ pub fn focus_detected_process(tmux_session: String, window_name: String) -> Resu
     if !crate::tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
-    crate::terminal::open_tmux_in_terminal(&tmux_session, &window_name)
+    crate::tmux::focus_window(&tmux_session, &window_name)
 }
 
 #[tauri::command]

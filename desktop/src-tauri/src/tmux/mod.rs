@@ -410,7 +410,6 @@ pub fn kill_pane(pane_id: &str) -> Result<(), String> {
 
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
-    // Select the window within the session
     let output = Command::new("tmux")
         .args(["select-window", "-t", &target])
         .output()
@@ -420,5 +419,102 @@ pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("tmux error: {}", stderr.trim()));
     }
+
+    // Activate the terminal window that has this tmux session attached
+    let _ = activate_terminal_for_session(session);
+    Ok(())
+}
+
+/// Find which terminal app has the tmux client for a session and bring it to front.
+fn activate_terminal_for_session(session: &str) -> Result<(), String> {
+    // Get the TTY of the client attached to this session
+    let output = Command::new("tmux")
+        .args([
+            "list-clients",
+            "-t",
+            session,
+            "-F",
+            "#{client_tty}",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to list clients: {}", e))?;
+
+    let tty = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_string();
+
+    if tty.is_empty() {
+        return Err("No client attached to session".to_string());
+    }
+
+    // Strip /dev/ prefix to get the tty name for ps
+    let tty_short = tty.trim_start_matches("/dev/");
+
+    // Find the tmux client process on this TTY, then walk up to find the terminal app
+    let ps_output = Command::new("ps")
+        .args(["-o", "pid,ppid,comm", "-t", tty_short])
+        .output()
+        .map_err(|e| format!("Failed to run ps: {}", e))?;
+
+    let ps_str = String::from_utf8_lossy(&ps_output.stdout);
+
+    // Find the shell process (parent of tmux client) and get its parent (the terminal app)
+    let mut terminal_pid: Option<u32> = None;
+    for line in ps_str.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3 && parts[2].contains("tmux") {
+            // tmux's parent is the shell, shell's parent is the terminal
+            if let Ok(shell_pid) = parts[1].parse::<u32>() {
+                // Get the shell's parent
+                let parent_output = Command::new("ps")
+                    .args(["-o", "ppid", "-p", &shell_pid.to_string()])
+                    .output()
+                    .ok();
+                if let Some(out) = parent_output {
+                    let s = String::from_utf8_lossy(&out.stdout);
+                    if let Some(ppid_str) = s.lines().nth(1) {
+                        terminal_pid = ppid_str.trim().parse().ok();
+                    }
+                }
+            }
+            break;
+        }
+    }
+
+    let pid = terminal_pid.ok_or("Could not find terminal process")?;
+
+    // Get the app name from the PID
+    let app_output = Command::new("ps")
+        .args(["-o", "comm", "-p", &pid.to_string()])
+        .output()
+        .map_err(|e| format!("Failed to get app name: {}", e))?;
+
+    let comm = String::from_utf8_lossy(&app_output.stdout)
+        .lines()
+        .nth(1)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    // Extract the .app name from the path (e.g. /Applications/Alacritty.app/Contents/MacOS/alacritty)
+    let app_name = if let Some(start) = comm.find("/Applications/") {
+        let after = &comm[start + 14..];
+        after.split(".app").next().unwrap_or(&comm).to_string()
+    } else {
+        // Fallback: use the binary name
+        comm.rsplit('/').next().unwrap_or(&comm).to_string()
+    };
+
+    // Activate the app via osascript
+    Command::new("osascript")
+        .args([
+            "-e",
+            &format!(r#"tell application "{}" to activate"#, app_name),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to activate {}: {}", app_name, e))?;
+
     Ok(())
 }
