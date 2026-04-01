@@ -35,8 +35,18 @@ export default function JobsScreen() {
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
-  const [selectedJob, setSelectedJob] = useState<string | null>(null)
-  const [selectedProcess, setSelectedProcess] = useState<string | null>(null)
+  const [selectedJob, setSelectedJob] = useState<string | null>(() => {
+    if (Platform.OS === "web") {
+      return sessionStorage.getItem("selectedJob") ?? null
+    }
+    return null
+  })
+  const [selectedProcess, setSelectedProcess] = useState<string | null>(() => {
+    if (Platform.OS === "web") {
+      return sessionStorage.getItem("selectedProcess") ?? null
+    }
+    return null
+  })
   const { isWide } = useResponsive()
   const router = useRouter()
 
@@ -80,8 +90,12 @@ export default function JobsScreen() {
 
   const handleSelectJob = useCallback((job: RemoteJob) => {
     if (isWide) {
-      setSelectedJob(job.name)
+      setSelectedJob(job.slug)
       setSelectedProcess(null)
+      if (Platform.OS === "web") {
+        sessionStorage.setItem("selectedJob", job.slug)
+        sessionStorage.removeItem("selectedProcess")
+      }
     } else {
       router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
     }
@@ -91,17 +105,29 @@ export default function JobsScreen() {
     if (isWide) {
       setSelectedProcess(process.pane_id)
       setSelectedJob(null)
+      if (Platform.OS === "web") {
+        sessionStorage.setItem("selectedProcess", process.pane_id)
+        sessionStorage.removeItem("selectedJob")
+      }
     } else {
       router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
     }
   }, [router, isWide])
 
+  const processesLoaded = useJobsStore((s) => s.processesLoaded)
+
   // Clear selection when a detected process disappears (e.g. killed)
+  // Only after processes have been loaded at least once, to avoid clearing
+  // URL-restored selections before WS delivers the process list.
   useEffect(() => {
+    if (!processesLoaded) return
     if (selectedProcess && !detectedProcesses.find((p) => p.pane_id === selectedProcess)) {
       setSelectedProcess(null)
+      if (Platform.OS === "web") {
+        sessionStorage.removeItem("selectedProcess")
+      }
     }
-  }, [detectedProcesses, selectedProcess])
+  }, [detectedProcesses, selectedProcess, processesLoaded])
 
   const bannerContent = (
     <>
@@ -227,13 +253,19 @@ export default function JobsScreen() {
             key={selectedJob}
             jobName={selectedJob}
             isDemo={isDemo}
-            onClose={() => setSelectedJob(null)}
+            onClose={() => {
+              setSelectedJob(null)
+              if (Platform.OS === "web") sessionStorage.removeItem("selectedJob")
+            }}
           />
         ) : selectedProcess ? (
           <ProcessDetailPane
             key={selectedProcess}
             paneId={selectedProcess}
-            onClose={() => setSelectedProcess(null)}
+            onClose={() => {
+              setSelectedProcess(null)
+              if (Platform.OS === "web") sessionStorage.removeItem("selectedProcess")
+            }}
           />
         ) : (
           <View style={styles.emptyDetail}>

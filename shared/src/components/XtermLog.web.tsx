@@ -7,6 +7,10 @@ import "@xterm/xterm/css/xterm.css";
 export interface XtermLogHandle {
   /** Write base64-encoded terminal data */
   write(b64: string): void;
+  /** Write plain text (normalises \n to \r\n for xterm) */
+  writeText(text: string): void;
+  /** Reset terminal state */
+  clear(): void;
   /** Get current terminal dimensions */
   dimensions(): { cols: number; rows: number };
 }
@@ -31,6 +35,12 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
           termRef.current.write(bytes);
         }
+      },
+      writeText(text: string) {
+        termRef.current?.write(text.replace(/\r?\n/g, "\r\n"));
+      },
+      clear() {
+        termRef.current?.reset();
       },
       dimensions() {
         const t = termRef.current;

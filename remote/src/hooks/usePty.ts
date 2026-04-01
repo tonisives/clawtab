@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { getWsSend, nextId } from "./useWebSocket";
 import type { XtermLogHandle } from "@clawtab/shared";
 
@@ -33,13 +33,22 @@ export function usePty(
   termRef: React.RefObject<XtermLogHandle | null>,
 ) {
   const subscribedRef = useRef(false);
+  const [connecting, setConnecting] = useState(false);
+  const gotDataRef = useRef(false);
 
   // Subscribe to PTY stream
   useEffect(() => {
     const send = getWsSend();
     if (!send || !paneId || !tmuxSession) return;
 
+    gotDataRef.current = false;
+    setConnecting(true);
+
     const onOutput = (data: string) => {
+      if (!gotDataRef.current) {
+        gotDataRef.current = true;
+        setConnecting(false);
+      }
       termRef.current?.write(data);
     };
 
@@ -74,6 +83,7 @@ export function usePty(
         if (s) s({ type: "unsubscribe_pty", pane_id: paneId });
         subscribedRef.current = false;
       }
+      setConnecting(false);
     };
   }, [paneId, tmuxSession]);
 
@@ -93,5 +103,5 @@ export function usePty(
     [paneId],
   );
 
-  return { sendInput, sendResize };
+  return { sendInput, sendResize, connecting };
 }

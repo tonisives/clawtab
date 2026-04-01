@@ -86,6 +86,7 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const loaded = useJobsStore((s) => s.loaded)
+  const processesLoaded = useJobsStore((s) => s.processesLoaded)
 
   const lastProcessRef = useRef(process)
   if (process) lastProcessRef.current = process
@@ -182,22 +183,30 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
   const tmuxSession = activeProcess?.tmux_session ?? ""
-  const { sendInput, sendResize } = usePty(paneId, tmuxSession, termRef)
+  const { sendInput, sendResize, connecting: ptyConnecting } = usePty(paneId, tmuxSession, termRef)
 
   const renderTerminal = useCallback(
     () => (
-      <XtermLog
-        ref={termRef}
-        onData={sendInput}
-        onResize={sendResize}
-        interactive
-      />
+      <View style={{ flex: 1, minHeight: 0 }}>
+        {ptyConnecting && (
+          <View style={styles.ptyConnecting}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
+          </View>
+        )}
+        <XtermLog
+          ref={termRef}
+          onData={sendInput}
+          onResize={sendResize}
+          interactive
+        />
+      </View>
     ),
-    [sendInput, sendResize],
+    [sendInput, sendResize, ptyConnecting],
   )
 
   const isAlive = !!process
-  const waitingForData = !process && !questions.some((q) => q.pane_id === paneId) && (!connected || !desktopOnline || !loaded)
+  const waitingForData = !process && !questions.some((q) => q.pane_id === paneId) && (!connected || !desktopOnline || !processesLoaded)
 
   if (waitingForData) {
     return (
@@ -296,5 +305,19 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     marginTop: 8,
+  },
+  ptyConnecting: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  ptyConnectingText: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
 })

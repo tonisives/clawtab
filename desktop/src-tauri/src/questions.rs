@@ -198,8 +198,22 @@ pub async fn question_detection_loop(
     let mut auto_answered_ids: HashMap<String, u32> = HashMap::new();
 
     loop {
-        let processes = detect_question_processes(&jobs_config, &job_status);
+        let detection = detect_question_processes(&jobs_config, &job_status);
+        let processes = detection.processes;
         log::info!("[questions] detected {} claude processes", processes.len());
+
+        // Prune auto_yes_panes: remove pane IDs that no longer exist in tmux
+        if !detection.all_pane_ids.is_empty() {
+            let mut yes_panes = auto_yes_panes.lock().unwrap();
+            let before = yes_panes.len();
+            yes_panes.retain(|id| detection.all_pane_ids.contains(id));
+            if yes_panes.len() < before {
+                log::info!(
+                    "[questions] pruned {} stale auto-yes pane(s)",
+                    before - yes_panes.len()
+                );
+            }
+        }
 
         // Track which panes were detected this tick
         let mut detected_panes = std::collections::HashSet::new();
@@ -377,12 +391,17 @@ fn last_context_lines(text: &str) -> String {
     context.join("\n")
 }
 
+struct DetectionResult {
+    processes: Vec<(String, String, String, String, String, Option<String>, Option<String>)>,
+    /// All pane IDs that currently exist in tmux (not just Claude processes).
+    all_pane_ids: HashSet<String>,
+}
+
 /// Detect Claude processes and return their details for question parsing.
-/// Returns: Vec<(pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job)>
 fn detect_question_processes(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-) -> Vec<(String, String, String, String, String, Option<String>, Option<String>)> {
+) -> DetectionResult {
     use std::collections::HashSet;
     use std::process::Command;
 
@@ -399,7 +418,7 @@ fn detect_question_processes(
         .output()
     {
         Ok(o) if o.status.success() => o,
-        _ => return vec![],
+        _ => return DetectionResult { processes: vec![], all_pane_ids: HashSet::new() },
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -432,6 +451,7 @@ fn detect_question_processes(
         }).collect()
     };
 
+    let mut all_pane_ids = HashSet::new();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 
@@ -441,6 +461,8 @@ fn detect_question_processes(
 
         let (pane_id, command, cwd, session, window) =
             (parts[0], parts[1], parts[2], parts[3], parts[4]);
+
+        all_pane_ids.insert(pane_id.to_string());
 
         if !is_semver(command) { continue; }
         if !seen.insert(pane_id.to_string()) { continue; }
@@ -474,5 +496,5 @@ fn detect_question_processes(
         ));
     }
 
-    results
+    DetectionResult { processes: results, all_pane_ids }
 }

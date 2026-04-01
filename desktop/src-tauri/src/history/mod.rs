@@ -196,6 +196,37 @@ impl HistoryStore {
         Ok(records)
     }
 
+    pub fn get_unfinished_by_job(&self, job_name: &str) -> Result<Option<RunRecord>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, job_name, started_at, finished_at, exit_code, trigger_type, stdout, stderr
+                 FROM runs WHERE job_name = ?1 AND finished_at IS NULL ORDER BY started_at DESC LIMIT 1",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+
+        let mut rows = stmt
+            .query_map(params![job_name], |row| {
+                Ok(RunRecord {
+                    id: row.get(0)?,
+                    job_name: row.get(1)?,
+                    started_at: row.get(2)?,
+                    finished_at: row.get(3)?,
+                    exit_code: row.get(4)?,
+                    trigger: row.get(5)?,
+                    stdout: row.get(6)?,
+                    stderr: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to query history: {}", e))?;
+
+        match rows.next() {
+            Some(Ok(record)) => Ok(Some(record)),
+            Some(Err(e)) => Err(format!("Failed to read row: {}", e)),
+            None => Ok(None),
+        }
+    }
+
     pub fn delete_by_id(&self, id: &str) -> Result<(), String> {
         self.conn
             .execute("DELETE FROM runs WHERE id = ?1", params![id])

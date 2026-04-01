@@ -49,6 +49,7 @@ export { JobListView } from "./components/JobListView";
 export { JobDetailView } from "./components/JobDetailView";
 export { XtermLog } from "./components/XtermLog";
 export type { XtermLogHandle } from "./components/XtermLog";
+export { ReadOnlyXterm } from "./components/ReadOnlyXterm";
 export { ShareSection } from "./components/ShareSection";
 export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
 

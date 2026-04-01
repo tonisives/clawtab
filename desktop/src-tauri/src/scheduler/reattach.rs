@@ -95,11 +95,6 @@ pub fn reattach_running_jobs(
                 continue;
             }
 
-            // Check if this pane is busy (has a running process, not just a shell)
-            if !tmux::is_pane_busy(session, &pane_info.pane_id) {
-                continue;
-            }
-
             // Match by pane title (job slug) first, fall back to window name
             let job = if !pane_info.title.is_empty() {
                 match slug_to_job.get(pane_info.title.as_str()) {
@@ -124,6 +119,32 @@ pub fn reattach_running_jobs(
                 if let Some(JobStatus::Running { .. }) = status.get(&job.slug) {
                     continue;
                 }
+            }
+
+            // If the pane is idle (job finished while we were down), finalize the
+            // orphaned run record by capturing remaining output from the pane.
+            // Leave the pane alive so the user can still attach and inspect it.
+            if !tmux::is_pane_busy(session, &pane_info.pane_id) {
+                let h = history.lock().unwrap();
+                if let Ok(Some(record)) = h.get_unfinished_by_job(&job.slug) {
+                    let output = tmux::capture_pane_full(&pane_info.pane_id)
+                        .unwrap_or_default()
+                        .trim()
+                        .to_string();
+                    let finished_at = chrono::Utc::now().to_rfc3339();
+                    if let Err(e) = h.update_finished(&record.id, &finished_at, None, &output, "") {
+                        log::error!("Failed to finalize orphaned run {}: {}", record.id, e);
+                    } else {
+                        log::info!(
+                            "Finalized orphaned run '{}' for job '{}' ({} bytes captured)",
+                            record.id,
+                            job.name,
+                            output.len(),
+                        );
+                        super::monitor::save_log_file(&job.slug, &record.id, &output);
+                    }
+                }
+                continue;
             }
 
             // Clean up any previous incomplete reattach records for this job

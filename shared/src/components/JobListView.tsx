@@ -431,14 +431,14 @@ export function JobListView({
               jobName={item.job.name}
               status={status}
               onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
-              selected={selectedSlug === item.job.slug || selectedSlug === item.job.name}
+              selected={selectedSlug === item.job.slug}
             />
           ) : (
             <JobCard
               job={item.job}
               status={status}
               onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
-              selected={selectedSlug === item.job.slug || selectedSlug === item.job.name}
+              selected={selectedSlug === item.job.slug}
             />
           )}
         </View>

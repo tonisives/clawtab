@@ -30,7 +30,7 @@ function useWebDarkScrollbars() {
 function WebSocketProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Reset stores to clear any stale data from a previous account
-    useJobsStore.setState({ jobs: [], statuses: {}, detectedProcesses: [], loaded: false, cachedLoad: false });
+    useJobsStore.setState({ jobs: [], statuses: {}, detectedProcesses: [], loaded: false, cachedLoad: false, processesLoaded: false });
     useNotificationStore.getState().reset();
 
     loadCache().then((cached) => {

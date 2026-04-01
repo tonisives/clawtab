@@ -15,7 +15,7 @@ const isWeb = Platform.OS === "web";
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
-import { LogViewer } from "./LogViewer";
+import { ReadOnlyXterm } from "./ReadOnlyXterm";
 import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
@@ -128,36 +128,9 @@ export function JobDetailView({
   const settingsBtnRef = useRef<any>(null);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
-  // Scroll to bottom when new logs arrive
   const scrollRef = useRef<ScrollView>(null);
-  const webDivRef = useRef<HTMLElement | null>(null);
-  const prevLogsLen = useRef(0);
 
-  const webRefCb = useCallback((node: HTMLElement | null) => {
-    webDivRef.current = node;
-  }, []);
-
-  useEffect(() => {
-    if (!isRunning || outputCollapsed) return;
-    // Only scroll when content actually grows
-    if (logs.length <= prevLogsLen.current) {
-      prevLogsLen.current = logs.length;
-      return;
-    }
-    prevLogsLen.current = logs.length;
-
-    if (isWeb) {
-      const el = webDivRef.current as any;
-      if (!el) return;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight;
-        });
-      });
-    } else {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }
-  }, [logs, isRunning, outputCollapsed]);
+  const webRefCb = useCallback((_node: HTMLElement | null) => {}, []);
 
   // Clear run-pending spinner once the job actually starts (or timeout after 1s)
   useEffect(() => {
@@ -564,7 +537,7 @@ export function JobDetailView({
           {!outputCollapsed && (
             <>
               <View style={[styles.logsContainer, { height: logsHeight }]}>
-                <LogViewer content={logs} onColumnsChange={onLogColumnsChange} />
+                <ReadOnlyXterm content={logs} onColumnsChange={onLogColumnsChange} />
               </View>
               {isWeb && (
                 <div
@@ -645,21 +618,8 @@ export function JobDetailView({
         </View>
 
         <View style={{ flex: 1, minHeight: 0, position: "relative" as const, overflow: "hidden" as const }}>
-          {renderTerminal ? renderTerminal() : isWeb ? (
-            <div
-              ref={webRefCb as any}
-              style={{
-                flex: 1,
-                overflowY: "auto" as any,
-                minHeight: 0,
-              }}
-            >
-              <LogViewer content={logs} borderless onColumnsChange={onLogColumnsChange} />
-            </div>
-          ) : (
-            <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={{ flexGrow: 1 }}>
-              <LogViewer content={logs} borderless onColumnsChange={onLogColumnsChange} />
-            </ScrollView>
+          {renderTerminal ? renderTerminal() : (
+            <ReadOnlyXterm content={logs} borderless onColumnsChange={onLogColumnsChange} />
           )}
           {!renderTerminal && (
             <TouchableOpacity
@@ -1010,35 +970,9 @@ function LogZoomModal({
   currentState: string;
   onClose: () => void;
 }) {
-  const scrollRef = useRef<ScrollView>(null);
-  const zoomWebRef = useRef<HTMLElement | null>(null);
   const color = runStatusColor(run, currentState);
   const label = runStatusLabel(run, currentState);
   const duration = formatDuration(run.started_at, run.finished_at);
-
-  const zoomWebRefCb = useCallback((node: HTMLElement | null) => {
-    zoomWebRef.current = node;
-    if (node) {
-      requestAnimationFrame(() => {
-        (node as any).scrollTop = (node as any).scrollHeight;
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isWeb) {
-      const timer = setTimeout(() => {
-        scrollRef.current?.scrollToEnd({ animated: false });
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
-  const logInner = hasAnsi(logContent) ? (
-    <AnsiText content={logContent} style={styles.zoomLogText} selectable />
-  ) : (
-    <Text style={styles.zoomLogText} selectable>{logContent}</Text>
-  );
 
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
@@ -1054,23 +988,7 @@ function LogZoomModal({
             <Text style={styles.zoomCloseText}>{"\u2715"}</Text>
           </TouchableOpacity>
         </View>
-        {isWeb ? (
-          <div
-            ref={zoomWebRefCb as any}
-            style={{
-              flex: 1,
-              overflowY: "auto" as any,
-              padding: 16,
-              minHeight: 0,
-            }}
-          >
-            {logInner}
-          </div>
-        ) : (
-          <ScrollView ref={scrollRef} style={styles.zoomLogScroll} contentContainerStyle={styles.zoomLogContent}>
-            {logInner}
-          </ScrollView>
-        )}
+        <ReadOnlyXterm content={logContent} borderless />
       </SafeAreaView>
     </Modal>
   );
@@ -1097,53 +1015,6 @@ function LiveZoomModal({
   onToggleAutoYes?: () => void;
   onClose: () => void;
 }) {
-  const scrollRef = useRef<ScrollView>(null);
-  const liveWebRef = useRef<HTMLElement | null>(null);
-  const prevLen = useRef(0);
-
-  const liveWebRefCb = useCallback((node: HTMLElement | null) => {
-    liveWebRef.current = node;
-    if (node) {
-      requestAnimationFrame(() => {
-        (node as any).scrollTop = (node as any).scrollHeight;
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (logs.length <= prevLen.current) {
-      prevLen.current = logs.length;
-      return;
-    }
-    prevLen.current = logs.length;
-    if (isWeb) {
-      const el = liveWebRef.current as any;
-      if (!el) return;
-      requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight;
-      });
-    } else {
-      scrollRef.current?.scrollToEnd({ animated: true });
-    }
-  }, [logs]);
-
-  useEffect(() => {
-    if (!isWeb) {
-      const timer = setTimeout(() => {
-        scrollRef.current?.scrollToEnd({ animated: false });
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
-  const processed = isWeb ? collapseSeparators(logs) : truncateLogLines(collapseSeparators(logs), 120);
-
-  const logInner = hasAnsi(processed) ? (
-    <AnsiText content={processed} style={styles.zoomLogText} selectable />
-  ) : (
-    <Text style={styles.zoomLogText} selectable>{processed}</Text>
-  );
-
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.zoomModal}>
@@ -1155,23 +1026,7 @@ function LiveZoomModal({
             <Text style={styles.zoomCloseText}>{"\u2715"}</Text>
           </TouchableOpacity>
         </View>
-        {isWeb ? (
-          <div
-            ref={liveWebRefCb as any}
-            style={{
-              flex: 1,
-              overflowY: "auto" as any,
-              padding: 16,
-              minHeight: 0,
-            }}
-          >
-            {logInner}
-          </div>
-        ) : (
-          <ScrollView ref={scrollRef} style={styles.zoomLogScroll} contentContainerStyle={styles.zoomLogContent}>
-            {logInner}
-          </ScrollView>
-        )}
+        <ReadOnlyXterm content={logs} borderless />
         <QuestionContextBlock context={questionContext} />
         <OptionButtons options={options} onSend={onSend} onFreetextOption={onFreetextOption} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
         <MessageInput onSend={onSend} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />

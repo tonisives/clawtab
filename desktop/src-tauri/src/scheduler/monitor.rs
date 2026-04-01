@@ -404,7 +404,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     );
 }
 
-fn save_log_file(slug: &str, run_id: &str, content: &str) {
+pub(crate) fn save_log_file(slug: &str, run_id: &str, content: &str) {
     let dir = match crate::config::config_dir() {
         Some(d) => d.join("jobs").join(slug).join("logs"),
         None => return,

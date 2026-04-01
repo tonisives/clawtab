@@ -4,6 +4,10 @@ import { View, StyleSheet } from "react-native";
 export interface XtermLogHandle {
   /** Write base64-encoded terminal data */
   write(b64: string): void;
+  /** Write plain text (normalises \n to \r\n for xterm) */
+  writeText(text: string): void;
+  /** Reset terminal state */
+  clear(): void;
   /** Get current terminal dimensions */
   dimensions(): { cols: number; rows: number };
 }
@@ -86,6 +90,14 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         webViewRef.current?.injectJavaScript(
           `(function(){var b='${escaped}';var a=Uint8Array.from(atob(b),function(c){return c.charCodeAt(0)});term.write(a)})();true;`
         );
+      },
+      writeText(text: string) {
+        const normalised = text.replace(/\r?\n/g, "\r\n");
+        const escaped = normalised.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\r/g, "\\r").replace(/\n/g, "\\n");
+        webViewRef.current?.injectJavaScript(`term.write('${escaped}');true;`);
+      },
+      clear() {
+        webViewRef.current?.injectJavaScript(`term.reset();true;`);
       },
       dimensions() {
         return dimsRef.current;

@@ -147,19 +147,27 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : ""
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
   const termRef = useRef<XtermLogHandle | null>(null)
-  const { sendInput, sendResize } = usePty(statusPaneId, statusTmuxSession, termRef)
+  const { sendInput, sendResize, connecting: ptyConnecting } = usePty(statusPaneId, statusTmuxSession, termRef)
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo
 
   const renderTerminal = useCallback(
     () => (
-      <XtermLog
-        ref={termRef}
-        onData={sendInput}
-        onResize={sendResize}
-        interactive
-      />
+      <View style={{ flex: 1, minHeight: 0 }}>
+        {ptyConnecting && (
+          <View style={styles.ptyConnecting}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
+          </View>
+        )}
+        <XtermLog
+          ref={termRef}
+          onData={sendInput}
+          onResize={sendResize}
+          interactive
+        />
+      </View>
     ),
-    [sendInput, sendResize],
+    [sendInput, sendResize, ptyConnecting],
   )
 
   if (!job) {
@@ -241,5 +249,19 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     marginTop: 8,
+  },
+  ptyConnecting: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  ptyConnectingText: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
 })
