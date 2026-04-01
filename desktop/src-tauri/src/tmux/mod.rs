@@ -138,6 +138,21 @@ pub struct PaneInfo {
     pub pane_id: String,
     pub current_command: String,
     pub active: bool,
+    pub title: String,
+}
+
+/// Set the title of a tmux pane (used to tag panes with job slugs).
+pub fn set_pane_title(pane_id: &str, title: &str) -> Result<(), String> {
+    let output = Command::new("tmux")
+        .args(["select-pane", "-t", pane_id, "-T", title])
+        .output()
+        .map_err(|e| format!("Failed to set pane title: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
 }
 
 /// Split a window to create a new pane, returning the new pane ID (e.g. "%42").
@@ -314,7 +329,7 @@ pub fn list_session_panes(session: &str) -> Result<Vec<(String, PaneInfo)>, Stri
             session,
             "-s",
             "-F",
-            "#{window_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_active}",
+            "#{window_name}\t#{pane_id}\t#{pane_current_command}\t#{pane_active}\t#{pane_title}",
         ])
         .output()
         .map_err(|e| format!("Failed to list panes: {}", e))?;
@@ -327,7 +342,7 @@ pub fn list_session_panes(session: &str) -> Result<Vec<(String, PaneInfo)>, Stri
     Ok(String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter_map(|line| {
-            let parts: Vec<&str> = line.splitn(4, '\t').collect();
+            let parts: Vec<&str> = line.splitn(5, '\t').collect();
             if parts.len() >= 4 {
                 Some((
                     parts[0].to_string(),
@@ -335,6 +350,7 @@ pub fn list_session_panes(session: &str) -> Result<Vec<(String, PaneInfo)>, Stri
                         pane_id: parts[1].to_string(),
                         current_command: parts[2].to_string(),
                         active: parts[3] == "1",
+                        title: parts.get(4).unwrap_or(&"").to_string(),
                     },
                 ))
             } else {

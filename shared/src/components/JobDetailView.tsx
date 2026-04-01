@@ -122,8 +122,10 @@ export function JobDetailView({
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [showDuplicateMenu, setShowDuplicateMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const dupMenuRef = useRef<View>(null);
   const settingsMenuRef = useRef<View>(null);
+  const settingsBtnRef = useRef<any>(null);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
   // Scroll to bottom when new logs arrive
@@ -364,14 +366,31 @@ export function JobDetailView({
           {(onEdit || onDuplicate || onDelete || (onToggleEnabled && !isManual)) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
+                ref={settingsBtnRef}
                 style={styles.moreBtn}
-                onPress={() => setShowSettingsMenu((v) => !v)}
+                onPress={(e: any) => {
+                  if (isWeb) {
+                    const node = e?.currentTarget ?? e?.target;
+                    if (node?.getBoundingClientRect) {
+                      const rect = node.getBoundingClientRect();
+                      setMenuPos({ top: rect.bottom + 4, left: rect.right });
+                    }
+                  }
+                  setShowSettingsMenu((v) => !v);
+                }}
                 activeOpacity={0.6}
               >
                 <Text style={styles.moreBtnText}>{"\u2026"}</Text>
               </TouchableOpacity>
               {showSettingsMenu && (
-                <View style={styles.dropdownMenu}>
+                <View style={isWeb && menuPos ? {
+                  ...StyleSheet.flatten(styles.dropdownMenu),
+                  position: "fixed" as any,
+                  top: menuPos.top,
+                  left: menuPos.left,
+                  right: undefined,
+                  transform: "translateX(-100%)" as any,
+                } : styles.dropdownMenu}>
                   {onEdit && (
                     <TouchableOpacity
                       style={styles.dropdownItem}
@@ -419,7 +438,7 @@ export function JobDetailView({
           )}
           {/* Duplicate sub-menu (shown after selecting Duplicate from settings menu) */}
           {showDuplicateMenu && onDuplicate && (
-            <View ref={dupMenuRef} style={{ position: "absolute", right: 0, top: "100%", zIndex: 9999 }}>
+            <View ref={dupMenuRef} style={isWeb && menuPos ? { position: "fixed" as any, top: menuPos.top, left: menuPos.left, transform: "translateX(-100%)" as any, zIndex: 9999 } : { position: "absolute", right: 0, top: "100%", zIndex: 9999 }}>
               <View style={styles.dropdownMenu}>
                 {groups && groups.map((g) => (
                   <TouchableOpacity
@@ -625,7 +644,7 @@ export function JobDetailView({
           {detailInner}
         </View>
 
-        <View style={{ flex: 1, minHeight: 0, position: "relative" as const }}>
+        <View style={{ flex: 1, minHeight: 0, position: "relative" as const, overflow: "hidden" as const }}>
           {renderTerminal ? renderTerminal() : isWeb ? (
             <div
               ref={webRefCb as any}

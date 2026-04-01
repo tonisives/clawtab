@@ -453,6 +453,11 @@ async fn execute_claude_job(
         tmux::get_window_pane_id(&tmux_session, &window_name)?
     };
 
+    // Tag pane with job slug so reattach can identify it
+    if let Err(e) = tmux::set_pane_title(&pane_id, &job.slug) {
+        log::warn!("Failed to set pane title for '{}': {}", job.slug, e);
+    }
+
     // Move to aerospace workspace if configured
     if let Some(ref workspace) = job.aerospace_workspace {
         if crate::aerospace::is_available() {
@@ -592,6 +597,11 @@ async fn execute_folder_job(
         tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
         tmux::get_window_pane_id(&tmux_session, &window_name)?
     };
+
+    // Tag pane with job slug so reattach can identify it
+    if let Err(e) = tmux::set_pane_title(&pane_id, &job.slug) {
+        log::warn!("Failed to set pane title for '{}': {}", job.slug, e);
+    }
 
     // Move to aerospace workspace if configured
     if let Some(ref workspace) = job.aerospace_workspace {

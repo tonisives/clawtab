@@ -84,6 +84,17 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
 
       if (cancelled) { t.dispose(); return; }
 
+      // Handle resize
+      observer = new ResizeObserver(() => {
+        fit.fit();
+        invoke("pty_resize", {
+          paneId,
+          cols: t.cols,
+          rows: t.rows,
+        }).catch(() => {});
+      });
+      observer.observe(el);
+
       const cols = t.cols;
       const rows = t.rows;
 
@@ -112,17 +123,6 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         const encoded = btoa(data);
         invoke("pty_write", { paneId, data: encoded }).catch(() => {});
       });
-
-      // Handle resize
-      observer = new ResizeObserver(() => {
-        fit.fit();
-        invoke("pty_resize", {
-          paneId,
-          cols: t.cols,
-          rows: t.rows,
-        }).catch(() => {});
-      });
-      observer.observe(el);
     }
 
     setup().catch((err) => {

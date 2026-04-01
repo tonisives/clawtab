@@ -85,28 +85,14 @@ pub fn resolve_session_info(pane_pid: &str) -> SessionInfo {
         .join(&project_dir);
     let jsonl_path = project_path.join(format!("{}.jsonl", session.session_id));
 
-    // If exact JSONL not found (e.g. resumed session), use most recently modified JSONL
-    let jsonl_path = if jsonl_path.exists() {
-        jsonl_path
-    } else {
-        find_latest_jsonl(&project_path).unwrap_or(jsonl_path)
-    };
+    // Only use the exact JSONL for this session; don't fall back to other sessions
+    // in the same project dir as that returns wrong queries.
 
     let (first, last) = read_user_messages(&jsonl_path);
     info.first_query = first;
     info.last_query = last;
 
     info
-}
-
-/// Find the most recently modified JSONL file in a project directory.
-fn find_latest_jsonl(dir: &PathBuf) -> Option<PathBuf> {
-    let entries = fs::read_dir(dir).ok()?;
-    entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("jsonl"))
-        .max_by_key(|e| e.metadata().ok().and_then(|m| m.modified().ok()))
-        .map(|e| e.path())
 }
 
 /// Check if a session file exists for this PID.

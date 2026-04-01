@@ -58,7 +58,13 @@ pub fn reattach_running_jobs(
     sessions.sort();
     sessions.dedup();
 
-    // Build a map: window_name -> Vec<&Job> for matching
+    // Build slug -> job map for title-based matching
+    let slug_to_job: HashMap<&str, &Job> = tmux_jobs
+        .iter()
+        .map(|j| (j.slug.as_str(), *j))
+        .collect();
+
+    // Build window_name -> jobs map as fallback for panes without titles
     let mut window_to_jobs: HashMap<String, Vec<&Job>> = HashMap::new();
     for job in &tmux_jobs {
         let window_name = project_window_name(job);
@@ -94,18 +100,22 @@ pub fn reattach_running_jobs(
                 continue;
             }
 
-            // Find matching jobs for this window
-            let matching_jobs = match window_to_jobs.get(window_name) {
-                Some(jobs) => jobs,
-                None => continue,
-            };
-
-            // Pick the first enabled job that matches this window.
-            // If multiple jobs share a window, we can't perfectly distinguish,
-            // but reattaching to one is better than losing all of them.
-            let job = match matching_jobs.iter().find(|j| j.enabled) {
-                Some(j) => *j,
-                None => continue,
+            // Match by pane title (job slug) first, fall back to window name
+            let job = if !pane_info.title.is_empty() {
+                match slug_to_job.get(pane_info.title.as_str()) {
+                    Some(j) if j.enabled => *j,
+                    _ => continue,
+                }
+            } else {
+                // Fallback for panes launched before title tagging
+                let matching_jobs = match window_to_jobs.get(window_name) {
+                    Some(jobs) => jobs,
+                    None => continue,
+                };
+                match matching_jobs.iter().find(|j| j.enabled) {
+                    Some(j) => *j,
+                    None => continue,
+                }
             };
 
             // Check if this job already has a status (avoid double-attach)
