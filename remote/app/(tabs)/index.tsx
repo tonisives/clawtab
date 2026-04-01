@@ -26,6 +26,38 @@ import { spacing } from "@clawtab/shared"
 import type { RemoteJob, JobSortMode } from "@clawtab/shared"
 import type { ClaudeProcess } from "@clawtab/shared"
 
+// Capture URL params before expo-router rewrites them on init
+const _initParams = Platform.OS === "web"
+  ? new URLSearchParams(window.location.search)
+  : null
+
+/** Read initial selection: URL param (works for pasted URLs) or sessionStorage (survives refresh) */
+function readSelection(key: "job" | "process"): string | null {
+  if (Platform.OS !== "web") return null
+  return _initParams?.get(key) ?? sessionStorage.getItem(`sel_${key}`)
+}
+
+/** Persist selection to sessionStorage and sync URL ?params */
+function setSelection(key: "job" | "process", value: string | null) {
+  if (Platform.OS !== "web") return
+  const other = key === "job" ? "process" : "job"
+  if (value) sessionStorage.setItem(`sel_${key}`, value)
+  else sessionStorage.removeItem(`sel_${key}`)
+  sessionStorage.removeItem(`sel_${other}`)
+  syncUrlParams()
+}
+
+function syncUrlParams() {
+  const job = sessionStorage.getItem("sel_job")
+  const process = sessionStorage.getItem("sel_process")
+  const url = new URL(window.location.href)
+  if (job) url.searchParams.set("job", job)
+  else url.searchParams.delete("job")
+  if (process) url.searchParams.set("process", process)
+  else url.searchParams.delete("process")
+  window.history.replaceState(window.history.state, "", url.toString())
+}
+
 export default function JobsScreen() {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
@@ -35,18 +67,8 @@ export default function JobsScreen() {
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
-  const [selectedJob, setSelectedJob] = useState<string | null>(() => {
-    if (Platform.OS === "web") {
-      return sessionStorage.getItem("selectedJob") ?? null
-    }
-    return null
-  })
-  const [selectedProcess, setSelectedProcess] = useState<string | null>(() => {
-    if (Platform.OS === "web") {
-      return sessionStorage.getItem("selectedProcess") ?? null
-    }
-    return null
-  })
+  const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
+  const [selectedProcess, setSelectedProcess] = useState<string | null>(() => readSelection("process"))
   const { isWide } = useResponsive()
   const router = useRouter()
 
@@ -92,10 +114,7 @@ export default function JobsScreen() {
     if (isWide) {
       setSelectedJob(job.slug)
       setSelectedProcess(null)
-      if (Platform.OS === "web") {
-        sessionStorage.setItem("selectedJob", job.slug)
-        sessionStorage.removeItem("selectedProcess")
-      }
+      setSelection("job", job.slug)
     } else {
       router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
     }
@@ -105,14 +124,20 @@ export default function JobsScreen() {
     if (isWide) {
       setSelectedProcess(process.pane_id)
       setSelectedJob(null)
-      if (Platform.OS === "web") {
-        sessionStorage.setItem("selectedProcess", process.pane_id)
-        sessionStorage.removeItem("selectedJob")
-      }
+      setSelection("process", process.pane_id)
     } else {
       router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
     }
   }, [router, isWide])
+
+  // Restore URL ?params after expo-router finishes its initial URL rewrite
+  useEffect(() => {
+    if (Platform.OS !== "web") return
+    if (!selectedJob && !selectedProcess) return
+    // Delay to run after expo-router's init replaceState
+    const t = setTimeout(syncUrlParams, 0)
+    return () => clearTimeout(t)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const processesLoaded = useJobsStore((s) => s.processesLoaded)
 
@@ -123,9 +148,7 @@ export default function JobsScreen() {
     if (!processesLoaded) return
     if (selectedProcess && !detectedProcesses.find((p) => p.pane_id === selectedProcess)) {
       setSelectedProcess(null)
-      if (Platform.OS === "web") {
-        sessionStorage.removeItem("selectedProcess")
-      }
+      setSelection("process", null)
     }
   }, [detectedProcesses, selectedProcess, processesLoaded])
 
@@ -255,7 +278,7 @@ export default function JobsScreen() {
             isDemo={isDemo}
             onClose={() => {
               setSelectedJob(null)
-              if (Platform.OS === "web") sessionStorage.removeItem("selectedJob")
+              setSelection("job", null)
             }}
           />
         ) : selectedProcess ? (
@@ -264,7 +287,7 @@ export default function JobsScreen() {
             paneId={selectedProcess}
             onClose={() => {
               setSelectedProcess(null)
-              if (Platform.OS === "web") sessionStorage.removeItem("selectedProcess")
+              setSelection("process", null)
             }}
           />
         ) : (
