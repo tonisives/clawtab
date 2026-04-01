@@ -89,25 +89,7 @@ impl PtyManager {
             "-x", &w.to_string(), "-y", &h.to_string(),
         ]);
 
-        // Give the app inside the pane a moment to redraw at the new size
-        thread::sleep(std::time::Duration::from_millis(150));
-
-        // Capture scrollback at the new dimensions
-        let initial = Command::new("tmux")
-            .args([
-                "capture-pane", "-p", "-e", "-S", "-",
-                "-t", &pane_id_owned,
-            ])
-            .output()
-            .map_err(|e| format!("capture-pane: {}", e))?;
-
-        if initial.status.success() && !initial.stdout.is_empty() {
-            let encoded =
-                base64::engine::general_purpose::STANDARD.encode(&initial.stdout);
-            let _ = app_handle.emit(&format!("pty-output-{}", event_key), encoded);
-        }
-
-        // Stream live output via pipe-pane -> temp file -> reader thread
+        // Start pipe-pane FIRST so we capture the full redraw
         let pipe_path = format!("/tmp/clawtab-pipe-{}", event_key);
         let _ = std::fs::remove_file(&pipe_path);
 
@@ -115,6 +97,12 @@ impl PtyManager {
             "pipe-pane", "-t", &pane_id_owned,
             &format!("cat >> {}", pipe_path),
         ])?;
+
+        // Give the app a moment to redraw at the new size, then force a
+        // screen refresh so the full content flows through pipe-pane into
+        // xterm.js as a single clean stream (no capture-pane overlap).
+        thread::sleep(std::time::Duration::from_millis(200));
+        let _ = tmux(&["send-keys", "-t", &pane_id_owned, "C-l"]);
 
         let pipe_event_key = event_key.clone();
         let pipe_path_clone = pipe_path.clone();
