@@ -640,7 +640,7 @@ export function JobDetailView({
           </View>
         ) : null}
 
-        <View style={styles.content}>
+        <View style={[styles.content, renderTerminal && { padding: spacing.sm, gap: spacing.sm }]}>
           {detailInner}
         </View>
 

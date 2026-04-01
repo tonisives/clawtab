@@ -43,23 +43,24 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         fontSize: 12,
         fontFamily: "monospace",
         theme: {
-          background: "#1a1a2e",
-          foreground: "#e0e0e0",
-          cursor: "#e0e0e0",
-          cursorAccent: "#1a1a2e",
-          selectionBackground: "rgba(255, 255, 255, 0.2)",
-          black: "#1a1a2e",
-          red: "#ff6b6b",
-          green: "#51cf66",
-          yellow: "#ffd43b",
-          blue: "#74c0fc",
+          background: "#1c1c1e",
+          foreground: "#e4e4e4",
+          cursor: "#7986cb",
+          cursorAccent: "#0a0a0a",
+          selectionBackground: "rgba(121, 134, 203, 0.3)",
+          selectionForeground: "#e4e4e4",
+          black: "#161616",
+          red: "#ff453a",
+          green: "#32d74b",
+          yellow: "#ff9f0a",
+          blue: "#7986cb",
           magenta: "#da77f2",
           cyan: "#66d9e8",
-          white: "#e0e0e0",
+          white: "#e4e4e4",
           brightBlack: "#555",
-          brightRed: "#ff8787",
-          brightGreen: "#69db7c",
-          brightYellow: "#ffe066",
+          brightRed: "#ff6b6b",
+          brightGreen: "#51cf66",
+          brightYellow: "#ffd43b",
           brightBlue: "#91d5ff",
           brightMagenta: "#e599f7",
           brightCyan: "#99e9f2",
@@ -84,14 +85,22 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
 
       if (cancelled) { t.dispose(); return; }
 
-      // Resize the tmux pane when the container changes size
+      // Resize the tmux pane when the container changes size.
+      // Track previous dimensions to avoid spurious resizes (e.g. from
+      // text selection toggling a scrollbar).
+      let prevCols = t.cols;
+      let prevRows = t.rows;
       observer = new ResizeObserver(() => {
         fit.fit();
-        invoke("pty_resize", {
-          paneId,
-          cols: t.cols,
-          rows: t.rows,
-        }).catch(() => {});
+        if (t.cols !== prevCols || t.rows !== prevRows) {
+          prevCols = t.cols;
+          prevRows = t.rows;
+          invoke("pty_resize", {
+            paneId,
+            cols: t.cols,
+            rows: t.rows,
+          }).catch(() => {});
+        }
       });
       observer.observe(el);
 
