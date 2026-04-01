@@ -6,6 +6,7 @@ import type { AppSettings, Job } from "../types";
 import { EDITOR_LABELS } from "../constants";
 import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { XtermPane } from "./XtermPane";
 import { describeCron } from "./CronInput";
 import type { Transport } from "@clawtab/shared";
 
@@ -410,6 +411,17 @@ export function DesktopJobDetail({
     [job, ready],
   );
 
+  // Extract pane info for interactive terminal when job is running
+  const paneId = status.state === "running" ? status.pane_id : undefined;
+  const tmuxSession = status.state === "running" ? status.tmux_session : undefined;
+
+  const renderTerminal = useCallback(
+    () => paneId && tmuxSession ? (
+      <XtermPane paneId={paneId} tmuxSession={tmuxSession} />
+    ) : null,
+    [paneId, tmuxSession],
+  );
+
   return (
     <>
       <JobDetailView
@@ -439,6 +451,8 @@ export function DesktopJobDetail({
         containerStyle={desktopContainerStyle}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
+        renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
+        hideMessageInput={!!(paneId && tmuxSession)}
       />
       {showConfirm && (
         <ConfirmDialog

@@ -3,8 +3,10 @@ import { View, Text, StyleSheet, ActivityIndicator } from "react-native"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, StatusBadge, findYesOption, colors, spacing } from "@clawtab/shared"
+import { JobDetailView, StatusBadge, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
+import type { XtermLogHandle } from "@clawtab/shared"
 import { getWsSend, nextId } from "../hooks/useWebSocket"
+import { usePty } from "../hooks/usePty"
 import { registerRequest } from "../lib/useRequestMap"
 import { confirm } from "../lib/platform"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
@@ -177,6 +179,23 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
 
   const transport = useMemo(() => createProcessTransport(paneId), [paneId])
 
+  // PTY streaming terminal
+  const termRef = useRef<XtermLogHandle | null>(null)
+  const tmuxSession = activeProcess?.tmux_session ?? ""
+  const { sendInput, sendResize } = usePty(paneId, tmuxSession, termRef)
+
+  const renderTerminal = useCallback(
+    () => (
+      <XtermLog
+        ref={termRef}
+        onData={sendInput}
+        onResize={sendResize}
+        interactive
+      />
+    ),
+    [sendInput, sendResize],
+  )
+
   const isAlive = !!process
   const waitingForData = !process && !questions.some((q) => q.pane_id === paneId) && (!connected || !desktopOnline || !loaded)
 
@@ -236,6 +255,8 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
         onToggleAutoYes={paneQuestion ? handleToggleAutoYes : undefined}
         firstQuery={activeProcess?.first_query ?? undefined}
         lastQuery={activeProcess?.last_query ?? undefined}
+        renderTerminal={isAlive ? renderTerminal : undefined}
+        hideMessageInput={isAlive}
       />
     </View>
   )

@@ -222,6 +222,7 @@ pub fn relay_connect(app: tauri::AppHandle, state: State<AppState>) -> Result<()
     let settings = Arc::clone(&state.settings);
     let active_agents = Arc::clone(&state.active_agents);
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
+    let pty_manager = Arc::clone(&state.pty_manager);
 
     tauri::async_runtime::spawn(async move {
         crate::relay::connect_loop(
@@ -237,6 +238,7 @@ pub fn relay_connect(app: tauri::AppHandle, state: State<AppState>) -> Result<()
             settings,
             active_agents,
             auto_yes_panes,
+            pty_manager,
             app,
         )
         .await;

@@ -1,3 +1,4 @@
+use base64::Engine;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -14,6 +15,8 @@ use crate::history::HistoryStore;
 use crate::secrets::SecretsManager;
 use crate::telegram::ActiveAgent;
 
+use crate::pty::{OutputSink, SharedPtyManager};
+
 use super::{job_to_remote, status_to_remote, RelayHandle};
 
 /// Handle a message received from the relay server (forwarded from a mobile client).
@@ -28,6 +31,7 @@ pub async fn handle_incoming(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
+    pty_manager: &SharedPtyManager,
     app_handle: &tauri::AppHandle,
 ) -> Option<String> {
     let msg: ClientMessage = match serde_json::from_str(text) {
@@ -244,6 +248,50 @@ pub async fn handle_incoming(
                     handle.send_message(&msg);
                 }
             }
+            None
+        }
+
+        ClientMessage::SubscribePty { id, pane_id, tmux_session, cols, rows } => {
+            let relay_for_pty = Arc::clone(relay);
+            let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
+            let result = pty_manager.lock().unwrap().spawn(
+                &pane_id, &tmux_session, cols as u16, rows as u16,
+                OutputSink::Channel(tx),
+            );
+            if result.is_ok() {
+                // Spawn a thread that reads PTY output from the channel and
+                // forwards it to the relay as PtyOutput messages
+                let pane_id_clone = pane_id.clone();
+                std::thread::spawn(move || {
+                    while let Ok((pid, data)) = rx.recv() {
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
+                        let msg = DesktopMessage::PtyOutput { pane_id: pid, data: encoded };
+                        if let Ok(guard) = relay_for_pty.lock() {
+                            if let Some(handle) = guard.as_ref() {
+                                handle.send_message(&msg);
+                            }
+                        }
+                    }
+                    log::debug!("PTY relay forwarder exited for {}", pane_id_clone);
+                });
+            }
+            Some(DesktopMessage::SubscribePtyAck { id, success: result.is_ok() })
+        }
+
+        ClientMessage::UnsubscribePty { pane_id } => {
+            let _ = pty_manager.lock().unwrap().destroy(&pane_id);
+            None
+        }
+
+        ClientMessage::PtyInput { pane_id, data } => {
+            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) {
+                let _ = pty_manager.lock().unwrap().write(&pane_id, &bytes);
+            }
+            None
+        }
+
+        ClientMessage::PtyResize { pane_id, cols, rows } => {
+            let _ = pty_manager.lock().unwrap().resize(&pane_id, cols as u16, rows as u16);
             None
         }
 

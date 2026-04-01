@@ -823,7 +823,11 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::RegisterPushToken { id, .. }
         | ClientMessage::AnswerQuestion { id, .. }
         | ClientMessage::SetAutoYesPanes { id, .. }
-        | ClientMessage::GetNotificationHistory { id, .. } => Some(id.clone()),
-        ClientMessage::UnsubscribeLogs { .. } => None,
+        | ClientMessage::GetNotificationHistory { id, .. }
+        | ClientMessage::SubscribePty { id, .. } => Some(id.clone()),
+        ClientMessage::UnsubscribeLogs { .. }
+        | ClientMessage::UnsubscribePty { .. }
+        | ClientMessage::PtyInput { .. }
+        | ClientMessage::PtyResize { .. } => None,
     }
 }

@@ -7,6 +7,7 @@ import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
 import { getPushToken } from "../lib/notifications";
 import { dispatchLogChunk } from "./useLogs";
+import { dispatchPtyOutput, dispatchPtyExit } from "./usePty";
 import { dispatchTransportLogChunk } from "../transport/wsTransport";
 import { resolveRequest } from "../lib/useRequestMap";
 import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
@@ -132,6 +133,12 @@ export function useWebSocket() {
           break;
         case "auto_yes_panes":
           useNotificationStore.getState().setAutoYesPanes((msg as { pane_ids?: string[] }).pane_ids ?? []);
+          break;
+        case "pty_output":
+          dispatchPtyOutput((msg as any).pane_id, (msg as any).data);
+          break;
+        case "pty_exit":
+          dispatchPtyExit((msg as any).pane_id);
           break;
         case "notification_history":
           // Ignored - desktop sends authoritative claude_questions

@@ -16,7 +16,7 @@ pub fn pty_spawn(
         .pty_manager
         .lock()
         .unwrap()
-        .spawn(&pane_id, &tmux_session, cols, rows, app)
+        .spawn(&pane_id, &tmux_session, cols, rows, crate::pty::OutputSink::Tauri(app))
 }
 
 #[tauri::command]
@@ -39,6 +39,11 @@ pub fn pty_resize(
         .lock()
         .unwrap()
         .resize(&pane_id, cols, rows)
+}
+
+#[tauri::command]
+pub fn pty_restore_size(state: State<AppState>, pane_id: String) -> Result<(), String> {
+    state.pty_manager.lock().unwrap().restore_size(&pane_id)
 }
 
 #[tauri::command]

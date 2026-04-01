@@ -13,6 +13,7 @@ use clawtab_protocol::{DesktopMessage, JobStatus as RemoteJobStatus, RemoteJob};
 use crate::config::jobs::{Job, JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
+use crate::pty::SharedPtyManager;
 use crate::secrets::SecretsManager;
 use crate::telegram::ActiveAgent;
 
@@ -206,6 +207,7 @@ pub async fn connect_loop(
     settings: Arc<Mutex<AppSettings>>,
     active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     auto_yes_panes: Arc<Mutex<std::collections::HashSet<String>>>,
+    pty_manager: SharedPtyManager,
     app_handle: tauri::AppHandle,
 ) {
     let mut backoff = Duration::from_secs(1);
@@ -288,6 +290,7 @@ pub async fn connect_loop(
                     &settings,
                     &active_agents,
                     &auto_yes_panes,
+                    &pty_manager,
                     &app_handle,
                 )
                 .await;
@@ -334,6 +337,7 @@ async fn run_session<S, R>(
     settings: &Arc<Mutex<AppSettings>>,
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
+    pty_manager: &SharedPtyManager,
     app_handle: &tauri::AppHandle,
 ) where
     S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
@@ -363,6 +367,7 @@ async fn run_session<S, R>(
                             active_agents,
                             relay,
                             auto_yes_panes,
+                            pty_manager,
                             app_handle,
                         ).await;
                         if let Some(json) = response {

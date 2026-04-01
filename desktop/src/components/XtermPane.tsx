@@ -1,9 +1,10 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
 // Tauri event names can't contain %, so sanitize pane IDs
@@ -27,10 +28,13 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
     let cancelled = false;
     let outputUnlisten: UnlistenFn | null = null;
     let exitUnlisten: UnlistenFn | null = null;
+    let dropUnlisten: UnlistenFn | null = null;
     let dataDisposable: { dispose(): void } | null = null;
     let observer: ResizeObserver | null = null;
     let term: Terminal | null = null;
     let spawned = false;
+    let blurHandler: (() => void) | null = null;
+    let focusHandler: (() => void) | null = null;
 
     const key = eventKey(paneId);
 
@@ -132,6 +136,34 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         const encoded = btoa(data);
         invoke("pty_write", { paneId, data: encoded }).catch(() => {});
       });
+
+      // When the clawtab window loses focus, restore the tmux window to
+      // automatic sizing so the real terminal (Alacritty) reclaims its full
+      // dimensions.  When focus returns, re-apply clawtab's viewport size.
+      blurHandler = () => {
+        invoke("pty_restore_size", { paneId }).catch(() => {});
+      };
+      focusHandler = () => {
+        if (t.cols > 0 && t.rows > 0) {
+          invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(() => {});
+        }
+      };
+      window.addEventListener("blur", blurHandler);
+      window.addEventListener("focus", focusHandler);
+
+      // Handle file drag-and-drop via Tauri's native API
+      dropUnlisten = await getCurrentWebview().onDragDropEvent((event) => {
+        const p = event.payload;
+        if (p.type !== "drop" || p.paths.length === 0) return;
+        const rect = el.getBoundingClientRect();
+        const { x, y } = p.position;
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return;
+        const text = p.paths
+          .map((fp: string) => `'${fp.replace(/'/g, "'\\''")}'`)
+          .join(" ");
+        const encoded = btoa(text);
+        invoke("pty_write", { paneId, data: encoded }).catch(() => {});
+      });
     }
 
     setup().catch((err) => {
@@ -144,6 +176,9 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
       dataDisposable?.dispose();
       outputUnlisten?.();
       exitUnlisten?.();
+      dropUnlisten?.();
+      if (blurHandler) window.removeEventListener("blur", blurHandler);
+      if (focusHandler) window.removeEventListener("focus", focusHandler);
       term?.dispose();
       if (spawned) {
         invoke("pty_destroy", { paneId }).catch(() => {});
@@ -151,32 +186,9 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
     };
   }, [paneId, tmuxSession]);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      const files = Array.from(e.dataTransfer.files);
-      const paths = files
-        .map((f) => (f as unknown as { path?: string }).path)
-        .filter(Boolean);
-      if (paths.length > 0) {
-        const text = paths
-          .map((p) => `'${p!.replace(/'/g, "'\\''")}'`)
-          .join(" ");
-        const encoded = btoa(text);
-        invoke("pty_write", { paneId, data: encoded }).catch(() => {});
-      }
-    },
-    [paneId],
-  );
-
   return (
     <div
       ref={containerRef}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      onDrop={handleDrop}
       style={{
         flex: 1,
         minHeight: 0,

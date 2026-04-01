@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native"
 import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
-import { JobDetailView, findYesOption, StatusBadge } from "@clawtab/shared"
+import { JobDetailView, findYesOption, StatusBadge, XtermLog } from "@clawtab/shared"
+import type { XtermLogHandle } from "@clawtab/shared"
 import { useLogs } from "../hooks/useLogs"
+import { usePty } from "../hooks/usePty"
 import { createWsTransport } from "../transport/wsTransport"
 import { getWsSend, nextId } from "../hooks/useWebSocket"
 import { registerRequest } from "../lib/useRequestMap"
@@ -141,6 +143,25 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
 
   const loaded = useJobsStore((s) => s.loaded)
 
+  // PTY streaming for running jobs
+  const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : ""
+  const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
+  const termRef = useRef<XtermLogHandle | null>(null)
+  const { sendInput, sendResize } = usePty(statusPaneId, statusTmuxSession, termRef)
+  const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo
+
+  const renderTerminal = useCallback(
+    () => (
+      <XtermLog
+        ref={termRef}
+        onData={sendInput}
+        onResize={sendResize}
+        interactive
+      />
+    ),
+    [sendInput, sendResize],
+  )
+
   if (!job) {
     const waiting = !loaded || !connected
     return (
@@ -179,6 +200,8 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
         questionContext={isDemo ? undefined : jobQuestion?.context_lines}
         autoYesActive={isDemo ? false : autoYesActive}
         onToggleAutoYes={isDemo ? undefined : (jobQuestion ? handleToggleAutoYes : undefined)}
+        renderTerminal={isRunningWithPty ? renderTerminal : undefined}
+        hideMessageInput={isRunningWithPty}
       />
     </View>
   )

@@ -113,6 +113,29 @@ pub enum ClientMessage {
         id: String,
         limit: u32,
     },
+    /// Subscribe to real-time PTY output for a tmux pane (xterm.js streaming)
+    SubscribePty {
+        id: String,
+        pane_id: String,
+        tmux_session: String,
+        cols: u32,
+        rows: u32,
+    },
+    /// Stop PTY streaming for a pane
+    UnsubscribePty {
+        pane_id: String,
+    },
+    /// Send keyboard input to a PTY-subscribed pane (base64-encoded)
+    PtyInput {
+        pane_id: String,
+        data: String,
+    },
+    /// Resize a PTY-subscribed pane
+    PtyResize {
+        pane_id: String,
+        cols: u32,
+        rows: u32,
+    },
 }
 
 /// Messages sent by the desktop app to the relay server.
@@ -241,6 +264,20 @@ pub enum DesktopMessage {
     /// Desktop pushes which pane_ids have auto-yes enabled (synced to mobile)
     AutoYesPanes {
         pane_ids: Vec<String>,
+    },
+    /// Ack for subscribe_pty
+    SubscribePtyAck {
+        id: String,
+        success: bool,
+    },
+    /// Real-time PTY output (base64-encoded raw terminal bytes)
+    PtyOutput {
+        pane_id: String,
+        data: String,
+    },
+    /// PTY session ended
+    PtyExit {
+        pane_id: String,
     },
 }
 

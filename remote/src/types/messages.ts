@@ -30,7 +30,11 @@ export type ClientMessage =
   | { type: "register_push_token"; id: string; push_token: string; platform: string }
   | { type: "answer_question"; id: string; question_id: string; pane_id: string; answer: string; freetext?: string }
   | { type: "set_auto_yes_panes"; id: string; pane_ids: string[] }
-  | { type: "get_notification_history"; id: string; limit: number };
+  | { type: "get_notification_history"; id: string; limit: number }
+  | { type: "subscribe_pty"; id: string; pane_id: string; tmux_session: string; cols: number; rows: number }
+  | { type: "unsubscribe_pty"; pane_id: string }
+  | { type: "pty_input"; pane_id: string; data: string }
+  | { type: "pty_resize"; pane_id: string; cols: number; rows: number };
 
 // Messages received from the relay (desktop responses forwarded through)
 export type DesktopMessage =
@@ -64,7 +68,10 @@ export type DesktopMessage =
   | { type: "claude_questions"; questions: ClaudeQuestion[] }
   | { type: "auto_yes_panes"; pane_ids: string[] }
   | { type: "notification_history"; id: string; notifications: NotificationHistoryItem[] }
-  | { type: "register_push_token_ack"; id: string; success: boolean };
+  | { type: "register_push_token_ack"; id: string; success: boolean }
+  | { type: "subscribe_pty_ack"; id: string; success: boolean }
+  | { type: "pty_output"; pane_id: string; data: string }
+  | { type: "pty_exit"; pane_id: string };
 
 // Messages from the relay server itself
 export type ServerMessage =

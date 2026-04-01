@@ -375,6 +375,7 @@ pub fn run() {
     let history_for_relay = Arc::clone(&history);
     let active_agents_for_relay = Arc::clone(&active_agents);
     let auto_yes_for_relay = Arc::clone(&auto_yes_panes);
+    let pty_manager_for_relay = Arc::clone(&pty_manager);
 
     // Clones for question detection loop
     let jobs_for_questions = Arc::clone(&jobs_config);
@@ -512,6 +513,7 @@ pub fn run() {
             commands::pty::pty_spawn,
             commands::pty::pty_write,
             commands::pty::pty_resize,
+            commands::pty::pty_restore_size,
             commands::pty::pty_destroy,
         ])
         .setup(move |app| {
@@ -702,6 +704,7 @@ pub fn run() {
                                 settings_for_relay,
                                 active_agents_for_relay,
                                 auto_yes_for_relay,
+                                pty_manager_for_relay,
                                 app_handle_for_relay,
                             )
                             .await;

@@ -47,6 +47,8 @@ export { AutoYesBanner } from "./components/AutoYesBanner";
 export type { AutoYesEntry } from "./components/AutoYesBanner";
 export { JobListView } from "./components/JobListView";
 export { JobDetailView } from "./components/JobDetailView";
+export { XtermLog } from "./components/XtermLog";
+export type { XtermLogHandle } from "./components/XtermLog";
 export { ShareSection } from "./components/ShareSection";
 export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
 

@@ -18,6 +18,14 @@ struct PaneViewer {
     stop: Arc<Mutex<bool>>,
 }
 
+/// Where PTY output bytes should be sent.
+pub enum OutputSink {
+    /// Emit as Tauri event (local desktop xterm.js)
+    Tauri(AppHandle),
+    /// Send via channel (relay forwarding to remote clients)
+    Channel(std::sync::mpsc::Sender<(String, Vec<u8>)>),
+}
+
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
 }
@@ -47,7 +55,7 @@ impl PtyManager {
         _tmux_session: &str,
         cols: u16,
         rows: u16,
-        app_handle: AppHandle,
+        sink: OutputSink,
     ) -> Result<(), String> {
         if self.sessions.contains_key(pane_id) {
             return Err(format!("Viewer already exists for pane {}", pane_id));
@@ -71,6 +79,13 @@ impl PtyManager {
         let _ = tmux(&["kill-session", "-t", &linked]); // clean stale
 
         tmux(&["new-session", "-d", "-s", &linked, "-t", &real_session])?;
+
+        // Mark the linked session as "manual" so its smaller viewport
+        // does not constrain the shared window group.  Without this,
+        // tmux sizes every window to the smallest attached session,
+        // which keeps the real terminal (Alacritty) at clawtab's size
+        // even after the user switches back.
+        let _ = tmux(&["set-option", "-s", "-t", &linked, "window-size", "manual"]);
 
         // Select the correct window and zoom the target pane so it fills
         // the entire window (no splitting with other panes)
@@ -106,6 +121,7 @@ impl PtyManager {
 
         let pipe_event_key = event_key.clone();
         let pipe_path_clone = pipe_path.clone();
+        let pane_id_for_thread = pane_id.to_string();
         thread::spawn(move || {
             use std::io::Read;
 
@@ -154,10 +170,18 @@ impl PtyManager {
                 match file.read(&mut buf) {
                     Ok(0) => thread::sleep(std::time::Duration::from_millis(50)),
                     Ok(n) => {
-                        let encoded =
-                            base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
-                        let _ = app_handle
-                            .emit(&format!("pty-output-{}", pipe_event_key), encoded);
+                        let data = &buf[..n];
+                        match &sink {
+                            OutputSink::Tauri(app_handle) => {
+                                let encoded =
+                                    base64::engine::general_purpose::STANDARD.encode(data);
+                                let _ = app_handle
+                                    .emit(&format!("pty-output-{}", pipe_event_key), encoded);
+                            }
+                            OutputSink::Channel(tx) => {
+                                let _ = tx.send((pane_id_for_thread.clone(), data.to_vec()));
+                            }
+                        }
                     }
                     Err(_) => thread::sleep(std::time::Duration::from_millis(100)),
                 }
@@ -248,6 +272,20 @@ impl PtyManager {
                 "-x", &cols.to_string(), "-y", &rows.to_string(),
             ]);
         }
+        Ok(())
+    }
+
+    /// Temporarily restore the tmux window to automatic sizing so the real
+    /// terminal (Alacritty) can reclaim its full dimensions.  Called when the
+    /// clawtab window loses focus.
+    pub fn restore_size(&self, pane_id: &str) -> Result<(), String> {
+        let session = self
+            .sessions
+            .get(pane_id)
+            .ok_or_else(|| format!("No viewer for pane {}", pane_id))?;
+
+        let _ = tmux(&["set-option", "-u", "-w", "-t", &session.window_id, "window-size"]);
+        let _ = tmux(&["resize-window", "-A", "-t", &session.window_id]);
         Ok(())
     }
 
