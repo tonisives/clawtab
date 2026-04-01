@@ -35,7 +35,7 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
     const key = eventKey(paneId);
 
     async function setup() {
-      // Destroy any leftover PTY from a previous mount
+      // Destroy any leftover viewer from a previous mount
       await invoke("pty_destroy", { paneId }).catch(() => {});
       if (cancelled) return;
 
@@ -84,7 +84,7 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
 
       if (cancelled) { t.dispose(); return; }
 
-      // Handle resize
+      // Resize the tmux pane when the container changes size
       observer = new ResizeObserver(() => {
         fit.fit();
         invoke("pty_resize", {
@@ -118,7 +118,7 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         return;
       }
 
-      // Send input to PTY
+      // Send input to the real tmux pane
       dataDisposable = t.onData((data) => {
         const encoded = btoa(data);
         invoke("pty_write", { paneId, data: encoded }).catch(() => {});

@@ -1,51 +1,37 @@
 use base64::Engine;
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::{AppHandle, Emitter};
 
-/// A pane viewer that attaches a hidden control-mode tmux client to a linked
-/// session, zooms the target pane, and sizes the client to match the xterm.js
-/// viewport.  The real terminal sees dots where the pane shrank, exactly like
-/// opening a second smaller terminal.  On destroy the control client is killed
-/// and the original terminal regains full sizing.
+/// A pane viewer that creates a linked tmux session, zooms the target pane,
+/// and resizes the window to match the xterm.js viewport.  Uses `pipe-pane`
+/// for live output streaming and `send-keys` for input.
+///
+/// On destroy, the linked session is killed and the window is restored to
+/// automatic sizing, so the real terminal regains its original dimensions.
 struct PaneViewer {
     pane_id: String,
     linked_session: String,
+    window_id: String,
     stop: Arc<Mutex<bool>>,
-    control_client: Option<Child>,
 }
 
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
 }
 
-/// Find the tmux window id that contains `pane_id`.
-fn window_of_pane(pane_id: &str) -> Option<String> {
+fn tmux(args: &[&str]) -> Result<String, String> {
     let out = Command::new("tmux")
-        .args(["display-message", "-t", pane_id, "-p", "#{window_id}"])
+        .args(args)
         .output()
-        .ok()?;
+        .map_err(|e| format!("tmux {}: {}", args[0], e))?;
     if !out.status.success() {
-        return None;
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("tmux {}: {}", args[0], stderr.trim()));
     }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
-}
-
-/// Find the tmux session that owns `pane_id`.
-fn session_of_pane(pane_id: &str) -> Option<String> {
-    let out = Command::new("tmux")
-        .args(["display-message", "-t", pane_id, "-p", "#{session_name}"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 impl PtyManager {
@@ -68,88 +54,52 @@ impl PtyManager {
         }
 
         let stop = Arc::new(Mutex::new(false));
+        let stop_clone = Arc::clone(&stop);
         let pane_id_owned = pane_id.to_string();
         let event_key = pane_id.replace('%', "p");
 
-        // Find the real session that owns this pane
-        let real_session = session_of_pane(pane_id)
-            .ok_or_else(|| format!("Cannot find session for pane {}", pane_id))?;
+        // Find the real session and window for this pane
+        let real_session = tmux(&[
+            "display-message", "-t", pane_id, "-p", "#{session_name}",
+        ])?;
+        let window_id = tmux(&[
+            "display-message", "-t", pane_id, "-p", "#{window_id}",
+        ])?;
 
-        let window_id = window_of_pane(pane_id)
-            .ok_or_else(|| format!("Cannot find window for pane {}", pane_id))?;
-
-        // Create a linked session (grouped with the real one)
+        // Create a linked session grouped with the real one
         let linked = format!("clawtab-view-{}", event_key);
+        let _ = tmux(&["kill-session", "-t", &linked]); // clean stale
 
-        // Kill any stale linked session from a previous run
-        let _ = Command::new("tmux")
-            .args(["kill-session", "-t", &linked])
-            .output();
+        tmux(&["new-session", "-d", "-s", &linked, "-t", &real_session])?;
 
-        // Create linked session targeting the window that contains our pane
-        let new_sess = Command::new("tmux")
-            .args([
-                "new-session",
-                "-d",       // detached (no terminal needed yet)
-                "-s", &linked,
-                "-t", &real_session,  // grouped / linked
-            ])
-            .output()
-            .map_err(|e| format!("new-session failed: {}", e))?;
+        // Select the correct window and zoom the target pane so it fills
+        // the entire window (no splitting with other panes)
+        let linked_win = format!("{}:{}", linked, window_id);
+        let linked_pane = format!("{}.{}", linked_win, pane_id_owned);
+        let _ = tmux(&["select-window", "-t", &linked_win]);
+        let _ = tmux(&["select-pane", "-t", &linked_pane]);
+        let _ = tmux(&["resize-pane", "-Z", "-t", &linked_pane]);
 
-        if !new_sess.status.success() {
-            let stderr = String::from_utf8_lossy(&new_sess.stderr);
-            return Err(format!("new-session: {}", stderr.trim()));
-        }
-
-        // Switch the linked session to the correct window and zoom the pane
-        let _ = Command::new("tmux")
-            .args(["select-window", "-t", &format!("{}:{}", linked, window_id)])
-            .output();
-
-        let _ = Command::new("tmux")
-            .args(["select-pane", "-t", &format!("{}:{}.{}", linked, window_id, pane_id_owned)])
-            .output();
-
-        // Zoom the pane so it fills the entire linked session window
-        let _ = Command::new("tmux")
-            .args(["resize-pane", "-Z", "-t", &format!("{}:{}.{}", linked, window_id, pane_id_owned)])
-            .output();
-
-        // Attach a control-mode client to the linked session.
-        // -CC = control mode without echo.  The client's size determines the
-        // pane dimensions visible through this session.
+        // Resize the window to match the xterm.js viewport.
+        // resize-window automatically sets window-size to manual.
         let w = if cols > 0 { cols } else { 80 };
         let h = if rows > 0 { rows } else { 24 };
+        let _ = tmux(&[
+            "resize-window", "-t", &linked_win,
+            "-x", &w.to_string(), "-y", &h.to_string(),
+        ]);
 
-        let mut control = Command::new("tmux")
-            .args([
-                "attach-session",
-                "-t", &linked,
-                "-x", &w.to_string(),
-                "-y", &h.to_string(),
-                "-CC",  // control mode, no echo
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("control attach failed: {}", e))?;
-
-        // Give tmux a moment to attach and resize
+        // Give the app inside the pane a moment to redraw at the new size
         thread::sleep(std::time::Duration::from_millis(150));
 
-        // Now capture the pane at the new size
+        // Capture scrollback at the new dimensions
         let initial = Command::new("tmux")
             .args([
-                "capture-pane",
-                "-p",    // print to stdout
-                "-e",    // include escape sequences (colors)
-                "-S", "-", // from start of scrollback
+                "capture-pane", "-p", "-e", "-S", "-",
                 "-t", &pane_id_owned,
             ])
             .output()
-            .map_err(|e| format!("Failed initial capture: {}", e))?;
+            .map_err(|e| format!("capture-pane: {}", e))?;
 
         if initial.status.success() && !initial.stdout.is_empty() {
             let encoded =
@@ -157,46 +107,82 @@ impl PtyManager {
             let _ = app_handle.emit(&format!("pty-output-{}", event_key), encoded);
         }
 
-        // Read the control client's stdout for pane output.
-        // In control mode, tmux sends %output lines with pane content.
-        let stdout = control.stdout.take();
-        let stop_clone = Arc::clone(&stop);
-        let pipe_event_key = event_key.clone();
+        // Stream live output via pipe-pane -> temp file -> reader thread
+        let pipe_path = format!("/tmp/clawtab-pipe-{}", event_key);
+        let _ = std::fs::remove_file(&pipe_path);
 
-        if let Some(stdout) = stdout {
-            thread::spawn(move || {
-                let reader = BufReader::new(stdout);
-                for line in reader.lines() {
-                    if *stop_clone.lock().unwrap() {
-                        break;
-                    }
-                    let line = match line {
-                        Ok(l) => l,
-                        Err(_) => break,
-                    };
-                    // Control mode output format: %output {pane_id} {base64-or-raw data}
-                    // We look for %output lines for our pane
-                    if let Some(rest) = line.strip_prefix("%output ") {
-                        // Format: %pane_id encoded_data
-                        if let Some((_pane, data)) = rest.split_once(' ') {
-                            // Data from control mode is raw (not base64)
-                            let encoded =
-                                base64::engine::general_purpose::STANDARD.encode(data.as_bytes());
-                            let _ = app_handle
-                                .emit(&format!("pty-output-{}", pipe_event_key), encoded);
+        tmux(&[
+            "pipe-pane", "-t", &pane_id_owned,
+            &format!("cat >> {}", pipe_path),
+        ])?;
+
+        let pipe_event_key = event_key.clone();
+        let pipe_path_clone = pipe_path.clone();
+        thread::spawn(move || {
+            use std::io::Read;
+
+            // Wait for the pipe file to appear
+            let mut attempts = 0;
+            loop {
+                if *stop_clone.lock().unwrap() {
+                    return;
+                }
+                if std::path::Path::new(&pipe_path_clone).exists() {
+                    break;
+                }
+                thread::sleep(std::time::Duration::from_millis(50));
+                attempts += 1;
+                if attempts > 200 {
+                    // Pane might be idle; keep waiting until stopped
+                    while !*stop_clone.lock().unwrap() {
+                        thread::sleep(std::time::Duration::from_millis(200));
+                        if std::path::Path::new(&pipe_path_clone).exists() {
+                            break;
                         }
                     }
+                    if *stop_clone.lock().unwrap() {
+                        return;
+                    }
+                    break;
                 }
-            });
-        }
+            }
+
+            // Open and tail
+            let mut file = loop {
+                if *stop_clone.lock().unwrap() {
+                    return;
+                }
+                match std::fs::File::open(&pipe_path_clone) {
+                    Ok(f) => break f,
+                    Err(_) => thread::sleep(std::time::Duration::from_millis(100)),
+                }
+            };
+
+            let mut buf = [0u8; 8192];
+            loop {
+                if *stop_clone.lock().unwrap() {
+                    break;
+                }
+                match file.read(&mut buf) {
+                    Ok(0) => thread::sleep(std::time::Duration::from_millis(50)),
+                    Ok(n) => {
+                        let encoded =
+                            base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
+                        let _ = app_handle
+                            .emit(&format!("pty-output-{}", pipe_event_key), encoded);
+                    }
+                    Err(_) => thread::sleep(std::time::Duration::from_millis(100)),
+                }
+            }
+        });
 
         self.sessions.insert(
             pane_id.to_string(),
             PaneViewer {
                 pane_id: pane_id.to_string(),
                 linked_session: linked,
+                window_id: window_id.clone(),
                 stop,
-                control_client: Some(control),
             },
         );
 
@@ -211,7 +197,6 @@ impl PtyManager {
 
         let text = String::from_utf8_lossy(data);
 
-        // Map xterm.js key sequences to tmux key names
         let tmux_key = match text.as_ref() {
             "\r" => Some("Enter"),
             "\x7f" => Some("BSpace"),
@@ -221,7 +206,7 @@ impl PtyManager {
             "\x1b[D" => Some("Left"),
             "\x1b[H" => Some("Home"),
             "\x1b[F" => Some("End"),
-            "\x1b[3~" => Some("DC"),     // Delete
+            "\x1b[3~" => Some("DC"),
             "\x1b[5~" => Some("PageUp"),
             "\x1b[6~" => Some("PageDown"),
             "\x1b" => Some("Escape"),
@@ -253,10 +238,10 @@ impl PtyManager {
                 .output()
         };
 
-        let output = output.map_err(|e| format!("Failed to send keys: {}", e))?;
+        let output = output.map_err(|e| format!("send-keys: {}", e))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("send-keys failed: {}", stderr.trim()));
+            return Err(format!("send-keys: {}", stderr.trim()));
         }
 
         Ok(())
@@ -269,36 +254,40 @@ impl PtyManager {
             .ok_or_else(|| format!("No viewer for pane {}", pane_id))?;
 
         if cols > 0 && rows > 0 {
-            // Resize the control client, which changes the linked session's
-            // view size and thus the pane dimensions.
-            let _ = Command::new("tmux")
-                .args([
-                    "resize-window",
-                    "-t", &session.linked_session,
-                    "-x", &cols.to_string(),
-                    "-y", &rows.to_string(),
-                ])
-                .output();
+            let target = format!("{}:{}", session.linked_session, session.window_id);
+            let _ = tmux(&[
+                "resize-window", "-t", &target,
+                "-x", &cols.to_string(), "-y", &rows.to_string(),
+            ]);
         }
         Ok(())
     }
 
     pub fn destroy(&mut self, pane_id: &str) -> Result<(), String> {
-        if let Some(mut session) = self.sessions.remove(pane_id) {
-            // Signal the reader thread to stop
+        if let Some(session) = self.sessions.remove(pane_id) {
             *session.stop.lock().unwrap() = true;
 
-            // Kill the control-mode client process
-            if let Some(ref mut child) = session.control_client {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
+            // Stop pipe-pane
+            let _ = tmux(&["pipe-pane", "-t", &session.pane_id]);
 
-            // Kill the linked session - this removes the extra client
-            // and the real terminal regains full sizing
-            let _ = Command::new("tmux")
-                .args(["kill-session", "-t", &session.linked_session])
-                .output();
+            // Unzoom the pane in the linked session before killing it
+            let linked_pane = format!(
+                "{}:{}.{}",
+                session.linked_session, session.window_id, session.pane_id
+            );
+            let _ = tmux(&["resize-pane", "-Z", "-t", &linked_pane]);
+
+            // Kill the linked session
+            let _ = tmux(&["kill-session", "-t", &session.linked_session]);
+
+            // Restore automatic window sizing so the real terminal regains
+            // its original dimensions
+            let _ = tmux(&["set-option", "-u", "-w", "-t", &session.window_id, "window-size"]);
+            let _ = tmux(&["resize-window", "-A", "-t", &session.window_id]);
+
+            // Clean up temp file
+            let event_key = pane_id.replace('%', "p");
+            let _ = std::fs::remove_file(format!("/tmp/clawtab-pipe-{}", event_key));
         }
         Ok(())
     }
