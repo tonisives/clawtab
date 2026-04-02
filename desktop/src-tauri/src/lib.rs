@@ -3,7 +3,7 @@ mod browser;
 pub mod claude_session;
 mod claude_usage;
 mod commands;
-mod config;
+pub mod config;
 mod cwt;
 mod history;
 pub mod ipc;

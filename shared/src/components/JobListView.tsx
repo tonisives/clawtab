@@ -111,6 +111,8 @@ export interface JobListViewProps {
   initialScrollOffset?: number;
   // Report scroll position changes (web only)
   onScrollOffsetChange?: (offset: number) => void;
+  // Scroll a specific slug into view (bumped counter to trigger re-scroll)
+  scrollToSlug?: string | null;
 }
 
 type ListItem =
@@ -140,6 +142,7 @@ export function JobListView({
   contentContainerStyle,
   initialScrollOffset,
   onScrollOffsetChange,
+  scrollToSlug,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -395,7 +398,7 @@ export function JobListView({
 
       if (item.kind === "process") {
         return (
-          <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+          <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
             <ProcessCard
               process={item.process}
               onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
@@ -421,6 +424,7 @@ export function JobListView({
       return (
         <View
           key={key}
+          {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
           style={[
             item.idx % 2 === 1 ? { opacity: 0.85 } : undefined,
             index > 0 ? { marginTop: spacing.sm } : undefined,
@@ -517,6 +521,24 @@ export function JobListView({
       )}
     </View>
   ) : null;
+
+  // Scroll a specific job into view when scrollToSlug changes
+  const prevScrollSlug = useRef<string | null>(null);
+  useEffect(() => {
+    if (!scrollToSlug || Platform.OS !== "web") return;
+    if (scrollToSlug === prevScrollSlug.current) return;
+    prevScrollSlug.current = scrollToSlug;
+    const escaped = CSS.escape(scrollToSlug);
+    const el = (
+      document.querySelector(`[data-job-slug="${escaped}"]`) ??
+      document.querySelector(`[data-process-id="${escaped}"]`)
+    ) as HTMLElement | null;
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    }
+  }, [scrollToSlug]);
 
   // Restore scroll position on mount
   useEffect(() => {

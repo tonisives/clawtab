@@ -50,6 +50,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
   const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
+  const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
+  const [pendingProcess, setPendingProcess] = useState<ClaudeProcess | null>(null);
 
   // Question polling
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
@@ -75,6 +77,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       }
       setQuestions(qs.filter((q) => !dismissedRef.current.has(q.question_id)));
     }).catch((e) => { console.error("[nfn] loadQuestions error", e); });
+    // Sync auto-yes panes (backend prunes stale panes when Claude instances stop)
+    invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
+      setAutoYesPaneIds(new Set(paneIds));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -221,6 +227,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   useEffect(() => {
     if (viewingProcess) {
+      // Don't clear pending placeholder processes - the swap effect handles those
+      if (viewingProcess.pane_id.startsWith("_pending_")) return;
       const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
       if (!fresh) setViewingProcess(null);
       else if (fresh !== viewingProcess) setViewingProcess(fresh);
@@ -231,14 +239,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     if (!pendingAgentWorkDir) return;
     const { dir, startedAt } = pendingAgentWorkDir;
-    const match = core.processes.find((p) => p.cwd === dir);
+    const match = core.processes.find((p) => p.cwd === dir && !p.pane_id.startsWith("_pending_"));
     if (match) {
       setPendingAgentWorkDir(null);
+      setPendingProcess(null);
       setViewingProcess(match);
+      setScrollToSlug(match.pane_id);
       return;
     }
     if (Date.now() - startedAt > 15000) {
       setPendingAgentWorkDir(null);
+      setPendingProcess(null);
     }
   }, [core.processes, pendingAgentWorkDir]);
 
@@ -412,6 +423,77 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     await invoke("focus_job_window", { name });
   }, []);
 
+  // Build flat ordered list of all selectable items (jobs + processes) matching display order
+  type ListItemRef = { kind: "job"; slug: string; job: Job } | { kind: "process"; paneId: string; process: ClaudeProcess };
+  const orderedItems = useMemo(() => {
+    const result: ListItemRef[] = [];
+    // Jobs grouped and sorted like JobListView
+    const jobs = core.jobs as Job[];
+    const grouped = new Map<string, Job[]>();
+    for (const job of jobs) {
+      const group = job.group || "default";
+      if (!grouped.has(group)) grouped.set(group, []);
+      grouped.get(group)!.push(job);
+    }
+    if (sortMode === "name") {
+      for (const [, gJobs] of grouped) {
+        gJobs.sort((a, b) => a.name.localeCompare(b.name));
+      }
+    }
+    const keys = [...grouped.keys()];
+    if (sortMode === "name") {
+      keys.sort((a, b) => {
+        const da = a === "default" ? "General" : a;
+        const db = b === "default" ? "General" : b;
+        return da.localeCompare(db, undefined, { sensitivity: "base" });
+      });
+    }
+    for (const key of keys) {
+      for (const job of grouped.get(key) ?? []) {
+        result.push({ kind: "job", slug: job.slug, job });
+      }
+      // Add processes matched to this group
+      for (const proc of core.processes) {
+        if (proc.matched_group === key) {
+          result.push({ kind: "process", paneId: proc.pane_id, process: proc });
+        }
+      }
+    }
+    // Unmatched processes
+    for (const proc of core.processes) {
+      if (!proc.matched_group) {
+        result.push({ kind: "process", paneId: proc.pane_id, process: proc });
+      }
+    }
+    return result;
+  }, [core.jobs, core.processes, sortMode]);
+
+  const selectAdjacentItem = useCallback((currentId: string) => {
+    const idx = orderedItems.findIndex((it) =>
+      it.kind === "job" ? it.slug === currentId : it.paneId === currentId,
+    );
+    // Select previous item (up), or next if at top
+    const prevIdx = idx > 0 ? idx - 1 : (orderedItems.length > 1 ? 1 : -1);
+    if (prevIdx >= 0 && prevIdx < orderedItems.length) {
+      const next = orderedItems[prevIdx];
+      if (next.kind === "job") {
+        setViewingProcess(null);
+        setViewingAgent(false);
+        setViewingJob(next.job);
+        setScrollToSlug(next.slug);
+      } else {
+        setViewingJob(null);
+        setViewingAgent(false);
+        setViewingProcess(next.process);
+        setScrollToSlug(next.paneId);
+      }
+    } else {
+      setViewingJob(null);
+      setViewingProcess(null);
+    }
+  }, [orderedItems]);
+
+
   const handleSelectJob = useCallback((job: RemoteJob) => {
     setViewingProcess(null);
     setViewingAgent(false);
@@ -430,12 +512,35 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, []);
 
   const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
-    await actions.runAgent(prompt, workDir);
     if (workDir) {
-      const dir = workDir;
-      setPendingAgentWorkDir({ dir, startedAt: Date.now() });
+      // Find the group this workDir belongs to so the placeholder appears in the right spot
+      const matchingJob = (core.jobs as Job[]).find(
+        (j) => j.folder_path === workDir || j.work_dir === workDir,
+      );
+      const matchedGroup = matchingJob ? (matchingJob.group || "default") : null;
+
+      const placeholder: ClaudeProcess = {
+        pane_id: `_pending_${Date.now()}`,
+        cwd: workDir,
+        version: "",
+        tmux_session: "",
+        window_name: "",
+        matched_group: matchedGroup,
+        matched_job: null,
+        log_lines: "",
+        first_query: prompt.slice(0, 80),
+        last_query: null,
+        session_started_at: new Date().toISOString(),
+      };
+      setPendingProcess(placeholder);
+      setViewingJob(null);
+      setViewingAgent(false);
+      setViewingProcess(placeholder);
+      setScrollToSlug(placeholder.pane_id);
+      setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
     }
-  }, [actions]);
+    await actions.runAgent(prompt, workDir);
+  }, [actions, core.jobs]);
 
   const handleAddJob = useCallback((group: string, folderPath?: string) => {
     if (folderPath) {
@@ -689,11 +794,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       );
     }
 
-    if (pendingAgentWorkDir) {
+    if (viewingProcess && pendingProcess && viewingProcess.pane_id === pendingProcess.pane_id) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button className="btn btn-sm" onClick={() => setPendingAgentWorkDir(null)}>
+            <button className="btn btn-sm" onClick={() => { setPendingAgentWorkDir(null); setPendingProcess(null); setViewingProcess(null); }}>
               Back
             </button>
             <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>
@@ -723,6 +828,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               else handleToggleAutoYesByPaneId(viewingProcess.pane_id, viewingProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
             }}
             showBackButton={!isWide}
+            onStopped={() => { selectAdjacentItem(viewingProcess.pane_id); }}
           />
           {pendingAutoYes && (
             <ConfirmDialog
@@ -754,7 +860,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onToggle={() => { actions.toggleJob(viewingJob.slug); core.reload(); }}
             onDuplicate={(group: string) => handleDuplicate(viewingJob, group)}
             onDuplicateToFolder={() => handleDuplicateToFolder(viewingJob)}
-            onDelete={() => { actions.deleteJob(viewingJob.slug); setViewingJob(null); core.reload(); }}
+            onDelete={() => { const slug = viewingJob.slug; selectAdjacentItem(slug); actions.deleteJob(slug); core.reload(); }}
             groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
             showBackButton={!isWide}
             options={jobQuestion?.options}
@@ -870,7 +976,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     <JobListView
       jobs={core.jobs}
       statuses={core.statuses}
-      detectedProcesses={core.processes}
+      detectedProcesses={pendingProcess ? [...core.processes, pendingProcess] : core.processes}
       collapsedGroups={core.collapsedGroups}
       onToggleGroup={core.toggleGroup}
       groupOrder={groupOrder}
@@ -884,6 +990,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       headerContent={notificationSection}
       showEmpty={core.loaded}
       emptyMessage="No jobs configured yet."
+      scrollToSlug={scrollToSlug}
     />
   );
 

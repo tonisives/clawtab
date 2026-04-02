@@ -22,6 +22,7 @@ fn print_usage() {
     eprintln!("  pane-info [pane_id]        Show first query and session date for a Claude pane");
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret values as KEY=VALUE lines");
+    eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
 }
 
 fn require_name(args: &[String], cmd_name: &str) -> String {
@@ -138,6 +139,37 @@ async fn main() {
                 std::process::exit(1);
             }
             return;
+        }
+        "telegram" => {
+            if args.len() >= 3 && args[2] == "send" {
+                if args.len() < 4 {
+                    eprintln!("Error: 'telegram send' requires a message");
+                    std::process::exit(1);
+                }
+                let message = args[3..].join(" ");
+                let settings = clawtab_lib::config::settings::AppSettings::load();
+                let tg = match settings.telegram {
+                    Some(ref t) if t.is_configured() => t,
+                    _ => {
+                        eprintln!("Error: Telegram not configured (no bot token or chat ids)");
+                        std::process::exit(1);
+                    }
+                };
+                let chat_id = tg.chat_ids[0];
+                match clawtab_lib::telegram::send_message(&tg.bot_token, chat_id, &message).await {
+                    Ok(()) => {
+                        println!("ok");
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+                return;
+            } else {
+                eprintln!("Unknown telegram subcommand. Usage: telegram send <message>");
+                std::process::exit(1);
+            }
         }
         "auto-yes" => {
             if args.len() >= 3 && args[2] == "toggle" {

@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+
+const COLLAPSE_THRESHOLD = 3;
 
 export interface AutoYesEntry {
   paneId: string;
@@ -16,11 +19,27 @@ export interface AutoYesBannerProps {
 }
 
 export function AutoYesBanner({ entries, onDisable, onPress }: AutoYesBannerProps) {
+  const [expanded, setExpanded] = useState(false);
+
   if (entries.length === 0) return null;
+
+  const shouldCollapse = entries.length > COLLAPSE_THRESHOLD;
+  const visibleEntries = shouldCollapse && !expanded ? [] : entries;
 
   return (
     <View style={styles.container}>
-      {entries.map((e) => (
+      {shouldCollapse && (
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => setExpanded(!expanded)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.label}>
+            ! Auto-yes: {entries.length} panes {expanded ? "(collapse)" : "(expand)"}
+          </Text>
+        </TouchableOpacity>
+      )}
+      {visibleEntries.map((e) => (
         <TouchableOpacity
           key={e.paneId}
           style={styles.row}

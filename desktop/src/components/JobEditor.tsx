@@ -267,11 +267,11 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           name: s.telegram?.chat_names?.[String(id)] ?? "",
         }));
         setTelegramChats(chats);
-        if (isNew && form.telegram_chat_id === null) {
+        if (form.telegram_chat_id === null) {
           setForm((prev) => ({
             ...prev,
             telegram_chat_id: chats[0].id,
-            notify_target: "telegram",
+            ...(isNew ? { notify_target: "telegram" } : {}),
           }));
         }
       }

@@ -47,6 +47,7 @@ export function DetectedProcessDetail({
   autoYesActive,
   onToggleAutoYes,
   showBackButton = false,
+  onStopped,
 }: {
   process: ClaudeProcess;
   questions: ClaudeQuestion[];
@@ -55,9 +56,12 @@ export function DetectedProcessDetail({
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
   showBackButton?: boolean;
+  onStopped?: () => void;
 }) {
   const processRef = useRef(process);
   processRef.current = process;
+  const onStoppedRef = useRef(onStopped);
+  onStoppedRef.current = onStopped;
 
   const displayName = shortenPath(process.cwd);
 
@@ -94,10 +98,18 @@ export function DetectedProcessDetail({
     if (paneQuestion) onDismissQuestion(paneQuestion.question_id);
   }, [process.pane_id, paneQuestion, onDismissQuestion]);
 
-  // Override transport.sendInput to also dismiss questions
+  // Override transport methods: sendInput for question dismissal, stop/sigint for adjacent selection
   const wrappedTransport = useMemo((): Transport => ({
     ...transport,
     sendInput: handleSendInput,
+    stopJob: async (...args: Parameters<Transport["stopJob"]>) => {
+      onStoppedRef.current?.();
+      return transport.stopJob(...args);
+    },
+    sigintJob: transport.sigintJob ? async (...args: Parameters<NonNullable<Transport["sigintJob"]>>) => {
+      onStoppedRef.current?.();
+      return transport.sigintJob!(...args);
+    } : undefined,
   }), [transport, handleSendInput]);
 
   const renderTerminal = useCallback(

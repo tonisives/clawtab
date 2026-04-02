@@ -536,9 +536,19 @@ export function JobDetailView({
           </View>
           {!outputCollapsed && (
             <>
-              <View style={[styles.logsContainer, { height: logsHeight }]}>
-                <ReadOnlyXterm content={logs} onColumnsChange={onLogColumnsChange} />
-              </View>
+              {isWeb ? (
+                <div style={{ height: logsHeight, overflow: "hidden", position: "relative", display: "flex" }}>
+                  {renderTerminal ? renderTerminal() : (
+                    <ReadOnlyXterm content={logs} onColumnsChange={onLogColumnsChange} />
+                  )}
+                </div>
+              ) : (
+                <View style={[styles.logsContainer, { height: logsHeight }]}>
+                  {renderTerminal ? renderTerminal() : (
+                    <ReadOnlyXterm content={logs} onColumnsChange={onLogColumnsChange} />
+                  )}
+                </View>
+              )}
               {isWeb && (
                 <div
                   onMouseDown={handleLogsResize}
@@ -560,7 +570,6 @@ export function JobDetailView({
             </>
           )}
           <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
-          <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
         </View>
       )}
 
@@ -1232,6 +1241,10 @@ const styles = StyleSheet.create({
   },
   logsContainer: {
     // height set dynamically via logsHeight state
+    overflow: "hidden" as any,
+    // Ensure xterm.js fits within parent width
+    position: "relative" as any,
+    width: "100%" as any,
   },
   questionContext: {
     backgroundColor: "#111",

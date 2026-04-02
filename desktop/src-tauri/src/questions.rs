@@ -202,11 +202,11 @@ pub async fn question_detection_loop(
         let processes = detection.processes;
         log::info!("[questions] detected {} claude processes", processes.len());
 
-        // Prune auto_yes_panes: remove pane IDs that no longer exist in tmux
+        // Prune auto_yes_panes: remove pane IDs where Claude is no longer running
         if !detection.all_pane_ids.is_empty() {
             let mut yes_panes = auto_yes_panes.lock().unwrap();
             let before = yes_panes.len();
-            yes_panes.retain(|id| detection.all_pane_ids.contains(id));
+            yes_panes.retain(|id| detection.claude_pane_ids.contains(id));
             if yes_panes.len() < before {
                 log::info!(
                     "[questions] pruned {} stale auto-yes pane(s)",
@@ -395,6 +395,8 @@ struct DetectionResult {
     processes: Vec<(String, String, String, String, String, Option<String>, Option<String>)>,
     /// All pane IDs that currently exist in tmux (not just Claude processes).
     all_pane_ids: HashSet<String>,
+    /// Pane IDs that have an active Claude process (subset of all_pane_ids).
+    claude_pane_ids: HashSet<String>,
 }
 
 /// Detect Claude processes and return their details for question parsing.
@@ -418,7 +420,7 @@ fn detect_question_processes(
         .output()
     {
         Ok(o) if o.status.success() => o,
-        _ => return DetectionResult { processes: vec![], all_pane_ids: HashSet::new() },
+        _ => return DetectionResult { processes: vec![], all_pane_ids: HashSet::new(), claude_pane_ids: HashSet::new() },
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -452,6 +454,7 @@ fn detect_question_processes(
     };
 
     let mut all_pane_ids = HashSet::new();
+    let mut claude_pane_ids = HashSet::new();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 
@@ -465,6 +468,8 @@ fn detect_question_processes(
         all_pane_ids.insert(pane_id.to_string());
 
         if !is_semver(command) { continue; }
+
+        claude_pane_ids.insert(pane_id.to_string());
         if !seen.insert(pane_id.to_string()) { continue; }
 
         // Check if this is a tracked running job
@@ -496,5 +501,5 @@ fn detect_question_processes(
         ));
     }
 
-    DetectionResult { processes: results, all_pane_ids }
+    DetectionResult { processes: results, all_pane_ids, claude_pane_ids }
 }
