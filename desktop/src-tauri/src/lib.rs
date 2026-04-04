@@ -658,8 +658,10 @@ pub fn run() {
             }
 
             // Reattach jobs still running in tmux from previous session
+            let app_handle_for_reattach = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 scheduler::reattach::reattach_running_jobs(
+                    &app_handle_for_reattach,
                     &jobs_for_reattach,
                     &settings_for_reattach,
                     &job_status_for_reattach,

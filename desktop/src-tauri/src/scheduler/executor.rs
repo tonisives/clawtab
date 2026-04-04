@@ -89,6 +89,7 @@ async fn execute_job_inner(
         trigger: trigger.to_string(),
         stdout: String::new(),
         stderr: String::new(),
+        pane_id: None,
     };
 
     {
@@ -130,6 +131,11 @@ async fn execute_job_inner(
                     status.insert(job.slug.clone(), new_status.clone());
                     drop(status);
                     crate::relay::push_status_update(relay, &job.slug, &new_status);
+                }
+                // Persist pane_id to history so reattach can find it after restart
+                {
+                    let h = history.lock().unwrap();
+                    let _ = h.update_pane_id(&run_id, &handle.pane_id);
                 }
                 // If job has auto_yes enabled, add this pane to auto_yes_panes
                 if job.auto_yes {

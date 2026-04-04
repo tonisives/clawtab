@@ -2,8 +2,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
+use tauri::{AppHandle, Emitter};
 
-use crate::config::jobs::{Job, JobStatus, JobType, JobsConfig, NotifyTarget};
+use crate::config::jobs::{JobStatus, JobType, JobsConfig, NotifyTarget};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
 use crate::relay::RelayHandle;
@@ -12,9 +13,11 @@ use crate::tmux;
 
 use super::monitor::{MonitorParams, TelegramStream};
 
-/// Scan tmux for panes that are still running jobs from a previous app session.
-/// For each match, set the job status to Running and spawn a monitor.
+/// Scan the history DB for unfinished runs that have a pane_id, then check if
+/// those panes are still alive in tmux. For each match, set the job status to
+/// Running and spawn a monitor.
 pub fn reattach_running_jobs(
+    app_handle: &AppHandle,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     settings: &Arc<Mutex<AppSettings>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
@@ -37,267 +40,224 @@ pub fn reattach_running_jobs(
         )
     };
 
-    // Only claude/folder jobs use tmux
-    let tmux_jobs: Vec<&Job> = jobs
+    // Build slug -> job map (only tmux-based jobs)
+    let slug_to_job: HashMap<&str, _> = jobs
         .iter()
         .filter(|j| matches!(j.job_type, JobType::Claude | JobType::Folder))
+        .map(|j| (j.slug.as_str(), j))
         .collect();
 
-    if tmux_jobs.is_empty() {
+    if slug_to_job.is_empty() {
         return;
     }
 
-    // Collect all unique tmux sessions these jobs might use
-    let mut sessions: Vec<String> = tmux_jobs
-        .iter()
-        .map(|j| {
-            j.tmux_session
-                .clone()
-                .unwrap_or_else(|| default_session.clone())
-        })
-        .collect();
-    sessions.sort();
-    sessions.dedup();
-
-    // Build slug -> job map for title-based matching
-    let slug_to_job: HashMap<&str, &Job> = tmux_jobs
-        .iter()
-        .map(|j| (j.slug.as_str(), *j))
-        .collect();
-
-    // Build window_name -> jobs map as fallback for panes without titles
-    let mut window_to_jobs: HashMap<String, Vec<&Job>> = HashMap::new();
-    for job in &tmux_jobs {
-        let window_name = project_window_name(job);
-        window_to_jobs
-            .entry(window_name)
-            .or_default()
-            .push(job);
-    }
+    // Get all unfinished runs that have a pane_id stored
+    let unfinished = {
+        let h = history.lock().unwrap();
+        match h.get_unfinished_with_pane() {
+            Ok(runs) => runs,
+            Err(e) => {
+                log::warn!("Failed to query unfinished runs: {}", e);
+                return;
+            }
+        }
+    };
 
     let mut reattached = 0;
 
-    for session in &sessions {
-        if !tmux::session_exists(session) {
+    for run in &unfinished {
+        let job = match slug_to_job.get(run.job_name.as_str()) {
+            Some(j) if j.enabled => *j,
+            _ => continue,
+        };
+
+        let pane_id = match &run.pane_id {
+            Some(id) => id.clone(),
+            None => continue,
+        };
+
+        let session = job
+            .tmux_session
+            .clone()
+            .unwrap_or_else(|| default_session.clone());
+
+        // Check if pane is still alive and busy
+        if !tmux::pane_exists(&pane_id) {
+            // Pane is gone - finalize the orphaned run
+            let h = history.lock().unwrap();
+            let finished_at = Utc::now().to_rfc3339();
+            if let Err(e) = h.update_finished(&run.id, &finished_at, None, "", "") {
+                log::error!("Failed to finalize orphaned run {}: {}", run.id, e);
+            }
             continue;
         }
 
-        let panes = match tmux::list_session_panes(session) {
-            Ok(p) => p,
-            Err(e) => {
-                log::warn!("Failed to list panes in session '{}': {}", session, e);
-                continue;
+        if !tmux::is_pane_busy(&session, &pane_id) {
+            // Pane exists but process finished while we were down
+            let h = history.lock().unwrap();
+            let output = tmux::capture_pane_full(&pane_id)
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let finished_at = Utc::now().to_rfc3339();
+            if let Err(e) = h.update_finished(&run.id, &finished_at, None, &output, "") {
+                log::error!("Failed to finalize orphaned run {}: {}", run.id, e);
+            } else {
+                log::info!(
+                    "Finalized orphaned run '{}' for job '{}' ({} bytes captured)",
+                    run.id,
+                    job.name,
+                    output.len(),
+                );
+                super::monitor::save_log_file(&job.slug, &run.id, &output);
             }
+            continue;
+        }
+
+        // Pane is still running - reattach
+
+        // Clean up any previous incomplete reattach records for this job
+        {
+            let h = history.lock().unwrap();
+            if let Ok(old_runs) = h.get_by_job_name(&job.slug, 20) {
+                let stale_ids: Vec<String> = old_runs
+                    .into_iter()
+                    .filter(|r| {
+                        r.trigger == "reattach"
+                            && r.finished_at.is_none()
+                            && r.stdout.is_empty()
+                            && r.stderr.is_empty()
+                    })
+                    .map(|r| r.id)
+                    .collect();
+                if !stale_ids.is_empty() {
+                    let _ = h.delete_by_ids(&stale_ids);
+                }
+            }
+        }
+
+        let run_id = format!("reattach-{}", uuid::Uuid::new_v4());
+        let started_at = Utc::now().to_rfc3339();
+
+        log::info!(
+            "Reattaching job '{}' to pane {} in session '{}'",
+            job.name,
+            pane_id,
+            session,
+        );
+
+        // Set status to Running
+        {
+            let mut status = job_status.lock().unwrap();
+            status.insert(
+                job.slug.clone(),
+                JobStatus::Running {
+                    run_id: run_id.clone(),
+                    started_at: started_at.clone(),
+                    pane_id: Some(pane_id.clone()),
+                    tmux_session: Some(session.clone()),
+                },
+            );
+        }
+
+        // Restore auto-yes for this pane if the job has it enabled
+        if job.auto_yes {
+            let mut panes = auto_yes_panes.lock().unwrap();
+            panes.insert(pane_id.clone());
+            log::info!(
+                "Auto-yes restored for reattached job '{}' pane '{}'",
+                job.name,
+                pane_id,
+            );
+        }
+
+        // Create a history record for the reattached run
+        {
+            let h = history.lock().unwrap();
+            let record = crate::history::RunRecord {
+                id: run_id.clone(),
+                job_name: job.slug.clone(),
+                started_at: started_at.clone(),
+                finished_at: None,
+                exit_code: None,
+                trigger: "reattach".to_string(),
+                stdout: String::new(),
+                stderr: String::new(),
+                pane_id: Some(pane_id.clone()),
+            };
+            if let Err(e) = h.insert(&record) {
+                log::error!("Failed to insert reattach record: {}", e);
+            }
+        }
+
+        // Register in active_agents for Telegram
+        {
+            let chat_id = job.telegram_chat_id.or_else(|| {
+                telegram_config
+                    .as_ref()
+                    .and_then(|c| c.chat_ids.first().copied())
+            });
+            if let Some(chat_id) = chat_id {
+                if let Ok(mut map) = active_agents.lock() {
+                    map.insert(
+                        chat_id,
+                        telegram::ActiveAgent {
+                            pane_id: pane_id.clone(),
+                            tmux_session: session.clone(),
+                            run_id: run_id.clone(),
+                            job_name: job.name.clone(),
+                        },
+                    );
+                }
+            }
+        }
+
+        // Build telegram stream for monitor (only when notify_target is Telegram)
+        let telegram = if job.notify_target == NotifyTarget::Telegram {
+            telegram_config.as_ref().and_then(|config| {
+                if !config.is_configured() {
+                    return None;
+                }
+                let chat_id = job
+                    .telegram_chat_id
+                    .or_else(|| config.chat_ids.first().copied())?;
+                Some(TelegramStream {
+                    bot_token: config.bot_token.clone(),
+                    chat_id,
+                })
+            })
+        } else {
+            None
         };
 
-        for (window_name, pane_info) in &panes {
-            // Only consider panes in cwt- windows
-            if !window_name.starts_with("cwt-") {
-                continue;
-            }
+        let notify_on_success = telegram_config
+            .as_ref()
+            .map(|c| c.notify_on_success)
+            .unwrap_or(true);
 
-            // Match by pane title (job slug) first, fall back to window name
-            let job = if !pane_info.title.is_empty() {
-                match slug_to_job.get(pane_info.title.as_str()) {
-                    Some(j) if j.enabled => *j,
-                    _ => continue,
-                }
-            } else {
-                // Fallback for panes launched before title tagging
-                let matching_jobs = match window_to_jobs.get(window_name) {
-                    Some(jobs) => jobs,
-                    None => continue,
-                };
-                match matching_jobs.iter().find(|j| j.enabled) {
-                    Some(j) => *j,
-                    None => continue,
-                }
-            };
+        let params = MonitorParams {
+            tmux_session: session.clone(),
+            pane_id: pane_id.clone(),
+            run_id,
+            job_name: job.name.clone(),
+            slug: job.slug.clone(),
+            telegram,
+            telegram_notify: job.telegram_notify.clone(),
+            notify_target: job.notify_target.clone(),
+            history: Arc::clone(history),
+            job_status: Arc::clone(job_status),
+            notify_on_success,
+            relay: Arc::clone(relay),
+            app_handle: None,
+            is_reattach: true,
+        };
+        tokio::spawn(super::monitor::monitor_pane(params));
 
-            // Check if this job already has a status (avoid double-attach)
-            {
-                let status = job_status.lock().unwrap();
-                if let Some(JobStatus::Running { .. }) = status.get(&job.slug) {
-                    continue;
-                }
-            }
-
-            // If the pane is idle (job finished while we were down), finalize the
-            // orphaned run record by capturing remaining output from the pane.
-            // Leave the pane alive so the user can still attach and inspect it.
-            if !tmux::is_pane_busy(session, &pane_info.pane_id) {
-                let h = history.lock().unwrap();
-                if let Ok(Some(record)) = h.get_unfinished_by_job(&job.slug) {
-                    let output = tmux::capture_pane_full(&pane_info.pane_id)
-                        .unwrap_or_default()
-                        .trim()
-                        .to_string();
-                    let finished_at = chrono::Utc::now().to_rfc3339();
-                    if let Err(e) = h.update_finished(&record.id, &finished_at, None, &output, "") {
-                        log::error!("Failed to finalize orphaned run {}: {}", record.id, e);
-                    } else {
-                        log::info!(
-                            "Finalized orphaned run '{}' for job '{}' ({} bytes captured)",
-                            record.id,
-                            job.name,
-                            output.len(),
-                        );
-                        super::monitor::save_log_file(&job.slug, &record.id, &output);
-                    }
-                }
-                continue;
-            }
-
-            // Clean up any previous incomplete reattach records for this job
-            {
-                let h = history.lock().unwrap();
-                if let Ok(old_runs) = h.get_by_job_name(&job.slug, 20) {
-                    let stale_ids: Vec<String> = old_runs
-                        .into_iter()
-                        .filter(|r| {
-                            r.trigger == "reattach"
-                                && r.finished_at.is_none()
-                                && r.stdout.is_empty()
-                                && r.stderr.is_empty()
-                        })
-                        .map(|r| r.id)
-                        .collect();
-                    if !stale_ids.is_empty() {
-                        let _ = h.delete_by_ids(&stale_ids);
-                    }
-                }
-            }
-
-            let run_id = format!("reattach-{}", uuid::Uuid::new_v4());
-            let started_at = Utc::now().to_rfc3339();
-
-            log::info!(
-                "Reattaching job '{}' to pane {} in session '{}' (window '{}')",
-                job.name,
-                pane_info.pane_id,
-                session,
-                window_name,
-            );
-
-            // Set status to Running
-            {
-                let mut status = job_status.lock().unwrap();
-                status.insert(
-                    job.slug.clone(),
-                    JobStatus::Running {
-                        run_id: run_id.clone(),
-                        started_at: started_at.clone(),
-                        pane_id: Some(pane_info.pane_id.clone()),
-                        tmux_session: Some(session.clone()),
-                    },
-                );
-            }
-
-            // Restore auto-yes for this pane if the job has it enabled
-            if job.auto_yes {
-                let mut panes = auto_yes_panes.lock().unwrap();
-                panes.insert(pane_info.pane_id.clone());
-                log::info!(
-                    "Auto-yes restored for reattached job '{}' pane '{}'",
-                    job.name,
-                    pane_info.pane_id,
-                );
-            }
-
-            // Create a history record for the reattached run
-            {
-                let h = history.lock().unwrap();
-                let record = crate::history::RunRecord {
-                    id: run_id.clone(),
-                    job_name: job.slug.clone(),
-                    started_at: started_at.clone(),
-                    finished_at: None,
-                    exit_code: None,
-                    trigger: "reattach".to_string(),
-                    stdout: String::new(),
-                    stderr: String::new(),
-                };
-                if let Err(e) = h.insert(&record) {
-                    log::error!("Failed to insert reattach record: {}", e);
-                }
-            }
-
-            // Register in active_agents for Telegram
-            {
-                let chat_id = job.telegram_chat_id.or_else(|| {
-                    telegram_config
-                        .as_ref()
-                        .and_then(|c| c.chat_ids.first().copied())
-                });
-                if let Some(chat_id) = chat_id {
-                    if let Ok(mut map) = active_agents.lock() {
-                        map.insert(
-                            chat_id,
-                            telegram::ActiveAgent {
-                                pane_id: pane_info.pane_id.clone(),
-                                tmux_session: session.clone(),
-                                run_id: run_id.clone(),
-                                job_name: job.name.clone(),
-                            },
-                        );
-                    }
-                }
-            }
-
-            // Build telegram stream for monitor (only when notify_target is Telegram)
-            let telegram = if job.notify_target == NotifyTarget::Telegram {
-                telegram_config.as_ref().and_then(|config| {
-                    if !config.is_configured() {
-                        return None;
-                    }
-                    let chat_id = job
-                        .telegram_chat_id
-                        .or_else(|| config.chat_ids.first().copied())?;
-                    Some(TelegramStream {
-                        bot_token: config.bot_token.clone(),
-                        chat_id,
-                    })
-                })
-            } else {
-                None
-            };
-
-            let notify_on_success = telegram_config
-                .as_ref()
-                .map(|c| c.notify_on_success)
-                .unwrap_or(true);
-
-            let params = MonitorParams {
-                tmux_session: session.clone(),
-                pane_id: pane_info.pane_id.clone(),
-                run_id,
-                job_name: job.name.clone(),
-                slug: job.slug.clone(),
-                telegram,
-                telegram_notify: job.telegram_notify.clone(),
-                notify_target: job.notify_target.clone(),
-                history: Arc::clone(history),
-                job_status: Arc::clone(job_status),
-                notify_on_success,
-                relay: Arc::clone(relay),
-                app_handle: None,
-                is_reattach: true,
-            };
-            tokio::spawn(super::monitor::monitor_pane(params));
-
-            reattached += 1;
-        }
+        reattached += 1;
     }
 
     if reattached > 0 {
         log::info!("Reattached {} running job(s) from previous session", reattached);
+        let _ = app_handle.emit("jobs-changed", ());
     }
-}
-
-fn project_window_name(job: &Job) -> String {
-    let project = match job.slug.split_once('/') {
-        Some((prefix, _)) if !prefix.is_empty() => prefix,
-        _ => &job.name,
-    };
-    format!("cwt-{}", project)
 }
