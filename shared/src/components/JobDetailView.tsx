@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import {
   View,
   Text,
@@ -834,7 +834,7 @@ function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onTog
   );
 }
 
-function RunRow({
+const RunRow = memo(function RunRow({
   run,
   transport,
   currentState,
@@ -901,9 +901,12 @@ function RunRow({
       ? [run.stdout, run.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
       : null;
 
-  const logContent = logContentRaw
-    ? (isWeb ? collapseSeparators(logContentRaw) : truncateLogLines(collapseSeparators(logContentRaw), 120))
-    : null;
+  const logContent = useMemo(
+    () => logContentRaw
+      ? (isWeb ? collapseSeparators(logContentRaw) : truncateLogLines(collapseSeparators(logContentRaw), 120))
+      : null,
+    [logContentRaw],
+  );
 
   return (
     <TouchableOpacity onPress={handleToggle} activeOpacity={0.7}>
@@ -966,7 +969,7 @@ function RunRow({
       )}
     </TouchableOpacity>
   );
-}
+})
 
 function LogZoomModal({
   run,

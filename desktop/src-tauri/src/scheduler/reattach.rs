@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
@@ -21,6 +21,7 @@ pub fn reattach_running_jobs(
     history: &Arc<Mutex<HistoryStore>>,
     active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
+    auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
 ) {
     if !tmux::is_available() {
         return;
@@ -189,6 +190,17 @@ pub fn reattach_running_jobs(
                         pane_id: Some(pane_info.pane_id.clone()),
                         tmux_session: Some(session.clone()),
                     },
+                );
+            }
+
+            // Restore auto-yes for this pane if the job has it enabled
+            if job.auto_yes {
+                let mut panes = auto_yes_panes.lock().unwrap();
+                panes.insert(pane_info.pane_id.clone());
+                log::info!(
+                    "Auto-yes restored for reattached job '{}' pane '{}'",
+                    job.name,
+                    pane_info.pane_id,
                 );
             }
 

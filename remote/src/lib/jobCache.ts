@@ -6,6 +6,7 @@ const KEY_STATUSES = "clawtab_cached_statuses";
 const KEY_QUESTIONS = "clawtab_cached_questions";
 
 let jobsTimer: ReturnType<typeof setTimeout> | undefined;
+let questionsTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function saveJobsCache(
   jobs: RemoteJob[],
@@ -21,9 +22,12 @@ export function saveJobsCache(
 }
 
 export function saveQuestionsCache(questions: ClaudeQuestion[]) {
-  AsyncStorage.setItem(KEY_QUESTIONS, JSON.stringify(questions)).catch((e) =>
-    console.log("[cache] failed to save questions:", e),
-  );
+  if (questionsTimer) clearTimeout(questionsTimer);
+  questionsTimer = setTimeout(() => {
+    AsyncStorage.setItem(KEY_QUESTIONS, JSON.stringify(questions)).catch((e) =>
+      console.log("[cache] failed to save questions:", e),
+    );
+  }, 500);
 }
 
 export async function loadCache(): Promise<{

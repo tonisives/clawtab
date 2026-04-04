@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import type { JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
@@ -5,7 +6,7 @@ import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
-export function RunningJobCard({
+export const RunningJobCard = memo(function RunningJobCard({
   jobName,
   status,
   onPress,
@@ -38,7 +39,7 @@ export function RunningJobCard({
       </View>
     </TouchableOpacity>
   );
-}
+})
 
 const styles = StyleSheet.create({
   card: {

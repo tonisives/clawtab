@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useMemo } from "react";
 import { View, Platform } from "react-native";
 import { XtermLog } from "./XtermLog";
 import type { XtermLogHandle } from "./XtermLog";
@@ -19,7 +19,7 @@ export function ReadOnlyXterm({ content, onColumnsChange }: ReadOnlyXtermProps) 
   // Buffer content until terminal is ready
   const pendingRef = useRef<string | null>(null);
 
-  const processed = collapseSeparators(content);
+  const processed = useMemo(() => collapseSeparators(content), [content]);
 
   const flush = useCallback(() => {
     if (!termRef.current) return;

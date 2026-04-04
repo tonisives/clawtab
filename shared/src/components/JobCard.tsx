@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { TouchableOpacity, View, Text, StyleSheet } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
@@ -8,7 +9,7 @@ import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
-export function JobCard({
+export const JobCard = memo(function JobCard({
   job,
   status,
   onPress,
@@ -57,7 +58,7 @@ export function JobCard({
       </View>
     </TouchableOpacity>
   );
-}
+})
 
 const styles = StyleSheet.create({
   card: {

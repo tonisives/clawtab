@@ -202,11 +202,13 @@ pub async fn question_detection_loop(
         let processes = detection.processes;
         log::info!("[questions] detected {} claude processes", processes.len());
 
-        // Prune auto_yes_panes: remove pane IDs where Claude is no longer running
+        // Prune auto_yes_panes: remove pane IDs where the pane no longer exists.
+        // Keep panes that exist but don't have a Claude process yet (startup delay)
+        // so that auto-yes isn't lost between pane creation and Claude launch.
         if !detection.all_pane_ids.is_empty() {
             let mut yes_panes = auto_yes_panes.lock().unwrap();
             let before = yes_panes.len();
-            yes_panes.retain(|id| detection.claude_pane_ids.contains(id));
+            yes_panes.retain(|id| detection.all_pane_ids.contains(id));
             if yes_panes.len() < before {
                 log::info!(
                     "[questions] pruned {} stale auto-yes pane(s)",

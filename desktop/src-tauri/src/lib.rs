@@ -364,6 +364,7 @@ pub fn run() {
     let history_for_reattach = Arc::clone(&history);
     let active_agents_for_reattach = Arc::clone(&active_agents);
     let relay_for_reattach = Arc::clone(&relay_handle);
+    let auto_yes_for_reattach = Arc::clone(&auto_yes_panes);
 
     // Clones for relay
     let relay_for_setup = Arc::clone(&relay_handle);
@@ -665,6 +666,7 @@ pub fn run() {
                     &history_for_reattach,
                     &active_agents_for_reattach,
                     &relay_for_reattach,
+                    &auto_yes_for_reattach,
                 );
             });
 
