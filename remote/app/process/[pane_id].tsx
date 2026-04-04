@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { LogViewer, MessageInput, findYesOption, isFreetextOption, colors, radius, spacing } from "@clawtab/shared";
-import { ContentContainer } from "../../src/components/ContentContainer";
-import { useResponsive } from "../../src/hooks/useResponsive";
+import { XtermLog, MessageInput, findYesOption, isFreetextOption, colors, radius, spacing } from "@clawtab/shared";
+import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { registerRequest } from "../../src/lib/useRequestMap";
+import { usePty } from "../../src/hooks/usePty";
 import { confirm } from "../../src/lib/platform";
 
 export default function ProcessDetailScreen() {
@@ -66,57 +66,21 @@ export default function ProcessDetailScreen() {
   const lastProcessRef = useRef(process);
   if (process) lastProcessRef.current = process;
   const lastProcess = lastProcessRef.current;
-  const { isWide } = useResponsive();
-  const [logs, setLogs] = useState(process?.log_lines ?? "");
-  const [logsLoaded, setLogsLoaded] = useState(!!process?.log_lines);
   const [stopping, setStopping] = useState(false);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
-  const tmuxSession = (process ?? lastProcess)?.tmux_session ?? paneQuestion?.tmux_session;
+  const tmuxSession = (process ?? lastProcess)?.tmux_session ?? paneQuestion?.tmux_session ?? "";
 
   const displayName = (process ?? lastProcess)
     ? (process ?? lastProcess)!.cwd.replace(/^\/Users\/[^/]+/, "~")
     : paneQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? pane_id;
 
-  // Poll logs - use lastProcess as fallback, then question for tmux_session
   const activeProcess = process ?? lastProcess;
-  useEffect(() => {
-    if (!tmuxSession) return;
-    let active = true;
-    let polling = false;
-    const poll = async () => {
-      if (polling) return;
-      polling = true;
-      try {
-        const send = getWsSend();
-        if (!send) return;
-        const id = nextId();
-        send({
-          type: "get_detected_process_logs",
-          id,
-          tmux_session: tmuxSession,
-          pane_id: pane_id,
-        });
-        const timeout = new Promise<{ logs?: string }>((resolve) =>
-          setTimeout(() => resolve({}), 5000),
-        );
-        const resp = await Promise.race([registerRequest<{ logs?: string }>(id), timeout]);
-        if (active && resp.logs != null) {
-          setLogs(resp.logs.trimEnd());
-          setLogsLoaded(true);
-        }
-      } finally {
-        polling = false;
-      }
-    };
-    poll();
-    const interval = setInterval(poll, 3000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [pane_id, tmuxSession]);
+
+  // PTY streaming terminal
+  const termRef = useRef<XtermLogHandle | null>(null);
+  const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
 
   const options = paneQuestion?.options ?? [];
 
@@ -227,95 +191,6 @@ export default function ProcessDetailScreen() {
   };
 
   const isAlive = !!process || !!paneQuestion;
-  const isWeb = Platform.OS === "web";
-  const outerScrollRef = useRef<ScrollView>(null);
-  const outerWebRef = useRef<HTMLElement | null>(null);
-  const prevLogsLenRef = useRef(0);
-
-  const outerWebRefCb = useCallback((node: HTMLElement | null) => {
-    outerWebRef.current = node;
-  }, []);
-
-  // Scroll to bottom when logs grow
-  useEffect(() => {
-    if (logs.length <= prevLogsLenRef.current) {
-      prevLogsLenRef.current = logs.length;
-      return;
-    }
-    prevLogsLenRef.current = logs.length;
-
-    if (isWeb) {
-      const el = outerWebRef.current;
-      if (!el) return;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          el.scrollTop = el.scrollHeight;
-        });
-      });
-    } else {
-      outerScrollRef.current?.scrollToEnd({ animated: true });
-    }
-  }, [logs, isWeb]);
-
-  const pageContent = (
-    <ContentContainer wide>
-      <View style={[styles.content, isWide && styles.contentWide]}>
-        <View style={styles.actions}>
-          {isAlive ? (
-            <TouchableOpacity
-              style={[styles.stopBtn, stopping && { opacity: 0.5 }]}
-              onPress={handleStop}
-              disabled={stopping}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.startBtn, starting && { opacity: 0.5 }]}
-              onPress={handleStart}
-              disabled={starting}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.startBtnText}>{starting ? "Starting..." : "Start"}</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {(process ?? lastProcess)?.first_query && (
-          <View style={styles.queryRow}>
-            <Text style={styles.queryLabel}>Query</Text>
-            <Text style={styles.queryText} numberOfLines={3}>
-              {(process ?? lastProcess)!.first_query}
-            </Text>
-          </View>
-        )}
-        {(process ?? lastProcess)?.last_query && (process ?? lastProcess)!.last_query !== (process ?? lastProcess)!.first_query && (
-          <View style={styles.queryRow}>
-            <Text style={styles.queryLabel}>Latest</Text>
-            <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={3}>
-              {(process ?? lastProcess)!.last_query}
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.logsContainer}>
-          {!logsLoaded && !tmuxSession ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Process not in detected list</Text>
-            </View>
-          ) : !logsLoaded ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator color={colors.accent} />
-              <Text style={styles.loadingText}>Loading logs...</Text>
-            </View>
-          ) : (
-            <LogViewer content={logs} />
-          )}
-        </View>
-      </View>
-    </ContentContainer>
-  );
 
   if (waitingForData) {
     return (
@@ -355,22 +230,59 @@ export default function ProcessDetailScreen() {
         </View>
       )}
 
-      {isWeb ? (
-        <div
-          ref={outerWebRefCb as any}
-          style={{
-            flex: 1,
-            overflowY: "auto" as any,
-            minHeight: 0,
-          }}
-        >
-          {pageContent}
-        </div>
-      ) : (
-        <ScrollView ref={outerScrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-          {pageContent}
-        </ScrollView>
+      {activeProcess?.first_query && (
+        <View style={styles.queryRow}>
+          <Text style={styles.queryLabel}>Query</Text>
+          <Text style={styles.queryText} numberOfLines={3}>
+            {activeProcess.first_query}
+          </Text>
+        </View>
       )}
+      {activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
+        <View style={styles.queryRow}>
+          <Text style={styles.queryLabel}>Latest</Text>
+          <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={3}>
+            {activeProcess.last_query}
+          </Text>
+        </View>
+      )}
+
+      <View style={styles.actions}>
+        {isAlive ? (
+          <TouchableOpacity
+            style={[styles.stopBtn, stopping && { opacity: 0.5 }]}
+            onPress={handleStop}
+            disabled={stopping}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.startBtn, starting && { opacity: 0.5 }]}
+            onPress={handleStart}
+            disabled={starting}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.startBtnText}>{starting ? "Starting..." : "Start"}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.terminalContainer}>
+        {ptyConnecting && (
+          <View style={styles.ptyConnecting}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
+          </View>
+        )}
+        <XtermLog
+          ref={termRef}
+          onData={ptySendInput}
+          onResize={sendResize}
+          interactive
+        />
+      </View>
 
       {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
       {(isAlive || paneQuestion) && (
@@ -442,10 +354,6 @@ function OptionButtons({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  scroll: { flex: 1 },
-  scrollContent: { flexGrow: 1 },
-  content: { padding: spacing.lg, gap: spacing.lg, flex: 1 },
-  contentWide: { paddingTop: 32, paddingHorizontal: spacing.xl },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   notFound: { color: colors.textMuted, fontSize: 16 },
   runningBadge: {
@@ -474,7 +382,15 @@ const styles = StyleSheet.create({
   },
   pathText: { flex: 1, color: colors.textMuted, fontSize: 11, fontFamily: "monospace" },
   versionText: { color: colors.textSecondary, fontSize: 11 },
-  actions: { flexDirection: "row", gap: spacing.sm },
+  actions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+  },
   stopBtn: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
@@ -495,20 +411,25 @@ const styles = StyleSheet.create({
   startBtnText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
   queryRow: {
     backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   queryLabel: { color: colors.textMuted, fontSize: 11, fontWeight: "600", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 },
   queryText: { color: colors.text, fontSize: 13, fontFamily: "monospace" },
-  logsContainer: { flex: 1, minHeight: 300 },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    gap: spacing.md,
+  terminalContainer: { flex: 1, minHeight: 0 },
+  ptyConnecting: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    gap: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
+  ptyConnectingText: { color: colors.textMuted, fontSize: 12 },
   loadingText: { color: colors.textMuted, fontSize: 13 },
   optionBar: {
     borderTopWidth: 1,

@@ -113,6 +113,11 @@ export interface JobListViewProps {
   onScrollOffsetChange?: (offset: number) => void;
   // Scroll a specific slug into view (bumped counter to trigger re-scroll)
   scrollToSlug?: string | null;
+  // Custom card renderers (for drag-and-drop wrappers)
+  renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean }) => React.ReactNode;
+  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean }) => React.ReactNode;
+  // Disable scrolling (e.g. during drag-and-drop)
+  scrollEnabled?: boolean;
 }
 
 type ListItem =
@@ -143,6 +148,9 @@ export function JobListView({
   initialScrollOffset,
   onScrollOffsetChange,
   scrollToSlug,
+  renderJobCard: customRenderJobCard,
+  renderProcessCard: customRenderProcessCard,
+  scrollEnabled = true,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -397,14 +405,14 @@ export function JobListView({
       }
 
       if (item.kind === "process") {
+        const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
+        const isSelected = selectedSlug === item.process.pane_id;
         return (
           <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-            <ProcessCard
-              process={item.process}
-              onPress={onSelectProcess ? () => onSelectProcess(item.process) : undefined}
-              inGroup={item.inGroup}
-              selected={selectedSlug === item.process.pane_id}
-            />
+            {customRenderProcessCard
+              ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected })
+              : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} />
+            }
           </View>
         );
       }
@@ -421,6 +429,8 @@ export function JobListView({
 
       // job
       const status = statuses[item.job.slug] ?? IDLE_STATUS;
+      const pressHandler = onSelectJob ? () => onSelectJob(item.job) : undefined;
+      const isSelected = selectedSlug === item.job.slug;
       return (
         <View
           key={key}
@@ -430,21 +440,24 @@ export function JobListView({
             index > 0 ? { marginTop: spacing.sm } : undefined,
           ]}
         >
-          {status.state === "running" ? (
-            <RunningJobCard
-              jobName={item.job.name}
-              status={status}
-              onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
-              selected={selectedSlug === item.job.slug}
-            />
-          ) : (
-            <JobCard
-              job={item.job}
-              status={status}
-              onPress={onSelectJob ? () => onSelectJob(item.job) : undefined}
-              selected={selectedSlug === item.job.slug}
-            />
-          )}
+          {customRenderJobCard
+            ? customRenderJobCard({ job: item.job, status, onPress: pressHandler, selected: isSelected })
+            : status.state === "running" ? (
+              <RunningJobCard
+                jobName={item.job.name}
+                status={status}
+                onPress={pressHandler}
+                selected={isSelected}
+              />
+            ) : (
+              <JobCard
+                job={item.job}
+                status={status}
+                onPress={pressHandler}
+                selected={isSelected}
+              />
+            )
+          }
         </View>
       );
     });
@@ -579,6 +592,7 @@ export function JobListView({
       ref={scrollRef}
       style={styles.scroll}
       contentContainerStyle={[styles.list, contentContainerStyle]}
+      scrollEnabled={scrollEnabled}
       automaticallyAdjustKeyboardInsets
       onScroll={(e) => { onScrollOffsetChange?.(e.nativeEvent.contentOffset.y); }}
       scrollEventThrottle={100}

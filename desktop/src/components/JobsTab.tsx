@@ -2,16 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { RemoteJob, JobSortMode } from "@clawtab/shared";
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent, type DragMoveEvent } from "@dnd-kit/core";
+import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared";
 import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import {
   JobListView,
   NotificationSection,
   AutoYesBanner,
+  SplitDetailArea,
+  DropZoneOverlay,
+  computeDropZone,
+  JobCard,
+  RunningJobCard,
+  ProcessCard,
   useJobsCore,
   useJobActions,
 } from "@clawtab/shared";
-import type { AutoYesEntry } from "@clawtab/shared";
+import type { AutoYesEntry, SplitDirection, DropZoneId } from "@clawtab/shared";
 import { createTauriTransport } from "../transport/tauriTransport";
 import type { AppSettings, Job } from "../types";
 import { JobEditor } from "./JobEditor";
@@ -20,6 +27,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DetectedProcessDetail } from "./DetectedProcessDetail";
 import { DesktopJobDetail, AgentDetail } from "./JobDetailSections";
 import { ParamsOverlay } from "./ParamsOverlay";
+import { DraggableJobCard, DraggableProcessCard, type DragData } from "./DraggableCards";
 
 const transport = createTauriTransport();
 
@@ -53,6 +61,27 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
   const [pendingProcess, setPendingProcess] = useState<ClaudeProcess | null>(null);
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: ClaudeProcess; stoppedAt: number }[]>([]);
+
+  // Split pane state
+  type SplitItem = { kind: "job"; slug: string } | { kind: "process"; paneId: string } | { kind: "agent" };
+  const [splitItem, setSplitItem] = useState<SplitItem | null>(null);
+  const [splitDirection, setSplitDirection] = useState<SplitDirection>(() => {
+    return (localStorage.getItem("split_direction") as SplitDirection) || "horizontal";
+  });
+  const [splitRatio, setSplitRatio] = useState(() => {
+    const v = localStorage.getItem("split_ratio");
+    return v ? Math.max(0.2, Math.min(0.8, parseFloat(v))) : 0.5;
+  });
+
+  // Drag-and-drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragActiveZone, setDragActiveZone] = useState<DropZoneId | null>(null);
+  const [dragOverlayData, setDragOverlayData] = useState<DragData | null>(null);
+  const detailPaneRef = useRef<HTMLDivElement>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
 
   // Question polling
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
@@ -692,6 +721,240 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [missedCronJobs, core.jobs, actions]);
 
+  // --- Drag-and-drop handlers ---
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setIsDragging(true);
+    setDragOverlayData(event.active.data.current as DragData);
+  }, []);
+
+  const handleDragMove = useCallback((event: DragMoveEvent) => {
+    // Compute drop zone from pointer position relative to detail pane
+    const el = detailPaneRef.current;
+    if (!el) { setDragActiveZone(null); return; }
+    const rect = el.getBoundingClientRect();
+    const act = event.activatorEvent as PointerEvent;
+    const dx = event.delta.x;
+    const dy = event.delta.y;
+    const px = act.clientX + dx;
+    const py = act.clientY + dy;
+
+    // Check if pointer is over the detail pane
+    if (px < rect.left || px > rect.right || py < rect.top || py > rect.bottom) {
+      setDragActiveZone(null);
+      return;
+    }
+
+    const zone = computeDropZone(
+      px - rect.left, py - rect.top, rect.width, rect.height,
+      splitItem !== null, splitDirection, splitRatio,
+    );
+    setDragActiveZone(zone);
+  }, [splitItem, splitDirection, splitRatio]);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setIsDragging(false);
+    setDragOverlayData(null);
+    const zone = dragActiveZone;
+    setDragActiveZone(null);
+
+    if (!zone) return;
+    const data = event.active.data.current as DragData;
+    if (!data) return;
+
+    const item: SplitItem = data.kind === "job"
+      ? { kind: "job", slug: data.slug }
+      : { kind: "process", paneId: data.paneId };
+
+    if (zone === "replace-current") {
+      // Replace primary (select the item)
+      if (data.kind === "job") {
+        handleSelectJob(data.job);
+      } else {
+        handleSelectProcess(data.process);
+      }
+      return;
+    }
+
+    if (zone === "replace-primary") {
+      if (data.kind === "job") {
+        handleSelectJob(data.job);
+      } else {
+        handleSelectProcess(data.process);
+      }
+      return;
+    }
+
+    if (zone === "replace-secondary") {
+      setSplitItem(item);
+      return;
+    }
+
+    // Split zones
+    const dir: SplitDirection =
+      zone === "split-horizontal-left" || zone === "split-horizontal-right"
+        ? "horizontal"
+        : "vertical";
+
+    setSplitDirection(dir);
+    localStorage.setItem("split_direction", dir);
+    setSplitRatio(0.5);
+    localStorage.setItem("split_ratio", "0.5");
+
+    if (zone === "split-horizontal-left" || zone === "split-vertical-top") {
+      // New item goes to primary, current becomes secondary
+      const currentPrimary: SplitItem | null = viewingAgent
+        ? { kind: "agent" }
+        : viewingProcess
+          ? { kind: "process", paneId: viewingProcess.pane_id }
+          : viewingJob
+            ? { kind: "job", slug: viewingJob.slug }
+            : null;
+      setSplitItem(currentPrimary);
+      if (data.kind === "job") handleSelectJob(data.job);
+      else handleSelectProcess(data.process);
+    } else {
+      // New item goes to secondary
+      setSplitItem(item);
+    }
+  }, [dragActiveZone, viewingAgent, viewingProcess, viewingJob, handleSelectJob, handleSelectProcess]);
+
+  const handleDragCancel = useCallback(() => {
+    setIsDragging(false);
+    setDragOverlayData(null);
+    setDragActiveZone(null);
+  }, []);
+
+  const handleSplitRatioChange = useCallback((ratio: number) => {
+    setSplitRatio(ratio);
+    localStorage.setItem("split_ratio", String(ratio));
+  }, []);
+
+  const handleClosePrimary = useCallback(() => {
+    // Promote secondary to primary
+    if (splitItem) {
+      if (splitItem.kind === "job") {
+        const job = (core.jobs as Job[]).find((j) => j.slug === splitItem.slug);
+        if (job) { setViewingJob(job); setViewingProcess(null); setViewingAgent(false); }
+      } else if (splitItem.kind === "process") {
+        const proc = core.processes.find((p) => p.pane_id === splitItem.paneId);
+        if (proc) { setViewingProcess(proc); setViewingJob(null); setViewingAgent(false); }
+      } else if (splitItem.kind === "agent") {
+        setViewingAgent(true); setViewingJob(null); setViewingProcess(null);
+      }
+    }
+    setSplitItem(null);
+  }, [splitItem, core.jobs, core.processes]);
+
+  const handleCloseSecondary = useCallback(() => {
+    setSplitItem(null);
+  }, []);
+
+  // Render secondary pane content
+  const renderSecondaryContent = useCallback(() => {
+    if (!splitItem) return null;
+
+    if (splitItem.kind === "agent") {
+      const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
+      const agentStatus = core.statuses["agent"] ?? { state: "idle" as const };
+      return (
+        <AgentDetail
+          transport={transport}
+          job={agentJob}
+          status={agentStatus}
+          onBack={() => setSplitItem(null)}
+          onOpen={() => handleOpen("agent")}
+          showBackButton={false}
+        />
+      );
+    }
+
+    if (splitItem.kind === "process") {
+      const proc = core.processes.find((p) => p.pane_id === splitItem.paneId);
+      if (!proc) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span></div>;
+      return (
+        <DetectedProcessDetail
+          process={proc}
+          questions={questions}
+          onBack={() => setSplitItem(null)}
+          onDismissQuestion={(qId) => {
+            dismissedRef.current.set(qId, Date.now());
+            setQuestions((prev) => prev.filter((q) => q.question_id !== qId));
+            startFastQuestionPoll();
+          }}
+          autoYesActive={autoYesPaneIds.has(proc.pane_id)}
+          onToggleAutoYes={() => {
+            const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
+            if (paneQuestion) handleToggleAutoYes(paneQuestion);
+            else handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
+          }}
+          showBackButton={false}
+          onStopped={() => {
+            setStoppingProcesses((prev) => [
+              ...prev,
+              { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() },
+            ]);
+            setSplitItem(null);
+          }}
+        />
+      );
+    }
+
+    // job
+    const job = (core.jobs as Job[]).find((j) => j.slug === splitItem.slug);
+    if (!job) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Job not found</span></div>;
+    const jobQuestion = questions.find((q) => q.matched_job === job.slug);
+    const matchedProcess = core.processes.find((p) => p.matched_job === job.slug);
+    return (
+      <DesktopJobDetail
+        transport={transport}
+        job={job}
+        status={core.statuses[job.slug] ?? { state: "idle" as const }}
+        firstQuery={matchedProcess?.first_query ?? undefined}
+        lastQuery={matchedProcess?.last_query ?? undefined}
+        onBack={() => setSplitItem(null)}
+        onEdit={() => { setEditingJob(job); setSplitItem(null); }}
+        onOpen={() => handleOpen(job.slug)}
+        onToggle={() => { actions.toggleJob(job.slug); core.reload(); }}
+        onDuplicate={(group: string) => handleDuplicate(job, group)}
+        onDuplicateToFolder={() => handleDuplicateToFolder(job)}
+        onDelete={() => { setSplitItem(null); actions.deleteJob(job.slug); core.reload(); }}
+        groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
+        showBackButton={false}
+        options={jobQuestion?.options}
+        questionContext={jobQuestion?.context_lines}
+        autoYesActive={(() => {
+          const paneId = jobQuestion?.pane_id ?? (core.statuses[job.slug]?.state === "running" ? (core.statuses[job.slug] as { pane_id?: string }).pane_id : undefined);
+          return paneId ? autoYesPaneIds.has(paneId) : false;
+        })()}
+        onToggleAutoYes={(() => {
+          if (jobQuestion) return () => handleToggleAutoYes(jobQuestion);
+          const status = core.statuses[job.slug];
+          if (status?.state === "running") {
+            const paneId = (status as { pane_id?: string }).pane_id;
+            if (paneId) return () => handleToggleAutoYesByPaneId(paneId, job.name);
+          }
+          return undefined;
+        })()}
+      />
+    );
+  }, [splitItem, core.statuses, core.jobs, core.processes, questions, autoYesPaneIds, actions, handleToggleAutoYes, handleToggleAutoYesByPaneId, startFastQuestionPoll, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload]);
+
+  // Custom card renderers for drag-and-drop
+  const renderDraggableJobCard = useCallback(
+    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean }) => (
+      <DraggableJobCard {...props} />
+    ),
+    [],
+  );
+
+  const renderDraggableProcessCard = useCallback(
+    (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean }) => (
+      <DraggableProcessCard {...props} />
+    ),
+    [],
+  );
+
   // --- Notification visibility (animation delay) ---
 
   const [nfnVisible, setNfnVisible] = useState(questions.length > 0);
@@ -995,21 +1258,23 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     </>
   );
 
+  const detectedProcessesMemo = useMemo(() => {
+    const stoppingIds = new Set(stoppingProcesses.map((sp) => sp.process.pane_id));
+    const base = stoppingIds.size > 0
+      ? core.processes.filter((p) => !stoppingIds.has(p.pane_id))
+      : core.processes;
+    const extras = [
+      ...stoppingProcesses.map((sp) => sp.process),
+      ...(pendingProcess ? [pendingProcess] : []),
+    ];
+    return extras.length > 0 ? [...base, ...extras] : base;
+  }, [stoppingProcesses, core.processes, pendingProcess]);
+
   const jobListView = (
     <JobListView
       jobs={core.jobs}
       statuses={core.statuses}
-      detectedProcesses={(() => {
-        const stoppingIds = new Set(stoppingProcesses.map((sp) => sp.process.pane_id));
-        const base = stoppingIds.size > 0
-          ? core.processes.filter((p) => !stoppingIds.has(p.pane_id))
-          : core.processes;
-        const extras = [
-          ...stoppingProcesses.map((sp) => sp.process),
-          ...(pendingProcess ? [pendingProcess] : []),
-        ];
-        return extras.length > 0 ? [...base, ...extras] : base;
-      })()}
+      detectedProcesses={detectedProcessesMemo}
       collapsedGroups={core.collapsedGroups}
       onToggleGroup={core.toggleGroup}
       groupOrder={groupOrder}
@@ -1024,6 +1289,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       showEmpty={core.loaded}
       emptyMessage="No jobs configured yet."
       scrollToSlug={scrollToSlug}
+      scrollEnabled={!isDragging}
+      renderJobCard={isWide ? renderDraggableJobCard : undefined}
+      renderProcessCard={isWide ? renderDraggableProcessCard : undefined}
     />
   );
 
@@ -1031,7 +1299,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   if (!isWide) {
     // Full-screen detail views for narrow mode
     if (viewingAgent || pendingAgentWorkDir || viewingProcess || viewingJob) {
-      return <>{detailPane}{dialogs}</>;
+      return <div style={{ margin: -20, height: "calc(100vh - 42px)", overflow: "hidden", display: "flex", flexDirection: "column" }}>{detailPane}{dialogs}</div>;
     }
     return (
       <div className="settings-section">
@@ -1044,20 +1312,66 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     );
   }
 
-  // Wide window: split pane
-  return (
-    <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px)", margin: -20, overflow: "hidden" }}>
-      <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {jobListView}
-      </div>
-      <div
-        onMouseDown={onResizeHandleMouseDown}
-        style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }}
-      />
-      <div className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)" }}>
-        {detailPane}
-      </div>
-      {dialogs}
+  // Drag overlay content
+  const dragOverlayContent = dragOverlayData ? (
+    <div style={{ opacity: 0.8, pointerEvents: "none", width: 300 }}>
+      {dragOverlayData.kind === "job" ? (
+        (() => {
+          const status = core.statuses[dragOverlayData.slug] ?? { state: "idle" as const };
+          return status.state === "running"
+            ? <RunningJobCard jobName={dragOverlayData.job.name} status={status} />
+            : <JobCard job={dragOverlayData.job} status={status} />;
+        })()
+      ) : (
+        <ProcessCard process={dragOverlayData.process} />
+      )}
     </div>
+  ) : null;
+
+  // Drop zone overlay (shown during drag over detail pane)
+  const dropOverlay = isDragging ? (
+    <DropZoneOverlay
+      isSplit={splitItem !== null}
+      splitDirection={splitDirection}
+      splitRatio={splitRatio}
+      activeZone={dragActiveZone}
+    />
+  ) : null;
+
+  // Wide window: split pane with DnD
+  return (
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px)", margin: -20, overflow: "hidden" }}>
+        <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", zIndex: 1 }}>
+          {jobListView}
+        </div>
+        <div
+          onMouseDown={onResizeHandleMouseDown}
+          style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }}
+        />
+        <div ref={detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", position: "relative", zIndex: 2 }}>
+          <SplitDetailArea
+            primaryContent={detailPane}
+            secondaryContent={splitItem ? renderSecondaryContent() : null}
+            direction={splitDirection}
+            ratio={splitRatio}
+            onRatioChange={handleSplitRatioChange}
+            onClosePrimary={splitItem ? handleClosePrimary : undefined}
+            onCloseSecondary={splitItem ? handleCloseSecondary : undefined}
+            overlay={dropOverlay}
+          />
+        </div>
+        {dialogs}
+      </div>
+      <DragOverlay dropAnimation={null}>
+        {dragOverlayContent}
+      </DragOverlay>
+    </DndContext>
   );
 }

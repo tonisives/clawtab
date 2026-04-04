@@ -831,7 +831,13 @@ while true; do
                 SEARCHING=0
                 CURSOR=0
                 SCROLL=0
-                draw
+                # If exactly 1 result, auto-execute it
+                apply_filter
+                if [ ${#FILTERED_INDICES[@]} -eq 1 ]; then
+                    do_enter || break
+                else
+                    draw
+                fi
                 ;;
             backspace)
                 if [ -n "$SEARCH" ]; then
@@ -920,7 +926,8 @@ while true; do
                 fi
                 draw_tabs; draw_shortcuts; draw_status_bar
             else
-                max=$(tab_count)
+                apply_filter
+                max=${#FILTERED_INDICES[@]}
                 if [ $max -gt 0 ]; then
                     if [ $CURSOR -gt 0 ]; then
                         ((CURSOR--))
@@ -951,7 +958,8 @@ while true; do
                 fi
                 draw_tabs; draw_shortcuts; draw_status_bar
             else
-                max=$(tab_count)
+                apply_filter
+                max=${#FILTERED_INDICES[@]}
                 if [ $max -gt 0 ]; then
                     if [ $CURSOR -lt $((max - 1)) ]; then
                         ((CURSOR++))

@@ -38,6 +38,7 @@ export interface JobDetailViewProps {
   onReloadRuns?: () => void;
   // Desktop-only slots
   onEdit?: () => void;
+  /** @deprecated No longer rendered, kept for caller compat */
   onOpen?: () => void;
   onDuplicate?: (group: string) => void;
   onToggleEnabled?: () => void;
