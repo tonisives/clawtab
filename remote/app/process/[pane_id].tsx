@@ -215,6 +215,17 @@ export default function ProcessDetailScreen() {
     confirm("Stop process", `Kill the Claude process in ${displayName}?`, doStop);
   };
 
+  const [starting, setStarting] = useState(false);
+  const handleStart = async () => {
+    const send = getWsSend();
+    if (!send || starting) return;
+    setStarting(true);
+    const workDir = (process ?? lastProcess)?.cwd;
+    const id = nextId();
+    send({ type: "run_agent", id, prompt: "", work_dir: workDir });
+    setTimeout(() => setStarting(false), 3000);
+  };
+
   const isAlive = !!process || !!paneQuestion;
   const isWeb = Platform.OS === "web";
   const outerScrollRef = useRef<ScrollView>(null);
@@ -249,8 +260,8 @@ export default function ProcessDetailScreen() {
   const pageContent = (
     <ContentContainer wide>
       <View style={[styles.content, isWide && styles.contentWide]}>
-        {isAlive && (
-          <View style={styles.actions}>
+        <View style={styles.actions}>
+          {isAlive ? (
             <TouchableOpacity
               style={[styles.stopBtn, stopping && { opacity: 0.5 }]}
               onPress={handleStop}
@@ -259,14 +270,31 @@ export default function ProcessDetailScreen() {
             >
               <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
             </TouchableOpacity>
-          </View>
-        )}
+          ) : (
+            <TouchableOpacity
+              style={[styles.startBtn, starting && { opacity: 0.5 }]}
+              onPress={handleStart}
+              disabled={starting}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.startBtnText}>{starting ? "Starting..." : "Start"}</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {(process ?? lastProcess)?.first_query && (
           <View style={styles.queryRow}>
             <Text style={styles.queryLabel}>Query</Text>
             <Text style={styles.queryText} numberOfLines={3}>
               {(process ?? lastProcess)!.first_query}
+            </Text>
+          </View>
+        )}
+        {(process ?? lastProcess)?.last_query && (process ?? lastProcess)!.last_query !== (process ?? lastProcess)!.first_query && (
+          <View style={styles.queryRow}>
+            <Text style={styles.queryLabel}>Latest</Text>
+            <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={3}>
+              {(process ?? lastProcess)!.last_query}
             </Text>
           </View>
         )}
@@ -456,6 +484,15 @@ const styles = StyleSheet.create({
     borderColor: colors.danger,
   },
   stopBtnText: { color: colors.danger, fontSize: 14, fontWeight: "600" },
+  startBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accentBg,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  startBtnText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
   queryRow: {
     backgroundColor: colors.surface,
     borderRadius: radius.sm,
