@@ -10,6 +10,7 @@ export interface ClaudeProcess {
   first_query: string | null;
   last_query: string | null;
   session_started_at: string | null;
+  _transient_state?: "starting" | "stopping";
 }
 
 export interface QuestionOption {

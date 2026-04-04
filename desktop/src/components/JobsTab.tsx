@@ -52,6 +52,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
   const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
   const [pendingProcess, setPendingProcess] = useState<ClaudeProcess | null>(null);
+  const [stoppingProcesses, setStoppingProcesses] = useState<{ process: ClaudeProcess; stoppedAt: number }[]>([]);
 
   // Question polling
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
@@ -253,6 +254,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [core.processes, pendingAgentWorkDir]);
 
+  // Remove stopping placeholders once the real process disappears or times out
+  useEffect(() => {
+    if (stoppingProcesses.length === 0) return;
+    setStoppingProcesses((prev) =>
+      prev.filter((sp) => {
+        const stillPresent = core.processes.some((p) => p.pane_id === sp.process.pane_id);
+        return stillPresent && Date.now() - sp.stoppedAt < 10000;
+      }),
+    );
+  }, [core.processes, stoppingProcesses.length]);
+
   useEffect(() => {
     if (!pendingPaneId) return;
     console.log("[open-pane] looking for pane:", pendingPaneId,
@@ -427,7 +439,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   type ListItemRef = { kind: "job"; slug: string; job: Job } | { kind: "process"; paneId: string; process: ClaudeProcess };
   const orderedItems = useMemo(() => {
     const result: ListItemRef[] = [];
-    // Jobs grouped and sorted like JobListView
     const jobs = core.jobs as Job[];
     const grouped = new Map<string, Job[]>();
     for (const job of jobs) {
@@ -448,25 +459,30 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return da.localeCompare(db, undefined, { sensitivity: "base" });
       });
     }
+    // Build combined process list (replacing real with stopping variants, adding pending)
+    const stoppingIds = new Set(stoppingProcesses.map((sp) => sp.process.pane_id));
+    const allProcs = [
+      ...core.processes.filter((p) => !stoppingIds.has(p.pane_id)),
+      ...stoppingProcesses.map((sp) => sp.process),
+      ...(pendingProcess ? [pendingProcess] : []),
+    ];
     for (const key of keys) {
       for (const job of grouped.get(key) ?? []) {
         result.push({ kind: "job", slug: job.slug, job });
       }
-      // Add processes matched to this group
-      for (const proc of core.processes) {
+      for (const proc of allProcs) {
         if (proc.matched_group === key) {
           result.push({ kind: "process", paneId: proc.pane_id, process: proc });
         }
       }
     }
-    // Unmatched processes
-    for (const proc of core.processes) {
+    for (const proc of allProcs) {
       if (!proc.matched_group) {
         result.push({ kind: "process", paneId: proc.pane_id, process: proc });
       }
     }
     return result;
-  }, [core.jobs, core.processes, sortMode]);
+  }, [core.jobs, core.processes, sortMode, pendingProcess, stoppingProcesses]);
 
   const selectAdjacentItem = useCallback((currentId: string) => {
     const idx = orderedItems.findIndex((it) =>
@@ -531,6 +547,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         first_query: prompt.slice(0, 80),
         last_query: null,
         session_started_at: new Date().toISOString(),
+        _transient_state: "starting",
       };
       setPendingProcess(placeholder);
       setViewingJob(null);
@@ -828,7 +845,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               else handleToggleAutoYesByPaneId(viewingProcess.pane_id, viewingProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
             }}
             showBackButton={!isWide}
-            onStopped={() => { selectAdjacentItem(viewingProcess.pane_id); }}
+            onStopped={() => {
+              setStoppingProcesses((prev) => [
+                ...prev,
+                { process: { ...viewingProcess, _transient_state: "stopping" }, stoppedAt: Date.now() },
+              ]);
+              selectAdjacentItem(viewingProcess.pane_id);
+            }}
           />
           {pendingAutoYes && (
             <ConfirmDialog
@@ -976,7 +999,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     <JobListView
       jobs={core.jobs}
       statuses={core.statuses}
-      detectedProcesses={pendingProcess ? [...core.processes, pendingProcess] : core.processes}
+      detectedProcesses={(() => {
+        const stoppingIds = new Set(stoppingProcesses.map((sp) => sp.process.pane_id));
+        const base = stoppingIds.size > 0
+          ? core.processes.filter((p) => !stoppingIds.has(p.pane_id))
+          : core.processes;
+        const extras = [
+          ...stoppingProcesses.map((sp) => sp.process),
+          ...(pendingProcess ? [pendingProcess] : []),
+        ];
+        return extras.length > 0 ? [...base, ...extras] : base;
+      })()}
       collapsedGroups={core.collapsedGroups}
       onToggleGroup={core.toggleGroup}
       groupOrder={groupOrder}

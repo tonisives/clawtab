@@ -397,8 +397,6 @@ struct DetectionResult {
     processes: Vec<(String, String, String, String, String, Option<String>, Option<String>)>,
     /// All pane IDs that currently exist in tmux (not just Claude processes).
     all_pane_ids: HashSet<String>,
-    /// Pane IDs that have an active Claude process (subset of all_pane_ids).
-    claude_pane_ids: HashSet<String>,
 }
 
 /// Detect Claude processes and return their details for question parsing.
@@ -422,7 +420,7 @@ fn detect_question_processes(
         .output()
     {
         Ok(o) if o.status.success() => o,
-        _ => return DetectionResult { processes: vec![], all_pane_ids: HashSet::new(), claude_pane_ids: HashSet::new() },
+        _ => return DetectionResult { processes: vec![], all_pane_ids: HashSet::new() },
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -456,7 +454,6 @@ fn detect_question_processes(
     };
 
     let mut all_pane_ids = HashSet::new();
-    let mut claude_pane_ids = HashSet::new();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 
@@ -471,7 +468,6 @@ fn detect_question_processes(
 
         if !is_semver(command) { continue; }
 
-        claude_pane_ids.insert(pane_id.to_string());
         if !seen.insert(pane_id.to_string()) { continue; }
 
         // Check if this is a tracked running job
@@ -503,5 +499,5 @@ fn detect_question_processes(
         ));
     }
 
-    DetectionResult { processes: results, all_pane_ids, claude_pane_ids }
+    DetectionResult { processes: results, all_pane_ids }
 }

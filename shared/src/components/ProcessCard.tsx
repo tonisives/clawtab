@@ -24,7 +24,14 @@ export function ProcessCard({
     ? (process.last_query && process.last_query !== process.first_query ? process.last_query : null)
     : (process.first_query ?? null);
 
-  const statusWithTitle = (
+  const transient = process._transient_state;
+
+  const statusWithTitle = transient ? (
+    <View style={[
+      styles.statusDot,
+      transient === "starting" ? styles.statusDotStarting : styles.statusDotStopping,
+    ]} />
+  ) : (
     <Tooltip label="Running">
       <View style={styles.statusDot} />
     </Tooltip>
@@ -41,10 +48,14 @@ export function ProcessCard({
           <Text style={styles.processTypeIconText}>C</Text>
         </View>
         <View style={styles.processInfo}>
-          <Text style={styles.processName} numberOfLines={1}>
+          <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
             {displayName}
           </Text>
-          {subtitle ? (
+          {transient ? (
+            <Text style={[styles.queryPreview, { fontStyle: "italic" }]} numberOfLines={1}>
+              {transient === "starting" ? "Starting..." : "Stopping..."}
+            </Text>
+          ) : subtitle ? (
             <Text style={styles.queryPreview} numberOfLines={1}>
               {subtitle}
             </Text>
@@ -97,5 +108,13 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.statusRunning,
     flexShrink: 0,
+  },
+  statusDotStarting: {
+    backgroundColor: "#f59e0b",
+    opacity: 0.7,
+  },
+  statusDotStopping: {
+    backgroundColor: colors.textMuted,
+    opacity: 0.5,
   },
 });
