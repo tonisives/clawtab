@@ -15,13 +15,13 @@ export const RunningJobCard = memo(function RunningJobCard({
   jobName: string;
   status: JobStatus;
   onPress?: () => void;
-  selected?: boolean;
+  selected?: boolean | string;
 }) {
   const startedAt = status.state === "running" ? status.started_at : null;
 
   return (
     <TouchableOpacity
-      style={[styles.card, selected && styles.cardSelected]}
+      style={[styles.card, selected && { borderColor: typeof selected === "string" ? selected : colors.accent }]}
       onPress={onPress}
       activeOpacity={0.7}
     >

@@ -18,7 +18,7 @@ export const JobCard = memo(function JobCard({
   job: RemoteJob;
   status: JobStatus;
   onPress?: () => void;
-  selected?: boolean;
+  selected?: boolean | string;
 }) {
   const lastRun =
     status.state === "success"
@@ -33,7 +33,7 @@ export const JobCard = memo(function JobCard({
 
   return (
     <TouchableOpacity
-      style={[styles.card, !job.enabled && styles.cardDisabled, selected && styles.cardSelected]}
+      style={[styles.card, !job.enabled && styles.cardDisabled, selected && { borderColor: typeof selected === "string" ? selected : colors.accent }]}
       onPress={onPress}
       activeOpacity={0.7}
     >

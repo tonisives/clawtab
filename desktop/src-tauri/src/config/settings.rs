@@ -34,6 +34,8 @@ pub struct AppSettings {
     pub tool_paths: HashMap<String, String>,
     /// Ordered list of job group names for display ordering
     pub group_order: Vec<String>,
+    /// Groups hidden from the main sidebar list
+    pub hidden_groups: Vec<String>,
     /// Remote relay server settings
     pub relay: Option<RelaySettings>,
 }
@@ -56,6 +58,7 @@ impl Default for AppSettings {
             auto_update_enabled: true,
             tool_paths: HashMap::new(),
             group_order: Vec::new(),
+            hidden_groups: Vec::new(),
             relay: None,
         }
     }

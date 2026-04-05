@@ -1,5 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, Platform, type StyleProp, type ViewStyle } from "react-native";
+
+const isWeb = Platform.OS === "web";
+let createPortalFn: ((children: ReactNode, container: Element) => ReactNode) | null = null;
+function PortalWeb({ children }: { children: ReactNode }) {
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    if (isWeb && !createPortalFn) {
+      import("react-dom").then((mod) => {
+        createPortalFn = mod.createPortal;
+        forceUpdate((n) => n + 1);
+      });
+    }
+  }, []);
+  if (!isWeb || !createPortalFn) return <>{children}</>;
+  return createPortalFn(children, document.body);
+}
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
 import type { ClaudeProcess } from "../types/process";
 import { JobCard } from "./JobCard";
@@ -92,7 +108,9 @@ export interface JobListViewProps {
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
-  // Slug or pane_id of the currently selected item (for highlighting)
+  // Map of slug/pane_id -> color hex for highlighted items (supports multi-selection)
+  selectedItems?: Map<string, string> | null;
+  // Single selection (backward compat with desktop) - uses accent color
   selectedSlug?: string | null;
   // Agent
   onRunAgent?: (prompt: string, workDir?: string) => void;
@@ -100,6 +118,10 @@ export interface JobListViewProps {
   onAddJob?: (group: string, folderPath?: string) => void;
   onEditJob?: (job: RemoteJob) => void;
   onOpenJob?: (job: RemoteJob) => void;
+  // Hidden groups
+  hiddenGroups?: Set<string>;
+  onHideGroup?: (group: string) => void;
+  onUnhideGroup?: (group: string) => void;
   // Header content (for banners, notifications, etc.)
   headerContent?: React.ReactNode;
   // Show empty state
@@ -114,8 +136,8 @@ export interface JobListViewProps {
   // Scroll a specific slug into view (bumped counter to trigger re-scroll)
   scrollToSlug?: string | null;
   // Custom card renderers (for drag-and-drop wrappers)
-  renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean }) => React.ReactNode;
-  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean }) => React.ReactNode;
+  renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string }) => React.ReactNode;
+  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string }) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
   scrollEnabled?: boolean;
 }
@@ -124,7 +146,9 @@ type ListItem =
   | { kind: "header"; group: string; displayGroup: string; folderPath?: string }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: ClaudeProcess; inGroup?: boolean }
-  | { kind: "group-agent"; workDir: string };
+  | { kind: "group-agent"; workDir: string }
+  | { kind: "hidden-section" }
+  | { kind: "hidden-header"; group: string; displayGroup: string };
 
 export function JobListView({
   jobs,
@@ -138,9 +162,13 @@ export function JobListView({
   onSortChange,
   onSelectJob,
   onSelectProcess,
+  selectedItems,
   selectedSlug,
   onRunAgent,
   onAddJob,
+  hiddenGroups,
+  onHideGroup,
+  onUnhideGroup,
   headerContent,
   showEmpty = true,
   emptyMessage = "No jobs found.",
@@ -156,6 +184,9 @@ export function JobListView({
   const searchRef = useRef<TextInput>(null);
   const [sortOpen, setSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string } | null>(null);
+  const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const groupMenuDropdownRef = useRef<View>(null);
 
   // Keyboard shortcut: Cmd+F (desktop) or / (web) to focus search
   useEffect(() => {
@@ -174,6 +205,20 @@ export function JobListView({
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
   }, []);
+
+  // Close group menu on outside click (web only)
+  useEffect(() => {
+    if (!groupMenu || !isWeb) return;
+    const handler = (e: MouseEvent) => {
+      const dropdown = (groupMenuDropdownRef.current as any);
+      const target = e.target as Node;
+      if (!dropdown || !dropdown.contains(target)) {
+        setGroupMenu(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [groupMenu]);
 
   const query = searchQuery.toLowerCase().trim();
 
@@ -303,9 +348,18 @@ export function JobListView({
       allGroups.push({ type: "ungrouped", procs: detUngrouped });
     }
 
-    const hasMultipleGroups = allGroups.length > 1;
+    // Split into visible and hidden groups
+    const isGroupHidden = (entry: GroupEntry) => {
+      if (!hiddenGroups?.size) return false;
+      const name = "displayGroup" in entry ? entry.displayGroup : "";
+      return hiddenGroups.has(name);
+    };
 
-    for (const entry of allGroups) {
+    const visibleGroups = allGroups.filter((e) => !isGroupHidden(e));
+    const hiddenEntries = allGroups.filter((e) => isGroupHidden(e));
+    const hasMultipleGroups = visibleGroups.length > 1;
+
+    for (const entry of visibleGroups) {
       if (entry.type === "job") {
         if (hasMultipleGroups || result.length > 0 || query) {
           result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath });
@@ -345,8 +399,18 @@ export function JobListView({
       }
     }
 
+    // Add hidden groups section at the bottom
+    if (hiddenEntries.length > 0) {
+      result.push({ kind: "hidden-section" });
+      for (const entry of hiddenEntries) {
+        const displayGroup = "displayGroup" in entry ? entry.displayGroup : "Detected";
+        const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" ? entry.groupKey : "Detected";
+        result.push({ kind: "hidden-header", group, displayGroup });
+      }
+    }
+
     return result;
-  }, [grouped, sortedGroupKeys, collapsedGroups, matchedProcessesByGroup, unmatchedProcesses, onRunAgent]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, matchedProcessesByGroup, unmatchedProcesses, onRunAgent]);
 
   const handleRefresh = useCallback(() => {
     onRefresh?.();
@@ -369,7 +433,11 @@ export function JobListView({
             ? `p_${item.process.pane_id}`
             : item.kind === "group-agent"
               ? `ga_${item.workDir}`
-              : `j_${item.job.slug || item.job.name}`;
+              : item.kind === "hidden-section"
+                ? "hidden_section"
+                : item.kind === "hidden-header"
+                  ? `hh_${item.group}`
+                  : `j_${item.job.slug || item.job.name}`;
 
       if (item.kind === "header") {
         const isCollapsed = collapsedGroups.has(item.group);
@@ -389,14 +457,28 @@ export function JobListView({
                   {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
                 </Text>
               )}
-              {onAddJob && (
+              {(onAddJob || onHideGroup) && (
                 <TouchableOpacity
-                  onPress={(e) => { e.stopPropagation(); onAddJob(item.group, item.folderPath); }}
+                  onPress={(e: any) => {
+                    e.stopPropagation();
+                    if (groupMenu?.group === item.group) {
+                      setGroupMenu(null);
+                      return;
+                    }
+                    if (isWeb) {
+                      const node = e?.currentTarget ?? e?.target;
+                      if (node?.getBoundingClientRect) {
+                        const rect = node.getBoundingClientRect();
+                        setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
+                      }
+                    }
+                    setGroupMenu({ group: item.group, folderPath: item.folderPath });
+                  }}
                   style={styles.addJobBtn}
                   activeOpacity={0.6}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={styles.addJobBtnText}>+</Text>
+                  <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
                 </TouchableOpacity>
               )}
             </TouchableOpacity>
@@ -406,7 +488,7 @@ export function JobListView({
 
       if (item.kind === "process") {
         const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
-        const isSelected = selectedSlug === item.process.pane_id;
+        const isSelected = selectedItems?.get(item.process.pane_id) ?? (selectedSlug === item.process.pane_id);
         return (
           <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
             {customRenderProcessCard
@@ -427,10 +509,39 @@ export function JobListView({
         );
       }
 
+      if (item.kind === "hidden-section") {
+        return (
+          <View key={key} style={{ marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
+            <Text style={[styles.groupHeader, { fontSize: 10, color: colors.textMuted }]}>Hidden Groups</Text>
+          </View>
+        );
+      }
+
+      if (item.kind === "hidden-header") {
+        return (
+          <View key={key} style={{ marginTop: spacing.xs }}>
+            <View style={[styles.groupHeaderRow, { opacity: 0.5 }]}>
+              <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+              <View style={{ flex: 1 }} />
+              {onUnhideGroup && (
+                <TouchableOpacity
+                  onPress={() => onUnhideGroup(item.group)}
+                  style={styles.addJobBtn}
+                  activeOpacity={0.6}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={[styles.groupDropdownItemText, { fontSize: 11, color: colors.textMuted }]}>Show</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        );
+      }
+
       // job
       const status = statuses[item.job.slug] ?? IDLE_STATUS;
       const pressHandler = onSelectJob ? () => onSelectJob(item.job) : undefined;
-      const isSelected = selectedSlug === item.job.slug;
+      const isSelected = selectedItems?.get(item.job.slug) ?? (selectedSlug === item.job.slug);
       return (
         <View
           key={key}
@@ -609,7 +720,68 @@ export function JobListView({
       {headerContent}
       {toolbar}
       {renderItems()}
+      <GroupMenuDropdown
+        groupMenu={groupMenu}
+        groupMenuPos={groupMenuPos}
+        dropdownRef={groupMenuDropdownRef}
+        onAddJob={onAddJob}
+        onHideGroup={onHideGroup}
+        onClose={() => setGroupMenu(null)}
+      />
     </ScrollView>
+  );
+}
+
+function GroupMenuDropdown({ groupMenu, groupMenuPos, dropdownRef, onAddJob, onHideGroup, onClose }: {
+  groupMenu: { group: string; folderPath?: string } | null;
+  groupMenuPos: { top: number; left: number } | null;
+  dropdownRef: React.RefObject<View | null>;
+  onAddJob?: (group: string, folderPath?: string) => void;
+  onHideGroup?: (group: string) => void;
+  onClose: () => void;
+}) {
+  if (!groupMenu || (!onAddJob && !onHideGroup)) return null;
+  return (
+    <PortalWeb>
+      <View ref={dropdownRef} style={isWeb && groupMenuPos ? {
+        position: "fixed" as any,
+        top: groupMenuPos.top,
+        left: groupMenuPos.left,
+        transform: "translateX(-100%)" as any,
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 6,
+        minWidth: 140,
+        zIndex: 9999,
+        boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+      } as any : styles.groupDropdownMenu}>
+        {onAddJob && (
+          <TouchableOpacity
+            style={styles.groupDropdownItem}
+            onPress={() => {
+              onClose();
+              onAddJob(groupMenu.group, groupMenu.folderPath);
+            }}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.groupDropdownItemText}>Add Job</Text>
+          </TouchableOpacity>
+        )}
+        {onHideGroup && (
+          <TouchableOpacity
+            style={styles.groupDropdownItem}
+            onPress={() => {
+              onClose();
+              onHideGroup(groupMenu.group);
+            }}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.groupDropdownItemText}>Hide Group</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </PortalWeb>
   );
 }
 
@@ -646,8 +818,30 @@ const styles = StyleSheet.create({
   addJobBtnText: {
     color: colors.textSecondary,
     fontSize: 18,
-    fontWeight: "300",
+    fontWeight: "700",
     lineHeight: 20,
+    letterSpacing: 1,
+  },
+  groupDropdownMenu: {
+    position: "absolute",
+    top: "100%",
+    right: 0,
+    marginTop: 4,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 6,
+    minWidth: 140,
+    zIndex: 9999,
+    ...(Platform.OS === "web" ? { boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } : {}),
+  },
+  groupDropdownItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  groupDropdownItemText: {
+    color: colors.text,
+    fontSize: 13,
   },
   groupHeaderArrow: { fontFamily: "monospace", fontSize: 9, color: colors.textSecondary },
   groupHeader: {

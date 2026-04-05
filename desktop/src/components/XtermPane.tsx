@@ -33,9 +33,6 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
     let observer: ResizeObserver | null = null;
     let term: Terminal | null = null;
     let spawned = false;
-    let blurHandler: (() => void) | null = null;
-    let focusHandler: (() => void) | null = null;
-
     const key = eventKey(paneId);
 
     async function setup() {
@@ -137,20 +134,6 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         invoke("pty_write", { paneId, data: encoded }).catch(() => {});
       });
 
-      // When the clawtab window loses focus, restore the tmux window to
-      // automatic sizing so the real terminal (Alacritty) reclaims its full
-      // dimensions.  When focus returns, re-apply clawtab's viewport size.
-      blurHandler = () => {
-        invoke("pty_restore_size", { paneId }).catch(() => {});
-      };
-      focusHandler = () => {
-        if (t.cols > 0 && t.rows > 0) {
-          invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(() => {});
-        }
-      };
-      window.addEventListener("blur", blurHandler);
-      window.addEventListener("focus", focusHandler);
-
       // Handle file drag-and-drop via Tauri's native API
       dropUnlisten = await getCurrentWebview().onDragDropEvent((event) => {
         const p = event.payload;
@@ -177,8 +160,6 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
       outputUnlisten?.();
       exitUnlisten?.();
       dropUnlisten?.();
-      if (blurHandler) window.removeEventListener("blur", blurHandler);
-      if (focusHandler) window.removeEventListener("focus", focusHandler);
       term?.dispose();
       if (spawned) {
         invoke("pty_destroy", { paneId }).catch(() => {});

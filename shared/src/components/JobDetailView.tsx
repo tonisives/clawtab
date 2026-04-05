@@ -153,6 +153,7 @@ export function JobDetailView({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const dupMenuRef = useRef<View>(null);
   const settingsMenuRef = useRef<View>(null);
+  const settingsDropdownRef = useRef<View>(null);
   const settingsBtnRef = useRef<any>(null);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
@@ -191,7 +192,9 @@ export function JobDetailView({
     if (!showSettingsMenu || !isWeb) return;
     const handler = (e: MouseEvent) => {
       const el = (settingsMenuRef.current as any);
-      if (el && !el.contains(e.target as Node)) {
+      const dropdown = (settingsDropdownRef.current as any);
+      const target = e.target as Node;
+      if (el && !el.contains(target) && (!dropdown || !dropdown.contains(target))) {
         setShowSettingsMenu(false);
       }
     };
@@ -420,7 +423,7 @@ export function JobDetailView({
               </TouchableOpacity>
               {showSettingsMenu && (
                 <PortalWeb>
-                  <View style={isWeb && menuPos ? {
+                  <View ref={settingsDropdownRef} style={isWeb && menuPos ? {
                     ...StyleSheet.flatten(styles.dropdownMenu),
                     position: "fixed" as any,
                     top: menuPos.top,

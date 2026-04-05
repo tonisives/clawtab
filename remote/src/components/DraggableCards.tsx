@@ -19,7 +19,7 @@ export function DraggableJobCard({
   job: RemoteJob
   status: JobStatus
   onPress?: () => void
-  selected?: boolean
+  selected?: boolean | string
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-job-${job.slug}`,
@@ -51,7 +51,7 @@ export function DraggableProcessCard({
   process: ClaudeProcess
   onPress?: () => void
   inGroup?: boolean
-  selected?: boolean
+  selected?: boolean | string
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-process-${process.pane_id}`,

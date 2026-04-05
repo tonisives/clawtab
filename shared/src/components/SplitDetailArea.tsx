@@ -1,70 +1,48 @@
-import { useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { SplitNode, PaneContent } from "../types/splitTree";
 
-export type SplitDirection = "horizontal" | "vertical";
+export type { SplitDirection } from "../types/splitTree";
+
+const MIN_PANE_SIZE = 300;
 
 export interface SplitDetailAreaProps {
-  /** Content for the primary (top/left) pane */
-  primaryContent: ReactNode;
-  /** Content for the secondary (bottom/right) pane - null means no split */
-  secondaryContent: ReactNode | null;
-  /** Split direction: horizontal = side-by-side, vertical = top-bottom */
-  direction: SplitDirection;
-  /** Split ratio 0.2-0.8, default 0.5 */
-  ratio: number;
-  onRatioChange: (ratio: number) => void;
-  /** Close button handler for primary pane */
-  onClosePrimary?: () => void;
-  /** Close button handler for secondary pane */
-  onCloseSecondary?: () => void;
-  /** Overlay to render on top (drop zone overlay during drag) */
+  tree: SplitNode | null;
+  renderLeaf: (content: PaneContent, leafId: string) => ReactNode;
+  onRatioChange: (splitNodeId: string, ratio: number) => void;
+  onClosePane: (leafId: string) => void;
+  paneColors?: Map<string, string>;
+  minPaneSize?: number;
+  emptyContent?: ReactNode;
   overlay?: ReactNode;
 }
 
 export function SplitDetailArea({
-  primaryContent,
-  secondaryContent,
-  direction,
-  ratio,
+  tree,
+  renderLeaf,
   onRatioChange,
-  onClosePrimary,
-  onCloseSecondary,
+  onClosePane,
+  paneColors,
+  minPaneSize = MIN_PANE_SIZE,
+  emptyContent,
   overlay,
 }: SplitDetailAreaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const ratioRef = useRef(ratio);
-  ratioRef.current = ratio;
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
 
-  const onResizeHandleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      const container = containerRef.current;
-      if (!container) return;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setContainerSize({ w: entry.contentRect.width, h: entry.contentRect.height });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-      const rect = container.getBoundingClientRect();
-      const isHorizontal = direction === "horizontal";
-
-      const onMouseMove = (ev: MouseEvent) => {
-        const pos = isHorizontal ? ev.clientX - rect.left : ev.clientY - rect.top;
-        const total = isHorizontal ? rect.width : rect.height;
-        const newRatio = Math.max(0.2, Math.min(0.8, pos / total));
-        onRatioChange(newRatio);
-      };
-      const onMouseUp = () => {
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
-      document.body.style.cursor = isHorizontal ? "col-resize" : "row-resize";
-      document.body.style.userSelect = "none";
-    },
-    [direction, onRatioChange],
-  );
-
-  const isSplit = secondaryContent !== null;
-  const isHorizontal = direction === "horizontal";
+  const leafCount = tree ? countLeaves(tree) : 0;
 
   return (
     <div
@@ -72,28 +50,70 @@ export function SplitDetailArea({
       style={{
         flex: 1,
         display: "flex",
-        flexDirection: isHorizontal ? "row" : "column",
         overflow: "hidden",
         position: "relative",
       }}
     >
-      {/* Primary pane */}
+      {tree ? (
+        <SplitNodeRenderer
+          node={tree}
+          renderLeaf={renderLeaf}
+          onRatioChange={onRatioChange}
+          onClosePane={leafCount > 1 ? onClosePane : undefined}
+          paneColors={paneColors}
+          minPaneSize={minPaneSize}
+          availableW={containerSize.w}
+          availableH={containerSize.h}
+        />
+      ) : (
+        emptyContent ?? null
+      )}
+      {overlay}
+    </div>
+  );
+}
+
+function countLeaves(node: SplitNode): number {
+  if (node.type === "leaf") return 1;
+  return countLeaves(node.first) + countLeaves(node.second);
+}
+
+function SplitNodeRenderer({
+  node,
+  renderLeaf,
+  onRatioChange,
+  onClosePane,
+  paneColors,
+  minPaneSize,
+  availableW,
+  availableH,
+}: {
+  node: SplitNode;
+  renderLeaf: (content: PaneContent, leafId: string) => ReactNode;
+  onRatioChange: (splitNodeId: string, ratio: number) => void;
+  onClosePane?: (leafId: string) => void;
+  paneColors?: Map<string, string>;
+  minPaneSize: number;
+  availableW: number;
+  availableH: number;
+}) {
+  if (node.type === "leaf") {
+    const color = paneColors?.get(node.id);
+    const showColorStrip = paneColors && paneColors.size > 1;
+    return (
       <div
         style={{
-          ...(isSplit
-            ? isHorizontal
-              ? { width: `${ratio * 100}%` }
-              : { height: `${ratio * 100}%` }
-            : { flex: 1 }),
+          flex: 1,
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
           position: "relative",
+          borderLeft: showColorStrip ? `3px solid ${color ?? "transparent"}` : undefined,
         }}
       >
-        {isSplit && onClosePrimary && (
+        {onClosePane && (
           <button
-            onClick={onClosePrimary}
+            onClick={() => onClosePane(node.id)}
             style={{
               position: "absolute",
               top: 6,
@@ -113,74 +133,145 @@ export function SplitDetailArea({
             x
           </button>
         )}
-        {primaryContent}
+        {renderLeaf(node.content, node.id)}
       </div>
+    );
+  }
 
-      {/* Resize handle */}
-      {isSplit && (
+  const isH = node.direction === "horizontal";
+  const firstW = isH ? availableW * node.ratio : availableW;
+  const firstH = isH ? availableH : availableH * node.ratio;
+  const secondW = isH ? availableW * (1 - node.ratio) : availableW;
+  const secondH = isH ? availableH : availableH * (1 - node.ratio);
+
+  return (
+    <SplitContainer
+      node={node}
+      onRatioChange={onRatioChange}
+      minPaneSize={minPaneSize}
+    >
+      <SplitNodeRenderer
+        node={node.first}
+        renderLeaf={renderLeaf}
+        onRatioChange={onRatioChange}
+        onClosePane={onClosePane}
+        paneColors={paneColors}
+        minPaneSize={minPaneSize}
+        availableW={firstW}
+        availableH={firstH}
+      />
+      <SplitNodeRenderer
+        node={node.second}
+        renderLeaf={renderLeaf}
+        onRatioChange={onRatioChange}
+        onClosePane={onClosePane}
+        paneColors={paneColors}
+        minPaneSize={minPaneSize}
+        availableW={secondW}
+        availableH={secondH}
+      />
+    </SplitContainer>
+  );
+}
+
+function SplitContainer({
+  node,
+  onRatioChange,
+  minPaneSize,
+  children,
+}: {
+  node: Extract<SplitNode, { type: "split" }>;
+  onRatioChange: (splitNodeId: string, ratio: number) => void;
+  minPaneSize: number;
+  children: [ReactNode, ReactNode];
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isH = node.direction === "horizontal";
+
+  const onResizeHandleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const total = isH ? rect.width : rect.height;
+      const minRatio = total > 0 ? minPaneSize / total : 0.2;
+      const maxRatio = total > 0 ? 1 - minPaneSize / total : 0.8;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        const pos = isH ? ev.clientX - rect.left : ev.clientY - rect.top;
+        const raw = pos / total;
+        const clamped = Math.max(minRatio, Math.min(maxRatio, raw));
+        onRatioChange(node.id, clamped);
+      };
+      const onMouseUp = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = isH ? "col-resize" : "row-resize";
+      document.body.style.userSelect = "none";
+    },
+    [isH, minPaneSize, node.id, onRatioChange],
+  );
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: isH ? "row" : "column",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          ...(isH
+            ? { width: `${node.ratio * 100}%` }
+            : { height: `${node.ratio * 100}%` }),
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        {children[0]}
+      </div>
+      <div
+        onMouseDown={onResizeHandleMouseDown}
+        style={{
+          ...(isH
+            ? { width: 9, marginLeft: -5, marginRight: -4, cursor: "col-resize" }
+            : { height: 9, marginTop: -5, marginBottom: -4, cursor: "row-resize" }),
+          backgroundColor: "transparent",
+          zIndex: 10,
+          flexShrink: 0,
+          position: "relative",
+        }}
+      >
         <div
-          onMouseDown={onResizeHandleMouseDown}
           style={{
-            ...(isHorizontal
-              ? { width: 9, marginLeft: -5, marginRight: -4, cursor: "col-resize" }
-              : { height: 9, marginTop: -5, marginBottom: -4, cursor: "row-resize" }),
-            backgroundColor: "transparent",
-            zIndex: 10,
-            flexShrink: 0,
-            position: "relative",
+            position: "absolute",
+            ...(isH
+              ? { left: 4, top: 0, bottom: 0, width: 1 }
+              : { top: 4, left: 0, right: 0, height: 1 }),
+            background: "var(--border-light, #333)",
           }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              ...(isHorizontal
-                ? { left: 4, top: 0, bottom: 0, width: 1 }
-                : { top: 4, left: 0, right: 0, height: 1 }),
-              background: "var(--border-light, #333)",
-            }}
-          />
-        </div>
-      )}
-
-      {/* Secondary pane */}
-      {isSplit && (
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            position: "relative",
-          }}
-        >
-          {onCloseSecondary && (
-            <button
-              onClick={onCloseSecondary}
-              style={{
-                position: "absolute",
-                top: 6,
-                right: 6,
-                zIndex: 10,
-                background: "var(--bg-tertiary, #222)",
-                border: "1px solid var(--border-light, #333)",
-                borderRadius: 4,
-                color: "var(--text-muted, #888)",
-                cursor: "pointer",
-                padding: "2px 6px",
-                fontSize: 11,
-                lineHeight: "1",
-              }}
-              title="Close pane"
-            >
-              x
-            </button>
-          )}
-          {secondaryContent}
-        </div>
-      )}
-
-      {/* Drop zone overlay */}
-      {overlay}
+        />
+      </div>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        {children[1]}
+      </div>
     </div>
   );
 }

@@ -11,17 +11,30 @@ export type {
   TelegramNotify,
 } from "./types/job";
 export type { ClaudeProcess, QuestionOption, ClaudeQuestion } from "./types/process";
+export type { PaneContent, SplitNode, SplitTreeState, SplitDirection } from "./types/splitTree";
 export type { Transport } from "./transport";
 
 // Theme
 export { colors } from "./theme/colors";
 export { spacing, radius } from "./theme/spacing";
+export { PANE_COLORS, assignPaneColors } from "./theme/paneColors";
 
 // Utils
 export { formatTime, formatDuration, timeAgo, shortenPath, compactPath, compactCron } from "./util/format";
 export { nextCronDate, formatNextRun, describeCron, cronTooltip } from "./util/cron";
 export { groupJobs, sortGroupNames, findYesOption, isFreetextOption, typeIcon } from "./util/jobs";
 export { collapseSeparators, stripSeparators, truncateLogLines } from "./util/logs";
+export {
+  genPaneId,
+  restoreIdCounter,
+  collectLeaves,
+  findNode,
+  replaceNode,
+  removeLeaf,
+  updateRatio,
+  splitLeaf,
+  removeStaleLeaves,
+} from "./util/splitTree";
 export {
   statusLabel,
   statusColor,
@@ -53,9 +66,14 @@ export { ReadOnlyXterm } from "./components/ReadOnlyXterm";
 export { ShareSection } from "./components/ShareSection";
 export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
 export { SplitDetailArea } from "./components/SplitDetailArea";
-export type { SplitDirection, SplitDetailAreaProps } from "./components/SplitDetailArea";
+export type { SplitDetailAreaProps } from "./components/SplitDetailArea";
 export { DropZoneOverlay, computeDropZone } from "./components/DropZoneOverlay";
 export type { DropZoneId } from "./components/DropZoneOverlay";
+// Legacy flat 2-pane split components (used by desktop app)
+export { LegacySplitDetailArea } from "./components/LegacySplitDetailArea";
+export type { LegacySplitDetailAreaProps, LegacySplitDirection } from "./components/LegacySplitDetailArea";
+export { LegacyDropZoneOverlay, legacyComputeDropZone } from "./components/LegacyDropZoneOverlay";
+export type { LegacyDropZoneId } from "./components/LegacyDropZoneOverlay";
 
 // Hooks
 export { useJobsCore } from "./hooks/useJobsCore";

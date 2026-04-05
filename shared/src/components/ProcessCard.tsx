@@ -14,7 +14,7 @@ export function ProcessCard({
   process: ClaudeProcess;
   onPress?: () => void;
   inGroup?: boolean;
-  selected?: boolean;
+  selected?: boolean | string;
 }) {
   const displayName = inGroup
     ? (process.first_query ?? shortenPath(process.cwd))
@@ -38,7 +38,7 @@ export function ProcessCard({
   );
 
   return (
-    <View style={[styles.processCard, selected && styles.processCardSelected]}>
+    <View style={[styles.processCard, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, opacity: 1 }]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={onPress}

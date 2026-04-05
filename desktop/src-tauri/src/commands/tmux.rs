@@ -83,7 +83,7 @@ pub fn open_job_terminal(state: State<AppState>, name: String) -> Result<(), Str
 
 /// Fork a Claude Code session by splitting the pane and continuing with --fork-session.
 #[tauri::command]
-pub async fn fork_pane(pane_id: String) -> Result<(), String> {
+pub async fn fork_pane(pane_id: String) -> Result<String, String> {
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
@@ -102,7 +102,7 @@ pub async fn fork_pane(pane_id: String) -> Result<(), String> {
     let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &[])?;
     tmux::send_keys_to_pane("", &new_pane, "claude --continue --fork-session")?;
 
-    Ok(())
+    Ok(new_pane)
 }
 
 /// Fork a Claude Code session with secrets injected as environment variables.
@@ -111,7 +111,7 @@ pub async fn fork_pane_with_secrets(
     state: State<'_, AppState>,
     pane_id: String,
     secret_keys: Vec<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
@@ -155,5 +155,5 @@ pub async fn fork_pane_with_secrets(
     let cmd = format!("claude --continue --fork-session '{}'", prompt);
     tmux::send_keys_to_pane("", &new_pane, &cmd)?;
 
-    Ok(())
+    Ok(new_pane)
 }

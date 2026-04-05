@@ -88,6 +88,7 @@ export interface AppSettings {
   auto_update_enabled: boolean;
   tool_paths: Record<string, string>;
   group_order: string[];
+  hidden_groups: string[];
   relay: RelaySettings | null;
 }
 
