@@ -379,6 +379,7 @@ export function JobDetailView({
               {showSettingsMenu && (
                 <PopupMenu
                   dropdownRef={settingsDropdownRef}
+                  triggerRef={settingsBtnRef}
                   position={menuPos}
                   onClose={() => setShowSettingsMenu(false)}
                   items={[

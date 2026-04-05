@@ -33,6 +33,8 @@ interface PopupMenuProps {
   position?: { top: number; left: number } | null;
   onClose: () => void;
   dropdownRef?: React.RefObject<View | null>;
+  /** Ref to the trigger button - clicks on it are ignored so the button's own toggle works */
+  triggerRef?: React.RefObject<any>;
 }
 
 function HoverableItem({ item, onClose }: { item: Extract<PopupMenuItem, { type: "item" }>; onClose: () => void }) {
@@ -64,7 +66,7 @@ function HoverableItem({ item, onClose }: { item: Extract<PopupMenuItem, { type:
   );
 }
 
-export function PopupMenu({ items, position, onClose, dropdownRef }: PopupMenuProps) {
+export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef }: PopupMenuProps) {
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
 
@@ -72,11 +74,14 @@ export function PopupMenu({ items, position, onClose, dropdownRef }: PopupMenuPr
     if (!isWeb) return;
     const handler = (e: MouseEvent) => {
       const el = (ref.current as any);
-      if (el && !el.contains(e.target)) onClose();
+      if (el && el.contains(e.target)) return;
+      const trigger = (triggerRef?.current as any);
+      if (trigger && trigger.contains(e.target)) return;
+      onClose();
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [onClose, ref]);
+  }, [onClose, ref, triggerRef]);
 
   const menuStyle = isWeb && position ? {
     position: "fixed" as any,

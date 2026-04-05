@@ -174,6 +174,8 @@ export function JobListView({
   const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string } | null>(null);
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const groupMenuDropdownRef = useRef<View>(null);
+  const groupMenuTriggerRef = useRef<any>(null);
+  const sortTriggerRef = useRef<any>(null);
 
   // Keyboard shortcut: Cmd+F (desktop) or / (web) to focus search
   useEffect(() => {
@@ -434,6 +436,7 @@ export function JobListView({
               )}
               {(onAddJob || onHideGroup) && (
                 <TouchableOpacity
+                  ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
                   onPress={(e: any) => {
                     e.stopPropagation();
                     if (groupMenu?.group === item.group) {
@@ -442,6 +445,7 @@ export function JobListView({
                     }
                     if (isWeb) {
                       const node = e?.currentTarget ?? e?.target;
+                      groupMenuTriggerRef.current = node;
                       if (node?.getBoundingClientRect) {
                         const rect = node.getBoundingClientRect();
                         setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
@@ -590,6 +594,7 @@ export function JobListView({
       {onSortChange && jobs.length > 1 && (
         <View>
           <TouchableOpacity
+            ref={sortTriggerRef}
             onPress={() => setSortOpen(!sortOpen)}
             style={styles.sortTrigger}
             activeOpacity={0.6}
@@ -605,6 +610,7 @@ export function JobListView({
                 onPress: () => handleSelectSort(opt.value),
                 active: sortMode === opt.value,
               }))}
+              triggerRef={sortTriggerRef}
               onClose={() => setSortOpen(false)}
             />
           )}
@@ -695,6 +701,7 @@ export function JobListView({
           ]}
           position={groupMenuPos}
           dropdownRef={groupMenuDropdownRef}
+          triggerRef={groupMenuTriggerRef}
           onClose={() => setGroupMenu(null)}
         />
       )}

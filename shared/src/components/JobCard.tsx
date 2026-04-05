@@ -33,7 +33,7 @@ export const JobCard = memo(function JobCard({
 
   return (
     <TouchableOpacity
-      style={[styles.card, !job.enabled && styles.cardDisabled, selected && { borderColor: typeof selected === "string" ? selected : colors.accent }]}
+      style={[styles.card, !job.enabled && styles.cardDisabled, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2 }]}
       onPress={onPress}
       activeOpacity={0.7}
     >

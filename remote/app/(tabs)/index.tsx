@@ -178,7 +178,10 @@ export default function JobsScreen() {
   const [focusedLeafId, setFocusedLeafId] = useState<string | null>(null)
 
   // Persist tree on change
-  useEffect(() => { saveSplitTree(splitTree) }, [splitTree])
+  useEffect(() => {
+    console.log("[split] tree changed:", splitTree ? `${collectLeaves(splitTree).length} leaves` : "null")
+    saveSplitTree(splitTree)
+  }, [splitTree])
 
   // DnD state
   const [isDragging, setIsDragging] = useState(false)
@@ -245,8 +248,18 @@ export default function JobsScreen() {
 
     const zone = computeDropZone(
       px - rect.left, py - rect.top, rect.width, rect.height,
-      effectiveTree, 300,
+      effectiveTree, 200,
     )
+    // DEBUG - remove after testing
+    console.log('[drag]', {
+      hasTree: !!tree,
+      treeType: tree?.type,
+      containerW: rect.width,
+      containerH: rect.height,
+      relPx: px - rect.left,
+      relPy: py - rect.top,
+      zone: zone ? (zone.action === 'split' ? `split-${zone.direction}-${zone.position}` : zone.action) : null,
+    })
     dragActiveZoneRef.current = zone
     setDragActiveZone(zone)
   }, [])
@@ -285,8 +298,13 @@ export default function JobsScreen() {
         return
       }
 
-      // Split: create tree with current + new
+      // Split: create tree with current + new (skip if same item)
       if (currentContent) {
+        const sameItem =
+          (currentContent.kind === "job" && newContent.kind === "job" && currentContent.slug === newContent.slug) ||
+          (currentContent.kind === "process" && newContent.kind === "process" && currentContent.paneId === newContent.paneId)
+        if (sameItem) return
+
         const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: currentContent }
         const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent }
         const tree: SplitNode = {
@@ -306,14 +324,32 @@ export default function JobsScreen() {
       return
     }
 
-    // Tree exists
-    if (zone.action === "replace") {
-      setSplitTree(prev => prev ? replaceNode(prev, zone.leafId, {
-        type: "leaf", id: zone.leafId, content: newContent,
-      }) : prev)
-    } else {
-      setSplitTree(prev => prev ? splitLeaf(prev, zone.leafId, newContent, zone.direction, zone.position) : prev)
-    }
+    // Tree exists - check if item is already in a pane (move instead of duplicate)
+    setSplitTree(prev => {
+      if (!prev) return prev
+      // Find existing leaf with the same content
+      const leaves = collectLeaves(prev)
+      const existingLeaf = leaves.find(l => {
+        if (newContent.kind === "job" && l.content.kind === "job") return l.content.slug === newContent.slug
+        if (newContent.kind === "process" && l.content.kind === "process") return l.content.paneId === newContent.paneId
+        return false
+      })
+
+      let tree = prev
+      if (existingLeaf) {
+        // Remove from old location first
+        const removed = removeLeaf(tree, existingLeaf.id)
+        if (!removed) return prev // was the only leaf, nothing to move
+        tree = removed
+        // If the target leaf was removed (same leaf), just focus it
+        if (existingLeaf.id === zone.leafId) return prev
+      }
+
+      if (zone.action === "replace") {
+        return replaceNode(tree, zone.leafId, { type: "leaf", id: zone.leafId, content: newContent })
+      }
+      return splitLeaf(tree, zone.leafId, newContent, zone.direction, zone.position)
+    })
   }, [handleSelectJob, handleSelectProcess])
 
   const handleDragCancel = useCallback(() => {
@@ -349,23 +385,29 @@ export default function JobsScreen() {
     if (focusedLeafId === leafId) setFocusedLeafId(null)
   }, [focusedLeafId])
 
-  // When clicking a sidebar item with a tree active, replace the focused leaf
+  // When clicking a sidebar item with a tree active:
+  // - If item is already in a pane, focus that pane
+  // - Otherwise, replace the focused leaf's content
   const handleSelectJobWithTree = useCallback((job: RemoteJob) => {
     if (!isWide) {
       router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
       return
     }
     if (splitTree) {
+      // Check if this job is already in a pane - if so, just focus it
+      const leaves = collectLeaves(splitTree)
+      const existingLeaf = leaves.find(l => l.content.kind === "job" && l.content.slug === job.slug)
+      if (existingLeaf) {
+        setFocusedLeafId(existingLeaf.id)
+        return
+      }
+      // Replace the focused leaf's content
       const content: PaneContent = { kind: "job", slug: job.slug }
       setSplitTree(prev => {
         if (!prev) return prev
-        if (focusedLeafId) {
-          return replaceNode(prev, focusedLeafId, { type: "leaf", id: focusedLeafId, content })
-        }
-        // Fallback: replace first leaf
-        const leaves = collectLeaves(prev)
-        if (leaves.length > 0) {
-          return replaceNode(prev, leaves[0].id, { type: "leaf", id: leaves[0].id, content })
+        const target = focusedLeafId ?? collectLeaves(prev)[0]?.id
+        if (target) {
+          return replaceNode(prev, target, { type: "leaf", id: target, content })
         }
         return prev
       })
@@ -380,15 +422,20 @@ export default function JobsScreen() {
       return
     }
     if (splitTree) {
+      // Check if this process is already in a pane - if so, just focus it
+      const leaves = collectLeaves(splitTree)
+      const existingLeaf = leaves.find(l => l.content.kind === "process" && l.content.paneId === process.pane_id)
+      if (existingLeaf) {
+        setFocusedLeafId(existingLeaf.id)
+        return
+      }
+      // Replace the focused leaf's content
       const content: PaneContent = { kind: "process", paneId: process.pane_id }
       setSplitTree(prev => {
         if (!prev) return prev
-        if (focusedLeafId) {
-          return replaceNode(prev, focusedLeafId, { type: "leaf", id: focusedLeafId, content })
-        }
-        const leaves = collectLeaves(prev)
-        if (leaves.length > 0) {
-          return replaceNode(prev, leaves[0].id, { type: "leaf", id: leaves[0].id, content })
+        const target = focusedLeafId ?? collectLeaves(prev)[0]?.id
+        if (target) {
+          return replaceNode(prev, target, { type: "leaf", id: target, content })
         }
         return prev
       })
@@ -442,6 +489,7 @@ export default function JobsScreen() {
         const key = leaf.content.kind === "job" ? leaf.content.slug : leaf.content.paneId
         items.set(key, colorMap.get(leaf.id) ?? colors.accent)
       }
+      console.log("[split] selectedItems from tree:", [...items.entries()])
       return items.size > 0 ? items : null
     }
     // Single selection
@@ -679,6 +727,7 @@ export default function JobsScreen() {
               onRatioChange={handleSplitRatioChange}
               onClosePane={handleClosePane}
               onFocusLeaf={setFocusedLeafId}
+              focusedLeafId={focusedLeafId}
               paneColors={paneColors}
               emptyContent={emptyContent}
               overlay={dropOverlay}

@@ -11,7 +11,7 @@ interface Rect {
   h: number;
 }
 
-const MIN_PANE_SIZE = 300;
+const MIN_PANE_SIZE = 200;
 
 /** Compute which zone the pointer is in, given coordinates relative to the overlay container */
 export function computeDropZone(
@@ -48,10 +48,11 @@ function computeZoneInNode(
     const canSplitH = rect.w / 2 >= minPaneSize;
     const canSplitV = rect.h / 2 >= minPaneSize;
 
-    if (canSplitH && relX < 0.25) return { action: "split", leafId: node.id, direction: "horizontal", position: "before" };
-    if (canSplitH && relX > 0.75) return { action: "split", leafId: node.id, direction: "horizontal", position: "after" };
-    if (canSplitV && relY < 0.25) return { action: "split", leafId: node.id, direction: "vertical", position: "before" };
-    if (canSplitV && relY > 0.75) return { action: "split", leafId: node.id, direction: "vertical", position: "after" };
+    // Edge zones: outer 30% on each side triggers split, center 40% triggers replace
+    if (canSplitH && relX < 0.3) return { action: "split", leafId: node.id, direction: "horizontal", position: "before" };
+    if (canSplitH && relX > 0.7) return { action: "split", leafId: node.id, direction: "horizontal", position: "after" };
+    if (canSplitV && relY < 0.3) return { action: "split", leafId: node.id, direction: "vertical", position: "before" };
+    if (canSplitV && relY > 0.7) return { action: "split", leafId: node.id, direction: "vertical", position: "after" };
 
     return { action: "replace", leafId: node.id };
   }

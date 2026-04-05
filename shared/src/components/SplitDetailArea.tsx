@@ -3,7 +3,7 @@ import type { SplitNode, PaneContent } from "../types/splitTree";
 
 export type { SplitDirection } from "../types/splitTree";
 
-const MIN_PANE_SIZE = 300;
+const MIN_PANE_SIZE = 200;
 
 export interface SplitDetailAreaProps {
   tree: SplitNode | null;
@@ -11,6 +11,7 @@ export interface SplitDetailAreaProps {
   onRatioChange: (splitNodeId: string, ratio: number) => void;
   onClosePane: (leafId: string) => void;
   onFocusLeaf?: (leafId: string) => void;
+  focusedLeafId?: string | null;
   paneColors?: Map<string, string>;
   minPaneSize?: number;
   emptyContent?: ReactNode;
@@ -23,6 +24,7 @@ export function SplitDetailArea({
   onRatioChange,
   onClosePane,
   onFocusLeaf,
+  focusedLeafId,
   paneColors,
   minPaneSize = MIN_PANE_SIZE,
   emptyContent,
@@ -63,6 +65,7 @@ export function SplitDetailArea({
           onRatioChange={onRatioChange}
           onClosePane={leafCount > 1 ? onClosePane : undefined}
           onFocusLeaf={onFocusLeaf}
+          focusedLeafId={focusedLeafId}
           paneColors={paneColors}
           minPaneSize={minPaneSize}
           availableW={containerSize.w}
@@ -87,6 +90,7 @@ function SplitNodeRenderer({
   onRatioChange,
   onClosePane,
   onFocusLeaf,
+  focusedLeafId,
   paneColors,
   minPaneSize,
   availableW,
@@ -97,6 +101,7 @@ function SplitNodeRenderer({
   onRatioChange: (splitNodeId: string, ratio: number) => void;
   onClosePane?: (leafId: string) => void;
   onFocusLeaf?: (leafId: string) => void;
+  focusedLeafId?: string | null;
   paneColors?: Map<string, string>;
   minPaneSize: number;
   availableW: number;
@@ -105,6 +110,7 @@ function SplitNodeRenderer({
   if (node.type === "leaf") {
     const color = paneColors?.get(node.id);
     const showColorStrip = paneColors && paneColors.size > 1;
+    const isFocused = focusedLeafId === node.id;
     return (
       <div
         style={{
@@ -113,7 +119,9 @@ function SplitNodeRenderer({
           flexDirection: "column",
           overflow: "hidden",
           position: "relative",
-          borderLeft: showColorStrip ? `3px solid ${color ?? "transparent"}` : undefined,
+          outline: showColorStrip ? `2px solid ${color ?? "transparent"}` : undefined,
+          outlineOffset: "-2px",
+          opacity: showColorStrip && !isFocused ? 0.85 : 1,
         }}
         onMouseDown={onFocusLeaf ? () => onFocusLeaf(node.id) : undefined}
       >
@@ -162,6 +170,7 @@ function SplitNodeRenderer({
         onRatioChange={onRatioChange}
         onClosePane={onClosePane}
         onFocusLeaf={onFocusLeaf}
+        focusedLeafId={focusedLeafId}
         paneColors={paneColors}
         minPaneSize={minPaneSize}
         availableW={firstW}
@@ -173,6 +182,7 @@ function SplitNodeRenderer({
         onRatioChange={onRatioChange}
         onClosePane={onClosePane}
         onFocusLeaf={onFocusLeaf}
+        focusedLeafId={focusedLeafId}
         paneColors={paneColors}
         minPaneSize={minPaneSize}
         availableW={secondW}

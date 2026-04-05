@@ -38,7 +38,7 @@ export function ProcessCard({
   );
 
   return (
-    <View style={[styles.processCard, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, opacity: 1 }]}>
+    <View style={[styles.processCard, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 }]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={onPress}
