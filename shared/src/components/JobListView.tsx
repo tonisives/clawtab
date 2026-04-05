@@ -1,23 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, Platform, type StyleProp, type ViewStyle } from "react-native";
 
 const isWeb = Platform.OS === "web";
-let createPortalFn: ((children: ReactNode, container: Element) => ReactNode) | null = null;
-function PortalWeb({ children }: { children: ReactNode }) {
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    if (isWeb && !createPortalFn) {
-      import("react-dom").then((mod) => {
-        createPortalFn = mod.createPortal;
-        forceUpdate((n) => n + 1);
-      });
-    }
-  }, []);
-  if (!isWeb || !createPortalFn) return <>{children}</>;
-  return createPortalFn(children, document.body);
-}
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
 import type { ClaudeProcess } from "../types/process";
+import { PopupMenu } from "./PopupMenu";
 import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
 import { ProcessCard } from "./ProcessCard";
@@ -206,19 +193,7 @@ export function JobListView({
     return () => document.removeEventListener("keydown", handler);
   }, []);
 
-  // Close group menu on outside click (web only)
-  useEffect(() => {
-    if (!groupMenu || !isWeb) return;
-    const handler = (e: MouseEvent) => {
-      const dropdown = (groupMenuDropdownRef.current as any);
-      const target = e.target as Node;
-      if (!dropdown || !dropdown.contains(target)) {
-        setGroupMenu(null);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [groupMenu]);
+  // (outside-click for group menu handled by PopupMenu)
 
   const query = searchQuery.toLowerCase().trim();
 
@@ -530,7 +505,7 @@ export function JobListView({
                   activeOpacity={0.6}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={[styles.groupDropdownItemText, { fontSize: 11, color: colors.textMuted }]}>Show</Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>Show</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -623,23 +598,15 @@ export function JobListView({
             <Text style={styles.sortTriggerArrow}>{sortOpen ? "\u25B4" : "\u25BE"}</Text>
           </TouchableOpacity>
           {sortOpen && (
-            <View style={styles.dropdownMenu}>
-              {SORT_OPTIONS.map((opt) => (
-                <TouchableOpacity
-                  key={opt.value}
-                  onPress={() => handleSelectSort(opt.value)}
-                  style={[styles.dropdownItem, sortMode === opt.value && styles.dropdownItemActive]}
-                  activeOpacity={0.6}
-                >
-                  <Text style={[
-                    styles.dropdownItemText,
-                    sortMode === opt.value && styles.dropdownItemTextActive,
-                  ]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <PopupMenu
+              items={SORT_OPTIONS.map((opt) => ({
+                type: "item" as const,
+                label: opt.label,
+                onPress: () => handleSelectSort(opt.value),
+                active: sortMode === opt.value,
+              }))}
+              onClose={() => setSortOpen(false)}
+            />
           )}
         </View>
       )}
@@ -720,70 +687,21 @@ export function JobListView({
       {headerContent}
       {toolbar}
       {renderItems()}
-      <GroupMenuDropdown
-        groupMenu={groupMenu}
-        groupMenuPos={groupMenuPos}
-        dropdownRef={groupMenuDropdownRef}
-        onAddJob={onAddJob}
-        onHideGroup={onHideGroup}
-        onClose={() => setGroupMenu(null)}
-      />
+      {groupMenu && (onAddJob || onHideGroup) && (
+        <PopupMenu
+          items={[
+            ...(onAddJob ? [{ type: "item" as const, label: "Add Job", onPress: () => onAddJob(groupMenu.group, groupMenu.folderPath) }] : []),
+            ...(onHideGroup ? [{ type: "item" as const, label: "Hide Group", onPress: () => onHideGroup(groupMenu.group) }] : []),
+          ]}
+          position={groupMenuPos}
+          dropdownRef={groupMenuDropdownRef}
+          onClose={() => setGroupMenu(null)}
+        />
+      )}
     </ScrollView>
   );
 }
 
-function GroupMenuDropdown({ groupMenu, groupMenuPos, dropdownRef, onAddJob, onHideGroup, onClose }: {
-  groupMenu: { group: string; folderPath?: string } | null;
-  groupMenuPos: { top: number; left: number } | null;
-  dropdownRef: React.RefObject<View | null>;
-  onAddJob?: (group: string, folderPath?: string) => void;
-  onHideGroup?: (group: string) => void;
-  onClose: () => void;
-}) {
-  if (!groupMenu || (!onAddJob && !onHideGroup)) return null;
-  return (
-    <PortalWeb>
-      <View ref={dropdownRef} style={isWeb && groupMenuPos ? {
-        position: "fixed" as any,
-        top: groupMenuPos.top,
-        left: groupMenuPos.left,
-        transform: "translateX(-100%)" as any,
-        backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: 6,
-        minWidth: 140,
-        zIndex: 9999,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-      } as any : styles.groupDropdownMenu}>
-        {onAddJob && (
-          <TouchableOpacity
-            style={styles.groupDropdownItem}
-            onPress={() => {
-              onClose();
-              onAddJob(groupMenu.group, groupMenu.folderPath);
-            }}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.groupDropdownItemText}>Add Job</Text>
-          </TouchableOpacity>
-        )}
-        {onHideGroup && (
-          <TouchableOpacity
-            style={styles.groupDropdownItem}
-            onPress={() => {
-              onClose();
-              onHideGroup(groupMenu.group);
-            }}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.groupDropdownItemText}>Hide Group</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </PortalWeb>
-  );
-}
 
 const styles = StyleSheet.create({
   scroll: {
@@ -821,27 +739,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 20,
     letterSpacing: 1,
-  },
-  groupDropdownMenu: {
-    position: "absolute",
-    top: "100%",
-    right: 0,
-    marginTop: 4,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 6,
-    minWidth: 140,
-    zIndex: 9999,
-    ...(Platform.OS === "web" ? { boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } : {}),
-  },
-  groupDropdownItem: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  groupDropdownItemText: {
-    color: colors.text,
-    fontSize: 13,
   },
   groupHeaderArrow: { fontFamily: "monospace", fontSize: 9, color: colors.textSecondary },
   groupHeader: {
@@ -909,38 +806,5 @@ const styles = StyleSheet.create({
   sortTriggerArrow: {
     color: colors.textSecondary,
     fontSize: 10,
-  },
-  dropdownMenu: {
-    position: "absolute",
-    top: "100%",
-    right: 0,
-    marginTop: 4,
-    minWidth: 120,
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    zIndex: 10,
-  },
-  dropdownItem: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  dropdownItemActive: {
-    backgroundColor: colors.accentBg,
-  },
-  dropdownItemText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
-  dropdownItemTextActive: {
-    color: colors.accent,
-    fontWeight: "500",
   },
 });

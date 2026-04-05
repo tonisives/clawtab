@@ -183,9 +183,19 @@ export default function JobsScreen() {
   // DnD state
   const [isDragging, setIsDragging] = useState(false)
   const [dragActiveZone, setDragActiveZone] = useState<DropZoneId | null>(null)
+  const dragActiveZoneRef = useRef<DropZoneId | null>(null)
   const [dragOverlayData, setDragOverlayData] = useState<DragData | null>(null)
   const detailPaneRef = useRef<View>(null)
   const [detailSize, setDetailSize] = useState({ w: 0, h: 0 })
+
+  // Refs for values read in drag handlers to avoid stale closures
+  // (dnd-kit may hold handlers from drag start)
+  const splitTreeRef = useRef(splitTree)
+  splitTreeRef.current = splitTree
+  const selectedJobRef = useRef(selectedJob)
+  selectedJobRef.current = selectedJob
+  const selectedProcessRef = useRef(selectedProcess)
+  selectedProcessRef.current = selectedProcess
 
   // Track detail pane size for drop zone computation
   useEffect(() => {
@@ -211,35 +221,41 @@ export default function JobsScreen() {
 
   const handleDragMove = useCallback((event: DragMoveEvent) => {
     const el = detailPaneRef.current as unknown as HTMLElement
-    if (!el) { setDragActiveZone(null); return }
+    if (!el) { dragActiveZoneRef.current = null; setDragActiveZone(null); return }
     const rect = el.getBoundingClientRect()
     const act = event.activatorEvent as PointerEvent
     const px = act.clientX + event.delta.x
     const py = act.clientY + event.delta.y
 
     if (px < rect.left || px > rect.right || py < rect.top || py > rect.bottom) {
+      dragActiveZoneRef.current = null
       setDragActiveZone(null)
       return
     }
 
     // If no tree yet, create a synthetic single-leaf for initial drop zone computation
-    const effectiveTree = splitTree ?? (selectedJob || selectedProcess
-      ? { type: "leaf" as const, id: "_root", content: selectedJob
-          ? { kind: "job" as const, slug: selectedJob }
-          : { kind: "process" as const, paneId: selectedProcess! } }
+    const tree = splitTreeRef.current
+    const job = selectedJobRef.current
+    const process = selectedProcessRef.current
+    const effectiveTree = tree ?? (job || process
+      ? { type: "leaf" as const, id: "_root", content: job
+          ? { kind: "job" as const, slug: job }
+          : { kind: "process" as const, paneId: process! } }
       : null)
 
     const zone = computeDropZone(
       px - rect.left, py - rect.top, rect.width, rect.height,
       effectiveTree, 300,
     )
+    dragActiveZoneRef.current = zone
     setDragActiveZone(zone)
-  }, [splitTree, selectedJob, selectedProcess])
+  }, [])
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     setIsDragging(false)
     setDragOverlayData(null)
-    const zone = dragActiveZone
+    const zone = dragActiveZoneRef.current
+    dragActiveZoneRef.current = null
     setDragActiveZone(null)
 
     if (!zone) return
@@ -250,12 +266,16 @@ export default function JobsScreen() {
       ? { kind: "job", slug: data.slug }
       : { kind: "process", paneId: data.paneId }
 
+    const currentTree = splitTreeRef.current
+    const currentSelectedJob = selectedJobRef.current
+    const currentSelectedProcess = selectedProcessRef.current
+
     // If no tree exists yet, the primary selection was shown as a virtual root
-    if (!splitTree) {
-      const currentContent: PaneContent | null = selectedJob
-        ? { kind: "job", slug: selectedJob }
-        : selectedProcess
-          ? { kind: "process", paneId: selectedProcess }
+    if (!currentTree) {
+      const currentContent: PaneContent | null = currentSelectedJob
+        ? { kind: "job", slug: currentSelectedJob }
+        : currentSelectedProcess
+          ? { kind: "process", paneId: currentSelectedProcess }
           : null
 
       if (zone.action === "replace") {
@@ -278,6 +298,7 @@ export default function JobsScreen() {
           second: zone.position === "after" ? newLeaf : rootLeaf,
         }
         setSplitTree(tree)
+        setFocusedLeafId(rootLeaf.id)
         // Clear single-item selection since tree now manages it
         setSelectedJob(null)
         setSelectedProcess(null)
@@ -287,17 +308,18 @@ export default function JobsScreen() {
 
     // Tree exists
     if (zone.action === "replace") {
-      setSplitTree(replaceNode(splitTree, zone.leafId, {
+      setSplitTree(prev => prev ? replaceNode(prev, zone.leafId, {
         type: "leaf", id: zone.leafId, content: newContent,
-      }))
+      }) : prev)
     } else {
-      setSplitTree(splitLeaf(splitTree, zone.leafId, newContent, zone.direction, zone.position))
+      setSplitTree(prev => prev ? splitLeaf(prev, zone.leafId, newContent, zone.direction, zone.position) : prev)
     }
-  }, [dragActiveZone, splitTree, selectedJob, selectedProcess, handleSelectJob, handleSelectProcess])
+  }, [handleSelectJob, handleSelectProcess])
 
   const handleDragCancel = useCallback(() => {
     setIsDragging(false)
     setDragOverlayData(null)
+    dragActiveZoneRef.current = null
     setDragActiveZone(null)
   }, [])
 
@@ -399,15 +421,16 @@ export default function JobsScreen() {
       setSelection("process", null)
     }
     // Also clean stale leaves from tree
-    if (splitTree) {
-      const cleaned = removeStaleLeaves(splitTree, (content) => {
+    setSplitTree(prev => {
+      if (!prev) return prev
+      const cleaned = removeStaleLeaves(prev, (content) => {
         if (content.kind === "process") {
           return !detectedProcesses.find((p) => p.pane_id === content.paneId)
         }
         return false
       })
-      if (cleaned !== splitTree) setSplitTree(cleaned)
-    }
+      return cleaned !== prev ? cleaned : prev
+    })
   }, [detectedProcesses, selectedProcess, processesLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Compute selectedItems map for sidebar highlighting
@@ -655,6 +678,7 @@ export default function JobsScreen() {
               renderLeaf={renderLeaf}
               onRatioChange={handleSplitRatioChange}
               onClosePane={handleClosePane}
+              onFocusLeaf={setFocusedLeafId}
               paneColors={paneColors}
               emptyContent={emptyContent}
               overlay={dropOverlay}

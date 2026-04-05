@@ -10,6 +10,7 @@ export interface SplitDetailAreaProps {
   renderLeaf: (content: PaneContent, leafId: string) => ReactNode;
   onRatioChange: (splitNodeId: string, ratio: number) => void;
   onClosePane: (leafId: string) => void;
+  onFocusLeaf?: (leafId: string) => void;
   paneColors?: Map<string, string>;
   minPaneSize?: number;
   emptyContent?: ReactNode;
@@ -21,6 +22,7 @@ export function SplitDetailArea({
   renderLeaf,
   onRatioChange,
   onClosePane,
+  onFocusLeaf,
   paneColors,
   minPaneSize = MIN_PANE_SIZE,
   emptyContent,
@@ -60,6 +62,7 @@ export function SplitDetailArea({
           renderLeaf={renderLeaf}
           onRatioChange={onRatioChange}
           onClosePane={leafCount > 1 ? onClosePane : undefined}
+          onFocusLeaf={onFocusLeaf}
           paneColors={paneColors}
           minPaneSize={minPaneSize}
           availableW={containerSize.w}
@@ -83,6 +86,7 @@ function SplitNodeRenderer({
   renderLeaf,
   onRatioChange,
   onClosePane,
+  onFocusLeaf,
   paneColors,
   minPaneSize,
   availableW,
@@ -92,6 +96,7 @@ function SplitNodeRenderer({
   renderLeaf: (content: PaneContent, leafId: string) => ReactNode;
   onRatioChange: (splitNodeId: string, ratio: number) => void;
   onClosePane?: (leafId: string) => void;
+  onFocusLeaf?: (leafId: string) => void;
   paneColors?: Map<string, string>;
   minPaneSize: number;
   availableW: number;
@@ -110,6 +115,7 @@ function SplitNodeRenderer({
           position: "relative",
           borderLeft: showColorStrip ? `3px solid ${color ?? "transparent"}` : undefined,
         }}
+        onMouseDown={onFocusLeaf ? () => onFocusLeaf(node.id) : undefined}
       >
         {onClosePane && (
           <button
@@ -155,6 +161,7 @@ function SplitNodeRenderer({
         renderLeaf={renderLeaf}
         onRatioChange={onRatioChange}
         onClosePane={onClosePane}
+        onFocusLeaf={onFocusLeaf}
         paneColors={paneColors}
         minPaneSize={minPaneSize}
         availableW={firstW}
@@ -165,6 +172,7 @@ function SplitNodeRenderer({
         renderLeaf={renderLeaf}
         onRatioChange={onRatioChange}
         onClosePane={onClosePane}
+        onFocusLeaf={onFocusLeaf}
         paneColors={paneColors}
         minPaneSize={minPaneSize}
         availableW={secondW}

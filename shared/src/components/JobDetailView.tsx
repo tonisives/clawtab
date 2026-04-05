@@ -10,28 +10,9 @@ import {
   SafeAreaView,
   Platform,
 } from "react-native";
+import { PopupMenu } from "./PopupMenu";
 
 const isWeb = Platform.OS === "web";
-
-// Portal helper: on web, renders into document.body to escape overflow:hidden clipping
-let createPortalFn: typeof import("react-dom").createPortal | null = null;
-if (isWeb) {
-  import("react-dom").then((mod) => { createPortalFn = mod.createPortal; });
-}
-
-function PortalWeb({ children }: { children: ReactNode }) {
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    if (isWeb && !createPortalFn) {
-      import("react-dom").then((mod) => {
-        createPortalFn = mod.createPortal;
-        forceUpdate((n) => n + 1);
-      });
-    }
-  }, []);
-  if (!isWeb || !createPortalFn) return <>{children}</>;
-  return createPortalFn(children, document.body);
-}
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
@@ -174,33 +155,7 @@ export function JobDetailView({
     onReloadRuns?.();
   }, [state]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Close duplicate menu on outside click (web only)
-  useEffect(() => {
-    if (!showDuplicateMenu || !isWeb) return;
-    const handler = (e: MouseEvent) => {
-      const el = (dupMenuRef.current as any);
-      if (el && !el.contains(e.target as Node)) {
-        setShowDuplicateMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showDuplicateMenu]);
-
-  // Close settings menu on outside click (web only)
-  useEffect(() => {
-    if (!showSettingsMenu || !isWeb) return;
-    const handler = (e: MouseEvent) => {
-      const el = (settingsMenuRef.current as any);
-      const dropdown = (settingsDropdownRef.current as any);
-      const target = e.target as Node;
-      if (el && !el.contains(target) && (!dropdown || !dropdown.contains(target))) {
-        setShowSettingsMenu(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showSettingsMenu]);
+  // (outside-click for menus handled by PopupMenu)
 
   const [sigintPending, setSigintPending] = useState(false);
   const [liveZoom, setLiveZoom] = useState(false);
@@ -422,134 +377,44 @@ export function JobDetailView({
                 <Text style={styles.moreBtnText}>{"\u2026"}</Text>
               </TouchableOpacity>
               {showSettingsMenu && (
-                <PortalWeb>
-                  <View ref={settingsDropdownRef} style={isWeb && menuPos ? {
-                    ...StyleSheet.flatten(styles.dropdownMenu),
-                    position: "fixed" as any,
-                    top: menuPos.top,
-                    left: menuPos.left,
-                    right: undefined,
-                    transform: "translateX(-100%)" as any,
-                  } : styles.dropdownMenu}>
-                    {onEdit && (
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { onEdit(); setShowSettingsMenu(false); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={styles.dropdownItemText}>Edit</Text>
-                      </TouchableOpacity>
-                    )}
-                    {onDuplicate && (
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { setShowSettingsMenu(false); setShowDuplicateMenu(true); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={styles.dropdownItemText}>Duplicate</Text>
-                      </TouchableOpacity>
-                    )}
-                    {onToggleEnabled && !isManual && (
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { onToggleEnabled(); setShowSettingsMenu(false); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={styles.dropdownItemText}>
-                          {job.enabled ? "Disable" : "Enable"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                    {(onFork || onInjectSecrets || onSearchSkills) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) && (
-                      <View style={styles.dropdownSeparator} />
-                    )}
-                    {onFork && (
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { onFork(); setShowSettingsMenu(false); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={styles.dropdownItemText}>Fork Session</Text>
-                      </TouchableOpacity>
-                    )}
-                    {onInjectSecrets && (
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { onInjectSecrets(); setShowSettingsMenu(false); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={styles.dropdownItemText}>Inject Secrets</Text>
-                      </TouchableOpacity>
-                    )}
-                    {onSearchSkills && (
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { onSearchSkills(); setShowSettingsMenu(false); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={styles.dropdownItemText}>Send Skill</Text>
-                      </TouchableOpacity>
-                    )}
-                    {isRunning && !sigintPending && (
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { handleAction(transport.sigintJob ? "sigint" : "stop"); setShowSettingsMenu(false); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={[styles.dropdownItemText, { color: colors.danger }]}>Stop</Text>
-                      </TouchableOpacity>
-                    )}
-                    {onDelete && !isRunning && (
-                      <>
-                        <View style={styles.dropdownSeparator} />
-                        <TouchableOpacity
-                          style={styles.dropdownItem}
-                          onPress={() => { onDelete(); setShowSettingsMenu(false); }}
-                          activeOpacity={0.6}
-                        >
-                          <Text style={[styles.dropdownItemText, { color: colors.danger }]}>Delete</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-                </PortalWeb>
+                <PopupMenu
+                  dropdownRef={settingsDropdownRef}
+                  position={menuPos}
+                  onClose={() => setShowSettingsMenu(false)}
+                  items={[
+                    ...(onEdit ? [{ type: "item" as const, label: "Edit", onPress: () => onEdit() }] : []),
+                    ...(onDuplicate ? [{ type: "item" as const, label: "Duplicate", onPress: () => setShowDuplicateMenu(true) }] : []),
+                    ...(onToggleEnabled && !isManual ? [{ type: "item" as const, label: job.enabled ? "Disable" : "Enable", onPress: () => onToggleEnabled() }] : []),
+                    ...((onFork || onInjectSecrets || onSearchSkills) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
+                    ...(onFork ? [{ type: "item" as const, label: "Fork Session", onPress: () => onFork() }] : []),
+                    ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
+                    ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
+                    ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction(transport.sigintJob ? "sigint" : "stop"), color: colors.danger }] : []),
+                    ...(onDelete && !isRunning ? [{ type: "separator" as const }, { type: "item" as const, label: "Delete", onPress: () => onDelete(), color: colors.danger }] : []),
+                  ]}
+                />
               )}
             </View>
           )}
           {/* Duplicate sub-menu (shown after selecting Duplicate from settings menu) */}
           {showDuplicateMenu && onDuplicate && (
-            <PortalWeb>
-              <View ref={dupMenuRef} style={isWeb && menuPos ? { position: "fixed" as any, top: menuPos.top, left: menuPos.left, transform: "translateX(-100%)" as any, zIndex: 9999 } : { position: "absolute", right: 0, top: "100%", zIndex: 9999 }}>
-                <View style={styles.dropdownMenu}>
-                  {groups && groups.map((g) => (
-                    <TouchableOpacity
-                      key={g}
-                      style={[styles.dropdownItem, g === currentGroup && styles.dropdownItemActive]}
-                      onPress={() => { onDuplicate(g); setShowDuplicateMenu(false); }}
-                      activeOpacity={0.6}
-                    >
-                      <Text style={[styles.dropdownItemText, g === currentGroup && styles.dropdownItemTextActive]}>
-                        {g}{g === currentGroup ? " (current)" : ""}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                  {onDuplicateToFolder && (
-                    <>
-                      <View style={styles.dropdownSeparator} />
-                      <TouchableOpacity
-                        style={styles.dropdownItem}
-                        onPress={() => { setShowDuplicateMenu(false); onDuplicateToFolder(); }}
-                        activeOpacity={0.6}
-                      >
-                        <Text style={[styles.dropdownItemText, { color: colors.accent }]}>
-                          Choose folder...
-                        </Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </View>
-            </PortalWeb>
+            <PopupMenu
+              dropdownRef={dupMenuRef}
+              position={menuPos}
+              onClose={() => setShowDuplicateMenu(false)}
+              items={[
+                ...(groups ?? []).map((g) => ({
+                  type: "item" as const,
+                  label: g === currentGroup ? `${g} (current)` : g,
+                  onPress: () => onDuplicate(g),
+                  active: g === currentGroup,
+                })),
+                ...(onDuplicateToFolder ? [
+                  { type: "separator" as const },
+                  { type: "item" as const, label: "Choose folder...", onPress: () => onDuplicateToFolder(), color: colors.accent },
+                ] : []),
+              ]}
+            />
           )}
         </View>
       </View>
@@ -1508,38 +1373,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 12,
-  },
-  dropdownMenu: {
-    position: "absolute",
-    top: "100%",
-    right: 0,
-    marginTop: 4,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    minWidth: 160,
-    zIndex: 9999,
-    ...(isWeb ? { boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } : {}),
-  },
-  dropdownSeparator: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.sm,
-  },
-  dropdownItem: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  dropdownItemActive: {
-    backgroundColor: `${colors.accent}18`,
-  },
-  dropdownItemText: {
-    color: colors.text,
-    fontSize: 13,
-  },
-  dropdownItemTextActive: {
-    color: colors.accent,
-    fontWeight: "600",
   },
 });
