@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::State;
 
 use crate::terminal;
@@ -78,4 +79,81 @@ pub fn open_job_terminal(state: State<AppState>, name: String) -> Result<(), Str
 
     let cmd = format!("cd {}", work_dir);
     terminal::open_in_terminal(&cmd)
+}
+
+/// Fork a Claude Code session by splitting the pane and continuing with --fork-session.
+#[tauri::command]
+pub async fn fork_pane(pane_id: String) -> Result<(), String> {
+    if !tmux::is_available() {
+        return Err("tmux is not installed".to_string());
+    }
+
+    let pane_path = tmux::get_pane_path(&pane_id)?;
+
+    // Send "forking" + ESC ESC to mark this as the most recent session
+    tmux::send_keys_to_tui_pane(&pane_id, "forking")?;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let _ = std::process::Command::new("tmux")
+        .args(["send-keys", "-t", &pane_id, "Escape", "Escape"])
+        .output();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Split pane and launch claude with --continue --fork-session
+    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &[])?;
+    tmux::send_keys_to_pane("", &new_pane, "claude --continue --fork-session")?;
+
+    Ok(())
+}
+
+/// Fork a Claude Code session with secrets injected as environment variables.
+#[tauri::command]
+pub async fn fork_pane_with_secrets(
+    state: State<'_, AppState>,
+    pane_id: String,
+    secret_keys: Vec<String>,
+) -> Result<(), String> {
+    if !tmux::is_available() {
+        return Err("tmux is not installed".to_string());
+    }
+
+    if secret_keys.is_empty() {
+        return Err("No secrets selected".to_string());
+    }
+
+    let pane_path = tmux::get_pane_path(&pane_id)?;
+
+    // Collect secret values
+    let secrets = Arc::clone(&state.secrets);
+    let env_vars: Vec<(String, String)> = {
+        let store = secrets.lock().unwrap();
+        secret_keys
+            .iter()
+            .filter_map(|key| {
+                store.get(key).map(|val| (key.clone(), val.clone()))
+            })
+            .collect()
+    };
+
+    if env_vars.is_empty() {
+        return Err("None of the selected secrets were found".to_string());
+    }
+
+    // Build the prompt describing injected secrets
+    let names_list: Vec<String> = env_vars.iter().map(|(k, _)| format!("${}", k)).collect();
+    let prompt = format!("added {} env", names_list.join(", "));
+
+    // Send "forking" + ESC ESC to mark this as the most recent session
+    tmux::send_keys_to_tui_pane(&pane_id, "forking")?;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let _ = std::process::Command::new("tmux")
+        .args(["send-keys", "-t", &pane_id, "Escape", "Escape"])
+        .output();
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Split pane with env vars and launch claude
+    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &env_vars)?;
+    let cmd = format!("claude --continue --fork-session '{}'", prompt);
+    tmux::send_keys_to_pane("", &new_pane, &cmd)?;
+
+    Ok(())
 }

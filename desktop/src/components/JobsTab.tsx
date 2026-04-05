@@ -28,6 +28,8 @@ import { DetectedProcessDetail } from "./DetectedProcessDetail";
 import { DesktopJobDetail, AgentDetail } from "./JobDetailSections";
 import { ParamsOverlay } from "./ParamsOverlay";
 import { DraggableJobCard, DraggableProcessCard, type DragData } from "./DraggableCards";
+import { SkillSearchDialog } from "./SkillSearchDialog";
+import { InjectSecretsDialog } from "./InjectSecretsDialog";
 
 const transport = createTauriTransport();
 
@@ -78,6 +80,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [dragActiveZone, setDragActiveZone] = useState<DropZoneId | null>(null);
   const [dragOverlayData, setDragOverlayData] = useState<DragData | null>(null);
   const detailPaneRef = useRef<HTMLDivElement>(null);
+
+  // Pane action dialogs (fork/inject secrets/skill search)
+  const [skillSearchPaneId, setSkillSearchPaneId] = useState<string | null>(null);
+  const [injectSecretsPaneId, setInjectSecretsPaneId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -896,6 +902,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             ]);
             setSplitItem(null);
           }}
+          onFork={() => invoke("fork_pane", { paneId: proc.pane_id }).catch(console.error)}
+          onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
+          onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
         />
       );
     }
@@ -935,6 +944,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             if (paneId) return () => handleToggleAutoYesByPaneId(paneId, job.name);
           }
           return undefined;
+        })()}
+        onFork={(() => {
+          const status = core.statuses[job.slug];
+          const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+          return paneId ? () => invoke("fork_pane", { paneId }).catch(console.error) : undefined;
+        })()}
+        onInjectSecrets={(() => {
+          const status = core.statuses[job.slug];
+          const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+          return paneId ? () => setInjectSecretsPaneId(paneId) : undefined;
+        })()}
+        onSearchSkills={(() => {
+          const status = core.statuses[job.slug];
+          const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+          return paneId ? () => setSkillSearchPaneId(paneId) : undefined;
         })()}
       />
     );
@@ -1115,6 +1139,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               ]);
               selectAdjacentItem(viewingProcess.pane_id);
             }}
+            onFork={() => invoke("fork_pane", { paneId: viewingProcess.pane_id }).catch(console.error)}
+            onInjectSecrets={() => setInjectSecretsPaneId(viewingProcess.pane_id)}
+            onSearchSkills={() => setSkillSearchPaneId(viewingProcess.pane_id)}
           />
           {pendingAutoYes && (
             <ConfirmDialog
@@ -1163,6 +1190,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                 if (paneId) return () => handleToggleAutoYesByPaneId(paneId, viewingJob.name);
               }
               return undefined;
+            })()}
+            onFork={(() => {
+              const status = core.statuses[viewingJob.slug];
+              const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+              return paneId ? () => invoke("fork_pane", { paneId }).catch(console.error) : undefined;
+            })()}
+            onInjectSecrets={(() => {
+              const status = core.statuses[viewingJob.slug];
+              const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+              return paneId ? () => setInjectSecretsPaneId(paneId) : undefined;
+            })()}
+            onSearchSkills={(() => {
+              const status = core.statuses[viewingJob.slug];
+              const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+              return paneId ? () => setSkillSearchPaneId(paneId) : undefined;
             })()}
           />
           {paramsDialog && (
@@ -1253,6 +1295,26 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onCancel={() => setMissedCronJobs([])}
           confirmLabel="Run All"
           confirmClassName="btn btn-primary btn-sm"
+        />
+      )}
+
+      {skillSearchPaneId && (
+        <SkillSearchDialog
+          onSelect={(name) => {
+            invoke("send_detected_process_input", { paneId: skillSearchPaneId, text: "/" + name }).catch(console.error);
+            setSkillSearchPaneId(null);
+          }}
+          onCancel={() => setSkillSearchPaneId(null)}
+        />
+      )}
+
+      {injectSecretsPaneId && (
+        <InjectSecretsDialog
+          onConfirm={(keys) => {
+            invoke("fork_pane_with_secrets", { paneId: injectSecretsPaneId, secretKeys: keys }).catch(console.error);
+            setInjectSecretsPaneId(null);
+          }}
+          onCancel={() => setInjectSecretsPaneId(null)}
         />
       )}
     </>
@@ -1348,14 +1410,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       onDragCancel={handleDragCancel}
     >
       <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px)", margin: -20, overflow: "hidden" }}>
-        <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden", position: "relative", zIndex: 1 }}>
+        <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {jobListView}
         </div>
         <div
           onMouseDown={onResizeHandleMouseDown}
           style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }}
         />
-        <div ref={detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", position: "relative", zIndex: 2 }}>
+        <div ref={detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)" }}>
           <SplitDetailArea
             primaryContent={detailPane}
             secondaryContent={splitItem ? renderSecondaryContent() : null}

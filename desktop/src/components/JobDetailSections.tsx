@@ -376,6 +376,9 @@ export function DesktopJobDetail({
   firstQuery,
   lastQuery,
   showBackButton = false,
+  onFork,
+  onInjectSecrets,
+  onSearchSkills,
 }: {
   transport: Transport;
   job: Job;
@@ -395,6 +398,9 @@ export function DesktopJobDetail({
   onToggleAutoYes?: () => void;
   firstQuery?: string;
   lastQuery?: string;
+  onFork?: () => void;
+  onInjectSecrets?: () => void;
+  onSearchSkills?: () => void;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
@@ -453,6 +459,9 @@ export function DesktopJobDetail({
         lastQuery={lastQuery}
         renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
         hideMessageInput={!!(paneId && tmuxSession)}
+        onFork={onFork}
+        onInjectSecrets={onInjectSecrets}
+        onSearchSkills={onSearchSkills}
       />
       {showConfirm && (
         <ConfirmDialog

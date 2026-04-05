@@ -403,6 +403,56 @@ pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Get the working directory of a pane.
+pub fn get_pane_path(pane_id: &str) -> Result<String, String> {
+    let output = Command::new("tmux")
+        .args(["display-message", "-t", pane_id, "-p", "#{pane_current_path}"])
+        .output()
+        .map_err(|e| format!("Failed to get pane path: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        return Err("Pane has no working directory".to_string());
+    }
+    Ok(path)
+}
+
+/// Split a pane by its ID, returning the new pane ID.
+pub fn split_pane_by_id(pane_id: &str, cwd: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+    let mut args = vec![
+        "split-window".to_string(),
+        "-v".to_string(),
+        "-t".to_string(),
+        pane_id.to_string(),
+        "-c".to_string(),
+        cwd.to_string(),
+        "-P".to_string(),
+        "-F".to_string(),
+        "#{pane_id}".to_string(),
+    ];
+    for (k, v) in env_vars {
+        args.push("-e".to_string());
+        args.push(format!("{}={}", k, v));
+    }
+
+    let output = Command::new("tmux")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("Failed to split pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
 /// Find which terminal app has the tmux client for a session and bring it to front.
 fn activate_terminal_for_session(session: &str) -> Result<(), String> {
     // Get the TTY of the client attached to this session

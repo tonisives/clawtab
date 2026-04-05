@@ -12,6 +12,14 @@ import {
 } from "react-native";
 
 const isWeb = Platform.OS === "web";
+
+// Portal helper: on web, renders into document.body to escape overflow:hidden clipping
+const PortalWeb = isWeb
+  ? ({ children }: { children: ReactNode }) => {
+      const { createPortal } = require("react-dom") as typeof import("react-dom");
+      return createPortal(children, document.body);
+    }
+  : ({ children }: { children: ReactNode }) => <>{children}</>;
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
@@ -76,6 +84,10 @@ export interface JobDetailViewProps {
   // Runtime query info (from detected processes)
   firstQuery?: string;
   lastQuery?: string;
+  // Pane actions (desktop only, for running jobs/processes with a tmux pane)
+  onFork?: () => void;
+  onInjectSecrets?: () => void;
+  onSearchSkills?: () => void;
 }
 
 export function JobDetailView({
@@ -88,7 +100,7 @@ export function JobDetailView({
   onBack,
   onReloadRuns,
   onEdit,
-  onOpen,
+  onOpen: _onOpen,
   onDuplicate,
   onToggleEnabled,
   onDelete,
@@ -111,6 +123,9 @@ export function JobDetailView({
   hideMessageInput,
   firstQuery,
   lastQuery,
+  onFork,
+  onInjectSecrets,
+  onSearchSkills,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -313,16 +328,8 @@ export function JobDetailView({
           )}
         </View>
         <View style={styles.actions}>
-          {isRunning && (
-            <>
-              {onOpen && <ActionButton label="Open in Terminal" color={colors.accent} onPress={() => onOpen()} compact={expandOutput} />}
-              <ActionButton
-                label={sigintPending ? "Stopping..." : "Stop"}
-                color={colors.danger}
-                onPress={() => handleAction(transport.sigintJob ? "sigint" : "stop")}
-                compact={expandOutput}
-              />
-            </>
+          {isRunning && sigintPending && (
+            <ActionButton label="Stopping..." color={colors.danger} onPress={() => {}} disabled compact={expandOutput} />
           )}
           {runPending && !isRunning && (
             <ActionButton label="Starting..." color={colors.accent} filled onPress={() => {}} disabled compact={expandOutput} />
@@ -336,8 +343,51 @@ export function JobDetailView({
           {!runPending && state === "idle" && (
             <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact={expandOutput} />
           )}
+          {isRunning && status.started_at ? (
+            <Text style={styles.runtimeText}>{formatTime(status.started_at)}</Text>
+          ) : null}
+          {isRunning && status.pane_id ? (
+            <Text style={styles.runtimeDim}>{status.pane_id}</Text>
+          ) : null}
+          {isRunning && onToggleAutoYes ? (
+            <TouchableOpacity
+              onPress={onToggleAutoYes}
+              activeOpacity={0.6}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                paddingHorizontal: 5,
+                paddingVertical: 2,
+                borderRadius: 4,
+                borderWidth: 1,
+                borderColor: autoYesActive ? colors.warning : colors.border,
+                backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
+              }}
+            >
+              <Text style={{ fontSize: 10, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
+                Auto-yes
+              </Text>
+              <View style={{
+                width: 20,
+                height: 12,
+                borderRadius: 6,
+                backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
+                justifyContent: "center",
+                paddingHorizontal: 1,
+              }}>
+                <View style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: "#fff",
+                  alignSelf: autoYesActive ? "flex-end" : "flex-start",
+                }} />
+              </View>
+            </TouchableOpacity>
+          ) : null}
           {/* Settings "..." menu */}
-          {(onEdit || onDuplicate || onDelete || (onToggleEnabled && !isManual)) && (
+          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onInjectSecrets || onSearchSkills) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}
@@ -357,162 +407,151 @@ export function JobDetailView({
                 <Text style={styles.moreBtnText}>{"\u2026"}</Text>
               </TouchableOpacity>
               {showSettingsMenu && (
-                <View style={isWeb && menuPos ? {
-                  ...StyleSheet.flatten(styles.dropdownMenu),
-                  position: "fixed" as any,
-                  top: menuPos.top,
-                  left: menuPos.left,
-                  right: undefined,
-                  transform: "translateX(-100%)" as any,
-                } : styles.dropdownMenu}>
-                  {onEdit && (
-                    <TouchableOpacity
-                      style={styles.dropdownItem}
-                      onPress={() => { onEdit(); setShowSettingsMenu(false); }}
-                      activeOpacity={0.6}
-                    >
-                      <Text style={styles.dropdownItemText}>Edit</Text>
-                    </TouchableOpacity>
-                  )}
-                  {onDuplicate && (
-                    <TouchableOpacity
-                      style={styles.dropdownItem}
-                      onPress={() => { setShowSettingsMenu(false); setShowDuplicateMenu(true); }}
-                      activeOpacity={0.6}
-                    >
-                      <Text style={styles.dropdownItemText}>Duplicate</Text>
-                    </TouchableOpacity>
-                  )}
-                  {onToggleEnabled && !isManual && (
-                    <TouchableOpacity
-                      style={styles.dropdownItem}
-                      onPress={() => { onToggleEnabled(); setShowSettingsMenu(false); }}
-                      activeOpacity={0.6}
-                    >
-                      <Text style={styles.dropdownItemText}>
-                        {job.enabled ? "Disable" : "Enable"}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  {onDelete && !isRunning && (
-                    <>
-                      <View style={styles.dropdownSeparator} />
+                <PortalWeb>
+                  <View style={isWeb && menuPos ? {
+                    ...StyleSheet.flatten(styles.dropdownMenu),
+                    position: "fixed" as any,
+                    top: menuPos.top,
+                    left: menuPos.left,
+                    right: undefined,
+                    transform: "translateX(-100%)" as any,
+                  } : styles.dropdownMenu}>
+                    {onEdit && (
                       <TouchableOpacity
                         style={styles.dropdownItem}
-                        onPress={() => { onDelete(); setShowSettingsMenu(false); }}
+                        onPress={() => { onEdit(); setShowSettingsMenu(false); }}
                         activeOpacity={0.6}
                       >
-                        <Text style={[styles.dropdownItemText, { color: colors.danger }]}>Delete</Text>
+                        <Text style={styles.dropdownItemText}>Edit</Text>
                       </TouchableOpacity>
-                    </>
-                  )}
-                </View>
+                    )}
+                    {onDuplicate && (
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { setShowSettingsMenu(false); setShowDuplicateMenu(true); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={styles.dropdownItemText}>Duplicate</Text>
+                      </TouchableOpacity>
+                    )}
+                    {onToggleEnabled && !isManual && (
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { onToggleEnabled(); setShowSettingsMenu(false); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={styles.dropdownItemText}>
+                          {job.enabled ? "Disable" : "Enable"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    {(onFork || onInjectSecrets || onSearchSkills) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) && (
+                      <View style={styles.dropdownSeparator} />
+                    )}
+                    {onFork && (
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { onFork(); setShowSettingsMenu(false); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={styles.dropdownItemText}>Fork Session</Text>
+                      </TouchableOpacity>
+                    )}
+                    {onInjectSecrets && (
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { onInjectSecrets(); setShowSettingsMenu(false); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={styles.dropdownItemText}>Inject Secrets</Text>
+                      </TouchableOpacity>
+                    )}
+                    {onSearchSkills && (
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { onSearchSkills(); setShowSettingsMenu(false); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={styles.dropdownItemText}>Send Skill</Text>
+                      </TouchableOpacity>
+                    )}
+                    {isRunning && !sigintPending && (
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { handleAction(transport.sigintJob ? "sigint" : "stop"); setShowSettingsMenu(false); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={[styles.dropdownItemText, { color: colors.danger }]}>Stop</Text>
+                      </TouchableOpacity>
+                    )}
+                    {onDelete && !isRunning && (
+                      <>
+                        <View style={styles.dropdownSeparator} />
+                        <TouchableOpacity
+                          style={styles.dropdownItem}
+                          onPress={() => { onDelete(); setShowSettingsMenu(false); }}
+                          activeOpacity={0.6}
+                        >
+                          <Text style={[styles.dropdownItemText, { color: colors.danger }]}>Delete</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                </PortalWeb>
               )}
             </View>
           )}
           {/* Duplicate sub-menu (shown after selecting Duplicate from settings menu) */}
           {showDuplicateMenu && onDuplicate && (
-            <View ref={dupMenuRef} style={isWeb && menuPos ? { position: "fixed" as any, top: menuPos.top, left: menuPos.left, transform: "translateX(-100%)" as any, zIndex: 9999 } : { position: "absolute", right: 0, top: "100%", zIndex: 9999 }}>
-              <View style={styles.dropdownMenu}>
-                {groups && groups.map((g) => (
-                  <TouchableOpacity
-                    key={g}
-                    style={[styles.dropdownItem, g === currentGroup && styles.dropdownItemActive]}
-                    onPress={() => { onDuplicate(g); setShowDuplicateMenu(false); }}
-                    activeOpacity={0.6}
-                  >
-                    <Text style={[styles.dropdownItemText, g === currentGroup && styles.dropdownItemTextActive]}>
-                      {g}{g === currentGroup ? " (current)" : ""}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-                {onDuplicateToFolder && (
-                  <>
-                    <View style={styles.dropdownSeparator} />
+            <PortalWeb>
+              <View ref={dupMenuRef} style={isWeb && menuPos ? { position: "fixed" as any, top: menuPos.top, left: menuPos.left, transform: "translateX(-100%)" as any, zIndex: 9999 } : { position: "absolute", right: 0, top: "100%", zIndex: 9999 }}>
+                <View style={styles.dropdownMenu}>
+                  {groups && groups.map((g) => (
                     <TouchableOpacity
-                      style={styles.dropdownItem}
-                      onPress={() => { setShowDuplicateMenu(false); onDuplicateToFolder(); }}
+                      key={g}
+                      style={[styles.dropdownItem, g === currentGroup && styles.dropdownItemActive]}
+                      onPress={() => { onDuplicate(g); setShowDuplicateMenu(false); }}
                       activeOpacity={0.6}
                     >
-                      <Text style={[styles.dropdownItemText, { color: colors.accent }]}>
-                        Choose folder...
+                      <Text style={[styles.dropdownItemText, g === currentGroup && styles.dropdownItemTextActive]}>
+                        {g}{g === currentGroup ? " (current)" : ""}
                       </Text>
                     </TouchableOpacity>
-                  </>
-                )}
+                  ))}
+                  {onDuplicateToFolder && (
+                    <>
+                      <View style={styles.dropdownSeparator} />
+                      <TouchableOpacity
+                        style={styles.dropdownItem}
+                        onPress={() => { setShowDuplicateMenu(false); onDuplicateToFolder(); }}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={[styles.dropdownItemText, { color: colors.accent }]}>
+                          Choose folder...
+                        </Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               </View>
-            </View>
+            </PortalWeb>
           )}
         </View>
       </View>
 
-      {/* Runtime info + auto-yes for running jobs */}
-      {isRunning && (
-        <>
-        <View style={styles.runtimeRow}>
-          {status.state === "running" && status.started_at ? (
-            <View style={styles.infoPill}>
-              <Text style={styles.runtimeText}>{formatTime(status.started_at)}</Text>
-            </View>
-          ) : null}
-          {status.state === "running" && status.pane_id ? (
-            <View style={styles.infoPill}>
-              <Text style={styles.runtimeDim}>{status.pane_id}</Text>
-            </View>
-          ) : null}
-          {onToggleAutoYes && <View style={{ flex: 1 }} />}
-          {onToggleAutoYes && (
-            <TouchableOpacity
-              onPress={onToggleAutoYes}
-              activeOpacity={0.6}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 8,
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-                borderRadius: 6,
-                borderWidth: 1,
-                borderColor: autoYesActive ? colors.warning : colors.border,
-                backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
-              }}
-            >
-              <Text style={{ fontSize: 11, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
-                Auto-yes
-              </Text>
-              <View style={{
-                width: 28,
-                height: 16,
-                borderRadius: 8,
-                backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
-                justifyContent: "center",
-                paddingHorizontal: 1,
-              }}>
-                <View style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: "#fff",
-                  alignSelf: autoYesActive ? "flex-end" : "flex-start",
-                }} />
-              </View>
-            </TouchableOpacity>
-          )}
+      {/* Query info for running jobs */}
+      {isRunning && firstQuery ? (
+        <View style={styles.queryRow}>
+          <Text style={styles.queryLabel}>Query</Text>
+          <Text style={styles.queryLine} numberOfLines={1}>{firstQuery}</Text>
         </View>
-        {firstQuery ? (
-          <View style={styles.queryRow}>
-            <Text style={styles.queryLabel}>Query</Text>
-            <Text style={styles.queryLine} numberOfLines={1}>{firstQuery}</Text>
-          </View>
-        ) : null}
-        {lastQuery && lastQuery !== firstQuery ? (
-          <View style={styles.queryRow}>
-            <Text style={styles.queryLabel}>Latest</Text>
-            <Text style={styles.queryLineDim} numberOfLines={1}>{lastQuery}</Text>
-          </View>
-        ) : null}
-        </>
-      )}
+      ) : null}
+      {isRunning && lastQuery && lastQuery !== firstQuery ? (
+        <View style={styles.queryRow}>
+          <Text style={styles.queryLabel}>Latest</Text>
+          <Text style={styles.queryLineDim} numberOfLines={1}>{lastQuery}</Text>
+        </View>
+      ) : null}
 
       {/* Live Output */}
       {(isRunning || isPaused) && !expandOutput && (
@@ -1118,12 +1157,6 @@ const styles = StyleSheet.create({
     zIndex: 200,
     ...(isWeb ? { position: "relative" as const } : {}),
   },
-  runtimeRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    flexWrap: "wrap",
-  },
   runtimeText: {
     color: colors.textSecondary,
     fontSize: 11,
@@ -1449,17 +1482,17 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   moreBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
   },
   moreBtnText: {
     color: colors.textSecondary,
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: "700",
-    lineHeight: 16,
+    lineHeight: 12,
   },
   dropdownMenu: {
     position: "absolute",

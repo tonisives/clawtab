@@ -48,6 +48,9 @@ export function DetectedProcessDetail({
   onToggleAutoYes,
   showBackButton = false,
   onStopped,
+  onFork,
+  onInjectSecrets,
+  onSearchSkills,
 }: {
   process: ClaudeProcess;
   questions: ClaudeQuestion[];
@@ -57,6 +60,9 @@ export function DetectedProcessDetail({
   onToggleAutoYes?: () => void;
   showBackButton?: boolean;
   onStopped?: () => void;
+  onFork?: () => void;
+  onInjectSecrets?: () => void;
+  onSearchSkills?: () => void;
 }) {
   const processRef = useRef(process);
   processRef.current = process;
@@ -144,6 +150,9 @@ export function DetectedProcessDetail({
       hideMessageInput
       firstQuery={process.first_query ?? undefined}
       lastQuery={process.last_query ?? undefined}
+      onFork={onFork}
+      onInjectSecrets={onInjectSecrets}
+      onSearchSkills={onSearchSkills}
     />
   );
 }
