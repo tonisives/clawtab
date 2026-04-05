@@ -14,12 +14,24 @@ import {
 const isWeb = Platform.OS === "web";
 
 // Portal helper: on web, renders into document.body to escape overflow:hidden clipping
-const PortalWeb = isWeb
-  ? ({ children }: { children: ReactNode }) => {
-      const { createPortal } = require("react-dom") as typeof import("react-dom");
-      return createPortal(children, document.body);
+let createPortalFn: typeof import("react-dom").createPortal | null = null;
+if (isWeb) {
+  import("react-dom").then((mod) => { createPortalFn = mod.createPortal; });
+}
+
+function PortalWeb({ children }: { children: ReactNode }) {
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    if (isWeb && !createPortalFn) {
+      import("react-dom").then((mod) => {
+        createPortalFn = mod.createPortal;
+        forceUpdate((n) => n + 1);
+      });
     }
-  : ({ children }: { children: ReactNode }) => <>{children}</>;
+  }, []);
+  if (!isWeb || !createPortalFn) return <>{children}</>;
+  return createPortalFn(children, document.body);
+}
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
@@ -329,19 +341,19 @@ export function JobDetailView({
         </View>
         <View style={styles.actions}>
           {isRunning && sigintPending && (
-            <ActionButton label="Stopping..." color={colors.danger} onPress={() => {}} disabled compact={expandOutput} />
+            <ActionButton label="Stopping..." color={colors.danger} onPress={() => {}} disabled compact />
           )}
           {runPending && !isRunning && (
-            <ActionButton label="Starting..." color={colors.accent} filled onPress={() => {}} disabled compact={expandOutput} />
+            <ActionButton label="Starting..." color={colors.accent} filled onPress={() => {}} disabled compact />
           )}
           {!runPending && state === "failed" && (
-            <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} compact={expandOutput} />
+            <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} compact />
           )}
           {!runPending && state === "success" && (
-            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact={expandOutput} />
+            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact />
           )}
           {!runPending && state === "idle" && (
-            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact={expandOutput} />
+            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact />
           )}
           {isRunning && status.started_at ? (
             <Text style={styles.runtimeText}>{formatTime(status.started_at)}</Text>
@@ -1233,7 +1245,7 @@ const styles = StyleSheet.create({
   },
   actionBtnCompact: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   actionText: {
     fontSize: 14,
