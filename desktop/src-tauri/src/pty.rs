@@ -104,27 +104,21 @@ impl PtyManager {
             "-x", &w.to_string(), "-y", &h.to_string(),
         ]);
 
-        // Create a FIFO for blocking reads (no polling needed).
+        // Write pipe-pane output to a regular file; use kqueue to wake
+        // on every write so we get near-instant delivery without polling.
         let pipe_path = format!("/tmp/clawtab-pipe-{}", event_key);
         let _ = std::fs::remove_file(&pipe_path);
-        let pipe_c = std::ffi::CString::new(pipe_path.clone()).unwrap();
-        let rc = unsafe { libc::mkfifo(pipe_c.as_ptr(), 0o600) };
-        if rc != 0 {
-            return Err(format!(
-                "mkfifo {}: {}",
-                pipe_path,
-                std::io::Error::last_os_error()
-            ));
-        }
+        std::fs::File::create(&pipe_path)
+            .map_err(|e| format!("create {}: {}", pipe_path, e))?;
 
         tmux(&[
             "pipe-pane", "-t", &pane_id_owned,
-            &format!("dd of={} bs=1 conv=notrunc oflag=append 2>/dev/null", pipe_path),
+            &format!("cat >> {}", pipe_path),
         ])?;
 
         // Give the app a moment to redraw at the new size, then force a
         // screen refresh so the full content flows through pipe-pane into
-        // xterm.js as a single clean stream (no capture-pane overlap).
+        // xterm.js as a single clean stream.
         thread::sleep(std::time::Duration::from_millis(200));
         let _ = tmux(&["send-keys", "-t", &pane_id_owned, "C-l"]);
 
@@ -132,52 +126,91 @@ impl PtyManager {
         let pipe_path_clone = pipe_path.clone();
         let pane_id_for_thread = pane_id.to_string();
         thread::spawn(move || {
-            use std::io::Read;
-            use std::os::unix::io::FromRawFd;
-
-            // Helper: open FIFO with O_NONBLOCK to avoid blocking until a
-            // writer connects, then clear the flag so reads block normally.
-            let open_fifo = |path: &str| -> Option<std::fs::File> {
-                let c_path = std::ffi::CString::new(path).ok()?;
-                let fd = unsafe { libc::open(c_path.as_ptr(), libc::O_RDONLY | libc::O_NONBLOCK) };
-                if fd < 0 { return None; }
-                // Clear O_NONBLOCK so reads block until data arrives
-                unsafe {
-                    let flags = libc::fcntl(fd, libc::F_GETFL);
-                    libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK);
-                }
-                Some(unsafe { std::fs::File::from_raw_fd(fd) })
-            };
+            use std::io::{Read, Seek, SeekFrom};
 
             let mut file = loop {
                 if *stop_clone.lock().unwrap() { return; }
-                if let Some(f) = open_fifo(&pipe_path_clone) {
-                    break f;
+                match std::fs::File::open(&pipe_path_clone) {
+                    Ok(f) => break f,
+                    Err(_) => thread::sleep(std::time::Duration::from_millis(50)),
                 }
-                thread::sleep(std::time::Duration::from_millis(50));
             };
+
+            // Set up kqueue to watch for writes (EVFILT_VNODE + NOTE_WRITE)
+            let kq = unsafe { libc::kqueue() };
+            if kq < 0 {
+                log::error!("[pty {}] kqueue failed: {}", pipe_event_key, std::io::Error::last_os_error());
+                return;
+            }
+
+            use std::os::unix::io::AsRawFd;
+            let file_fd = file.as_raw_fd();
+            let changelist = libc::kevent {
+                ident: file_fd as usize,
+                filter: libc::EVFILT_VNODE,
+                flags: libc::EV_ADD | libc::EV_CLEAR,
+                fflags: libc::NOTE_WRITE | libc::NOTE_DELETE,
+                data: 0,
+                udata: std::ptr::null_mut(),
+            };
+
+            let rc = unsafe {
+                libc::kevent(
+                    kq,
+                    &changelist as *const libc::kevent,
+                    1,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null(),
+                )
+            };
+            if rc < 0 {
+                log::error!("[pty {}] kevent register failed: {}", pipe_event_key, std::io::Error::last_os_error());
+                unsafe { libc::close(kq); }
+                return;
+            }
+
+            // Seek to end so we only read new data
+            let _ = file.seek(SeekFrom::End(0));
 
             let mut buf = [0u8; 65536];
             let mut last_read = std::time::Instant::now();
+            let timeout = libc::timespec { tv_sec: 1, tv_nsec: 0 };
             loop {
                 if *stop_clone.lock().unwrap() { break; }
+
+                // Wait for file write notification (1s timeout for stop check)
+                let mut event_buf = [libc::kevent {
+                    ident: 0, filter: 0, flags: 0, fflags: 0, data: 0,
+                    udata: std::ptr::null_mut(),
+                }; 1];
+                let nev = unsafe {
+                    libc::kevent(
+                        kq,
+                        std::ptr::null(),
+                        0,
+                        event_buf.as_mut_ptr(),
+                        1,
+                        &timeout as *const libc::timespec,
+                    )
+                };
+
+                if nev < 0 { break; }
+                if nev == 0 { continue; } // timeout, check stop flag
+
+                // File was deleted (pipe-pane stopped)
+                if event_buf[0].fflags & libc::NOTE_DELETE != 0 { break; }
+
+                // Read all new data
                 let t0 = std::time::Instant::now();
                 match file.read(&mut buf) {
-                    Ok(0) => {
-                        thread::sleep(std::time::Duration::from_millis(10));
-                        if *stop_clone.lock().unwrap() { break; }
-                        match open_fifo(&pipe_path_clone) {
-                            Some(f) => file = f,
-                            None => break,
-                        }
-                    }
+                    Ok(0) => {}
                     Ok(n) => {
                         let read_ms = t0.elapsed().as_millis();
                         let gap_ms = last_read.elapsed().as_millis();
                         last_read = std::time::Instant::now();
 
                         let data = &buf[..n];
-                        let t1 = std::time::Instant::now();
                         match &sink {
                             OutputSink::Tauri(app_handle) => {
                                 let encoded =
@@ -186,11 +219,10 @@ impl PtyManager {
                                 let _ = app_handle
                                     .emit(&format!("pty-output-{}", pipe_event_key), encoded);
                                 let emit_ms = emit_t.elapsed().as_millis();
-                                let encode_ms = t1.elapsed().as_millis() - emit_ms;
                                 if gap_ms > 200 || read_ms > 50 || emit_ms > 10 {
                                     log::warn!(
-                                        "[pty {}] gap={}ms read={}ms encode={}ms emit={}ms bytes={}",
-                                        pipe_event_key, gap_ms, read_ms, encode_ms, emit_ms, n
+                                        "[pty {}] gap={}ms read={}ms emit={}ms bytes={}",
+                                        pipe_event_key, gap_ms, read_ms, emit_ms, n
                                     );
                                 }
                             }
@@ -199,9 +231,10 @@ impl PtyManager {
                             }
                         }
                     }
-                    Err(_) => thread::sleep(std::time::Duration::from_millis(50)),
+                    Err(_) => {}
                 }
             }
+            unsafe { libc::close(kq); }
         });
 
         self.sessions.insert(

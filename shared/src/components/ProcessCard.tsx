@@ -174,11 +174,13 @@ const styles = StyleSheet.create({
   },
   rightColExpanded: {
     justifyContent: "space-between",
-    height: 40,
-    marginVertical: -4,
+    height: 50,
+    marginTop: -13,
+    marginBottom: -5,
+    marginRight: -6,
   },
   spacer: {
-    height: 10,
+    height: 8,
   },
   autoYesDot: {
     width: 8,
@@ -188,7 +190,7 @@ const styles = StyleSheet.create({
   },
   moreBtn: {
     width: 20,
-    height: 10,
+    height: 8,
     justifyContent: "center",
     alignItems: "center",
   },
