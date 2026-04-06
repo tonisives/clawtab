@@ -82,12 +82,14 @@ pub fn open_job_terminal(state: State<AppState>, name: String) -> Result<(), Str
 }
 
 /// Fork a Claude Code session by splitting the pane and continuing with --fork-session.
+/// `direction` is "right" for horizontal split or "down" for vertical split.
 #[tauri::command]
-pub async fn fork_pane(pane_id: String) -> Result<String, String> {
+pub async fn fork_pane(pane_id: String, direction: String) -> Result<String, String> {
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
 
+    let horizontal = direction == "right";
     let pane_path = tmux::get_pane_path(&pane_id)?;
 
     // Send "forking" + ESC ESC to mark this as the most recent session
@@ -99,8 +101,22 @@ pub async fn fork_pane(pane_id: String) -> Result<String, String> {
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // Split pane and launch claude with --continue --fork-session
-    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &[])?;
+    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &[], horizontal)?;
     tmux::send_keys_to_pane("", &new_pane, "claude --continue --fork-session")?;
+
+    Ok(new_pane)
+}
+
+/// Split a tmux pane without launching Claude (plain terminal).
+#[tauri::command]
+pub async fn split_pane_plain(pane_id: String, direction: String) -> Result<String, String> {
+    if !tmux::is_available() {
+        return Err("tmux is not installed".to_string());
+    }
+
+    let horizontal = direction == "right";
+    let pane_path = tmux::get_pane_path(&pane_id)?;
+    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &[], horizontal)?;
 
     Ok(new_pane)
 }
@@ -111,6 +127,7 @@ pub async fn fork_pane_with_secrets(
     state: State<'_, AppState>,
     pane_id: String,
     secret_keys: Vec<String>,
+    direction: String,
 ) -> Result<String, String> {
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
@@ -142,6 +159,8 @@ pub async fn fork_pane_with_secrets(
     let names_list: Vec<String> = env_vars.iter().map(|(k, _)| format!("${}", k)).collect();
     let prompt = format!("added {} env", names_list.join(", "));
 
+    let horizontal = direction == "right";
+
     // Send "forking" + ESC ESC to mark this as the most recent session
     tmux::send_keys_to_tui_pane(&pane_id, "forking")?;
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -151,7 +170,7 @@ pub async fn fork_pane_with_secrets(
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     // Split pane with env vars and launch claude
-    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &env_vars)?;
+    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &env_vars, horizontal)?;
     let cmd = format!("claude --continue --fork-session '{}'", prompt);
     tmux::send_keys_to_pane("", &new_pane, &cmd)?;
 

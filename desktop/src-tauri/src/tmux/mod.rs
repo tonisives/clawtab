@@ -423,10 +423,12 @@ pub fn get_pane_path(pane_id: &str) -> Result<String, String> {
 }
 
 /// Split a pane by its ID, returning the new pane ID.
-pub fn split_pane_by_id(pane_id: &str, cwd: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+/// When `horizontal` is true, splits right (-h); otherwise splits down (-v).
+pub fn split_pane_by_id(pane_id: &str, cwd: &str, env_vars: &[(String, String)], horizontal: bool) -> Result<String, String> {
+    let flag = if horizontal { "-h" } else { "-v" };
     let mut args = vec![
         "split-window".to_string(),
-        "-v".to_string(),
+        flag.to_string(),
         "-t".to_string(),
         pane_id.to_string(),
         "-c".to_string(),

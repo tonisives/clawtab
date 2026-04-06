@@ -49,6 +49,7 @@ export function DetectedProcessDetail({
   showBackButton = false,
   onStopped,
   onFork,
+  onSplitPane,
   onInjectSecrets,
   onSearchSkills,
 }: {
@@ -60,7 +61,8 @@ export function DetectedProcessDetail({
   onToggleAutoYes?: () => void;
   showBackButton?: boolean;
   onStopped?: () => void;
-  onFork?: () => void;
+  onFork?: (direction: "right" | "down") => void;
+  onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
 }) {
@@ -151,6 +153,7 @@ export function DetectedProcessDetail({
       firstQuery={process.first_query ?? undefined}
       lastQuery={process.last_query ?? undefined}
       onFork={onFork}
+      onSplitPane={onSplitPane}
       onInjectSecrets={onInjectSecrets}
       onSearchSkills={onSearchSkills}
     />

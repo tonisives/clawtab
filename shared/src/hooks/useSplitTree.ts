@@ -159,10 +159,22 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       ? { type: "leaf" as const, id: "_root", content: cc }
       : null);
 
+    const relX = px - rect.left;
+    const relY = py - rect.top;
     const zone = computeDropZone(
-      px - rect.left, py - rect.top, rect.width, rect.height,
+      relX, relY, rect.width, rect.height,
       effectiveTree, minPaneSize,
     );
+    // DEBUG
+    if (Math.random() < 0.05) {
+      console.log('[drag]', {
+        hasTree: !!tree, treeType: tree?.type,
+        cW: Math.round(rect.width), cH: Math.round(rect.height),
+        rX: Math.round(relX), rY: Math.round(relY),
+        zone: zone ? (zone.action === 'split' ? `split-${zone.direction}-${zone.position} @ ${zone.leafId}` : `replace @ ${zone.leafId}`) : 'null',
+        minPaneSize,
+      });
+    }
     dragActiveZoneRef.current = zone;
     setDragActiveZone(zone);
   }, [minPaneSize]);
@@ -289,6 +301,32 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     });
   }, []);
 
+  /** Programmatically split a leaf to add new content next to it */
+  const addSplitLeaf = useCallback((
+    targetLeafId: string,
+    newContent: PaneContent,
+    direction: "horizontal" | "vertical",
+  ) => {
+    setSplitTree(prev => {
+      if (!prev) {
+        // No tree yet - create one from currentContent + newContent
+        const cc = currentContentRef.current;
+        if (!cc) return prev;
+        const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: cc };
+        const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
+        return {
+          type: "split",
+          id: genPaneId(),
+          direction,
+          ratio: 0.5,
+          first: rootLeaf,
+          second: newLeaf,
+        };
+      }
+      return splitLeaf(prev, targetLeafId, newContent, direction, "after");
+    });
+  }, []);
+
   // Compute selectedItems map for sidebar highlighting
   const selectedItems = useMemo((): Map<string, string> | null => {
     if (splitTree) {
@@ -349,6 +387,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     handleClosePane,
     handleSelectInTree,
     cleanStaleLeaves,
+    addSplitLeaf,
     // Sidebar data
     selectedItems,
     focusedItemKey,

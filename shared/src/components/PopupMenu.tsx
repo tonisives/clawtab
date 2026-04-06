@@ -26,7 +26,8 @@ function PortalWeb({ children }: { children: ReactNode }) {
 
 export type PopupMenuItem =
   | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean }
-  | { type: "separator" };
+  | { type: "separator" }
+  | { type: "submenu"; label: string; items: PopupMenuItem[] };
 
 interface PopupMenuProps {
   items: PopupMenuItem[];
@@ -37,31 +38,43 @@ interface PopupMenuProps {
   triggerRef?: React.RefObject<any>;
 }
 
-function HoverableItem({ item, onClose }: { item: Extract<PopupMenuItem, { type: "item" }>; onClose: () => void }) {
+function HoverableItem({ item, onPress }: {
+  item: Extract<PopupMenuItem, { type: "item" }> | Extract<PopupMenuItem, { type: "submenu" }>;
+  onPress: () => void;
+}) {
   const [hovered, setHovered] = useState(false);
   const webProps = isWeb ? {
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
   } : {};
 
+  const isSubmenu = item.type === "submenu";
+  const color = item.type === "item" ? item.color : undefined;
+  const active = item.type === "item" ? item.active : false;
+
   return (
     <TouchableOpacity
       style={[
         styles.item,
-        item.active && styles.itemActive,
+        active && styles.itemActive,
         hovered && styles.itemHover,
       ]}
-      onPress={() => { onClose(); item.onPress(); }}
+      onPress={onPress}
       activeOpacity={0.6}
       {...webProps}
     >
-      <Text style={[
-        styles.itemText,
-        item.active && styles.itemTextActive,
-        item.color ? { color: item.color } : null,
-      ]}>
-        {item.label}
-      </Text>
+      <View style={styles.itemRow}>
+        <Text style={[
+          styles.itemText,
+          active && styles.itemTextActive,
+          color ? { color } : null,
+        ]}>
+          {item.label}
+        </Text>
+        {isSubmenu && (
+          <Text style={styles.submenuArrow}>{"\u203a"}</Text>
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
@@ -69,6 +82,12 @@ function HoverableItem({ item, onClose }: { item: Extract<PopupMenuItem, { type:
 export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef }: PopupMenuProps) {
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
+  const [submenu, setSubmenu] = useState<{ label: string; items: PopupMenuItem[] } | null>(null);
+
+  // Reset submenu when menu closes/reopens
+  useEffect(() => {
+    setSubmenu(null);
+  }, [items]);
 
   useEffect(() => {
     if (!isWeb) return;
@@ -98,14 +117,41 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef }:
     paddingVertical: 4,
   } as any : styles.menu;
 
+  const activeItems = submenu ? submenu.items : items;
+
   return (
     <PortalWeb>
       <View ref={ref} style={menuStyle}>
-        {items.map((item, i) => {
+        {submenu && (
+          <TouchableOpacity
+            style={styles.backItem}
+            onPress={() => setSubmenu(null)}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.backText}>{"\u2039"} {submenu.label}</Text>
+          </TouchableOpacity>
+        )}
+        {activeItems.map((item, i) => {
           if (item.type === "separator") {
             return <View key={`sep-${i}`} style={styles.separator} />;
           }
-          return <HoverableItem key={`${item.label}-${i}`} item={item} onClose={onClose} />;
+          if (item.type === "submenu") {
+            return (
+              <HoverableItem
+                key={`${item.label}-${i}`}
+                item={item}
+
+                onPress={() => setSubmenu({ label: item.label, items: item.items })}
+              />
+            );
+          }
+          return (
+            <HoverableItem
+              key={`${item.label}-${i}`}
+              item={item}
+              onPress={() => { onClose(); item.onPress(); }}
+            />
+          );
         })}
       </View>
     </PortalWeb>
@@ -142,6 +188,11 @@ const styles = StyleSheet.create({
   itemHover: {
     backgroundColor: colors.surfaceHover,
   },
+  itemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   itemText: {
     color: colors.text,
     fontSize: 13,
@@ -149,5 +200,21 @@ const styles = StyleSheet.create({
   itemTextActive: {
     color: colors.accent,
     fontWeight: "600",
+  },
+  submenuArrow: {
+    color: colors.textMuted,
+    fontSize: 16,
+    marginLeft: spacing.sm,
+  },
+  backItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: 2,
+  },
+  backText: {
+    color: colors.textMuted,
+    fontSize: 12,
   },
 });

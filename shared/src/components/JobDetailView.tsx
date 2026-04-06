@@ -78,7 +78,8 @@ export interface JobDetailViewProps {
   firstQuery?: string;
   lastQuery?: string;
   // Pane actions (desktop only, for running jobs/processes with a tmux pane)
-  onFork?: () => void;
+  onFork?: (direction: "right" | "down") => void;
+  onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
 }
@@ -117,6 +118,7 @@ export function JobDetailView({
   firstQuery,
   lastQuery,
   onFork,
+  onSplitPane,
   onInjectSecrets,
   onSearchSkills,
 }: JobDetailViewProps) {
@@ -357,7 +359,7 @@ export function JobDetailView({
             </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
-          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onInjectSecrets || onSearchSkills) && (
+          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onInjectSecrets || onSearchSkills) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}
@@ -386,8 +388,15 @@ export function JobDetailView({
                     ...(onEdit ? [{ type: "item" as const, label: "Edit", onPress: () => onEdit() }] : []),
                     ...(onDuplicate ? [{ type: "item" as const, label: "Duplicate", onPress: () => setShowDuplicateMenu(true) }] : []),
                     ...(onToggleEnabled && !isManual ? [{ type: "item" as const, label: job.enabled ? "Disable" : "Enable", onPress: () => onToggleEnabled() }] : []),
-                    ...((onFork || onInjectSecrets || onSearchSkills) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
-                    ...(onFork ? [{ type: "item" as const, label: "Fork Session", onPress: () => onFork() }] : []),
+                    ...((onFork || onSplitPane || onInjectSecrets || onSearchSkills) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
+                    ...(onFork ? [{ type: "submenu" as const, label: "Fork Session", items: [
+                      { type: "item" as const, label: "Right", onPress: () => onFork("right") },
+                      { type: "item" as const, label: "Down", onPress: () => onFork("down") },
+                    ] }] : []),
+                    ...(onSplitPane ? [{ type: "submenu" as const, label: "Split Pane", items: [
+                      { type: "item" as const, label: "Right", onPress: () => onSplitPane("right") },
+                      { type: "item" as const, label: "Down", onPress: () => onSplitPane("down") },
+                    ] }] : []),
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction(transport.sigintJob ? "sigint" : "stop"), color: colors.danger }] : []),

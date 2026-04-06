@@ -17,6 +17,7 @@ import {
   useJobsCore,
   useJobActions,
   useSplitTree,
+  collectLeaves,
 } from "@clawtab/shared";
 import type { AutoYesEntry, PaneContent, SplitDragData } from "@clawtab/shared";
 import { createTauriTransport } from "../transport/tauriTransport";
@@ -163,23 +164,51 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // --- Fork handlers ---
 
-  const handleFork = useCallback(async (paneId: string) => {
+  const handleFork = useCallback(async (paneId: string, direction: "right" | "down" = "down") => {
     try {
-      await invoke<string>("fork_pane", { paneId });
+      const newPaneId = await invoke<string>("fork_pane", { paneId, direction });
       await core.reload();
+      // Add the new pane to the split tree
+      const treeDirection = direction === "right" ? "horizontal" as const : "vertical" as const;
+      const leaves = split.tree ? collectLeaves(split.tree) : [];
+      const sourceLeaf = leaves.find(l => l.content.kind === "process" && l.content.paneId === paneId);
+      if (sourceLeaf) {
+        split.addSplitLeaf(sourceLeaf.id, { kind: "process", paneId: newPaneId }, treeDirection);
+      }
     } catch (e) {
       console.error("fork_pane failed:", e);
     }
-  }, [core.reload]);
+  }, [core.reload, split.tree, split.addSplitLeaf]);
 
-  const handleForkWithSecrets = useCallback(async (paneId: string, secretKeys: string[]) => {
+  const handleForkWithSecrets = useCallback(async (paneId: string, secretKeys: string[], direction: "right" | "down" = "down") => {
     try {
-      await invoke<string>("fork_pane_with_secrets", { paneId, secretKeys });
+      const newPaneId = await invoke<string>("fork_pane_with_secrets", { paneId, secretKeys, direction });
       await core.reload();
+      const treeDirection = direction === "right" ? "horizontal" as const : "vertical" as const;
+      const leaves = split.tree ? collectLeaves(split.tree) : [];
+      const sourceLeaf = leaves.find(l => l.content.kind === "process" && l.content.paneId === paneId);
+      if (sourceLeaf) {
+        split.addSplitLeaf(sourceLeaf.id, { kind: "process", paneId: newPaneId }, treeDirection);
+      }
     } catch (e) {
       console.error("fork_pane_with_secrets failed:", e);
     }
-  }, [core.reload]);
+  }, [core.reload, split.tree, split.addSplitLeaf]);
+
+  const handleSplitPane = useCallback(async (paneId: string, direction: "right" | "down") => {
+    try {
+      const newPaneId = await invoke<string>("split_pane_plain", { paneId, direction });
+      await core.reload();
+      const treeDirection = direction === "right" ? "horizontal" as const : "vertical" as const;
+      const leaves = split.tree ? collectLeaves(split.tree) : [];
+      const sourceLeaf = leaves.find(l => l.content.kind === "process" && l.content.paneId === paneId);
+      if (sourceLeaf) {
+        split.addSplitLeaf(sourceLeaf.id, { kind: "process", paneId: newPaneId }, treeDirection);
+      }
+    } catch (e) {
+      console.error("split_pane_plain failed:", e);
+    }
+  }, [core.reload, split.tree, split.addSplitLeaf]);
 
   // --- Settings & event listeners ---
 
@@ -226,7 +255,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     if (!pendingAgentWorkDir) return;
     const { dir, startedAt } = pendingAgentWorkDir;
-    const match = core.processes.find((p) => p.cwd === dir && !p.pane_id.startsWith("_pending_"));
+    const match = core.processes.find((p) =>
+      p.cwd === dir && !p.pane_id.startsWith("_pending_") &&
+      p.session_started_at && new Date(p.session_started_at).getTime() >= startedAt - 5000,
+    );
     if (match) {
       setPendingAgentWorkDir(null);
       setPendingProcess(null);
@@ -565,7 +597,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     onFork: (() => {
       const status = core.statuses[job.slug];
       const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
-      return paneId ? () => handleFork(paneId) : undefined;
+      return paneId ? (direction: "right" | "down") => handleFork(paneId, direction) : undefined;
+    })(),
+    onSplitPane: (() => {
+      const status = core.statuses[job.slug];
+      const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+      return paneId ? (direction: "right" | "down") => handleSplitPane(paneId, direction) : undefined;
     })(),
     onInjectSecrets: (() => {
       const status = core.statuses[job.slug];
@@ -577,7 +614,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
       return paneId ? () => setSkillSearchPaneId(paneId) : undefined;
     })(),
-  }), [core.statuses, autoYes, handleFork]);
+  }), [core.statuses, autoYes, handleFork, handleSplitPane]);
 
   // Render a leaf pane in the split tree
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
@@ -608,7 +645,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             setStoppingProcesses((prev) => [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }]);
             split.handleClosePane(leafId);
           }}
-          onFork={() => handleFork(proc.pane_id)}
+          onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
+          onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
           onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
           onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
         />
@@ -639,7 +677,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         {...buildJobPaneActions(job, jobQuestion)}
       />
     );
-  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, questionPolling, buildJobPaneActions, split.handleClosePane]);
+  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, split.handleClosePane]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
@@ -732,7 +770,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               setStoppingProcesses((prev) => [...prev, { process: { ...viewingProcess, _transient_state: "stopping" }, stoppedAt: Date.now() }]);
               selectAdjacentItem(viewingProcess.pane_id);
             }}
-            onFork={() => handleFork(viewingProcess.pane_id)}
+            onFork={(direction: "right" | "down") => handleFork(viewingProcess.pane_id, direction)}
+            onSplitPane={(direction: "right" | "down") => handleSplitPane(viewingProcess.pane_id, direction)}
             onInjectSecrets={() => setInjectSecretsPaneId(viewingProcess.pane_id)}
             onSearchSkills={() => setSkillSearchPaneId(viewingProcess.pane_id)}
           />

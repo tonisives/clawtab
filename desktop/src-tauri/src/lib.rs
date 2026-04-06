@@ -464,6 +464,7 @@ pub fn run() {
             commands::tmux::open_job_terminal,
             commands::tmux::fork_pane,
             commands::tmux::fork_pane_with_secrets,
+            commands::tmux::split_pane_plain,
             commands::tools::detect_tools,
             commands::tools::install_tool,
             commands::tools::set_tool_path,
