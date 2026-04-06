@@ -82,6 +82,8 @@ export interface JobDetailViewProps {
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
+  // Notify parent that a stop was requested (for sidebar "Stopping..." state)
+  onStopping?: () => void;
 }
 
 export function JobDetailView({
@@ -121,6 +123,7 @@ export function JobDetailView({
   onSplitPane,
   onInjectSecrets,
   onSearchSkills,
+  onStopping,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -193,11 +196,13 @@ export function JobDetailView({
           case "sigint":
             if (transport.sigintJob) {
               setSigintPending(true);
+              onStopping?.();
               await transport.sigintJob(job.slug);
               setTimeout(() => setSigintPending(false), 2000);
             }
             break;
           case "stop":
+            onStopping?.();
             await transport.stopJob(job.slug);
             break;
           case "pause":

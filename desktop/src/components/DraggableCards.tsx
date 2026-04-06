@@ -14,6 +14,7 @@ export function DraggableJobCard({
   selected,
   onStop,
   autoYesActive,
+  stopping,
 }: {
   job: RemoteJob;
   status: JobStatus;
@@ -21,6 +22,7 @@ export function DraggableJobCard({
   selected?: boolean | string;
   onStop?: () => void;
   autoYesActive?: boolean;
+  stopping?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-job-${job.slug}`,
@@ -44,6 +46,7 @@ export function DraggableJobCard({
           selected={selected}
           onStop={onStop}
           autoYesActive={autoYesActive}
+          stopping={stopping}
         />
       ) : (
         <JobCard

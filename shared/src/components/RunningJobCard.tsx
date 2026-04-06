@@ -16,6 +16,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   selected,
   onStop,
   autoYesActive,
+  stopping,
 }: {
   jobName: string;
   status: JobStatus;
@@ -23,11 +24,14 @@ export const RunningJobCard = memo(function RunningJobCard({
   selected?: boolean | string;
   onStop?: () => void;
   autoYesActive?: boolean;
+  stopping?: boolean;
 }) {
   const startedAt = status.state === "running" ? status.started_at : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<any>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  const showMenu = onStop && !stopping;
 
   return (
     <TouchableOpacity
@@ -40,38 +44,46 @@ export const RunningJobCard = memo(function RunningJobCard({
           <Text style={styles.typeIconText}>C</Text>
         </View>
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>{jobName}</Text>
-          {startedAt && (
+          <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{jobName}</Text>
+          {stopping ? (
+            <Text style={[styles.metaText, { fontStyle: "italic" }]}>Stopping...</Text>
+          ) : startedAt ? (
             <Text style={styles.metaText}>{timeAgo(startedAt)}</Text>
-          )}
+          ) : null}
         </View>
-        {autoYesActive && (
-          <View style={styles.autoYesDot} />
-        )}
-        <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} />
-        {onStop && (
-          <TouchableOpacity
-            ref={menuBtnRef}
-            onPress={(e: any) => {
-              e.stopPropagation();
-              if (isWeb) {
-                const node = e?.currentTarget ?? e?.target;
-                if (node?.getBoundingClientRect) {
-                  const rect = node.getBoundingClientRect();
-                  setMenuPos({ top: rect.bottom + 4, left: rect.right });
+        <View style={[styles.rightCol, (showMenu || autoYesActive) && styles.rightColExpanded]}>
+          {showMenu ? (
+            <TouchableOpacity
+              ref={menuBtnRef}
+              onPress={(e: any) => {
+                e.stopPropagation();
+                if (isWeb) {
+                  const node = e?.currentTarget ?? e?.target;
+                  if (node?.getBoundingClientRect) {
+                    const rect = node.getBoundingClientRect();
+                    setMenuPos({ top: rect.bottom + 4, left: rect.right });
+                  }
                 }
-              }
-              setMenuOpen((v) => !v);
-            }}
-            style={styles.moreBtn}
-            activeOpacity={0.6}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.moreBtnText}>{"\u2026"}</Text>
-          </TouchableOpacity>
-        )}
+                setMenuOpen((v) => !v);
+              }}
+              style={styles.moreBtn}
+              activeOpacity={0.6}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+            </TouchableOpacity>
+          ) : (autoYesActive && !stopping) ? <View style={styles.spacer} /> : null}
+          {stopping ? (
+            <View style={styles.stoppingDot} />
+          ) : (
+            <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} />
+          )}
+          {autoYesActive && !stopping ? (
+            <View style={styles.autoYesDot} />
+          ) : showMenu ? <View style={styles.spacer} /> : null}
+        </View>
       </View>
-      {menuOpen && onStop && (
+      {menuOpen && showMenu && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
@@ -114,6 +126,26 @@ const styles = StyleSheet.create({
   info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
   metaText: { color: colors.textSecondary, fontSize: 12 },
+  rightCol: {
+    alignItems: "center",
+    justifyContent: "center",
+    height: 32,
+  },
+  rightColExpanded: {
+    justifyContent: "space-between",
+    height: 40,
+    marginVertical: -4,
+  },
+  spacer: {
+    height: 10,
+  },
+  stoppingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.textMuted,
+    opacity: 0.5,
+  },
   autoYesDot: {
     width: 8,
     height: 8,
@@ -121,21 +153,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warning,
   },
   moreBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 10,
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "flex-start",
-    marginTop: -4,
-    marginRight: -6,
-    marginLeft: -4,
   },
   moreBtnText: {
     color: colors.textSecondary,
-    fontSize: 16,
-    fontWeight: "700",
-    lineHeight: 18,
-    letterSpacing: 1,
+    fontSize: 14,
+    lineHeight: 14,
   },
 });

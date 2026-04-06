@@ -119,7 +119,7 @@ impl PtyManager {
 
         tmux(&[
             "pipe-pane", "-t", &pane_id_owned,
-            &format!("cat >> {}", pipe_path),
+            &format!("dd of={} bs=1 conv=notrunc oflag=append 2>/dev/null", pipe_path),
         ])?;
 
         // Give the app a moment to redraw at the new size, then force a
@@ -158,12 +158,12 @@ impl PtyManager {
             };
 
             let mut buf = [0u8; 65536];
+            let mut last_read = std::time::Instant::now();
             loop {
                 if *stop_clone.lock().unwrap() { break; }
+                let t0 = std::time::Instant::now();
                 match file.read(&mut buf) {
                     Ok(0) => {
-                        // Writer closed the FIFO (pipe-pane stopped).
-                        // Re-open to wait for a new writer, or exit if stopped.
                         thread::sleep(std::time::Duration::from_millis(10));
                         if *stop_clone.lock().unwrap() { break; }
                         match open_fifo(&pipe_path_clone) {
@@ -172,13 +172,27 @@ impl PtyManager {
                         }
                     }
                     Ok(n) => {
+                        let read_ms = t0.elapsed().as_millis();
+                        let gap_ms = last_read.elapsed().as_millis();
+                        last_read = std::time::Instant::now();
+
                         let data = &buf[..n];
+                        let t1 = std::time::Instant::now();
                         match &sink {
                             OutputSink::Tauri(app_handle) => {
                                 let encoded =
                                     base64::engine::general_purpose::STANDARD.encode(data);
+                                let emit_t = std::time::Instant::now();
                                 let _ = app_handle
                                     .emit(&format!("pty-output-{}", pipe_event_key), encoded);
+                                let emit_ms = emit_t.elapsed().as_millis();
+                                let encode_ms = t1.elapsed().as_millis() - emit_ms;
+                                if gap_ms > 200 || read_ms > 50 || emit_ms > 10 {
+                                    log::warn!(
+                                        "[pty {}] gap={}ms read={}ms encode={}ms emit={}ms bytes={}",
+                                        pipe_event_key, gap_ms, read_ms, encode_ms, emit_ms, n
+                                    );
+                                }
                             }
                             OutputSink::Channel(tx) => {
                                 let _ = tx.send((pane_id_for_thread.clone(), data.to_vec()));

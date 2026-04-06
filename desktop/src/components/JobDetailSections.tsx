@@ -380,6 +380,7 @@ export function DesktopJobDetail({
   onSplitPane,
   onInjectSecrets,
   onSearchSkills,
+  onStopping,
 }: {
   transport: Transport;
   job: Job;
@@ -403,6 +404,7 @@ export function DesktopJobDetail({
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
+  onStopping?: () => void;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
@@ -465,6 +467,7 @@ export function DesktopJobDetail({
         onSplitPane={onSplitPane}
         onInjectSecrets={onInjectSecrets}
         onSearchSkills={onSearchSkills}
+        onStopping={onStopping}
       />
       {showConfirm && (
         <ConfirmDialog

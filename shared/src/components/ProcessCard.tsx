@@ -75,31 +75,33 @@ export function ProcessCard({
             </Text>
           ) : null}
         </View>
-        {autoYesActive && !transient && (
-          <View style={styles.autoYesDot} />
-        )}
-        {statusDot}
-        {showMenu && (
-          <TouchableOpacity
-            ref={menuBtnRef}
-            onPress={(e: any) => {
-              e.stopPropagation();
-              if (isWeb) {
-                const node = e?.currentTarget ?? e?.target;
-                if (node?.getBoundingClientRect) {
-                  const rect = node.getBoundingClientRect();
-                  setMenuPos({ top: rect.bottom + 4, left: rect.right });
+        <View style={[styles.rightCol, (showMenu || (autoYesActive && !transient)) && styles.rightColExpanded]}>
+          {showMenu ? (
+            <TouchableOpacity
+              ref={menuBtnRef}
+              onPress={(e: any) => {
+                e.stopPropagation();
+                if (isWeb) {
+                  const node = e?.currentTarget ?? e?.target;
+                  if (node?.getBoundingClientRect) {
+                    const rect = node.getBoundingClientRect();
+                    setMenuPos({ top: rect.bottom + 4, left: rect.right });
+                  }
                 }
-              }
-              setMenuOpen((v) => !v);
-            }}
-            style={styles.moreBtn}
-            activeOpacity={0.6}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.moreBtnText}>{"\u2026"}</Text>
-          </TouchableOpacity>
-        )}
+                setMenuOpen((v) => !v);
+              }}
+              style={styles.moreBtn}
+              activeOpacity={0.6}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+            </TouchableOpacity>
+          ) : (autoYesActive && !transient) ? <View style={styles.spacer} /> : null}
+          {statusDot}
+          {autoYesActive && !transient ? (
+            <View style={styles.autoYesDot} />
+          ) : showMenu ? <View style={styles.spacer} /> : null}
+        </View>
       </TouchableOpacity>
       {menuOpen && onStop && (
         <PopupMenu
@@ -165,6 +167,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textMuted,
     opacity: 0.5,
   },
+  rightCol: {
+    alignItems: "center",
+    justifyContent: "center",
+    height: 32,
+  },
+  rightColExpanded: {
+    justifyContent: "space-between",
+    height: 40,
+    marginVertical: -4,
+  },
+  spacer: {
+    height: 10,
+  },
   autoYesDot: {
     width: 8,
     height: 8,
@@ -172,21 +187,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warning,
   },
   moreBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 10,
     justifyContent: "center",
     alignItems: "center",
-    alignSelf: "flex-start",
-    marginTop: -4,
-    marginRight: -6,
-    marginLeft: -4,
   },
   moreBtnText: {
     color: colors.textSecondary,
-    fontSize: 16,
-    fontWeight: "700",
-    lineHeight: 18,
-    letterSpacing: 1,
+    fontSize: 14,
+    lineHeight: 14,
   },
 });

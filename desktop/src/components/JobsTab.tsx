@@ -69,6 +69,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
   const [pendingProcess, setPendingProcess] = useState<ClaudeProcess | null>(null);
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: ClaudeProcess; stoppedAt: number }[]>([]);
+  const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
+
+  // Clear stopping job slugs when job is no longer running
+  useEffect(() => {
+    if (stoppingJobSlugs.size === 0) return;
+    const next = new Set<string>();
+    for (const slug of stoppingJobSlugs) {
+      if (core.statuses[slug]?.state === "running") next.add(slug);
+    }
+    if (next.size !== stoppingJobSlugs.size) setStoppingJobSlugs(next);
+  }, [core.statuses, stoppingJobSlugs]);
 
   // Split tree (shared hook)
 
@@ -403,8 +414,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return;
       }
 
-      // Ctrl+H/J/K/L: navigate between panes
-      if (e.ctrlKey && "hjkl".includes(e.key)) {
+      // Cmd+H/J/K/L: navigate between panes
+      if (e.metaKey && "hjkl".includes(e.key)) {
         e.preventDefault();
         const tree = split.tree;
         if (!tree) return;
@@ -754,13 +765,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         options={jobQuestion?.options}
         questionContext={jobQuestion?.context_lines}
         {...buildJobPaneActions(job, jobQuestion)}
+        onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(job.slug))}
       />
     );
   }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, split.handleClosePane]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean }) => <DraggableJobCard {...props} />,
+    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => <DraggableJobCard {...props} />,
     [],
   );
 
@@ -887,6 +899,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             options={jobQuestion?.options}
             questionContext={jobQuestion?.context_lines}
             {...buildJobPaneActions(viewingJob, jobQuestion)}
+            onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(viewingJob.slug))}
           />
           {paramsDialog && (
             <ParamsOverlay
@@ -1021,11 +1034,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       emptyMessage="No jobs configured yet."
       scrollToSlug={scrollToSlug}
       scrollEnabled={!split.isDragging}
-      onStopJob={(slug) => transport.sigintJob ? transport.sigintJob(slug) : transport.stopJob(slug)}
+      onStopJob={(slug) => {
+        setStoppingJobSlugs((prev) => new Set(prev).add(slug));
+        transport.sigintJob ? transport.sigintJob(slug) : transport.stopJob(slug);
+      }}
       onStopProcess={(paneId) => invoke("sigint_detected_process", { paneId })}
       autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}
+      stoppingSlugs={stoppingJobSlugs}
     />
   );
 

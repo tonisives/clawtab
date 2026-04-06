@@ -87,8 +87,8 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         if (e.metaKey && e.key === "e") return false;
         // Ctrl+V/S: split pane
         if (e.ctrlKey && (e.key === "v" || e.key === "s")) return false;
-        // Ctrl+H/J/K/L: move between panes
-        if (e.ctrlKey && "hjkl".includes(e.key)) return false;
+        // Cmd+H/J/K/L: move between panes
+        if (e.metaKey && "hjkl".includes(e.key)) return false;
         return true;
       });
 
