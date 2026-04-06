@@ -18,6 +18,11 @@ interface XtermPaneProps {
   onExit?: () => void;
 }
 
+interface PtySpawnResult {
+  native_cols: number;
+  native_rows: number;
+}
+
 export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -97,6 +102,42 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
 
       if (cancelled) { t.dispose(); return; }
 
+      const cols = t.cols;
+      const rows = t.rows;
+
+      // Listen for output before spawning so we don't miss the initial capture
+      outputUnlisten = await listen<number[]>(`pty-output-${key}`, (event) => {
+        t.write(new Uint8Array(event.payload));
+      });
+
+      exitUnlisten = await listen(`pty-exit-${key}`, () => {
+        onExit?.();
+      });
+
+      if (cancelled) return;
+
+      // Spawn returns the pane's native dimensions. The backend immediately
+      // emits captured screen content via pty-output, so we see it instantly.
+      const result = await invoke<PtySpawnResult>("pty_spawn", {
+        paneId, tmuxSession, cols, rows,
+      });
+      spawned = true;
+
+      if (cancelled) {
+        invoke("pty_destroy", { paneId }).catch(() => {});
+        return;
+      }
+
+      // If our viewport differs from the pane's native size, the ResizeObserver
+      // will trigger pty_resize which lazily creates a linked session and
+      // resizes it. The app then reflows at our viewport size.
+      // Log if sizes differ for debugging.
+      if (result.native_cols !== cols || result.native_rows !== rows) {
+        console.log(
+          `[XtermPane] native ${result.native_cols}x${result.native_rows}, viewport ${cols}x${rows} - resize will trigger reflow`
+        );
+      }
+
       // Resize the tmux pane when the container changes size.
       // Debounced to avoid spamming tmux resize-window during drag.
       let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -112,28 +153,6 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         }, 80);
       });
       observer.observe(el);
-
-      const cols = t.cols;
-      const rows = t.rows;
-
-      // Listen for output before spawning so we don't miss anything
-      outputUnlisten = await listen<number[]>(`pty-output-${key}`, (event) => {
-        t.write(new Uint8Array(event.payload));
-      });
-
-      exitUnlisten = await listen(`pty-exit-${key}`, () => {
-        onExit?.();
-      });
-
-      if (cancelled) return;
-
-      await invoke("pty_spawn", { paneId, tmuxSession, cols, rows });
-      spawned = true;
-
-      if (cancelled) {
-        invoke("pty_destroy", { paneId }).catch(() => {});
-        return;
-      }
 
       // Send input to the real tmux pane, batching rapid keystrokes
       // (e.g. paste) into fewer IPC calls to reduce subprocess spawns.

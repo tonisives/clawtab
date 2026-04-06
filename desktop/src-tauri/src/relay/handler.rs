@@ -192,7 +192,13 @@ pub async fn handle_incoming(
         }
 
         ClientMessage::DetectProcesses { id } => {
-            let processes = detect_processes(jobs_config, job_status);
+            let jc = Arc::clone(jobs_config);
+            let js = Arc::clone(job_status);
+            let processes = tokio::task::spawn_blocking(move || {
+                detect_processes(&jc, &js)
+            })
+            .await
+            .unwrap_or_default();
             Some(DesktopMessage::DetectedProcesses { id, processes })
         }
 
