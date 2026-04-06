@@ -97,6 +97,8 @@ export interface JobListViewProps {
   onSelectProcess?: (process: ClaudeProcess) => void;
   // Map of slug/pane_id -> color hex for highlighted items (supports multi-selection)
   selectedItems?: Map<string, string> | null;
+  // The key of the focused item (brighter border); unfocused selected items are faded
+  focusedItemKey?: string | null;
   // Single selection (backward compat with desktop) - uses accent color
   selectedSlug?: string | null;
   // Agent
@@ -150,6 +152,7 @@ export function JobListView({
   onSelectJob,
   onSelectProcess,
   selectedItems,
+  focusedItemKey,
   selectedSlug,
   onRunAgent,
   onAddJob,
@@ -467,7 +470,11 @@ export function JobListView({
 
       if (item.kind === "process") {
         const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
-        const isSelected = selectedItems?.get(item.process.pane_id) ?? (selectedSlug === item.process.pane_id);
+        const rawColor = selectedItems?.get(item.process.pane_id);
+        const isFocused = !focusedItemKey || focusedItemKey === item.process.pane_id;
+        const isSelected: boolean | string = rawColor
+          ? (isFocused ? rawColor : rawColor + "66")
+          : (selectedSlug === item.process.pane_id);
         return (
           <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
             {customRenderProcessCard
@@ -520,7 +527,11 @@ export function JobListView({
       // job
       const status = statuses[item.job.slug] ?? IDLE_STATUS;
       const pressHandler = onSelectJob ? () => onSelectJob(item.job) : undefined;
-      const isSelected = selectedItems?.get(item.job.slug) ?? (selectedSlug === item.job.slug);
+      const rawJobColor = selectedItems?.get(item.job.slug);
+      const isJobFocused = !focusedItemKey || focusedItemKey === item.job.slug;
+      const isSelected: boolean | string = rawJobColor
+        ? (isJobFocused ? rawJobColor : rawJobColor + "66")
+        : (selectedSlug === item.job.slug);
       return (
         <View
           key={key}

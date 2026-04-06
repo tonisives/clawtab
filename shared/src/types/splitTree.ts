@@ -1,6 +1,7 @@
 export type PaneContent =
   | { kind: "job"; slug: string }
-  | { kind: "process"; paneId: string };
+  | { kind: "process"; paneId: string }
+  | { kind: "agent" };
 
 export type SplitNode =
   | { type: "leaf"; id: string; content: PaneContent }

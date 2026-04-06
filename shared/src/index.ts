@@ -69,14 +69,11 @@ export { SplitDetailArea } from "./components/SplitDetailArea";
 export type { SplitDetailAreaProps } from "./components/SplitDetailArea";
 export { DropZoneOverlay, computeDropZone } from "./components/DropZoneOverlay";
 export type { DropZoneId } from "./components/DropZoneOverlay";
-// Legacy flat 2-pane split components (used by desktop app)
-export { LegacySplitDetailArea } from "./components/LegacySplitDetailArea";
-export type { LegacySplitDetailAreaProps, LegacySplitDirection } from "./components/LegacySplitDetailArea";
-export { LegacyDropZoneOverlay, legacyComputeDropZone } from "./components/LegacyDropZoneOverlay";
-export type { LegacyDropZoneId } from "./components/LegacyDropZoneOverlay";
 
 // Hooks
 export { useJobsCore } from "./hooks/useJobsCore";
 export { useJobActions } from "./hooks/useJobActions";
 export { useJobDetail } from "./hooks/useJobDetail";
 export { useLogBuffer } from "./hooks/useLogBuffer";
+export { useSplitTree } from "./hooks/useSplitTree";
+export type { SplitDragData, UseSplitTreeOptions } from "./hooks/useSplitTree";

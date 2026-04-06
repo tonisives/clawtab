@@ -193,6 +193,9 @@ importers:
 
   shared:
     dependencies:
+      '@dnd-kit/core':
+        specifier: '>=6'
+        version: 6.3.1(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0

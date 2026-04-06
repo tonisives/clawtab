@@ -8,7 +8,7 @@ import {
   Platform,
 } from "react-native"
 import { useRouter } from "expo-router"
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent, type DragMoveEvent } from "@dnd-kit/core"
+import { DndContext, DragOverlay } from "@dnd-kit/core"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
 import { NotificationStack } from "../../src/components/NotificationStack"
@@ -16,12 +16,11 @@ import { DemoNotificationStack } from "../../src/components/DemoNotificationStac
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
 import {
-  JobListView, SplitDetailArea, DropZoneOverlay, computeDropZone,
+  JobListView, SplitDetailArea, DropZoneOverlay,
   JobCard, RunningJobCard, ProcessCard,
-  collectLeaves, replaceNode, removeLeaf, splitLeaf, updateRatio,
-  genPaneId, restoreIdCounter, removeStaleLeaves, assignPaneColors,
+  useSplitTree,
 } from "@clawtab/shared"
-import type { SplitNode, PaneContent, DropZoneId } from "@clawtab/shared"
+import type { PaneContent, SplitDragData } from "@clawtab/shared"
 import { DraggableJobCard, DraggableProcessCard, type DragData } from "../../src/components/DraggableCards"
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
 import { registerRequest } from "../../src/lib/useRequestMap"
@@ -64,32 +63,6 @@ function syncUrlParams() {
   if (process) url.searchParams.set("process", process)
   else url.searchParams.delete("process")
   window.history.replaceState(window.history.state, "", url.toString())
-}
-
-/** Load split tree from localStorage, migrating old flat state if needed */
-function loadSplitTree(): SplitNode | null {
-  if (Platform.OS !== "web") return null
-  const saved = localStorage.getItem("remote_split_tree")
-  if (saved) {
-    try {
-      const tree = JSON.parse(saved) as SplitNode
-      restoreIdCounter(tree)
-      return tree
-    } catch { /* ignore corrupt data */ }
-  }
-  // Migrate old flat split state
-  const oldDir = localStorage.getItem("remote_split_direction")
-  if (oldDir) {
-    localStorage.removeItem("remote_split_direction")
-    localStorage.removeItem("remote_split_ratio")
-  }
-  return null
-}
-
-function saveSplitTree(tree: SplitNode | null) {
-  if (Platform.OS !== "web") return
-  if (tree) localStorage.setItem("remote_split_tree", JSON.stringify(tree))
-  else localStorage.removeItem("remote_split_tree")
 }
 
 export default function JobsScreen() {
@@ -173,276 +146,59 @@ export default function JobsScreen() {
     return () => clearTimeout(t)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split tree state
-  const [splitTree, setSplitTree] = useState<SplitNode | null>(loadSplitTree)
-  const [focusedLeafId, setFocusedLeafId] = useState<string | null>(null)
+  // Compute current single-pane content for the split tree hook
+  const currentContent: PaneContent | null = useMemo(() => {
+    if (selectedJob) return { kind: "job", slug: selectedJob }
+    if (selectedProcess) return { kind: "process", paneId: selectedProcess }
+    return null
+  }, [selectedJob, selectedProcess])
 
-  // Persist tree on change
-  useEffect(() => {
-    console.log("[split] tree changed:", splitTree ? `${collectLeaves(splitTree).length} leaves` : "null")
-    saveSplitTree(splitTree)
-  }, [splitTree])
-
-  // DnD state
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragActiveZone, setDragActiveZone] = useState<DropZoneId | null>(null)
-  const dragActiveZoneRef = useRef<DropZoneId | null>(null)
-  const [dragOverlayData, setDragOverlayData] = useState<DragData | null>(null)
-  const detailPaneRef = useRef<View>(null)
-  const [detailSize, setDetailSize] = useState({ w: 0, h: 0 })
-
-  // Refs for values read in drag handlers to avoid stale closures
-  // (dnd-kit may hold handlers from drag start)
-  const splitTreeRef = useRef(splitTree)
-  splitTreeRef.current = splitTree
-  const selectedJobRef = useRef(selectedJob)
-  selectedJobRef.current = selectedJob
-  const selectedProcessRef = useRef(selectedProcess)
-  selectedProcessRef.current = selectedProcess
-
-  // Track detail pane size for drop zone computation
-  useEffect(() => {
-    if (Platform.OS !== "web") return
-    const el = detailPaneRef.current as unknown as HTMLElement
-    if (!el) return
-    const ro = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (entry) setDetailSize({ w: entry.contentRect.width, h: entry.contentRect.height })
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [isWide])
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-  )
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setIsDragging(true)
-    setDragOverlayData(event.active.data.current as DragData)
-  }, [])
-
-  const handleDragMove = useCallback((event: DragMoveEvent) => {
-    const el = detailPaneRef.current as unknown as HTMLElement
-    if (!el) { dragActiveZoneRef.current = null; setDragActiveZone(null); return }
-    const rect = el.getBoundingClientRect()
-    const act = event.activatorEvent as PointerEvent
-    const px = act.clientX + event.delta.x
-    const py = act.clientY + event.delta.y
-
-    if (px < rect.left || px > rect.right || py < rect.top || py > rect.bottom) {
-      dragActiveZoneRef.current = null
-      setDragActiveZone(null)
-      return
-    }
-
-    // If no tree yet, create a synthetic single-leaf for initial drop zone computation
-    const tree = splitTreeRef.current
-    const job = selectedJobRef.current
-    const process = selectedProcessRef.current
-    const effectiveTree = tree ?? (job || process
-      ? { type: "leaf" as const, id: "_root", content: job
-          ? { kind: "job" as const, slug: job }
-          : { kind: "process" as const, paneId: process! } }
-      : null)
-
-    const zone = computeDropZone(
-      px - rect.left, py - rect.top, rect.width, rect.height,
-      effectiveTree, 200,
-    )
-    // DEBUG - remove after testing
-    console.log('[drag]', {
-      hasTree: !!tree,
-      treeType: tree?.type,
-      containerW: rect.width,
-      containerH: rect.height,
-      relPx: px - rect.left,
-      relPy: py - rect.top,
-      zone: zone ? (zone.action === 'split' ? `split-${zone.direction}-${zone.position}` : zone.action) : null,
-    })
-    dragActiveZoneRef.current = zone
-    setDragActiveZone(zone)
-  }, [])
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    setIsDragging(false)
-    setDragOverlayData(null)
-    const zone = dragActiveZoneRef.current
-    dragActiveZoneRef.current = null
-    setDragActiveZone(null)
-
-    if (!zone) return
-    const data = event.active.data.current as DragData
-    if (!data) return
-
-    const newContent: PaneContent = data.kind === "job"
-      ? { kind: "job", slug: data.slug }
-      : { kind: "process", paneId: data.paneId }
-
-    const currentTree = splitTreeRef.current
-    const currentSelectedJob = selectedJobRef.current
-    const currentSelectedProcess = selectedProcessRef.current
-
-    // If no tree exists yet, the primary selection was shown as a virtual root
-    if (!currentTree) {
-      const currentContent: PaneContent | null = currentSelectedJob
-        ? { kind: "job", slug: currentSelectedJob }
-        : currentSelectedProcess
-          ? { kind: "process", paneId: currentSelectedProcess }
-          : null
-
-      if (zone.action === "replace") {
-        // Replace the current view
-        if (data.kind === "job") handleSelectJob(data.job)
-        else handleSelectProcess(data.process)
-        return
-      }
-
-      // Split: create tree with current + new (skip if same item)
-      if (currentContent) {
-        const sameItem =
-          (currentContent.kind === "job" && newContent.kind === "job" && currentContent.slug === newContent.slug) ||
-          (currentContent.kind === "process" && newContent.kind === "process" && currentContent.paneId === newContent.paneId)
-        if (sameItem) return
-
-        const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: currentContent }
-        const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent }
-        const tree: SplitNode = {
-          type: "split",
-          id: genPaneId(),
-          direction: zone.direction,
-          ratio: 0.5,
-          first: zone.position === "before" ? newLeaf : rootLeaf,
-          second: zone.position === "after" ? newLeaf : rootLeaf,
-        }
-        setSplitTree(tree)
-        setFocusedLeafId(rootLeaf.id)
-        // Clear single-item selection since tree now manages it
-        setSelectedJob(null)
+  const split = useSplitTree({
+    storageKey: "remote_split_tree",
+    minPaneSize: 200,
+    onCollapse: useCallback((content: PaneContent) => {
+      if (content.kind === "job") {
+        setSelectedJob(content.slug)
         setSelectedProcess(null)
+        setSelection("job", content.slug)
+      } else if (content.kind === "process") {
+        setSelectedProcess(content.paneId)
+        setSelectedJob(null)
+        setSelection("process", content.paneId)
       }
-      return
-    }
-
-    // Tree exists - check if item is already in a pane (move instead of duplicate)
-    setSplitTree(prev => {
-      if (!prev) return prev
-      // Find existing leaf with the same content
-      const leaves = collectLeaves(prev)
-      const existingLeaf = leaves.find(l => {
-        if (newContent.kind === "job" && l.content.kind === "job") return l.content.slug === newContent.slug
-        if (newContent.kind === "process" && l.content.kind === "process") return l.content.paneId === newContent.paneId
-        return false
-      })
-
-      let tree = prev
-      if (existingLeaf) {
-        // Remove from old location first
-        const removed = removeLeaf(tree, existingLeaf.id)
-        if (!removed) return prev // was the only leaf, nothing to move
-        tree = removed
-        // If the target leaf was removed (same leaf), just focus it
-        if (existingLeaf.id === zone.leafId) return prev
+    }, []),
+    onReplaceSingle: useCallback((data: SplitDragData) => {
+      if (data.kind === "job") {
+        const job = jobs.find(j => j.slug === data.slug)
+        if (job) handleSelectJob(job)
+      } else if (data.kind === "process") {
+        const proc = detectedProcesses.find(p => p.pane_id === data.paneId)
+        if (proc) handleSelectProcess(proc)
       }
+    }, [jobs, detectedProcesses, handleSelectJob, handleSelectProcess]),
+    currentContent,
+  })
 
-      if (zone.action === "replace") {
-        return replaceNode(tree, zone.leafId, { type: "leaf", id: zone.leafId, content: newContent })
-      }
-      return splitLeaf(tree, zone.leafId, newContent, zone.direction, zone.position)
-    })
-  }, [handleSelectJob, handleSelectProcess])
-
-  const handleDragCancel = useCallback(() => {
-    setIsDragging(false)
-    setDragOverlayData(null)
-    dragActiveZoneRef.current = null
-    setDragActiveZone(null)
-  }, [])
-
-  const handleSplitRatioChange = useCallback((splitNodeId: string, ratio: number) => {
-    setSplitTree(prev => prev ? updateRatio(prev, splitNodeId, ratio) : null)
-  }, [])
-
-  const handleClosePane = useCallback((leafId: string) => {
-    setSplitTree(prev => {
-      if (!prev) return null
-      const result = removeLeaf(prev, leafId)
-      // If only one leaf remains, extract it back to selectedJob/selectedProcess
-      if (result && result.type === "leaf") {
-        if (result.content.kind === "job") {
-          setSelectedJob(result.content.slug)
-          setSelectedProcess(null)
-          setSelection("job", result.content.slug)
-        } else {
-          setSelectedProcess(result.content.paneId)
-          setSelectedJob(null)
-          setSelection("process", result.content.paneId)
-        }
-        return null
-      }
-      return result
-    })
-    if (focusedLeafId === leafId) setFocusedLeafId(null)
-  }, [focusedLeafId])
-
-  // When clicking a sidebar item with a tree active:
-  // - If item is already in a pane, focus that pane
-  // - Otherwise, replace the focused leaf's content
+  // Wrap select handlers to check tree first
   const handleSelectJobWithTree = useCallback((job: RemoteJob) => {
     if (!isWide) {
       router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
       return
     }
-    if (splitTree) {
-      // Check if this job is already in a pane - if so, just focus it
-      const leaves = collectLeaves(splitTree)
-      const existingLeaf = leaves.find(l => l.content.kind === "job" && l.content.slug === job.slug)
-      if (existingLeaf) {
-        setFocusedLeafId(existingLeaf.id)
-        return
-      }
-      // Replace the focused leaf's content
-      const content: PaneContent = { kind: "job", slug: job.slug }
-      setSplitTree(prev => {
-        if (!prev) return prev
-        const target = focusedLeafId ?? collectLeaves(prev)[0]?.id
-        if (target) {
-          return replaceNode(prev, target, { type: "leaf", id: target, content })
-        }
-        return prev
-      })
-    } else {
-      handleSelectJob(job)
-    }
-  }, [isWide, isDemo, router, splitTree, focusedLeafId, handleSelectJob])
+    const content: PaneContent = { kind: "job", slug: job.slug }
+    if (split.tree && split.handleSelectInTree(content)) return
+    handleSelectJob(job)
+  }, [isWide, isDemo, router, split.tree, split.handleSelectInTree, handleSelectJob])
 
   const handleSelectProcessWithTree = useCallback((process: ClaudeProcess) => {
     if (!isWide) {
       router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
       return
     }
-    if (splitTree) {
-      // Check if this process is already in a pane - if so, just focus it
-      const leaves = collectLeaves(splitTree)
-      const existingLeaf = leaves.find(l => l.content.kind === "process" && l.content.paneId === process.pane_id)
-      if (existingLeaf) {
-        setFocusedLeafId(existingLeaf.id)
-        return
-      }
-      // Replace the focused leaf's content
-      const content: PaneContent = { kind: "process", paneId: process.pane_id }
-      setSplitTree(prev => {
-        if (!prev) return prev
-        const target = focusedLeafId ?? collectLeaves(prev)[0]?.id
-        if (target) {
-          return replaceNode(prev, target, { type: "leaf", id: target, content })
-        }
-        return prev
-      })
-    } else {
-      handleSelectProcess(process)
-    }
-  }, [isWide, router, splitTree, focusedLeafId, handleSelectProcess])
+    const content: PaneContent = { kind: "process", paneId: process.pane_id }
+    if (split.tree && split.handleSelectInTree(content)) return
+    handleSelectProcess(process)
+  }, [isWide, router, split.tree, split.handleSelectInTree, handleSelectProcess])
 
   const renderDraggableJobCard = useCallback(
     (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string }) => (
@@ -467,44 +223,13 @@ export default function JobsScreen() {
       setSelectedProcess(null)
       setSelection("process", null)
     }
-    // Also clean stale leaves from tree
-    setSplitTree(prev => {
-      if (!prev) return prev
-      const cleaned = removeStaleLeaves(prev, (content) => {
-        if (content.kind === "process") {
-          return !detectedProcesses.find((p) => p.pane_id === content.paneId)
-        }
-        return false
-      })
-      return cleaned !== prev ? cleaned : prev
-    })
-  }, [detectedProcesses, selectedProcess, processesLoaded]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Compute selectedItems map for sidebar highlighting
-  const selectedItems = useMemo(() => {
-    if (splitTree) {
-      const colorMap = assignPaneColors(splitTree)
-      const items = new Map<string, string>()
-      for (const leaf of collectLeaves(splitTree)) {
-        const key = leaf.content.kind === "job" ? leaf.content.slug : leaf.content.paneId
-        items.set(key, colorMap.get(leaf.id) ?? colors.accent)
+    split.cleanStaleLeaves((content) => {
+      if (content.kind === "process") {
+        return !detectedProcesses.find((p) => p.pane_id === content.paneId)
       }
-      console.log("[split] selectedItems from tree:", [...items.entries()])
-      return items.size > 0 ? items : null
-    }
-    // Single selection
-    const slug = selectedJob ?? selectedProcess
-    if (slug) {
-      return new Map([[slug, colors.accent]])
-    }
-    return null
-  }, [splitTree, selectedJob, selectedProcess])
-
-  // Pane colors for the detail area
-  const paneColors = useMemo(() => {
-    if (!splitTree) return undefined
-    return assignPaneColors(splitTree)
-  }, [splitTree])
+      return false
+    })
+  }, [detectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
   const bannerContent = (
     <>
@@ -609,18 +334,21 @@ export default function JobsScreen() {
           key={`leaf-${leafId}-${content.slug}`}
           jobName={content.slug}
           isDemo={isDemo}
-          onClose={() => handleClosePane(leafId)}
+          onClose={() => split.handleClosePane(leafId)}
         />
       )
     }
-    return (
-      <ProcessDetailPane
-        key={`leaf-${leafId}-${content.paneId}`}
-        paneId={content.paneId}
-        onClose={() => handleClosePane(leafId)}
-      />
-    )
-  }, [isDemo, handleClosePane])
+    if (content.kind === "process") {
+      return (
+        <ProcessDetailPane
+          key={`leaf-${leafId}-${content.paneId}`}
+          paneId={content.paneId}
+          onClose={() => split.handleClosePane(leafId)}
+        />
+      )
+    }
+    return null
+  }, [isDemo, split.handleClosePane])
 
   // Non-tree primary content (when no split tree)
   const primaryContent = selectedJob ? (
@@ -649,34 +377,31 @@ export default function JobsScreen() {
   )
 
   // Drag overlay
-  const dragOverlayContent = dragOverlayData ? (
-    <div style={{ opacity: 0.8, pointerEvents: "none" as const, width: 300 }}>
-      {dragOverlayData.kind === "job" ? (
-        (() => {
-          const s = statuses[dragOverlayData.slug] ?? { state: "idle" as const }
-          return s.state === "running"
-            ? <RunningJobCard jobName={dragOverlayData.job.name} status={s} />
-            : <JobCard job={dragOverlayData.job} status={s} />
-        })()
-      ) : (
-        <ProcessCard process={dragOverlayData.process} />
-      )}
-    </div>
-  ) : null
+  const dragOverlayContent = (() => {
+    const data = split.dragOverlayData as DragData | null
+    if (!data) return null
+    return (
+      <div style={{ opacity: 0.8, pointerEvents: "none" as const, width: 300 }}>
+        {data.kind === "job" ? (
+          (() => {
+            const s = statuses[data.slug] ?? { state: "idle" as const }
+            return s.state === "running"
+              ? <RunningJobCard jobName={data.job.name} status={s} />
+              : <JobCard job={data.job} status={s} />
+          })()
+        ) : (
+          <ProcessCard process={data.process} />
+        )}
+      </div>
+    )
+  })()
 
-  // Drop zone overlay - works for both tree and non-tree modes
-  const effectiveTreeForOverlay = splitTree ?? (selectedJob || selectedProcess
-    ? { type: "leaf" as const, id: "_root", content: selectedJob
-        ? { kind: "job" as const, slug: selectedJob }
-        : { kind: "process" as const, paneId: selectedProcess! } }
-    : null)
-
-  const dropOverlay = isDragging ? (
+  const dropOverlay = split.isDragging ? (
     <DropZoneOverlay
-      tree={effectiveTreeForOverlay}
-      containerW={detailSize.w}
-      containerH={detailSize.h}
-      activeZone={dragActiveZone}
+      tree={split.effectiveTreeForOverlay}
+      containerW={split.detailSize.w}
+      containerH={split.detailSize.h}
+      activeZone={split.dragActiveZone}
     />
   ) : null
 
@@ -688,11 +413,11 @@ export default function JobsScreen() {
 
   return (
     <DndContext
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragMove={handleDragMove}
-      onDragEnd={handleDragEnd}
-      onDragCancel={handleDragCancel}
+      sensors={split.sensors}
+      onDragStart={split.handleDragStart}
+      onDragMove={split.handleDragMove}
+      onDragEnd={split.handleDragEnd}
+      onDragCancel={split.handleDragCancel}
     >
       <View style={styles.splitContainer}>
         <View style={[styles.listPane, { width: listWidth }]}>
@@ -706,38 +431,32 @@ export default function JobsScreen() {
             onRefresh={handleRefresh}
             sortMode={sortMode}
             onSortChange={setSortMode}
-            onSelectJob={splitTree ? handleSelectJobWithTree : handleSelectJob}
-            onSelectProcess={splitTree ? handleSelectProcessWithTree : handleSelectProcess}
-            selectedItems={selectedItems}
+            onSelectJob={handleSelectJobWithTree}
+            onSelectProcess={handleSelectProcessWithTree}
+            selectedItems={split.selectedItems}
+            focusedItemKey={split.focusedItemKey}
             onRunAgent={desktopOnline ? handleRunAgent : undefined}
             headerContent={bannerContent}
             showEmpty={loaded || isDemo}
             emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
-            scrollEnabled={!isDragging}
+            scrollEnabled={!split.isDragging}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}
           />
         </View>
         <View ref={handleRef} style={styles.resizeHandle} />
-        <View ref={detailPaneRef} style={styles.detailPane}>
-          {splitTree ? (
-            <SplitDetailArea
-              tree={splitTree}
-              renderLeaf={renderLeaf}
-              onRatioChange={handleSplitRatioChange}
-              onClosePane={handleClosePane}
-              onFocusLeaf={setFocusedLeafId}
-              focusedLeafId={focusedLeafId}
-              paneColors={paneColors}
-              emptyContent={emptyContent}
-              overlay={dropOverlay}
-            />
-          ) : (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
-              {primaryContent}
-              {dropOverlay}
-            </div>
-          )}
+        <View ref={split.detailPaneRef as unknown as React.Ref<View>} style={styles.detailPane}>
+          <SplitDetailArea
+            tree={split.tree}
+            renderLeaf={renderLeaf}
+            onRatioChange={split.handleSplitRatioChange}
+            onClosePane={split.handleClosePane}
+            onFocusLeaf={split.setFocusedLeafId}
+            focusedLeafId={split.focusedLeafId}
+            paneColors={split.paneColors}
+            emptyContent={primaryContent}
+            overlay={dropOverlay}
+          />
         </View>
       </View>
       <DragOverlay dropAnimation={null}>

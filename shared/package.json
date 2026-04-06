@@ -11,7 +11,8 @@
   "peerDependencies": {
     "react": ">=19",
     "react-native": ">=0.70 || >=0.70.0-0",
-    "react-native-web": ">=0.19"
+    "react-native-web": ">=0.19",
+    "@dnd-kit/core": ">=6"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

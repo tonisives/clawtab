@@ -119,7 +119,7 @@ function SplitNodeRenderer({
           flexDirection: "column",
           overflow: "hidden",
           position: "relative",
-          outline: showColorStrip ? `2px solid ${color ?? "transparent"}` : undefined,
+          outline: showColorStrip ? `2px solid ${(color ?? "transparent") + (isFocused ? "" : "66")}` : undefined,
           outlineOffset: "-2px",
           opacity: showColorStrip && !isFocused ? 0.85 : 1,
         }}
