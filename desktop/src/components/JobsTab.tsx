@@ -632,9 +632,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
     if (content.kind === "terminal") {
       return (
-        <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center", flexDirection: "column", gap: 8 }}>
-          <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Terminal pane</span>
-          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{content.paneId}</span>
+        <div style={{ display: "flex", flex: 1, flexDirection: "column", overflow: "hidden" }}>
+          <XtermPane
+            paneId={content.paneId}
+            tmuxSession={content.tmuxSession}
+            onExit={() => split.handleClosePane(leafId)}
+          />
         </div>
       );
     }

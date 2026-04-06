@@ -9,13 +9,14 @@ import { GeneralSettings } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
 import { TelegramPanel } from "./TelegramPanel";
 import { RelayPanel } from "./RelayPanel";
+import { ShortcutsPanel } from "./ShortcutsPanel";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "secrets" | "skills" | "telegram" | "remote" | "settings";
+type TabId = "jobs" | "secrets" | "skills" | "telegram" | "remote" | "shortcuts" | "settings";
 
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
@@ -56,6 +57,13 @@ const tabIcons: Record<TabId, React.ReactNode> = {
       <path d="M1.42 9a16 16 0 0 1 21.16 0" />
       <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
       <line x1="12" x2="12.01" y1="20" y2="20" />
+    </svg>
+  ),
+  // keyboard (SF: keyboard)
+  shortcuts: (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
     </svg>
   ),
   // gearshape (SF: gearshape)
@@ -190,6 +198,7 @@ export function SettingsApp() {
     { id: "skills", label: "Skills" },
     { id: "telegram", label: "Telegram" },
     { id: "remote", label: "Remote" },
+    { id: "shortcuts", label: "Shortcuts" },
     { id: "settings", label: "Settings" },
   ];
 
@@ -252,6 +261,7 @@ export function SettingsApp() {
             onExternalTokenConsumed={() => { setAuthCallbackToken(null); setAuthCallbackRefreshToken(null); }}
           />
         )}
+        {activeTab === "shortcuts" && <ShortcutsPanel />}
         {activeTab === "settings" && <GeneralSettings />}
       </div>
     </div>

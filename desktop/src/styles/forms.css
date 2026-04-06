@@ -761,3 +761,48 @@ input[type="password"]:disabled,
 .search-bar .search-clear:hover {
   color: var(--text-primary);
 }
+
+/* Shortcuts table */
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.shortcuts-table td {
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.shortcuts-table tr:last-child td {
+  border-bottom: none;
+}
+
+.shortcut-label {
+  color: var(--text-primary);
+}
+
+.shortcut-keys {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.shortcut-keys kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--border-color);
+  line-height: 1.4;
+}
+
+.shortcut-plus {
+  display: inline-block;
+  margin: 0 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
