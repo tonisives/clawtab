@@ -36,7 +36,7 @@ const demoTransport: Transport = {
   detectProcesses: async () => [],
   sendInput: noop,
   subscribeLogs: () => () => {},
-  runAgent: noop,
+  runAgent: async () => null,
 };
 
 function agentJobFromSlug(slug: string): RemoteJob {

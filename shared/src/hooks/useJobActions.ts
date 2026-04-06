@@ -75,8 +75,9 @@ export function useJobActions(transport: Transport, onStatusChange?: () => void)
 
   const runAgent = useCallback(
     async (prompt: string, workDir?: string) => {
-      await transportRef.current.runAgent(prompt, workDir);
+      const result = await transportRef.current.runAgent(prompt, workDir);
       delayedRefresh();
+      return result;
     },
     [delayedRefresh],
   );

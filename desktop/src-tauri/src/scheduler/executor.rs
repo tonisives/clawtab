@@ -31,7 +31,7 @@ pub async fn execute_job(
     params: &HashMap<String, String>,
     app_handle: Option<tauri::AppHandle>,
 ) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None, app_handle).await;
+    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None, app_handle, None).await;
 }
 
 pub async fn execute_job_with_auto_yes(
@@ -47,7 +47,23 @@ pub async fn execute_job_with_auto_yes(
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     app_handle: Option<tauri::AppHandle>,
 ) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, auto_yes_panes, app_handle).await;
+    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, auto_yes_panes, app_handle, None).await;
+}
+
+pub async fn execute_job_with_pane_notify(
+    job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    history: &Arc<Mutex<HistoryStore>>,
+    settings: &Arc<Mutex<AppSettings>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    trigger: &str,
+    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    params: &HashMap<String, String>,
+    pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
+    app_handle: Option<tauri::AppHandle>,
+) {
+    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None, app_handle, Some(pane_tx)).await;
 }
 
 async fn execute_job_inner(
@@ -62,6 +78,7 @@ async fn execute_job_inner(
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     app_handle: Option<tauri::AppHandle>,
+    mut pane_tx: Option<tokio::sync::oneshot::Sender<(String, String)>>,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
@@ -131,6 +148,10 @@ async fn execute_job_inner(
                     status.insert(job.slug.clone(), new_status.clone());
                     drop(status);
                     crate::relay::push_status_update(relay, &job.slug, &new_status);
+                }
+                // Notify caller of the pane_id if requested
+                if let Some(tx) = pane_tx.take() {
+                    let _ = tx.send((handle.pane_id.clone(), handle.tmux_session.clone()));
                 }
                 // Persist pane_id to history so reattach can find it after restart
                 {

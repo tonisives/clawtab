@@ -11,6 +11,8 @@ export interface ClaudeProcess {
   last_query: string | null;
   session_started_at: string | null;
   _transient_state?: "starting" | "stopping";
+  /** Timestamp (ms) when log_lines last changed, set client-side */
+  _last_log_change?: number;
 }
 
 export interface QuestionOption {

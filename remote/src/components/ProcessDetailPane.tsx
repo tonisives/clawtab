@@ -61,7 +61,7 @@ function createProcessTransport(paneId: string): Transport {
       }
     },
     subscribeLogs: () => () => {},
-    runAgent: noop,
+    runAgent: async () => null,
     sigintJob: async () => {
       const send = getWsSend()
       if (!send) return

@@ -5,8 +5,8 @@ use std::thread;
 use tauri::{AppHandle, Emitter};
 
 /// A pane viewer that creates a linked tmux session, zooms the target pane,
-/// and resizes the window to match the xterm.js viewport.  Uses `pipe-pane`
-/// for live output streaming and direct TTY writes for input.
+/// and resizes the window to match the xterm.js viewport.  Uses tmux control
+/// mode (`tmux -C`) for real-time output streaming and `send-keys` for input.
 ///
 /// On destroy, the linked session is killed and the window is restored to
 /// automatic sizing, so the real terminal regains its original dimensions.
@@ -14,7 +14,6 @@ struct PaneViewer {
     pane_id: String,
     linked_session: String,
     window_id: String,
-    pane_tty: Option<String>,
     stop: Arc<Mutex<bool>>,
 }
 
@@ -40,6 +39,33 @@ fn tmux(args: &[&str]) -> Result<String, String> {
         return Err(format!("tmux {}: {}", args[0], stderr.trim()));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Decode tmux control-mode octal escapes: \NNN -> byte value
+fn decode_tmux_octal(s: &str) -> Vec<u8> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 3 < bytes.len()
+            && bytes[i + 1].is_ascii_digit()
+            && bytes[i + 2].is_ascii_digit()
+            && bytes[i + 3].is_ascii_digit()
+        {
+            let val = (bytes[i + 1] - b'0') as u16 * 64
+                + (bytes[i + 2] - b'0') as u16 * 8
+                + (bytes[i + 3] - b'0') as u16;
+            out.push(val as u8);
+            i += 4;
+        } else if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'\\' {
+            out.push(b'\\');
+            i += 2;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
 }
 
 impl PtyManager {
@@ -81,25 +107,17 @@ impl PtyManager {
         tmux(&["new-session", "-d", "-s", &linked, "-t", &real_session])?;
 
         // Mark the linked session as "manual" so its smaller viewport
-        // does not constrain the shared window group.  Without this,
-        // tmux sizes every window to the smallest attached session,
-        // which keeps the real terminal (Alacritty) at clawtab's size
-        // even after the user switches back.
+        // does not constrain the shared window group.
         let _ = tmux(&["set-option", "-s", "-t", &linked, "window-size", "manual"]);
 
-        // Select the correct window and zoom the target pane so it fills
-        // the entire window (no splitting with other panes).
-        // Use the global pane ID directly - tmux resolves it across all
-        // sessions, so we don't need to construct a session:window.index path.
+        // Select the correct window and zoom the target pane
         let linked_win = format!("{}:{}", linked, window_id);
         let _ = tmux(&["select-window", "-t", &linked_win]);
-        // Find this pane's index within the linked session's window
         let pane_index = tmux(&[
             "display-message", "-t", &format!("{}:{}.{}", linked, window_id, pane_id_owned),
             "-p", "#{pane_index}",
         ]).unwrap_or_default();
         let zoom_target = if pane_index.is_empty() {
-            // Fallback: select by global ID within the linked session
             format!("{}:{}.{}", linked, window_id, pane_id_owned)
         } else {
             format!("{}:{}.{}", linked, window_id, pane_index)
@@ -107,8 +125,7 @@ impl PtyManager {
         let _ = tmux(&["select-pane", "-t", &zoom_target]);
         let _ = tmux(&["resize-pane", "-Z", "-t", &zoom_target]);
 
-        // Resize the window to match the xterm.js viewport.
-        // resize-window automatically sets window-size to manual.
+        // Resize the window to match the xterm.js viewport
         let w = if cols > 0 { cols } else { 80 };
         let h = if rows > 0 { rows } else { 24 };
         let _ = tmux(&[
@@ -116,126 +133,123 @@ impl PtyManager {
             "-x", &w.to_string(), "-y", &h.to_string(),
         ]);
 
-        // Get the pane's TTY path for direct input writes (avoids spawning
-        // tmux send-keys per keystroke).
-        let pane_tty = tmux(&[
-            "display-message", "-t", pane_id, "-p", "#{pane_tty}",
-        ]).ok().filter(|s| !s.is_empty());
-
-        // Write pipe-pane output to a regular file; use kqueue to wake
-        // on every write so we get near-instant delivery without polling.
-        let pipe_path = format!("/tmp/clawtab-pipe-{}", event_key);
-        let _ = std::fs::remove_file(&pipe_path);
-        std::fs::File::create(&pipe_path)
-            .map_err(|e| format!("create {}: {}", pipe_path, e))?;
-
-        tmux(&[
-            "pipe-pane", "-t", &pane_id_owned,
-            &format!("cat >> {}", pipe_path),
-        ])?;
-
-        // Brief pause for the app to redraw at the new size, then force a
-        // screen refresh so the full content flows through pipe-pane.
-        thread::sleep(std::time::Duration::from_millis(50));
-        let _ = tmux(&["send-keys", "-t", &pane_id_owned, "C-l"]);
-
-        let pipe_event_key = event_key.clone();
-        let pipe_path_clone = pipe_path.clone();
+        // Use tmux control mode for real-time output streaming.
+        // `tmux -C attach -t <session>` sends `%output <pane> <data>`
+        // lines with no internal buffering.
+        let ctrl_event_key = event_key.clone();
+        let ctrl_linked = linked.clone();
         let pane_id_for_thread = pane_id.to_string();
         thread::spawn(move || {
-            use std::io::{Read, Seek, SeekFrom};
+            use std::io::{BufRead, BufReader, Write};
 
-            let mut file = loop {
-                if *stop_clone.lock().unwrap() { return; }
-                match std::fs::File::open(&pipe_path_clone) {
-                    Ok(f) => break f,
-                    Err(_) => thread::sleep(std::time::Duration::from_millis(50)),
+            let mut child = match Command::new("tmux")
+                .args(["-C", "attach-session", "-t", &ctrl_linked])
+                .stdout(std::process::Stdio::piped())
+                .stdin(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("[pty {}] control mode spawn failed: {}", ctrl_event_key, e);
+                    return;
                 }
             };
 
-            // Set up kqueue to watch for writes (EVFILT_VNODE + NOTE_WRITE)
-            let kq = unsafe { libc::kqueue() };
-            if kq < 0 {
-                log::error!("[pty {}] kqueue failed: {}", pipe_event_key, std::io::Error::last_os_error());
-                return;
-            }
-
-            use std::os::unix::io::AsRawFd;
-            let file_fd = file.as_raw_fd();
-            let changelist = libc::kevent {
-                ident: file_fd as usize,
-                filter: libc::EVFILT_VNODE,
-                flags: libc::EV_ADD | libc::EV_CLEAR,
-                fflags: libc::NOTE_WRITE | libc::NOTE_DELETE,
-                data: 0,
-                udata: std::ptr::null_mut(),
+            // Take stdin before stdout - we need to keep it alive for the
+            // entire duration or the control mode client will exit.
+            let mut stdin = match child.stdin.take() {
+                Some(s) => s,
+                None => {
+                    log::error!("[pty {}] no stdin", ctrl_event_key);
+                    return;
+                }
+            };
+            let stdout = match child.stdout.take() {
+                Some(s) => s,
+                None => {
+                    log::error!("[pty {}] no stdout", ctrl_event_key);
+                    return;
+                }
             };
 
-            let rc = unsafe {
-                libc::kevent(
-                    kq,
-                    &changelist as *const libc::kevent,
-                    1,
-                    std::ptr::null_mut(),
-                    0,
-                    std::ptr::null(),
-                )
-            };
-            if rc < 0 {
-                log::error!("[pty {}] kevent register failed: {}", pipe_event_key, std::io::Error::last_os_error());
-                unsafe { libc::close(kq); }
-                return;
+            log::info!("[pty {}] control mode started for {}", ctrl_event_key, ctrl_linked);
+
+            // Capture current screen content and send it as initial output,
+            // then send C-l to trigger a refresh so ongoing changes stream through.
+            match tmux(&["capture-pane", "-t", &pane_id_for_thread, "-p", "-e"]) {
+                Ok(content) if !content.is_empty() => {
+                    // capture-pane -e returns text with ANSI escapes preserved.
+                    // Wrap in a clear-screen + content to initialize xterm.js.
+                    let mut init = Vec::new();
+                    init.extend_from_slice(b"\x1b[2J\x1b[H"); // clear + home
+                    init.extend_from_slice(content.as_bytes());
+                    match &sink {
+                        OutputSink::Tauri(app_handle) => {
+                            let _ = app_handle
+                                .emit(&format!("pty-output-{}", ctrl_event_key), init);
+                        }
+                        OutputSink::Channel(tx) => {
+                            let _ = tx.send((pane_id_for_thread.clone(), init));
+                        }
+                    }
+                }
+                _ => {}
             }
 
-            // Seek to end so we only read new data
-            let _ = file.seek(SeekFrom::End(0));
+            // Trigger refresh so the app redraws and streams through control mode
+            let _ = writeln!(stdin, "send-keys -t {} C-l", pane_id_for_thread);
 
-            let mut buf = [0u8; 65536];
-            let timeout = libc::timespec { tv_sec: 1, tv_nsec: 0 };
+            // Read raw bytes and split on newlines - control mode output
+            // can contain non-UTF-8 sequences in %output data.
+            let mut reader = BufReader::new(stdout);
+            let target_prefix = format!("%output {} ", pane_id_for_thread);
+            let target_bytes = target_prefix.as_bytes();
+
+            let mut line_buf = Vec::with_capacity(8192);
             loop {
                 if *stop_clone.lock().unwrap() { break; }
 
-                // Wait for file write notification (1s timeout for stop check)
-                let mut event_buf = [libc::kevent {
-                    ident: 0, filter: 0, flags: 0, fflags: 0, data: 0,
-                    udata: std::ptr::null_mut(),
-                }; 1];
-                let nev = unsafe {
-                    libc::kevent(
-                        kq,
-                        std::ptr::null(),
-                        0,
-                        event_buf.as_mut_ptr(),
-                        1,
-                        &timeout as *const libc::timespec,
-                    )
+                line_buf.clear();
+                match reader.read_until(b'\n', &mut line_buf) {
+                    Ok(0) => break, // EOF
+                    Err(_) => break,
+                    Ok(_) => {}
+                }
+
+                // Trim trailing newline
+                if line_buf.last() == Some(&b'\n') { line_buf.pop(); }
+
+                // Check for %exit
+                if line_buf.starts_with(b"%exit") { break; }
+
+                // Only process %output lines for our target pane
+                if !line_buf.starts_with(target_bytes) { continue; }
+
+                let raw = &line_buf[target_bytes.len()..];
+                // raw is octal-escaped ASCII, safe to treat as str
+                let raw_str = match std::str::from_utf8(raw) {
+                    Ok(s) => s,
+                    Err(_) => continue,
                 };
 
-                if nev < 0 { break; }
-                if nev == 0 { continue; } // timeout, check stop flag
+                let data = decode_tmux_octal(raw_str);
+                if data.is_empty() { continue; }
 
-                // File was deleted (pipe-pane stopped)
-                if event_buf[0].fflags & libc::NOTE_DELETE != 0 { break; }
-
-                // Read all new data
-                match file.read(&mut buf) {
-                    Ok(0) => {}
-                    Ok(n) => {
-                        let data = &buf[..n];
-                        match &sink {
-                            OutputSink::Tauri(app_handle) => {
-                                let _ = app_handle
-                                    .emit(&format!("pty-output-{}", pipe_event_key), data.to_vec());
-                            }
-                            OutputSink::Channel(tx) => {
-                                let _ = tx.send((pane_id_for_thread.clone(), data.to_vec()));
-                            }
-                        }
+                match &sink {
+                    OutputSink::Tauri(app_handle) => {
+                        let _ = app_handle
+                            .emit(&format!("pty-output-{}", ctrl_event_key), data);
                     }
-                    Err(_) => {}
+                    OutputSink::Channel(tx) => {
+                        let _ = tx.send((pane_id_for_thread.clone(), data));
+                    }
                 }
             }
-            unsafe { libc::close(kq); }
+
+            drop(stdin);
+            let _ = child.kill();
+            let _ = child.wait();
         });
 
         self.sessions.insert(
@@ -244,7 +258,6 @@ impl PtyManager {
                 pane_id: pane_id.to_string(),
                 linked_session: linked,
                 window_id: window_id.clone(),
-                pane_tty,
                 stop,
             },
         );
@@ -253,21 +266,11 @@ impl PtyManager {
     }
 
     pub fn write(&mut self, pane_id: &str, data: &[u8]) -> Result<(), String> {
-        let session = self
+        let _session = self
             .sessions
             .get(pane_id)
             .ok_or_else(|| format!("No viewer for pane {}", pane_id))?;
 
-        // Fast path: write directly to the pane's TTY (no subprocess spawn)
-        if let Some(tty) = &session.pane_tty {
-            use std::io::Write;
-            match std::fs::OpenOptions::new().write(true).open(tty) {
-                Ok(mut f) => return f.write_all(data).map_err(|e| format!("tty write: {}", e)),
-                Err(_) => {} // fall through to send-keys
-            }
-        }
-
-        // Fallback: tmux send-keys (slower, spawns subprocess)
         let text = String::from_utf8_lossy(data);
 
         let tmux_key = match text.as_ref() {
@@ -354,23 +357,16 @@ impl PtyManager {
         if let Some(session) = self.sessions.remove(pane_id) {
             *session.stop.lock().unwrap() = true;
 
-            // Stop pipe-pane
-            let _ = tmux(&["pipe-pane", "-t", &session.pane_id]);
-
             // Unzoom the pane in the linked session before killing it
             let _ = tmux(&["resize-pane", "-Z", "-t", &session.pane_id]);
 
-            // Kill the linked session
+            // Kill the linked session (also terminates control mode client)
             let _ = tmux(&["kill-session", "-t", &session.linked_session]);
 
             // Restore automatic window sizing so the real terminal regains
             // its original dimensions
             let _ = tmux(&["set-option", "-u", "-w", "-t", &session.window_id, "window-size"]);
             let _ = tmux(&["resize-window", "-A", "-t", &session.window_id]);
-
-            // Clean up temp file
-            let event_key = pane_id.replace('%', "p");
-            let _ = std::fs::remove_file(format!("/tmp/clawtab-pipe-{}", event_key));
         }
         Ok(())
     }

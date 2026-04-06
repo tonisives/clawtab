@@ -33,6 +33,10 @@ export function ProcessCard({
     : (process.first_query ?? null);
 
   const transient = process._transient_state;
+  const TEN_MINUTES = 10 * 60 * 1000;
+  const recentActivity = !transient && (
+    !process._last_log_change || (Date.now() - process._last_log_change < TEN_MINUTES)
+  );
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<any>(null);
@@ -44,8 +48,8 @@ export function ProcessCard({
       transient === "starting" ? styles.statusDotStarting : styles.statusDotStopping,
     ]} />
   ) : (
-    <Tooltip label="Running">
-      <View style={styles.statusDot} />
+    <Tooltip label={recentActivity ? "Running" : "Idle"}>
+      <View style={[styles.statusDot, !recentActivity && styles.statusDotIdle]} />
     </Tooltip>
   );
 
@@ -160,12 +164,15 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   statusDotStarting: {
-    backgroundColor: "#f59e0b",
-    opacity: 0.7,
+    backgroundColor: colors.accent,
+    opacity: 0.5,
   },
   statusDotStopping: {
     backgroundColor: colors.textMuted,
     opacity: 0.5,
+  },
+  statusDotIdle: {
+    backgroundColor: colors.statusIdle,
   },
   rightCol: {
     alignItems: "center",

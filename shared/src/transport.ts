@@ -15,7 +15,7 @@ export interface Transport {
   detectProcesses(): Promise<ClaudeProcess[]>;
   sendInput(name: string, text: string, freetext?: string): Promise<void>;
   subscribeLogs(name: string, onChunk: (content: string) => void): () => void;
-  runAgent(prompt: string, workDir?: string): Promise<void>;
+  runAgent(prompt: string, workDir?: string): Promise<{ pane_id: string; tmux_session: string } | null>;
   // Desktop-only (optional)
   focusJobWindow?(name: string): Promise<void>;
   saveJob?(job: RemoteJob): Promise<void>;

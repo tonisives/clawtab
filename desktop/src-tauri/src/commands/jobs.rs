@@ -1232,8 +1232,14 @@ pub fn build_agent_job(
     })
 }
 
+#[derive(serde::Serialize)]
+pub struct RunAgentResult {
+    pub pane_id: String,
+    pub tmux_session: String,
+}
+
 #[tauri::command]
-pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Option<String>) -> Result<(), String> {
+pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Option<String>) -> Result<Option<RunAgentResult>, String> {
     let (settings, jobs) = {
         let s = state.settings.lock().unwrap().clone();
         let j = state.jobs_config.lock().unwrap().jobs.clone();
@@ -1248,14 +1254,20 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Opt
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
 
+    let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
+
     tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job(
+        scheduler::executor::execute_job_with_pane_notify(
             &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
-            &relay, &std::collections::HashMap::new(), None,
+            &relay, &std::collections::HashMap::new(), pane_tx, None,
         )
         .await;
     });
 
-    Ok(())
+    // Wait for the pane to be created (up to 10s)
+    match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
+        Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult { pane_id, tmux_session })),
+        _ => Ok(None),
+    }
 }
 

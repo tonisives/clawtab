@@ -270,9 +270,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     if (!pendingAgentWorkDir) return;
     const { dir, startedAt } = pendingAgentWorkDir;
+    // If we already have a real pane_id, match by it directly
+    const pendingPaneId = pendingProcess && !pendingProcess.pane_id.startsWith("_pending_") ? pendingProcess.pane_id : null;
     const match = core.processes.find((p) =>
-      p.cwd === dir && !p.pane_id.startsWith("_pending_") &&
-      p.session_started_at && new Date(p.session_started_at).getTime() >= startedAt - 5000,
+      pendingPaneId
+        ? p.pane_id === pendingPaneId
+        : (p.cwd === dir && !p.pane_id.startsWith("_pending_") &&
+           p.session_started_at && new Date(p.session_started_at).getTime() >= startedAt - 5000),
     );
     if (match) {
       setPendingAgentWorkDir(null);
@@ -285,7 +289,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       setPendingAgentWorkDir(null);
       setPendingProcess(null);
     }
-  }, [core.processes, pendingAgentWorkDir]);
+  }, [core.processes, pendingAgentWorkDir, pendingProcess]);
 
   useEffect(() => {
     if (stoppingProcesses.length === 0) return;
@@ -572,6 +576,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (workDir) {
       const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
       const matchedGroup = matchingJob ? (matchingJob.group || "default") : null;
+      // Show a placeholder while waiting for the pane to be created
       const placeholder: ClaudeProcess = {
         pane_id: `_pending_${Date.now()}`, cwd: workDir, version: "", tmux_session: "", window_name: "",
         matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
@@ -580,9 +585,27 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       setPendingProcess(placeholder);
       setViewingJob(null); setViewingAgent(false); setViewingProcess(placeholder);
       setScrollToSlug(placeholder.pane_id);
-      setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
+
+      const result = await actions.runAgent(prompt, workDir);
+      if (result) {
+        // Got the real pane - switch to it immediately
+        const realProcess: ClaudeProcess = {
+          pane_id: result.pane_id, cwd: workDir, version: "", tmux_session: result.tmux_session, window_name: "",
+          matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
+          last_query: null, session_started_at: new Date().toISOString(),
+        };
+        setPendingProcess(realProcess);
+        setViewingProcess(realProcess);
+        setScrollToSlug(result.pane_id);
+        // Clear pending state after next process poll picks it up
+        setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
+      } else {
+        // Fallback: poll for the process (timeout case)
+        setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
+      }
+    } else {
+      await actions.runAgent(prompt, workDir);
     }
-    await actions.runAgent(prompt, workDir);
   }, [actions, core.jobs]);
 
   const handleHideGroup = useCallback((group: string) => {
@@ -832,7 +855,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       );
     }
 
-    if (viewingProcess && pendingProcess && viewingProcess.pane_id === pendingProcess.pane_id) {
+    if (viewingProcess && pendingProcess && viewingProcess.pane_id === pendingProcess.pane_id
+        && viewingProcess.pane_id.startsWith("_pending_")) {
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

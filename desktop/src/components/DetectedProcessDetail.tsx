@@ -26,7 +26,7 @@ function createProcessTransport(process: ClaudeProcess): Transport {
       await invoke("send_detected_process_input", { paneId, text });
     },
     subscribeLogs: () => () => {},
-    runAgent: noop,
+    runAgent: async () => null,
     sigintJob: async () => {
       await invoke("sigint_detected_process", { paneId });
     },

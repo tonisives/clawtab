@@ -35,9 +35,29 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
     }
   }, []);
 
+  const prevLogLinesRef = useRef<Map<string, string>>(new Map());
+  const prevLastLogChangeRef = useRef<Map<string, number>>(new Map());
+
   const loadProcesses = useCallback(async () => {
     try {
       const p = await transportRef.current.detectProcesses();
+      const now = Date.now();
+      const prevLogs = prevLogLinesRef.current;
+      const prevChanges = prevLastLogChangeRef.current;
+      const nextLogs = new Map<string, string>();
+      const nextChanges = new Map<string, number>();
+      for (const proc of p) {
+        const oldLog = prevLogs.get(proc.pane_id);
+        nextLogs.set(proc.pane_id, proc.log_lines);
+        if (oldLog !== undefined && oldLog !== proc.log_lines) {
+          proc._last_log_change = now;
+        } else {
+          proc._last_log_change = prevChanges.get(proc.pane_id) ?? now;
+        }
+        nextChanges.set(proc.pane_id, proc._last_log_change);
+      }
+      prevLogLinesRef.current = nextLogs;
+      prevLastLogChangeRef.current = nextChanges;
       setProcesses(p);
     } catch (e) {
       console.error("Failed to detect processes:", e);

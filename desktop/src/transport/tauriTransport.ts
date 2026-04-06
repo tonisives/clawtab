@@ -98,7 +98,7 @@ export function createTauriTransport(): Transport {
     },
 
     async runAgent(prompt: string, workDir?: string) {
-      await invoke("run_agent", { prompt, workDir });
+      return await invoke<{ pane_id: string; tmux_session: string } | null>("run_agent", { prompt, workDir });
     },
 
     async focusJobWindow(name: string) {
