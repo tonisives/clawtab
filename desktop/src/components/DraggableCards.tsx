@@ -62,11 +62,15 @@ export function DraggableProcessCard({
   onPress,
   inGroup,
   selected,
+  onStop,
+  autoYesActive,
 }: {
   process: ClaudeProcess;
   onPress?: () => void;
   inGroup?: boolean;
   selected?: boolean | string;
+  onStop?: () => void;
+  autoYesActive?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-process-${process.pane_id}`,
@@ -85,6 +89,8 @@ export function DraggableProcessCard({
         onPress={onPress}
         inGroup={inGroup}
         selected={selected}
+        onStop={onStop}
+        autoYesActive={autoYesActive}
       />
     </div>
   );

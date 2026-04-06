@@ -45,35 +45,31 @@ export const RunningJobCard = memo(function RunningJobCard({
             <Text style={styles.metaText}>{timeAgo(startedAt)}</Text>
           )}
         </View>
-        <View style={styles.rightCol}>
-          <View style={styles.rightTopRow}>
-            {autoYesActive && (
-              <View style={styles.autoYesDot} />
-            )}
-            {onStop && (
-              <TouchableOpacity
-                ref={menuBtnRef}
-                onPress={(e: any) => {
-                  e.stopPropagation();
-                  if (isWeb) {
-                    const node = e?.currentTarget ?? e?.target;
-                    if (node?.getBoundingClientRect) {
-                      const rect = node.getBoundingClientRect();
-                      setMenuPos({ top: rect.bottom + 4, left: rect.right });
-                    }
-                  }
-                  setMenuOpen((v) => !v);
-                }}
-                style={styles.moreBtn}
-                activeOpacity={0.6}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.moreBtnText}>{"\u2026"}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} />
-        </View>
+        {autoYesActive && (
+          <View style={styles.autoYesDot} />
+        )}
+        <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} />
+        {onStop && (
+          <TouchableOpacity
+            ref={menuBtnRef}
+            onPress={(e: any) => {
+              e.stopPropagation();
+              if (isWeb) {
+                const node = e?.currentTarget ?? e?.target;
+                if (node?.getBoundingClientRect) {
+                  const rect = node.getBoundingClientRect();
+                  setMenuPos({ top: rect.bottom + 4, left: rect.right });
+                }
+              }
+              setMenuOpen((v) => !v);
+            }}
+            style={styles.moreBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+          </TouchableOpacity>
+        )}
       </View>
       {menuOpen && onStop && (
         <PopupMenu
@@ -118,15 +114,6 @@ const styles = StyleSheet.create({
   info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
   metaText: { color: colors.textSecondary, fontSize: 12 },
-  rightCol: {
-    alignItems: "center",
-    gap: 4,
-  },
-  rightTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
   autoYesDot: {
     width: 8,
     height: 8,
@@ -139,6 +126,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: -4,
+    marginRight: -6,
+    marginLeft: -4,
   },
   moreBtnText: {
     color: colors.textSecondary,

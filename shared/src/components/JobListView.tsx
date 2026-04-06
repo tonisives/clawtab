@@ -124,13 +124,14 @@ export interface JobListViewProps {
   onScrollOffsetChange?: (offset: number) => void;
   // Scroll a specific slug into view (bumped counter to trigger re-scroll)
   scrollToSlug?: string | null;
-  // Stop job from sidebar
+  // Stop job/process from sidebar
   onStopJob?: (slug: string) => void;
-  // Auto-yes pane IDs (for yellow * indicator)
+  onStopProcess?: (paneId: string) => void;
+  // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean }) => React.ReactNode;
-  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string }) => React.ReactNode;
+  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean }) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
   scrollEnabled?: boolean;
 }
@@ -171,6 +172,7 @@ export function JobListView({
   onScrollOffsetChange,
   scrollToSlug,
   onStopJob,
+  onStopProcess,
   autoYesPaneIds,
   renderJobCard: customRenderJobCard,
   renderProcessCard: customRenderProcessCard,
@@ -481,11 +483,13 @@ export function JobListView({
         const isSelected: boolean | string = rawColor
           ? (isFocused ? rawColor : rawColor + "66")
           : (selectedSlug === item.process.pane_id);
+        const procAutoYesActive = autoYesPaneIds?.has(item.process.pane_id) ?? false;
+        const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
         return (
           <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
             {customRenderProcessCard
-              ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected })
-              : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} />
+              ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, autoYesActive: procAutoYesActive })
+              : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} autoYesActive={procAutoYesActive} />
             }
           </View>
         );

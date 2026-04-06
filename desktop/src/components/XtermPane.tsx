@@ -81,6 +81,17 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         // WebGL not available
       }
 
+      // Let our app shortcuts pass through instead of being consumed by the terminal
+      t.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+        // Cmd+E: toggle sidebar
+        if (e.metaKey && e.key === "e") return false;
+        // Ctrl+V/S: split pane
+        if (e.ctrlKey && (e.key === "v" || e.key === "s")) return false;
+        // Ctrl+H/J/K/L: move between panes
+        if (e.ctrlKey && "hjkl".includes(e.key)) return false;
+        return true;
+      });
+
       fit.fit();
       term = t;
 

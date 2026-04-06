@@ -1,20 +1,28 @@
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { useRef, useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { ClaudeProcess } from "../types/process";
+import { PopupMenu } from "./PopupMenu";
 import { shortenPath } from "../util/format";
 import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+
+const isWeb = Platform.OS === "web";
 
 export function ProcessCard({
   process,
   onPress,
   inGroup,
   selected,
+  onStop,
+  autoYesActive,
 }: {
   process: ClaudeProcess;
   onPress?: () => void;
   inGroup?: boolean;
   selected?: boolean | string;
+  onStop?: () => void;
+  autoYesActive?: boolean;
 }) {
   const displayName = inGroup
     ? (process.first_query ?? shortenPath(process.cwd))
@@ -26,7 +34,11 @@ export function ProcessCard({
 
   const transient = process._transient_state;
 
-  const statusWithTitle = transient ? (
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBtnRef = useRef<any>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  const statusDot = transient ? (
     <View style={[
       styles.statusDot,
       transient === "starting" ? styles.statusDotStarting : styles.statusDotStopping,
@@ -36,6 +48,8 @@ export function ProcessCard({
       <View style={styles.statusDot} />
     </Tooltip>
   );
+
+  const showMenu = onStop && !transient;
 
   return (
     <View style={[styles.processCard, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 }]}>
@@ -61,8 +75,42 @@ export function ProcessCard({
             </Text>
           ) : null}
         </View>
-        {statusWithTitle}
+        {autoYesActive && !transient && (
+          <View style={styles.autoYesDot} />
+        )}
+        {statusDot}
+        {showMenu && (
+          <TouchableOpacity
+            ref={menuBtnRef}
+            onPress={(e: any) => {
+              e.stopPropagation();
+              if (isWeb) {
+                const node = e?.currentTarget ?? e?.target;
+                if (node?.getBoundingClientRect) {
+                  const rect = node.getBoundingClientRect();
+                  setMenuPos({ top: rect.bottom + 4, left: rect.right });
+                }
+              }
+              setMenuOpen((v) => !v);
+            }}
+            style={styles.moreBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
+      {menuOpen && onStop && (
+        <PopupMenu
+          triggerRef={menuBtnRef}
+          position={menuPos}
+          onClose={() => setMenuOpen(false)}
+          items={[
+            { type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger },
+          ]}
+        />
+      )}
     </View>
   );
 }
@@ -116,5 +164,29 @@ const styles = StyleSheet.create({
   statusDotStopping: {
     backgroundColor: colors.textMuted,
     opacity: 0.5,
+  },
+  autoYesDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.warning,
+  },
+  moreBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: -4,
+    marginRight: -6,
+    marginLeft: -4,
+  },
+  moreBtnText: {
+    color: colors.textSecondary,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 18,
+    letterSpacing: 1,
   },
 });

@@ -363,6 +363,69 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     return () => window.removeEventListener("resize", onResize);
   }, []);
   const isWide = windowWidth >= 768;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Cmd+E: toggle sidebar
+      if (e.metaKey && e.key === "e") {
+        e.preventDefault();
+        setSidebarCollapsed(prev => !prev);
+        return;
+      }
+
+      // Ctrl+V: split focused pane vertically (side by side)
+      if (e.ctrlKey && e.key === "v") {
+        e.preventDefault();
+        const tree = split.tree;
+        if (!tree) return;
+        const leaves = collectLeaves(tree);
+        const focused = leaves.find(l => l.id === split.focusedLeafId) ?? leaves[0];
+        if (!focused) return;
+        const c = focused.content;
+        const paneId = (c.kind === "process" || c.kind === "terminal") ? c.paneId : null;
+        if (paneId) handleSplitPane(paneId, "right");
+        return;
+      }
+
+      // Ctrl+S: split focused pane horizontally (top/bottom)
+      if (e.ctrlKey && e.key === "s") {
+        e.preventDefault();
+        const tree = split.tree;
+        if (!tree) return;
+        const leaves = collectLeaves(tree);
+        const focused = leaves.find(l => l.id === split.focusedLeafId) ?? leaves[0];
+        if (!focused) return;
+        const c = focused.content;
+        const paneId = (c.kind === "process" || c.kind === "terminal") ? c.paneId : null;
+        if (paneId) handleSplitPane(paneId, "down");
+        return;
+      }
+
+      // Ctrl+H/J/K/L: navigate between panes
+      if (e.ctrlKey && "hjkl".includes(e.key)) {
+        e.preventDefault();
+        const tree = split.tree;
+        if (!tree) return;
+        const leaves = collectLeaves(tree);
+        if (leaves.length < 2) return;
+        const currentIdx = leaves.findIndex(l => l.id === split.focusedLeafId);
+        const idx = currentIdx === -1 ? 0 : currentIdx;
+        let next = idx;
+        if (e.key === "h" || e.key === "k") {
+          next = (idx - 1 + leaves.length) % leaves.length;
+        } else {
+          next = (idx + 1) % leaves.length;
+        }
+        split.setFocusedLeafId(leaves[next].id);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [split.tree, split.focusedLeafId, split.setFocusedLeafId, handleSplitPane]);
 
   const isFullScreenView = !!(editingJob || isCreating || showPicker);
   useEffect(() => {
@@ -702,7 +765,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: string | boolean }) => <DraggableProcessCard {...props} />,
+    (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean }) => <DraggableProcessCard {...props} />,
     [],
   );
 
@@ -959,6 +1022,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       scrollToSlug={scrollToSlug}
       scrollEnabled={!split.isDragging}
       onStopJob={(slug) => transport.sigintJob ? transport.sigintJob(slug) : transport.stopJob(slug)}
+      onStopProcess={(paneId) => invoke("sigint_detected_process", { paneId })}
       autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}
@@ -1062,10 +1126,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onDragCancel={split.handleDragCancel}
           >
             <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px - 3px)", margin: "-17px -20px -20px -20px", overflow: "hidden" }}>
-              <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                {jobListView}
-              </div>
-              <div onMouseDown={onResizeHandleMouseDown} style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }} />
+              {!sidebarCollapsed && (
+                <>
+                  <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                    {jobListView}
+                  </div>
+                  <div onMouseDown={onResizeHandleMouseDown} style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }} />
+                </>
+              )}
               <div ref={split.detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)" }}>
                 <SplitDetailArea
                   tree={split.tree}
