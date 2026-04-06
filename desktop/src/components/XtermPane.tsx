@@ -117,9 +117,8 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
       const rows = t.rows;
 
       // Listen for output before spawning so we don't miss anything
-      outputUnlisten = await listen<string>(`pty-output-${key}`, (event) => {
-        const bytes = Uint8Array.from(atob(event.payload), (c) => c.charCodeAt(0));
-        t.write(bytes);
+      outputUnlisten = await listen<number[]>(`pty-output-${key}`, (event) => {
+        t.write(new Uint8Array(event.payload));
       });
 
       exitUnlisten = await listen(`pty-exit-${key}`, () => {

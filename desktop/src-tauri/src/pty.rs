@@ -1,4 +1,3 @@
-use base64::Engine;
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
@@ -7,7 +6,7 @@ use tauri::{AppHandle, Emitter};
 
 /// A pane viewer that creates a linked tmux session, zooms the target pane,
 /// and resizes the window to match the xterm.js viewport.  Uses `pipe-pane`
-/// for live output streaming and `send-keys` for input.
+/// for live output streaming and direct TTY writes for input.
 ///
 /// On destroy, the linked session is killed and the window is restored to
 /// automatic sizing, so the real terminal regains its original dimensions.
@@ -15,6 +14,7 @@ struct PaneViewer {
     pane_id: String,
     linked_session: String,
     window_id: String,
+    pane_tty: Option<String>,
     stop: Arc<Mutex<bool>>,
 }
 
@@ -88,12 +88,24 @@ impl PtyManager {
         let _ = tmux(&["set-option", "-s", "-t", &linked, "window-size", "manual"]);
 
         // Select the correct window and zoom the target pane so it fills
-        // the entire window (no splitting with other panes)
+        // the entire window (no splitting with other panes).
+        // Use the global pane ID directly - tmux resolves it across all
+        // sessions, so we don't need to construct a session:window.index path.
         let linked_win = format!("{}:{}", linked, window_id);
-        let linked_pane = format!("{}.{}", linked_win, pane_id_owned);
         let _ = tmux(&["select-window", "-t", &linked_win]);
-        let _ = tmux(&["select-pane", "-t", &linked_pane]);
-        let _ = tmux(&["resize-pane", "-Z", "-t", &linked_pane]);
+        // Find this pane's index within the linked session's window
+        let pane_index = tmux(&[
+            "display-message", "-t", &format!("{}:{}.{}", linked, window_id, pane_id_owned),
+            "-p", "#{pane_index}",
+        ]).unwrap_or_default();
+        let zoom_target = if pane_index.is_empty() {
+            // Fallback: select by global ID within the linked session
+            format!("{}:{}.{}", linked, window_id, pane_id_owned)
+        } else {
+            format!("{}:{}.{}", linked, window_id, pane_index)
+        };
+        let _ = tmux(&["select-pane", "-t", &zoom_target]);
+        let _ = tmux(&["resize-pane", "-Z", "-t", &zoom_target]);
 
         // Resize the window to match the xterm.js viewport.
         // resize-window automatically sets window-size to manual.
@@ -103,6 +115,12 @@ impl PtyManager {
             "resize-window", "-t", &linked_win,
             "-x", &w.to_string(), "-y", &h.to_string(),
         ]);
+
+        // Get the pane's TTY path for direct input writes (avoids spawning
+        // tmux send-keys per keystroke).
+        let pane_tty = tmux(&[
+            "display-message", "-t", pane_id, "-p", "#{pane_tty}",
+        ]).ok().filter(|s| !s.is_empty());
 
         // Write pipe-pane output to a regular file; use kqueue to wake
         // on every write so we get near-instant delivery without polling.
@@ -116,10 +134,9 @@ impl PtyManager {
             &format!("cat >> {}", pipe_path),
         ])?;
 
-        // Give the app a moment to redraw at the new size, then force a
-        // screen refresh so the full content flows through pipe-pane into
-        // xterm.js as a single clean stream.
-        thread::sleep(std::time::Duration::from_millis(200));
+        // Brief pause for the app to redraw at the new size, then force a
+        // screen refresh so the full content flows through pipe-pane.
+        thread::sleep(std::time::Duration::from_millis(50));
         let _ = tmux(&["send-keys", "-t", &pane_id_owned, "C-l"]);
 
         let pipe_event_key = event_key.clone();
@@ -174,7 +191,6 @@ impl PtyManager {
             let _ = file.seek(SeekFrom::End(0));
 
             let mut buf = [0u8; 65536];
-            let mut last_read = std::time::Instant::now();
             let timeout = libc::timespec { tv_sec: 1, tv_nsec: 0 };
             loop {
                 if *stop_clone.lock().unwrap() { break; }
@@ -202,29 +218,14 @@ impl PtyManager {
                 if event_buf[0].fflags & libc::NOTE_DELETE != 0 { break; }
 
                 // Read all new data
-                let t0 = std::time::Instant::now();
                 match file.read(&mut buf) {
                     Ok(0) => {}
                     Ok(n) => {
-                        let read_ms = t0.elapsed().as_millis();
-                        let gap_ms = last_read.elapsed().as_millis();
-                        last_read = std::time::Instant::now();
-
                         let data = &buf[..n];
                         match &sink {
                             OutputSink::Tauri(app_handle) => {
-                                let encoded =
-                                    base64::engine::general_purpose::STANDARD.encode(data);
-                                let emit_t = std::time::Instant::now();
                                 let _ = app_handle
-                                    .emit(&format!("pty-output-{}", pipe_event_key), encoded);
-                                let emit_ms = emit_t.elapsed().as_millis();
-                                if gap_ms > 200 || read_ms > 50 || emit_ms > 10 {
-                                    log::warn!(
-                                        "[pty {}] gap={}ms read={}ms emit={}ms bytes={}",
-                                        pipe_event_key, gap_ms, read_ms, emit_ms, n
-                                    );
-                                }
+                                    .emit(&format!("pty-output-{}", pipe_event_key), data.to_vec());
                             }
                             OutputSink::Channel(tx) => {
                                 let _ = tx.send((pane_id_for_thread.clone(), data.to_vec()));
@@ -243,6 +244,7 @@ impl PtyManager {
                 pane_id: pane_id.to_string(),
                 linked_session: linked,
                 window_id: window_id.clone(),
+                pane_tty,
                 stop,
             },
         );
@@ -251,11 +253,21 @@ impl PtyManager {
     }
 
     pub fn write(&mut self, pane_id: &str, data: &[u8]) -> Result<(), String> {
-        let _session = self
+        let session = self
             .sessions
             .get(pane_id)
             .ok_or_else(|| format!("No viewer for pane {}", pane_id))?;
 
+        // Fast path: write directly to the pane's TTY (no subprocess spawn)
+        if let Some(tty) = &session.pane_tty {
+            use std::io::Write;
+            match std::fs::OpenOptions::new().write(true).open(tty) {
+                Ok(mut f) => return f.write_all(data).map_err(|e| format!("tty write: {}", e)),
+                Err(_) => {} // fall through to send-keys
+            }
+        }
+
+        // Fallback: tmux send-keys (slower, spawns subprocess)
         let text = String::from_utf8_lossy(data);
 
         let tmux_key = match text.as_ref() {
@@ -346,11 +358,7 @@ impl PtyManager {
             let _ = tmux(&["pipe-pane", "-t", &session.pane_id]);
 
             // Unzoom the pane in the linked session before killing it
-            let linked_pane = format!(
-                "{}:{}.{}",
-                session.linked_session, session.window_id, session.pane_id
-            );
-            let _ = tmux(&["resize-pane", "-Z", "-t", &linked_pane]);
+            let _ = tmux(&["resize-pane", "-Z", "-t", &session.pane_id]);
 
             // Kill the linked session
             let _ = tmux(&["kill-session", "-t", &session.linked_session]);
