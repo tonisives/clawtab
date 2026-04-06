@@ -1077,6 +1077,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     flexWrap: "wrap",
+    flexShrink: 1,
   },
   infoPill: {
     backgroundColor: colors.surface,
@@ -1102,8 +1103,10 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
     flexWrap: "wrap",
+    flexShrink: 1,
   },
   actionBtn: {
     paddingHorizontal: spacing.lg,

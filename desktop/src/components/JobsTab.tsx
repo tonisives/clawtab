@@ -1004,7 +1004,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onDragEnd={split.handleDragEnd}
             onDragCancel={split.handleDragCancel}
           >
-            <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px)", margin: -20, overflow: "hidden" }}>
+            <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px - 3px)", margin: "-17px -20px -20px -20px", overflow: "hidden" }}>
               <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 {jobListView}
               </div>

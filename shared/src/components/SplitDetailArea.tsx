@@ -119,12 +119,27 @@ function SplitNodeRenderer({
           flexDirection: "column",
           overflow: "hidden",
           position: "relative",
-          outline: showColorStrip ? `2px solid ${(color ?? "transparent") + (isFocused ? "" : "66")}` : undefined,
-          outlineOffset: "-2px",
+          borderRadius: 3,
           opacity: showColorStrip && !isFocused ? 0.85 : 1,
+          isolation: "isolate",
         }}
         onMouseDown={onFocusLeaf ? () => onFocusLeaf(node.id) : undefined}
       >
+        {renderLeaf(node.content, node.id)}
+        {showColorStrip && (() => {
+          const c = (color ?? "transparent") + (isFocused ? "" : "66");
+          return (
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: 3,
+              border: `1px solid ${c}`,
+              boxShadow: `inset 0 0 1px ${c}`,
+              pointerEvents: "none",
+              zIndex: 9999,
+            }} />
+          );
+        })()}
         {onClosePane && (
           <button
             onClick={() => onClosePane(node.id)}
@@ -147,7 +162,6 @@ function SplitNodeRenderer({
             x
           </button>
         )}
-        {renderLeaf(node.content, node.id)}
       </div>
     );
   }
@@ -262,20 +276,20 @@ function SplitContainer({
         onMouseDown={onResizeHandleMouseDown}
         style={{
           ...(isH
-            ? { width: 9, marginLeft: -5, marginRight: -4, cursor: "col-resize" }
-            : { height: 9, marginTop: -5, marginBottom: -4, cursor: "row-resize" }),
+            ? { width: 1, margin: "0 -4px", padding: "0 4px", cursor: "col-resize" }
+            : { height: 1, margin: "-4px 0", padding: "4px 0", cursor: "row-resize" }),
           backgroundColor: "transparent",
           zIndex: 10,
           flexShrink: 0,
           position: "relative",
+          boxSizing: "content-box",
         }}
       >
         <div
           style={{
-            position: "absolute",
             ...(isH
-              ? { left: 4, top: 0, bottom: 0, width: 1 }
-              : { top: 4, left: 0, right: 0, height: 1 }),
+              ? { width: 1, height: "100%" }
+              : { height: 1, width: "100%" }),
             background: "var(--border-light, #333)",
           }}
         />
