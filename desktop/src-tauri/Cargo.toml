@@ -47,6 +47,7 @@ futures-util = "0.3"
 tokio-util = "0.7"
 gethostname = "1"
 base64 = "0.22"
+libc = "0.2"
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 
 [lints.rust]

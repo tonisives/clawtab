@@ -549,6 +549,7 @@ dependencies = [
  "env_logger",
  "futures-util",
  "gethostname",
+ "libc",
  "log",
  "notify",
  "ratatui",

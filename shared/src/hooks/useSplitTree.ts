@@ -71,6 +71,7 @@ function dragDataToContent(data: SplitDragData): PaneContent {
 function contentKey(content: PaneContent): string {
   if (content.kind === "job") return content.slug;
   if (content.kind === "agent") return "_agent";
+  if (content.kind === "terminal") return `_term_${content.paneId}`;
   return content.paneId;
 }
 

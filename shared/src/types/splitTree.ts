@@ -1,6 +1,7 @@
 export type PaneContent =
   | { kind: "job"; slug: string }
   | { kind: "process"; paneId: string }
+  | { kind: "terminal"; paneId: string; tmuxSession: string }
   | { kind: "agent" };
 
 export type SplitNode =

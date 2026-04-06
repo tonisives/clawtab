@@ -124,8 +124,12 @@ export interface JobListViewProps {
   onScrollOffsetChange?: (offset: number) => void;
   // Scroll a specific slug into view (bumped counter to trigger re-scroll)
   scrollToSlug?: string | null;
+  // Stop job from sidebar
+  onStopJob?: (slug: string) => void;
+  // Auto-yes pane IDs (for yellow * indicator)
+  autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
-  renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string }) => React.ReactNode;
+  renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean }) => React.ReactNode;
   renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string }) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
   scrollEnabled?: boolean;
@@ -166,6 +170,8 @@ export function JobListView({
   initialScrollOffset,
   onScrollOffsetChange,
   scrollToSlug,
+  onStopJob,
+  autoYesPaneIds,
   renderJobCard: customRenderJobCard,
   renderProcessCard: customRenderProcessCard,
   scrollEnabled = true,
@@ -532,6 +538,10 @@ export function JobListView({
       const isSelected: boolean | string = rawJobColor
         ? (isJobFocused ? rawJobColor : rawJobColor + "66")
         : (selectedSlug === item.job.slug);
+      const isRunning = status.state === "running";
+      const jobPaneId = isRunning ? (status as { pane_id?: string }).pane_id : undefined;
+      const jobAutoYesActive = jobPaneId ? autoYesPaneIds?.has(jobPaneId) ?? false : false;
+      const jobOnStop = isRunning && onStopJob ? () => onStopJob(item.job.slug) : undefined;
       return (
         <View
           key={key}
@@ -542,13 +552,15 @@ export function JobListView({
           ]}
         >
           {customRenderJobCard
-            ? customRenderJobCard({ job: item.job, status, onPress: pressHandler, selected: isSelected })
+            ? customRenderJobCard({ job: item.job, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive })
             : status.state === "running" ? (
               <RunningJobCard
                 jobName={item.job.name}
                 status={status}
                 onPress={pressHandler}
                 selected={isSelected}
+                onStop={jobOnStop}
+                autoYesActive={jobAutoYesActive}
               />
             ) : (
               <JobCard

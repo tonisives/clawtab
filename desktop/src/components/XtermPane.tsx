@@ -87,21 +87,18 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
       if (cancelled) { t.dispose(); return; }
 
       // Resize the tmux pane when the container changes size.
-      // Track previous dimensions to avoid spurious resizes (e.g. from
-      // text selection toggling a scrollbar).
-      let prevCols = t.cols;
-      let prevRows = t.rows;
+      // Debounced to avoid spamming tmux resize-window during drag.
+      let resizeTimer: ReturnType<typeof setTimeout> | null = null;
       observer = new ResizeObserver(() => {
         fit.fit();
-        if (t.cols !== prevCols || t.rows !== prevRows) {
-          prevCols = t.cols;
-          prevRows = t.rows;
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
           invoke("pty_resize", {
             paneId,
             cols: t.cols,
             rows: t.rows,
           }).catch(() => {});
-        }
+        }, 80);
       });
       observer.observe(el);
 
@@ -128,10 +125,22 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         return;
       }
 
-      // Send input to the real tmux pane
+      // Send input to the real tmux pane, batching rapid keystrokes
+      // (e.g. paste) into fewer IPC calls to reduce subprocess spawns.
+      let inputBuf = "";
+      let inputScheduled = false;
       dataDisposable = t.onData((data) => {
-        const encoded = btoa(data);
-        invoke("pty_write", { paneId, data: encoded }).catch(() => {});
+        inputBuf += data;
+        if (!inputScheduled) {
+          inputScheduled = true;
+          Promise.resolve().then(() => {
+            const batch = inputBuf;
+            inputBuf = "";
+            inputScheduled = false;
+            const encoded = btoa(batch);
+            invoke("pty_write", { paneId, data: encoded }).catch(() => {});
+          });
+        }
       });
 
       // Handle file drag-and-drop via Tauri's native API

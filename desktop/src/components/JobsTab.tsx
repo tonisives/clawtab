@@ -31,6 +31,7 @@ import { ParamsOverlay } from "./ParamsOverlay";
 import { DraggableJobCard, DraggableProcessCard, type DragData } from "./DraggableCards";
 import { SkillSearchDialog } from "./SkillSearchDialog";
 import { InjectSecretsDialog } from "./InjectSecretsDialog";
+import { XtermPane } from "./XtermPane";
 import { useQuestionPolling } from "../hooks/useQuestionPolling";
 import { useAutoYes } from "../hooks/useAutoYes";
 import { useImportJob } from "../hooks/useImportJob";
@@ -201,14 +202,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       await core.reload();
       const treeDirection = direction === "right" ? "horizontal" as const : "vertical" as const;
       const leaves = split.tree ? collectLeaves(split.tree) : [];
-      const sourceLeaf = leaves.find(l => l.content.kind === "process" && l.content.paneId === paneId);
+      const sourceLeaf = leaves.find(l => (l.content.kind === "process" || l.content.kind === "terminal") && l.content.paneId === paneId);
       if (sourceLeaf) {
-        split.addSplitLeaf(sourceLeaf.id, { kind: "process", paneId: newPaneId }, treeDirection);
+        const sourceProc = core.processes.find(p => p.pane_id === paneId);
+        const tmuxSession = sourceProc?.tmux_session
+          ?? (sourceLeaf.content.kind === "terminal" ? sourceLeaf.content.tmuxSession : "");
+        split.addSplitLeaf(sourceLeaf.id, { kind: "terminal", paneId: newPaneId, tmuxSession }, treeDirection);
       }
     } catch (e) {
       console.error("split_pane_plain failed:", e);
     }
-  }, [core.reload, split.tree, split.addSplitLeaf]);
+  }, [core.reload, split.tree, split.addSplitLeaf, core.processes]);
 
   // --- Settings & event listeners ---
 
@@ -626,6 +630,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       );
     }
 
+    if (content.kind === "terminal") {
+      return (
+        <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center", flexDirection: "column", gap: 8 }}>
+          <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Terminal pane</span>
+          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{content.paneId}</span>
+        </div>
+      );
+    }
+
     if (content.kind === "process") {
       const proc = core.processes.find((p) => p.pane_id === content.paneId);
       if (!proc) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span></div>;
@@ -681,7 +694,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: string | boolean }) => <DraggableJobCard {...props} />,
+    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean }) => <DraggableJobCard {...props} />,
     [],
   );
 
@@ -942,6 +955,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       emptyMessage="No jobs configured yet."
       scrollToSlug={scrollToSlug}
       scrollEnabled={!split.isDragging}
+      onStopJob={(slug) => transport.sigintJob ? transport.sigintJob(slug) : transport.stopJob(slug)}
+      autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}
     />
