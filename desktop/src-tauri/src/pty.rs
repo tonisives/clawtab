@@ -104,7 +104,7 @@ impl PtyManager {
             "-x", &w.to_string(), "-y", &h.to_string(),
         ]);
 
-        // Create a FIFO so the reader gets blocking reads (no polling).
+        // Create a FIFO for blocking reads (no polling needed).
         let pipe_path = format!("/tmp/clawtab-pipe-{}", event_key);
         let _ = std::fs::remove_file(&pipe_path);
         let pipe_c = std::ffi::CString::new(pipe_path.clone()).unwrap();
@@ -133,32 +133,42 @@ impl PtyManager {
         let pane_id_for_thread = pane_id.to_string();
         thread::spawn(move || {
             use std::io::Read;
+            use std::os::unix::io::FromRawFd;
 
-            // Open the FIFO - this blocks until a writer (pipe-pane's cat)
-            // connects, so no polling needed.
+            // Helper: open FIFO with O_NONBLOCK to avoid blocking until a
+            // writer connects, then clear the flag so reads block normally.
+            let open_fifo = |path: &str| -> Option<std::fs::File> {
+                let c_path = std::ffi::CString::new(path).ok()?;
+                let fd = unsafe { libc::open(c_path.as_ptr(), libc::O_RDONLY | libc::O_NONBLOCK) };
+                if fd < 0 { return None; }
+                // Clear O_NONBLOCK so reads block until data arrives
+                unsafe {
+                    let flags = libc::fcntl(fd, libc::F_GETFL);
+                    libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK);
+                }
+                Some(unsafe { std::fs::File::from_raw_fd(fd) })
+            };
+
             let mut file = loop {
-                if *stop_clone.lock().unwrap() {
-                    return;
+                if *stop_clone.lock().unwrap() { return; }
+                if let Some(f) = open_fifo(&pipe_path_clone) {
+                    break f;
                 }
-                match std::fs::File::open(&pipe_path_clone) {
-                    Ok(f) => break f,
-                    Err(_) => thread::sleep(std::time::Duration::from_millis(50)),
-                }
+                thread::sleep(std::time::Duration::from_millis(50));
             };
 
             let mut buf = [0u8; 65536];
             loop {
-                if *stop_clone.lock().unwrap() {
-                    break;
-                }
+                if *stop_clone.lock().unwrap() { break; }
                 match file.read(&mut buf) {
                     Ok(0) => {
                         // Writer closed the FIFO (pipe-pane stopped).
                         // Re-open to wait for a new writer, or exit if stopped.
                         thread::sleep(std::time::Duration::from_millis(10));
-                        match std::fs::File::open(&pipe_path_clone) {
-                            Ok(f) => file = f,
-                            Err(_) => break,
+                        if *stop_clone.lock().unwrap() { break; }
+                        match open_fifo(&pipe_path_clone) {
+                            Some(f) => file = f,
+                            None => break,
                         }
                     }
                     Ok(n) => {
