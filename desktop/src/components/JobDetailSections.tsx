@@ -429,9 +429,9 @@ export function DesktopJobDetail({
 
   const renderTerminal = useCallback(
     () => paneId && tmuxSession ? (
-      <XtermPane paneId={paneId} tmuxSession={tmuxSession} />
+      <XtermPane paneId={paneId} tmuxSession={tmuxSession} group={job.group} />
     ) : null,
-    [paneId, tmuxSession],
+    [paneId, tmuxSession, job.group],
   );
 
   return (

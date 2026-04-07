@@ -127,9 +127,10 @@ export function DetectedProcessDetail({
       <XtermPane
         paneId={process.pane_id}
         tmuxSession={process.tmux_session}
+        group={process.matched_group ?? "default"}
       />
     ),
-    [process.pane_id, process.tmux_session],
+    [process.pane_id, process.tmux_session, process.matched_group],
   );
 
   return (

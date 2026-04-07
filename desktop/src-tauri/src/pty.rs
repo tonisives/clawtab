@@ -1,16 +1,26 @@
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
+
+use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
 
-/// Pane viewer using tmux control mode for live streaming.
-/// A linked session with the target pane zoomed allows resizing
-/// independently of other panes in the window.
+/// Pane viewer: captured pane in a clawtab-<group> session, streamed via a
+/// local PTY running `tmux attach-session` against an ephemeral grouped view
+/// session. This gives us independent resize on the captured window without
+/// disturbing other clients of the real tmux server.
 struct PaneViewer {
-    linked_session: String,
+    stop: Arc<AtomicBool>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
+    /// Captured window id (@...) in the clawtab-<group> session.
     window_id: String,
-    stop: Arc<Mutex<bool>>,
+    /// Ephemeral grouped view session (clawtab-<group>-view-N); killed on stop.
+    view_session: String,
 }
 
 /// Where PTY output bytes should be sent.
@@ -21,7 +31,7 @@ pub enum OutputSink {
     Channel(std::sync::mpsc::Sender<(String, Vec<u8>)>),
 }
 
-/// Returned from spawn so the frontend knows the pane's native size.
+/// Returned from spawn so the frontend knows the pane's native size at capture time.
 pub struct SpawnResult {
     pub native_cols: u16,
     pub native_rows: u16,
@@ -30,6 +40,8 @@ pub struct SpawnResult {
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
 }
+
+static VIEW_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn tmux(args: &[&str]) -> Result<String, String> {
     let out = Command::new("tmux")
@@ -43,62 +55,167 @@ fn tmux(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Decode tmux control-mode octal escapes: \NNN -> byte value
-fn decode_tmux_octal(s: &str) -> Vec<u8> {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' && i + 3 < bytes.len()
-            && bytes[i + 1].is_ascii_digit()
-            && bytes[i + 2].is_ascii_digit()
-            && bytes[i + 3].is_ascii_digit()
-        {
-            let val = (bytes[i + 1] - b'0') as u16 * 64
-                + (bytes[i + 2] - b'0') as u16 * 8
-                + (bytes[i + 3] - b'0') as u16;
-            out.push(val as u8);
-            i += 4;
-        } else if bytes[i] == b'\\' && i + 1 < bytes.len() && bytes[i + 1] == b'\\' {
-            out.push(b'\\');
-            i += 2;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
+// ---------------------------------------------------------------------------
+// Capture helpers
+// ---------------------------------------------------------------------------
+
+fn capture_session_name(group: &str) -> String {
+    format!("clawtab-{}", group)
+}
+
+/// Make sure the capture session exists. Creates it with a placeholder window
+/// if not present. The placeholder keeps the session alive when no panes are
+/// captured.
+fn ensure_capture_session(group: &str) -> Result<String, String> {
+    let session = capture_session_name(group);
+    let exists = Command::new("tmux")
+        .args(["has-session", "-t", &session])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !exists {
+        tmux(&[
+            "new-session", "-d", "-s", &session,
+            "-n", "__placeholder", "-x", "80", "-y", "24",
+            "sh", "-c", "while :; do sleep 3600; done",
+        ])?;
+        // Hide status bar for clients attaching to this session
+        let _ = tmux(&["set-option", "-t", &session, "status", "off"]);
     }
-    out
+    Ok(session)
 }
 
-/// Create a linked session with the target pane zoomed so resize-window
-/// controls that pane's dimensions exclusively.
-fn create_linked_session(pane_id: &str, real_session: &str, window_id: &str) -> Result<String, String> {
-    let event_key = pane_id.replace('%', "p");
-    let linked = format!("clawtab-view-{}", event_key);
-
-    let _ = tmux(&["kill-session", "-t", &linked]);
-    tmux(&["new-session", "-d", "-s", &linked, "-t", real_session])?;
-    let _ = tmux(&["set-option", "-s", "-t", &linked, "window-size", "manual"]);
-
-    // Select the window and zoom the target pane so it fills the window.
-    let linked_win = format!("{}:{}", linked, window_id);
-    let _ = tmux(&["select-window", "-t", &linked_win]);
-
-    let pane_index = tmux(&[
-        "display-message", "-t", &format!("{}:{}.{}", linked, window_id, pane_id),
-        "-p", "#{pane_index}",
-    ]).unwrap_or_default();
-
-    let zoom_target = if pane_index.is_empty() {
-        format!("{}:{}.{}", linked, window_id, pane_id)
+/// Returns Some((session, window_id)) if the pane is already in a clawtab capture session.
+fn find_captured_window(pane_id: &str) -> Option<(String, String)> {
+    let info = tmux(&[
+        "display-message", "-t", pane_id,
+        "-p", "#{session_name}\t#{window_id}",
+    ]).ok()?;
+    let parts: Vec<&str> = info.split('\t').collect();
+    if parts.len() == 2 && parts[0].starts_with("clawtab-") {
+        Some((parts[0].to_string(), parts[1].to_string()))
     } else {
-        format!("{}:{}.{}", linked, window_id, pane_index)
-    };
-    let _ = tmux(&["select-pane", "-t", &zoom_target]);
-    let _ = tmux(&["resize-pane", "-Z", "-t", &zoom_target]);
-
-    Ok(linked)
+        None
+    }
 }
+
+/// Break a pane into its own window inside the capture session for `group`.
+/// Records origin as a window option. Returns the new window id.
+/// Idempotent: if already captured, returns the existing window id.
+fn capture_pane(pane_id: &str, group: &str) -> Result<String, String> {
+    if let Some((_, win_id)) = find_captured_window(pane_id) {
+        return Ok(win_id);
+    }
+
+    let session = ensure_capture_session(group)?;
+
+    // Record origin BEFORE break-pane
+    let origin = tmux(&[
+        "display-message", "-t", pane_id,
+        "-p", "#{session_name}\t#{window_id}\t#{pane_index}\t#{window_name}",
+    ])?;
+
+    // break-pane moves the pane into a new window in the target session
+    tmux(&[
+        "break-pane", "-d",
+        "-s", pane_id,
+        "-t", &format!("{}:", session),
+    ])?;
+
+    // After break-pane, the pane_id is stable. Look up its new window.
+    let new_win = tmux(&[
+        "display-message", "-t", pane_id, "-p", "#{window_id}",
+    ])?;
+
+    // Store origin on the new window as a user option
+    let _ = tmux(&[
+        "set-option", "-w", "-t", &new_win,
+        "@clawtab-origin", &origin,
+    ]);
+
+    Ok(new_win)
+}
+
+/// Release a captured pane back to its original session:window.
+///
+/// If the original window still exists in the original session, the pane is
+/// joined back into it. If the original window is gone (because the pane was
+/// the last one in it when captured, and break-pane migrated the window_id),
+/// a new window with the original name is created in the original session.
+/// If the original session is also gone, a new session with the original name
+/// is created.
+fn release_captured_pane(pane_id: &str) -> Result<(), String> {
+    let (_, _cap_win) = find_captured_window(pane_id)
+        .ok_or("pane is not captured")?;
+
+    // Read origin from the current (captured) window of the pane.
+    let cap_win_now = tmux(&[
+        "display-message", "-t", pane_id, "-p", "#{window_id}",
+    ])?;
+    let origin = tmux(&[
+        "show-options", "-w", "-v", "-t", &cap_win_now, "@clawtab-origin",
+    ]).map_err(|e| format!("no origin recorded: {}", e))?;
+
+    let parts: Vec<&str> = origin.split('\t').collect();
+    if parts.len() < 2 {
+        return Err(format!("malformed origin: {}", origin));
+    }
+    let orig_session = parts[0];
+    let orig_window = parts[1];
+    let orig_window_name = parts.get(3).copied().unwrap_or("");
+
+    // Does the original session still exist?
+    let session_exists = Command::new("tmux")
+        .args(["has-session", "-t", orig_session])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !session_exists {
+        tmux(&[
+            "new-session", "-d", "-s", orig_session,
+            "-n", "__tmp", "sh", "-c", "while :; do sleep 3600; done",
+        ])?;
+        let name = if orig_window_name.is_empty() { "restored" } else { orig_window_name };
+        tmux(&[
+            "break-pane", "-d",
+            "-s", pane_id,
+            "-t", &format!("{}:", orig_session),
+            "-n", name,
+        ])?;
+        let _ = tmux(&["kill-window", "-t", &format!("{}:__tmp", orig_session)]);
+        return Ok(());
+    }
+
+    // Does the original window still belong to the original session?
+    // Note: @window_id is globally unique in tmux, but `display-message -t session:@id`
+    // resolves the window_id globally and ignores the session prefix. So we have to
+    // check session membership explicitly by listing the windows of orig_session.
+    let windows_in_session = tmux(&[
+        "list-windows", "-t", orig_session, "-F", "#{window_id}",
+    ]).unwrap_or_default();
+    let window_exists = windows_in_session.lines().any(|l| l.trim() == orig_window);
+
+    if window_exists {
+        tmux(&["join-pane", "-s", pane_id, "-t", orig_window])?;
+        if !orig_window_name.is_empty() {
+            let _ = tmux(&["rename-window", "-t", orig_window, orig_window_name]);
+        }
+    } else {
+        let name = if orig_window_name.is_empty() { "restored" } else { orig_window_name };
+        tmux(&[
+            "break-pane", "-d",
+            "-s", pane_id,
+            "-t", &format!("{}:", orig_session),
+            "-n", name,
+        ])?;
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// PtyManager
+// ---------------------------------------------------------------------------
 
 impl PtyManager {
     pub fn new() -> Self {
@@ -113,6 +230,7 @@ impl PtyManager {
         _tmux_session: &str,
         cols: u16,
         rows: u16,
+        group: &str,
         sink: OutputSink,
     ) -> Result<SpawnResult, String> {
         if self.sessions.contains_key(pane_id) {
@@ -120,152 +238,103 @@ impl PtyManager {
             let _ = self.destroy(pane_id);
         }
 
-        let event_key = pane_id.replace('%', "p");
-
-        let pane_info = tmux(&[
+        // Read the pane's native size before capture. After capture + resize we
+        // mutate it, so this captures the "original" view the user expected.
+        let native_info = tmux(&[
             "display-message", "-t", pane_id,
-            "-p", "#{pane_width} #{pane_height} #{session_name} #{window_id}",
+            "-p", "#{pane_width} #{pane_height}",
         ])?;
-        let parts: Vec<&str> = pane_info.split(' ').collect();
-        if parts.len() < 4 {
-            return Err(format!("Unexpected pane info: {}", pane_info));
-        }
-        let native_cols: u16 = parts[0].parse().unwrap_or(80);
-        let native_rows: u16 = parts[1].parse().unwrap_or(24);
-        let real_session = parts[2].to_string();
-        let window_id = parts[3].to_string();
+        let native_parts: Vec<&str> = native_info.split(' ').collect();
+        let native_cols: u16 = native_parts.first().and_then(|s| s.parse().ok()).unwrap_or(80);
+        let native_rows: u16 = native_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(24);
 
-        // Create linked session with pane zoomed for independent resize.
-        let linked = create_linked_session(pane_id, &real_session, &window_id)?;
+        // Capture the pane into our group's session (idempotent).
+        let window_id = capture_pane(pane_id, group)?;
+        let base_session = capture_session_name(group);
 
-        // Resize linked window to our viewport so the zoomed pane matches.
+        // Ephemeral grouped view session so this viewer has its own current-window.
+        let view_id = VIEW_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let view_session = format!("{}-view-{}", base_session, view_id);
+        tmux(&[
+            "new-session", "-d",
+            "-s", &view_session,
+            "-t", &base_session,
+        ])?;
+        let _ = tmux(&["set-option", "-t", &view_session, "status", "off"]);
+        tmux(&[
+            "select-window",
+            "-t", &format!("{}:{}", view_session, window_id),
+        ])?;
+
+        // Open a local PTY and spawn `tmux attach-session` inside it.
+        let pty_system = native_pty_system();
+        let pair = pty_system
+            .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .map_err(|e| format!("openpty: {}", e))?;
+
+        let mut cmd = CommandBuilder::new("tmux");
+        cmd.args(["attach-session", "-t", &view_session]);
+        cmd.env("TERM", "xterm-256color");
+
+        let _child = pair.slave
+            .spawn_command(cmd)
+            .map_err(|e| format!("tmux attach spawn: {}", e))?;
+        drop(pair.slave);
+
+        let mut reader = pair.master
+            .try_clone_reader()
+            .map_err(|e| format!("clone reader: {}", e))?;
+        let writer = pair.master
+            .take_writer()
+            .map_err(|e| format!("take writer: {}", e))?;
+        let writer = Arc::new(Mutex::new(writer));
+        let master = Arc::new(Mutex::new(pair.master));
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_clone = Arc::clone(&stop);
+        let event_key = pane_id.replace('%', "p");
+        let pane_id_for_thread = pane_id.to_string();
+
+        thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            loop {
+                if stop_clone.load(Ordering::Relaxed) { break; }
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let bytes = buf[..n].to_vec();
+                        match &sink {
+                            OutputSink::Tauri(app_handle) => {
+                                let _ = app_handle
+                                    .emit(&format!("pty-output-{}", event_key), bytes);
+                            }
+                            OutputSink::Channel(tx) => {
+                                let _ = tx.send((pane_id_for_thread.clone(), bytes));
+                            }
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            log::debug!("[pty {}] reader thread exited", event_key);
+        });
+
+        // Resize the captured window to match the viewport so content reflows.
         if cols > 0 && rows > 0 {
-            let target = format!("{}:{}", linked, window_id);
             let _ = tmux(&[
-                "resize-window", "-t", &target,
+                "resize-window", "-t", &window_id,
                 "-x", &cols.to_string(), "-y", &rows.to_string(),
             ]);
         }
 
-        let stop = Arc::new(Mutex::new(false));
-        let stop_clone = Arc::clone(&stop);
-        let ctrl_event_key = event_key.clone();
-        let ctrl_session = real_session.clone();
-        let pane_id_for_thread = pane_id.to_string();
-        thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
-
-            let mut child = match Command::new("tmux")
-                .args(["-C", "attach-session", "-t", &ctrl_session, "-r"])
-                .stdout(std::process::Stdio::piped())
-                .stdin(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-            {
-                Ok(c) => c,
-                Err(e) => {
-                    log::error!("[pty {}] control mode spawn failed: {}", ctrl_event_key, e);
-                    return;
-                }
-            };
-
-            let _stdin = child.stdin.take();
-            let stdout = match child.stdout.take() {
-                Some(s) => s,
-                None => {
-                    log::error!("[pty {}] no stdout", ctrl_event_key);
-                    return;
-                }
-            };
-
-            log::info!("[pty {}] control mode started for session {}", ctrl_event_key, ctrl_session);
-
-            let mut reader = BufReader::new(stdout);
-            let target_prefix = format!("%output {} ", pane_id_for_thread);
-            let target_bytes = target_prefix.as_bytes();
-
-            // Wait for control mode %begin/%end handshake.
-            let mut line_buf = Vec::with_capacity(8192);
-            let mut ready = false;
-            while !ready {
-                line_buf.clear();
-                match reader.read_until(b'\n', &mut line_buf) {
-                    Ok(0) => break,
-                    Err(_) => break,
-                    Ok(_) => {}
-                }
-                if line_buf.starts_with(b"%end") || line_buf.starts_with(b"%begin") {
-                    ready = true;
-                }
-                if line_buf.starts_with(b"%exit") { break; }
-            }
-
-            if ready {
-                log::info!("[pty {}] control mode ready, sending RIS + C-l", ctrl_event_key);
-
-                // RIS clears xterm.js before fresh content arrives.
-                let reset = b"\x1bc".to_vec();
-                match &sink {
-                    OutputSink::Tauri(app_handle) => {
-                        let _ = app_handle.emit(
-                            &format!("pty-output-{}", ctrl_event_key), reset);
-                    }
-                    OutputSink::Channel(tx) => {
-                        let _ = tx.send((pane_id_for_thread.clone(), reset));
-                    }
-                }
-
-                // C-l forces a full redraw at the (now resized) pane dimensions.
-                let _ = Command::new("tmux")
-                    .args(["send-keys", "-t", &pane_id_for_thread, "C-l"])
-                    .output();
-            }
-
-            loop {
-                if *stop_clone.lock().unwrap() { break; }
-
-                line_buf.clear();
-                match reader.read_until(b'\n', &mut line_buf) {
-                    Ok(0) => break,
-                    Err(_) => break,
-                    Ok(_) => {}
-                }
-
-                if line_buf.last() == Some(&b'\n') { line_buf.pop(); }
-                if line_buf.starts_with(b"%exit") { break; }
-                if !line_buf.starts_with(target_bytes) { continue; }
-
-                let raw = &line_buf[target_bytes.len()..];
-                let raw_str = match std::str::from_utf8(raw) {
-                    Ok(s) => s,
-                    Err(_) => continue,
-                };
-
-                let data = decode_tmux_octal(raw_str);
-                if data.is_empty() { continue; }
-
-                match &sink {
-                    OutputSink::Tauri(app_handle) => {
-                        let _ = app_handle
-                            .emit(&format!("pty-output-{}", ctrl_event_key), data);
-                    }
-                    OutputSink::Channel(tx) => {
-                        let _ = tx.send((pane_id_for_thread.clone(), data));
-                    }
-                }
-            }
-
-            drop(_stdin);
-            let _ = child.kill();
-            let _ = child.wait();
-        });
-
         self.sessions.insert(
             pane_id.to_string(),
             PaneViewer {
-                linked_session: linked,
-                window_id: window_id.clone(),
                 stop,
+                writer,
+                master,
+                window_id,
+                view_session,
             },
         );
 
@@ -273,60 +342,13 @@ impl PtyManager {
     }
 
     pub fn write(&mut self, pane_id: &str, data: &[u8]) -> Result<(), String> {
-        let _session = self
+        let viewer = self
             .sessions
             .get(pane_id)
             .ok_or_else(|| format!("No viewer for pane {}", pane_id))?;
-
-        let text = String::from_utf8_lossy(data);
-
-        let tmux_key = match text.as_ref() {
-            "\r" => Some("Enter"),
-            "\x7f" => Some("BSpace"),
-            "\x1b[A" => Some("Up"),
-            "\x1b[B" => Some("Down"),
-            "\x1b[C" => Some("Right"),
-            "\x1b[D" => Some("Left"),
-            "\x1b[H" => Some("Home"),
-            "\x1b[F" => Some("End"),
-            "\x1b[3~" => Some("DC"),
-            "\x1b[5~" => Some("PageUp"),
-            "\x1b[6~" => Some("PageDown"),
-            "\x1b" => Some("Escape"),
-            "\t" => Some("Tab"),
-            "\x01" => Some("C-a"),
-            "\x02" => Some("C-b"),
-            "\x03" => Some("C-c"),
-            "\x04" => Some("C-d"),
-            "\x05" => Some("C-e"),
-            "\x06" => Some("C-f"),
-            "\x0b" => Some("C-k"),
-            "\x0c" => Some("C-l"),
-            "\x0e" => Some("C-n"),
-            "\x10" => Some("C-p"),
-            "\x12" => Some("C-r"),
-            "\x15" => Some("C-u"),
-            "\x17" => Some("C-w"),
-            "\x1a" => Some("C-z"),
-            _ => None,
-        };
-
-        let output = if let Some(key) = tmux_key {
-            Command::new("tmux")
-                .args(["send-keys", "-t", pane_id, key])
-                .output()
-        } else {
-            Command::new("tmux")
-                .args(["send-keys", "-t", pane_id, "-l", &text])
-                .output()
-        };
-
-        let output = output.map_err(|e| format!("send-keys: {}", e))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("send-keys: {}", stderr.trim()));
-        }
-
+        viewer.writer.lock().unwrap()
+            .write_all(data)
+            .map_err(|e| format!("pty write: {}", e))?;
         Ok(())
     }
 
@@ -338,29 +360,33 @@ impl PtyManager {
         let viewer = self.sessions.get(pane_id)
             .ok_or_else(|| format!("No viewer for pane {}", pane_id))?;
 
-        let target = format!("{}:{}", viewer.linked_session, viewer.window_id);
+        viewer.master.lock().unwrap()
+            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .map_err(|e| format!("pty resize: {}", e))?;
+
         let _ = tmux(&[
-            "resize-window", "-t", &target,
+            "resize-window", "-t", &viewer.window_id,
             "-x", &cols.to_string(), "-y", &rows.to_string(),
         ]);
-
-        // C-l forces the app to redraw at the new size.
-        let _ = tmux(&["send-keys", "-t", pane_id, "C-l"]);
 
         Ok(())
     }
 
     pub fn destroy(&mut self, pane_id: &str) -> Result<(), String> {
         if let Some(viewer) = self.sessions.remove(pane_id) {
-            *viewer.stop.lock().unwrap() = true;
-
-            // Kill linked session (unzooms and restores original layout)
-            let _ = tmux(&["kill-session", "-t", &viewer.linked_session]);
-
-            // Let tmux auto-size the window again
-            let _ = tmux(&["resize-window", "-A", "-t", &viewer.window_id]);
+            viewer.stop.store(true, Ordering::Relaxed);
+            // Kill only the ephemeral view session. The captured window stays
+            // in clawtab-<group> so the user can re-attach or release later.
+            let _ = tmux(&["kill-session", "-t", &viewer.view_session]);
         }
         Ok(())
+    }
+
+    pub fn release(&mut self, pane_id: &str) -> Result<(), String> {
+        let _ = self.destroy(pane_id);
+        // Give tmux a moment for the PTY to detach before moving the pane.
+        thread::sleep(Duration::from_millis(100));
+        release_captured_pane(pane_id)
     }
 
     pub fn destroy_all(&mut self) {

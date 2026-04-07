@@ -18,16 +18,22 @@ pub fn pty_spawn(
     tmux_session: String,
     cols: u16,
     rows: u16,
+    group: String,
 ) -> Result<PtySpawnResult, String> {
     let result = state
         .pty_manager
         .lock()
         .unwrap()
-        .spawn(&pane_id, &tmux_session, cols, rows, crate::pty::OutputSink::Tauri(app))?;
+        .spawn(&pane_id, &tmux_session, cols, rows, &group, crate::pty::OutputSink::Tauri(app))?;
     Ok(PtySpawnResult {
         native_cols: result.native_cols,
         native_rows: result.native_rows,
     })
+}
+
+#[tauri::command]
+pub fn pty_release(state: State<AppState>, pane_id: String) -> Result<(), String> {
+    state.pty_manager.lock().unwrap().release(&pane_id)
 }
 
 #[tauri::command]

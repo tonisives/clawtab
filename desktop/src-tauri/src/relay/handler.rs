@@ -262,6 +262,7 @@ pub async fn handle_incoming(
             let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
             let result = pty_manager.lock().unwrap().spawn(
                 &pane_id, &tmux_session, cols as u16, rows as u16,
+                "default",
                 OutputSink::Channel(tx),
             );
             if result.is_ok() {

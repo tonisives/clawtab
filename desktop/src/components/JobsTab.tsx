@@ -739,6 +739,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           <XtermPane
             paneId={content.paneId}
             tmuxSession={content.tmuxSession}
+            group="default"
             onExit={() => split.handleClosePane(leafId)}
           />
         </div>

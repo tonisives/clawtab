@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -15,6 +15,7 @@ function eventKey(paneId: string): string {
 interface XtermPaneProps {
   paneId: string;
   tmuxSession: string;
+  group?: string;
   onExit?: () => void;
 }
 
@@ -23,8 +24,18 @@ interface PtySpawnResult {
   native_rows: number;
 }
 
-export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
+export function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const resolvedGroup = group ?? "default";
+
+  const handleRelease = useCallback(async () => {
+    try {
+      await invoke("pty_release", { paneId });
+    } catch (err) {
+      console.error("pty_release failed:", err);
+    }
+    onExit?.();
+  }, [paneId, onExit]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -116,10 +127,11 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
 
       if (cancelled) return;
 
-      // Spawn returns the pane's native dimensions. The backend immediately
-      // emits captured screen content via pty-output, so we see it instantly.
+      // Spawn captures the pane into clawtab-<group>, opens a local PTY
+      // running `tmux attach-session` on an ephemeral view session, and
+      // streams bytes via pty-output events.
       const result = await invoke<PtySpawnResult>("pty_spawn", {
-        paneId, tmuxSession, cols, rows,
+        paneId, tmuxSession, cols, rows, group: resolvedGroup,
       });
       spawned = true;
 
@@ -128,10 +140,8 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         return;
       }
 
-      // If our viewport differs from the pane's native size, the ResizeObserver
-      // will trigger pty_resize which lazily creates a linked session and
-      // resizes it. The app then reflows at our viewport size.
-      // Log if sizes differ for debugging.
+      // Backend reflows the captured window directly on resize. If viewport
+      // differs from native size, ResizeObserver will trigger pty_resize.
       if (result.native_cols !== cols || result.native_rows !== rows) {
         console.log(
           `[XtermPane] native ${result.native_cols}x${result.native_rows}, viewport ${cols}x${rows} - resize will trigger reflow`
@@ -151,9 +161,6 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         resizeTimer = setTimeout(() => {
           prevCols = t.cols;
           prevRows = t.rows;
-          // Reset xterm.js before resize output arrives to prevent
-          // old content mixing with new reflow output.
-          t.write("\x1bc");
           invoke("pty_resize", {
             paneId,
             cols: t.cols,
@@ -212,16 +219,41 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
         invoke("pty_destroy", { paneId }).catch(() => {});
       }
     };
-  }, [paneId, tmuxSession]);
+  }, [paneId, tmuxSession, resolvedGroup]);
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        flex: 1,
-        minHeight: 0,
-        overflow: "hidden",
-      }}
-    />
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          padding: "4px 8px",
+          background: "#232325",
+          borderBottom: "1px solid #333",
+        }}
+      >
+        <button
+          onClick={handleRelease}
+          style={{
+            background: "#444",
+            color: "#e4e4e4",
+            border: "1px solid #555",
+            padding: "2px 10px",
+            borderRadius: 4,
+            fontSize: 11,
+            cursor: "pointer",
+          }}
+        >
+          Release
+        </button>
+      </div>
+      <div
+        ref={containerRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: "hidden",
+        }}
+      />
+    </div>
   );
 }

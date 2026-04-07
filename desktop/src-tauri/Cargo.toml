@@ -49,6 +49,7 @@ gethostname = "1"
 base64 = "0.22"
 libc = "0.2"
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+portable-pty = "0.8"
 
 [lints.rust]
 warnings = "deny"
