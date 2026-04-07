@@ -3,8 +3,64 @@ import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { AppSettings } from "../types";
 import { ToolsPanel } from "./ToolsPanel";
+import { TelegramPanel } from "./TelegramPanel";
+import { RelayPanel } from "./RelayPanel";
+import { ShortcutsPanel } from "./ShortcutsPanel";
 
-export function GeneralSettings() {
+export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts";
+
+interface Props {
+  activeSubTab: SettingsSubTab;
+  onSubTabChange: (tab: SettingsSubTab) => void;
+  externalAccessToken: string | null;
+  externalRefreshToken: string | null;
+  onExternalTokenConsumed: () => void;
+}
+
+const subTabs: { id: SettingsSubTab; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "remote", label: "Remote" },
+  { id: "telegram", label: "Telegram" },
+  { id: "shortcuts", label: "Shortcuts" },
+];
+
+export function GeneralSettings({
+  activeSubTab,
+  onSubTabChange,
+  externalAccessToken,
+  externalRefreshToken,
+  onExternalTokenConsumed,
+}: Props) {
+  return (
+    <div className="settings-with-subtabs">
+      <div className="settings-subtab-bar">
+        {subTabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`settings-subtab ${activeSubTab === tab.id ? "active" : ""}`}
+            onClick={() => onSubTabChange(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="settings-subtab-content">
+        {activeSubTab === "general" && <GeneralSettingsContent />}
+        {activeSubTab === "remote" && (
+          <RelayPanel
+            externalAccessToken={externalAccessToken}
+            externalRefreshToken={externalRefreshToken}
+            onExternalTokenConsumed={onExternalTokenConsumed}
+          />
+        )}
+        {activeSubTab === "telegram" && <TelegramPanel />}
+        {activeSubTab === "shortcuts" && <ShortcutsPanel />}
+      </div>
+    </div>
+  );
+}
+
+function GeneralSettingsContent() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [showToolsModal, setShowToolsModal] = useState(false);
   const toolsOverlayRef = useRef<HTMLDivElement>(null);
@@ -30,6 +86,24 @@ export function GeneralSettings() {
       await invoke("set_settings", { newSettings });
     } catch (e) {
       console.error("Failed to save settings:", e);
+    }
+  };
+
+  const toggleDock = async (visible: boolean) => {
+    await update({ show_in_dock: visible });
+    try {
+      await invoke("set_dock_visibility", { visible });
+    } catch (e) {
+      console.error("Failed to set dock visibility:", e);
+    }
+  };
+
+  const toggleTitlebar = async (hidden: boolean) => {
+    await update({ hide_titlebar: hidden });
+    try {
+      await invoke("set_titlebar_visibility", { hidden });
+    } catch (e) {
+      console.error("Failed to set titlebar visibility:", e);
     }
   };
 
@@ -71,6 +145,32 @@ export function GeneralSettings() {
       <h2>General Settings</h2>
 
       <div className="field-group">
+        <span className="field-group-title">Appearance</span>
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.show_in_dock}
+              onChange={(e) => toggleDock(e.target.checked)}
+            />
+            Show in Dock
+          </label>
+          <span className="hint">When disabled, ClawTab runs as a menu bar-only app</span>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.hide_titlebar}
+              onChange={(e) => toggleTitlebar(e.target.checked)}
+            />
+            Hide Title Bar
+          </label>
+          <span className="hint">Uses overlay style with native traffic light buttons</span>
+        </div>
+      </div>
+
+      <div className="field-group">
         <span className="field-group-title">About</span>
         <div className="form-group">
           <label>Version</label>
@@ -95,7 +195,7 @@ export function GeneralSettings() {
             )}
             {updateStatus === "installed" && (
               <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                v{updateVersion} installed --{" "}
+                v{updateVersion} installed -{" "}
                 <button
                   className="btn btn-sm"
                   onClick={() => invoke("restart_app")}

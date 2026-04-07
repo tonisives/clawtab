@@ -90,6 +90,8 @@ export interface AppSettings {
   group_order: string[];
   hidden_groups: string[];
   relay: RelaySettings | null;
+  show_in_dock: boolean;
+  hide_titlebar: boolean;
 }
 
 export interface ToolInfo {

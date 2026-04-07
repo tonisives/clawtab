@@ -45,10 +45,13 @@ interface JobsTabProps {
   importCwtKey?: number;
   pendingPaneId?: string | null;
   onPaneHandled?: () => void;
+  navBar?: React.ReactNode;
+  rightPanelOverlay?: React.ReactNode;
+  onJobSelected?: () => void;
 }
 
-export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled }: JobsTabProps) {
-  const core = useJobsCore(transport);
+export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected }: JobsTabProps) {
+  const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
@@ -106,18 +109,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     setViewingProcess(null);
     setViewingAgent(false);
     setViewingJob(job as Job);
-  }, []);
+    onJobSelected?.();
+  }, [onJobSelected]);
 
   const handleSelectProcessDirect = useCallback((process: ClaudeProcess) => {
     setViewingJob(null);
     if (process.cwd.endsWith("/clawtab/agent")) {
       setViewingProcess(null);
       setViewingAgent(true);
+      onJobSelected?.();
       return;
     }
     setViewingAgent(false);
     setViewingProcess(process);
-  }, []);
+    onJobSelected?.();
+  }, [onJobSelected]);
 
   // Compute current single-pane content for the split tree hook
   const currentContent: PaneContent | null = useMemo(() => {
@@ -723,7 +729,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
         <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => split.handleClosePane(leafId)} onOpen={() => handleOpen("agent")} showBackButton={false} />
+          onBack={() => split.handleClosePane(leafId)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath />
       );
     }
 
@@ -753,7 +759,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
             else autoYes.handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
           }}
-          showBackButton={false}
+          showBackButton={!isWide} hidePath
           onStopped={() => {
             setStoppingProcesses((prev) => [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }]);
             split.handleClosePane(leafId);
@@ -784,7 +790,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         onDuplicateToFolder={() => handleDuplicateToFolder(job)}
         onDelete={() => { split.handleClosePane(leafId); actions.deleteJob(job.slug); core.reload(); }}
         groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
-        showBackButton={false}
+        showBackButton={!isWide} hidePath
         options={jobQuestion?.options}
         questionContext={jobQuestion?.context_lines}
         {...buildJobPaneActions(job, jobQuestion)}
@@ -851,7 +857,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
         <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => setViewingAgent(false)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} />
+          onBack={() => setViewingAgent(false)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath />
       );
     }
 
@@ -880,7 +886,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
               else autoYes.handleToggleAutoYesByPaneId(viewingProcess.pane_id, viewingProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
             }}
-            showBackButton={!isWide}
+            showBackButton={!isWide} hidePath
             onStopped={() => {
               setStoppingProcesses((prev) => [...prev, { process: { ...viewingProcess, _transient_state: "stopping" }, stoppedAt: Date.now() }]);
               selectAdjacentItem(viewingProcess.pane_id);
@@ -919,7 +925,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onDuplicateToFolder={() => handleDuplicateToFolder(viewingJob)}
             onDelete={() => { const slug = viewingJob.slug; selectAdjacentItem(slug); actions.deleteJob(slug); core.reload(); }}
             groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
-            showBackButton={!isWide}
+            showBackButton={!isWide} hidePath
             options={jobQuestion?.options}
             questionContext={jobQuestion?.context_lines}
             {...buildJobPaneActions(viewingJob, jobQuestion)}
@@ -1150,10 +1156,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       <div style={{ display: isMainVisible ? undefined : "none", height: "100%" }}>
         {!isWide ? (
           (viewingAgent || pendingAgentWorkDir || viewingProcess || viewingJob) ? (
-            <div style={{ margin: -20, height: "calc(100vh - 42px)", overflow: "hidden", display: "flex", flexDirection: "column" }}>{detailPane}{dialogs}</div>
+            <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>{navBar}{detailPane}{dialogs}</div>
           ) : (
-            <div className="settings-section">
-              <div className="section-header"><h2>Jobs</h2></div>
+            <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              {navBar}
               {jobListView}
               {dialogs}
             </div>
@@ -1166,16 +1172,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onDragEnd={split.handleDragEnd}
             onDragCancel={split.handleDragCancel}
           >
-            <div style={{ display: "flex", flexDirection: "row", height: "calc(100vh - 42px - 3px)", margin: "-17px -20px -20px -20px", overflow: "hidden" }}>
+            <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
               {!sidebarCollapsed && (
                 <>
                   <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                    {navBar}
                     {jobListView}
                   </div>
                   <div onMouseDown={onResizeHandleMouseDown} style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }} />
                 </>
               )}
-              <div ref={split.detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)" }}>
+              <div ref={split.detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", position: "relative" }}>
                 <SplitDetailArea
                   tree={split.tree}
                   renderLeaf={renderLeaf}
@@ -1188,6 +1195,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                   emptyContent={detailPane}
                   overlay={dropOverlay}
                 />
+                {rightPanelOverlay}
               </div>
               {dialogs}
             </div>

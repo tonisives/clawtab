@@ -47,6 +47,7 @@ export function DetectedProcessDetail({
   autoYesActive,
   onToggleAutoYes,
   showBackButton = false,
+  hidePath = false,
   onStopped,
   onFork,
   onSplitPane,
@@ -60,6 +61,7 @@ export function DetectedProcessDetail({
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
   showBackButton?: boolean;
+  hidePath?: boolean;
   onStopped?: () => void;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
@@ -140,6 +142,7 @@ export function DetectedProcessDetail({
       runsLoading={false}
       onBack={onBack}
       showBackButton={showBackButton}
+      hidePath={hidePath}
       onOpen={handleOpen}
       hideRuns
       expandOutput

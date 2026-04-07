@@ -22,9 +22,10 @@
         "url": "/settings.html",
         "width": 900,
         "height": 700,
-        "visible": false,
+        "visible": true,
         "center": true,
-        "title": "ClawTab"
+        "title": "",
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {

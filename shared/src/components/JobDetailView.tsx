@@ -49,6 +49,8 @@ export interface JobDetailViewProps {
   onDuplicateToFolder?: () => void;
   // Hide the back arrow (e.g. when the platform already provides a nav back button)
   showBackButton?: boolean;
+  // Hide the path/breadcrumb row at the top of the detail view
+  hidePath?: boolean;
   // Auto-expand a specific run by ID (e.g. from notification deep link)
   expandRunId?: string;
   // Slot for platform-specific content (e.g. desktop configuration sections)
@@ -104,6 +106,7 @@ export function JobDetailView({
   currentGroup,
   onDuplicateToFolder,
   showBackButton = true,
+  hidePath = false,
   expandRunId,
   extraContent,
   options: optionsProp,
@@ -549,7 +552,7 @@ export function JobDetailView({
   if (expandOutput && (isRunning || isPaused)) {
     return (
       <View style={[styles.container, containerStyle]}>
-        {pathDisplay ? (
+        {!hidePath && pathDisplay ? (
           <View style={styles.pathRow}>
             <Text style={styles.pathText} numberOfLines={1}>
               {pathDisplay}
@@ -599,7 +602,7 @@ export function JobDetailView({
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {pathDisplay ? (
+      {!hidePath && pathDisplay ? (
         <View style={styles.pathRow}>
           <Text style={styles.pathText} numberOfLines={1}>
             {pathDisplay}

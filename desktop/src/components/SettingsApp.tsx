@@ -7,16 +7,14 @@ import { JobsTab } from "./JobsTab";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
-import { TelegramPanel } from "./TelegramPanel";
-import { RelayPanel } from "./RelayPanel";
-import { ShortcutsPanel } from "./ShortcutsPanel";
+import type { SettingsSubTab } from "./GeneralSettings";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "secrets" | "skills" | "telegram" | "remote" | "shortcuts" | "settings";
+type TabId = "jobs" | "secrets" | "skills" | "settings";
 
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
@@ -24,14 +22,14 @@ const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 const tabIcons: Record<TabId, React.ReactNode> = {
   // clock (SF: clock)
   jobs: (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10" />
       <path d="M12 6v6l4 2" />
     </svg>
   ),
   // lock.shield (SF: lock.shield)
   secrets: (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.25C17.25 22.15 21 17.25 21 12V7L12 2z" />
       <path d="M12 11a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" />
       <path d="M12 11v3" />
@@ -39,35 +37,12 @@ const tabIcons: Record<TabId, React.ReactNode> = {
   ),
   // book (SF: book)
   skills: (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
     </svg>
   ),
-  // paperplane (SF: paperplane)
-  telegram: (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 2L11 13" />
-      <path d="M22 2L15 22l-4-9-9-4 20-7z" />
-    </svg>
-  ),
-  // antenna.radiowaves.left.and.right (SF: remote access)
-  remote: (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-      <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-      <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-      <line x1="12" x2="12.01" y1="20" y2="20" />
-    </svg>
-  ),
-  // keyboard (SF: keyboard)
-  shortcuts: (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="4" width="20" height="16" rx="2" />
-      <path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8" />
-    </svg>
-  ),
   // gearshape (SF: gearshape)
-  settings: <GearIcon />,
+  settings: <GearIcon size={14} />,
 };
 
 export function SettingsApp() {
@@ -81,6 +56,7 @@ export function SettingsApp() {
   const [authCallbackRefreshToken, setAuthCallbackRefreshToken] = useState<string | null>(null);
   const [importCwtKey, setImportCwtKey] = useState(0);
   const [pendingPaneId, setPendingPaneId] = useState<string | null>(null);
+  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>("general");
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -135,7 +111,8 @@ export function SettingsApp() {
         const refreshTokenVal = params.get("refresh_token");
         const error = params.get("error");
         console.log("auth callback:", { accessToken: !!accessToken, error });
-        setActiveTab("remote");
+        setActiveTab("settings");
+        setSettingsSubTab("remote");
         if (accessToken) {
           setAuthCallbackToken(accessToken);
           if (refreshTokenVal) {
@@ -193,76 +170,103 @@ export function SettingsApp() {
   }
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: "jobs", label: "Jobs" },
     { id: "secrets", label: "Secrets" },
     { id: "skills", label: "Skills" },
-    { id: "telegram", label: "Telegram" },
-    { id: "remote", label: "Remote" },
-    { id: "shortcuts", label: "Shortcuts" },
     { id: "settings", label: "Settings" },
   ];
 
+  const navBar = (
+    <div className="nav-bar" data-tauri-drag-region>
+      <button
+        className="add-job-btn"
+        onClick={() => {
+          setActiveTab("jobs");
+          setCreateJobKey((k) => k + 1);
+        }}
+        title="Add job"
+      >
+        <span style={{ position: 'relative', top: -1, fontSize: 14 }}>+</span>
+      </button>
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          className={`tab ${activeTab === tab.id ? "active" : ""}`}
+          onClick={() => {
+            if (tab.id === "jobs" && activeTab === "jobs") {
+              setJobsResetKey((k) => k + 1);
+            }
+            setActiveTab(tab.id);
+          }}
+          title={tab.label}
+        >
+          <span className="tab-icon">{tabIcons[tab.id]}</span>
+        </button>
+      ))}
+      <button
+        className="claw-icon-btn"
+        onClick={() => openUrl("https://clawtab.cc")}
+        title="Open ClawTab website"
+      >
+        <img src={clawIcon} alt="ClawTab" width={18} height={18} style={{ borderRadius: 3 }} />
+      </button>
+    </div>
+  );
+
+  const panelClose = (
+    <button
+      className="panel-close-btn"
+      onClick={() => setActiveTab("jobs")}
+      title="Close panel"
+    >
+      <svg width={14} height={14} viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+        <path d="M2 2l10 10M12 2L2 12" />
+      </svg>
+    </button>
+  );
+
+  const renderPanel = (id: TabId, label: string, content: React.ReactNode) => (
+    <div key={id} style={{ display: activeTab === id ? "flex" : "none", flexDirection: "column", flex: 1, position: "absolute", inset: 0, background: "var(--bg-secondary)", zIndex: 1 }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "12px 20px 0", flexShrink: 0 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{label}</span>
+        {panelClose}
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: "12px 20px 20px" }}>
+        {content}
+      </div>
+    </div>
+  );
+
+  const rightPanelOverlay = (
+    <>
+      {renderPanel("secrets", "Secrets", <SecretsPanel />)}
+      {renderPanel("skills", "Skills", <SkillsPanel />)}
+      {renderPanel("settings", "Settings",
+        <GeneralSettings
+          activeSubTab={settingsSubTab}
+          onSubTabChange={setSettingsSubTab}
+          externalAccessToken={authCallbackToken}
+          externalRefreshToken={authCallbackRefreshToken}
+          onExternalTokenConsumed={() => { setAuthCallbackToken(null); setAuthCallbackRefreshToken(null); }}
+        />
+      )}
+    </>
+  );
+
   return (
     <div className="settings-container">
-      <div className="tabs">
-        <button
-          className="add-job-btn"
-          onClick={() => {
-            setActiveTab("jobs");
-            setCreateJobKey((k) => k + 1);
-          }}
-          title="Add job"
-        >
-          <span style={{ position: 'relative', top: -1 }}>+</span>
-        </button>
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`tab ${activeTab === tab.id ? "active" : ""}`}
-            onClick={() => {
-              if (tab.id === "jobs" && activeTab === "jobs") {
-                setJobsResetKey((k) => k + 1);
-              }
-              setActiveTab(tab.id);
-            }}
-          >
-            <span className="tab-icon">{tabIcons[tab.id]}</span>
-            {tab.label}
-          </button>
-        ))}
-        <button
-          className="claw-icon-btn"
-          onClick={() => openUrl("https://clawtab.cc")}
-          title="Open ClawTab website"
-        >
-          <img src={clawIcon} alt="ClawTab" width={28} height={28} style={{ borderRadius: 6 }} />
-        </button>
-      </div>
-
       <div className="tab-content">
-        <div style={{ display: activeTab === "jobs" ? undefined : "none" }}>
-          <JobsTab
-            key={jobsResetKey}
-            pendingTemplateId={pendingTemplateId}
-            onTemplateHandled={() => setPendingTemplateId(null)}
-            createJobKey={createJobKey}
-            importCwtKey={importCwtKey}
-            pendingPaneId={pendingPaneId}
-            onPaneHandled={() => setPendingPaneId(null)}
-          />
-        </div>
-        {activeTab === "secrets" && <SecretsPanel />}
-        {activeTab === "skills" && <SkillsPanel />}
-        {activeTab === "telegram" && <TelegramPanel />}
-        {activeTab === "remote" && (
-          <RelayPanel
-            externalAccessToken={authCallbackToken}
-            externalRefreshToken={authCallbackRefreshToken}
-            onExternalTokenConsumed={() => { setAuthCallbackToken(null); setAuthCallbackRefreshToken(null); }}
-          />
-        )}
-        {activeTab === "shortcuts" && <ShortcutsPanel />}
-        {activeTab === "settings" && <GeneralSettings />}
+        <JobsTab
+          key={jobsResetKey}
+          pendingTemplateId={pendingTemplateId}
+          onTemplateHandled={() => setPendingTemplateId(null)}
+          createJobKey={createJobKey}
+          importCwtKey={importCwtKey}
+          pendingPaneId={pendingPaneId}
+          onPaneHandled={() => setPendingPaneId(null)}
+          navBar={navBar}
+          rightPanelOverlay={rightPanelOverlay}
+          onJobSelected={() => setActiveTab("jobs")}
+        />
       </div>
     </div>
   );

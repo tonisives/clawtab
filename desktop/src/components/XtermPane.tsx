@@ -139,18 +139,27 @@ export function XtermPane({ paneId, tmuxSession, onExit }: XtermPaneProps) {
       }
 
       // Resize the tmux pane when the container changes size.
-      // Debounced to avoid spamming tmux resize-window during drag.
+      // Debounced to avoid spamming during drag. Skip no-op resizes
+      // (spawn already resized to viewport dimensions).
       let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+      let prevCols = cols;
+      let prevRows = rows;
       observer = new ResizeObserver(() => {
         fit.fit();
+        if (t.cols === prevCols && t.rows === prevRows) return;
         if (resizeTimer) clearTimeout(resizeTimer);
         resizeTimer = setTimeout(() => {
+          prevCols = t.cols;
+          prevRows = t.rows;
+          // Reset xterm.js before resize output arrives to prevent
+          // old content mixing with new reflow output.
+          t.write("\x1bc");
           invoke("pty_resize", {
             paneId,
             cols: t.cols,
             rows: t.rows,
           }).catch(() => {});
-        }, 80);
+        }, 150);
       });
       observer.observe(el);
 

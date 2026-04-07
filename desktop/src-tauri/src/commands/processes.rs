@@ -33,7 +33,50 @@ fn is_semver(s: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProcess>, String> {
+pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<ClaudeProcess>, String> {
+    // Snapshot shared state under the lock, then release before spawning blocking work
+    let tracked_panes: HashSet<String> = {
+        let statuses = state.job_status.lock().unwrap();
+        statuses
+            .iter()
+            .filter(|(name, _)| !name.starts_with("agent"))
+            .filter_map(|(_, s)| match s {
+                JobStatus::Running { pane_id: Some(pid), .. } => Some(pid.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+
+    let match_entries: Vec<(String, String, String)> = {
+        let config = state.jobs_config.lock().unwrap();
+        config
+            .jobs
+            .iter()
+            .filter_map(|job| {
+                if let Some(ref fp) = job.folder_path {
+                    let root = fp.as_str();
+                    Some((root.to_string(), job.group.clone(), job.name.clone()))
+                } else if let Some(ref wd) = job.work_dir {
+                    Some((wd.clone(), job.group.clone(), job.name.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
+    // Run all subprocess-heavy work off the async runtime
+    tokio::task::spawn_blocking(move || {
+        detect_claude_processes_blocking(tracked_panes, match_entries)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {}", e))?
+}
+
+fn detect_claude_processes_blocking(
+    tracked_panes: HashSet<String>,
+    match_entries: Vec<(String, String, String)>,
+) -> Result<Vec<ClaudeProcess>, String> {
     let output = Command::new("tmux")
         .args([
             "list-panes",
@@ -56,40 +99,6 @@ pub fn detect_claude_processes(state: State<AppState>) -> Result<Vec<ClaudeProce
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Collect tracked pane_ids from job_status Running entries.
-    // Exclude agent jobs so their panes appear as detected processes
-    // (AgentSection / group matching needs the ClaudeProcess to render).
-    let tracked_panes: HashSet<String> = {
-        let statuses = state.job_status.lock().unwrap();
-        statuses
-            .iter()
-            .filter(|(name, _)| !name.starts_with("agent"))
-            .filter_map(|(_, s)| match s {
-                JobStatus::Running { pane_id: Some(pid), .. } => Some(pid.clone()),
-                _ => None,
-            })
-            .collect()
-    };
-
-    // Build matching table from configured jobs: (project_root, group, job_name)
-    let match_entries: Vec<(String, String, String)> = {
-        let config = state.jobs_config.lock().unwrap();
-        config
-            .jobs
-            .iter()
-            .filter_map(|job| {
-                if let Some(ref fp) = job.folder_path {
-                    let root = fp.as_str();
-                    Some((root.to_string(), job.group.clone(), job.name.clone()))
-                } else if let Some(ref wd) = job.work_dir {
-                    Some((wd.clone(), job.group.clone(), job.name.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    };
 
     let mut seen_panes = HashSet::new();
     let mut results = Vec::new();

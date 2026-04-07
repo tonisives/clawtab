@@ -376,6 +376,7 @@ export function DesktopJobDetail({
   firstQuery,
   lastQuery,
   showBackButton = false,
+  hidePath = false,
   onFork,
   onSplitPane,
   onInjectSecrets,
@@ -394,6 +395,7 @@ export function DesktopJobDetail({
   onDelete: () => void;
   groups: string[];
   showBackButton?: boolean;
+  hidePath?: boolean;
   options?: { number: string; label: string }[];
   questionContext?: string;
   autoYesActive?: boolean;
@@ -443,6 +445,7 @@ export function DesktopJobDetail({
         runsLoading={!runs}
         onBack={onBack}
         showBackButton={showBackButton}
+        hidePath={hidePath}
         onReloadRuns={reloadRuns}
         onEdit={onEdit}
         onOpen={onOpen}
@@ -488,6 +491,7 @@ export function AgentDetail({
   onBack,
   onOpen,
   showBackButton = false,
+  hidePath = false,
 }: {
   transport: Transport;
   job: RemoteJob;
@@ -495,6 +499,7 @@ export function AgentDetail({
   onBack: () => void;
   onOpen: () => void;
   showBackButton?: boolean;
+  hidePath?: boolean;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, "agent");
   const { logs } = useLogBuffer(transport, "agent");
@@ -513,6 +518,7 @@ export function AgentDetail({
       runs={runs}
       onBack={onBack}
       showBackButton={showBackButton}
+      hidePath={hidePath}
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
       extraContent={extraContent}

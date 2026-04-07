@@ -53,11 +53,6 @@ pub fn pty_resize(
 }
 
 #[tauri::command]
-pub fn pty_restore_size(state: State<AppState>, pane_id: String) -> Result<(), String> {
-    state.pty_manager.lock().unwrap().restore_size(&pane_id)
-}
-
-#[tauri::command]
 pub fn pty_destroy(state: State<AppState>, pane_id: String) -> Result<(), String> {
     state.pty_manager.lock().unwrap().destroy(&pane_id)
 }

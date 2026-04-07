@@ -486,6 +486,8 @@ pub fn run() {
             commands::browser::check_browser_session,
             commands::browser::clear_browser_session,
             commands::browser::check_playwright_installed,
+            commands::settings::set_dock_visibility,
+            commands::settings::set_titlebar_visibility,
             commands::updater::get_version,
             commands::updater::check_for_update,
             commands::updater::restart_app,
@@ -517,12 +519,27 @@ pub fn run() {
             commands::pty::pty_spawn,
             commands::pty::pty_write,
             commands::pty::pty_resize,
-            commands::pty::pty_restore_size,
             commands::pty::pty_destroy,
         ])
         .setup(move |app| {
+            // Show in Dock by default; if user disabled it, switch to Accessory (tray-only)
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            {
+                let state = app.state::<AppState>();
+                let settings = state.settings.lock().unwrap();
+                let show = settings.show_in_dock;
+                let hide_titlebar = settings.hide_titlebar;
+                drop(settings);
+                if !show {
+                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                }
+                // Config defaults to Overlay; restore Visible if user disabled it
+                if !hide_titlebar {
+                    if let Some(window) = app.get_webview_window("settings") {
+                        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Visible);
+                    }
+                }
+            }
 
             // Set app handle for IPC
             *ipc_app_handle.lock().unwrap() = Some(app.handle().clone());
@@ -628,7 +645,12 @@ pub fn run() {
                         api.prevent_close();
                         let _ = window.hide();
                         #[cfg(target_os = "macos")]
-                        let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                        {
+                            let show = app_handle.state::<AppState>().settings.lock().unwrap().show_in_dock;
+                            if !show {
+                                let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                            }
+                        }
                     }
                 });
             }

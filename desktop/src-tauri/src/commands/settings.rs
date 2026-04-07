@@ -80,6 +80,37 @@ pub fn get_hostname() -> String {
 }
 
 #[tauri::command]
+pub fn set_dock_visibility(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
+        let _ = app.set_activation_policy(policy);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_titlebar_visibility(app: tauri::AppHandle, hidden: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::TitleBarStyle;
+        if let Some(window) = app.get_webview_window("settings") {
+            let style = if hidden {
+                TitleBarStyle::Overlay
+            } else {
+                TitleBarStyle::Visible
+            };
+            window.set_title_bar_style(style).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn open_logs_folder() -> Result<(), String> {
     let dir = Path::new(LOG_DIR);
     let _ = fs::create_dir_all(dir);
