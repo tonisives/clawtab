@@ -1106,6 +1106,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   return (
     <>
+      {navBar}
       {/* Editor view - always in tree, hidden via display */}
       <div style={{ display: isEditorVisible ? undefined : "none", height: "100%" }}>
         {saveError && (
@@ -1156,10 +1157,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       <div style={{ display: isMainVisible ? undefined : "none", height: "100%" }}>
         {!isWide ? (
           (viewingAgent || pendingAgentWorkDir || viewingProcess || viewingJob) ? (
-            <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>{navBar}{detailPane}{dialogs}</div>
+            <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <div style={{ height: 28, flexShrink: 0 }} />
+              {detailPane}
+              {dialogs}
+            </div>
           ) : (
             <div style={{ height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              {navBar}
+              <div style={{ height: 28, flexShrink: 0 }} />
               {jobListView}
               {dialogs}
             </div>
@@ -1176,7 +1181,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               {!sidebarCollapsed && (
                 <>
                   <div style={{ width: listWidth, minWidth: 260, maxWidth: 600, borderRight: "1px solid var(--border-light)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                    {navBar}
+                    <div style={{ height: 28, flexShrink: 0 }} />
                     {jobListView}
                   </div>
                   <div onMouseDown={onResizeHandleMouseDown} style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }} />
