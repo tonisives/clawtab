@@ -94,6 +94,15 @@ function contentEquals(a: PaneContent, b: PaneContent): boolean {
   return contentKey(a) === contentKey(b);
 }
 
+function createVirtualRoot(content: PaneContent | null): SplitNode {
+  return {
+    type: "leaf",
+    id: "_root",
+    // Placeholder content is only used for overlay geometry when the detail pane is empty.
+    content: content ?? { kind: "agent" },
+  };
+}
+
 export function useSplitTree(options: UseSplitTreeOptions) {
   const {
     storageKey,
@@ -167,19 +176,18 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       return;
     }
 
-    // If no tree, create a synthetic single-leaf for initial drop zone computation
     const tree = splitTreeRef.current;
     const cc = currentContentRef.current;
-    const effectiveTree = tree ?? (cc
-      ? { type: "leaf" as const, id: "_root", content: cc }
-      : null);
+    const effectiveTree = tree ?? (cc ? createVirtualRoot(cc) : null);
 
     const relX = px - rect.left;
     const relY = py - rect.top;
-    const zone = computeDropZone(
-      relX, relY, rect.width, rect.height,
-      effectiveTree, minPaneSize,
-    );
+    const zone: DropZoneId | null = !tree && !cc
+      ? { action: "replace", leafId: "_root" }
+      : computeDropZone(
+        relX, relY, rect.width, rect.height,
+        effectiveTree, minPaneSize,
+      );
     // DEBUG
     if (Math.random() < 0.05) {
       console.log('[drag]', {
@@ -376,10 +384,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
   // Effective tree for overlay (includes virtual root when no tree)
   const effectiveTreeForOverlay = useMemo(() => {
     if (splitTree) return splitTree;
-    if (currentContent) {
-      return { type: "leaf" as const, id: "_root", content: currentContent };
-    }
-    return null;
+    return createVirtualRoot(currentContent);
   }, [splitTree, currentContent]);
 
   return {

@@ -31,6 +31,8 @@ export interface NotificationSectionProps {
   autoAnsweredIds?: Set<string>;
   /** Override the auto-reset delay (ms) for the "Sent" indicator on cards */
   answerResetMs?: number;
+  /** Optional wrapper for active question cards (for drag handles, etc.) */
+  wrapQuestionCard?: (question: ClaudeQuestion, card: React.ReactNode) => React.ReactNode;
 }
 
 interface DepartingQuestion {
@@ -50,6 +52,7 @@ export function NotificationSection({
   onToggleAutoYes,
   autoAnsweredIds,
   answerResetMs,
+  wrapQuestionCard,
 }: NotificationSectionProps) {
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -372,6 +375,7 @@ export function NotificationSection({
         answerResetMs={answerResetMs}
       />
     );
+    const wrapped = wrapQuestionCard ? wrapQuestionCard(q, inner) : inner;
 
     if (isWeb) {
       const isEntering = entering.has(q.question_id);
@@ -388,7 +392,7 @@ export function NotificationSection({
               transform: isEntering ? "translateX(-200px) scale(0.9)" : "translateX(0) scale(1)",
             }}
           >
-            {inner}
+            {wrapped}
           </div>
         </View>
       );
@@ -407,9 +411,9 @@ export function NotificationSection({
               { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
             ],
           }}>
-            {inner}
+            {wrapped}
           </Animated.View>
-        ) : inner}
+        ) : wrapped}
       </View>
     );
   };

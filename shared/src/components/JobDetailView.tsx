@@ -70,6 +70,8 @@ export interface JobDetailViewProps {
   expandOutput?: boolean;
   // Optional style override for the container
   containerStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
+  // Optional style override for the top content area
+  contentStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
   // Called when log viewer column count changes (for tmux pane resize)
   onLogColumnsChange?: (cols: number) => void;
   // Render a real terminal instead of LogViewer (desktop xterm.js)
@@ -119,6 +121,7 @@ export function JobDetailView({
   hideRuns,
   expandOutput,
   containerStyle,
+  contentStyle,
   onLogColumnsChange,
   renderTerminal,
   hideMessageInput,
@@ -575,7 +578,7 @@ export function JobDetailView({
           </View>
         ) : null}
 
-        <View style={[styles.content, renderTerminal && { padding: spacing.sm, gap: spacing.sm }]}>
+        <View style={[styles.content, renderTerminal && { padding: spacing.sm, gap: spacing.sm }, contentStyle]}>
           {detailInner}
         </View>
 
@@ -634,13 +637,13 @@ export function JobDetailView({
             minHeight: 0,
           }}
         >
-          <View style={styles.content}>
+          <View style={[styles.content, contentStyle]}>
             {detailInner}
           </View>
         </div>
       ) : (
         <ScrollView ref={scrollRef} style={styles.scroll} contentContainerStyle={styles.scrollContent} automaticallyAdjustKeyboardInsets>
-          <View style={styles.content}>
+          <View style={[styles.content, contentStyle]}>
             {detailInner}
           </View>
         </ScrollView>
