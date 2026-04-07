@@ -434,6 +434,15 @@ export function DesktopJobDetail({
     [paneId, tmuxSession, job.group],
   );
 
+  const handleRelease = useCallback(async () => {
+    if (!paneId) return;
+    try {
+      await invoke("pty_release", { paneId });
+    } catch (err) {
+      console.error("pty_release failed:", err);
+    }
+  }, [paneId]);
+
   return (
     <>
       <JobDetailView
@@ -470,6 +479,7 @@ export function DesktopJobDetail({
         onSplitPane={onSplitPane}
         onInjectSecrets={onInjectSecrets}
         onSearchSkills={onSearchSkills}
+        onRelease={paneId ? handleRelease : undefined}
         onStopping={onStopping}
       />
       {showConfirm && (

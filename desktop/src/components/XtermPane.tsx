@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -27,15 +27,6 @@ interface PtySpawnResult {
 export function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const resolvedGroup = group ?? "default";
-
-  const handleRelease = useCallback(async () => {
-    try {
-      await invoke("pty_release", { paneId });
-    } catch (err) {
-      console.error("pty_release failed:", err);
-    }
-    onExit?.();
-  }, [paneId, onExit]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -222,38 +213,13 @@ export function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps
   }, [paneId, tmuxSession, resolvedGroup]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div
-        style={{
-          display: "flex",
-          padding: "4px 8px",
-          background: "#232325",
-          borderBottom: "1px solid #333",
-        }}
-      >
-        <button
-          onClick={handleRelease}
-          style={{
-            background: "#444",
-            color: "#e4e4e4",
-            border: "1px solid #555",
-            padding: "2px 10px",
-            borderRadius: 4,
-            fontSize: 11,
-            cursor: "pointer",
-          }}
-        >
-          Release
-        </button>
-      </div>
-      <div
-        ref={containerRef}
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflow: "hidden",
-        }}
-      />
-    </div>
+    <div
+      ref={containerRef}
+      style={{
+        flex: 1,
+        minHeight: 0,
+        overflow: "hidden",
+      }}
+    />
   );
 }

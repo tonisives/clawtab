@@ -450,7 +450,6 @@ export default function JobsScreen() {
             tree={split.tree}
             renderLeaf={renderLeaf}
             onRatioChange={split.handleSplitRatioChange}
-            onClosePane={split.handleClosePane}
             onFocusLeaf={split.setFocusedLeafId}
             focusedLeafId={split.focusedLeafId}
             paneColors={split.paneColors}

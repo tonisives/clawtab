@@ -84,6 +84,8 @@ export interface JobDetailViewProps {
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
+  // Release the captured tmux pane (desktop only, when viewing a live pane)
+  onRelease?: () => void;
   // Notify parent that a stop was requested (for sidebar "Stopping..." state)
   onStopping?: () => void;
 }
@@ -126,6 +128,7 @@ export function JobDetailView({
   onSplitPane,
   onInjectSecrets,
   onSearchSkills,
+  onRelease,
   onStopping,
 }: JobDetailViewProps) {
   const state = status.state;
@@ -396,7 +399,7 @@ export function JobDetailView({
                     ...(onEdit ? [{ type: "item" as const, label: "Edit", onPress: () => onEdit() }] : []),
                     ...(onDuplicate ? [{ type: "item" as const, label: "Duplicate", onPress: () => setShowDuplicateMenu(true) }] : []),
                     ...(onToggleEnabled && !isManual ? [{ type: "item" as const, label: job.enabled ? "Disable" : "Enable", onPress: () => onToggleEnabled() }] : []),
-                    ...((onFork || onSplitPane || onInjectSecrets || onSearchSkills) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
+                    ...((onFork || onSplitPane || onInjectSecrets || onSearchSkills || onRelease) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
                     ...(onFork ? [{ type: "submenu" as const, label: "Fork Session", items: [
                       { type: "item" as const, label: "Right", onPress: () => onFork("right") },
                       { type: "item" as const, label: "Down", onPress: () => onFork("down") },
@@ -407,12 +410,24 @@ export function JobDetailView({
                     ] }] : []),
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
+                    ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),
                     ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction(transport.sigintJob ? "sigint" : "stop"), color: colors.danger }] : []),
                     ...(onDelete && !isRunning ? [{ type: "separator" as const }, { type: "item" as const, label: "Delete", onPress: () => onDelete(), color: colors.danger }] : []),
                   ]}
                 />
               )}
             </View>
+          )}
+          {/* Close pane "x" button - always last in actions row */}
+          {!showBackButton && (
+            <TouchableOpacity
+              style={styles.moreBtn}
+              onPress={onBack}
+              activeOpacity={0.6}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={styles.moreBtnText}>{"\u00D7"}</Text>
+            </TouchableOpacity>
           )}
           {/* Duplicate sub-menu (shown after selecting Duplicate from settings menu) */}
           {showDuplicateMenu && onDuplicate && (

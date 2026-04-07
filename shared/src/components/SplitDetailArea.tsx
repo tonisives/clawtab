@@ -9,7 +9,6 @@ export interface SplitDetailAreaProps {
   tree: SplitNode | null;
   renderLeaf: (content: PaneContent, leafId: string) => ReactNode;
   onRatioChange: (splitNodeId: string, ratio: number) => void;
-  onClosePane: (leafId: string) => void;
   onFocusLeaf?: (leafId: string) => void;
   focusedLeafId?: string | null;
   paneColors?: Map<string, string>;
@@ -22,7 +21,6 @@ export function SplitDetailArea({
   tree,
   renderLeaf,
   onRatioChange,
-  onClosePane,
   onFocusLeaf,
   focusedLeafId,
   paneColors,
@@ -46,8 +44,6 @@ export function SplitDetailArea({
     return () => ro.disconnect();
   }, []);
 
-  const leafCount = tree ? countLeaves(tree) : 0;
-
   return (
     <div
       ref={containerRef}
@@ -63,7 +59,6 @@ export function SplitDetailArea({
           node={tree}
           renderLeaf={renderLeaf}
           onRatioChange={onRatioChange}
-          onClosePane={leafCount > 1 ? onClosePane : undefined}
           onFocusLeaf={onFocusLeaf}
           focusedLeafId={focusedLeafId}
           paneColors={paneColors}
@@ -79,16 +74,10 @@ export function SplitDetailArea({
   );
 }
 
-function countLeaves(node: SplitNode): number {
-  if (node.type === "leaf") return 1;
-  return countLeaves(node.first) + countLeaves(node.second);
-}
-
 function SplitNodeRenderer({
   node,
   renderLeaf,
   onRatioChange,
-  onClosePane,
   onFocusLeaf,
   focusedLeafId,
   paneColors,
@@ -99,7 +88,6 @@ function SplitNodeRenderer({
   node: SplitNode;
   renderLeaf: (content: PaneContent, leafId: string) => ReactNode;
   onRatioChange: (splitNodeId: string, ratio: number) => void;
-  onClosePane?: (leafId: string) => void;
   onFocusLeaf?: (leafId: string) => void;
   focusedLeafId?: string | null;
   paneColors?: Map<string, string>;
@@ -140,28 +128,6 @@ function SplitNodeRenderer({
             }} />
           );
         })()}
-        {onClosePane && (
-          <button
-            onClick={() => onClosePane(node.id)}
-            style={{
-              position: "absolute",
-              top: 6,
-              right: 6,
-              zIndex: 10,
-              background: "var(--bg-tertiary, #222)",
-              border: "1px solid var(--border-light, #333)",
-              borderRadius: 4,
-              color: "var(--text-muted, #888)",
-              cursor: "pointer",
-              padding: "2px 6px",
-              fontSize: 11,
-              lineHeight: "1",
-            }}
-            title="Close pane"
-          >
-            x
-          </button>
-        )}
       </div>
     );
   }
@@ -182,7 +148,6 @@ function SplitNodeRenderer({
         node={node.first}
         renderLeaf={renderLeaf}
         onRatioChange={onRatioChange}
-        onClosePane={onClosePane}
         onFocusLeaf={onFocusLeaf}
         focusedLeafId={focusedLeafId}
         paneColors={paneColors}
@@ -194,7 +159,6 @@ function SplitNodeRenderer({
         node={node.second}
         renderLeaf={renderLeaf}
         onRatioChange={onRatioChange}
-        onClosePane={onClosePane}
         onFocusLeaf={onFocusLeaf}
         focusedLeafId={focusedLeafId}
         paneColors={paneColors}

@@ -9,17 +9,18 @@ use std::time::Duration;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
 
-/// Pane viewer: captured pane in a clawtab-<group> session, streamed via a
-/// local PTY running `tmux attach-session` against an ephemeral grouped view
-/// session. This gives us independent resize on the captured window without
-/// disturbing other clients of the real tmux server.
+/// Pane viewer: captured pane moved into a new `ct-<orig>-<N>` window in its
+/// original tmux session, streamed via a local PTY running `tmux attach-session`
+/// against an ephemeral grouped view session. This gives us independent resize
+/// on the captured window without disturbing other clients of the real tmux
+/// server, while keeping the pane discoverable inside its original session.
 struct PaneViewer {
     stop: Arc<AtomicBool>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-    /// Captured window id (@...) in the clawtab-<group> session.
+    /// Captured window id (@...) in the original session.
     window_id: String,
-    /// Ephemeral grouped view session (clawtab-<group>-view-N); killed on stop.
+    /// Ephemeral grouped view session (clawtab-view-N); killed on stop.
     view_session: String,
 }
 
@@ -59,55 +60,51 @@ fn tmux(args: &[&str]) -> Result<String, String> {
 // Capture helpers
 // ---------------------------------------------------------------------------
 
-fn capture_session_name(group: &str) -> String {
-    format!("clawtab-{}", group)
-}
-
-/// Make sure the capture session exists. Creates it with a placeholder window
-/// if not present. The placeholder keeps the session alive when no panes are
-/// captured.
-fn ensure_capture_session(group: &str) -> Result<String, String> {
-    let session = capture_session_name(group);
-    let exists = Command::new("tmux")
-        .args(["has-session", "-t", &session])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
-    if !exists {
-        tmux(&[
-            "new-session", "-d", "-s", &session,
-            "-n", "__placeholder", "-x", "80", "-y", "24",
-            "sh", "-c", "while :; do sleep 3600; done",
-        ])?;
-        // Hide status bar for clients attaching to this session
-        let _ = tmux(&["set-option", "-t", &session, "status", "off"]);
-    }
-    Ok(session)
-}
-
-/// Returns Some((session, window_id)) if the pane is already in a clawtab capture session.
+/// Returns Some((session, window_id)) if the pane is already in a ct-* window
+/// (i.e. already captured by clawtab).
 fn find_captured_window(pane_id: &str) -> Option<(String, String)> {
     let info = tmux(&[
         "display-message", "-t", pane_id,
-        "-p", "#{session_name}\t#{window_id}",
+        "-p", "#{session_name}\t#{window_id}\t#{window_name}",
     ]).ok()?;
     let parts: Vec<&str> = info.split('\t').collect();
-    if parts.len() == 2 && parts[0].starts_with("clawtab-") {
+    if parts.len() == 3 && parts[2].starts_with("ct-") {
         Some((parts[0].to_string(), parts[1].to_string()))
     } else {
         None
     }
 }
 
-/// Break a pane into its own window inside the capture session for `group`.
-/// Records origin as a window option. Returns the new window id.
-/// Idempotent: if already captured, returns the existing window id.
-fn capture_pane(pane_id: &str, group: &str) -> Result<String, String> {
-    if let Some((_, win_id)) = find_captured_window(pane_id) {
-        return Ok(win_id);
+/// Return the next available `ct-<base>-<N>` window name in `session`.
+/// Starts at 1 and picks the smallest unused integer suffix.
+fn next_ct_window_name(session: &str, base: &str) -> String {
+    let base = if base.is_empty() { "pane" } else { base };
+    let existing = tmux(&["list-windows", "-t", session, "-F", "#{window_name}"])
+        .unwrap_or_default();
+    let prefix = format!("ct-{}-", base);
+    let mut used = std::collections::HashSet::new();
+    for line in existing.lines() {
+        if let Some(rest) = line.strip_prefix(&prefix) {
+            if let Ok(n) = rest.parse::<u32>() {
+                used.insert(n);
+            }
+        }
     }
+    let mut n = 1u32;
+    while used.contains(&n) {
+        n += 1;
+    }
+    format!("ct-{}-{}", base, n)
+}
 
-    let session = ensure_capture_session(group)?;
+/// Break a pane into a new `ct-<orig_window_name>-<N>` window inside the pane's
+/// original tmux session. Records origin as a window option so release can put
+/// it back. Returns (session, window_id). Idempotent: if already captured,
+/// returns the existing session/window.
+fn capture_pane(pane_id: &str, _group: &str) -> Result<(String, String), String> {
+    if let Some((sess, win_id)) = find_captured_window(pane_id) {
+        return Ok((sess, win_id));
+    }
 
     // Record origin BEFORE break-pane
     let origin = tmux(&[
@@ -115,11 +112,21 @@ fn capture_pane(pane_id: &str, group: &str) -> Result<String, String> {
         "-p", "#{session_name}\t#{window_id}\t#{pane_index}\t#{window_name}",
     ])?;
 
-    // break-pane moves the pane into a new window in the target session
+    let parts: Vec<&str> = origin.split('\t').collect();
+    if parts.len() < 4 {
+        return Err(format!("malformed origin: {}", origin));
+    }
+    let orig_session = parts[0];
+    let orig_window_name = parts[3];
+
+    let new_name = next_ct_window_name(orig_session, orig_window_name);
+
+    // break-pane moves the pane into a new window in the SAME original session
     tmux(&[
         "break-pane", "-d",
         "-s", pane_id,
-        "-t", &format!("{}:", session),
+        "-t", &format!("{}:", orig_session),
+        "-n", &new_name,
     ])?;
 
     // After break-pane, the pane_id is stable. Look up its new window.
@@ -133,7 +140,7 @@ fn capture_pane(pane_id: &str, group: &str) -> Result<String, String> {
         "@clawtab-origin", &origin,
     ]);
 
-    Ok(new_win)
+    Ok((orig_session.to_string(), new_win))
 }
 
 /// Release a captured pane back to its original session:window.
@@ -248,13 +255,14 @@ impl PtyManager {
         let native_cols: u16 = native_parts.first().and_then(|s| s.parse().ok()).unwrap_or(80);
         let native_rows: u16 = native_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(24);
 
-        // Capture the pane into our group's session (idempotent).
-        let window_id = capture_pane(pane_id, group)?;
-        let base_session = capture_session_name(group);
+        // Capture the pane into a ct-<orig>-<N> window in its original session
+        // (idempotent). base_session here is the original tmux session.
+        let (base_session, window_id) = capture_pane(pane_id, group)?;
 
-        // Ephemeral grouped view session so this viewer has its own current-window.
+        // Ephemeral grouped view session so this viewer has its own current-window
+        // without disturbing other clients attached to the original session.
         let view_id = VIEW_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let view_session = format!("{}-view-{}", base_session, view_id);
+        let view_session = format!("clawtab-view-{}", view_id);
         tmux(&[
             "new-session", "-d",
             "-s", &view_session,

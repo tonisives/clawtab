@@ -1,15 +1,12 @@
 .nav-bar {
-  position: fixed;
-  top: 0;
-  right: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
   padding: 0 10px;
   height: 28px;
-  background: transparent;
-  z-index: 1000;
+  background: var(--bg-secondary);
+  flex-shrink: 0;
   -webkit-app-region: drag;
 }
 
@@ -72,7 +69,6 @@
 }
 
 .claw-icon-btn {
-  margin-left: auto;
   display: flex;
   align-items: center;
   justify-content: center;
