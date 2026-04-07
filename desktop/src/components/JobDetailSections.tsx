@@ -382,6 +382,7 @@ export function DesktopJobDetail({
   onInjectSecrets,
   onSearchSkills,
   onStopping,
+  contentStyle,
 }: {
   transport: Transport;
   job: Job;
@@ -407,6 +408,7 @@ export function DesktopJobDetail({
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   onStopping?: () => void;
+  contentStyle?: unknown;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
@@ -471,6 +473,7 @@ export function DesktopJobDetail({
         onToggleAutoYes={onToggleAutoYes}
         sectionStyle={cardSectionStyle}
         containerStyle={desktopContainerStyle}
+        contentStyle={contentStyle as any}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
         renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
@@ -502,6 +505,7 @@ export function AgentDetail({
   onOpen,
   showBackButton = false,
   hidePath = false,
+  contentStyle,
 }: {
   transport: Transport;
   job: RemoteJob;
@@ -510,6 +514,7 @@ export function AgentDetail({
   onOpen: () => void;
   showBackButton?: boolean;
   hidePath?: boolean;
+  contentStyle?: unknown;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, "agent");
   const { logs } = useLogBuffer(transport, "agent");
@@ -534,6 +539,7 @@ export function AgentDetail({
       extraContent={extraContent}
       sectionStyle={cardSectionStyle}
       containerStyle={desktopContainerStyle}
+      contentStyle={contentStyle as any}
       expandOutput
     />
   );

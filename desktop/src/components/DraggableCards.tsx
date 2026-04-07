@@ -1,11 +1,11 @@
 import { useDraggable } from "@dnd-kit/core";
 import type { RemoteJob, JobStatus } from "@clawtab/shared";
-import type { ClaudeProcess } from "@clawtab/shared";
+import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import { JobCard, RunningJobCard, ProcessCard } from "@clawtab/shared";
 
 export type DragData =
   | { kind: "job"; slug: string; job: RemoteJob }
-  | { kind: "process"; paneId: string; process: ClaudeProcess };
+  | { kind: "process"; paneId: string; process?: ClaudeProcess; question?: ClaudeQuestion; resolvedJob?: string | null };
 
 export function DraggableJobCard({
   job,
@@ -95,6 +95,37 @@ export function DraggableProcessCard({
         onStop={onStop}
         autoYesActive={autoYesActive}
       />
+    </div>
+  );
+}
+
+export function DraggableNotificationCard({
+  question,
+  resolvedJob,
+  children,
+}: {
+  question: ClaudeQuestion;
+  resolvedJob: string | null;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `drag-question-${question.question_id}`,
+    data: {
+      kind: "process",
+      paneId: question.pane_id,
+      question,
+      resolvedJob,
+    } satisfies DragData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none" }}
+      {...listeners}
+      {...attributes}
+    >
+      {children}
     </div>
   );
 }

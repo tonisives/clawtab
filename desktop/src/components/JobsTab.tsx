@@ -14,6 +14,7 @@ import {
   JobCard,
   RunningJobCard,
   ProcessCard,
+  NotificationCard,
   useJobsCore,
   useJobActions,
   useSplitTree,
@@ -28,7 +29,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DetectedProcessDetail } from "./DetectedProcessDetail";
 import { DesktopJobDetail, AgentDetail } from "./JobDetailSections";
 import { ParamsOverlay } from "./ParamsOverlay";
-import { DraggableJobCard, DraggableProcessCard, type DragData } from "./DraggableCards";
+import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, type DragData } from "./DraggableCards";
 import { SkillSearchDialog } from "./SkillSearchDialog";
 import { InjectSecretsDialog } from "./InjectSecretsDialog";
 import { XtermPane } from "./XtermPane";
@@ -449,6 +450,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [split.tree, split.focusedLeafId, split.setFocusedLeafId, handleSplitPane]);
 
   const isFullScreenView = !!(editingJob || isCreating || showPicker);
+  const trafficLightInsetStyle = isWide && sidebarCollapsed ? { paddingLeft: 84 } : undefined;
   useEffect(() => {
     const tabContent = document.querySelector(".tab-content") as HTMLElement | null;
     if (!tabContent) return;
@@ -729,7 +731,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
         <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => split.handleClosePane(leafId)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath />
+          onBack={() => split.handleClosePane(leafId)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} />
       );
     }
 
@@ -769,6 +771,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
           onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
           onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
+          contentStyle={trafficLightInsetStyle}
         />
       );
     }
@@ -796,9 +799,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         questionContext={jobQuestion?.context_lines}
         {...buildJobPaneActions(job, jobQuestion)}
         onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(job.slug))}
+        contentStyle={trafficLightInsetStyle}
       />
     );
-  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, split.handleClosePane]);
+  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, split.handleClosePane, isWide, trafficLightInsetStyle]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
@@ -841,11 +845,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onToggleCollapse={() => core.toggleGroup("Notifications")}
             autoYesPaneIds={autoYes.autoYesPaneIds}
             onToggleAutoYes={autoYes.handleToggleAutoYes}
+            wrapQuestionCard={isWide ? (question, card) => (
+              <DraggableNotificationCard
+                question={question}
+                resolvedJob={questionPolling.resolveQuestionJob(question)}
+              >
+                {card}
+              </DraggableNotificationCard>
+            ) : undefined}
           />
         )}
       </>
     );
-  }, [nfnVisible, questions, questionPolling, handleQuestionNavigate, core.collapsedGroups, core.toggleGroup, autoYes, handleAutoYesPress]);
+  }, [nfnVisible, questions, questionPolling, handleQuestionNavigate, core.collapsedGroups, core.toggleGroup, autoYes, handleAutoYesPress, isWide]);
 
   // --- Render ---
 
@@ -858,7 +870,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
         <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => setViewingAgent(false)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath />
+          onBack={() => setViewingAgent(false)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} />
       );
     }
 
@@ -896,6 +908,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onSplitPane={(direction: "right" | "down") => handleSplitPane(viewingProcess.pane_id, direction)}
             onInjectSecrets={() => setInjectSecretsPaneId(viewingProcess.pane_id)}
             onSearchSkills={() => setSkillSearchPaneId(viewingProcess.pane_id)}
+            contentStyle={trafficLightInsetStyle}
           />
           {autoYes.pendingAutoYes && (
             <ConfirmDialog
@@ -931,6 +944,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             questionContext={jobQuestion?.context_lines}
             {...buildJobPaneActions(viewingJob, jobQuestion)}
             onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(viewingJob.slug))}
+            contentStyle={trafficLightInsetStyle}
           />
           {paramsDialog && (
             <ParamsOverlay
@@ -1089,9 +1103,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               ? <RunningJobCard jobName={data.job.name} status={status} />
               : <JobCard job={data.job} status={status} />;
           })()
-        ) : (
+        ) : data.question ? (
+          <NotificationCard
+            question={data.question}
+            resolvedJob={data.resolvedJob ?? null}
+            onNavigate={() => {}}
+            onSendOption={() => {}}
+            autoYesActive={autoYes.autoYesPaneIds.has(data.paneId)}
+          />
+        ) : data.process ? (
           <ProcessCard process={data.process} />
-        )}
+        ) : null}
       </div>
     );
   })();

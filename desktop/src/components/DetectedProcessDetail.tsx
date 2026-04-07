@@ -53,6 +53,7 @@ export function DetectedProcessDetail({
   onSplitPane,
   onInjectSecrets,
   onSearchSkills,
+  contentStyle,
 }: {
   process: ClaudeProcess;
   questions: ClaudeQuestion[];
@@ -67,6 +68,7 @@ export function DetectedProcessDetail({
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
+  contentStyle?: unknown;
 }) {
   const processRef = useRef(process);
   processRef.current = process;
@@ -148,6 +150,7 @@ export function DetectedProcessDetail({
       hideRuns
       expandOutput
       containerStyle={{ backgroundColor: "var(--bg-primary)", borderRadius: 0 } as any}
+      contentStyle={contentStyle as any}
       options={paneQuestion?.options}
       questionContext={paneQuestion?.context_lines}
       autoYesActive={autoYesActive}
