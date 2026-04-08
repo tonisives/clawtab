@@ -84,10 +84,6 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef }:
   const ref = dropdownRef ?? localRef;
   const [submenu, setSubmenu] = useState<{ label: string; items: PopupMenuItem[] } | null>(null);
 
-  // Reset submenu when menu closes/reopens
-  useEffect(() => {
-    setSubmenu(null);
-  }, [items]);
 
   useEffect(() => {
     if (!isWeb) return;
