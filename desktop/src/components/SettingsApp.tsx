@@ -195,7 +195,7 @@ export function SettingsApp() {
             if (tab.id === "jobs" && activeTab === "jobs") {
               setJobsResetKey((k) => k + 1);
             }
-            setActiveTab(tab.id);
+            setActiveTab((current) => (current === tab.id ? "jobs" : tab.id));
           }}
           title={tab.label}
         >
