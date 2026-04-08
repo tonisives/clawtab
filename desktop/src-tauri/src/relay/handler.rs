@@ -635,6 +635,7 @@ fn detect_processes(
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
             version: command.to_string(),
+            process_type: None,
             tmux_session: session.to_string(),
             window_name: window.to_string(),
             matched_group,

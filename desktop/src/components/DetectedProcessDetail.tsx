@@ -86,7 +86,7 @@ export function DetectedProcessDetail({
 
   const syntheticJob: RemoteJob = {
     name: displayName,
-    job_type: "claude",
+    job_type: process.process_type ?? "claude",
     enabled: true,
     cron: "",
     group: "detected",

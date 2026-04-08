@@ -3,11 +3,11 @@ import { TouchableOpacity, View, Text, StyleSheet } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { Tooltip } from "./Tooltip";
-import { typeIcon } from "../util/jobs";
 import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import { JobKindIcon, kindForJob } from "./JobKindIcon";
 
 export const JobCard = memo(function JobCard({
   job,
@@ -29,7 +29,7 @@ export const JobCard = memo(function JobCard({
           ? timeAgo(status.started_at)
           : null;
 
-  const icon = typeIcon(job.job_type);
+  const kind = kindForJob(job);
 
   return (
     <TouchableOpacity
@@ -38,9 +38,7 @@ export const JobCard = memo(function JobCard({
       activeOpacity={0.7}
     >
       <View style={styles.row}>
-        <View style={[styles.typeIcon, { backgroundColor: icon.bg }]}>
-          <Text style={[styles.typeIconText, job.job_type === "claude" && { color: colors.accent }]}>{icon.letter}</Text>
-        </View>
+        <JobKindIcon kind={kind} />
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1}>
             {job.name}
@@ -79,19 +77,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.md,
     minWidth: 0,
-  },
-  typeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  typeIconText: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: "monospace",
   },
   info: {
     flex: 1,

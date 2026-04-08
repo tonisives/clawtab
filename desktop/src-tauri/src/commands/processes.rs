@@ -14,6 +14,7 @@ pub struct ClaudeProcess {
     pub pane_id: String,
     pub cwd: String,
     pub version: String,
+    pub process_type: Option<String>,
     pub tmux_session: String,
     pub window_name: String,
     pub matched_group: Option<String>,
@@ -30,6 +31,79 @@ fn is_semver(s: &str) -> bool {
         return false;
     }
     parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+}
+
+fn detect_process_type(pane_pid: &str) -> Option<String> {
+    fn command_for_pid(pid: &str) -> Option<String> {
+        let output = Command::new("ps")
+            .args(["-p", pid, "-o", "comm="])
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    fn child_pids(parent_pid: &str) -> Vec<String> {
+        let output = match Command::new("ps")
+            .args(["-o", "pid=,ppid="])
+            .arg("-A")
+            .output()
+        {
+            Ok(o) if o.status.success() => o,
+            _ => return Vec::new(),
+        };
+
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() == 2 && parts[1] == parent_pid {
+                    Some(parts[0].to_string())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn process_type_for_command(command: &str) -> Option<String> {
+        let lower = command.to_lowercase();
+        if lower.contains("codex") {
+            Some("codex".to_string())
+        } else if lower.contains("claude") && !lower.contains("claude.app") {
+            Some("claude".to_string())
+        } else {
+            None
+        }
+    }
+
+    if let Some(command) = command_for_pid(pane_pid) {
+        if let Some(kind) = process_type_for_command(&command) {
+            return Some(kind);
+        }
+    }
+
+    for child in child_pids(pane_pid) {
+        if let Some(command) = command_for_pid(&child) {
+            if let Some(kind) = process_type_for_command(&command) {
+                return Some(kind);
+            }
+        }
+
+        for grandchild in child_pids(&child) {
+            if let Some(command) = command_for_pid(&grandchild) {
+                if let Some(kind) = process_type_for_command(&command) {
+                    return Some(kind);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 #[tauri::command]
@@ -159,6 +233,7 @@ fn detect_claude_processes_blocking(
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
             version: command.to_string(),
+            process_type: detect_process_type(pane_pid),
             tmux_session: session.to_string(),
             window_name: window.to_string(),
             matched_group,

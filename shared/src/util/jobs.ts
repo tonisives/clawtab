@@ -1,6 +1,7 @@
 import type { RemoteJob } from "../types/job";
 import type { ClaudeQuestion } from "../types/process";
 import { colors } from "../theme/colors";
+import { kindForJob, type JobKind } from "../components/JobKindIcon";
 
 export function groupJobs<T extends RemoteJob>(jobs: T[]): Map<string, T[]> {
   const groups = new Map<string, T[]>();
@@ -45,15 +46,18 @@ export function isFreetextOption(label: string): boolean {
   return /^type something/i.test(label.trim());
 }
 
-export function typeIcon(jobType: string): { letter: string; bg: string } {
-  switch (jobType) {
+export function typeIcon(jobType: string): { kind: JobKind; bg: string } {
+  const kind = kindForJob({ job_type: jobType, cron: "", enabled: true, group: "", name: "", slug: "" });
+  switch (kind) {
     case "claude":
-      return { letter: "C", bg: colors.accentBg };
-    case "binary":
-      return { letter: "B", bg: "rgba(152, 152, 157, 0.12)" };
-    case "folder":
-      return { letter: "F", bg: "rgba(152, 152, 157, 0.12)" };
+      return { kind, bg: colors.accentBg };
+    case "cron":
+      return { kind, bg: "rgba(255, 159, 10, 0.16)" };
+    case "manual":
+      return { kind, bg: "rgba(10, 132, 255, 0.14)" };
+    case "shell":
+      return { kind, bg: colors.successBg ?? "rgba(52, 199, 89, 0.14)" };
     default:
-      return { letter: "?", bg: "rgba(152, 152, 157, 0.12)" };
+      return { kind, bg: "rgba(152, 152, 157, 0.12)" };
   }
 }

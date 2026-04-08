@@ -34,7 +34,7 @@ export function DraggableJobCard({
       {...attributes}
     >
       {status.state === "running" ? (
-        <RunningJobCard jobName={job.name} status={status} onPress={onPress} selected={selected} />
+        <RunningJobCard job={job} status={status} onPress={onPress} selected={selected} />
       ) : (
         <JobCard job={job} status={status} onPress={onPress} selected={selected} />
       )}

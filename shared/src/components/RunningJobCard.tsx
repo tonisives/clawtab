@@ -1,16 +1,17 @@
 import { memo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
-import type { JobStatus } from "../types/job";
+import type { JobStatus, RemoteJob } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
 import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import { JobKindIcon, kindForJob } from "./JobKindIcon";
 
 const isWeb = Platform.OS === "web";
 
 export const RunningJobCard = memo(function RunningJobCard({
-  jobName,
+  job,
   status,
   onPress,
   selected,
@@ -18,7 +19,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   autoYesActive,
   stopping,
 }: {
-  jobName: string;
+  job: RemoteJob;
   status: JobStatus;
   onPress?: () => void;
   selected?: boolean | string;
@@ -32,6 +33,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const showMenu = onStop && !stopping;
+  const kind = kindForJob(job);
 
   return (
     <TouchableOpacity
@@ -40,11 +42,9 @@ export const RunningJobCard = memo(function RunningJobCard({
       activeOpacity={0.7}
     >
       <View style={styles.row}>
-        <View style={styles.typeIcon}>
-          <Text style={styles.typeIconText}>C</Text>
-        </View>
+        <JobKindIcon kind={kind} />
         <View style={styles.info}>
-          <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{jobName}</Text>
+          <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{job.name}</Text>
           {stopping ? (
             <Text style={[styles.metaText, { fontStyle: "italic" }]}>Stopping...</Text>
           ) : startedAt ? (
@@ -109,20 +109,6 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 0 },
-  typeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentBg,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  typeIconText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: "monospace",
-  },
   info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
   metaText: { color: colors.textSecondary, fontSize: 12 },

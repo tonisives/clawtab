@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared";
-import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
+import type { ClaudeProcess, ClaudeQuestion, ShellPane } from "@clawtab/shared";
 import {
   JobListView,
   NotificationSection,
@@ -33,7 +33,7 @@ import { ParamsOverlay } from "./ParamsOverlay";
 import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, type DragData } from "./DraggableCards";
 import { SkillSearchDialog } from "./SkillSearchDialog";
 import { InjectSecretsDialog } from "./InjectSecretsDialog";
-import { XtermPane } from "./XtermPane";
+import { ShellPaneDetail } from "./ShellPaneDetail";
 import { useQuestionPolling } from "../hooks/useQuestionPolling";
 import { useAutoYes } from "../hooks/useAutoYes";
 import { useImportJob } from "../hooks/useImportJob";
@@ -67,6 +67,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [saveError, setSaveError] = useState<string | null>(null);
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
   const [viewingProcess, setViewingProcess] = useState<ClaudeProcess | null>(null);
+  const [viewingShell, setViewingShell] = useState<ShellPane | null>(null);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
@@ -75,6 +76,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [pendingProcess, setPendingProcess] = useState<ClaudeProcess | null>(null);
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: ClaudeProcess; stoppedAt: number }[]>([]);
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
+  const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
 
   // Clear stopping job slugs when job is no longer running
   useEffect(() => {
@@ -109,6 +111,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const handleSelectJobDirect = useCallback((job: RemoteJob) => {
     setViewingProcess(null);
+    setViewingShell(null);
     setViewingAgent(false);
     setViewingJob(job as Job);
     onJobSelected?.();
@@ -116,6 +119,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const handleSelectProcessDirect = useCallback((process: ClaudeProcess) => {
     setViewingJob(null);
+    setViewingShell(null);
     if (process.cwd.endsWith("/clawtab/agent")) {
       setViewingProcess(null);
       setViewingAgent(true);
@@ -127,13 +131,22 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     onJobSelected?.();
   }, [onJobSelected]);
 
+  const handleSelectShellDirect = useCallback((shell: ShellPane) => {
+    setViewingJob(null);
+    setViewingProcess(null);
+    setViewingAgent(false);
+    setViewingShell(shell);
+    onJobSelected?.();
+  }, [onJobSelected]);
+
   // Compute current single-pane content for the split tree hook
   const currentContent: PaneContent | null = useMemo(() => {
     if (viewingAgent) return { kind: "agent" };
+    if (viewingShell) return { kind: "terminal", paneId: viewingShell.pane_id, tmuxSession: viewingShell.tmux_session };
     if (viewingProcess) return { kind: "process", paneId: viewingProcess.pane_id };
     if (viewingJob) return { kind: "job", slug: viewingJob.slug };
     return null;
-  }, [viewingAgent, viewingProcess, viewingJob]);
+  }, [viewingAgent, viewingShell, viewingProcess, viewingJob]);
 
   const split = useSplitTree({
     storageKey: "desktop_split_tree",
@@ -141,14 +154,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     onCollapse: useCallback((content: PaneContent) => {
       if (content.kind === "job") {
         const job = (core.jobs as Job[]).find(j => j.slug === content.slug);
-        if (job) { setViewingJob(job); setViewingProcess(null); setViewingAgent(false); }
+        if (job) { setViewingJob(job); setViewingProcess(null); setViewingShell(null); setViewingAgent(false); }
       } else if (content.kind === "process") {
         const proc = core.processes.find(p => p.pane_id === content.paneId);
-        if (proc) { setViewingProcess(proc); setViewingJob(null); setViewingAgent(false); }
+        if (proc) { setViewingProcess(proc); setViewingJob(null); setViewingShell(null); setViewingAgent(false); }
+      } else if (content.kind === "terminal") {
+        const shell = shellPanes.find((p) => p.pane_id === content.paneId);
+        if (shell) { setViewingShell(shell); setViewingJob(null); setViewingProcess(null); setViewingAgent(false); }
       } else if (content.kind === "agent") {
-        setViewingAgent(true); setViewingJob(null); setViewingProcess(null);
+        setViewingAgent(true); setViewingJob(null); setViewingProcess(null); setViewingShell(null);
       }
-    }, [core.jobs, core.processes]),
+    }, [core.jobs, core.processes, shellPanes]),
     onReplaceSingle: useCallback((data: SplitDragData) => {
       if (data.kind === "job") {
         const job = (core.jobs as Job[]).find(j => j.slug === data.slug);
@@ -179,6 +195,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (split.tree && split.handleSelectInTree(content)) return;
     handleSelectProcessDirect(process);
   }, [split.tree, split.handleSelectInTree, handleSelectProcessDirect]);
+
+  const handleSelectShell = useCallback((shell: ShellPane) => {
+    const content: PaneContent = { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session };
+    if (split.tree && split.handleSelectInTree(content)) return;
+    handleSelectShellDirect(shell);
+  }, [split.tree, split.handleSelectInTree, handleSelectShellDirect]);
 
   const importJob = useImportJob(core.jobs as Job[], core.reload);
 
@@ -217,21 +239,34 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const handleSplitPane = useCallback(async (paneId: string, direction: "right" | "down") => {
     try {
-      const newPaneId = await invoke<string>("split_pane_plain", { paneId, direction });
-      await core.reload();
+      const baseShell = await invoke<ShellPane>("split_pane_plain", { paneId, direction });
+      const sourceProc = core.processes.find((p) => p.pane_id === paneId);
+      const sourceShell = shellPanes.find((p) => p.pane_id === paneId);
+      const sourceJob = (core.jobs as Job[]).find((job) => {
+        const status = core.statuses[job.slug];
+        return status?.state === "running" && (status as { pane_id?: string }).pane_id === paneId;
+      });
+      const shell: ShellPane = {
+        ...baseShell,
+        matched_group: sourceProc?.matched_group
+          ?? sourceShell?.matched_group
+          ?? sourceJob?.group
+          ?? null,
+      };
+      setShellPanes((prev) => prev.some((p) => p.pane_id === shell.pane_id) ? prev : [...prev, shell]);
+      setScrollToSlug(shell.pane_id);
       const treeDirection = direction === "right" ? "horizontal" as const : "vertical" as const;
       const leaves = split.tree ? collectLeaves(split.tree) : [];
       const sourceLeaf = leaves.find(l => (l.content.kind === "process" || l.content.kind === "terminal") && l.content.paneId === paneId);
       if (sourceLeaf) {
-        const sourceProc = core.processes.find(p => p.pane_id === paneId);
-        const tmuxSession = sourceProc?.tmux_session
-          ?? (sourceLeaf.content.kind === "terminal" ? sourceLeaf.content.tmuxSession : "");
-        split.addSplitLeaf(sourceLeaf.id, { kind: "terminal", paneId: newPaneId, tmuxSession }, treeDirection);
+        split.addSplitLeaf(sourceLeaf.id, { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session }, treeDirection);
+      } else {
+        split.addSplitLeaf("_root", { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session }, treeDirection);
       }
     } catch (e) {
       console.error("split_pane_plain failed:", e);
     }
-  }, [core.reload, split.tree, split.addSplitLeaf, core.processes]);
+  }, [core.processes, core.jobs, core.statuses, shellPanes, split.tree, split.addSplitLeaf]);
 
   // --- Settings & event listeners ---
 
@@ -280,6 +315,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       else if (fresh !== viewingProcess) setViewingProcess(fresh);
     }
   }, [core.processes, viewingProcess, pendingAgentWorkDir, pendingProcess]);
+
+  useEffect(() => {
+    if (!viewingShell) return;
+    const fresh = shellPanes.find((p) => p.pane_id === viewingShell.pane_id);
+    if (!fresh) setViewingShell(null);
+    else if (fresh !== viewingShell) setViewingShell(fresh);
+  }, [shellPanes, viewingShell]);
 
   useEffect(() => {
     if (!pendingAgentWorkDir) return;
@@ -556,7 +598,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     await invoke("focus_job_window", { name });
   }, []);
 
-  type ListItemRef = { kind: "job"; slug: string; job: Job } | { kind: "process"; paneId: string; process: ClaudeProcess };
+  type ListItemRef =
+    | { kind: "job"; slug: string; job: Job }
+    | { kind: "process"; paneId: string; process: ClaudeProcess }
+    | { kind: "terminal"; paneId: string; shell: ShellPane };
   const orderedItems = useMemo(() => {
     const result: ListItemRef[] = [];
     const jobs = core.jobs as Job[];
@@ -592,8 +637,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     for (const proc of allProcs) {
       if (!proc.matched_group) result.push({ kind: "process", paneId: proc.pane_id, process: proc });
     }
+    for (const shell of shellPanes) {
+      result.push({ kind: "terminal", paneId: shell.pane_id, shell });
+    }
     return result;
-  }, [core.jobs, core.processes, sortMode, pendingProcess, stoppingProcesses]);
+  }, [core.jobs, core.processes, sortMode, pendingProcess, stoppingProcesses, shellPanes]);
 
   const selectAdjacentItem = useCallback((currentId: string) => {
     const idx = orderedItems.findIndex((it) =>
@@ -603,12 +651,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (prevIdx >= 0 && prevIdx < orderedItems.length) {
       const next = orderedItems[prevIdx];
       if (next.kind === "job") {
-        setViewingProcess(null); setViewingAgent(false); setViewingJob(next.job); setScrollToSlug(next.slug);
+        setViewingProcess(null); setViewingShell(null); setViewingAgent(false); setViewingJob(next.job); setScrollToSlug(next.slug);
+      } else if (next.kind === "terminal") {
+        setViewingJob(null); setViewingProcess(null); setViewingAgent(false); setViewingShell(next.shell); setScrollToSlug(next.paneId);
       } else {
-        setViewingJob(null); setViewingAgent(false); setViewingProcess(next.process); setScrollToSlug(next.paneId);
+        setViewingJob(null); setViewingShell(null); setViewingAgent(false); setViewingProcess(next.process); setScrollToSlug(next.paneId);
       }
     } else {
-      setViewingJob(null); setViewingProcess(null);
+      setViewingJob(null); setViewingProcess(null); setViewingShell(null);
     }
   }, [orderedItems]);
 
@@ -728,9 +778,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         if (pendingProcess?.pane_id === content.paneId) return false;
         return !core.processes.find(p => p.pane_id === content.paneId);
       }
+      if (content.kind === "terminal") {
+        return !shellPanes.find((p) => p.pane_id === content.paneId);
+      }
       return false;
     });
-  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess]);
+  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes]);
 
   // Helper: build DesktopJobDetail pane action props
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
@@ -789,15 +842,24 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
 
     if (content.kind === "terminal") {
+      const shell = shellPanes.find((p) => p.pane_id === content.paneId);
+      if (!shell) {
+        return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Shell pane not found</span></div>;
+      }
       return (
-        <div style={{ display: "flex", flex: 1, flexDirection: "column", overflow: "hidden" }}>
-          <XtermPane
-            paneId={content.paneId}
-            tmuxSession={content.tmuxSession}
-            group="default"
-            onExit={() => split.handleClosePane(leafId)}
-          />
-        </div>
+        <ShellPaneDetail
+          shell={shell}
+          onBack={() => split.handleClosePane(leafId)}
+          showBackButton={!isWide}
+          hidePath
+          onStopped={() => {
+            setShellPanes((prev) => prev.filter((p) => p.pane_id !== shell.pane_id));
+            split.handleClosePane(leafId);
+          }}
+          onSplitPane={(nextDirection: "right" | "down") => handleSplitPane(shell.pane_id, nextDirection)}
+          contentStyle={trafficLightInsetStyle}
+          titlePath={shortenPath(shell.cwd)}
+        />
       );
     }
 
@@ -875,7 +937,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         titlePath={buildJobTitlePath(job, jobQuestion)}
       />
     );
-  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle, pendingProcess]);
+  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle, pendingProcess, shellPanes]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
@@ -996,6 +1058,24 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             />
           )}
         </>
+      );
+    }
+
+    if (viewingShell) {
+      return (
+        <ShellPaneDetail
+          shell={viewingShell}
+          onBack={() => setViewingShell(null)}
+          showBackButton={!isWide}
+          hidePath
+          onStopped={() => {
+            setShellPanes((prev) => prev.filter((p) => p.pane_id !== viewingShell.pane_id));
+            selectAdjacentItem(viewingShell.pane_id);
+          }}
+          onSplitPane={(direction: "right" | "down") => handleSplitPane(viewingShell.pane_id, direction)}
+          contentStyle={trafficLightInsetStyle}
+          titlePath={shortenPath(viewingShell.cwd)}
+        />
       );
     }
 
@@ -1142,6 +1222,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       jobs={core.jobs}
       statuses={core.statuses}
       detectedProcesses={detectedProcessesMemo}
+      shellPanes={shellPanes}
       collapsedGroups={core.collapsedGroups}
       onToggleGroup={core.toggleGroup}
       groupOrder={groupOrder}
@@ -1149,6 +1230,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       onSortChange={setSortMode}
       onSelectJob={handleSelectJob}
       onSelectProcess={handleSelectProcess}
+      onSelectShell={handleSelectShell}
       selectedItems={split.selectedItems}
       focusedItemKey={split.focusedItemKey}
       onRunAgent={handleRunAgent}
@@ -1164,7 +1246,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       onStopJob={(slug) => {
         setStoppingJobSlugs((prev) => new Set(prev).add(slug));
         core.requestFastPoll(`job:${slug}`);
-        transport.sigintJob ? transport.sigintJob(slug) : transport.stopJob(slug);
+        transport.stopJob(slug);
       }}
       onStopProcess={(paneId) => {
         const proc = core.processes.find((p) => p.pane_id === paneId);
@@ -1176,6 +1258,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         }
         core.requestFastPoll(`pane:${paneId}`);
         invoke("sigint_detected_process", { paneId });
+      }}
+      onStopShell={(paneId) => {
+        setShellPanes((prev) => prev.filter((p) => p.pane_id !== paneId));
+        if (viewingShell?.pane_id === paneId) selectAdjacentItem(paneId);
+        invoke("stop_detected_process", { paneId });
       }}
       autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
@@ -1193,7 +1280,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           (() => {
             const status = core.statuses[data.slug] ?? { state: "idle" as const };
             return status.state === "running"
-              ? <RunningJobCard jobName={data.job.name} status={status} />
+              ? <RunningJobCard job={data.job} status={status} />
               : <JobCard job={data.job} status={status} />;
           })()
         ) : data.question ? (
@@ -1271,7 +1358,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       {/* Main view */}
       <div style={{ display: isMainVisible ? undefined : "none", height: "100%" }}>
         {!isWide ? (
-          (viewingAgent || pendingAgentWorkDir || viewingProcess || viewingJob) ? (
+          (viewingAgent || pendingAgentWorkDir || viewingProcess || viewingShell || viewingJob) ? (
             <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
               {navBar}
               {detailPane}

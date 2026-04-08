@@ -3,11 +3,12 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, RefreshControl, St
 
 const isWeb = Platform.OS === "web";
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
-import type { ClaudeProcess } from "../types/process";
+import type { ClaudeProcess, ShellPane } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
 import { ProcessCard } from "./ProcessCard";
+import { ShellCard } from "./ShellCard";
 import { GroupAgentRow } from "./GroupAgentRow";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
@@ -85,6 +86,7 @@ export interface JobListViewProps {
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
   detectedProcesses: ClaudeProcess[];
+  shellPanes?: ShellPane[];
   collapsedGroups: Set<string>;
   onToggleGroup: (group: string) => void;
   groupOrder?: string[];
@@ -95,6 +97,7 @@ export interface JobListViewProps {
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: ClaudeProcess) => void;
+  onSelectShell?: (shell: ShellPane) => void;
   // Map of slug/pane_id -> color hex for highlighted items (supports multi-selection)
   selectedItems?: Map<string, string> | null;
   // The key of the focused item (brighter border); unfocused selected items are faded
@@ -127,11 +130,13 @@ export interface JobListViewProps {
   // Stop job/process from sidebar
   onStopJob?: (slug: string) => void;
   onStopProcess?: (paneId: string) => void;
+  onStopShell?: (paneId: string) => void;
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => React.ReactNode;
   renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean }) => React.ReactNode;
+  renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
   scrollEnabled?: boolean;
   // Slugs currently being stopped (for "Stopping..." display in sidebar)
@@ -142,6 +147,7 @@ type ListItem =
   | { kind: "header"; group: string; displayGroup: string; folderPath?: string }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: ClaudeProcess; inGroup?: boolean }
+  | { kind: "shell"; shell: ShellPane }
   | { kind: "group-agent"; workDir: string }
   | { kind: "hidden-section" }
   | { kind: "hidden-header"; group: string; displayGroup: string };
@@ -150,6 +156,7 @@ export function JobListView({
   jobs,
   statuses,
   detectedProcesses,
+  shellPanes = [],
   collapsedGroups,
   onToggleGroup,
   groupOrder: _groupOrder = [],
@@ -158,6 +165,7 @@ export function JobListView({
   onSortChange,
   onSelectJob,
   onSelectProcess,
+  onSelectShell,
   selectedItems,
   focusedItemKey,
   selectedSlug,
@@ -175,9 +183,11 @@ export function JobListView({
   scrollToSlug,
   onStopJob,
   onStopProcess,
+  onStopShell,
   autoYesPaneIds,
   renderJobCard: customRenderJobCard,
   renderProcessCard: customRenderProcessCard,
+  renderShellCard: customRenderShellCard,
   scrollEnabled = true,
   stoppingSlugs: stoppingSlugsExternal,
 }: JobListViewProps) {
@@ -250,6 +260,17 @@ export function JobListView({
     }
     return map;
   }, [detectedProcesses]);
+
+  const matchedShellsByGroup = useMemo(() => {
+    const map = new Map<string, ShellPane[]>();
+    for (const shell of shellPanes) {
+      if (!shell.matched_group) continue;
+      const list = map.get(shell.matched_group) ?? [];
+      list.push(shell);
+      map.set(shell.matched_group, list);
+    }
+    return map;
+  }, [shellPanes]);
 
   const unmatchedProcesses = useMemo(
     () => detectedProcesses.filter((p) => {
@@ -363,6 +384,9 @@ export function JobListView({
           for (const proc of entry.procs) {
             result.push({ kind: "process", process: proc, inGroup: true });
           }
+          for (const shell of matchedShellsByGroup.get(entry.group) ?? []) {
+            result.push({ kind: "shell", shell });
+          }
           if (onRunAgent) {
             const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
             if (groupWorkDir) {
@@ -400,8 +424,24 @@ export function JobListView({
       }
     }
 
+    const unmatchedShells: ShellPane[] = [];
+    for (const shell of shellPanes) {
+      if (!shell.matched_group || !allGroups.some((entry) => entry.type === "job" && entry.group === shell.matched_group)) {
+        unmatchedShells.push(shell);
+      }
+    }
+
+    if (unmatchedShells.length > 0) {
+      result.push({ kind: "header", group: "Shells", displayGroup: "Shells" });
+      if (!collapsedGroups.has("Shells")) {
+        for (const shell of unmatchedShells) {
+          result.push({ kind: "shell", shell });
+        }
+      }
+    }
+
     return result;
-  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, matchedProcessesByGroup, unmatchedProcesses, onRunAgent]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, shellPanes]);
 
   const handleRefresh = useCallback(() => {
     onRefresh?.();
@@ -422,6 +462,8 @@ export function JobListView({
           ? `h_${item.group}`
           : item.kind === "process"
             ? `p_${item.process.pane_id}`
+            : item.kind === "shell"
+              ? `s_${item.shell.pane_id}`
             : item.kind === "group-agent"
               ? `ga_${item.workDir}`
               : item.kind === "hidden-section"
@@ -432,6 +474,7 @@ export function JobListView({
 
       if (item.kind === "header") {
         const isCollapsed = collapsedGroups.has(item.group);
+        const allowGroupMenu = item.group !== "Shells" && (onAddJob || onHideGroup);
         return (
           <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
             <TouchableOpacity
@@ -448,7 +491,7 @@ export function JobListView({
                   {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
                 </Text>
               )}
-              {(onAddJob || onHideGroup) && (
+              {allowGroupMenu && (
                 <TouchableOpacity
                   ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
                   onPress={(e: any) => {
@@ -493,6 +536,25 @@ export function JobListView({
             {customRenderProcessCard
               ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, autoYesActive: procAutoYesActive })
               : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} autoYesActive={procAutoYesActive} />
+            }
+          </View>
+        );
+      }
+
+      if (item.kind === "shell") {
+        const pressHandler = onSelectShell ? () => onSelectShell(item.shell) : undefined;
+        const keyId = `_term_${item.shell.pane_id}`;
+        const rawColor = selectedItems?.get(keyId);
+        const isFocused = !focusedItemKey || focusedItemKey === keyId;
+        const isSelected: boolean | string = rawColor
+          ? (isFocused ? rawColor : rawColor + "66")
+          : (selectedSlug === keyId);
+        const shellOnStop = onStopShell ? () => onStopShell(item.shell.pane_id) : undefined;
+        return (
+          <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+            {customRenderShellCard
+              ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop })
+              : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} />
             }
           </View>
         );
@@ -563,7 +625,7 @@ export function JobListView({
             ? customRenderJobCard({ job: item.job, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping })
             : status.state === "running" ? (
               <RunningJobCard
-                jobName={item.job.name}
+                job={item.job}
                 status={status}
                 onPress={pressHandler}
                 selected={isSelected}
@@ -660,7 +722,8 @@ export function JobListView({
     const escaped = CSS.escape(scrollToSlug);
     const el = (
       document.querySelector(`[data-job-slug="${escaped}"]`) ??
-      document.querySelector(`[data-process-id="${escaped}"]`)
+      document.querySelector(`[data-process-id="${escaped}"]`) ??
+      document.querySelector(`[data-shell-id="${escaped}"]`)
     ) as HTMLElement | null;
     if (el) {
       requestAnimationFrame(() => {

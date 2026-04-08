@@ -386,7 +386,7 @@ export default function JobsScreen() {
           (() => {
             const s = statuses[data.slug] ?? { state: "idle" as const }
             return s.state === "running"
-              ? <RunningJobCard jobName={data.job.name} status={s} />
+              ? <RunningJobCard job={data.job} status={s} />
               : <JobCard job={data.job} status={s} />
           })()
         ) : (

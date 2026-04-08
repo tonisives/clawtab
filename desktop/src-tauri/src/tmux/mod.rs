@@ -100,6 +100,15 @@ pub fn window_exists(session: &str, window_name: &str) -> bool {
 }
 
 pub fn create_window(session: &str, name: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+    create_window_with_cwd(session, name, None, env_vars)
+}
+
+pub fn create_window_with_cwd(
+    session: &str,
+    name: &str,
+    cwd: Option<&str>,
+    env_vars: &[(String, String)],
+) -> Result<String, String> {
     let mut args = vec![
         "new-window",
         "-P",
@@ -110,6 +119,10 @@ pub fn create_window(session: &str, name: &str, env_vars: &[(String, String)]) -
         "-n",
         name,
     ];
+    if let Some(cwd) = cwd {
+        args.push("-c");
+        args.push(cwd);
+    }
     let env_pairs: Vec<String> = env_vars.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
     for pair in &env_pairs {
         args.push("-e");

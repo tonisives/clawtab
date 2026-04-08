@@ -6,6 +6,7 @@ import { shortenPath } from "../util/format";
 import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import { JobKindIcon, kindForProcess } from "./JobKindIcon";
 
 const isWeb = Platform.OS === "web";
 
@@ -54,6 +55,7 @@ export function ProcessCard({
   );
 
   const showMenu = onStop && !transient;
+  const kind = kindForProcess(process);
 
   return (
     <View style={[styles.processCard, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 }]}>
@@ -62,9 +64,7 @@ export function ProcessCard({
         onPress={onPress}
         activeOpacity={0.7}
       >
-        <View style={styles.processTypeIcon}>
-          <Text style={styles.processTypeIconText}>C</Text>
-        </View>
+        <JobKindIcon kind={kind} />
         <View style={styles.processInfo}>
           <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
             {displayName}
@@ -135,21 +135,6 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  processTypeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentBg,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  processTypeIconText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: "monospace",
-    fontStyle: "italic",
-  },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
   processName: { color: colors.text, fontSize: 13, fontWeight: "500" },
   queryPreview: {

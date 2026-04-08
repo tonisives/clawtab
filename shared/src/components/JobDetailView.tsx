@@ -24,9 +24,10 @@ import { formatTime, formatDuration, compactCron, shortenPath } from "../util/fo
 import { nextCronDate, formatNextRun, cronTooltip } from "../util/cron";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
-import { isFreetextOption, typeIcon } from "../util/jobs";
+import { isFreetextOption } from "../util/jobs";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import { JobKindIcon, kindForJob } from "./JobKindIcon";
 
 export interface JobDetailViewProps {
   transport: Transport;
@@ -215,8 +216,10 @@ export function JobDetailView({
             }
             break;
           case "stop":
+            setSigintPending(true);
             onStopping?.();
             await transport.stopJob(job.slug);
+            setTimeout(() => setSigintPending(false), 2000);
             break;
           case "pause":
             await transport.pauseJob(job.slug);
@@ -274,7 +277,7 @@ export function JobDetailView({
   const pathDisplay = jobDir.replace(/^\/Users\/[^/]+/, "~");
   const shortTitlePath = titlePath ? shortenPath(titlePath) : null;
   const compactLeadingPills = headerWidth > 0 && headerWidth < 940;
-  const jobTypeIcon = typeIcon(job.job_type);
+  const jobTypeIcon = kindForJob(job);
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
 
@@ -297,20 +300,8 @@ export function JobDetailView({
         onLayout={(e) => setHeaderWidth(e.nativeEvent.layout.width)}
       >
         <View style={styles.infoPills}>
-          <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: job.job_type } as any : {})}>
-            {compactLeadingPills ? (
-              <Text
-                style={[
-                  styles.infoLabel,
-                  styles.compactInfoLetter,
-                  { color: job.job_type === "claude" ? colors.accent : colors.textSecondary },
-                ]}
-              >
-                {jobTypeIcon.letter}
-              </Text>
-            ) : (
-              <Text style={styles.infoLabel}>{job.job_type}</Text>
-            )}
+          <View style={styles.infoLeadingIcon} {...(isWeb ? { title: job.job_type } as any : {})}>
+            <JobKindIcon kind={jobTypeIcon} size={compactLeadingPills ? 22 : 28} compact bare />
           </View>
           {job.cron ? (
             <View style={styles.infoPill} {...(isWeb ? { title: cronTooltip(job.cron) } as any : {})}>
@@ -352,10 +343,10 @@ export function JobDetailView({
             <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} compact />
           )}
           {!runPending && state === "success" && (
-            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact />
+            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
           )}
           {!runPending && state === "idle" && (
-            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact />
+            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
           )}
           {shortTitlePath ? (
             <Text style={styles.headerPathText} numberOfLines={1}>
@@ -447,7 +438,7 @@ export function JobDetailView({
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),
-                    ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction(transport.sigintJob ? "sigint" : "stop"), color: colors.danger }] : []),
+                    ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction("stop"), color: colors.danger }] : []),
                     ...(onDelete && !isRunning ? [{ type: "separator" as const }, { type: "item" as const, label: "Delete", onPress: () => onDelete(), color: colors.danger }] : []),
                   ]}
                 />
@@ -728,6 +719,7 @@ function ActionButton({
   filled,
   disabled,
   compact,
+  icon,
 }: {
   label: string;
   color: string;
@@ -735,12 +727,14 @@ function ActionButton({
   filled?: boolean;
   disabled?: boolean;
   compact?: boolean;
+  icon?: "run";
 }) {
   return (
     <TouchableOpacity
       style={[
         styles.actionBtn,
         compact && styles.actionBtnCompact,
+        icon === "run" && styles.actionBtnSquare,
         filled
           ? { backgroundColor: color }
           : { borderColor: color, borderWidth: 1 },
@@ -750,9 +744,13 @@ function ActionButton({
       activeOpacity={disabled ? 1 : 0.7}
       disabled={disabled}
     >
-      <Text style={[styles.actionText, compact && styles.actionTextCompact, { color: filled ? "#fff" : color }]}>
-        {label}
-      </Text>
+      {icon === "run" ? (
+        <View style={styles.runTriangle} />
+      ) : (
+        <Text style={[styles.actionText, compact && styles.actionTextCompact, { color: filled ? "#fff" : color }]}>
+          {label}
+        </Text>
+      )}
     </TouchableOpacity>
   );
 }
@@ -1160,6 +1158,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
   },
+  infoLeadingIcon: {
+    minWidth: 28,
+    minHeight: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   infoPillIcon: {
     paddingHorizontal: 6,
     minWidth: 24,
@@ -1207,12 +1211,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 2,
   },
+  actionBtnSquare: {
+    width: 24,
+    height: 24,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
   actionText: {
     fontSize: 14,
     fontWeight: "600",
   },
   actionTextCompact: {
     fontSize: 12,
+  },
+  runTriangle: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderTopWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftColor: "#fff",
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    marginLeft: 2,
   },
   section: {
     gap: spacing.sm,

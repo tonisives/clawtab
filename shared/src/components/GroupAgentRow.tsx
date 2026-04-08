@@ -17,18 +17,18 @@ export function GroupAgentRow({
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const hadFocusRef = useRef(false);
   // Expand only once the user inserts a newline (Enter key).
   const expanded = prompt.includes("\n");
 
   // When the input mode swaps (single-line <-> multiline), focus is lost on web
-  // because the underlying DOM element changes. Refocus and place caret at end.
+  // because the underlying DOM element changes. Refocus if this editor was active.
   useEffect(() => {
     if (Platform.OS !== "web") return;
+    if (!hadFocusRef.current) return;
     const node = inputRef.current as unknown as HTMLInputElement | HTMLTextAreaElement | null;
     if (!node) return;
     if (document.activeElement === node) return;
-    // Only refocus if the user was already typing (prompt is non-empty).
-    if (prompt.length === 0) return;
     node.focus();
     const len = prompt.length;
     try { node.setSelectionRange(len, len); } catch {}
@@ -55,6 +55,12 @@ export function GroupAgentRow({
     placeholder: "Run agent in this folder...",
     placeholderTextColor: colors.textMuted,
     inputAccessoryViewID: Platform.OS === "ios" ? "keyboard-dismiss" : undefined,
+    onFocus: () => {
+      hadFocusRef.current = true;
+    },
+    onBlur: () => {
+      hadFocusRef.current = false;
+    },
     onKeyPress: (e: any) => {
       const ne = e.nativeEvent ?? e;
       if (ne.key !== "Enter") return;

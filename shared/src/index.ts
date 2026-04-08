@@ -10,7 +10,7 @@ export type {
   TelegramLogMode,
   TelegramNotify,
 } from "./types/job";
-export type { ClaudeProcess, QuestionOption, ClaudeQuestion } from "./types/process";
+export type { ClaudeProcess, ShellPane, QuestionOption, ClaudeQuestion } from "./types/process";
 export type { PaneContent, SplitNode, SplitTreeState, SplitDirection } from "./types/splitTree";
 export type { Transport } from "./transport";
 
@@ -50,6 +50,8 @@ export { StatusBadge } from "./components/StatusBadge";
 export { JobCard } from "./components/JobCard";
 export { RunningJobCard } from "./components/RunningJobCard";
 export { ProcessCard } from "./components/ProcessCard";
+export { ShellCard } from "./components/ShellCard";
+export { JobKindIcon, kindForJob, kindForProcess, kindForShell } from "./components/JobKindIcon";
 export { LogViewer } from "./components/LogViewer";
 export { MessageInput } from "./components/MessageInput";
 export { ParamsDialog } from "./components/ParamsDialog";

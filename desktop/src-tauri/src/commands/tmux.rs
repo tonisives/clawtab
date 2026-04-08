@@ -1,9 +1,18 @@
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::State;
 
 use crate::terminal;
 use crate::tmux;
 use crate::AppState;
+
+#[derive(serde::Serialize)]
+pub struct ShellPaneResult {
+    pub pane_id: String,
+    pub cwd: String,
+    pub tmux_session: String,
+    pub window_name: String,
+}
 
 #[tauri::command]
 pub fn list_tmux_sessions() -> Result<Vec<String>, String> {
@@ -109,16 +118,41 @@ pub async fn fork_pane(pane_id: String, direction: String) -> Result<String, Str
 
 /// Split a tmux pane without launching Claude (plain terminal).
 #[tauri::command]
-pub async fn split_pane_plain(pane_id: String, direction: String) -> Result<String, String> {
+pub async fn split_pane_plain(pane_id: String, direction: String) -> Result<ShellPaneResult, String> {
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
 
-    let horizontal = direction == "right";
     let pane_path = tmux::get_pane_path(&pane_id)?;
-    let new_pane = tmux::split_pane_by_id(&pane_id, &pane_path, &[], horizontal)?;
+    let tmux_session = std::process::Command::new("tmux")
+        .args(["display-message", "-t", &pane_id, "-p", "#{session_name}"])
+        .output()
+        .map_err(|e| format!("Failed to get pane session: {}", e))
+        .and_then(|output| {
+            if output.status.success() {
+                Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                Err(format!(
+                    "tmux error: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ))
+            }
+        })?;
 
-    Ok(new_pane)
+    let _ = direction;
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let window_name = format!("clawtab-shell-{}", suffix);
+    let new_pane = tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&pane_path), &[])?;
+
+    Ok(ShellPaneResult {
+        pane_id: new_pane,
+        cwd: pane_path,
+        tmux_session,
+        window_name,
+    })
 }
 
 /// Fork a Claude Code session with secrets injected as environment variables.

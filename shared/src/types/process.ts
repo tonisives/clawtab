@@ -2,6 +2,7 @@ export interface ClaudeProcess {
   pane_id: string;
   cwd: string;
   version: string;
+  process_type?: "claude" | "codex";
   tmux_session: string;
   window_name: string;
   matched_group: string | null;
@@ -13,6 +14,14 @@ export interface ClaudeProcess {
   _transient_state?: "starting" | "stopping";
   /** Timestamp (ms) when log_lines last changed, set client-side */
   _last_log_change?: number;
+}
+
+export interface ShellPane {
+  pane_id: string;
+  cwd: string;
+  tmux_session: string;
+  window_name: string;
+  matched_group?: string | null;
 }
 
 export interface QuestionOption {

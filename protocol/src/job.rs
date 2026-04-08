@@ -62,6 +62,8 @@ pub struct ClaudeProcess {
     pub pane_id: String,
     pub cwd: String,
     pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_type: Option<String>,
     pub tmux_session: String,
     pub window_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
