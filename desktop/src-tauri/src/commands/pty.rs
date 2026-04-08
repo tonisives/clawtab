@@ -62,3 +62,12 @@ pub fn pty_resize(
 pub fn pty_destroy(state: State<AppState>, pane_id: String) -> Result<(), String> {
     state.pty_manager.lock().unwrap().destroy(&pane_id)
 }
+
+#[tauri::command]
+pub fn pty_get_cached_output(state: State<AppState>, pane_id: String) -> Result<Vec<u8>, String> {
+    Ok(state
+        .pty_manager
+        .lock()
+        .unwrap()
+        .get_cached_output(&pane_id))
+}

@@ -69,6 +69,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const actions = useJobActions(transport, core.reloadStatuses);
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   const [jobOrder, setJobOrder] = useState<Record<string, string[]>>({});
+  const [processOrder, setProcessOrder] = useState<Record<string, string[]>>(() => {
+    const raw = localStorage.getItem("desktop_process_order");
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw) as Record<string, string[]>;
+    } catch {
+      return {};
+    }
+  });
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<JobSortMode>("name");
 
@@ -130,13 +139,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     startFastQuestionPoll,
   );
 
+  const blurSelectionFocus = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && typeof active.blur === "function") active.blur();
+    });
+  }, []);
+
   const handleSelectJobDirect = useCallback((job: RemoteJob) => {
     setViewingProcess(null);
     setViewingShell(null);
     setViewingAgent(false);
     setViewingJob(job as Job);
+    blurSelectionFocus();
     onJobSelected?.();
-  }, [onJobSelected]);
+  }, [blurSelectionFocus, onJobSelected]);
 
   const handleSelectProcessDirect = useCallback((process: ClaudeProcess) => {
     setViewingJob(null);
@@ -144,21 +161,24 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (process.cwd.endsWith("/clawtab/agent")) {
       setViewingProcess(null);
       setViewingAgent(true);
+      blurSelectionFocus();
       onJobSelected?.();
       return;
     }
     setViewingAgent(false);
     setViewingProcess(process);
+    blurSelectionFocus();
     onJobSelected?.();
-  }, [onJobSelected]);
+  }, [blurSelectionFocus, onJobSelected]);
 
   const handleSelectShellDirect = useCallback((shell: ShellPane) => {
     setViewingJob(null);
     setViewingProcess(null);
     setViewingAgent(false);
     setViewingShell(shell);
+    blurSelectionFocus();
     onJobSelected?.();
-  }, [onJobSelected]);
+  }, [blurSelectionFocus, onJobSelected]);
 
   // Compute current single-pane content for the split tree hook
   const currentContent: PaneContent | null = useMemo(() => {
@@ -685,8 +705,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const openRenameProcessDialog = useCallback((process: ClaudeProcess) => {
     setEditProcessField({
       paneId: process.pane_id,
-      title: "Rename detected agent",
-      label: "Name",
+      title: "Edit pane title",
+      label: "Title",
       field: "display_name",
       initialValue: process.display_name ?? "",
       placeholder: shortenPath(process.cwd),
@@ -710,19 +730,47 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const handleSaveProcessField = useCallback(async (value: string) => {
     if (!editProcessField) return;
+    const normalizedValue = value.trim() || null;
+    const paneId = editProcessField.paneId;
     try {
       if (editProcessField.field === "display_name") {
+        core.setProcesses((prev) => prev.map((proc) => (
+          proc.pane_id === paneId ? { ...proc, display_name: normalizedValue } : proc
+        )));
+        setViewingProcess((prev) => prev && prev.pane_id === paneId
+          ? { ...prev, display_name: normalizedValue }
+          : prev);
         await invoke("set_detected_process_display_name", {
-          paneId: editProcessField.paneId,
-          displayName: value || null,
+          paneId,
+          displayName: normalizedValue,
         });
+        setPendingProcess((prev) => prev && prev.pane_id === paneId
+          ? { ...prev, display_name: normalizedValue }
+          : prev);
       } else {
-        const proc = core.processes.find((item) => item.pane_id === editProcessField.paneId)
-          ?? (pendingProcess?.pane_id === editProcessField.paneId ? pendingProcess : null);
+        const proc = core.processes.find((item) => item.pane_id === paneId)
+          ?? (pendingProcess?.pane_id === paneId ? pendingProcess : null);
+        const nextFirstQuery = editProcessField.field === "first_query"
+          ? normalizedValue
+          : (proc?.first_query ?? null);
+        const nextLastQuery = editProcessField.field === "last_query"
+          ? normalizedValue
+          : (proc?.last_query ?? null);
+        core.setProcesses((prev) => prev.map((item) => (
+          item.pane_id === paneId
+            ? { ...item, first_query: nextFirstQuery, last_query: nextLastQuery }
+            : item
+        )));
+        setViewingProcess((prev) => prev && prev.pane_id === paneId
+          ? { ...prev, first_query: nextFirstQuery, last_query: nextLastQuery }
+          : prev);
+        setPendingProcess((prev) => prev && prev.pane_id === paneId
+          ? { ...prev, first_query: nextFirstQuery, last_query: nextLastQuery }
+          : prev);
         await invoke("set_detected_process_queries", {
-          paneId: editProcessField.paneId,
-          firstQuery: editProcessField.field === "first_query" ? (value || null) : (proc?.first_query ?? null),
-          lastQuery: editProcessField.field === "last_query" ? (value || null) : (proc?.last_query ?? null),
+          paneId,
+          firstQuery: nextFirstQuery,
+          lastQuery: nextLastQuery,
         });
       }
       setEditProcessField(null);
@@ -814,6 +862,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       .catch(() => {});
   }, []);
 
+  const persistProcessOrder = useCallback((next: Record<string, string[]>) => {
+    setProcessOrder(next);
+    localStorage.setItem("desktop_process_order", JSON.stringify(next));
+  }, []);
+
   const handleJobReorder = useCallback((sourceSlug: string, targetSlug: string) => {
     const jobs = core.jobs as Job[];
     const sourceJob = jobs.find((job) => job.slug === sourceSlug);
@@ -849,6 +902,41 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     return true;
   }, [core.jobs, jobOrder, persistJobOrder]);
 
+  const handleProcessReorder = useCallback((sourcePaneId: string, targetPaneId: string) => {
+    const allProcesses = [...core.processes, ...stoppingProcesses.map((entry) => entry.process), ...(pendingProcess ? [pendingProcess] : [])];
+    const sourceProcess = allProcesses.find((process) => process.pane_id === sourcePaneId);
+    const targetProcess = allProcesses.find((process) => process.pane_id === targetPaneId);
+    if (!sourceProcess || !targetProcess) return false;
+    const sourceGroup = sourceProcess.matched_group ?? `cwd:${sourceProcess.cwd}`;
+    const targetGroup = targetProcess.matched_group ?? `cwd:${targetProcess.cwd}`;
+    if (sourceGroup !== targetGroup) return false;
+
+    const groupProcesses = allProcesses.filter((process) => (process.matched_group ?? `cwd:${process.cwd}`) === sourceGroup);
+    const manualOrder = processOrder[sourceGroup] ?? [];
+    const manualIndex = new Map(manualOrder.map((paneId, index) => [paneId, index]));
+    groupProcesses.sort((a, b) => {
+      const aIndex = manualIndex.get(a.pane_id);
+      const bIndex = manualIndex.get(b.pane_id);
+      if (aIndex != null && bIndex != null) return aIndex - bIndex;
+      if (aIndex != null) return -1;
+      if (bIndex != null) return 1;
+      return (a.display_name ?? a.first_query ?? a.cwd).localeCompare(b.display_name ?? b.first_query ?? b.cwd);
+    });
+
+    const fromIndex = groupProcesses.findIndex((process) => process.pane_id === sourcePaneId);
+    const toIndex = groupProcesses.findIndex((process) => process.pane_id === targetPaneId);
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return false;
+
+    const reordered = [...groupProcesses];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    persistProcessOrder({
+      ...processOrder,
+      [sourceGroup]: reordered.map((process) => process.pane_id),
+    });
+    return true;
+  }, [core.processes, pendingProcess, processOrder, persistProcessOrder, stoppingProcesses]);
+
   const blurActiveListElement = useCallback(() => {
     requestAnimationFrame(() => {
       const active = document.activeElement as HTMLElement | null;
@@ -870,9 +958,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (data?.kind === "job" && overId) {
       handleJobReorder(data.slug, overId);
     }
+    if (data?.kind === "process" && overId) {
+      handleProcessReorder(data.paneId, overId);
+    }
     split.handleDragEnd(event);
     blurActiveListElement();
-  }, [blurActiveListElement, handleJobReorder, split.handleDragEnd]);
+  }, [blurActiveListElement, handleJobReorder, handleProcessReorder, split.handleDragEnd]);
 
   const handleDragCancel = useCallback(() => {
     split.handleDragCancel();
@@ -1071,13 +1162,36 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     return shortenPath(process.cwd);
   }, []);
 
+  const agentProcess = useMemo(
+    () => core.processes.find((process) => process.cwd.endsWith("/clawtab/agent")) ?? null,
+    [core.processes],
+  );
+
+  const agentJob = useMemo<RemoteJob>(() => ({
+    name: agentProcess?.display_name ?? agentProcess?.first_query ?? "agent",
+    job_type: "claude",
+    enabled: true,
+    cron: "",
+    group: "",
+    slug: "agent",
+  }), [agentProcess]);
+
   // Render a leaf pane in the split tree
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
     if (content.kind === "agent") {
-      const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
-        <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => split.handleClosePane(leafId)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} titlePath="Agent" />
+        <AgentDetail
+          transport={transport}
+          job={agentJob}
+          status={core.statuses["agent"] ?? { state: "idle" as const }}
+          onBack={() => split.handleClosePane(leafId)}
+          onOpen={() => handleOpen("agent")}
+          onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
+          showBackButton={!isWide}
+          hidePath
+          contentStyle={trafficLightInsetStyle}
+          titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
+        />
       );
     }
 
@@ -1122,7 +1236,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           process={proc} questions={questions}
           onBack={() => split.handleClosePane(leafId)}
           onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-          onRename={() => openRenameProcessDialog(proc)}
           onEditFirstQuery={() => openEditProcessQueryDialog(proc, "first_query")}
           onEditLastQuery={() => openEditProcessQueryDialog(proc, "last_query")}
           autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
@@ -1182,11 +1295,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         titlePath={buildJobTitlePath(job, jobQuestion)}
       />
     );
-  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle, pendingProcess, shellPanes]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => (
+    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string }) => (
       <DraggableJobCard
         {...props}
         reorderEnabled={sortMode === "name"}
@@ -1196,7 +1309,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean }) => <DraggableProcessCard {...props} />,
+    (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => (
+      <DraggableProcessCard
+        {...props}
+        reorderEnabled
+      />
+    ),
     [],
   );
 
@@ -1204,6 +1322,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     <SortableContext
       key={`sortable-${group}`}
       items={jobSlugs}
+      strategy={verticalListSortingStrategy}
+    >
+      {children}
+    </SortableContext>
+  ), []);
+
+  const wrapSortableProcessGroup = useCallback((group: string, processPaneIds: string[], children: React.ReactNode) => (
+    <SortableContext
+      key={`sortable-process-${group}`}
+      items={processPaneIds}
       strategy={verticalListSortingStrategy}
     >
       {children}
@@ -1270,10 +1398,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const renderSinglePaneContent = useCallback((content: PaneContent) => {
     if (content.kind === "agent") {
-      const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
-        <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => setViewingAgent(false)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} titlePath="Agent" />
+        <AgentDetail
+          transport={transport}
+          job={agentJob}
+          status={core.statuses["agent"] ?? { state: "idle" as const }}
+          onBack={() => setViewingAgent(false)}
+          onOpen={() => handleOpen("agent")}
+          onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
+          showBackButton={!isWide}
+          hidePath
+          contentStyle={trafficLightInsetStyle}
+          titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
+        />
       );
     }
 
@@ -1303,7 +1440,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             process={singleProcess} questions={questions}
             onBack={() => setViewingProcess(null)}
             onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-            onRename={() => openRenameProcessDialog(singleProcess)}
             onEditFirstQuery={() => openEditProcessQueryDialog(singleProcess, "first_query")}
             onEditLastQuery={() => openEditProcessQueryDialog(singleProcess, "last_query")}
             autoYesActive={autoYes.autoYesPaneIds.has(singleProcess.pane_id)}
@@ -1403,7 +1539,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Select a job to view details</span>
       </div>
     );
-  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog]);
 
   const detailPane = currentContent ? (
     <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
@@ -1551,6 +1687,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       onToggleGroup={core.toggleGroup}
       groupOrder={groupOrder}
       jobOrder={jobOrder}
+      processOrder={processOrder}
       sortMode={sortMode}
       onSortChange={setSortMode}
       onSelectJob={handleSelectJob}
@@ -1595,6 +1732,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}
       wrapJobGroup={isWide && sortMode === "name" ? wrapSortableJobGroup : undefined}
+      wrapProcessGroup={isWide ? wrapSortableProcessGroup : undefined}
       stoppingSlugs={stoppingJobSlugs}
     />
   );

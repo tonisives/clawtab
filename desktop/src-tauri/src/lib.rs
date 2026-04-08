@@ -529,6 +529,7 @@ pub fn run() {
             commands::pty::pty_write,
             commands::pty::pty_resize,
             commands::pty::pty_destroy,
+            commands::pty::pty_get_cached_output,
             commands::pty::pty_release,
         ])
         .setup(move |app| {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -24,6 +24,57 @@ struct PaneViewer {
     view_session: String,
 }
 
+const MAX_RECENT_PANES: usize = 12;
+const MAX_CACHED_BYTES_PER_PANE: usize = 256 * 1024;
+
+struct RecentPaneCache {
+    order: VecDeque<String>,
+    entries: HashMap<String, Vec<u8>>,
+}
+
+impl RecentPaneCache {
+    fn new() -> Self {
+        Self {
+            order: VecDeque::new(),
+            entries: HashMap::new(),
+        }
+    }
+
+    fn touch(&mut self, pane_id: &str) {
+        if let Some(idx) = self.order.iter().position(|id| id == pane_id) {
+            self.order.remove(idx);
+        }
+        self.order.push_front(pane_id.to_string());
+        while self.order.len() > MAX_RECENT_PANES {
+            if let Some(oldest) = self.order.pop_back() {
+                self.entries.remove(&oldest);
+            }
+        }
+    }
+
+    fn append(&mut self, pane_id: &str, bytes: &[u8]) {
+        if bytes.is_empty() {
+            self.touch(pane_id);
+            return;
+        }
+
+        self.touch(pane_id);
+        let entry = self.entries.entry(pane_id.to_string()).or_default();
+        entry.extend_from_slice(bytes);
+        if entry.len() > MAX_CACHED_BYTES_PER_PANE {
+            let overflow = entry.len() - MAX_CACHED_BYTES_PER_PANE;
+            entry.drain(..overflow);
+        }
+    }
+
+    fn get(&mut self, pane_id: &str) -> Vec<u8> {
+        if self.entries.contains_key(pane_id) {
+            self.touch(pane_id);
+        }
+        self.entries.get(pane_id).cloned().unwrap_or_default()
+    }
+}
+
 /// Where PTY output bytes should be sent.
 pub enum OutputSink {
     /// Emit as Tauri event (local desktop xterm.js)
@@ -40,6 +91,7 @@ pub struct SpawnResult {
 
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
+    recent: Arc<Mutex<RecentPaneCache>>,
 }
 
 static VIEW_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -228,6 +280,7 @@ impl PtyManager {
     pub fn new() -> Self {
         Self {
             sessions: HashMap::new(),
+            recent: Arc::new(Mutex::new(RecentPaneCache::new())),
         }
     }
 
@@ -306,6 +359,7 @@ impl PtyManager {
         let stop_clone = Arc::clone(&stop);
         let event_key = pane_id.replace('%', "p");
         let pane_id_for_thread = pane_id.to_string();
+        let recent_cache = Arc::clone(&self.recent);
 
         thread::spawn(move || {
             let mut buf = [0u8; 8192];
@@ -315,6 +369,10 @@ impl PtyManager {
                     Ok(0) => break,
                     Ok(n) => {
                         let bytes = buf[..n].to_vec();
+                        recent_cache
+                            .lock()
+                            .unwrap()
+                            .append(&pane_id_for_thread, &bytes);
                         match &sink {
                             OutputSink::Tauri(app_handle) => {
                                 let _ = app_handle
@@ -351,6 +409,10 @@ impl PtyManager {
         );
 
         Ok(SpawnResult { native_cols, native_rows })
+    }
+
+    pub fn get_cached_output(&self, pane_id: &str) -> Vec<u8> {
+        self.recent.lock().unwrap().get(pane_id)
     }
 
     pub fn write(&mut self, pane_id: &str, data: &[u8]) -> Result<(), String> {

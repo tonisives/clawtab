@@ -22,8 +22,16 @@ export function EditTextDialog({
   const [value, setValue] = useState(initialValue);
 
   useEffect(() => {
+    setValue(initialValue);
+    const timer = window.setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [initialValue]);
+
+  useEffect(() => {
     inputRef.current?.focus();
-    inputRef.current?.select();
 
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();

@@ -33,6 +33,11 @@ pub struct ClaudeProcess {
     pub session_started_at: Option<String>,
 }
 
+struct DetectionSnapshot {
+    processes: Vec<ClaudeProcess>,
+    active_pane_ids: HashSet<String>,
+}
+
 fn is_semver(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 3 {
@@ -160,7 +165,7 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
     let overrides = state.process_overrides.lock().unwrap().clone();
 
     // Run all subprocess-heavy work off the async runtime
-    tokio::task::spawn_blocking(move || {
+    let snapshot = tokio::task::spawn_blocking(move || {
         detect_claude_processes_blocking(
             live_viewer_panes,
             match_entries,
@@ -169,7 +174,11 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
         )
     })
     .await
-    .map_err(|e| format!("spawn_blocking failed: {}", e))?
+    .map_err(|e| format!("spawn_blocking failed: {}", e))??;
+
+    prune_stale_process_overrides(&state, &snapshot.active_pane_ids)?;
+
+    Ok(snapshot.processes)
 }
 
 fn detect_claude_processes_blocking(
@@ -177,7 +186,7 @@ fn detect_claude_processes_blocking(
     match_entries: Vec<(String, String, String)>,
     running_panes: HashMap<String, (String, String)>,
     overrides: HashMap<String, DetectedProcessOverride>,
-) -> Result<Vec<ClaudeProcess>, String> {
+) -> Result<DetectionSnapshot, String> {
     let output = Command::new("tmux")
         .args([
             "list-panes",
@@ -192,7 +201,10 @@ fn detect_claude_processes_blocking(
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             if stderr.contains("no server running") || stderr.contains("no sessions") {
-                return Ok(vec![]);
+                return Ok(DetectionSnapshot {
+                    processes: Vec::new(),
+                    active_pane_ids: HashSet::new(),
+                });
             }
             return Err(format!("tmux error: {}", stderr.trim()));
         }
@@ -201,6 +213,7 @@ fn detect_claude_processes_blocking(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
+    let mut active_pane_ids = HashSet::new();
     let mut seen_panes = HashSet::new();
     let mut results = Vec::new();
 
@@ -216,6 +229,8 @@ fn detect_claude_processes_blocking(
         let session = parts[3];
         let window = parts[4];
         let pane_pid = parts[5];
+
+        active_pane_ids.insert(pane_id.to_string());
 
         let process_type = detect_process_type(pane_pid);
         if !is_semver(command) && process_type.is_none() {
@@ -272,7 +287,10 @@ fn detect_claude_processes_blocking(
         });
     }
 
-    Ok(results)
+    Ok(DetectionSnapshot {
+        processes: results,
+        active_pane_ids,
+    })
 }
 
 #[tauri::command]
@@ -305,6 +323,21 @@ pub fn set_detected_process_queries(
     let snapshot = overrides.clone();
     drop(overrides);
     persist_process_overrides(&state, snapshot)
+}
+
+fn prune_stale_process_overrides(
+    state: &State<'_, AppState>,
+    active_pane_ids: &HashSet<String>,
+) -> Result<(), String> {
+    let mut overrides = state.process_overrides.lock().unwrap();
+    let before_len = overrides.len();
+    overrides.retain(|pane_id, _| active_pane_ids.contains(pane_id));
+    if overrides.len() == before_len {
+        return Ok(());
+    }
+    let snapshot = overrides.clone();
+    drop(overrides);
+    persist_process_overrides(state, snapshot)
 }
 
 fn normalize_optional_text(value: String) -> Option<String> {
@@ -387,6 +420,13 @@ pub fn sigint_detected_process(pane_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn stop_detected_process(pane_id: String) -> Result<(), String> {
-    crate::tmux::kill_pane(&pane_id)
+pub fn stop_detected_process(state: State<'_, AppState>, pane_id: String) -> Result<(), String> {
+    crate::tmux::kill_pane(&pane_id)?;
+    let mut overrides = state.process_overrides.lock().unwrap();
+    if overrides.remove(&pane_id).is_none() {
+        return Ok(());
+    }
+    let snapshot = overrides.clone();
+    drop(overrides);
+    persist_process_overrides(&state, snapshot)
 }

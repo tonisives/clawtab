@@ -153,6 +153,15 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
       if (cancelled) { t.dispose(); return; }
 
+      const cachedBytes = await invoke<number[]>("pty_get_cached_output", { paneId }).catch(() => []);
+      if (cancelled) {
+        t.dispose();
+        return;
+      }
+      if (cachedBytes.length > 0) {
+        t.write(new Uint8Array(cachedBytes));
+      }
+
       const viewport = await waitForViewportReady(el, t, fit, () => cancelled);
       if (!viewport || cancelled) {
         t.dispose();

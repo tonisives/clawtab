@@ -50,7 +50,6 @@ export function DetectedProcessDetail({
   showBackButton = false,
   hidePath = false,
   onStopped,
-  onRename,
   onEditFirstQuery,
   onEditLastQuery,
   onFork,
@@ -69,7 +68,6 @@ export function DetectedProcessDetail({
   showBackButton?: boolean;
   hidePath?: boolean;
   onStopped?: () => void;
-  onRename?: () => void;
   onEditFirstQuery?: () => void;
   onEditLastQuery?: () => void;
   onFork?: (direction: "right" | "down") => void;
@@ -169,7 +167,6 @@ export function DetectedProcessDetail({
       hideMessageInput
       firstQuery={process.first_query ?? undefined}
       lastQuery={process.last_query ?? undefined}
-      onEdit={onRename}
       onEditFirstQuery={onEditFirstQuery}
       onEditLastQuery={onEditLastQuery}
       onFork={onFork}

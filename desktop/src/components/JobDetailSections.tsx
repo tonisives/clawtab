@@ -516,6 +516,7 @@ export function AgentDetail({
   status,
   onBack,
   onOpen,
+  onEditTitle,
   showBackButton = false,
   hidePath = false,
   contentStyle,
@@ -526,6 +527,7 @@ export function AgentDetail({
   status: JobStatus;
   onBack: () => void;
   onOpen: () => void;
+  onEditTitle?: () => void;
   showBackButton?: boolean;
   hidePath?: boolean;
   contentStyle?: unknown;
@@ -551,6 +553,7 @@ export function AgentDetail({
       hidePath={hidePath}
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
+      onEditTitle={onEditTitle}
       extraContent={extraContent}
       sectionStyle={cardSectionStyle}
       containerStyle={desktopContainerStyle}
