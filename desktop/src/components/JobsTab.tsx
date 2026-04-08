@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { DndContext, DragOverlay } from "@dnd-kit/core";
+import { DndContext, DragOverlay, type DragEndEvent, type DragMoveEvent, type DragStartEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared";
 import type { ClaudeProcess, ClaudeQuestion, ShellPane } from "@clawtab/shared";
 import {
@@ -67,6 +68,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
+  const [jobOrder, setJobOrder] = useState<Record<string, string[]>>({});
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<JobSortMode>("name");
 
@@ -293,6 +295,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     invoke<AppSettings>("get_settings").then((s) => {
       if (s.group_order && s.group_order.length > 0) {
         setGroupOrder(s.group_order);
+      }
+      if (s.job_order) {
+        setJobOrder(s.job_order);
       }
       if (s.hidden_groups && s.hidden_groups.length > 0) {
         setHiddenGroups(new Set(s.hidden_groups));
@@ -741,7 +746,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       grouped.get(group)!.push(job);
     }
     if (sortMode === "name") {
-      for (const [, gJobs] of grouped) gJobs.sort((a, b) => a.name.localeCompare(b.name));
+      for (const [group, gJobs] of grouped) {
+        const manualOrder = jobOrder[group] ?? [];
+        const manualIndex = new Map(manualOrder.map((slug, index) => [slug, index]));
+        gJobs.sort((a, b) => {
+          const aIndex = manualIndex.get(a.slug);
+          const bIndex = manualIndex.get(b.slug);
+          if (aIndex != null && bIndex != null) return aIndex - bIndex;
+          if (aIndex != null) return -1;
+          if (bIndex != null) return 1;
+          return a.name.localeCompare(b.name);
+        });
+      }
     }
     const keys = [...grouped.keys()];
     if (sortMode === "name") {
@@ -770,7 +786,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       result.push({ kind: "terminal", paneId: shell.pane_id, shell });
     }
     return result;
-  }, [core.jobs, core.processes, sortMode, pendingProcess, stoppingProcesses, shellPanes]);
+  }, [core.jobs, core.processes, sortMode, jobOrder, pendingProcess, stoppingProcesses, shellPanes]);
 
   const selectAdjacentItem = useCallback((currentId: string) => {
     const idx = orderedItems.findIndex((it) =>
@@ -790,6 +806,78 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       setViewingJob(null); setViewingProcess(null); setViewingShell(null);
     }
   }, [orderedItems]);
+
+  const persistJobOrder = useCallback((next: Record<string, string[]>) => {
+    setJobOrder(next);
+    invoke<AppSettings>("get_settings")
+      .then((s) => invoke("set_settings", { newSettings: { ...s, job_order: next } }))
+      .catch(() => {});
+  }, []);
+
+  const handleJobReorder = useCallback((sourceSlug: string, targetSlug: string) => {
+    const jobs = core.jobs as Job[];
+    const sourceJob = jobs.find((job) => job.slug === sourceSlug);
+    const targetJob = jobs.find((job) => job.slug === targetSlug);
+    if (!sourceJob || !targetJob) return false;
+    const sourceGroup = sourceJob.group || "default";
+    const targetGroup = targetJob.group || "default";
+    if (sourceGroup !== targetGroup) return false;
+
+    const groupJobs = jobs.filter((job) => (job.group || "default") === sourceGroup).slice();
+    const manualOrder = jobOrder[sourceGroup] ?? [];
+    const manualIndex = new Map(manualOrder.map((slug, index) => [slug, index]));
+    groupJobs.sort((a, b) => {
+      const aIndex = manualIndex.get(a.slug);
+      const bIndex = manualIndex.get(b.slug);
+      if (aIndex != null && bIndex != null) return aIndex - bIndex;
+      if (aIndex != null) return -1;
+      if (bIndex != null) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const fromIndex = groupJobs.findIndex((job) => job.slug === sourceSlug);
+    const toIndex = groupJobs.findIndex((job) => job.slug === targetSlug);
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return false;
+
+    const reordered = [...groupJobs];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    persistJobOrder({
+      ...jobOrder,
+      [sourceGroup]: reordered.map((job) => job.slug),
+    });
+    return true;
+  }, [core.jobs, jobOrder, persistJobOrder]);
+
+  const blurActiveListElement = useCallback(() => {
+    requestAnimationFrame(() => {
+      const active = document.activeElement as HTMLElement | null;
+      if (active && typeof active.blur === "function") active.blur();
+    });
+  }, []);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    split.handleDragStart(event);
+  }, [split.handleDragStart]);
+
+  const handleDragMove = useCallback((event: DragMoveEvent) => {
+    split.handleDragMove(event);
+  }, [split.handleDragMove]);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const data = event.active.data.current as DragData | null;
+    const overId = typeof event.over?.id === "string" ? event.over.id : null;
+    if (data?.kind === "job" && overId) {
+      handleJobReorder(data.slug, overId);
+    }
+    split.handleDragEnd(event);
+    blurActiveListElement();
+  }, [blurActiveListElement, handleJobReorder, split.handleDragEnd]);
+
+  const handleDragCancel = useCallback(() => {
+    split.handleDragCancel();
+    blurActiveListElement();
+  }, [blurActiveListElement, split.handleDragCancel]);
 
   const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
     if (workDir) {
@@ -913,6 +1001,29 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       return false;
     });
   }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes]);
+
+  // Promote shell panes to detected processes when claude/codex is launched inside them
+  useEffect(() => {
+    if (core.processes.length === 0 || shellPanes.length === 0) return;
+    const processPaneIds = new Set(core.processes.map((p) => p.pane_id));
+    const promoted = shellPanes.filter((s) => processPaneIds.has(s.pane_id));
+    if (promoted.length === 0) return;
+    const promotedIds = new Set(promoted.map((s) => s.pane_id));
+    setShellPanes((prev) => prev.filter((s) => !promotedIds.has(s.pane_id)));
+    for (const shell of promoted) {
+      split.replaceContent(
+        { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
+        { kind: "process", paneId: shell.pane_id },
+      );
+    }
+    if (viewingShell && promotedIds.has(viewingShell.pane_id)) {
+      const proc = core.processes.find((p) => p.pane_id === viewingShell.pane_id);
+      if (proc) {
+        setViewingShell(null);
+        setViewingProcess(proc);
+      }
+    }
+  }, [core.processes, shellPanes, split.replaceContent, viewingShell]);
 
   // Helper: build DesktopJobDetail pane action props
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
@@ -1075,14 +1186,29 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => <DraggableJobCard {...props} />,
-    [],
+    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => (
+      <DraggableJobCard
+        {...props}
+        reorderEnabled={sortMode === "name"}
+      />
+    ),
+    [sortMode],
   );
 
   const renderDraggableProcessCard = useCallback(
     (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean }) => <DraggableProcessCard {...props} />,
     [],
   );
+
+  const wrapSortableJobGroup = useCallback((group: string, jobSlugs: string[], children: React.ReactNode) => (
+    <SortableContext
+      key={`sortable-${group}`}
+      items={jobSlugs}
+      strategy={verticalListSortingStrategy}
+    >
+      {children}
+    </SortableContext>
+  ), []);
 
   // --- Notification visibility ---
 
@@ -1424,6 +1550,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       collapsedGroups={core.collapsedGroups}
       onToggleGroup={core.toggleGroup}
       groupOrder={groupOrder}
+      jobOrder={jobOrder}
       sortMode={sortMode}
       onSortChange={setSortMode}
       onSelectJob={handleSelectJob}
@@ -1467,6 +1594,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}
+      wrapJobGroup={isWide && sortMode === "name" ? wrapSortableJobGroup : undefined}
       stoppingSlugs={stoppingJobSlugs}
     />
   );
@@ -1580,10 +1708,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         ) : (
           <DndContext
             sensors={split.sensors}
-            onDragStart={split.handleDragStart}
-            onDragMove={split.handleDragMove}
-            onDragEnd={split.handleDragEnd}
-            onDragCancel={split.handleDragCancel}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
           >
             <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
               {!sidebarCollapsed && (

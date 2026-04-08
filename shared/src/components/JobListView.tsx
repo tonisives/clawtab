@@ -90,6 +90,7 @@ export interface JobListViewProps {
   collapsedGroups: Set<string>;
   onToggleGroup: (group: string) => void;
   groupOrder?: string[];
+  jobOrder?: Record<string, string[]>;
   onRefresh?: () => void;
   // Sorting
   sortMode?: JobSortMode;
@@ -135,9 +136,10 @@ export interface JobListViewProps {
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
-  renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => React.ReactNode;
+  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => React.ReactNode;
   renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
+  wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
   scrollEnabled?: boolean;
   // Slugs currently being stopped (for "Stopping..." display in sidebar)
@@ -168,6 +170,7 @@ export function JobListView({
   collapsedGroups,
   onToggleGroup,
   groupOrder: _groupOrder = [],
+  jobOrder = {},
   onRefresh,
   sortMode = "name",
   onSortChange,
@@ -197,6 +200,7 @@ export function JobListView({
   renderJobCard: customRenderJobCard,
   renderProcessCard: customRenderProcessCard,
   renderShellCard: customRenderShellCard,
+  wrapJobGroup,
   scrollEnabled = true,
   stoppingSlugs: stoppingSlugsExternal,
   onSelectableItemsChange,
@@ -247,12 +251,21 @@ export function JobListView({
       map.get(group)!.push(job);
     }
     if (sortMode === "name") {
-      for (const [, groupJobs] of map) {
-        groupJobs.sort((a, b) => a.name.localeCompare(b.name));
+      for (const [group, groupJobs] of map) {
+        const manualOrder = jobOrder[group] ?? [];
+        const manualIndex = new Map(manualOrder.map((slug, index) => [slug, index]));
+        groupJobs.sort((a, b) => {
+          const aIndex = manualIndex.get(a.slug);
+          const bIndex = manualIndex.get(b.slug);
+          if (aIndex != null && bIndex != null) return aIndex - bIndex;
+          if (aIndex != null) return -1;
+          if (bIndex != null) return 1;
+          return a.name.localeCompare(b.name);
+        });
       }
     }
     return map;
-  }, [jobs, query, sortMode]);
+  }, [jobOrder, jobs, query, sortMode]);
 
   const sortedGroupKeys = useMemo(
     () => sortGroupKeys([...grouped.keys()], grouped, sortMode, statuses),
@@ -470,7 +483,54 @@ export function JobListView({
     onRefresh?.();
   }, [onRefresh]);
 
-  const renderItems = () => {
+  const renderJobItem = (item: Extract<ListItem, { kind: "job" }>, key: string, index: number) => {
+    const status = statuses[item.job.slug] ?? IDLE_STATUS;
+    const pressHandler = onSelectJob ? () => onSelectJob(item.job) : undefined;
+    const rawJobColor = selectedItems?.get(item.job.slug);
+    const isJobFocused = !focusedItemKey || focusedItemKey === item.job.slug;
+    const isSelected: boolean | string = rawJobColor
+      ? (isJobFocused ? rawJobColor : rawJobColor + "66")
+      : (selectedSlug === item.job.slug);
+    const isRunning = status.state === "running";
+    const jobPaneId = isRunning ? (status as { pane_id?: string }).pane_id : undefined;
+    const jobAutoYesActive = jobPaneId ? autoYesPaneIds?.has(jobPaneId) ?? false : false;
+    const isStopping = stoppingSlugsExternal?.has(item.job.slug) ?? false;
+    const jobOnStop = isRunning && !isStopping && onStopJob ? () => onStopJob(item.job.slug) : undefined;
+    return (
+      <View
+        key={key}
+        {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
+        style={[
+          item.idx % 2 === 1 ? { opacity: 0.85 } : undefined,
+          index > 0 ? { marginTop: spacing.sm } : undefined,
+        ]}
+      >
+        {customRenderJobCard
+          ? customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping })
+          : status.state === "running" ? (
+            <RunningJobCard
+              job={item.job}
+              status={status}
+              onPress={pressHandler}
+              selected={isSelected}
+              onStop={jobOnStop}
+              autoYesActive={jobAutoYesActive}
+              stopping={isStopping}
+            />
+          ) : (
+            <JobCard
+              job={item.job}
+              status={status}
+              onPress={pressHandler}
+              selected={isSelected}
+            />
+          )
+        }
+      </View>
+    );
+  };
+
+  const renderItemsWithSortableGroups = () => {
     if (items.length === 0 && (showEmpty || query)) {
       return (
         <View style={styles.empty}>
@@ -479,7 +539,28 @@ export function JobListView({
         </View>
       );
     }
-    return items.map((item, index) => {
+    const rendered: React.ReactNode[] = [];
+    let index = 0;
+    while (index < items.length) {
+      const item = items[index];
+      if (item.kind === "job") {
+        const jobItems: Extract<ListItem, { kind: "job" }>[] = [];
+        const startIndex = index;
+        while (index < items.length && items[index]?.kind === "job") {
+          jobItems.push(items[index] as Extract<ListItem, { kind: "job" }>);
+          index += 1;
+        }
+        const children = jobItems.map((jobItem, offset) => {
+          const key = `j_${jobItem.job.slug || jobItem.job.name}`;
+          return renderJobItem(jobItem, key, startIndex + offset);
+        });
+        const group = jobItems[0]?.job.group || "default";
+        const jobSlugs = jobItems.map((jobItem) => jobItem.job.slug);
+        rendered.push(
+          wrapJobGroup ? wrapJobGroup(group, jobSlugs, children) : children,
+        );
+        continue;
+      }
       const key =
         item.kind === "header"
           ? `h_${item.group}`
@@ -491,184 +572,143 @@ export function JobListView({
               ? `ga_${item.workDir}`
               : item.kind === "hidden-section"
                 ? "hidden_section"
-                : item.kind === "hidden-header"
-                  ? `hh_${item.group}`
-                  : `j_${item.job.slug || item.job.name}`;
+                : `hh_${item.group}`;
+      rendered.push(
+        (() => {
+              if (item.kind === "header") {
+                const isCollapsed = collapsedGroups.has(item.group);
+                const allowGroupMenu = item.group !== "Shells" && (onAddJob || onHideGroup);
+                return (
+                  <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                    <TouchableOpacity
+                      onPress={() => onToggleGroup(item.group)}
+                      style={styles.groupHeaderRow}
+                      activeOpacity={0.6}
+                    >
+                      <Text style={styles.groupHeaderArrow}>
+                        {isCollapsed ? "\u25B6" : "\u25BC"}
+                      </Text>
+                      <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+                      {item.folderPath && (
+                        <Text style={styles.groupFolderPath} numberOfLines={1}>
+                          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
+                        </Text>
+                      )}
+                      {allowGroupMenu && (
+                        <TouchableOpacity
+                          ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
+                          onPress={(e: any) => {
+                            e.stopPropagation();
+                            if (groupMenu?.group === item.group) {
+                              setGroupMenu(null);
+                              return;
+                            }
+                            if (isWeb) {
+                              const node = e?.currentTarget ?? e?.target;
+                              groupMenuTriggerRef.current = node;
+                              if (node?.getBoundingClientRect) {
+                                const rect = node.getBoundingClientRect();
+                                setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
+                              }
+                            }
+                            setGroupMenu({ group: item.group, folderPath: item.folderPath });
+                          }}
+                          style={styles.addJobBtn}
+                          activeOpacity={0.6}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
+                        </TouchableOpacity>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              }
 
-      if (item.kind === "header") {
-        const isCollapsed = collapsedGroups.has(item.group);
-        const allowGroupMenu = item.group !== "Shells" && (onAddJob || onHideGroup);
-        return (
-          <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-            <TouchableOpacity
-              onPress={() => onToggleGroup(item.group)}
-              style={styles.groupHeaderRow}
-              activeOpacity={0.6}
-            >
-              <Text style={styles.groupHeaderArrow}>
-                {isCollapsed ? "\u25B6" : "\u25BC"}
-              </Text>
-              <Text style={styles.groupHeader}>{item.displayGroup}</Text>
-              {item.folderPath && (
-                <Text style={styles.groupFolderPath} numberOfLines={1}>
-                  {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
-                </Text>
-              )}
-              {allowGroupMenu && (
-                <TouchableOpacity
-                  ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
-                  onPress={(e: any) => {
-                    e.stopPropagation();
-                    if (groupMenu?.group === item.group) {
-                      setGroupMenu(null);
-                      return;
+              if (item.kind === "process") {
+                const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
+                const rawColor = selectedItems?.get(item.process.pane_id);
+                const isFocused = !focusedItemKey || focusedItemKey === item.process.pane_id;
+                const isSelected: boolean | string = rawColor
+                  ? (isFocused ? rawColor : rawColor + "66")
+                  : (selectedSlug === item.process.pane_id);
+                const procAutoYesActive = autoYesPaneIds?.has(item.process.pane_id) ?? false;
+                const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
+                const procOnRename = onRenameProcess ? () => onRenameProcess(item.process) : undefined;
+                return (
+                  <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                    {customRenderProcessCard
+                      ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, autoYesActive: procAutoYesActive })
+                      : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} autoYesActive={procAutoYesActive} />
                     }
-                    if (isWeb) {
-                      const node = e?.currentTarget ?? e?.target;
-                      groupMenuTriggerRef.current = node;
-                      if (node?.getBoundingClientRect) {
-                        const rect = node.getBoundingClientRect();
-                        setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
-                      }
+                  </View>
+                );
+              }
+
+              if (item.kind === "shell") {
+                const pressHandler = onSelectShell ? () => onSelectShell(item.shell) : undefined;
+                const keyId = `_term_${item.shell.pane_id}`;
+                const rawColor = selectedItems?.get(keyId);
+                const isFocused = !focusedItemKey || focusedItemKey === keyId;
+                const isSelected: boolean | string = rawColor
+                  ? (isFocused ? rawColor : rawColor + "66")
+                  : (selectedSlug === keyId);
+                const shellOnStop = onStopShell ? () => onStopShell(item.shell.pane_id) : undefined;
+                return (
+                  <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                    {customRenderShellCard
+                      ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop })
+                      : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} />
                     }
-                    setGroupMenu({ group: item.group, folderPath: item.folderPath });
-                  }}
-                  style={styles.addJobBtn}
-                  activeOpacity={0.6}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
-                </TouchableOpacity>
-              )}
-            </TouchableOpacity>
-          </View>
-        );
-      }
+                  </View>
+                );
+              }
 
-      if (item.kind === "process") {
-        const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
-        const rawColor = selectedItems?.get(item.process.pane_id);
-        const isFocused = !focusedItemKey || focusedItemKey === item.process.pane_id;
-        const isSelected: boolean | string = rawColor
-          ? (isFocused ? rawColor : rawColor + "66")
-          : (selectedSlug === item.process.pane_id);
-        const procAutoYesActive = autoYesPaneIds?.has(item.process.pane_id) ?? false;
-        const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
-        const procOnRename = onRenameProcess ? () => onRenameProcess(item.process) : undefined;
-        return (
-          <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-            {customRenderProcessCard
-              ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, autoYesActive: procAutoYesActive })
-              : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} autoYesActive={procAutoYesActive} />
-            }
-          </View>
-        );
-      }
+              if (item.kind === "group-agent") {
+                return (
+                  <View key={key} style={{ marginTop: spacing.sm }}>
+                    <GroupAgentRow
+                      onRunAgent={(prompt) => onRunAgent!(prompt, item.workDir)}
+                    />
+                  </View>
+                );
+              }
 
-      if (item.kind === "shell") {
-        const pressHandler = onSelectShell ? () => onSelectShell(item.shell) : undefined;
-        const keyId = `_term_${item.shell.pane_id}`;
-        const rawColor = selectedItems?.get(keyId);
-        const isFocused = !focusedItemKey || focusedItemKey === keyId;
-        const isSelected: boolean | string = rawColor
-          ? (isFocused ? rawColor : rawColor + "66")
-          : (selectedSlug === keyId);
-        const shellOnStop = onStopShell ? () => onStopShell(item.shell.pane_id) : undefined;
-        return (
-          <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-            {customRenderShellCard
-              ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop })
-              : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} />
-            }
-          </View>
-        );
-      }
+              if (item.kind === "hidden-section") {
+                return (
+                  <View key={key} style={{ marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
+                    <Text style={[styles.groupHeader, { fontSize: 10, color: colors.textMuted }]}>Hidden Groups</Text>
+                  </View>
+                );
+              }
 
-      if (item.kind === "group-agent") {
-        return (
-          <View key={key} style={{ marginTop: spacing.sm }}>
-            <GroupAgentRow
-              onRunAgent={(prompt) => onRunAgent!(prompt, item.workDir)}
-            />
-          </View>
-        );
-      }
+              if (item.kind === "hidden-header") {
+                return (
+                  <View key={key} style={{ marginTop: spacing.xs }}>
+                    <View style={[styles.groupHeaderRow, { opacity: 0.5 }]}>
+                      <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+                      <View style={{ flex: 1 }} />
+                      {onUnhideGroup && (
+                        <TouchableOpacity
+                          onPress={() => onUnhideGroup(item.group)}
+                          style={styles.addJobBtn}
+                          activeOpacity={0.6}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={{ fontSize: 11, color: colors.textMuted }}>Show</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              }
 
-      if (item.kind === "hidden-section") {
-        return (
-          <View key={key} style={{ marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
-            <Text style={[styles.groupHeader, { fontSize: 10, color: colors.textMuted }]}>Hidden Groups</Text>
-          </View>
-        );
-      }
-
-      if (item.kind === "hidden-header") {
-        return (
-          <View key={key} style={{ marginTop: spacing.xs }}>
-            <View style={[styles.groupHeaderRow, { opacity: 0.5 }]}>
-              <Text style={styles.groupHeader}>{item.displayGroup}</Text>
-              <View style={{ flex: 1 }} />
-              {onUnhideGroup && (
-                <TouchableOpacity
-                  onPress={() => onUnhideGroup(item.group)}
-                  style={styles.addJobBtn}
-                  activeOpacity={0.6}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={{ fontSize: 11, color: colors.textMuted }}>Show</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        );
-      }
-
-      // job
-      const status = statuses[item.job.slug] ?? IDLE_STATUS;
-      const pressHandler = onSelectJob ? () => onSelectJob(item.job) : undefined;
-      const rawJobColor = selectedItems?.get(item.job.slug);
-      const isJobFocused = !focusedItemKey || focusedItemKey === item.job.slug;
-      const isSelected: boolean | string = rawJobColor
-        ? (isJobFocused ? rawJobColor : rawJobColor + "66")
-        : (selectedSlug === item.job.slug);
-      const isRunning = status.state === "running";
-      const jobPaneId = isRunning ? (status as { pane_id?: string }).pane_id : undefined;
-      const jobAutoYesActive = jobPaneId ? autoYesPaneIds?.has(jobPaneId) ?? false : false;
-      const isStopping = stoppingSlugsExternal?.has(item.job.slug) ?? false;
-      const jobOnStop = isRunning && !isStopping && onStopJob ? () => onStopJob(item.job.slug) : undefined;
-      return (
-        <View
-          key={key}
-          {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
-          style={[
-            item.idx % 2 === 1 ? { opacity: 0.85 } : undefined,
-            index > 0 ? { marginTop: spacing.sm } : undefined,
-          ]}
-        >
-          {customRenderJobCard
-            ? customRenderJobCard({ job: item.job, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping })
-            : status.state === "running" ? (
-              <RunningJobCard
-                job={item.job}
-                status={status}
-                onPress={pressHandler}
-                selected={isSelected}
-                onStop={jobOnStop}
-                autoYesActive={jobAutoYesActive}
-                stopping={isStopping}
-              />
-            ) : (
-              <JobCard
-                job={item.job}
-                status={status}
-                onPress={pressHandler}
-                selected={isSelected}
-              />
-            )
-          }
-        </View>
+              return null;
+            })(),
       );
-    });
+      index += 1;
+    }
+    return rendered;
   };
 
   const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Name";
@@ -811,7 +851,7 @@ export function JobListView({
     >
       {headerContent}
       {toolbar}
-      {renderItems()}
+      {renderItemsWithSortableGroups()}
       {groupMenu && (onAddJob || onHideGroup) && (
         <PopupMenu
           items={[

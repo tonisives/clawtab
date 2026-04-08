@@ -1,4 +1,6 @@
 import { useDraggable } from "@dnd-kit/core";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { RemoteJob, JobStatus } from "@clawtab/shared";
 import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
 import { JobCard, RunningJobCard, ProcessCard } from "@clawtab/shared";
@@ -9,34 +11,45 @@ export type DragData =
 
 export function DraggableJobCard({
   job,
+  group,
   status,
   onPress,
   selected,
   onStop,
   autoYesActive,
   stopping,
+  reorderEnabled,
 }: {
   job: RemoteJob;
+  group: string;
   status: JobStatus;
   onPress?: () => void;
   selected?: boolean | string;
   onStop?: () => void;
   autoYesActive?: boolean;
   stopping?: boolean;
+  reorderEnabled?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `drag-job-${job.slug}`,
-    data: { kind: "job", slug: job.slug, job } satisfies DragData,
+  const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
+    id: job.slug,
+    data: { kind: "job", slug: job.slug, job, group } satisfies DragData & { group: string },
+    disabled: !reorderEnabled,
   });
-
-  // Do NOT apply transform here - DragOverlay handles the floating preview.
-  // This prevents the source element from moving and causing scroll jumps.
   return (
     <div
       ref={setNodeRef}
-      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none" }}
+      style={{
+        opacity: isDragging ? 0.4 : 1,
+        cursor: "grab",
+        touchAction: "none",
+        outline: "none",
+        transform: CSS.Transform.toString(transform),
+        transition,
+        borderRadius: 10,
+      }}
       {...listeners}
       {...attributes}
+      tabIndex={-1}
     >
       {status.state === "running" ? (
         <RunningJobCard
@@ -85,9 +98,10 @@ export function DraggableProcessCard({
   return (
     <div
       ref={setNodeRef}
-      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none" }}
+      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none" }}
       {...listeners}
       {...attributes}
+      tabIndex={-1}
     >
       <ProcessCard
         process={process}
@@ -124,9 +138,10 @@ export function DraggableNotificationCard({
   return (
     <div
       ref={setNodeRef}
-      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none" }}
+      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none" }}
       {...listeners}
       {...attributes}
+      tabIndex={-1}
     >
       {children}
     </div>
