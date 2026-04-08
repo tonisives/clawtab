@@ -158,7 +158,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
   }, []);
 
   const reloadDirections = useCallback(() => {
-    if (job.job_type !== "folder" || !job.folder_path) return;
+    if (job.job_type !== "job" || !job.folder_path) return;
     const jn = job.job_name ?? "default";
     invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
       .then((content) => {
@@ -169,7 +169,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
   }, [job]);
 
   useEffect(() => {
-    if (job.job_type === "folder" && job.folder_path) {
+    if (job.job_type === "job" && job.folder_path) {
       const jn = job.job_name ?? "default";
       invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
         .then((content) => {
@@ -184,7 +184,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
   }, [job]);
 
   useEffect(() => {
-    if (job.job_type !== "folder" || !job.folder_path) return;
+    if (job.job_type !== "job" || !job.folder_path) return;
     const interval = setInterval(reloadDirections, 2000);
     return () => clearInterval(interval);
   }, [job, reloadDirections]);
@@ -207,10 +207,14 @@ export function DesktopDetailSections({ job }: { job: Job }) {
     }
   };
 
+  const displayJobType = job.job_type === "job"
+    ? (job.cron ? "cronjob" : "job")
+    : job.job_type;
+
   return (
     <>
       {/* Directions (folder jobs only) */}
-      {job.job_type === "folder" && job.folder_path && (
+      {job.job_type === "job" && job.folder_path && (
         <div className="field-group">
           <CollapsibleHeader
             collapsed={directionsCollapsed}
@@ -282,7 +286,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
         />
         {!configCollapsed && (
           <>
-            <DetailRow label="Type" value={job.job_type} />
+            <DetailRow label="Type" value={displayJobType} />
             <DetailRow label="Enabled" value={job.enabled ? "Yes" : "No"} />
             {job.cron ? (
               <>
@@ -295,8 +299,8 @@ export function DesktopDetailSections({ job }: { job: Job }) {
             {job.group && job.group !== "default" && (
               <DetailRow label="Group" value={job.group} />
             )}
-            {job.job_type === "folder" && job.folder_path && (
-              <DetailRow label="Folder" value={job.folder_path} mono />
+            {job.job_type === "job" && job.folder_path && (
+              <DetailRow label="Working directory" value={job.folder_path} mono />
             )}
             {job.job_type === "binary" && (
               <DetailRow label="Path" value={job.path} mono />
@@ -375,6 +379,8 @@ export function DesktopJobDetail({
   onToggleAutoYes,
   firstQuery,
   lastQuery,
+  onEditFirstQuery,
+  onEditLastQuery,
   showBackButton = false,
   hidePath = false,
   onFork,
@@ -404,6 +410,8 @@ export function DesktopJobDetail({
   onToggleAutoYes?: () => void;
   firstQuery?: string;
   lastQuery?: string;
+  onEditFirstQuery?: () => void;
+  onEditLastQuery?: () => void;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
@@ -479,6 +487,8 @@ export function DesktopJobDetail({
         titlePath={titlePath}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
+        onEditFirstQuery={onEditFirstQuery}
+        onEditLastQuery={onEditLastQuery}
         renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
         hideMessageInput={!!(paneId && tmuxSession)}
         onFork={onFork}

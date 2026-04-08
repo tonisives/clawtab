@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::commands::processes::DetectedProcessOverride;
 use crate::telegram::TelegramConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -42,6 +43,8 @@ pub struct AppSettings {
     pub show_in_dock: bool,
     /// Whether to hide the native title bar (uses overlay style)
     pub hide_titlebar: bool,
+    /// Per-pane detected process metadata overrides.
+    pub process_overrides: HashMap<String, DetectedProcessOverride>,
 }
 
 impl Default for AppSettings {
@@ -66,6 +69,7 @@ impl Default for AppSettings {
             relay: None,
             show_in_dock: true,
             hide_titlebar: true,
+            process_overrides: HashMap::new(),
         }
     }
 }

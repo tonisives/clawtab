@@ -130,17 +130,20 @@ export interface JobListViewProps {
   // Stop job/process from sidebar
   onStopJob?: (slug: string) => void;
   onStopProcess?: (paneId: string) => void;
+  onRenameProcess?: (process: ClaudeProcess) => void;
   onStopShell?: (paneId: string) => void;
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => React.ReactNode;
-  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean }) => React.ReactNode;
+  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
   scrollEnabled?: boolean;
   // Slugs currently being stopped (for "Stopping..." display in sidebar)
   stoppingSlugs?: Set<string>;
+  // Visible selectable items in rendered sidebar order
+  onSelectableItemsChange?: (items: SidebarSelectableItem[]) => void;
 }
 
 type ListItem =
@@ -151,6 +154,11 @@ type ListItem =
   | { kind: "group-agent"; workDir: string }
   | { kind: "hidden-section" }
   | { kind: "hidden-header"; group: string; displayGroup: string };
+
+export type SidebarSelectableItem =
+  | { kind: "job"; key: string; job: RemoteJob }
+  | { kind: "process"; key: string; process: ClaudeProcess }
+  | { kind: "shell"; key: string; shell: ShellPane };
 
 export function JobListView({
   jobs,
@@ -183,6 +191,7 @@ export function JobListView({
   scrollToSlug,
   onStopJob,
   onStopProcess,
+  onRenameProcess,
   onStopShell,
   autoYesPaneIds,
   renderJobCard: customRenderJobCard,
@@ -190,6 +199,7 @@ export function JobListView({
   renderShellCard: customRenderShellCard,
   scrollEnabled = true,
   stoppingSlugs: stoppingSlugsExternal,
+  onSelectableItemsChange,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -443,6 +453,19 @@ export function JobListView({
     return result;
   }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, shellPanes]);
 
+  const selectableItems = useMemo((): SidebarSelectableItem[] => (
+    items.flatMap((item): SidebarSelectableItem[] => {
+      if (item.kind === "job") return [{ kind: "job", key: item.job.slug, job: item.job }];
+      if (item.kind === "process") return [{ kind: "process", key: item.process.pane_id, process: item.process }];
+      if (item.kind === "shell") return [{ kind: "shell", key: `_term_${item.shell.pane_id}`, shell: item.shell }];
+      return [];
+    })
+  ), [items]);
+
+  useEffect(() => {
+    onSelectableItemsChange?.(selectableItems);
+  }, [onSelectableItemsChange, selectableItems]);
+
   const handleRefresh = useCallback(() => {
     onRefresh?.();
   }, [onRefresh]);
@@ -531,11 +554,12 @@ export function JobListView({
           : (selectedSlug === item.process.pane_id);
         const procAutoYesActive = autoYesPaneIds?.has(item.process.pane_id) ?? false;
         const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
+        const procOnRename = onRenameProcess ? () => onRenameProcess(item.process) : undefined;
         return (
           <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
             {customRenderProcessCard
-              ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, autoYesActive: procAutoYesActive })
-              : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} autoYesActive={procAutoYesActive} />
+              ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, autoYesActive: procAutoYesActive })
+              : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} autoYesActive={procAutoYesActive} />
             }
           </View>
         );

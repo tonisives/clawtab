@@ -1,4 +1,4 @@
-export type JobType = "binary" | "claude" | "folder";
+export type JobType = "binary" | "claude" | "job";
 
 export type JobSortMode = "name" | "recent" | "added";
 

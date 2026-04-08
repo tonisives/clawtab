@@ -180,7 +180,7 @@ export function SetupWizard({ onComplete }: Props) {
 
       const job: Job = {
         name: "Hacker News",
-        job_type: "folder",
+        job_type: "job",
         enabled: true,
         path: "",
         args: [],

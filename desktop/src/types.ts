@@ -1,4 +1,4 @@
-export type JobType = "binary" | "claude" | "folder";
+export type JobType = "binary" | "claude" | "job";
 export type TelegramLogMode = "off" | "on_prompt" | "always";
 export type NotifyTarget = "none" | "telegram" | "app";
 
@@ -75,6 +75,12 @@ export interface RelaySettings {
   device_name: string;
 }
 
+export interface DetectedProcessOverride {
+  display_name?: string | null;
+  first_query?: string | null;
+  last_query?: string | null;
+}
+
 export interface AppSettings {
   default_tmux_session: string;
   default_work_dir: string;
@@ -92,6 +98,7 @@ export interface AppSettings {
   relay: RelaySettings | null;
   show_in_dock: boolean;
   hide_titlebar: boolean;
+  process_overrides: Record<string, DetectedProcessOverride>;
 }
 
 export interface ToolInfo {

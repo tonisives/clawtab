@@ -2,6 +2,7 @@ export interface ClaudeProcess {
   pane_id: string;
   cwd: string;
   version: string;
+  display_name?: string | null;
   process_type?: "claude" | "codex";
   tmux_session: string;
   window_name: string;

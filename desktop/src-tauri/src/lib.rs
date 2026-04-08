@@ -49,6 +49,7 @@ pub struct AppState {
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
+    pub process_overrides: Arc<Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>>,
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
     pub pty_manager: pty::SharedPtyManager,
@@ -305,6 +306,10 @@ pub fn run() {
         Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
         Arc::new(Mutex::new(HashSet::new()));
+    let process_overrides: Arc<Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>> = {
+        let loaded = settings.lock().unwrap().process_overrides.clone();
+        Arc::new(Mutex::new(loaded))
+    };
     let notification_state: Arc<Mutex<notifications::NotificationState>> =
         Arc::new(Mutex::new(notifications::NotificationState::new()));
 
@@ -324,6 +329,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        process_overrides: Arc::clone(&process_overrides),
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
         pty_manager: Arc::clone(&pty_manager),
@@ -342,6 +348,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        process_overrides: Arc::clone(&process_overrides),
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
         pty_manager: Arc::clone(&pty_manager),
@@ -514,6 +521,8 @@ pub fn run() {
             commands::processes::get_active_questions,
             commands::processes::get_auto_yes_panes,
             commands::processes::set_auto_yes_panes,
+            commands::processes::set_detected_process_display_name,
+            commands::processes::set_detected_process_queries,
             commands::processes::sigint_detected_process,
             commands::processes::stop_detected_process,
             commands::pty::pty_spawn,

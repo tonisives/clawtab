@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -20,6 +20,7 @@ import {
   useSplitTree,
   collectLeaves,
   shortenPath,
+  type SidebarSelectableItem,
 } from "@clawtab/shared";
 import type { AutoYesEntry, PaneContent, SplitDragData } from "@clawtab/shared";
 import { createTauriTransport } from "../transport/tauriTransport";
@@ -34,6 +35,7 @@ import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, type
 import { SkillSearchDialog } from "./SkillSearchDialog";
 import { InjectSecretsDialog } from "./InjectSecretsDialog";
 import { ShellPaneDetail } from "./ShellPaneDetail";
+import { EditTextDialog } from "./EditTextDialog";
 import { useQuestionPolling } from "../hooks/useQuestionPolling";
 import { useAutoYes } from "../hooks/useAutoYes";
 import { useImportJob } from "../hooks/useImportJob";
@@ -77,6 +79,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: ClaudeProcess; stoppedAt: number }[]>([]);
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
   const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
+  const [editProcessField, setEditProcessField] = useState<{
+    paneId: string;
+    title: string;
+    label: string;
+    field: "display_name" | "first_query" | "last_query";
+    initialValue: string;
+    placeholder?: string;
+  } | null>(null);
 
   // Clear stopping job slugs when job is no longer running
   useEffect(() => {
@@ -448,10 +458,60 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, []);
   const isWide = windowWidth >= 768;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarSelectableItems, setSidebarSelectableItems] = useState<SidebarSelectableItem[]>([]);
+
+  const navigateSidebarItems = useCallback((direction: 1 | -1) => {
+    if (sidebarSelectableItems.length === 0) return;
+
+    const currentKey = split.focusedItemKey
+      ?? (viewingShell
+        ? `_term_${viewingShell.pane_id}`
+        : viewingProcess
+          ? viewingProcess.pane_id
+          : viewingJob?.slug ?? null);
+    const currentIndex = currentKey
+      ? sidebarSelectableItems.findIndex((item) => item.key === currentKey)
+      : -1;
+    const baseIndex = currentIndex === -1
+      ? (direction > 0 ? -1 : 0)
+      : currentIndex;
+    const nextIndex = (baseIndex + direction + sidebarSelectableItems.length) % sidebarSelectableItems.length;
+    const nextItem = sidebarSelectableItems[nextIndex];
+    if (!nextItem) return;
+
+    if (nextItem.kind === "job") {
+      handleSelectJob(nextItem.job);
+      setScrollToSlug(nextItem.job.slug);
+      return;
+    }
+    if (nextItem.kind === "process") {
+      handleSelectProcess(nextItem.process);
+      setScrollToSlug(nextItem.process.pane_id);
+      return;
+    }
+    handleSelectShell(nextItem.shell);
+    setScrollToSlug(nextItem.shell.pane_id);
+  }, [sidebarSelectableItems, split.focusedItemKey, viewingShell, viewingProcess, viewingJob, handleSelectJob, handleSelectProcess, handleSelectShell]);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tagName = target?.tagName;
+      const isEditable = !!target && (
+        target.isContentEditable ||
+        tagName === "INPUT" ||
+        tagName === "TEXTAREA" ||
+        tagName === "SELECT"
+      );
+      if (isEditable) return;
+
+      if (e.key === "Tab") {
+        e.preventDefault();
+        navigateSidebarItems(e.shiftKey ? -1 : 1);
+        return;
+      }
+
       // Cmd+E: toggle sidebar
       if (e.metaKey && e.key === "e") {
         e.preventDefault();
@@ -509,9 +569,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [split.tree, split.focusedLeafId, split.setFocusedLeafId, handleSplitPane]);
+  }, [split.tree, split.focusedLeafId, split.setFocusedLeafId, handleSplitPane, navigateSidebarItems]);
 
-  const isFullScreenView = !!(editingJob || isCreating || showPicker);
+  const isFullScreenView = !isWide && !!(editingJob || isCreating || showPicker);
   const trafficLightInsetStyle = isWide && sidebarCollapsed ? { paddingLeft: 84 } : undefined;
   useEffect(() => {
     const tabContent = document.querySelector(".tab-content") as HTMLElement | null;
@@ -597,6 +657,56 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const handleOpen = useCallback(async (name: string) => {
     await invoke("focus_job_window", { name });
   }, []);
+
+  const openRenameProcessDialog = useCallback((process: ClaudeProcess) => {
+    setEditProcessField({
+      paneId: process.pane_id,
+      title: "Rename detected agent",
+      label: "Name",
+      field: "display_name",
+      initialValue: process.display_name ?? "",
+      placeholder: shortenPath(process.cwd),
+    });
+  }, []);
+
+  const openEditProcessQueryDialog = useCallback((
+    process: ClaudeProcess,
+    field: "first_query" | "last_query",
+  ) => {
+    const isLatest = field === "last_query";
+    setEditProcessField({
+      paneId: process.pane_id,
+      title: isLatest ? "Edit latest query" : "Edit query",
+      label: isLatest ? "Latest" : "Query",
+      field,
+      initialValue: (field === "first_query" ? process.first_query : process.last_query) ?? "",
+      placeholder: isLatest ? "Latest query text" : "Query text",
+    });
+  }, []);
+
+  const handleSaveProcessField = useCallback(async (value: string) => {
+    if (!editProcessField) return;
+    try {
+      if (editProcessField.field === "display_name") {
+        await invoke("set_detected_process_display_name", {
+          paneId: editProcessField.paneId,
+          displayName: value || null,
+        });
+      } else {
+        const proc = core.processes.find((item) => item.pane_id === editProcessField.paneId)
+          ?? (pendingProcess?.pane_id === editProcessField.paneId ? pendingProcess : null);
+        await invoke("set_detected_process_queries", {
+          paneId: editProcessField.paneId,
+          firstQuery: editProcessField.field === "first_query" ? (value || null) : (proc?.first_query ?? null),
+          lastQuery: editProcessField.field === "last_query" ? (value || null) : (proc?.last_query ?? null),
+        });
+      }
+      setEditProcessField(null);
+      await core.reloadProcesses();
+    } catch (e) {
+      console.error("Failed to save process edit:", e);
+    }
+  }, [editProcessField, core, pendingProcess]);
 
   type ListItemRef =
     | { kind: "job"; slug: string; job: Job }
@@ -742,7 +852,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
     const jobs = core.jobs as Job[];
     const groupJobs = jobs.filter((j) => (j.group || "default") === group);
-    const isFolderGroup = groupJobs.length > 0 && groupJobs.every((j) => j.job_type === "folder");
+    const isFolderGroup = groupJobs.length > 0 && groupJobs.every((j) => j.job_type === "job");
     setCreateForGroup({
       group,
       folderPath: isFolderGroup ? groupJobs[0]?.folder_path ?? null : null,
@@ -882,6 +992,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           process={proc} questions={questions}
           onBack={() => split.handleClosePane(leafId)}
           onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
+          onRename={() => openRenameProcessDialog(proc)}
+          onEditFirstQuery={() => openEditProcessQueryDialog(proc, "first_query")}
+          onEditLastQuery={() => openEditProcessQueryDialog(proc, "last_query")}
           autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
           onToggleAutoYes={() => {
             const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
@@ -917,6 +1030,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         status={core.statuses[job.slug] ?? { state: "idle" as const }}
         firstQuery={matchedProcess?.first_query ?? undefined}
         lastQuery={matchedProcess?.last_query ?? undefined}
+        onEditFirstQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "first_query") : undefined}
+        onEditLastQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "last_query") : undefined}
         onBack={() => split.handleClosePane(leafId)}
         onEdit={() => { setEditingJob(job); split.handleClosePane(leafId); }}
         onOpen={() => handleOpen(job.slug)}
@@ -946,7 +1061,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean }) => <DraggableProcessCard {...props} />,
+    (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean }) => <DraggableProcessCard {...props} />,
     [],
   );
 
@@ -998,7 +1113,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const isEditorVisible = !!(editingJob || isCreating);
   const isPickerVisible = showPicker && !isEditorVisible;
-  const isMainVisible = !isEditorVisible && !isPickerVisible;
+  const isMainVisible = isWide || (!isEditorVisible && !isPickerVisible);
+  const panelContentStyle: CSSProperties = {
+    flex: 1,
+    overflow: "auto",
+    paddingTop: 28,
+    paddingRight: 20,
+    paddingBottom: 20,
+    paddingLeft: isWide && sidebarCollapsed ? 104 : 20,
+  };
 
   const detailPane = (() => {
     if (viewingAgent) {
@@ -1028,6 +1151,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             process={viewingProcess} questions={questions}
             onBack={() => setViewingProcess(null)}
             onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
+            onRename={() => openRenameProcessDialog(viewingProcess)}
+            onEditFirstQuery={() => openEditProcessQueryDialog(viewingProcess, "first_query")}
+            onEditLastQuery={() => openEditProcessQueryDialog(viewingProcess, "last_query")}
             autoYesActive={autoYes.autoYesPaneIds.has(viewingProcess.pane_id)}
             onToggleAutoYes={() => {
               const paneQuestion = questions.find((q) => q.pane_id === viewingProcess.pane_id);
@@ -1089,6 +1215,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             status={core.statuses[viewingJob.slug] ?? { state: "idle" as const }}
             firstQuery={matchedProcess?.first_query ?? undefined}
             lastQuery={matchedProcess?.last_query ?? undefined}
+            onEditFirstQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "first_query") : undefined}
+            onEditLastQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "last_query") : undefined}
             onBack={() => setViewingJob(null)}
             onEdit={() => { setEditingJob(viewingJob); setViewingJob(null); }}
             onOpen={() => handleOpen(viewingJob.slug)}
@@ -1202,6 +1330,17 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onCancel={() => setInjectSecretsPaneId(null)}
         />
       )}
+
+      {editProcessField && (
+        <EditTextDialog
+          title={editProcessField.title}
+          label={editProcessField.label}
+          initialValue={editProcessField.initialValue}
+          placeholder={editProcessField.placeholder}
+          onSave={handleSaveProcessField}
+          onCancel={() => setEditProcessField(null)}
+        />
+      )}
     </>
   );
 
@@ -1243,6 +1382,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       emptyMessage="No jobs configured yet."
       scrollToSlug={scrollToSlug}
       scrollEnabled={!split.isDragging}
+      onSelectableItemsChange={setSidebarSelectableItems}
       onStopJob={(slug) => {
         setStoppingJobSlugs((prev) => new Set(prev).add(slug));
         core.requestFastPoll(`job:${slug}`);
@@ -1259,6 +1399,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         core.requestFastPoll(`pane:${paneId}`);
         invoke("sigint_detected_process", { paneId });
       }}
+      onRenameProcess={openRenameProcessDialog}
       onStopShell={(paneId) => {
         setShellPanes((prev) => prev.filter((p) => p.pane_id !== paneId));
         if (viewingShell?.pane_id === paneId) selectAdjacentItem(paneId);
@@ -1309,49 +1450,55 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   return (
     <>
-      {/* Editor view - always in tree, hidden via display */}
-      <div style={{ display: isEditorVisible ? undefined : "none", height: "100%" }}>
+      {/* Editor view - full screen only on narrow layouts */}
+      <div style={{ display: !isWide && isEditorVisible ? undefined : "none", height: "100%" }}>
         {saveError && (
           <div style={{ padding: "8px 12px", marginBottom: 12, background: "var(--danger-bg, #2d1b1b)", border: "1px solid var(--danger, #e55)", borderRadius: 4, fontSize: 13 }}>
             Save failed: {saveError}
           </div>
         )}
-        {isEditorVisible && (
-          <JobEditor
-            job={editingJob}
-            onSave={handleSave}
-            onCancel={() => {
-              if (editingJob) setViewingJob(editingJob);
-              setEditingJob(null); setIsCreating(false); setCreateForGroup(null); setSaveError(null);
-            }}
-            onPickTemplate={(templateId) => {
-              setIsCreating(false); setCreateForGroup(null);
-              setPickerTemplateId(templateId); setShowPicker(true);
-            }}
-            defaultGroup={createForGroup?.group}
-            defaultFolderPath={createForGroup?.folderPath ?? undefined}
-          />
+        {!isWide && isEditorVisible && (
+          <div style={panelContentStyle}>
+            <JobEditor
+              job={editingJob}
+              onSave={handleSave}
+              onCancel={() => {
+                if (editingJob) setViewingJob(editingJob);
+                setEditingJob(null); setIsCreating(false); setCreateForGroup(null); setSaveError(null);
+              }}
+              headerMode="back"
+              onPickTemplate={(templateId) => {
+                setIsCreating(false); setCreateForGroup(null);
+                setPickerTemplateId(templateId); setShowPicker(true);
+              }}
+              defaultGroup={createForGroup?.group}
+              defaultFolderPath={createForGroup?.folderPath ?? undefined}
+            />
+          </div>
         )}
       </div>
 
-      {/* Picker view */}
-      <div style={{ display: isPickerVisible ? undefined : "none", height: "100%" }}>
-        {isPickerVisible && (
-          <SamplePicker
-            autoCreateTemplateId={pickerTemplateId ?? pendingTemplateId ?? undefined}
-            onCreated={() => {
-              setShowPicker(false); setPickerTemplateId(null);
-              onTemplateHandled?.(); core.reload();
-            }}
-            onBlank={() => {
-              setShowPicker(false); setPickerTemplateId(null);
-              onTemplateHandled?.(); setIsCreating(true);
-            }}
-            onCancel={() => {
-              setShowPicker(false); setPickerTemplateId(null);
-              onTemplateHandled?.();
-            }}
-          />
+      {/* Picker view - full screen only on narrow layouts */}
+      <div style={{ display: !isWide && isPickerVisible ? undefined : "none", height: "100%" }}>
+        {!isWide && isPickerVisible && (
+          <div style={panelContentStyle}>
+            <SamplePicker
+              autoCreateTemplateId={pickerTemplateId ?? pendingTemplateId ?? undefined}
+              headerMode="back"
+              onCreated={() => {
+                setShowPicker(false); setPickerTemplateId(null);
+                onTemplateHandled?.(); core.reload();
+              }}
+              onBlank={() => {
+                setShowPicker(false); setPickerTemplateId(null);
+                onTemplateHandled?.(); setIsCreating(true);
+              }}
+              onCancel={() => {
+                setShowPicker(false); setPickerTemplateId(null);
+                onTemplateHandled?.();
+              }}
+            />
+          </div>
         )}
       </div>
 
@@ -1390,17 +1537,61 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                 </>
               )}
               <div ref={split.detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", position: "relative" }}>
-                <SplitDetailArea
-                  tree={split.tree}
-                  renderLeaf={renderLeaf}
-                  onRatioChange={split.handleSplitRatioChange}
-                  onFocusLeaf={split.setFocusedLeafId}
-                  focusedLeafId={split.focusedLeafId}
-                  paneColors={split.paneColors}
-                  minPaneSize={200}
-                  emptyContent={detailPane}
-                  overlay={dropOverlay}
-                />
+                {isEditorVisible ? (
+                  <div style={panelContentStyle}>
+                    {saveError && (
+                      <div style={{ padding: "8px 12px", marginBottom: 12, background: "var(--danger-bg, #2d1b1b)", border: "1px solid var(--danger, #e55)", borderRadius: 4, fontSize: 13 }}>
+                        Save failed: {saveError}
+                      </div>
+                    )}
+                    <JobEditor
+                      job={editingJob}
+                      onSave={handleSave}
+                      onCancel={() => {
+                        if (editingJob) setViewingJob(editingJob);
+                        setEditingJob(null); setIsCreating(false); setCreateForGroup(null); setSaveError(null);
+                      }}
+                      headerMode="close"
+                      onPickTemplate={(templateId) => {
+                        setIsCreating(false); setCreateForGroup(null);
+                        setPickerTemplateId(templateId); setShowPicker(true);
+                      }}
+                      defaultGroup={createForGroup?.group}
+                      defaultFolderPath={createForGroup?.folderPath ?? undefined}
+                    />
+                  </div>
+                ) : isPickerVisible ? (
+                  <div style={panelContentStyle}>
+                    <SamplePicker
+                      autoCreateTemplateId={pickerTemplateId ?? pendingTemplateId ?? undefined}
+                      headerMode="close"
+                      onCreated={() => {
+                        setShowPicker(false); setPickerTemplateId(null);
+                        onTemplateHandled?.(); core.reload();
+                      }}
+                      onBlank={() => {
+                        setShowPicker(false); setPickerTemplateId(null);
+                        onTemplateHandled?.(); setIsCreating(true);
+                      }}
+                      onCancel={() => {
+                        setShowPicker(false); setPickerTemplateId(null);
+                        onTemplateHandled?.();
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <SplitDetailArea
+                    tree={split.tree}
+                    renderLeaf={renderLeaf}
+                    onRatioChange={split.handleSplitRatioChange}
+                    onFocusLeaf={split.setFocusedLeafId}
+                    focusedLeafId={split.focusedLeafId}
+                    paneColors={split.paneColors}
+                    minPaneSize={200}
+                    emptyContent={detailPane}
+                    overlay={dropOverlay}
+                  />
+                )}
                 {rightPanelOverlay}
               </div>
               {dialogs}

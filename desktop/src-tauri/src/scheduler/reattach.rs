@@ -43,7 +43,7 @@ pub fn reattach_running_jobs(
     // Build slug -> job map (only tmux-based jobs)
     let slug_to_job: HashMap<&str, _> = jobs
         .iter()
-        .filter(|j| matches!(j.job_type, JobType::Claude | JobType::Folder))
+        .filter(|j| matches!(j.job_type, JobType::Claude | JobType::Job))
         .map(|j| (j.slug.as_str(), j))
         .collect();
 

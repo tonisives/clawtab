@@ -44,7 +44,7 @@ export const SAMPLE_TEMPLATES: SampleTemplate[] = [
     category: "web-browsing",
     categoryIcon: "globe",
     description: "Monitor posts matching a topic, draft reply suggestions, send digest to Telegram",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 9 * * *",
     group: "social",
     template: `# X/Twitter Engagement Agent
@@ -78,7 +78,7 @@ For each post:
     category: "web-browsing",
     categoryIcon: "globe",
     description: "Browse subreddits, summarize top discussions and sentiment",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 8 * * 1",
     group: "social",
     template: `# Reddit Research Agent
@@ -109,7 +109,7 @@ Research r/[YOUR_SUBREDDIT] for trending discussions and summarize key insights.
     category: "web-browsing",
     categoryIcon: "globe",
     description: "Track changes on competitor websites, report new features or content",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 7 * * 1,4",
     group: "research",
     template: `# Competitor Website Monitor
@@ -142,7 +142,7 @@ Check [YOUR_WEBSITE] for changes since last run and report findings.
     category: "web-browsing",
     categoryIcon: "globe",
     description: "Find and engage with relevant LinkedIn posts in your industry",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 10 * * 1,3,5",
     group: "social",
     template: `# LinkedIn Engagement Agent
@@ -174,7 +174,7 @@ For each post:
     category: "web-browsing",
     categoryIcon: "globe",
     description: "Browse news sites and compile a daily summary of relevant stories",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 7 * * *",
     group: "research",
     template: `# Daily News Digest
@@ -208,7 +208,7 @@ Top story deep-dive: (3-4 sentences on the most important story)
     category: "web-browsing",
     categoryIcon: "globe",
     description: "Track new Product Hunt launches, report interesting products",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 18 * * *",
     group: "research",
     template: `# Product Hunt Monitor
@@ -241,7 +241,7 @@ Review today's Product Hunt launches and identify interesting products.
     category: "code-dev",
     categoryIcon: "code",
     description: "Review open pull requests, suggest improvements and catch issues",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 9 * * 1,2,3,4,5",
     group: "dev",
     template: `# PR Review Agent
@@ -273,7 +273,7 @@ For each PR:
     category: "code-dev",
     categoryIcon: "code",
     description: "Generate tests for uncovered code paths",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 14 * * 5",
     group: "dev",
     template: `# Test Writer Agent
@@ -304,7 +304,7 @@ Find untested code paths and generate meaningful test cases.
     category: "code-dev",
     categoryIcon: "code",
     description: "Check for outdated packages and security advisories",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 6 * * 1",
     group: "dev",
     template: `# Dependency Auditor
@@ -336,7 +336,7 @@ Audit project dependencies for updates and security issues.
     category: "code-dev",
     categoryIcon: "code",
     description: "Find code smells and propose targeted improvements",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 10 * * 5",
     group: "dev",
     template: `# Code Refactoring Agent
@@ -369,7 +369,7 @@ Identify code smells and propose focused refactoring improvements.
     category: "code-dev",
     categoryIcon: "code",
     description: "Scan recent changes and update docs/READMEs accordingly",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 16 * * 5",
     group: "dev",
     template: `# Documentation Updater
@@ -402,7 +402,7 @@ Keep documentation in sync with recent code changes.
     category: "content-marketing",
     categoryIcon: "pen",
     description: "Research a topic and draft a blog post outline with key points",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 9 * * 1",
     group: "content",
     template: `# Blog Post Drafter
@@ -438,7 +438,7 @@ Research and draft a blog post about [YOUR_TOPIC].
     category: "content-marketing",
     categoryIcon: "pen",
     description: "Generate a week of social media content ideas with drafts",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 9 * * 0",
     group: "content",
     template: `# Social Media Content Planner
@@ -472,7 +472,7 @@ For each day (Mon-Sun):
     category: "content-marketing",
     categoryIcon: "pen",
     description: "Audit pages for search ranking improvements",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 6 * * 1",
     group: "content",
     template: `# SEO Analyzer
@@ -508,7 +508,7 @@ Audit [YOUR_WEBSITE] for SEO improvements.
     category: "content-marketing",
     categoryIcon: "pen",
     description: "Compile release notes from recent commits and PRs",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 17 * * 5",
     group: "dev",
     template: `# Changelog Generator
@@ -545,7 +545,7 @@ Generate a changelog from recent git activity.
     category: "data-research",
     categoryIcon: "chart",
     description: "Browse industry sites and compile competitive intelligence",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 8 * * 1",
     group: "research",
     template: `# Market Research Agent
@@ -582,7 +582,7 @@ Compile weekly intelligence on [YOUR_MARKET].
     category: "data-research",
     categoryIcon: "chart",
     description: "Monitor product prices across sites, alert on changes",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 6 * * *",
     group: "research",
     template: `# Price Tracker
@@ -616,7 +616,7 @@ Monitor prices for [YOUR_PRODUCT] and alert on significant changes.
     category: "data-research",
     categoryIcon: "chart",
     description: "Search for recent papers on a topic and create summaries",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 8 * * 1",
     group: "research",
     template: `# Academic Paper Digest
@@ -652,7 +652,7 @@ For each paper:
     category: "data-research",
     categoryIcon: "chart",
     description: "Track job postings in a field and summarize hiring trends",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 7 * * 1",
     group: "research",
     template: `# Job Market Scanner
@@ -692,7 +692,7 @@ Analyze job postings for [YOUR_FIELD] and identify trends.
     category: "devops",
     categoryIcon: "server",
     description: "Run diagnostics on servers, report status and anomalies",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 */4 * * *",
     group: "ops",
     template: `# Server Health Check
@@ -728,7 +728,7 @@ Run health diagnostics and report any issues.
     category: "devops",
     categoryIcon: "server",
     description: "Verify backups exist, are recent, and have correct checksums",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 5 * * *",
     group: "ops",
     template: `# Backup Verifier
@@ -763,7 +763,7 @@ Verify that backups are current and valid.
     category: "devops",
     categoryIcon: "server",
     description: "Check SSL certificate expiry dates and alert if expiring soon",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 6 * * 1",
     group: "ops",
     template: `# SSL Certificate Monitor
@@ -798,7 +798,7 @@ For each domain:
     category: "devops",
     categoryIcon: "server",
     description: "Parse application logs, identify errors and anomalies",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 8 * * *",
     group: "ops",
     template: `# Log Analyzer
@@ -833,7 +833,7 @@ Analyze recent application logs for errors and patterns.
     category: "finance",
     categoryIcon: "dollar",
     description: "Check DeFi yield rates across protocols, report via Telegram",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 8 * * *",
     group: "finance",
     template: `# DeFi Yield Monitor
@@ -872,7 +872,7 @@ Check current DeFi yield rates and report significant changes.
     category: "finance",
     categoryIcon: "dollar",
     description: "Aggregate portfolio positions and generate daily P&L summary",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 20 * * *",
     group: "finance",
     template: `# Portfolio Tracker
@@ -904,7 +904,7 @@ Track the following positions:
     category: "finance",
     categoryIcon: "dollar",
     description: "Monitor stablecoin rates and peg stability across exchanges",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 */6 * * *",
     group: "finance",
     template: `# Stablecoin Rate Checker
@@ -935,7 +935,7 @@ Monitor stablecoin peg stability and lending rates.
     category: "finance",
     categoryIcon: "dollar",
     description: "Track upcoming airdrops and check eligibility criteria",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 9 * * 1,4",
     group: "finance",
     template: `# Airdrop Tracker
@@ -969,7 +969,7 @@ Track upcoming crypto airdrops and eligibility requirements.
     category: "productivity",
     categoryIcon: "clock",
     description: "Review flagged emails and draft professional responses",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 8 * * 1,2,3,4,5",
     group: "personal",
     template: `# Email Drafter
@@ -1004,7 +1004,7 @@ For each email:
     category: "productivity",
     categoryIcon: "clock",
     description: "Summarize the week's work from git commits and task activity",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 17 * * 5",
     group: "personal",
     template: `# Weekly Review Generator
@@ -1043,7 +1043,7 @@ Generate a comprehensive weekly review of accomplishments.
     category: "productivity",
     categoryIcon: "clock",
     description: "Research a topic and compile structured study notes",
-    job_type: "folder",
+    job_type: "job",
     cron: "0 10 * * 6",
     group: "personal",
     template: `# Learning Agent

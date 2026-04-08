@@ -7,7 +7,8 @@ use std::path::PathBuf;
 pub enum JobType {
     Binary,
     Claude,
-    Folder,
+    #[serde(alias = "folder")]
+    Job,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -238,6 +239,11 @@ impl JobsConfig {
                     // notify_target should default to Telegram to preserve behavior
                     if job.telegram_chat_id.is_some() && job.notify_target == NotifyTarget::None {
                         job.notify_target = NotifyTarget::Telegram;
+                    }
+                    if contents.contains("job_type: folder") {
+                        if let Ok(canonical) = serde_yml::to_string(&job) {
+                            let _ = std::fs::write(path, canonical);
+                        }
                     }
                     Some(job)
                 }
@@ -522,7 +528,7 @@ pub fn migrate_job_md_to_central(jobs: &mut [Job]) {
     };
 
     for job in jobs.iter_mut() {
-        if job.job_type != JobType::Folder {
+        if job.job_type != JobType::Job {
             continue;
         }
         let folder_path = match job.folder_path.as_ref() {
@@ -609,10 +615,10 @@ pub fn migrate_cwt_to_central(jobs: &[Job]) {
         None => return,
     };
 
-    // Collect unique folder_paths from folder jobs
+    // Collect unique folder_paths from project jobs
     let mut seen_projects: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for job in jobs.iter().filter(|j| j.job_type == JobType::Folder) {
+    for job in jobs.iter().filter(|j| j.job_type == JobType::Job) {
         let folder_path = match job.folder_path.as_ref() {
             Some(fp) => fp.clone(),
             None => continue,

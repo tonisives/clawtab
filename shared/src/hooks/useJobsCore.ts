@@ -27,6 +27,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       proc.pane_id,
       proc.cwd,
       proc.version,
+      proc.display_name ?? null,
       proc.tmux_session,
       proc.window_name,
       proc.matched_group,

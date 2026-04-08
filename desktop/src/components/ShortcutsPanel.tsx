@@ -1,4 +1,6 @@
 const shortcuts: { label: string; keys: string[] }[] = [
+  { label: "Next sidebar item", keys: ["Tab"] },
+  { label: "Previous sidebar item", keys: ["Shift", "Tab"] },
   { label: "Toggle sidebar", keys: ["Cmd", "E"] },
   { label: "Split pane vertically", keys: ["Ctrl", "V"] },
   { label: "Split pane horizontally", keys: ["Ctrl", "S"] },

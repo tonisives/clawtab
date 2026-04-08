@@ -29,6 +29,7 @@ pub fn set_settings(
         settings.telegram = telegram;
     }
     settings.save()?;
+    *state.process_overrides.lock().unwrap() = settings.process_overrides.clone();
 
     // Regenerate all cwt.md context files with updated settings
     let settings_clone = settings.clone();

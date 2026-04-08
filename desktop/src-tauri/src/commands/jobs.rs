@@ -159,7 +159,7 @@ pub fn import_job_folder(
 
     let job = Job {
         name: job_name.clone(),
-        job_type: crate::config::jobs::JobType::Folder,
+        job_type: crate::config::jobs::JobType::Job,
         enabled: true,
         path: String::new(),
         args: Vec::new(),
@@ -406,7 +406,7 @@ pub async fn run_job_now(
 
     if matches!(
         job.job_type,
-        crate::config::jobs::JobType::Claude | crate::config::jobs::JobType::Folder
+        crate::config::jobs::JobType::Claude | crate::config::jobs::JobType::Job
     ) {
         let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
         let app_handle = app_handle.clone();
@@ -857,7 +857,7 @@ fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Opt
             let jt = match job.job_type {
                 crate::config::jobs::JobType::Binary => "bin",
                 crate::config::jobs::JobType::Claude => "claude",
-                crate::config::jobs::JobType::Folder => "folder",
+                crate::config::jobs::JobType::Job => if job.cron.is_empty() { "job" } else { "cronjob" },
             };
             let dir = job.folder_path.as_deref()
                 .or(job.work_dir.as_deref())
@@ -1019,7 +1019,7 @@ pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
 
     for job in jobs {
         match job.job_type {
-            crate::config::jobs::JobType::Folder => {
+            crate::config::jobs::JobType::Job => {
                 if let Some(ref folder_path) = job.folder_path {
                     let content = generate_cwt_context(job, settings);
                     // Write context.md to central: ~/.config/clawtab/jobs/{slug}/context.md

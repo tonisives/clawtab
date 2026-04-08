@@ -23,8 +23,62 @@ interface PtySpawnResult {
   native_rows: number;
 }
 
+async function waitForViewportReady(
+  el: HTMLDivElement,
+  term: Terminal,
+  fit: FitAddon,
+  isCancelled: () => boolean,
+): Promise<{ cols: number; rows: number } | null> {
+  const measure = () => {
+    fit.fit();
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    if (term.cols < 2 || term.rows < 2) return null;
+    return { cols: term.cols, rows: term.rows };
+  };
+
+  const initial = measure();
+  if (initial) return initial;
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    let rafId = 0;
+    let resizeObserver: ResizeObserver | null = null;
+
+    const finish = (value: { cols: number; rows: number } | null) => {
+      if (settled) return;
+      settled = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      resizeObserver?.disconnect();
+      resolve(value);
+    };
+
+    const check = () => {
+      if (isCancelled()) {
+        finish(null);
+        return;
+      }
+      const size = measure();
+      if (size) {
+        finish(size);
+        return;
+      }
+      rafId = requestAnimationFrame(check);
+    };
+
+    resizeObserver = new ResizeObserver(() => {
+      const size = measure();
+      if (size) finish(size);
+    });
+    resizeObserver.observe(el);
+    rafId = requestAnimationFrame(check);
+  });
+}
+
 export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
   const resolvedGroup = group ?? "default";
 
   useEffect(() => {
@@ -83,6 +137,8 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
       // Let our app shortcuts pass through instead of being consumed by the terminal
       t.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+        // Tab / Shift+Tab: navigate sidebar items
+        if (e.key === "Tab") return false;
         // Cmd+E: toggle sidebar
         if (e.metaKey && e.key === "e") return false;
         // Ctrl+V/S: split pane
@@ -97,8 +153,12 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
       if (cancelled) { t.dispose(); return; }
 
-      const cols = t.cols;
-      const rows = t.rows;
+      const viewport = await waitForViewportReady(el, t, fit, () => cancelled);
+      if (!viewport || cancelled) {
+        t.dispose();
+        return;
+      }
+      const { cols, rows } = viewport;
 
       // Listen for output before spawning so we don't miss the initial capture
       outputUnlisten = await listen<number[]>(`pty-output-${key}`, (event) => {
@@ -106,7 +166,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       });
 
       exitUnlisten = await listen(`pty-exit-${key}`, () => {
-        onExit?.();
+        onExitRef.current?.();
       });
 
       if (cancelled) return;
@@ -212,7 +272,10 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         invoke("pty_destroy", { paneId }).catch(() => {});
       }
     };
-  }, [paneId, tmuxSession, resolvedGroup]);
+    // The viewer lifecycle is keyed by the tmux pane id. Parent polling can
+    // refresh tmux session metadata without changing the actual pane, and
+    // re-spawning here causes a visible terminal reset.
+  }, [paneId]);
 
   return (
     <div

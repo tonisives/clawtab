@@ -50,6 +50,9 @@ export function DetectedProcessDetail({
   showBackButton = false,
   hidePath = false,
   onStopped,
+  onRename,
+  onEditFirstQuery,
+  onEditLastQuery,
   onFork,
   onSplitPane,
   onInjectSecrets,
@@ -66,6 +69,9 @@ export function DetectedProcessDetail({
   showBackButton?: boolean;
   hidePath?: boolean;
   onStopped?: () => void;
+  onRename?: () => void;
+  onEditFirstQuery?: () => void;
+  onEditLastQuery?: () => void;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
@@ -78,7 +84,7 @@ export function DetectedProcessDetail({
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
 
-  const displayName = shortenPath(process.cwd);
+  const displayName = process.display_name ?? shortenPath(process.cwd);
 
   const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
 
@@ -163,6 +169,9 @@ export function DetectedProcessDetail({
       hideMessageInput
       firstQuery={process.first_query ?? undefined}
       lastQuery={process.last_query ?? undefined}
+      onEdit={onRename}
+      onEditFirstQuery={onEditFirstQuery}
+      onEditLastQuery={onEditLastQuery}
       onFork={onFork}
       onSplitPane={onSplitPane}
       onInjectSecrets={onInjectSecrets}

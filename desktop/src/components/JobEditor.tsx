@@ -12,7 +12,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
 
 const STEP_TIPS: Record<string, string> = {
-  identity: "Choose the project folder, name the job, and write its directions.",
+  identity: "Choose the working directory, name the job, and write its directions.",
   settings: "Configure schedule, secrets, and notifications. Expand sections as needed.",
 };
 
@@ -31,11 +31,12 @@ interface Props {
   onPickTemplate?: (templateId: string) => void;
   defaultGroup?: string;
   defaultFolderPath?: string;
+  headerMode?: "back" | "close";
 }
 
 const emptyJob: Job = {
   name: "",
-  job_type: "folder",
+  job_type: "job",
   enabled: true,
   path: "",
   args: [],
@@ -140,7 +141,7 @@ function parseCronToWeekly(cron: string): { days: string[]; times: string[] } | 
   };
 }
 
-export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup, defaultFolderPath }: Props) {
+export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup, defaultFolderPath, headerMode = "back" }: Props) {
   const [form, setForm] = useState<Job>(job ?? {
     ...emptyJob,
     ...(defaultGroup ? { group: defaultGroup } : {}),
@@ -154,7 +155,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   );
 
   const isNew = job === null;
-  const isWizard = isNew && form.job_type === "folder";
+  const isWizard = isNew && form.job_type === "job";
+  const isCloseHeader = headerMode === "close";
 
   // Wizard state
   const [currentStep, setCurrentStep] = useState<WizardStep>("identity");
@@ -170,7 +172,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     }
   }, []);
 
-  const importableJobs = existingJobs.filter((j) => j.job_type === "folder");
+  const importableJobs = existingJobs.filter((j) => j.job_type === "job");
 
   const handleImportJob = async (source: Job) => {
     // Load the source job's content
@@ -292,7 +294,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   // Load existing content for edit mode (not new wizard)
   useEffect(() => {
-    if (!isNew && form.job_type === "folder" && form.folder_path) {
+    if (!isNew && form.job_type === "job" && form.folder_path) {
       const jn = form.job_name ?? "default";
       invoke<string>("read_cwt_entry", { folderPath: form.folder_path, jobName: jn })
         .then((content) => {
@@ -364,7 +366,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       }
     }
     // For new folder jobs, create the job directory and write files now
-    if (isNew && form.job_type === "folder" && form.folder_path) {
+    if (isNew && form.job_type === "job" && form.folder_path) {
       const jn = form.job_name ?? "default";
       await invoke("init_cwt_folder", { folderPath: form.folder_path, jobName: jn });
       await invoke("write_cwt_entry", {
@@ -405,7 +407,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   };
 
   const canAdvanceFromFolder = (): boolean => {
-    if (form.job_type === "folder") {
+    if (form.job_type === "job") {
       if (!form.folder_path || !form.name) return false;
       if (isWizard && !cwtEdited) return false;
       return true;
@@ -465,17 +467,17 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               setForm({ ...form, job_type: e.target.value as JobType })
             }
           >
-            <option value="folder">Folder</option>
+            <option value="job">Job</option>
             <option value="claude">Claude</option>
             <option value="binary">Binary</option>
           </select>
         </div>
       )}
 
-      {form.job_type === "folder" ? (
+      {form.job_type === "job" ? (
         <>
           <div className="form-group">
-            <label>Folder Path</label>
+            <label>Working Directory</label>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 type="text"
@@ -498,7 +500,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             </div>
             <span className="hint">
               {isNew
-                ? "Pick a project folder. Job config is stored centrally in ~/.config/clawtab/jobs/."
+                ? "Pick a project directory. Job config is stored centrally in ~/.config/clawtab/jobs/."
                 : "Directory cannot be changed after creation."}
             </span>
           </div>
@@ -601,7 +603,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   }, [previewFile]);
 
   const renderDirectionsFields = () => {
-    if (form.job_type !== "folder" || !form.folder_path) return null;
+    if (form.job_type !== "job" || !form.folder_path) return null;
 
     return (
       <div className="form-group">
@@ -713,7 +715,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   };
 
   const renderParamsFields = () => {
-    if (form.job_type !== "folder") return null;
+    if (form.job_type !== "job") return null;
 
     const addParam = (name: string) => {
       const key = name.trim().replace(/[^a-zA-Z0-9_-]/g, "");
@@ -1048,7 +1050,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const renderRuntimeFields = () => (
     <>
-      {(form.job_type === "claude" || form.job_type === "folder") && (
+      {(form.job_type === "claude" || form.job_type === "job") && (
         <>
           <div className="form-group">
             <label>Tmux Session</label>
@@ -1070,7 +1072,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const renderConfigFields = () => (
     <>
-      {form.job_type === "folder" && (
+      {form.job_type === "job" && (
         <>
           <div className="form-group">
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -1135,7 +1137,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         </div>
       )}
 
-      {form.job_type !== "folder" && (
+      {form.job_type !== "job" && (
         <div className="form-group">
           <label>Working Directory</label>
           <input
@@ -1264,7 +1266,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const renderAdvancedFields = () => (
     <>
-      {form.job_type === "folder" && (
+      {form.job_type === "job" && (
         <>
           <div className="form-group">
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -1333,11 +1335,24 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   if (isWizard) {
     return (
       <div className="settings-section">
-        <div className="section-header" onClick={() => { if (currentIdx > 0) { goBack(); } else { onCancel(); } }} style={{ cursor: "pointer" }} title={currentIdx > 0 ? "Back to previous step" : "Back to jobs"}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          <h2>Add Job</h2>
+        <div className="section-header" style={{ justifyContent: "space-between" }}>
+          {isCloseHeader ? (
+            <>
+              <h2>Add Job</h2>
+              <button className="panel-close-btn" onClick={onCancel} title="Close panel">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M2 2l10 10M12 2L2 12" />
+                </svg>
+              </button>
+            </>
+          ) : (
+            <div onClick={() => { if (currentIdx > 0) { goBack(); } else { onCancel(); } }} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} title={currentIdx > 0 ? "Back to previous step" : "Back to jobs"}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              <h2>Add Job</h2>
+            </div>
+          )}
         </div>
 
         <div>
@@ -1507,26 +1522,44 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   return (
     <div className="settings-section">
       <div className="section-header" style={{ justifyContent: "space-between" }}>
-        <div
-          onClick={onCancel}
-          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-          title={isNew ? "Back to jobs" : "Back to job"}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-          <h2>{isNew ? "Add Job" : `Edit: ${form.name}`}</h2>
-        </div>
-        <button className="btn btn-primary btn-sm" onClick={handleSubmit}>
-          {isNew ? "Create" : "Save"}
-        </button>
+        {isCloseHeader ? (
+          <>
+            <h2>{isNew ? "Add Job" : `Edit: ${form.name}`}</h2>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={handleSubmit}>
+                {isNew ? "Create" : "Save"}
+              </button>
+              <button className="panel-close-btn" onClick={onCancel} title="Close panel">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M2 2l10 10M12 2L2 12" />
+                </svg>
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              onClick={onCancel}
+              style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+              title={isNew ? "Back to jobs" : "Back to job"}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-secondary)", flexShrink: 0 }}>
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+              <h2>{isNew ? "Add Job" : `Edit: ${form.name}`}</h2>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={handleSubmit}>
+              {isNew ? "Create" : "Save"}
+            </button>
+          </>
+        )}
       </div>
 
       <FieldGroup title="Identity">
         {renderIdentityFields()}
       </FieldGroup>
 
-      {form.job_type === "folder" && form.folder_path && (
+      {form.job_type === "job" && form.folder_path && (
         <FieldGroup title="Directions">
           {renderDirectionsFields()}
           {renderParamsFields()}

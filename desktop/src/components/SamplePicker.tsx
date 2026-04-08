@@ -9,6 +9,7 @@ interface Props {
   onCreated: () => void;
   onBlank?: () => void;
   onCancel: () => void;
+  headerMode?: "back" | "close";
 }
 
 function slugifyName(input: string): string {
@@ -20,7 +21,7 @@ function slugifyName(input: string): string {
     .slice(0, 40);
 }
 
-export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Props) {
+export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, headerMode = "back" }: Props) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [expandedTemplates, setExpandedTemplates] = useState<Set<string>>(new Set());
   const [configuring, setConfiguring] = useState<SampleTemplate | null>(null);
@@ -28,7 +29,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Quick-create folder job form state
+  // Quick-create job form state
   const [quickFolderPath, setQuickFolderPath] = useState("");
   const [quickJobName, setQuickJobName] = useState("");
   const [quickJobMd, setQuickJobMd] = useState("");
@@ -111,14 +112,14 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
         templateContent = templateContent.split(`[${key}]`).join(replacement);
       }
 
-      if (template.job_type === "folder") {
+      if (template.job_type === "job") {
         const folderPath = workDir.replace(/\/+$/, "");
         await invoke("init_cwt_folder", { folderPath, jobName });
         await invoke("write_cwt_entry", { folderPath, jobName, content: templateContent });
 
         const job: Job = {
           name: template.name,
-          job_type: "folder",
+          job_type: "job",
           enabled: true,
           path: "",
           args: [],
@@ -194,7 +195,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
 
       const job: Job = {
         name: quickJobName.trim(),
-        job_type: "folder",
+        job_type: "job",
         enabled: true,
         path: "",
         args: [],
@@ -305,26 +306,39 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
 
   return (
     <div className="settings-section">
-      <div className="section-header">
-        <button
-          onClick={onCancel}
-          style={{
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--text-secondary)",
-            padding: "2px 4px",
-            lineHeight: 1,
-            display: "inline-flex",
-            alignItems: "center",
-          }}
-          title="Back to jobs"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-        </button>
-        <h2>Add Job</h2>
+      <div className="section-header" style={{ justifyContent: "space-between" }}>
+        {headerMode === "close" ? (
+          <>
+            <h2>Add Job</h2>
+            <button className="panel-close-btn" onClick={onCancel} title="Close panel">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M2 2l10 10M12 2L2 12" />
+              </svg>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={onCancel}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--text-secondary)",
+                padding: "2px 4px",
+                lineHeight: 1,
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+              title="Back to jobs"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
+            <h2 style={{ marginRight: "auto" }}>Add Job</h2>
+          </>
+        )}
       </div>
 
       {error && (
@@ -334,7 +348,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel }: Prop
       )}
 
       <div className="field-group" style={{ marginBottom: 20 }}>
-        <span className="field-group-title">Quick create (folder job)</span>
+        <span className="field-group-title">Quick create (job)</span>
         <div className="form-group">
           <label>Job name</label>
           <input

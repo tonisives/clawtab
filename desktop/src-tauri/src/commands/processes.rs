@@ -1,19 +1,27 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 use clawtab_protocol::DesktopMessage;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::config::jobs::JobStatus;
 use crate::AppState;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DetectedProcessOverride {
+    pub display_name: Option<String>,
+    pub first_query: Option<String>,
+    pub last_query: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ClaudeProcess {
     pub pane_id: String,
     pub cwd: String,
     pub version: String,
+    pub display_name: Option<String>,
     pub process_type: Option<String>,
     pub tmux_session: String,
     pub window_name: String,
@@ -109,18 +117,6 @@ fn detect_process_type(pane_pid: &str) -> Option<String> {
 #[tauri::command]
 pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<ClaudeProcess>, String> {
     // Snapshot shared state under the lock, then release before spawning blocking work
-    let tracked_panes: HashSet<String> = {
-        let statuses = state.job_status.lock().unwrap();
-        statuses
-            .iter()
-            .filter(|(name, _)| !name.starts_with("agent"))
-            .filter_map(|(_, s)| match s {
-                JobStatus::Running { pane_id: Some(pid), .. } => Some(pid.clone()),
-                _ => None,
-            })
-            .collect()
-    };
-
     let live_viewer_panes: HashSet<String> = {
         state.pty_manager.lock().unwrap().active_pane_ids()
     };
@@ -133,9 +129,9 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
             .filter_map(|job| {
                 if let Some(ref fp) = job.folder_path {
                     let root = fp.as_str();
-                    Some((root.to_string(), job.group.clone(), job.name.clone()))
+                    Some((root.to_string(), job.group.clone(), job.slug.clone()))
                 } else if let Some(ref wd) = job.work_dir {
-                    Some((wd.clone(), job.group.clone(), job.name.clone()))
+                    Some((wd.clone(), job.group.clone(), job.slug.clone()))
                 } else {
                     None
                 }
@@ -143,18 +139,44 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
             .collect()
     };
 
+    let running_panes: HashMap<String, (String, String)> = {
+        let statuses = state.job_status.lock().unwrap();
+        let config = state.jobs_config.lock().unwrap();
+        statuses
+            .iter()
+            .filter_map(|(slug, status)| match status {
+                JobStatus::Running {
+                    pane_id: Some(pid), ..
+                } => config
+                    .jobs
+                    .iter()
+                    .find(|job| job.slug == *slug)
+                    .map(|job| (pid.clone(), (job.group.clone(), job.slug.clone()))),
+                _ => None,
+            })
+            .collect()
+    };
+
+    let overrides = state.process_overrides.lock().unwrap().clone();
+
     // Run all subprocess-heavy work off the async runtime
     tokio::task::spawn_blocking(move || {
-        detect_claude_processes_blocking(tracked_panes, live_viewer_panes, match_entries)
+        detect_claude_processes_blocking(
+            live_viewer_panes,
+            match_entries,
+            running_panes,
+            overrides,
+        )
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))?
 }
 
 fn detect_claude_processes_blocking(
-    tracked_panes: HashSet<String>,
     live_viewer_panes: HashSet<String>,
     match_entries: Vec<(String, String, String)>,
+    running_panes: HashMap<String, (String, String)>,
+    overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<Vec<ClaudeProcess>, String> {
     let output = Command::new("tmux")
         .args([
@@ -195,7 +217,8 @@ fn detect_claude_processes_blocking(
         let window = parts[4];
         let pane_pid = parts[5];
 
-        if !is_semver(command) {
+        let process_type = detect_process_type(pane_pid);
+        if !is_semver(command) && process_type.is_none() {
             continue;
         }
 
@@ -203,20 +226,18 @@ fn detect_claude_processes_blocking(
             continue;
         }
 
-        if tracked_panes.contains(pane_id) {
-            continue;
-        }
-
-        // Match against configured jobs: prefer exact CWD match only.
-        // Prefix matching (starts_with) is too greedy - a job at /automation
-        // would incorrectly claim processes in /automation/business/seo-optimise.
-        let mut matched_group = None;
-        for (root, group, _name) in &match_entries {
-            if cwd == root {
-                matched_group = Some(group.clone());
-                break;
+        let (matched_group, matched_job) = if let Some((group, slug)) = running_panes.get(pane_id) {
+            (Some(group.clone()), Some(slug.clone()))
+        } else {
+            let best = match_entries
+                .iter()
+                .filter(|(root, _, _)| cwd == root || cwd.starts_with(&format!("{}/", root)))
+                .max_by_key(|(root, _, _)| root.len());
+            match best {
+                Some((_, group, slug)) => (Some(group.clone()), Some(slug.clone())),
+                None => (None, None),
             }
-        }
+        };
 
         let log_lines = if live_viewer_panes.contains(pane_id) {
             String::new()
@@ -228,24 +249,86 @@ fn detect_claude_processes_blocking(
         };
 
         let session_info = crate::claude_session::resolve_session_info(pane_pid);
+        let override_meta = overrides.get(pane_id);
 
         results.push(ClaudeProcess {
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
-            version: command.to_string(),
-            process_type: detect_process_type(pane_pid),
+            version: if is_semver(command) { command.to_string() } else { String::new() },
+            display_name: override_meta.and_then(|meta| meta.display_name.clone()),
+            process_type,
             tmux_session: session.to_string(),
             window_name: window.to_string(),
             matched_group,
-            matched_job: None,
+            matched_job,
             log_lines,
-            first_query: session_info.first_query,
-            last_query: session_info.last_query,
+            first_query: override_meta
+                .and_then(|meta| meta.first_query.clone())
+                .or(session_info.first_query),
+            last_query: override_meta
+                .and_then(|meta| meta.last_query.clone())
+                .or(session_info.last_query),
             session_started_at: session_info.session_started_at,
         });
     }
 
     Ok(results)
+}
+
+#[tauri::command]
+pub fn set_detected_process_display_name(
+    state: State<'_, AppState>,
+    pane_id: String,
+    display_name: Option<String>,
+) -> Result<(), String> {
+    let mut overrides = state.process_overrides.lock().unwrap();
+    let entry = overrides.entry(pane_id).or_default();
+    entry.display_name = display_name.and_then(normalize_optional_text);
+    prune_empty_overrides(&mut overrides);
+    let snapshot = overrides.clone();
+    drop(overrides);
+    persist_process_overrides(&state, snapshot)
+}
+
+#[tauri::command]
+pub fn set_detected_process_queries(
+    state: State<'_, AppState>,
+    pane_id: String,
+    first_query: Option<String>,
+    last_query: Option<String>,
+) -> Result<(), String> {
+    let mut overrides = state.process_overrides.lock().unwrap();
+    let entry = overrides.entry(pane_id).or_default();
+    entry.first_query = first_query.and_then(normalize_optional_text);
+    entry.last_query = last_query.and_then(normalize_optional_text);
+    prune_empty_overrides(&mut overrides);
+    let snapshot = overrides.clone();
+    drop(overrides);
+    persist_process_overrides(&state, snapshot)
+}
+
+fn normalize_optional_text(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn prune_empty_overrides(overrides: &mut HashMap<String, DetectedProcessOverride>) {
+    overrides.retain(|_, meta| {
+        meta.display_name.is_some() || meta.first_query.is_some() || meta.last_query.is_some()
+    });
+}
+
+fn persist_process_overrides(
+    state: &State<'_, AppState>,
+    overrides: HashMap<String, DetectedProcessOverride>,
+) -> Result<(), String> {
+    let mut settings = state.settings.lock().unwrap();
+    settings.process_overrides = overrides;
+    settings.save()
 }
 
 #[tauri::command]

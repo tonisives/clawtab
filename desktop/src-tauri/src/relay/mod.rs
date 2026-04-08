@@ -410,7 +410,7 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         job_type: match job.job_type {
             crate::config::jobs::JobType::Binary => "binary".to_string(),
             crate::config::jobs::JobType::Claude => "claude".to_string(),
-            crate::config::jobs::JobType::Folder => "folder".to_string(),
+            crate::config::jobs::JobType::Job => "job".to_string(),
         },
         enabled: job.enabled,
         cron: job.cron.clone(),

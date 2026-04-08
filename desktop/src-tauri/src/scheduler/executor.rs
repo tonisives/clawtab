@@ -155,7 +155,7 @@ async fn execute_job_inner(
                 .await
                 .map(|(code, out, err)| (code, out, err, None)),
             JobType::Claude => execute_claude_job(job, secrets, settings, params).await,
-            JobType::Folder => execute_folder_job(job, secrets, settings, params).await,
+            JobType::Job => execute_folder_job(job, secrets, settings, params).await,
         };
 
     // Get telegram config for notifications

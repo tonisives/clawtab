@@ -61,6 +61,7 @@ export { NotificationSection } from "./components/NotificationSection";
 export { AutoYesBanner } from "./components/AutoYesBanner";
 export type { AutoYesEntry } from "./components/AutoYesBanner";
 export { JobListView } from "./components/JobListView";
+export type { SidebarSelectableItem } from "./components/JobListView";
 export { JobDetailView } from "./components/JobDetailView";
 export { XtermLog } from "./components/XtermLog";
 export type { XtermLogHandle } from "./components/XtermLog";

@@ -84,6 +84,8 @@ export interface JobDetailViewProps {
   // Runtime query info (from detected processes)
   firstQuery?: string;
   lastQuery?: string;
+  onEditFirstQuery?: () => void;
+  onEditLastQuery?: () => void;
   // Pane actions (desktop only, for running jobs/processes with a tmux pane)
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
@@ -131,6 +133,8 @@ export function JobDetailView({
   hideMessageInput,
   firstQuery,
   lastQuery,
+  onEditFirstQuery,
+  onEditLastQuery,
   onFork,
   onSplitPane,
   onInjectSecrets,
@@ -484,12 +488,22 @@ export function JobDetailView({
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Query</Text>
           <Text style={styles.queryLine} numberOfLines={1}>{firstQuery}</Text>
+          {onEditFirstQuery ? (
+            <TouchableOpacity onPress={onEditFirstQuery} activeOpacity={0.6} style={styles.queryEditBtn}>
+              <Text style={styles.queryEditText}>Edit</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
       {isRunning && lastQuery && lastQuery !== firstQuery ? (
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Latest</Text>
           <Text style={styles.queryLineDim} numberOfLines={1}>{lastQuery}</Text>
+          {onEditLastQuery ? (
+            <TouchableOpacity onPress={onEditLastQuery} activeOpacity={0.6} style={styles.queryEditBtn}>
+              <Text style={styles.queryEditText}>Edit</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       ) : null}
 
@@ -1139,6 +1153,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex: 1,
     minWidth: 0,
+  },
+  queryEditBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  queryEditText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: "600",
   },
   runtimeDim: {
     color: colors.textMuted,

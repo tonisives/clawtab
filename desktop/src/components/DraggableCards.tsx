@@ -66,6 +66,7 @@ export function DraggableProcessCard({
   inGroup,
   selected,
   onStop,
+  onRename,
   autoYesActive,
 }: {
   process: ClaudeProcess;
@@ -73,6 +74,7 @@ export function DraggableProcessCard({
   inGroup?: boolean;
   selected?: boolean | string;
   onStop?: () => void;
+  onRename?: () => void;
   autoYesActive?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -93,6 +95,7 @@ export function DraggableProcessCard({
         inGroup={inGroup}
         selected={selected}
         onStop={onStop}
+        onRename={onRename}
         autoYesActive={autoYesActive}
       />
     </div>

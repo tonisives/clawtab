@@ -8,14 +8,12 @@ import cronIcon from "../assets/cron-icon.png";
 import manualIcon from "../assets/manual-icon.png";
 import shellIcon from "../assets/shell-icon.png";
 import codexIcon from "../assets/codex-icon.png";
-import folderIcon from "../assets/folder-icon.png";
 
-export type JobKind = "cron" | "manual" | "claude" | "codex" | "shell" | "folder";
+export type JobKind = "cron" | "manual" | "claude" | "codex" | "shell";
 
 export function kindForJob(job: RemoteJob): JobKind {
   if (job.job_type === "claude") return "claude";
   if (job.job_type === "shell") return "shell";
-  if (job.job_type === "folder" && !job.cron) return "folder";
   return job.cron ? "cron" : "manual";
 }
 
@@ -39,8 +37,6 @@ function paletteForKind(kind: JobKind) {
       return { bg: "rgba(255, 159, 10, 0.16)", fg: "#ff9f0a" };
     case "manual":
       return { bg: "rgba(10, 132, 255, 0.14)", fg: "#0a84ff" };
-    case "folder":
-      return { bg: "rgba(152, 152, 157, 0.12)", fg: colors.textSecondary };
     default:
       return { bg: "rgba(152, 152, 157, 0.12)", fg: colors.textSecondary };
   }
@@ -58,8 +54,6 @@ function sourceForKind(kind: JobKind) {
       return shellIcon;
     case "codex":
       return codexIcon;
-    case "folder":
-      return folderIcon;
   }
 }
 

@@ -16,6 +16,7 @@ export function ProcessCard({
   inGroup,
   selected,
   onStop,
+  onRename,
   autoYesActive,
 }: {
   process: ClaudeProcess;
@@ -23,11 +24,12 @@ export function ProcessCard({
   inGroup?: boolean;
   selected?: boolean | string;
   onStop?: () => void;
+  onRename?: () => void;
   autoYesActive?: boolean;
 }) {
   const displayName = inGroup
-    ? (process.first_query ?? shortenPath(process.cwd))
-    : shortenPath(process.cwd);
+    ? (process.display_name ?? process.first_query ?? shortenPath(process.cwd))
+    : (process.display_name ?? shortenPath(process.cwd));
 
   const subtitle = inGroup
     ? (process.last_query && process.last_query !== process.first_query ? process.last_query : null)
@@ -54,7 +56,7 @@ export function ProcessCard({
     </Tooltip>
   );
 
-  const showMenu = onStop && !transient;
+  const showMenu = (onStop || onRename) && !transient;
   const kind = kindForProcess(process);
 
   return (
@@ -107,13 +109,15 @@ export function ProcessCard({
           ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </TouchableOpacity>
-      {menuOpen && onStop && (
+      {menuOpen && (onStop || onRename) && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
-            { type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger },
+            ...(onRename ? [{ type: "item" as const, label: "Rename", onPress: () => { onRename(); setMenuOpen(false); } }] : []),
+            ...(onRename && onStop ? [{ type: "separator" as const }] : []),
+            ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}
         />
       )}
