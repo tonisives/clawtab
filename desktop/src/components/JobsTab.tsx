@@ -315,10 +315,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   useEffect(() => {
     if (stoppingProcesses.length === 0) return;
+    const MIN_STOPPING_VISIBLE_MS = 1500;
+    const MAX_STOPPING_VISIBLE_MS = 10000;
     setStoppingProcesses((prev) =>
       prev.filter((sp) => {
         const stillPresent = core.processes.some((p) => p.pane_id === sp.process.pane_id);
-        return stillPresent && Date.now() - sp.stoppedAt < 10000;
+        const elapsed = Date.now() - sp.stoppedAt;
+        if (elapsed >= MAX_STOPPING_VISIBLE_MS) return false;
+        if (stillPresent) return true;
+        return elapsed < MIN_STOPPING_VISIBLE_MS;
       }),
     );
   }, [core.processes, stoppingProcesses.length]);
@@ -823,7 +828,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           }}
           showBackButton={!isWide} hidePath
           onStopped={() => {
-            setStoppingProcesses((prev) => [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }]);
+            setStoppingProcesses((prev) => {
+              if (prev.some((sp) => sp.process.pane_id === proc.pane_id)) return prev;
+              return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
+            });
+            core.requestFastPoll(`pane:${proc.pane_id}`);
             split.handleClosePane(leafId);
           }}
           onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
@@ -858,7 +867,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         options={jobQuestion?.options}
         questionContext={jobQuestion?.context_lines}
         {...buildJobPaneActions(job, jobQuestion)}
-        onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(job.slug))}
+        onStopping={() => {
+          setStoppingJobSlugs((prev) => new Set(prev).add(job.slug));
+          core.requestFastPoll(`job:${job.slug}`);
+        }}
         contentStyle={trafficLightInsetStyle}
         titlePath={buildJobTitlePath(job, jobQuestion)}
       />
@@ -962,7 +974,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             }}
             showBackButton={!isWide} hidePath
             onStopped={() => {
-              setStoppingProcesses((prev) => [...prev, { process: { ...viewingProcess, _transient_state: "stopping" }, stoppedAt: Date.now() }]);
+              setStoppingProcesses((prev) => {
+                if (prev.some((sp) => sp.process.pane_id === viewingProcess.pane_id)) return prev;
+                return [...prev, { process: { ...viewingProcess, _transient_state: "stopping" }, stoppedAt: Date.now() }];
+              });
+              core.requestFastPoll(`pane:${viewingProcess.pane_id}`);
               selectAdjacentItem(viewingProcess.pane_id);
             }}
             onFork={(direction: "right" | "down") => handleFork(viewingProcess.pane_id, direction)}
@@ -1005,7 +1021,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             options={jobQuestion?.options}
             questionContext={jobQuestion?.context_lines}
             {...buildJobPaneActions(viewingJob, jobQuestion)}
-            onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(viewingJob.slug))}
+            onStopping={() => {
+              setStoppingJobSlugs((prev) => new Set(prev).add(viewingJob.slug));
+              core.requestFastPoll(`job:${viewingJob.slug}`);
+            }}
             contentStyle={trafficLightInsetStyle}
             titlePath={buildJobTitlePath(viewingJob, jobQuestion)}
           />
@@ -1144,9 +1163,20 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       scrollEnabled={!split.isDragging}
       onStopJob={(slug) => {
         setStoppingJobSlugs((prev) => new Set(prev).add(slug));
+        core.requestFastPoll(`job:${slug}`);
         transport.sigintJob ? transport.sigintJob(slug) : transport.stopJob(slug);
       }}
-      onStopProcess={(paneId) => invoke("sigint_detected_process", { paneId })}
+      onStopProcess={(paneId) => {
+        const proc = core.processes.find((p) => p.pane_id === paneId);
+        if (proc) {
+          setStoppingProcesses((prev) => {
+            if (prev.some((sp) => sp.process.pane_id === paneId)) return prev;
+            return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
+          });
+        }
+        core.requestFastPoll(`pane:${paneId}`);
+        invoke("sigint_detected_process", { paneId });
+      }}
       autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}

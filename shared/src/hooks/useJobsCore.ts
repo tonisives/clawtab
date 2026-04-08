@@ -17,6 +17,8 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const jobsSigRef = useRef("[]");
   const statusesSigRef = useRef("{}");
   const processesSigRef = useRef("[]");
+  const fastPollTargetsRef = useRef<Map<string, number>>(new Map());
+  const fastPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const signatureForJobs = (items: RemoteJob[]) => JSON.stringify(items);
   const signatureForStatuses = (items: Record<string, JobStatus>) => JSON.stringify(items);
@@ -99,6 +101,34 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
     }
   }, []);
 
+  const stopFastPoll = useCallback(() => {
+    if (!fastPollIntervalRef.current) return;
+    clearInterval(fastPollIntervalRef.current);
+    fastPollIntervalRef.current = null;
+  }, []);
+
+  const runFastPoll = useCallback(async () => {
+    const now = Date.now();
+    for (const [key, expiresAt] of fastPollTargetsRef.current) {
+      if (expiresAt <= now) fastPollTargetsRef.current.delete(key);
+    }
+    if (fastPollTargetsRef.current.size === 0) {
+      stopFastPoll();
+      return;
+    }
+    await Promise.all([loadStatuses(), loadProcesses()]);
+  }, [loadProcesses, loadStatuses, stopFastPoll]);
+
+  const requestFastPoll = useCallback((target: string, durationMs = 7000) => {
+    fastPollTargetsRef.current.set(target, Date.now() + durationMs);
+    if (!fastPollIntervalRef.current) {
+      fastPollIntervalRef.current = setInterval(() => {
+        void runFastPoll();
+      }, 500);
+    }
+    void runFastPoll();
+  }, [runFastPoll]);
+
   useEffect(() => {
     loadAll();
     loadProcesses();
@@ -106,7 +136,10 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       loadStatuses();
       loadProcesses();
     }, pollInterval);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      stopFastPoll();
+    };
   }, [loadAll, loadStatuses, loadProcesses, pollInterval]);
 
   const toggleGroup = useCallback((group: string) => {
@@ -152,5 +185,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
     setStatuses,
     reload: loadAll,
     reloadStatuses: loadStatuses,
+    reloadProcesses: loadProcesses,
+    requestFastPoll,
   };
 }
