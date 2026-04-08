@@ -24,7 +24,7 @@ import { formatTime, formatDuration, compactCron, shortenPath } from "../util/fo
 import { nextCronDate, formatNextRun, cronTooltip } from "../util/cron";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
-import { isFreetextOption } from "../util/jobs";
+import { isFreetextOption, typeIcon } from "../util/jobs";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -156,6 +156,7 @@ export function JobDetailView({
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const [headerWidth, setHeaderWidth] = useState(0);
 
   const webRefCb = useCallback((_node: HTMLElement | null) => {}, []);
 
@@ -272,6 +273,10 @@ export function JobDetailView({
   const jobDir = job.work_dir || job.folder_path || "";
   const pathDisplay = jobDir.replace(/^\/Users\/[^/]+/, "~");
   const shortTitlePath = titlePath ? shortenPath(titlePath) : null;
+  const compactLeadingPills = headerWidth > 0 && headerWidth < 940;
+  const jobTypeIcon = typeIcon(job.job_type);
+  const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
+  const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
 
   const detailInner = (
     <>
@@ -287,10 +292,25 @@ export function JobDetailView({
       )}
 
       {/* Info row with actions */}
-      <View style={styles.infoRow}>
+      <View
+        style={styles.infoRow}
+        onLayout={(e) => setHeaderWidth(e.nativeEvent.layout.width)}
+      >
         <View style={styles.infoPills}>
-          <View style={styles.infoPill}>
-            <Text style={styles.infoLabel}>{job.job_type}</Text>
+          <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: job.job_type } as any : {})}>
+            {compactLeadingPills ? (
+              <Text
+                style={[
+                  styles.infoLabel,
+                  styles.compactInfoLetter,
+                  { color: job.job_type === "claude" ? colors.accent : colors.textSecondary },
+                ]}
+              >
+                {jobTypeIcon.letter}
+              </Text>
+            ) : (
+              <Text style={styles.infoLabel}>{job.job_type}</Text>
+            )}
           </View>
           {job.cron ? (
             <View style={styles.infoPill} {...(isWeb ? { title: cronTooltip(job.cron) } as any : {})}>
@@ -306,13 +326,17 @@ export function JobDetailView({
             ) : null;
           })() : null}
           {isManual ? (
-            <View style={styles.infoPill}>
-              <Text style={styles.infoLabel}>{expandOutput ? "detected" : "manual"}</Text>
+            <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: modeLabel } as any : {})}>
+              {compactLeadingPills ? (
+                <Text style={styles.infoLabel}>{modeCompactLabel}</Text>
+              ) : (
+                <Text style={styles.infoLabel}>{modeLabel}</Text>
+              )}
             </View>
           ) : (
-            <View style={styles.infoPill}>
+            <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: modeLabel } as any : {})}>
               <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
-                {job.enabled ? "Enabled" : "Disabled"}
+                {compactLeadingPills ? modeCompactLabel : modeLabel}
               </Text>
             </View>
           )}
@@ -1078,7 +1102,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.sm,
     rowGap: spacing.sm,
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
     zIndex: 200,
     ...(isWeb ? { position: "relative" as const } : {}),
   },
@@ -1091,8 +1115,8 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontFamily: "monospace",
-    maxWidth: 220,
-    flexShrink: 1,
+    flex: 1,
+    minWidth: 0,
   },
   queryRow: {
     flexDirection: "row",
@@ -1127,14 +1151,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    flexWrap: "wrap",
-    flexShrink: 1,
+    flexWrap: "nowrap",
+    flexShrink: 0,
   },
   infoPill: {
     backgroundColor: colors.surface,
     borderRadius: radius.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
+  },
+  infoPillIcon: {
+    paddingHorizontal: 6,
+    minWidth: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  compactInfoLetter: {
+    lineHeight: 11,
+    letterSpacing: 0,
+    textAlign: "center",
   },
   infoLabel: {
     color: colors.textSecondary,
@@ -1156,8 +1191,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
     flexShrink: 1,
+    minWidth: 0,
+    overflow: "hidden",
   },
   actionBtn: {
     paddingHorizontal: spacing.lg,

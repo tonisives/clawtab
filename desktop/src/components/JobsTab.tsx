@@ -295,7 +295,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (match) {
       setPendingAgentWorkDir(null);
       setPendingProcess(null);
-      setViewingProcess(match);
+      if (split.tree) {
+        const matchContent: PaneContent = { kind: "process", paneId: match.pane_id };
+        const pendingContent = pendingProcess ? { kind: "process" as const, paneId: pendingProcess.pane_id } : null;
+        if (!pendingContent || !split.replaceContent(pendingContent, matchContent)) {
+          split.openContent(matchContent);
+        }
+      } else {
+        setViewingProcess(match);
+      }
       setScrollToSlug(match.pane_id);
       return;
     }
@@ -303,7 +311,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       setPendingAgentWorkDir(null);
       setPendingProcess(null);
     }
-  }, [core.processes, pendingAgentWorkDir, pendingProcess]);
+  }, [core.processes, pendingAgentWorkDir, pendingProcess, split.tree, split.openContent, split.replaceContent]);
 
   useEffect(() => {
     if (stoppingProcesses.length === 0) return;
@@ -610,7 +618,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         last_query: null, session_started_at: new Date().toISOString(), _transient_state: "starting",
       };
       setPendingProcess(placeholder);
-      setViewingJob(null); setViewingAgent(false); setViewingProcess(placeholder);
+      if (split.tree) {
+        split.openContent({ kind: "process", paneId: placeholder.pane_id });
+      } else {
+        setViewingJob(null); setViewingAgent(false); setViewingProcess(placeholder);
+      }
       setScrollToSlug(placeholder.pane_id);
 
       const result = await actions.runAgent(prompt, workDir);
@@ -622,7 +634,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           last_query: null, session_started_at: new Date().toISOString(),
         };
         setPendingProcess(realProcess);
-        setViewingProcess(realProcess);
+        if (split.tree) {
+          const realContent: PaneContent = { kind: "process", paneId: realProcess.pane_id };
+          if (!split.replaceContent({ kind: "process", paneId: placeholder.pane_id }, realContent)) {
+            split.openContent(realContent);
+          }
+        } else {
+          setViewingProcess(realProcess);
+        }
         setScrollToSlug(result.pane_id);
         // Clear pending state after next process poll picks it up
         setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
@@ -633,7 +652,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     } else {
       await actions.runAgent(prompt, workDir);
     }
-  }, [actions, core.jobs]);
+  }, [actions, core.jobs, split.tree, split.openContent, split.replaceContent]);
 
   const handleHideGroup = useCallback((group: string) => {
     setHiddenGroups((prev) => {
@@ -701,11 +720,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (!core.loaded) return;
     split.cleanStaleLeaves((content) => {
       if (content.kind === "process") {
+        if (pendingProcess?.pane_id === content.paneId) return false;
         return !core.processes.find(p => p.pane_id === content.paneId);
       }
       return false;
     });
-  }, [core.processes, core.loaded, split.cleanStaleLeaves]);
+  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess]);
 
   // Helper: build DesktopJobDetail pane action props
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
@@ -777,8 +797,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
 
     if (content.kind === "process") {
-      const proc = core.processes.find((p) => p.pane_id === content.paneId);
+      const proc = core.processes.find((p) => p.pane_id === content.paneId)
+        ?? (pendingProcess?.pane_id === content.paneId ? pendingProcess : null);
       if (!proc) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span></div>;
+      if (proc.pane_id.startsWith("_pending_")) {
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button className="btn btn-sm" onClick={() => { setPendingAgentWorkDir(null); setPendingProcess(null); split.handleClosePane(leafId); }}>Back</button>
+              <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>Waiting for agent to start...</span>
+            </div>
+          </div>
+        );
+      }
       return (
         <DetectedProcessDetail
           process={proc} questions={questions}
@@ -832,7 +863,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         titlePath={buildJobTitlePath(job, jobQuestion)}
       />
     );
-  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle]);
+  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle, pendingProcess]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(

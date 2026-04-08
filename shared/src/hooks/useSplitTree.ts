@@ -23,6 +23,8 @@ import {
 import { assignPaneColors } from "../theme/paneColors";
 import { colors } from "../theme/colors";
 
+type LeafRect = { id: string; content: PaneContent; x: number; y: number; w: number; h: number };
+
 /** Minimal drag data - both apps use { kind, slug?, paneId? } */
 export interface SplitDragData {
   kind: "job" | "process" | "agent";
@@ -101,6 +103,48 @@ function createVirtualRoot(content: PaneContent | null): SplitNode {
     // Placeholder content is only used for overlay geometry when the detail pane is empty.
     content: content ?? { kind: "agent" },
   };
+}
+
+function collectLeafRects(
+  node: SplitNode,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): LeafRect[] {
+  if (node.type === "leaf") {
+    return [{ id: node.id, content: node.content, x, y, w, h }];
+  }
+
+  if (node.direction === "horizontal") {
+    const firstW = w * node.ratio;
+    const secondW = w - firstW;
+    return [
+      ...collectLeafRects(node.first, x, y, firstW, h),
+      ...collectLeafRects(node.second, x + firstW, y, secondW, h),
+    ];
+  }
+
+  const firstH = h * node.ratio;
+  const secondH = h - firstH;
+  return [
+    ...collectLeafRects(node.first, x, y, w, firstH),
+    ...collectLeafRects(node.second, x, y + firstH, w, secondH),
+  ];
+}
+
+function chooseSplitDirection(
+  rect: Pick<LeafRect, "w" | "h">,
+  minPaneSize: number,
+): "horizontal" | "vertical" | null {
+  const canSplitHorizontal = rect.w >= minPaneSize * 2;
+  const canSplitVertical = rect.h >= minPaneSize * 2;
+  if (canSplitHorizontal && canSplitVertical) {
+    return rect.w >= rect.h ? "horizontal" : "vertical";
+  }
+  if (canSplitHorizontal) return "horizontal";
+  if (canSplitVertical) return "vertical";
+  return null;
 }
 
 export function useSplitTree(options: UseSplitTreeOptions) {
@@ -350,6 +394,71 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     });
   }, []);
 
+  /** Open content in the current tree, preferring a split when any pane has room, otherwise replacing the largest pane. */
+  const openContent = useCallback((content: PaneContent) => {
+    const currentTree = splitTreeRef.current;
+
+    if (!currentTree) return false;
+
+    const existingLeaf = collectLeaves(currentTree).find((leaf) => contentEquals(leaf.content, content));
+    if (existingLeaf) {
+      setFocusedLeafId(existingLeaf.id);
+      return true;
+    }
+
+    const containerW = detailPaneRef.current?.clientWidth ?? detailSize.w;
+    const containerH = detailPaneRef.current?.clientHeight ?? detailSize.h;
+    const leafRects = collectLeafRects(currentTree, 0, 0, containerW, containerH);
+
+    const focusedRect = focusedLeafId ? leafRects.find((leaf) => leaf.id === focusedLeafId) : undefined;
+    const focusedDirection = focusedRect ? chooseSplitDirection(focusedRect, minPaneSize) : null;
+    const candidate = focusedRect && focusedDirection
+      ? { leafId: focusedRect.id, direction: focusedDirection }
+      : leafRects
+          .map((leaf) => ({ leafId: leaf.id, direction: chooseSplitDirection(leaf, minPaneSize), area: leaf.w * leaf.h }))
+          .filter((leaf): leaf is { leafId: string; direction: "horizontal" | "vertical"; area: number } => !!leaf.direction)
+          .sort((a, b) => b.area - a.area)[0];
+
+    if (candidate) {
+      let insertedLeafId: string | null = null;
+      setSplitTree((prev) => {
+        if (!prev) return prev;
+        const next = splitLeaf(prev, candidate.leafId, content, candidate.direction, "after");
+        const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, content));
+        insertedLeafId = inserted?.id ?? null;
+        return next;
+      });
+      if (insertedLeafId) setFocusedLeafId(insertedLeafId);
+      return true;
+    }
+
+    const largestLeaf = leafRects
+      .slice()
+      .sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
+    if (!largestLeaf) return false;
+
+    setSplitTree((prev) => {
+      if (!prev) return prev;
+      return replaceNode(prev, largestLeaf.id, { type: "leaf", id: largestLeaf.id, content });
+    });
+    setFocusedLeafId(largestLeaf.id);
+    return true;
+  }, [detailSize.h, detailSize.w, focusedLeafId, minPaneSize]);
+
+  /** Replace an existing leaf's content and keep that pane focused. */
+  const replaceContent = useCallback((from: PaneContent, to: PaneContent) => {
+    const currentTree = splitTreeRef.current;
+    if (!currentTree) return false;
+    const existingLeaf = collectLeaves(currentTree).find((leaf) => contentEquals(leaf.content, from));
+    if (!existingLeaf) return false;
+    setSplitTree((prev) => {
+      if (!prev) return prev;
+      return replaceNode(prev, existingLeaf.id, { type: "leaf", id: existingLeaf.id, content: to });
+    });
+    setFocusedLeafId(existingLeaf.id);
+    return true;
+  }, []);
+
   // Compute selectedItems map for sidebar highlighting
   const selectedItems = useMemo((): Map<string, string> | null => {
     if (splitTree) {
@@ -408,6 +517,8 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     handleSelectInTree,
     cleanStaleLeaves,
     addSplitLeaf,
+    openContent,
+    replaceContent,
     // Sidebar data
     selectedItems,
     focusedItemKey,
