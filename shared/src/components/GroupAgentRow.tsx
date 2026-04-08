@@ -12,7 +12,7 @@ const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 export function GroupAgentRow({
   onRunAgent,
 }: {
-  onRunAgent: (prompt: string) => void;
+  onRunAgent: (prompt: string) => void | Promise<void>;
 }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
@@ -41,12 +41,16 @@ export function GroupAgentRow({
     EXPANDED_MAX_HEIGHT,
   );
 
-  const handleRun = () => {
+  const handleRun = async () => {
     if (!prompt.trim() || sending) return;
+    const nextPrompt = prompt.trim();
     setSending(true);
-    onRunAgent(prompt.trim());
-    setPrompt("");
-    setSending(false);
+    try {
+      await onRunAgent(nextPrompt);
+      setPrompt("");
+    } finally {
+      setSending(false);
+    }
   };
 
   const commonProps = {
@@ -66,7 +70,7 @@ export function GroupAgentRow({
       if (ne.key !== "Enter") return;
       if (ne.metaKey || ne.ctrlKey) {
         e.preventDefault?.();
-        handleRun();
+        void handleRun();
         return;
       }
       // Plain Enter in the collapsed (single-line) input would submit the form
@@ -106,7 +110,7 @@ export function GroupAgentRow({
       )}
       <TouchableOpacity
         style={[styles.btn, (!prompt.trim() || sending) && styles.btnDisabled]}
-        onPress={handleRun}
+        onPress={() => { void handleRun(); }}
         disabled={!prompt.trim() || sending}
         activeOpacity={0.7}
       >

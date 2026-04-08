@@ -225,7 +225,7 @@ export function SettingsApp() {
   );
 
   const renderPanel = (id: TabId, label: string, content: React.ReactNode) => (
-    <div key={id} style={{ display: activeTab === id ? "flex" : "none", flexDirection: "column", flex: 1, position: "absolute", inset: 0, background: "var(--bg-secondary)", zIndex: 1 }}>
+    <div key={id} style={{ display: activeTab === id ? "flex" : "none", flexDirection: "column", flex: 1, position: "absolute", inset: 0, background: "var(--bg-secondary)", zIndex: 20000 }}>
       <div style={{ display: "flex", alignItems: "center", padding: "12px 20px 0", flexShrink: 0 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{label}</span>
         {panelClose}

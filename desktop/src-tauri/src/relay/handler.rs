@@ -102,7 +102,7 @@ pub async fn handle_incoming(
         }
 
         ClientMessage::StopJob { id, name } => {
-            let result = stop_job(&name, job_status);
+            let result = stop_job(&name, job_status, relay);
             let _ = app_handle.emit("jobs-changed", ());
             Some(DesktopMessage::StopJobAck {
                 id,
@@ -401,6 +401,7 @@ fn resume_job(
 fn stop_job(
     name: &str,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
 ) -> Result<(), String> {
     let mut status = job_status.lock().unwrap();
     match status.get(name).cloned() {
@@ -409,11 +410,17 @@ fn stop_job(
             ..
         }) => {
             let _ = crate::tmux::kill_pane(&pane_id);
-            status.insert(name.to_string(), JobStatus::Idle);
+            let next_status = JobStatus::Idle;
+            status.insert(name.to_string(), next_status.clone());
+            drop(status);
+            crate::relay::push_status_update(relay, name, &next_status);
             Ok(())
         }
         Some(JobStatus::Running { .. }) | Some(JobStatus::Paused) => {
-            status.insert(name.to_string(), JobStatus::Idle);
+            let next_status = JobStatus::Idle;
+            status.insert(name.to_string(), next_status.clone());
+            drop(status);
+            crate::relay::push_status_update(relay, name, &next_status);
             Ok(())
         }
         _ => Err("job is not running".to_string()),

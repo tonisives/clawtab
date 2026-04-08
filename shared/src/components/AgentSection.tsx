@@ -19,19 +19,23 @@ export function AgentSection({
   agentProcess: ClaudeProcess | null;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  onRunAgent: (prompt: string) => void;
+  onRunAgent: (prompt: string) => void | Promise<void>;
   onSelectProcess?: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const canRun = agentStatus.state === "idle" || agentStatus.state === "success" || agentStatus.state === "failed";
 
-  const handleRun = () => {
+  const handleRun = async () => {
     if (!prompt.trim() || sending) return;
+    const nextPrompt = prompt.trim();
     setSending(true);
-    onRunAgent(prompt.trim());
-    setPrompt("");
-    setSending(false);
+    try {
+      await onRunAgent(nextPrompt);
+      setPrompt("");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -64,7 +68,7 @@ export function AgentSection({
                   placeholderTextColor={colors.textMuted}
                   returnKeyType="send"
                   inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
-                  onSubmitEditing={handleRun}
+                  onSubmitEditing={() => { void handleRun(); }}
                   editable={!sending}
                 />
                 <TouchableOpacity
@@ -72,7 +76,7 @@ export function AgentSection({
                     styles.agentRunBtn,
                     (!prompt.trim() || sending) && styles.btnDisabled,
                   ]}
-                  onPress={handleRun}
+                  onPress={() => { void handleRun(); }}
                   disabled={!prompt.trim() || sending}
                   activeOpacity={0.7}
                 >

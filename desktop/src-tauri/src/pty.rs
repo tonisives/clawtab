@@ -26,6 +26,7 @@ struct PaneViewer {
 
 const MAX_RECENT_PANES: usize = 12;
 const MAX_CACHED_BYTES_PER_PANE: usize = 256 * 1024;
+const MAX_WARM_VIEWERS: usize = 8;
 
 struct RecentPaneCache {
     order: VecDeque<String>,
@@ -92,6 +93,7 @@ pub struct SpawnResult {
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
     recent: Arc<Mutex<RecentPaneCache>>,
+    warm_order: VecDeque<String>,
 }
 
 static VIEW_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -106,6 +108,24 @@ fn tmux(args: &[&str]) -> Result<String, String> {
         return Err(format!("tmux {}: {}", args[0], stderr.trim()));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn tmux_session_exists(session: &str) -> bool {
+    Command::new("tmux")
+        .args(["has-session", "-t", session])
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+fn next_view_session_name() -> String {
+    loop {
+        let view_id = VIEW_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let candidate = format!("clawtab-view-{}", view_id);
+        if !tmux_session_exists(&candidate) {
+            return candidate;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -281,6 +301,7 @@ impl PtyManager {
         Self {
             sessions: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),
+            warm_order: VecDeque::new(),
         }
     }
 
@@ -298,8 +319,18 @@ impl PtyManager {
         sink: OutputSink,
     ) -> Result<SpawnResult, String> {
         if self.sessions.contains_key(pane_id) {
-            log::info!("[pty] destroying stale viewer for {} before re-spawn", pane_id);
-            let _ = self.destroy(pane_id);
+            self.touch_warm_viewer(pane_id);
+            self.resize(pane_id, cols, rows)?;
+
+            let native_info = tmux(&[
+                "display-message", "-t", pane_id,
+                "-p", "#{pane_width} #{pane_height}",
+            ])?;
+            let native_parts: Vec<&str> = native_info.split(' ').collect();
+            let native_cols: u16 = native_parts.first().and_then(|s| s.parse().ok()).unwrap_or(80);
+            let native_rows: u16 = native_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(24);
+
+            return Ok(SpawnResult { native_cols, native_rows });
         }
 
         // Read the pane's native size before capture. After capture + resize we
@@ -318,8 +349,7 @@ impl PtyManager {
 
         // Ephemeral grouped view session so this viewer has its own current-window
         // without disturbing other clients attached to the original session.
-        let view_id = VIEW_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let view_session = format!("clawtab-view-{}", view_id);
+        let view_session = next_view_session_name();
         tmux(&[
             "new-session", "-d",
             "-s", &view_session,
@@ -407,6 +437,8 @@ impl PtyManager {
                 view_session,
             },
         );
+        self.touch_warm_viewer(pane_id);
+        self.evict_warm_viewers();
 
         Ok(SpawnResult { native_cols, native_rows })
     }
@@ -448,6 +480,7 @@ impl PtyManager {
 
     pub fn destroy(&mut self, pane_id: &str) -> Result<(), String> {
         if let Some(viewer) = self.sessions.remove(pane_id) {
+            self.warm_order.retain(|id| id != pane_id);
             viewer.stop.store(true, Ordering::Relaxed);
             // Kill only the ephemeral view session. The captured window stays
             // in clawtab-<group> so the user can re-attach or release later.
@@ -467,6 +500,20 @@ impl PtyManager {
         let pane_ids: Vec<String> = self.sessions.keys().cloned().collect();
         for pane_id in pane_ids {
             let _ = self.destroy(&pane_id);
+        }
+    }
+
+    fn touch_warm_viewer(&mut self, pane_id: &str) {
+        self.warm_order.retain(|id| id != pane_id);
+        self.warm_order.push_front(pane_id.to_string());
+    }
+
+    fn evict_warm_viewers(&mut self) {
+        while self.warm_order.len() > MAX_WARM_VIEWERS {
+            let Some(oldest) = self.warm_order.pop_back() else {
+                break;
+            };
+            let _ = self.destroy(&oldest);
         }
     }
 }

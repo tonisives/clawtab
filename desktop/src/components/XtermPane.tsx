@@ -92,14 +92,9 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
     let dataDisposable: { dispose(): void } | null = null;
     let observer: ResizeObserver | null = null;
     let term: Terminal | null = null;
-    let spawned = false;
     const key = eventKey(paneId);
 
     async function setup() {
-      // Destroy any leftover viewer from a previous mount
-      await invoke("pty_destroy", { paneId }).catch(() => {});
-      if (cancelled) return;
-
       const t = new Terminal({
         fontSize: 12,
         fontFamily: "monospace",
@@ -143,8 +138,8 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         if (e.metaKey && e.key === "e") return false;
         // Ctrl+V/S: split pane
         if (e.ctrlKey && (e.key === "v" || e.key === "s")) return false;
-        // Cmd+H/J/K/L: move between panes
-        if (e.metaKey && "hjkl".includes(e.key)) return false;
+        // Ctrl+H/J/K/L: move between panes
+        if (e.ctrlKey && !e.metaKey && "hjkl".includes(e.key)) return false;
         return true;
       });
 
@@ -186,10 +181,8 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       const result = await invoke<PtySpawnResult>("pty_spawn", {
         paneId, tmuxSession, cols, rows, group: resolvedGroup,
       });
-      spawned = true;
 
       if (cancelled) {
-        invoke("pty_destroy", { paneId }).catch(() => {});
         return;
       }
 
@@ -277,9 +270,6 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       exitUnlisten?.();
       dropUnlisten?.();
       term?.dispose();
-      if (spawned) {
-        invoke("pty_destroy", { paneId }).catch(() => {});
-      }
     };
     // The viewer lifecycle is keyed by the tmux pane id. Parent polling can
     // refresh tmux session metadata without changing the actual pane, and

@@ -4,10 +4,10 @@ const shortcuts: { label: string; keys: string[] }[] = [
   { label: "Toggle sidebar", keys: ["Cmd", "E"] },
   { label: "Split pane vertically", keys: ["Ctrl", "V"] },
   { label: "Split pane horizontally", keys: ["Ctrl", "S"] },
-  { label: "Move to left pane", keys: ["Cmd", "H"] },
-  { label: "Move to pane below", keys: ["Cmd", "J"] },
-  { label: "Move to pane above", keys: ["Cmd", "K"] },
-  { label: "Move to right pane", keys: ["Cmd", "L"] },
+  { label: "Move to left pane", keys: ["Ctrl", "H"] },
+  { label: "Move to pane below", keys: ["Ctrl", "J"] },
+  { label: "Move to pane above", keys: ["Ctrl", "K"] },
+  { label: "Move to right pane", keys: ["Ctrl", "L"] },
 ];
 
 export function ShortcutsPanel() {

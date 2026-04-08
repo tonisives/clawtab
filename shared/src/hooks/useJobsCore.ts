@@ -184,6 +184,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
     updateStatus,
     setJobs,
     setStatuses,
+    setProcesses,
     reload: loadAll,
     reloadStatuses: loadStatuses,
     reloadProcesses: loadProcesses,

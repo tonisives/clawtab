@@ -91,6 +91,7 @@ export interface JobListViewProps {
   onToggleGroup: (group: string) => void;
   groupOrder?: string[];
   jobOrder?: Record<string, string[]>;
+  processOrder?: Record<string, string[]>;
   onRefresh?: () => void;
   // Sorting
   sortMode?: JobSortMode;
@@ -136,10 +137,11 @@ export interface JobListViewProps {
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
-  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean }) => React.ReactNode;
-  renderProcessCard?: (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean }) => React.ReactNode;
+  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string }) => React.ReactNode;
+  renderProcessCard?: (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
+  wrapProcessGroup?: (group: string, processPaneIds: string[], children: React.ReactNode) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
   scrollEnabled?: boolean;
   // Slugs currently being stopped (for "Stopping..." display in sidebar)
@@ -162,6 +164,19 @@ export type SidebarSelectableItem =
   | { kind: "process"; key: string; process: ClaudeProcess }
   | { kind: "shell"; key: string; shell: ShellPane };
 
+function areSelectableItemsEqual(
+  left: SidebarSelectableItem[],
+  right: SidebarSelectableItem[],
+): boolean {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i].kind !== right[i].kind || left[i].key !== right[i].key) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function JobListView({
   jobs,
   statuses,
@@ -171,6 +186,7 @@ export function JobListView({
   onToggleGroup,
   groupOrder: _groupOrder = [],
   jobOrder = {},
+  processOrder = {},
   onRefresh,
   sortMode = "name",
   onSortChange,
@@ -201,6 +217,7 @@ export function JobListView({
   renderProcessCard: customRenderProcessCard,
   renderShellCard: customRenderShellCard,
   wrapJobGroup,
+  wrapProcessGroup,
   scrollEnabled = true,
   stoppingSlugs: stoppingSlugsExternal,
   onSelectableItemsChange,
@@ -281,8 +298,20 @@ export function JobListView({
         map.set(proc.matched_group, list);
       }
     }
+    for (const [group, list] of map) {
+      const manualOrder = processOrder[group] ?? [];
+      const manualIndex = new Map(manualOrder.map((paneId, index) => [paneId, index]));
+      list.sort((a, b) => {
+        const aIndex = manualIndex.get(a.pane_id);
+        const bIndex = manualIndex.get(b.pane_id);
+        if (aIndex != null && bIndex != null) return aIndex - bIndex;
+        if (aIndex != null) return -1;
+        if (bIndex != null) return 1;
+        return (a.display_name ?? a.first_query ?? a.cwd).localeCompare(b.display_name ?? b.first_query ?? b.cwd);
+      });
+    }
     return map;
-  }, [detectedProcesses]);
+  }, [detectedProcesses, processOrder]);
 
   const matchedShellsByGroup = useMemo(() => {
     const map = new Map<string, ShellPane[]>();
@@ -475,7 +504,12 @@ export function JobListView({
     })
   ), [items]);
 
+  const lastSelectableItemsRef = useRef<SidebarSelectableItem[]>([]);
   useEffect(() => {
+    if (areSelectableItemsEqual(lastSelectableItemsRef.current, selectableItems)) {
+      return;
+    }
+    lastSelectableItemsRef.current = selectableItems;
     onSelectableItemsChange?.(selectableItems);
   }, [onSelectableItemsChange, selectableItems]);
 
@@ -496,18 +530,23 @@ export function JobListView({
     const jobAutoYesActive = jobPaneId ? autoYesPaneIds?.has(jobPaneId) ?? false : false;
     const isStopping = stoppingSlugsExternal?.has(item.job.slug) ?? false;
     const jobOnStop = isRunning && !isStopping && onStopJob ? () => onStopJob(item.job.slug) : undefined;
+    const marginTop = index > 0 ? spacing.sm : undefined;
+    const dimmed = item.idx % 2 === 1;
     return (
-      <View
-        key={key}
-        {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
-        style={[
-          item.idx % 2 === 1 ? { opacity: 0.85 } : undefined,
-          index > 0 ? { marginTop: spacing.sm } : undefined,
-        ]}
-      >
-        {customRenderJobCard
-          ? customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping })
-          : status.state === "running" ? (
+      customRenderJobCard ? (
+        <View key={key}>
+          {customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping, marginTop, dimmed, dataJobSlug: item.job.slug })}
+        </View>
+      ) : (
+        <View
+          key={key}
+          {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
+          style={[
+            dimmed ? { opacity: 0.85 } : undefined,
+            marginTop != null ? { marginTop } : undefined,
+          ]}
+        >
+          {status.state === "running" ? (
             <RunningJobCard
               job={item.job}
               status={status}
@@ -524,8 +563,31 @@ export function JobListView({
               onPress={pressHandler}
               selected={isSelected}
             />
-          )
-        }
+          )}
+        </View>
+      )
+    );
+  };
+
+  const renderProcessItem = (item: Extract<ListItem, { kind: "process" }>, key: string, index: number) => {
+    const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
+    const rawColor = selectedItems?.get(item.process.pane_id);
+    const isFocused = !focusedItemKey || focusedItemKey === item.process.pane_id;
+    const isSelected: boolean | string = rawColor
+      ? (isFocused ? rawColor : rawColor + "66")
+      : (selectedSlug === item.process.pane_id);
+    const procAutoYesActive = autoYesPaneIds?.has(item.process.pane_id) ?? false;
+    const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
+    const procOnRename = onRenameProcess ? () => onRenameProcess(item.process) : undefined;
+    const marginTop = index > 0 ? spacing.sm : undefined;
+    const sortGroup = item.process.matched_group ?? `cwd:${item.process.cwd}`;
+    return customRenderProcessCard ? (
+      <View key={key}>
+        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id })}
+      </View>
+    ) : (
+      <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={marginTop != null ? { marginTop } : undefined}>
+        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} autoYesActive={procAutoYesActive} />
       </View>
     );
   };
@@ -561,12 +623,28 @@ export function JobListView({
         );
         continue;
       }
+      if (item.kind === "process") {
+        const processItems: Extract<ListItem, { kind: "process" }>[] = [];
+        const startIndex = index;
+        while (index < items.length && items[index]?.kind === "process") {
+          processItems.push(items[index] as Extract<ListItem, { kind: "process" }>);
+          index += 1;
+        }
+        const children = processItems.map((processItem, offset) => {
+          const key = `p_${processItem.process.pane_id}`;
+          return renderProcessItem(processItem, key, startIndex + offset);
+        });
+        const group = processItems[0]?.process.matched_group ?? `cwd:${processItems[0]?.process.cwd ?? ""}`;
+        const processPaneIds = processItems.map((processItem) => processItem.process.pane_id);
+        rendered.push(
+          wrapProcessGroup ? wrapProcessGroup(group, processPaneIds, children) : children,
+        );
+        continue;
+      }
       const key =
         item.kind === "header"
           ? `h_${item.group}`
-          : item.kind === "process"
-            ? `p_${item.process.pane_id}`
-            : item.kind === "shell"
+          : item.kind === "shell"
               ? `s_${item.shell.pane_id}`
             : item.kind === "group-agent"
               ? `ga_${item.workDir}`
@@ -621,26 +699,6 @@ export function JobListView({
                         </TouchableOpacity>
                       )}
                     </TouchableOpacity>
-                  </View>
-                );
-              }
-
-              if (item.kind === "process") {
-                const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
-                const rawColor = selectedItems?.get(item.process.pane_id);
-                const isFocused = !focusedItemKey || focusedItemKey === item.process.pane_id;
-                const isSelected: boolean | string = rawColor
-                  ? (isFocused ? rawColor : rawColor + "66")
-                  : (selectedSlug === item.process.pane_id);
-                const procAutoYesActive = autoYesPaneIds?.has(item.process.pane_id) ?? false;
-                const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
-                const procOnRename = onRenameProcess ? () => onRenameProcess(item.process) : undefined;
-                return (
-                  <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
-                    {customRenderProcessCard
-                      ? customRenderProcessCard({ process: item.process, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, autoYesActive: procAutoYesActive })
-                      : <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} autoYesActive={procAutoYesActive} />
-                    }
                   </View>
                 );
               }

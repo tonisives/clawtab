@@ -582,8 +582,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return;
       }
 
-      // Cmd+H/J/K/L: navigate between panes
-      if (e.metaKey && "hjkl".includes(e.key)) {
+      // Ctrl+H/J/K/L: navigate between panes
+      if (e.ctrlKey && !e.metaKey && "hjkl".includes(e.key)) {
         e.preventDefault();
         const tree = split.tree;
         if (!tree) return;
@@ -1720,7 +1720,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           });
         }
         core.requestFastPoll(`pane:${paneId}`);
-        invoke("sigint_detected_process", { paneId });
+        invoke("stop_detected_process", { paneId });
       }}
       onRenameProcess={openRenameProcessDialog}
       onStopShell={(paneId) => {

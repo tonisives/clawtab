@@ -86,6 +86,7 @@ export interface JobDetailViewProps {
   lastQuery?: string;
   onEditFirstQuery?: () => void;
   onEditLastQuery?: () => void;
+  onEditTitle?: () => void;
   // Pane actions (desktop only, for running jobs/processes with a tmux pane)
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
@@ -135,6 +136,7 @@ export function JobDetailView({
   lastQuery,
   onEditFirstQuery,
   onEditLastQuery,
+  onEditTitle,
   onFork,
   onSplitPane,
   onInjectSecrets,
@@ -288,13 +290,22 @@ export function JobDetailView({
   const detailInner = (
     <>
       {/* Header with back button (hidden when platform provides its own nav bar) */}
-      {showBackButton && (
+      {(showBackButton || onEditTitle) && (
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={onBack} style={styles.backRow} activeOpacity={0.6}>
-            <Text style={styles.backArrow}>{"\u2190"}</Text>
+          <View style={styles.headerTitleRow}>
+            {showBackButton ? (
+              <TouchableOpacity onPress={onBack} style={styles.backButton} activeOpacity={0.6}>
+                <Text style={styles.backArrow}>{"\u2190"}</Text>
+              </TouchableOpacity>
+            ) : null}
             <Text style={styles.jobName}>{job.name}</Text>
             <StatusBadge status={status} />
-          </TouchableOpacity>
+          </View>
+          {onEditTitle ? (
+            <TouchableOpacity onPress={onEditTitle} activeOpacity={0.6} style={styles.titleEditBtn}>
+              <Text style={styles.titleEditText}>Edit</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       )}
 
@@ -352,6 +363,9 @@ export function JobDetailView({
           {!runPending && state === "idle" && (
             <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
           )}
+          <Text style={styles.headerTitleText} numberOfLines={1}>
+            {job.name}
+          </Text>
           {shortTitlePath ? (
             <Text style={styles.headerPathText} numberOfLines={1}>
               {shortTitlePath}
@@ -1068,7 +1082,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: spacing.sm,
     zIndex: 200,
+  },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flex: 1,
+    minWidth: 0,
   },
   headerActions: {
     flexDirection: "row",
@@ -1076,24 +1098,35 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     zIndex: 200,
   },
-  backRow: {
-    flexDirection: "row",
+  backButton: {
+    width: 28,
+    height: 28,
     alignItems: "center",
-    gap: spacing.sm,
-    flex: 1,
-    minWidth: 0,
+    justifyContent: "center",
+    borderRadius: radius.sm,
   },
   backArrow: {
     color: colors.textSecondary,
     fontSize: 18,
     lineHeight: 22,
-    textAlign: "center",
-    width: 22,
-    height: 22,
   },
   jobName: {
     color: colors.text,
     fontSize: 18,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  titleEditBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  titleEditText: {
+    color: colors.textSecondary,
+    fontSize: 12,
     fontWeight: "600",
   },
   pathRow: {
@@ -1170,6 +1203,13 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     fontFamily: "monospace",
+  },
+  headerTitleText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+    maxWidth: 220,
+    flexShrink: 1,
   },
   infoPills: {
     flexDirection: "row",
