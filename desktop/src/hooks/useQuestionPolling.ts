@@ -8,6 +8,18 @@ export function useQuestionPolling() {
   const questionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fastPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dismissedRef = useRef<Map<string, number>>(new Map());
+  const questionsSigRef = useRef("[]");
+
+  const signatureForQuestions = (qs: ClaudeQuestion[]) =>
+    JSON.stringify(qs.map((q) => [
+      q.question_id,
+      q.pane_id,
+      q.matched_job,
+      q.tmux_session,
+      q.window_name,
+      q.context_lines,
+      q.options,
+    ]));
 
   const loadQuestions = useCallback(() => {
     invoke<ClaudeQuestion[]>("get_active_questions").then((qs) => {
@@ -16,7 +28,11 @@ export function useQuestionPolling() {
       for (const [id, ts] of dismissedRef.current) {
         if (now - ts > 10000) dismissedRef.current.delete(id);
       }
-      setQuestions(qs.filter((q) => !dismissedRef.current.has(q.question_id)));
+      const filtered = qs.filter((q) => !dismissedRef.current.has(q.question_id));
+      const nextSig = signatureForQuestions(filtered);
+      if (nextSig === questionsSigRef.current) return;
+      questionsSigRef.current = nextSig;
+      setQuestions(filtered);
     }).catch((e) => { console.error("[nfn] loadQuestions error", e); });
   }, []);
 
@@ -42,7 +58,11 @@ export function useQuestionPolling() {
 
   const dismissQuestion = useCallback((questionId: string) => {
     dismissedRef.current.set(questionId, Date.now());
-    setQuestions((prev) => prev.filter((q) => q.question_id !== questionId));
+    setQuestions((prev) => {
+      const next = prev.filter((q) => q.question_id !== questionId);
+      questionsSigRef.current = signatureForQuestions(next);
+      return next;
+    });
     startFastQuestionPoll();
   }, [startFastQuestionPoll]);
 
@@ -78,7 +98,11 @@ export function useQuestionPolling() {
     dismissedRef.current.set(q.question_id, Date.now());
     startFastQuestionPoll();
     setTimeout(() => {
-      setQuestions((prev) => prev.filter((pq) => pq.question_id !== q.question_id));
+      setQuestions((prev) => {
+        const next = prev.filter((pq) => pq.question_id !== q.question_id);
+        questionsSigRef.current = signatureForQuestions(next);
+        return next;
+      });
     }, 750);
   }, [startFastQuestionPoll]);
 

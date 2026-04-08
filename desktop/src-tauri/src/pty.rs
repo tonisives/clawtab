@@ -231,6 +231,10 @@ impl PtyManager {
         }
     }
 
+    pub fn active_pane_ids(&self) -> std::collections::HashSet<String> {
+        self.sessions.keys().cloned().collect()
+    }
+
     pub fn spawn(
         &mut self,
         pane_id: &str,

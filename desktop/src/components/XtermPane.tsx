@@ -136,9 +136,18 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       // Debounced to avoid spamming during drag. Skip no-op resizes
       // (spawn already resized to viewport dimensions).
       let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+      let prevWidth = 0;
+      let prevHeight = 0;
       let prevCols = cols;
       let prevRows = rows;
-      observer = new ResizeObserver(() => {
+      observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        const width = Math.round(entry.contentRect.width);
+        const height = Math.round(entry.contentRect.height);
+        if (width === prevWidth && height === prevHeight) return;
+        prevWidth = width;
+        prevHeight = height;
         fit.fit();
         if (t.cols === prevCols && t.rows === prevRows) return;
         if (resizeTimer) clearTimeout(resizeTimer);

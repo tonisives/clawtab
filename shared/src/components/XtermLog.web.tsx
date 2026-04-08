@@ -91,10 +91,19 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       termRef.current = t;
 
       // Track previous dimensions to avoid spurious resizes from text selection
+      let prevWidth = 0;
+      let prevHeight = 0;
       let prevCols = t.cols;
       let prevRows = t.rows;
 
-      const observer = new ResizeObserver(() => {
+      const observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        const width = Math.round(entry.contentRect.width);
+        const height = Math.round(entry.contentRect.height);
+        if (width === prevWidth && height === prevHeight) return;
+        prevWidth = width;
+        prevHeight = height;
         fit.fit();
         if (t.cols !== prevCols || t.rows !== prevRows) {
           prevCols = t.cols;

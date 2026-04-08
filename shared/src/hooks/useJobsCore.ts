@@ -14,12 +14,41 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const transportRef = useRef(transport);
   transportRef.current = transport;
+  const jobsSigRef = useRef("[]");
+  const statusesSigRef = useRef("{}");
+  const processesSigRef = useRef("[]");
+
+  const signatureForJobs = (items: RemoteJob[]) => JSON.stringify(items);
+  const signatureForStatuses = (items: Record<string, JobStatus>) => JSON.stringify(items);
+  const signatureForProcesses = (items: ClaudeProcess[]) =>
+    JSON.stringify(items.map((proc) => [
+      proc.pane_id,
+      proc.cwd,
+      proc.version,
+      proc.tmux_session,
+      proc.window_name,
+      proc.matched_group,
+      proc.matched_job,
+      proc.log_lines,
+      proc.first_query,
+      proc.last_query,
+      proc.session_started_at,
+      proc._last_log_change ?? null,
+    ]));
 
   const loadAll = useCallback(async () => {
     try {
       const result = await transportRef.current.listJobs();
-      setJobs(result.jobs);
-      setStatuses(result.statuses);
+      const jobsSig = signatureForJobs(result.jobs);
+      if (jobsSig !== jobsSigRef.current) {
+        jobsSigRef.current = jobsSig;
+        setJobs(result.jobs);
+      }
+      const statusesSig = signatureForStatuses(result.statuses);
+      if (statusesSig !== statusesSigRef.current) {
+        statusesSigRef.current = statusesSig;
+        setStatuses(result.statuses);
+      }
       setLoaded(true);
     } catch (e) {
       console.error("Failed to load jobs:", e);
@@ -29,6 +58,9 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const loadStatuses = useCallback(async () => {
     try {
       const s = await transportRef.current.getStatuses();
+      const sig = signatureForStatuses(s);
+      if (sig === statusesSigRef.current) return;
+      statusesSigRef.current = sig;
       setStatuses(s);
     } catch (e) {
       console.error("Failed to load statuses:", e);
@@ -58,6 +90,9 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       }
       prevLogLinesRef.current = nextLogs;
       prevLastLogChangeRef.current = nextChanges;
+      const sig = signatureForProcesses(p);
+      if (sig === processesSigRef.current) return;
+      processesSigRef.current = sig;
       setProcesses(p);
     } catch (e) {
       console.error("Failed to detect processes:", e);

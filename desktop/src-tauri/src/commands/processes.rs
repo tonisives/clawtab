@@ -47,6 +47,10 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
             .collect()
     };
 
+    let live_viewer_panes: HashSet<String> = {
+        state.pty_manager.lock().unwrap().active_pane_ids()
+    };
+
     let match_entries: Vec<(String, String, String)> = {
         let config = state.jobs_config.lock().unwrap();
         config
@@ -67,7 +71,7 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
 
     // Run all subprocess-heavy work off the async runtime
     tokio::task::spawn_blocking(move || {
-        detect_claude_processes_blocking(tracked_panes, match_entries)
+        detect_claude_processes_blocking(tracked_panes, live_viewer_panes, match_entries)
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))?
@@ -75,6 +79,7 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
 
 fn detect_claude_processes_blocking(
     tracked_panes: HashSet<String>,
+    live_viewer_panes: HashSet<String>,
     match_entries: Vec<(String, String, String)>,
 ) -> Result<Vec<ClaudeProcess>, String> {
     let output = Command::new("tmux")
@@ -139,10 +144,14 @@ fn detect_claude_processes_blocking(
             }
         }
 
-        let log_lines = crate::tmux::capture_pane(session, pane_id, 5)
-            .unwrap_or_default()
-            .trim()
-            .to_string();
+        let log_lines = if live_viewer_panes.contains(pane_id) {
+            String::new()
+        } else {
+            crate::tmux::capture_pane(session, pane_id, 5)
+                .unwrap_or_default()
+                .trim()
+                .to_string()
+        };
 
         let session_info = crate::claude_session::resolve_session_info(pane_pid);
 
