@@ -1,7 +1,6 @@
 import { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
 export interface XtermLogHandle {
@@ -87,12 +86,6 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       const fit = new FitAddon();
       t.loadAddon(fit);
       t.open(el);
-
-      try {
-        t.loadAddon(new WebglAddon());
-      } catch {
-        // WebGL not available - canvas fallback
-      }
 
       fit.fit();
       termRef.current = t;

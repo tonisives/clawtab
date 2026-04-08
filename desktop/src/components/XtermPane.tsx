@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -24,7 +23,7 @@ interface PtySpawnResult {
   native_rows: number;
 }
 
-export function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps) {
+export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const resolvedGroup = group ?? "default";
 
@@ -81,12 +80,6 @@ export function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps
       const fit = new FitAddon();
       t.loadAddon(fit);
       t.open(el);
-
-      try {
-        t.loadAddon(new WebglAddon());
-      } catch {
-        // WebGL not available
-      }
 
       // Let our app shortcuts pass through instead of being consumed by the terminal
       t.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -222,4 +215,4 @@ export function XtermPane({ paneId, tmuxSession, group, onExit }: XtermPaneProps
       }}
     />
   );
-}
+});

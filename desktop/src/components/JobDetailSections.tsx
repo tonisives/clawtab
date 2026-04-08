@@ -383,6 +383,7 @@ export function DesktopJobDetail({
   onSearchSkills,
   onStopping,
   contentStyle,
+  titlePath,
 }: {
   transport: Transport;
   job: Job;
@@ -409,6 +410,7 @@ export function DesktopJobDetail({
   onSearchSkills?: () => void;
   onStopping?: () => void;
   contentStyle?: unknown;
+  titlePath?: string;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
@@ -474,6 +476,7 @@ export function DesktopJobDetail({
         sectionStyle={cardSectionStyle}
         containerStyle={desktopContainerStyle}
         contentStyle={contentStyle as any}
+        titlePath={titlePath}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
         renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
@@ -506,6 +509,7 @@ export function AgentDetail({
   showBackButton = false,
   hidePath = false,
   contentStyle,
+  titlePath,
 }: {
   transport: Transport;
   job: RemoteJob;
@@ -515,6 +519,7 @@ export function AgentDetail({
   showBackButton?: boolean;
   hidePath?: boolean;
   contentStyle?: unknown;
+  titlePath?: string;
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, "agent");
   const { logs } = useLogBuffer(transport, "agent");
@@ -540,6 +545,7 @@ export function AgentDetail({
       sectionStyle={cardSectionStyle}
       containerStyle={desktopContainerStyle}
       contentStyle={contentStyle as any}
+      titlePath={titlePath}
       expandOutput
     />
   );

@@ -54,6 +54,7 @@ export function DetectedProcessDetail({
   onInjectSecrets,
   onSearchSkills,
   contentStyle,
+  titlePath,
 }: {
   process: ClaudeProcess;
   questions: ClaudeQuestion[];
@@ -69,6 +70,7 @@ export function DetectedProcessDetail({
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   contentStyle?: unknown;
+  titlePath?: string;
 }) {
   const processRef = useRef(process);
   processRef.current = process;
@@ -151,6 +153,7 @@ export function DetectedProcessDetail({
       expandOutput
       containerStyle={{ backgroundColor: "var(--bg-primary)", borderRadius: 0 } as any}
       contentStyle={contentStyle as any}
+      titlePath={titlePath}
       options={paneQuestion?.options}
       questionContext={paneQuestion?.context_lines}
       autoYesActive={autoYesActive}

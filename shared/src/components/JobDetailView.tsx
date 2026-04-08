@@ -20,7 +20,7 @@ import { ReadOnlyXterm } from "./ReadOnlyXterm";
 import { MessageInput } from "./MessageInput";
 import { ParamsDialog } from "./ParamsDialog";
 import { AnsiText, hasAnsi } from "./AnsiText";
-import { formatTime, formatDuration, compactCron } from "../util/format";
+import { formatTime, formatDuration, compactCron, shortenPath } from "../util/format";
 import { nextCronDate, formatNextRun, cronTooltip } from "../util/cron";
 import { runStatusColor, runStatusLabel } from "../util/status";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
@@ -72,6 +72,8 @@ export interface JobDetailViewProps {
   containerStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
   // Optional style override for the top content area
   contentStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
+  // Optional breadcrumb shown above the title inside the detail view
+  titlePath?: string;
   // Called when log viewer column count changes (for tmux pane resize)
   onLogColumnsChange?: (cols: number) => void;
   // Render a real terminal instead of LogViewer (desktop xterm.js)
@@ -122,6 +124,7 @@ export function JobDetailView({
   expandOutput,
   containerStyle,
   contentStyle,
+  titlePath,
   onLogColumnsChange,
   renderTerminal,
   hideMessageInput,
@@ -268,6 +271,7 @@ export function JobDetailView({
 
   const jobDir = job.work_dir || job.folder_path || "";
   const pathDisplay = jobDir.replace(/^\/Users\/[^/]+/, "~");
+  const shortTitlePath = titlePath ? shortenPath(titlePath) : null;
 
   const detailInner = (
     <>
@@ -329,6 +333,11 @@ export function JobDetailView({
           {!runPending && state === "idle" && (
             <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact />
           )}
+          {shortTitlePath ? (
+            <Text style={styles.headerPathText} numberOfLines={1}>
+              {shortTitlePath}
+            </Text>
+          ) : null}
           {isRunning && status.started_at ? (
             <Text style={styles.runtimeText}>{formatTime(status.started_at)}</Text>
           ) : null}
@@ -1077,6 +1086,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 11,
     fontFamily: "monospace",
+  },
+  headerPathText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: "monospace",
+    maxWidth: 220,
+    flexShrink: 1,
   },
   queryRow: {
     flexDirection: "row",

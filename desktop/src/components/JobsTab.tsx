@@ -19,6 +19,7 @@ import {
   useJobActions,
   useSplitTree,
   collectLeaves,
+  shortenPath,
 } from "@clawtab/shared";
 import type { AutoYesEntry, PaneContent, SplitDragData } from "@clawtab/shared";
 import { createTauriTransport } from "../transport/tauriTransport";
@@ -725,13 +726,22 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     })(),
   }), [core.statuses, autoYes, handleFork, handleSplitPane]);
 
+  const buildJobTitlePath = useCallback((job: Job, _jobQuestion: ClaudeQuestion | undefined) => {
+    const sourcePath = job.work_dir || job.folder_path || job.path;
+    return sourcePath ? shortenPath(sourcePath) : undefined;
+  }, []);
+
+  const buildProcessTitlePath = useCallback((process: ClaudeProcess) => {
+    return shortenPath(process.cwd);
+  }, []);
+
   // Render a leaf pane in the split tree
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
     if (content.kind === "agent") {
       const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
         <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => split.handleClosePane(leafId)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} />
+          onBack={() => split.handleClosePane(leafId)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} titlePath="Agent" />
       );
     }
 
@@ -772,6 +782,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
           onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
           contentStyle={trafficLightInsetStyle}
+          titlePath={buildProcessTitlePath(proc)}
         />
       );
     }
@@ -800,9 +811,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         {...buildJobPaneActions(job, jobQuestion)}
         onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(job.slug))}
         contentStyle={trafficLightInsetStyle}
+        titlePath={buildJobTitlePath(job, jobQuestion)}
       />
     );
-  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, split.handleClosePane, isWide, trafficLightInsetStyle]);
+  }, [core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
@@ -870,7 +882,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const agentJob: RemoteJob = { name: "agent", job_type: "claude", enabled: true, cron: "", group: "", slug: "agent" };
       return (
         <AgentDetail transport={transport} job={agentJob} status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => setViewingAgent(false)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} />
+          onBack={() => setViewingAgent(false)} onOpen={() => handleOpen("agent")} showBackButton={!isWide} hidePath contentStyle={trafficLightInsetStyle} titlePath="Agent" />
       );
     }
 
@@ -909,6 +921,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onInjectSecrets={() => setInjectSecretsPaneId(viewingProcess.pane_id)}
             onSearchSkills={() => setSkillSearchPaneId(viewingProcess.pane_id)}
             contentStyle={trafficLightInsetStyle}
+            titlePath={buildProcessTitlePath(viewingProcess)}
           />
           {autoYes.pendingAutoYes && (
             <ConfirmDialog
@@ -945,6 +958,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             {...buildJobPaneActions(viewingJob, jobQuestion)}
             onStopping={() => setStoppingJobSlugs((prev) => new Set(prev).add(viewingJob.slug))}
             contentStyle={trafficLightInsetStyle}
+            titlePath={buildJobTitlePath(viewingJob, jobQuestion)}
           />
           {paramsDialog && (
             <ParamsOverlay
