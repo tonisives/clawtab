@@ -4,7 +4,7 @@ import type { ClaudeProcess } from "./types/process";
 export interface Transport {
   listJobs(): Promise<{ jobs: RemoteJob[]; statuses: Record<string, JobStatus> }>;
   getStatuses(): Promise<Record<string, JobStatus>>;
-  runJob(name: string, params?: Record<string, string>): Promise<void>;
+  runJob(name: string, params?: Record<string, string>): Promise<{ pane_id: string; tmux_session: string } | null>;
   stopJob(name: string): Promise<void>;
   pauseJob(name: string): Promise<void>;
   resumeJob(name: string): Promise<void>;

@@ -384,7 +384,7 @@ pub async fn run_job_now(
     state: State<'_, AppState>,
     name: String,
     params: Option<std::collections::HashMap<String, String>>,
-) -> Result<(), String> {
+) -> Result<Option<RunAgentResult>, String> {
     let job = {
         let config = state.jobs_config.lock().unwrap();
         config
@@ -404,25 +404,55 @@ pub async fn run_job_now(
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
-    let app_handle = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job_with_auto_yes(
-            &job,
-            &secrets,
-            &history,
-            &settings,
-            &job_status,
-            "manual",
-            &active_agents,
-            &relay,
-            &params,
-            Some(&auto_yes_panes),
-            Some(app_handle),
-        )
-        .await;
-    });
+    if matches!(
+        job.job_type,
+        crate::config::jobs::JobType::Claude | crate::config::jobs::JobType::Folder
+    ) {
+        let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
+        let app_handle = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            scheduler::executor::execute_job_with_auto_yes_and_pane_notify(
+                &job,
+                &secrets,
+                &history,
+                &settings,
+                &job_status,
+                "manual",
+                &active_agents,
+                &relay,
+                &params,
+                Some(&auto_yes_panes),
+                pane_tx,
+                Some(app_handle),
+            )
+            .await;
+        });
 
-    Ok(())
+        match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
+            Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult { pane_id, tmux_session })),
+            _ => Ok(None),
+        }
+    } else {
+        let app_handle = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            scheduler::executor::execute_job_with_auto_yes(
+                &job,
+                &secrets,
+                &history,
+                &settings,
+                &job_status,
+                "manual",
+                &active_agents,
+                &relay,
+                &params,
+                Some(&auto_yes_panes),
+                Some(app_handle),
+            )
+            .await;
+        });
+
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -1270,4 +1300,3 @@ pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Opt
         _ => Ok(None),
     }
 }
-

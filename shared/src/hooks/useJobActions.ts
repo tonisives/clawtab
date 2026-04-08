@@ -6,13 +6,16 @@ export function useJobActions(transport: Transport, onStatusChange?: () => void)
   transportRef.current = transport;
 
   const delayedRefresh = useCallback(() => {
-    if (onStatusChange) setTimeout(onStatusChange, 500);
+    if (!onStatusChange) return;
+    onStatusChange();
+    setTimeout(onStatusChange, 500);
   }, [onStatusChange]);
 
   const runJob = useCallback(
     async (name: string, params?: Record<string, string>) => {
-      await transportRef.current.runJob(name, params);
+      const result = await transportRef.current.runJob(name, params);
       delayedRefresh();
+      return result;
     },
     [delayedRefresh],
   );

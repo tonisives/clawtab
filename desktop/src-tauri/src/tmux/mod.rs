@@ -99,8 +99,17 @@ pub fn window_exists(session: &str, window_name: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn create_window(session: &str, name: &str, env_vars: &[(String, String)]) -> Result<(), String> {
-    let mut args = vec!["new-window", "-t", session, "-n", name];
+pub fn create_window(session: &str, name: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+    let mut args = vec![
+        "new-window",
+        "-P",
+        "-F",
+        "#{pane_id}",
+        "-t",
+        session,
+        "-n",
+        name,
+    ];
     let env_pairs: Vec<String> = env_vars.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
     for pair in &env_pairs {
         args.push("-e");
@@ -116,21 +125,7 @@ pub fn create_window(session: &str, name: &str, env_vars: &[(String, String)]) -
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("tmux error: {}", stderr.trim()));
     }
-    Ok(())
-}
-
-pub fn send_keys(session: &str, window: &str, keys: &str) -> Result<(), String> {
-    let target = format!("{}:{}", session, window);
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", &target, keys, "Enter"])
-        .output()
-        .map_err(|e| format!("Failed to send keys: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("tmux error: {}", stderr.trim()));
-    }
-    Ok(())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// Set the title of a tmux pane (used to tag panes with job slugs).
@@ -321,27 +316,6 @@ pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {
     }
 }
 
-
-/// Get the active pane ID of a window (e.g. "%42").
-pub fn get_window_pane_id(session: &str, window: &str) -> Result<String, String> {
-    let target = format!("{}:{}", session, window);
-    let output = Command::new("tmux")
-        .args(["list-panes", "-t", &target, "-F", "#{pane_id}"])
-        .output()
-        .map_err(|e| format!("Failed to list panes: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("tmux error: {}", stderr.trim()));
-    }
-
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .last()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "No pane found".to_string())
-}
 
 /// Capture the entire scrollback from a pane.
 pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {

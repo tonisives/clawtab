@@ -17,7 +17,7 @@ export function createTauriTransport(): Transport {
     },
 
     async runJob(name: string, params?: Record<string, string>) {
-      await invoke("run_job_now", { name, params });
+      return await invoke<{ pane_id: string; tmux_session: string } | null>("run_job_now", { name, params });
     },
 
     async stopJob(name: string) {

@@ -6,19 +6,20 @@ import { JobDetailView, shortenPath } from "@clawtab/shared";
 import { XtermPane } from "./XtermPane";
 
 function createProcessTransport(process: ClaudeProcess): Transport {
-  const noop = async () => {};
+  const noopRunJob: Transport["runJob"] = async () => null;
+  const noopVoid = async () => {};
   const paneId = process.pane_id;
   return {
     listJobs: async () => ({ jobs: [], statuses: {} }),
     getStatuses: async () => ({}),
-    runJob: noop,
+    runJob: noopRunJob,
     stopJob: async () => {
       await invoke("stop_detected_process", { paneId });
     },
-    pauseJob: noop,
-    resumeJob: noop,
-    toggleJob: noop,
-    deleteJob: noop,
+    pauseJob: noopVoid,
+    resumeJob: noopVoid,
+    toggleJob: noopVoid,
+    deleteJob: noopVoid,
     getRunHistory: async () => [],
     getRunDetail: async () => null,
     detectProcesses: async () => [],

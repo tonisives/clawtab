@@ -270,10 +270,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (viewingProcess) {
       if (viewingProcess.pane_id.startsWith("_pending_")) return;
       const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
-      if (!fresh) setViewingProcess(null);
+      if (!fresh) {
+        const awaitingDetection =
+          !!pendingAgentWorkDir &&
+          pendingProcess?.pane_id === viewingProcess.pane_id;
+        if (awaitingDetection) return;
+        setViewingProcess(null);
+      }
       else if (fresh !== viewingProcess) setViewingProcess(fresh);
     }
-  }, [core.processes, viewingProcess]);
+  }, [core.processes, viewingProcess, pendingAgentWorkDir, pendingProcess]);
 
   useEffect(() => {
     if (!pendingAgentWorkDir) return;
@@ -482,10 +488,22 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       } else {
         await invoke("save_job", { job });
       }
+      const savedJobs = await invoke<Job[]>("get_jobs");
+      const savedJob = savedJobs.find((candidate) => {
+        if (wasEditing && candidate.slug === wasEditing.slug) return true;
+        return (
+          candidate.name === job.name &&
+          candidate.job_type === job.job_type &&
+          (candidate.group || "default") === (job.group || "default") &&
+          (candidate.folder_path ?? "") === (job.folder_path ?? "") &&
+          (candidate.work_dir ?? "") === (job.work_dir ?? "")
+        );
+      }) ?? savedJobs.find((candidate) => candidate.name === job.name);
       await core.reload();
       setEditingJob(null);
       setIsCreating(false);
-      if (wasEditing) setViewingJob(job);
+      setCreateForGroup(null);
+      if (savedJob) setViewingJob(savedJob);
     } catch (e) {
       const msg = typeof e === "string" ? e : String(e);
       setSaveError(msg);

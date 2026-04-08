@@ -50,6 +50,37 @@ pub async fn execute_job_with_auto_yes(
     execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, auto_yes_panes, app_handle, None).await;
 }
 
+pub async fn execute_job_with_auto_yes_and_pane_notify(
+    job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    history: &Arc<Mutex<HistoryStore>>,
+    settings: &Arc<Mutex<AppSettings>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    trigger: &str,
+    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    params: &HashMap<String, String>,
+    auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
+    pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
+    app_handle: Option<tauri::AppHandle>,
+) {
+    execute_job_inner(
+        job,
+        secrets,
+        history,
+        settings,
+        job_status,
+        trigger,
+        active_agents,
+        relay,
+        params,
+        auto_yes_panes,
+        app_handle,
+        Some(pane_tx),
+    )
+    .await;
+}
+
 pub async fn execute_job_with_pane_notify(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
@@ -454,12 +485,10 @@ async fn execute_claude_job(
     }
 
     // Create window if it doesn't exist; track whether we just created it
-    let window_just_created = if !tmux::window_exists(&tmux_session, &window_name) {
-        tmux::create_window(&tmux_session, &window_name, &env_vars)?;
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        true
+    let created_window_pane_id = if !tmux::window_exists(&tmux_session, &window_name) {
+        Some(tmux::create_window(&tmux_session, &window_name, &env_vars)?)
     } else {
-        false
+        None
     };
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
@@ -470,14 +499,13 @@ async fn execute_claude_job(
 
     // If the window already existed, always split a new pane (other jobs may occupy it).
     // If we just created it, use the initial pane.
-    let pane_id = if !window_just_created {
-        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let pane_id = if let Some(pane_id) = created_window_pane_id {
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
     } else {
-        tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
-        tmux::get_window_pane_id(&tmux_session, &window_name)?
+        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
+        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
+        pane_id
     };
 
     // Tag pane with job slug so reattach can identify it
@@ -598,12 +626,10 @@ async fn execute_folder_job(
         tmux::create_session(&tmux_session)?;
     }
 
-    let window_just_created = if !tmux::window_exists(&tmux_session, &window_name) {
-        tmux::create_window(&tmux_session, &window_name, &env_vars)?;
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        true
+    let created_window_pane_id = if !tmux::window_exists(&tmux_session, &window_name) {
+        Some(tmux::create_window(&tmux_session, &window_name, &env_vars)?)
     } else {
-        false
+        None
     };
 
     // Pass the prompt content directly to Claude via stdin-like heredoc
@@ -615,14 +641,13 @@ async fn execute_folder_job(
 
     // If the window already existed, always split a new pane (other jobs may occupy it).
     // If we just created it, use the initial pane.
-    let pane_id = if !window_just_created {
-        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let pane_id = if let Some(pane_id) = created_window_pane_id {
         tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
         pane_id
     } else {
-        tmux::send_keys(&tmux_session, &window_name, &send_cmd)?;
-        tmux::get_window_pane_id(&tmux_session, &window_name)?
+        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
+        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
+        pane_id
     };
 
     // Tag pane with job slug so reattach can identify it
