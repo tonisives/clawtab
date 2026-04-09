@@ -1300,7 +1300,7 @@ pub fn build_agent_job(
         slug: job_slug,
         skill_paths: Vec::new(),
         params: Vec::new(),
-        kill_on_end: true,
+        kill_on_end: false,
         auto_yes: false,
         agent_provider: provider,
         added_at: Some(chrono::Utc::now().to_rfc3339()),

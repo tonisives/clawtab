@@ -56,6 +56,7 @@ export function DetectedProcessDetail({
   onSearchSkills,
   contentStyle,
   titlePath,
+  dragHandleProps,
 }: {
   process: DetectedProcess;
   questions: ClaudeQuestion[];
@@ -72,6 +73,12 @@ export function DetectedProcessDetail({
   onSearchSkills?: () => void;
   contentStyle?: unknown;
   titlePath?: string;
+  dragHandleProps?: {
+    ref?: (node: HTMLElement | null) => void;
+    attributes?: Record<string, unknown>;
+    listeners?: Record<string, unknown>;
+    isDragging?: boolean;
+  };
 }) {
   const processRef = useRef(process);
   processRef.current = process;
@@ -166,6 +173,7 @@ export function DetectedProcessDetail({
       onSplitPane={onSplitPane}
       onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}
       onSearchSkills={process.can_send_skills ? onSearchSkills : undefined}
+      dragHandleProps={dragHandleProps}
     />
   );
 }

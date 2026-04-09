@@ -23,6 +23,7 @@ pub struct MonitorParams {
     pub run_id: String,
     pub job_name: String,
     pub slug: String,
+    pub kill_on_end: bool,
     pub telegram: Option<TelegramStream>,
     pub telegram_notify: TelegramNotify,
     pub notify_target: NotifyTarget,
@@ -346,9 +347,11 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Save log file to disk
     save_log_file(&params.slug, &params.run_id, &full_output);
 
-    // Close the tmux pane now that output has been captured
-    if let Err(e) = tmux::kill_pane(&params.pane_id) {
-        log::warn!("[{}] Failed to kill pane {}: {}", params.run_id, params.pane_id, e);
+    // Close the tmux pane only when the job is configured to do so.
+    if params.kill_on_end {
+        if let Err(e) = tmux::kill_pane(&params.pane_id) {
+            log::warn!("[{}] Failed to kill pane {}: {}", params.run_id, params.pane_id, e);
+        }
     }
 
     let finished_at = Utc::now().to_rfc3339();

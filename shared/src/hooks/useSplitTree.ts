@@ -27,9 +27,11 @@ type LeafRect = { id: string; content: PaneContent; x: number; y: number; w: num
 
 /** Minimal drag data - both apps use { kind, slug?, paneId? } */
 export interface SplitDragData {
-  kind: "job" | "process" | "agent";
-  slug: string;
-  paneId: string;
+  kind: "job" | "process" | "terminal" | "agent";
+  slug?: string;
+  paneId?: string;
+  tmuxSession?: string;
+  source?: "sidebar" | "detail-pane";
 }
 
 export interface UseSplitTreeOptions {
@@ -79,9 +81,12 @@ function saveTree(storageKey: string, tree: SplitNode | null) {
 }
 
 function dragDataToContent(data: SplitDragData): PaneContent {
-  if (data.kind === "job") return { kind: "job", slug: data.slug };
+  if (data.kind === "job") return { kind: "job", slug: data.slug ?? "" };
   if (data.kind === "agent") return { kind: "agent" };
-  return { kind: "process", paneId: data.paneId };
+  if (data.kind === "terminal") {
+    return { kind: "terminal", paneId: data.paneId ?? "", tmuxSession: data.tmuxSession ?? "" };
+  }
+  return { kind: "process", paneId: data.paneId ?? "" };
 }
 
 function contentKey(content: PaneContent): string {
@@ -295,18 +300,32 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       const leaves = collectLeaves(prev);
       const existingLeaf = leaves.find(l => contentEquals(l.content, newContent));
 
-      let tree = prev;
       if (existingLeaf) {
-        const removed = removeLeaf(tree, existingLeaf.id);
-        if (!removed) return prev; // was the only leaf
-        tree = removed;
         if (existingLeaf.id === zone.leafId) return prev;
+
+        if (zone.action === "replace") {
+          const targetLeaf = leaves.find((leaf) => leaf.id === zone.leafId);
+          if (!targetLeaf) return prev;
+          return replaceNode(
+            replaceNode(prev, existingLeaf.id, {
+              type: "leaf",
+              id: existingLeaf.id,
+              content: targetLeaf.content,
+            }),
+            zone.leafId,
+            { type: "leaf", id: zone.leafId, content: newContent },
+          );
+        }
+
+        const removed = removeLeaf(prev, existingLeaf.id);
+        if (!removed) return prev; // was the only leaf
+        return splitLeaf(removed, zone.leafId, newContent, zone.direction, zone.position);
       }
 
       if (zone.action === "replace") {
-        return replaceNode(tree, zone.leafId, { type: "leaf", id: zone.leafId, content: newContent });
+        return replaceNode(prev, zone.leafId, { type: "leaf", id: zone.leafId, content: newContent });
       }
-      return splitLeaf(tree, zone.leafId, newContent, zone.direction, zone.position);
+      return splitLeaf(prev, zone.leafId, newContent, zone.direction, zone.position);
     });
   }, []);
 
@@ -374,13 +393,14 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     newContent: PaneContent,
     direction: "horizontal" | "vertical",
   ) => {
+    let insertedLeafId: string | null = null;
     setSplitTree(prev => {
       if (!prev) {
-        // No tree yet - create one from currentContent + newContent
         const cc = currentContentRef.current;
         if (!cc) return prev;
         const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: cc };
         const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
+        insertedLeafId = newLeaf.id;
         return {
           type: "split",
           id: genPaneId(),
@@ -390,8 +410,12 @@ export function useSplitTree(options: UseSplitTreeOptions) {
           second: newLeaf,
         };
       }
-      return splitLeaf(prev, targetLeafId, newContent, direction, "after");
+      const next = splitLeaf(prev, targetLeafId, newContent, direction, "after");
+      const inserted = collectLeaves(next).find(leaf => contentEquals(leaf.content, newContent));
+      insertedLeafId = inserted?.id ?? null;
+      return next;
     });
+    if (insertedLeafId) setFocusedLeafId(insertedLeafId);
   }, []);
 
   /** Open content in the current tree, preferring a split when any pane has room, otherwise replacing the largest pane. */

@@ -1,13 +1,16 @@
+import type { ReactNode } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { RemoteJob, JobStatus } from "@clawtab/shared";
-import type { DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
-import { JobCard, RunningJobCard, ProcessCard } from "@clawtab/shared";
+import type { DetectedProcess, ClaudeQuestion, PaneContent, ShellPane } from "@clawtab/shared";
+import { JobCard, RunningJobCard, ProcessCard, ShellCard } from "@clawtab/shared";
 
 export type DragData =
-  | { kind: "job"; slug: string; job: RemoteJob }
-  | { kind: "process"; paneId: string; process?: DetectedProcess; question?: ClaudeQuestion; resolvedJob?: string | null };
+  | { kind: "job"; slug: string; job?: RemoteJob; source?: "sidebar" | "detail-pane" }
+  | { kind: "process"; paneId: string; process?: DetectedProcess; question?: ClaudeQuestion; resolvedJob?: string | null; source?: "sidebar" | "detail-pane" }
+  | { kind: "terminal"; paneId: string; tmuxSession: string; shell?: ShellPane; source?: "sidebar" | "detail-pane" }
+  | { kind: "agent"; source?: "sidebar" | "detail-pane" };
 
 export function DraggableJobCard({
   job,
@@ -38,7 +41,7 @@ export function DraggableJobCard({
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: job.slug,
-    data: { kind: "job", slug: job.slug, job, group } satisfies DragData & { group: string },
+    data: { kind: "job", slug: job.slug, job, group, source: "sidebar" } satisfies DragData & { group: string },
     disabled: !reorderEnabled,
   });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -135,7 +138,7 @@ export function DraggableProcessCard({
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: process.pane_id,
-    data: { kind: "process", paneId: process.pane_id, process, sortGroup } satisfies DragData & { sortGroup: string },
+    data: { kind: "process", paneId: process.pane_id, process, sortGroup, source: "sidebar" } satisfies DragData & { sortGroup: string },
     disabled: !reorderEnabled,
   });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
@@ -212,6 +215,7 @@ export function DraggableNotificationCard({
       paneId: question.pane_id,
       question,
       resolvedJob,
+      source: "sidebar",
     } satisfies DragData,
   });
 
@@ -225,5 +229,78 @@ export function DraggableNotificationCard({
     >
       {children}
     </div>
+  );
+}
+
+export function DraggableShellCard({
+  shell,
+  onPress,
+  selected,
+  onStop,
+}: {
+  shell: ShellPane;
+  onPress?: () => void;
+  selected?: boolean | string;
+  onStop?: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `shell-${shell.pane_id}`,
+    data: {
+      kind: "terminal",
+      paneId: shell.pane_id,
+      tmuxSession: shell.tmux_session,
+      shell,
+      source: "sidebar",
+    } satisfies DragData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none" }}
+      {...listeners}
+      {...attributes}
+      tabIndex={-1}
+    >
+      <ShellCard shell={shell} onPress={onPress} selected={selected} onStop={onStop} />
+    </div>
+  );
+}
+
+function dragDataForPane(content: PaneContent): DragData {
+  if (content.kind === "job") return { kind: "job", slug: content.slug, source: "detail-pane" };
+  if (content.kind === "process") return { kind: "process", paneId: content.paneId, source: "detail-pane" };
+  if (content.kind === "terminal") return { kind: "terminal", paneId: content.paneId, tmuxSession: content.tmuxSession, source: "detail-pane" };
+  return { kind: "agent", source: "detail-pane" };
+}
+
+export function DraggableSplitPane({
+  leafId,
+  content,
+  children,
+}: {
+  leafId: string;
+  content: PaneContent;
+  children: (dragHandleProps: {
+    ref?: (node: HTMLElement | null) => void;
+    attributes?: any;
+    listeners?: any;
+    isDragging?: boolean;
+  }) => ReactNode;
+}) {
+  const { attributes, listeners, setActivatorNodeRef, isDragging } = useDraggable({
+    id: `detail-pane-${leafId}`,
+    data: dragDataForPane(content),
+  });
+
+  return (
+    <>
+      {children({
+        ref: setActivatorNodeRef,
+        attributes,
+        listeners,
+        isDragging,
+      })}
+    </>
   );
 }

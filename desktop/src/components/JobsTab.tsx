@@ -32,7 +32,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { DetectedProcessDetail } from "./DetectedProcessDetail";
 import { DesktopJobDetail, AgentDetail } from "./JobDetailSections";
 import { ParamsOverlay } from "./ParamsOverlay";
-import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, type DragData } from "./DraggableCards";
+import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, DraggableShellCard, DraggableSplitPane, type DragData } from "./DraggableCards";
 import { SkillSearchDialog } from "./SkillSearchDialog";
 import { InjectSecretsDialog } from "./InjectSecretsDialog";
 import { ShellPaneDetail } from "./ShellPaneDetail";
@@ -239,8 +239,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       } else if (data.kind === "process") {
         const proc = core.processes.find(p => p.pane_id === data.paneId);
         if (proc) handleSelectProcessDirect(proc);
+      } else if (data.kind === "terminal") {
+        const shell = shellPanes.find((p) => p.pane_id === data.paneId);
+        if (shell) handleSelectShellDirect(shell);
+      } else if (data.kind === "agent") {
+        setViewingAgent(true);
+        setViewingJob(null);
+        setViewingProcess(null);
+        setViewingShell(null);
       }
-    }, [core.jobs, core.processes, handleSelectJobDirect, handleSelectProcessDirect]),
+    }, [core.jobs, core.processes, handleSelectJobDirect, handleSelectProcessDirect, handleSelectShellDirect, shellPanes]),
     currentContent,
   });
 
@@ -1082,10 +1090,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const data = event.active.data.current as DragData | null;
     const overId = typeof event.over?.id === "string" ? event.over.id : null;
-    if (data?.kind === "job" && overId) {
+    if (data?.kind === "job" && data.source === "sidebar" && overId) {
       handleJobReorder(data.slug, overId);
     }
-    if (data?.kind === "process" && overId) {
+    if (data?.kind === "process" && data.source === "sidebar" && overId) {
       handleProcessReorder(data.paneId, overId);
     }
     split.handleDragEnd(event);
@@ -1316,18 +1324,23 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
     if (content.kind === "agent") {
       return (
-        <AgentDetail
-          transport={transport}
-          job={agentJob}
-          status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => split.handleClosePane(leafId)}
-          onOpen={() => handleOpen("agent")}
-          onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
-          showBackButton={!isWide}
-          hidePath
-          contentStyle={trafficLightInsetStyle}
-          titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
-        />
+        <DraggableSplitPane leafId={leafId} content={content}>
+          {(dragHandleProps) => (
+            <AgentDetail
+              transport={transport}
+              job={agentJob}
+              status={core.statuses["agent"] ?? { state: "idle" as const }}
+              onBack={() => split.handleClosePane(leafId)}
+              onOpen={() => handleOpen("agent")}
+              onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
+              showBackButton={!isWide}
+              hidePath
+              contentStyle={trafficLightInsetStyle}
+              titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
+              dragHandleProps={dragHandleProps}
+            />
+          )}
+        </DraggableSplitPane>
       );
     }
 
@@ -1337,19 +1350,24 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Shell pane not found</span></div>;
       }
       return (
-        <ShellPaneDetail
-          shell={shell}
-          onBack={() => split.handleClosePane(leafId)}
-          showBackButton={!isWide}
-          hidePath
-          onStopped={() => {
-            setShellPanes((prev) => prev.filter((p) => p.pane_id !== shell.pane_id));
-            split.handleClosePane(leafId);
-          }}
-          onSplitPane={(nextDirection: "right" | "down") => handleSplitPane(shell.pane_id, nextDirection)}
-          contentStyle={trafficLightInsetStyle}
-          titlePath={shortenPath(shell.cwd)}
-        />
+        <DraggableSplitPane leafId={leafId} content={content}>
+          {(dragHandleProps) => (
+            <ShellPaneDetail
+              shell={shell}
+              onBack={() => split.handleClosePane(leafId)}
+              showBackButton={!isWide}
+              hidePath
+              onStopped={() => {
+                setShellPanes((prev) => prev.filter((p) => p.pane_id !== shell.pane_id));
+                split.handleClosePane(leafId);
+              }}
+              onSplitPane={(nextDirection: "right" | "down") => handleSplitPane(shell.pane_id, nextDirection)}
+              contentStyle={trafficLightInsetStyle}
+              titlePath={shortenPath(shell.cwd)}
+              dragHandleProps={dragHandleProps}
+            />
+          )}
+        </DraggableSplitPane>
       );
     }
 
@@ -1368,32 +1386,37 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         );
       }
       return (
-        <DetectedProcessDetail
-          process={proc} questions={questions}
-          onBack={() => split.handleClosePane(leafId)}
-          onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-          autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
-          onToggleAutoYes={() => {
-            const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
-            if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
-            else autoYes.handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
-          }}
-          showBackButton={!isWide} hidePath
-          onStopped={() => {
-            setStoppingProcesses((prev) => {
-              if (prev.some((sp) => sp.process.pane_id === proc.pane_id)) return prev;
-              return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
-            });
-            core.requestFastPoll(`pane:${proc.pane_id}`);
-            split.handleClosePane(leafId);
-          }}
-          onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
-          onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
-          onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
-          onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
-          contentStyle={trafficLightInsetStyle}
-          titlePath={buildProcessTitlePath(proc)}
-        />
+        <DraggableSplitPane leafId={leafId} content={content}>
+          {(dragHandleProps) => (
+            <DetectedProcessDetail
+              process={proc} questions={questions}
+              onBack={() => split.handleClosePane(leafId)}
+              onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
+              autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
+              onToggleAutoYes={() => {
+                const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
+                if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
+                else autoYes.handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
+              }}
+              showBackButton={!isWide} hidePath
+              onStopped={() => {
+                setStoppingProcesses((prev) => {
+                  if (prev.some((sp) => sp.process.pane_id === proc.pane_id)) return prev;
+                  return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
+                });
+                core.requestFastPoll(`pane:${proc.pane_id}`);
+                split.handleClosePane(leafId);
+              }}
+              onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
+              onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
+              onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
+              onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
+              contentStyle={trafficLightInsetStyle}
+              titlePath={buildProcessTitlePath(proc)}
+              dragHandleProps={dragHandleProps}
+            />
+          )}
+        </DraggableSplitPane>
       );
     }
 
@@ -1402,30 +1425,35 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     const jobQuestion = questions.find((q) => q.matched_job === job.slug);
     const matchedProcess = core.processes.find((p) => p.matched_job === job.slug);
     return (
-      <DesktopJobDetail
-        transport={transport} job={job}
-        status={core.statuses[job.slug] ?? { state: "idle" as const }}
-        firstQuery={matchedProcess?.first_query ?? undefined}
-        lastQuery={matchedProcess?.last_query ?? undefined}
-        onBack={() => split.handleClosePane(leafId)}
-        onEdit={() => { setEditingJob(job); split.handleClosePane(leafId); }}
-        onOpen={() => handleOpen(job.slug)}
-        onToggle={() => { actions.toggleJob(job.slug); core.reload(); }}
-        onDuplicate={(group: string) => handleDuplicate(job, group)}
-        onDuplicateToFolder={() => handleDuplicateToFolder(job)}
-        onDelete={() => { split.handleClosePane(leafId); actions.deleteJob(job.slug); core.reload(); }}
-        groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
-        showBackButton={!isWide} hidePath
-        options={jobQuestion?.options}
-        questionContext={jobQuestion?.context_lines}
-        {...buildJobPaneActions(job, jobQuestion)}
-        onStopping={() => {
-          setStoppingJobSlugs((prev) => new Set(prev).add(job.slug));
-          core.requestFastPoll(`job:${job.slug}`);
-        }}
-        contentStyle={trafficLightInsetStyle}
-        titlePath={buildJobTitlePath(job, jobQuestion)}
-      />
+      <DraggableSplitPane leafId={leafId} content={content}>
+        {(dragHandleProps) => (
+          <DesktopJobDetail
+            transport={transport} job={job}
+            status={core.statuses[job.slug] ?? { state: "idle" as const }}
+            firstQuery={matchedProcess?.first_query ?? undefined}
+            lastQuery={matchedProcess?.last_query ?? undefined}
+            onBack={() => split.handleClosePane(leafId)}
+            onEdit={() => { setEditingJob(job); split.handleClosePane(leafId); }}
+            onOpen={() => handleOpen(job.slug)}
+            onToggle={() => { actions.toggleJob(job.slug); core.reload(); }}
+            onDuplicate={(group: string) => handleDuplicate(job, group)}
+            onDuplicateToFolder={() => handleDuplicateToFolder(job)}
+            onDelete={() => { split.handleClosePane(leafId); actions.deleteJob(job.slug); core.reload(); }}
+            groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
+            showBackButton={!isWide} hidePath
+            options={jobQuestion?.options}
+            questionContext={jobQuestion?.context_lines}
+            {...buildJobPaneActions(job, jobQuestion)}
+            onStopping={() => {
+              setStoppingJobSlugs((prev) => new Set(prev).add(job.slug));
+              core.requestFastPoll(`job:${job.slug}`);
+            }}
+            contentStyle={trafficLightInsetStyle}
+            titlePath={buildJobTitlePath(job, jobQuestion)}
+            dragHandleProps={dragHandleProps}
+          />
+        )}
+      </DraggableSplitPane>
     );
   }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog]);
 
@@ -1446,6 +1474,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         {...props}
         reorderEnabled
       />
+    ),
+    [],
+  );
+
+  const renderDraggableShellCard = useCallback(
+    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => (
+      <DraggableShellCard {...props} />
     ),
     [],
   );
@@ -1878,6 +1913,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}
+      renderShellCard={isWide ? renderDraggableShellCard : undefined}
       wrapJobGroup={isWide && sortMode === "name" ? wrapSortableJobGroup : undefined}
       wrapProcessGroup={isWide ? wrapSortableProcessGroup : undefined}
       stoppingSlugs={stoppingJobSlugs}
@@ -1887,25 +1923,44 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const dragOverlayContent = (() => {
     const data = split.dragOverlayData as DragData | null;
     if (!data) return null;
+    const notificationData = data.kind === "process" ? data : null;
+    const processData = data.kind === "process" && data.process ? data : null;
+    const shellData = data.kind === "terminal" ? data : null;
     return (
       <div style={{ opacity: 0.8, pointerEvents: "none", width: 300 }}>
         {data.kind === "job" ? (
-          (() => {
+          data.job ? (() => {
             const status = core.statuses[data.slug] ?? { state: "idle" as const };
             return status.state === "running"
               ? <RunningJobCard job={data.job} status={status} />
               : <JobCard job={data.job} status={status} />;
-          })()
-        ) : data.question ? (
+          })() : (
+            <div style={{ padding: 16, borderRadius: 10, background: "var(--bg-primary)", border: "1px solid var(--border-light)" }}>
+              {data.slug}
+            </div>
+          )
+        ) : notificationData?.question ? (
           <NotificationCard
-            question={data.question}
-            resolvedJob={data.resolvedJob ?? null}
+            question={notificationData.question}
+            resolvedJob={notificationData.resolvedJob ?? null}
             onNavigate={() => {}}
             onSendOption={() => {}}
-            autoYesActive={autoYes.autoYesPaneIds.has(data.paneId)}
+            autoYesActive={autoYes.autoYesPaneIds.has(notificationData.paneId)}
           />
-        ) : data.process ? (
-          <ProcessCard process={data.process} />
+        ) : processData?.process ? (
+          <ProcessCard process={processData.process} />
+        ) : shellData?.shell ? (
+          <div style={{ pointerEvents: "none" }}>
+            <DraggableShellCard shell={shellData.shell} />
+          </div>
+        ) : shellData ? (
+          <div style={{ padding: 16, borderRadius: 10, background: "var(--bg-primary)", border: "1px solid var(--border-light)" }}>
+            Shell {shellData.paneId}
+          </div>
+        ) : data.kind === "agent" ? (
+          <div style={{ padding: 16, borderRadius: 10, background: "var(--bg-primary)", border: "1px solid var(--border-light)" }}>
+            Agent
+          </div>
         ) : null}
       </div>
     );

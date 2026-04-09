@@ -244,6 +244,7 @@ async fn execute_job_inner(
                     run_id: run_id.clone(),
                     job_name: job.name.clone(),
                     slug: job.slug.clone(),
+                    kill_on_end: job.kill_on_end,
                     telegram,
                     telegram_notify: job.telegram_notify.clone(),
                     notify_target: job.notify_target.clone(),

@@ -48,6 +48,7 @@ export function ShellPaneDetail({
   onSplitPane,
   contentStyle,
   titlePath,
+  dragHandleProps,
 }: {
   shell: ShellPane;
   onBack: () => void;
@@ -57,6 +58,12 @@ export function ShellPaneDetail({
   onSplitPane?: (direction: "right" | "down") => void;
   contentStyle?: unknown;
   titlePath?: string;
+  dragHandleProps?: {
+    ref?: (node: HTMLElement | null) => void;
+    attributes?: Record<string, unknown>;
+    listeners?: Record<string, unknown>;
+    isDragging?: boolean;
+  };
 }) {
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
@@ -130,6 +137,7 @@ export function ShellPaneDetail({
       renderTerminal={renderTerminal}
       hideMessageInput
       onSplitPane={onSplitPane}
+      dragHandleProps={dragHandleProps}
     />
   );
 }

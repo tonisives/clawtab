@@ -61,12 +61,12 @@ export function GroupAgentRow({
     EXPANDED_MAX_HEIGHT,
   );
 
-  const runWithProvider = async (provider?: ProcessProvider) => {
+  const runWithProvider = async (overrideProvider?: ProcessProvider) => {
     if (!prompt.trim() || sending) return;
     const nextPrompt = prompt.trim();
     setSending(true);
     try {
-      await onRunAgent(nextPrompt, provider);
+      await onRunAgent(nextPrompt, overrideProvider ?? provider);
       setPrompt("");
     } finally {
       setSending(false);
@@ -81,6 +81,43 @@ export function GroupAgentRow({
     setProviderMenuOpen(false);
   };
 
+  const setInputRef = (node: TextInput | null) => {
+    inputRef.current = node;
+    if (Platform.OS !== "web" || !node) return;
+    const el = node as unknown as HTMLElement;
+    if (el.tagName === "TEXTAREA") {
+      (el as HTMLTextAreaElement).style.resize = "vertical";
+      (el as HTMLTextAreaElement).style.overflow = "auto";
+    }
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const el = inputRef.current as unknown as HTMLElement | null;
+    if (!el) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        void runWithProvider();
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        setPrompt((p) => p + "\n");
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        cycleProvider(e.shiftKey ? -1 : 1);
+      }
+    };
+    el.addEventListener("keydown", handler, true);
+    return () => el.removeEventListener("keydown", handler, true);
+  });
+
   const commonProps = {
     value: prompt,
     onChangeText: setPrompt,
@@ -93,23 +130,15 @@ export function GroupAgentRow({
     onBlur: () => {
       hadFocusRef.current = false;
     },
-    onKeyPress: (e: any) => {
-      const ne = e.nativeEvent ?? e;
-      if (ne.key !== "Enter") return;
-      // Plain Enter in the collapsed (single-line) input would submit the form
-      // by default. Intercept it and insert a newline so the input expands.
-      if (!expanded) {
-        e.preventDefault?.();
-        setPrompt((p) => p + "\n");
-      }
-    },
     editable: !sending,
-    ...(Platform.OS === "web"
+    ...(Platform.OS !== "web"
       ? {
-          onKeyDown: (e: KeyboardEvent) => {
-            if (e.key === "Tab") {
-              e.preventDefault();
-              cycleProvider(e.shiftKey ? -1 : 1);
+          onKeyPress: (e: any) => {
+            const ne = e.nativeEvent ?? e;
+            if (ne.key !== "Enter") return;
+            if (!expanded) {
+              e.preventDefault?.();
+              setPrompt((p) => p + "\n");
             }
           },
         }
@@ -122,7 +151,7 @@ export function GroupAgentRow({
         {expanded ? (
           <TextInput
             {...commonProps}
-            ref={inputRef}
+            ref={setInputRef}
             multiline
             style={[
               styles.input,
@@ -132,13 +161,16 @@ export function GroupAgentRow({
                 textAlignVertical: "top",
                 paddingVertical: 6,
                 lineHeight: LINE_HEIGHT,
+                ...(Platform.OS === "web"
+                  ? ({ outlineStyle: "none" } as any)
+                  : {}),
               },
             ]}
           />
         ) : (
           <TextInput
             {...commonProps}
-            ref={inputRef}
+            ref={setInputRef}
             style={[styles.input, styles.inputCollapsed]}
           />
         )}

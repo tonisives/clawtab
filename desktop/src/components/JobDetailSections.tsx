@@ -388,6 +388,7 @@ export function DesktopJobDetail({
   onStopping,
   contentStyle,
   titlePath,
+  dragHandleProps,
 }: {
   transport: Transport;
   job: Job;
@@ -415,6 +416,12 @@ export function DesktopJobDetail({
   onStopping?: () => void;
   contentStyle?: unknown;
   titlePath?: string;
+  dragHandleProps?: {
+    ref?: (node: HTMLElement | null) => void;
+    attributes?: Record<string, unknown>;
+    listeners?: Record<string, unknown>;
+    isDragging?: boolean;
+  };
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, job.slug);
   const { logs } = useLogBuffer(transport, job.slug);
@@ -491,6 +498,7 @@ export function DesktopJobDetail({
         onSearchSkills={onSearchSkills}
         onRelease={paneId ? handleRelease : undefined}
         onStopping={onStopping}
+        dragHandleProps={dragHandleProps}
       />
       {showConfirm && (
         <ConfirmDialog
@@ -515,6 +523,7 @@ export function AgentDetail({
   hidePath = false,
   contentStyle,
   titlePath,
+  dragHandleProps,
 }: {
   transport: Transport;
   job: RemoteJob;
@@ -526,6 +535,12 @@ export function AgentDetail({
   hidePath?: boolean;
   contentStyle?: unknown;
   titlePath?: string;
+  dragHandleProps?: {
+    ref?: (node: HTMLElement | null) => void;
+    attributes?: Record<string, unknown>;
+    listeners?: Record<string, unknown>;
+    isDragging?: boolean;
+  };
 }) {
   const { runs, reloadRuns } = useJobDetail(transport, "agent");
   const { logs } = useLogBuffer(transport, "agent");
@@ -554,6 +569,7 @@ export function AgentDetail({
       contentStyle={contentStyle as any}
       titlePath={titlePath}
       expandOutput
+      dragHandleProps={dragHandleProps}
     />
   );
 }

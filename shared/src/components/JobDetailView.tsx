@@ -94,6 +94,13 @@ export interface JobDetailViewProps {
   onRelease?: () => void;
   // Notify parent that a stop was requested (for sidebar "Stopping..." state)
   onStopping?: () => void;
+  // Desktop-only drag handle for split panes
+  dragHandleProps?: {
+    ref?: (node: HTMLElement | null) => void;
+    attributes?: Record<string, unknown>;
+    listeners?: Record<string, unknown>;
+    isDragging?: boolean;
+  };
 }
 
 export function JobDetailView({
@@ -139,6 +146,7 @@ export function JobDetailView({
   onSearchSkills,
   onRelease,
   onStopping,
+  dragHandleProps,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -161,7 +169,9 @@ export function JobDetailView({
   const scrollRef = useRef<ScrollView>(null);
   const [headerWidth, setHeaderWidth] = useState(0);
 
-  const webRefCb = useCallback((_node: HTMLElement | null) => {}, []);
+  const webRefCb = useCallback((node: HTMLElement | null) => {
+    dragHandleProps?.ref?.(node);
+  }, [dragHandleProps]);
 
   // Clear run-pending spinner once the job actually starts (or timeout after 1s)
   useEffect(() => {
@@ -291,12 +301,24 @@ export function JobDetailView({
   const showModePill = !(isManual && expandOutput);
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
+  const dragHandleWebProps = isWeb && dragHandleProps ? {
+    ref: webRefCb,
+    ...(dragHandleProps.attributes ?? {}),
+    ...(dragHandleProps.listeners ?? {}),
+  } as any : {};
 
   const detailInner = (
     <>
       {/* Header with back button (hidden when platform provides its own nav bar) */}
       {(showBackButton || onEditTitle) && (
-        <View style={styles.headerRow}>
+        <View
+          style={[
+            styles.headerRow,
+            dragHandleProps ? styles.dragHandleRow : null,
+            dragHandleProps?.isDragging ? styles.dragHandleRowDragging : null,
+          ]}
+          {...dragHandleWebProps}
+        >
           <View style={styles.headerTitleRow}>
             {showBackButton ? (
               <TouchableOpacity onPress={onBack} style={styles.backButton} activeOpacity={0.6}>
@@ -1080,6 +1102,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.sm,
     zIndex: 200,
+  },
+  dragHandleRow: {
+    cursor: "grab" as any,
+  },
+  dragHandleRowDragging: {
+    opacity: 0.5,
+    cursor: "grabbing" as any,
   },
   headerTitleRow: {
     flexDirection: "row",
