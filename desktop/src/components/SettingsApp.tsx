@@ -70,6 +70,13 @@ export function SettingsApp() {
   }, []);
 
   useEffect(() => {
+    const unlistenPromise = listen<AppSettings>("settings-updated", () => {});
+    return () => {
+      unlistenPromise.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
     const unlistenPromise = listen("import-cwt", () => {
       setActiveTab("jobs");
       setImportCwtKey((k) => k + 1);

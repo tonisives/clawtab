@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { ProcessProvider } from "@clawtab/shared";
 import type { AppSettings, Job, JobType, NotifyTarget, SecretEntry } from "../types";
 import { HighlightedTextarea } from "./MarkdownHighlight";
 import { CronInput, describeCron } from "./CronInput";
@@ -192,6 +193,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   // Lazy-loaded data
   const [availableSkills, setAvailableSkills] = useState<{ name: string }[] | null>(null);
+  const [availableProviders, setAvailableProviders] = useState<ProcessProvider[]>([]);
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
   const [previewFile, setPreviewFile] = useState<"job.md" | "context.md">("job.md");
   const [sharedContent, setSharedContent] = useState("");
@@ -278,6 +280,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         }
       }
     });
+    invoke<ProcessProvider[]>("detect_agent_providers").then(setAvailableProviders).catch(() => {});
   }, []);
 
   // Load secrets and skills when entering settings step (or on mount for edit mode)
@@ -1052,6 +1055,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     <>
       {(form.job_type === "claude" || form.job_type === "job") && (
         <>
+          {renderProviderField()}
           <div className="form-group">
             <label>Tmux Session</label>
             <input
@@ -1306,6 +1310,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         </>
       )}
 
+      {(form.job_type === "claude" || form.job_type === "job") && renderProviderField()}
+
       <div className="form-group">
         <label>Tmux Session</label>
         <input
@@ -1331,6 +1337,44 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   );
 
   // ---- Wizard mode (new folder jobs) ----
+
+  const renderProviderField = () => {
+    if (form.job_type !== "claude" && form.job_type !== "job") return null;
+    const knownProviders = availableProviders.includes("claude")
+      || availableProviders.includes("codex")
+      || availableProviders.includes("opencode")
+      ? availableProviders
+      : ([] as ProcessProvider[]);
+    const currentProvider = form.agent_provider ?? null;
+    const providers = currentProvider && !knownProviders.includes(currentProvider)
+      ? [currentProvider, ...knownProviders]
+      : knownProviders;
+
+    return (
+      <div className="form-group">
+        <label>Provider</label>
+        <select
+          value={currentProvider ?? ""}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              agent_provider: (e.target.value || null) as ProcessProvider | null,
+            })
+          }
+        >
+          <option value="">Use app default</option>
+          {providers.map((provider) => (
+            <option key={provider} value={provider}>
+              {provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "OpenCode"}
+            </option>
+          ))}
+        </select>
+        <span className="hint">
+          Leave unset to use the provider selected in the top bar.
+        </span>
+      </div>
+    );
+  };
 
   if (isWizard) {
     return (

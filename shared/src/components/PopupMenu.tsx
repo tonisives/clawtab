@@ -25,7 +25,7 @@ function PortalWeb({ children }: { children: ReactNode }) {
 }
 
 export type PopupMenuItem =
-  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean }
+  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean; icon?: ReactNode }
   | { type: "separator" }
   | { type: "submenu"; label: string; items: PopupMenuItem[] };
 
@@ -71,13 +71,18 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
       {...webProps}
     >
       <View style={styles.itemRow}>
-        <Text style={[
-          styles.itemText,
-          active && styles.itemTextActive,
-          color ? { color } : null,
-        ]}>
-          {item.label}
-        </Text>
+        <View style={styles.itemLabelWrap}>
+          {item.type === "item" && item.icon ? (
+            <View style={styles.itemIconWrap}>{item.icon}</View>
+          ) : null}
+          <Text style={[
+            styles.itemText,
+            active && styles.itemTextActive,
+            color ? { color } : null,
+          ]}>
+            {item.label}
+          </Text>
+        </View>
         {isSubmenu && (
           <Text style={styles.submenuArrow}>{"\u203a"}</Text>
         )}
@@ -294,6 +299,17 @@ const styles = StyleSheet.create({
   itemRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+  },
+  itemLabelWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  itemIconWrap: {
+    width: 16,
+    height: 16,
+    justifyContent: "center",
     alignItems: "center",
   },
   itemText: {

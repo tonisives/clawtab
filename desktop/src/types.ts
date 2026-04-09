@@ -1,3 +1,5 @@
+import type { ProcessProvider } from "@clawtab/shared";
+
 export type JobType = "binary" | "claude" | "job";
 export type TelegramLogMode = "off" | "on_prompt" | "always";
 export type NotifyTarget = "none" | "telegram" | "app";
@@ -33,6 +35,7 @@ export interface Job {
   params: string[];
   kill_on_end: boolean;
   auto_yes: boolean;
+  agent_provider?: ProcessProvider | null;
   added_at?: string;
 }
 
@@ -96,6 +99,7 @@ export interface ShortcutSettings {
 export interface AppSettings {
   default_tmux_session: string;
   default_work_dir: string;
+  default_provider: ProcessProvider;
   claude_path: string;
   preferred_editor: string;
   preferred_terminal: string;

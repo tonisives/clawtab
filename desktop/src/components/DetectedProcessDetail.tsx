@@ -50,8 +50,6 @@ export function DetectedProcessDetail({
   showBackButton = false,
   hidePath = false,
   onStopped,
-  onEditFirstQuery,
-  onEditLastQuery,
   onFork,
   onSplitPane,
   onInjectSecrets,
@@ -68,8 +66,6 @@ export function DetectedProcessDetail({
   showBackButton?: boolean;
   hidePath?: boolean;
   onStopped?: () => void;
-  onEditFirstQuery?: () => void;
-  onEditLastQuery?: () => void;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
@@ -166,8 +162,6 @@ export function DetectedProcessDetail({
       hideMessageInput
       firstQuery={process.first_query ?? undefined}
       lastQuery={process.last_query ?? undefined}
-      onEditFirstQuery={onEditFirstQuery}
-      onEditLastQuery={onEditLastQuery}
       onFork={process.can_fork_session ? onFork : undefined}
       onSplitPane={onSplitPane}
       onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}

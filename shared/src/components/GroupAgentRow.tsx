@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { View, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import type { ProcessProvider } from "../types/process";
+import { JobKindIcon } from "./JobKindIcon";
 import { PopupMenu } from "./PopupMenu";
 
 const COLLAPSED_HEIGHT = 32;
@@ -13,21 +14,32 @@ const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 
 export function GroupAgentRow({
   onRunAgent,
-  getAgentProviders,
+  provider,
+  providers = [provider],
+  onProviderChange,
 }: {
   onRunAgent: (prompt: string, provider?: ProcessProvider) => void | Promise<void>;
-  getAgentProviders?: () => Promise<ProcessProvider[]>;
+  provider: ProcessProvider;
+  providers?: ProcessProvider[];
+  onProviderChange?: (provider: ProcessProvider) => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const [availableProviders, setAvailableProviders] = useState<ProcessProvider[] | null>(null);
   const inputRef = useRef<TextInput>(null);
-  const buttonRef = useRef<any>(null);
   const hadFocusRef = useRef(false);
+  const providerButtonRef = useRef<any>(null);
   // Expand only once the user inserts a newline (Enter key).
   const expanded = prompt.includes("\n");
+  const providerOptions = useMemo(() => {
+    const seen = new Set<ProcessProvider>();
+    return providers.filter((entry) => {
+      if (seen.has(entry)) return false;
+      seen.add(entry);
+      return true;
+    });
+  }, [providers]);
 
   // When the input mode swaps (single-line <-> multiline), focus is lost on web
   // because the underlying DOM element changes. Refocus if this editor was active.
@@ -49,18 +61,6 @@ export function GroupAgentRow({
     EXPANDED_MAX_HEIGHT,
   );
 
-  const loadProviders = useCallback(async () => {
-    if (!getAgentProviders) return [] as ProcessProvider[];
-    const providers = await getAgentProviders();
-    setAvailableProviders(providers);
-    return providers;
-  }, [getAgentProviders]);
-
-  useEffect(() => {
-    if (!getAgentProviders) return;
-    void loadProviders();
-  }, [getAgentProviders, loadProviders]);
-
   const runWithProvider = async (provider?: ProcessProvider) => {
     if (!prompt.trim() || sending) return;
     const nextPrompt = prompt.trim();
@@ -68,29 +68,18 @@ export function GroupAgentRow({
     try {
       await onRunAgent(nextPrompt, provider);
       setPrompt("");
-      setProviderMenuOpen(false);
     } finally {
       setSending(false);
     }
   };
 
-  const openProviderMenu = async (node?: any) => {
-    const providers = availableProviders ?? await loadProviders();
-    if (providers.length <= 1) {
-      await runWithProvider(providers[0]);
-      return;
-    }
-    if (isWeb) {
-      const target = node ?? buttonRef.current;
-      const rect = target?.getBoundingClientRect?.();
-      if (rect) {
-        setProviderMenuPos({ top: rect.bottom + 4, left: rect.right });
-      }
-    }
-    setProviderMenuOpen(true);
+  const cycleProvider = (direction: 1 | -1) => {
+    if (providerOptions.length <= 1) return;
+    const currentIndex = Math.max(providerOptions.indexOf(provider), 0);
+    const nextIndex = (currentIndex + direction + providerOptions.length) % providerOptions.length;
+    onProviderChange?.(providerOptions[nextIndex]);
+    setProviderMenuOpen(false);
   };
-
-  const isWeb = Platform.OS === "web";
 
   const commonProps = {
     value: prompt,
@@ -107,11 +96,6 @@ export function GroupAgentRow({
     onKeyPress: (e: any) => {
       const ne = e.nativeEvent ?? e;
       if (ne.key !== "Enter") return;
-      if (ne.metaKey || ne.ctrlKey) {
-        e.preventDefault?.();
-        void openProviderMenu((e as any)?.currentTarget ?? (e as any)?.target);
-        return;
-      }
       // Plain Enter in the collapsed (single-line) input would submit the form
       // by default. Intercept it and insert a newline so the input expands.
       if (!expanded) {
@@ -120,37 +104,71 @@ export function GroupAgentRow({
       }
     },
     editable: !sending,
+    ...(Platform.OS === "web"
+      ? {
+          onKeyDown: (e: KeyboardEvent) => {
+            if (e.key === "Tab") {
+              e.preventDefault();
+              cycleProvider(e.shiftKey ? -1 : 1);
+            }
+          },
+        }
+      : {}),
   };
 
   return (
     <View style={[styles.row, expanded ? styles.rowExpanded : styles.rowCollapsed]}>
-      {expanded ? (
-        <TextInput
-          {...commonProps}
-          ref={inputRef}
-          multiline
-          style={[
-            styles.input,
-            {
-              height: expandedHeight,
-              maxHeight: EXPANDED_MAX_HEIGHT,
-              textAlignVertical: "top",
-              paddingVertical: 6,
-              lineHeight: LINE_HEIGHT,
-            },
-          ]}
-        />
-      ) : (
-        <TextInput
-          {...commonProps}
-          ref={inputRef}
-          style={[styles.input, styles.inputCollapsed]}
-        />
-      )}
+      <View style={styles.inputWrap}>
+        {expanded ? (
+          <TextInput
+            {...commonProps}
+            ref={inputRef}
+            multiline
+            style={[
+              styles.input,
+              {
+                height: expandedHeight,
+                maxHeight: EXPANDED_MAX_HEIGHT,
+                textAlignVertical: "top",
+                paddingVertical: 6,
+                lineHeight: LINE_HEIGHT,
+              },
+            ]}
+          />
+        ) : (
+          <TextInput
+            {...commonProps}
+            ref={inputRef}
+            style={[styles.input, styles.inputCollapsed]}
+          />
+        )}
+        <View style={styles.providerOverlay}>
+          <TouchableOpacity
+            ref={providerButtonRef}
+            style={styles.providerButton}
+            onPress={(e: any) => {
+              if (Platform.OS === "web") {
+                const node = e?.currentTarget ?? e?.target;
+                if (node?.getBoundingClientRect) {
+                  const rect = node.getBoundingClientRect();
+                  setProviderMenuPos({ top: rect.bottom + 6, left: rect.right });
+                }
+              }
+              setProviderMenuOpen((open) => !open);
+            }}
+            activeOpacity={0.7}
+            disabled={providerOptions.length <= 1}
+          >
+            <JobKindIcon kind={provider} size={16} compact bare />
+            {providerOptions.length > 1 && (
+              <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
       <TouchableOpacity
-        ref={buttonRef}
         style={[styles.btn, (!prompt.trim() || sending) && styles.btnDisabled]}
-        onPress={(e: any) => { void openProviderMenu(e?.currentTarget ?? e?.target); }}
+        onPress={() => { void runWithProvider(); }}
         disabled={!prompt.trim() || sending}
         activeOpacity={0.7}
       >
@@ -158,17 +176,22 @@ export function GroupAgentRow({
           <View style={styles.triangle} />
         </View>
       </TouchableOpacity>
-      {providerMenuOpen && (
+      {providerMenuOpen && providerOptions.length > 1 && (
         <PopupMenu
-          position={providerMenuPos}
-          triggerRef={buttonRef}
-          autoFocus
-          onClose={() => setProviderMenuOpen(false)}
-          items={(availableProviders ?? []).map((provider) => ({
+          items={providerOptions.map((option) => ({
             type: "item" as const,
-            label: provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "OpenCode",
-            onPress: () => { void runWithProvider(provider); },
+            label: option === "claude" ? "Claude" : option === "codex" ? "Codex" : "OpenCode",
+            active: option === provider,
+            icon: <JobKindIcon kind={option} size={16} compact bare />,
+            onPress: () => {
+              onProviderChange?.(option);
+              setProviderMenuOpen(false);
+            },
           }))}
+          position={providerMenuPos}
+          onClose={() => setProviderMenuOpen(false)}
+          triggerRef={providerButtonRef}
+          autoFocus
         />
       )}
     </View>
@@ -183,8 +206,11 @@ const styles = StyleSheet.create({
   },
   rowCollapsed: { alignItems: "center" },
   rowExpanded: { alignItems: "flex-end" },
-  input: {
+  inputWrap: {
     flex: 1,
+    position: "relative",
+  },
+  input: {
     borderRadius: radius.sm,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -196,6 +222,30 @@ const styles = StyleSheet.create({
   inputCollapsed: {
     height: COLLAPSED_HEIGHT,
     paddingVertical: 0,
+  },
+  providerOverlay: {
+    position: "absolute",
+    top: 5,
+    right: 6,
+    zIndex: 5,
+    alignItems: "flex-end",
+  },
+  providerButton: {
+    height: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingLeft: 5,
+    paddingRight: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(10, 10, 10, 0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  providerButtonCaret: {
+    color: colors.textMuted,
+    fontSize: 9,
+    marginTop: -1,
   },
   btn: {
     width: 32,

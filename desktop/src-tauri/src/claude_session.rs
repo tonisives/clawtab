@@ -73,7 +73,7 @@ pub struct ProcessSnapshot {
 impl ProcessSnapshot {
     pub fn capture() -> Self {
         let output = match Command::new("ps")
-            .args(["-Ao", "pid=,ppid=,comm="])
+            .args(["-Ao", "pid=,ppid=,command="])
             .output()
         {
             Ok(o) if o.status.success() => o,
@@ -159,7 +159,7 @@ pub fn resolve_session_info_for_provider_with_cwd(
     match provider {
         Some(ProcessProvider::Claude) => resolve_claude_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Codex) => resolve_codex_session_info(pane_pid, snapshot),
-        Some(ProcessProvider::Opencode) => resolve_opencode_session_info(cwd),
+        Some(ProcessProvider::Opencode) => resolve_opencode_session_info(pane_pid, snapshot, cwd),
         None => SessionInfo::default(),
     }
 }
@@ -324,13 +324,18 @@ fn resolve_codex_session_info(
     info
 }
 
-fn resolve_opencode_session_info(cwd: Option<&str>) -> SessionInfo {
+fn resolve_opencode_session_info(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+    cwd: Option<&str>,
+) -> SessionInfo {
     let mut info = SessionInfo::default();
     let Some(cwd) = cwd.and_then(normalize_optional_str) else {
         return info;
     };
 
-    let Some(session) = find_opencode_session_for_directory(&cwd) else {
+    let prompt = find_opencode_prompt(pane_pid, snapshot);
+    let Some(session) = find_opencode_session(&cwd, prompt.as_deref()) else {
         return info;
     };
 
@@ -339,7 +344,10 @@ fn resolve_opencode_session_info(cwd: Option<&str>) -> SessionInfo {
     info.session_started_at = format_local_timestamp(started_secs);
 
     let (first, last) = read_opencode_user_messages(&session.id);
-    info.first_query = first.or_else(|| normalize_optional_owned(session.title.clone()));
+    info.first_query = prompt
+        .clone()
+        .or(first)
+        .or_else(|| normalize_optional_owned(session.title.clone()));
     info.last_query = last;
 
     if info
@@ -514,6 +522,7 @@ struct CodexThreadInfo {
     rollout_path: Option<String>,
 }
 
+#[derive(Clone)]
 struct OpencodeSessionInfo {
     id: String,
     title: String,
@@ -643,26 +652,60 @@ fn opencode_db_path() -> PathBuf {
         .join(".local/share/opencode/opencode.db")
 }
 
-fn find_opencode_session_for_directory(cwd: &str) -> Option<OpencodeSessionInfo> {
+fn find_opencode_session(cwd: &str, prompt: Option<&str>) -> Option<OpencodeSessionInfo> {
     let conn = Connection::open(opencode_db_path()).ok()?;
-    conn.query_row(
-        "select id, title, time_created
-         from session
-         where ?1 = directory or ?1 like directory || '/%'
-         order by length(directory) desc, time_updated desc, time_created desc
-         limit 1",
-        [cwd],
-        |row| {
+    let mut stmt = conn
+        .prepare(
+            "select id, title, time_created
+             from session
+             where ?1 = directory or ?1 like directory || '/%'
+             order by length(directory) desc, time_updated desc, time_created desc
+             limit 12",
+        )
+        .ok()?;
+
+    let candidates = stmt
+        .query_map([cwd], |row| {
             Ok(OpencodeSessionInfo {
                 id: row.get(0)?,
                 title: row.get(1)?,
                 time_created: row.get(2)?,
             })
-        },
-    )
-    .optional()
-    .ok()
-    .flatten()
+        })
+        .ok()?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    let normalized_prompt = prompt.and_then(normalize_prompt_text);
+    if let Some(ref prompt_text) = normalized_prompt {
+        for candidate in &candidates {
+            let (first, _) = read_opencode_user_messages(&candidate.id);
+            if first
+                .as_deref()
+                .and_then(normalize_prompt_text)
+                .as_deref()
+                == Some(prompt_text.as_str())
+            {
+                return Some(candidate.clone());
+            }
+        }
+
+        for candidate in &candidates {
+            if normalize_optional_str(&candidate.title)
+                .and_then(|title| normalize_prompt_text(&title))
+                .as_deref()
+                == Some(prompt_text.as_str())
+            {
+                return Some(candidate.clone());
+            }
+        }
+    }
+
+    candidates.into_iter().next()
 }
 
 fn read_opencode_user_messages(session_id: &str) -> (Option<String>, Option<String>) {
@@ -726,6 +769,75 @@ fn normalize_optional_str(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn find_opencode_child(parent_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {
+    let owned_snapshot;
+    let snapshot = match snapshot {
+        Some(snapshot) => snapshot,
+        None => {
+            owned_snapshot = ProcessSnapshot::capture();
+            &owned_snapshot
+        }
+    };
+
+    let children = snapshot.child_pids(parent_pid);
+    for child_pid in children {
+        if is_opencode_process_with_snapshot(child_pid, Some(snapshot)) {
+            return Some(child_pid.clone());
+        }
+    }
+
+    for child_pid in children {
+        if let Some(pid) = find_opencode_child(child_pid, Some(snapshot)) {
+            return Some(pid);
+        }
+    }
+
+    None
+}
+
+fn is_opencode_process_with_snapshot(pid: &str, snapshot: Option<&ProcessSnapshot>) -> bool {
+    match snapshot.and_then(|snap| snap.command_for_pid(pid)) {
+        Some(command) => command.to_ascii_lowercase().contains("opencode"),
+        None => false,
+    }
+}
+
+fn find_opencode_prompt(pane_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {
+    let owned_snapshot;
+    let snapshot = match snapshot {
+        Some(snapshot) => snapshot,
+        None => {
+            owned_snapshot = ProcessSnapshot::capture();
+            &owned_snapshot
+        }
+    };
+
+    let opencode_pid = if is_opencode_process_with_snapshot(pane_pid, Some(snapshot)) {
+        Some(pane_pid.to_string())
+    } else {
+        find_opencode_child(pane_pid, Some(snapshot))
+    }?;
+
+    snapshot
+        .command_for_pid(&opencode_pid)
+        .and_then(parse_opencode_prompt_from_command)
+}
+
+fn parse_opencode_prompt_from_command(command: &str) -> Option<String> {
+    let marker = "--prompt ";
+    let start = command.find(marker)?;
+    let raw = &command[start + marker.len()..];
+    normalize_prompt_text(raw)
+}
+
+fn normalize_prompt_text(value: &str) -> Option<String> {
+    let replaced = value
+        .replace("\\012", "\n")
+        .replace("\\n", "\n")
+        .replace("\\t", "\t");
+    normalize_optional_str(&replaced)
 }
 
 fn format_local_timestamp(epoch_secs: i64) -> Option<String> {

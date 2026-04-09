@@ -25,6 +25,14 @@ export function AgentSection({
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const canRun = agentStatus.state === "idle" || agentStatus.state === "success" || agentStatus.state === "failed";
+  const isWeb = Platform.OS === "web";
+
+  const handleKeyDown = (e: any) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      void handleRun();
+    }
+  };
 
   const handleRun = async () => {
     if (!prompt.trim() || sending) return;
@@ -61,15 +69,24 @@ export function AgentSection({
             <View style={styles.agentSection}>
               <View style={styles.agentInput}>
                 <TextInput
-                  style={styles.agentTextInput}
+                  style={[
+                    styles.agentTextInput,
+                    isWeb &&
+                      ({
+                        resize: "vertical",
+                        minHeight: 36,
+                        maxHeight: 200,
+                        outlineStyle: "none",
+                      } as any),
+                  ]}
                   value={prompt}
                   onChangeText={setPrompt}
                   placeholder="Enter a prompt for the agent..."
                   placeholderTextColor={colors.textMuted}
-                  returnKeyType="send"
+                  multiline
                   inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
-                  onSubmitEditing={() => { void handleRun(); }}
                   editable={!sending}
+                  {...(isWeb ? { onKeyDown: handleKeyDown } : {})}
                 />
                 <TouchableOpacity
                   style={[
@@ -116,10 +133,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: spacing.sm,
   },
-  agentInput: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
+  agentInput: { flexDirection: "row", gap: spacing.sm, alignItems: "flex-start" },
   agentTextInput: {
     flex: 1,
-    height: 36,
+    minHeight: 36,
     borderRadius: radius.sm,
     backgroundColor: colors.bg,
     borderWidth: 1,

@@ -1,3 +1,5 @@
+import type { ProcessProvider } from "./process";
+
 export type JobType = "binary" | "claude" | "job";
 
 export type JobSortMode = "name" | "recent" | "added";
@@ -13,6 +15,7 @@ export interface RemoteJob {
   path?: string;
   folder_path?: string;
   params?: string[];
+  agent_provider?: ProcessProvider | null;
   added_at?: string;
 }
 
@@ -37,6 +40,7 @@ export interface DesktopJob extends RemoteJob {
   telegram_log_mode: TelegramLogMode;
   telegram_notify: TelegramNotify;
   skill_paths: string[];
+  agent_provider?: ProcessProvider | null;
 }
 
 export type JobStatus =

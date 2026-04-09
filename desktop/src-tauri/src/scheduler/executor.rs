@@ -436,11 +436,9 @@ async fn execute_claude_job(
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::tmux;
 
-    let provider = job
-        .agent_provider
-        .unwrap_or(crate::claude_session::ProcessProvider::Claude);
-    let (tmux_session, work_dir, agent_command) = {
+    let (provider, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
+        let provider = job.agent_provider.unwrap_or(s.default_provider);
         let session = job
             .tmux_session
             .clone()
@@ -453,7 +451,7 @@ async fn execute_claude_job(
             crate::claude_session::ProcessProvider::Claude => s.claude_path.clone(),
             _ => provider.binary_name().to_string(),
         };
-        (session, wd, command)
+        (provider, session, wd, command)
     };
 
     let env_vars = collect_env_vars(job, secrets, settings);
@@ -613,19 +611,21 @@ async fn execute_folder_job(
     prompt_parts.push(raw_prompt);
     let prompt_content = prompt_parts.join("\n\n");
 
-    let (tmux_session, claude_path) = {
+    let (provider, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
+        let provider = job.agent_provider.unwrap_or(s.default_provider);
         let session = job
             .tmux_session
             .clone()
             .unwrap_or_else(|| s.default_tmux_session.clone());
-        let cp = s.claude_path.clone();
-        (session, cp)
+        let command = match provider {
+            crate::claude_session::ProcessProvider::Claude => s.claude_path.clone(),
+            _ => provider.binary_name().to_string(),
+        };
+        (provider, session, folder_path.clone(), command)
     };
 
     let env_vars = collect_env_vars(job, secrets, settings);
-
-    let work_dir = folder_path.clone();
     let window_name = project_window_name(job);
 
     if !tmux::is_available() {
@@ -642,12 +642,15 @@ async fn execute_folder_job(
         None
     };
 
-    // Pass the prompt content directly to Claude via stdin-like heredoc
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
-    let send_cmd = format!(
-        "cd {} && {} $'{}'",
-        work_dir, claude_path, escaped_prompt
-    );
+    let send_cmd = match provider {
+        crate::claude_session::ProcessProvider::Claude | crate::claude_session::ProcessProvider::Codex => {
+            format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
+        }
+        crate::claude_session::ProcessProvider::Opencode => {
+            format!("cd {} && {} --prompt $'{}'", work_dir, agent_command, escaped_prompt)
+        }
+    };
 
     // If the window already existed, always split a new pane (other jobs may occupy it).
     // If we just created it, use the initial pane.

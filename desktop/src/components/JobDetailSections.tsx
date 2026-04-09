@@ -379,8 +379,6 @@ export function DesktopJobDetail({
   onToggleAutoYes,
   firstQuery,
   lastQuery,
-  onEditFirstQuery,
-  onEditLastQuery,
   showBackButton = false,
   hidePath = false,
   onFork,
@@ -410,8 +408,6 @@ export function DesktopJobDetail({
   onToggleAutoYes?: () => void;
   firstQuery?: string;
   lastQuery?: string;
-  onEditFirstQuery?: () => void;
-  onEditLastQuery?: () => void;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
   onInjectSecrets?: () => void;
@@ -487,8 +483,6 @@ export function DesktopJobDetail({
         titlePath={titlePath}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
-        onEditFirstQuery={onEditFirstQuery}
-        onEditLastQuery={onEditLastQuery}
         renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
         hideMessageInput={!!(paneId && tmuxSession)}
         onFork={onFork}

@@ -24,6 +24,7 @@ export function ShortcutsPanel() {
     if (!recordingId) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      event.stopPropagation();
       event.preventDefault();
 
       if (event.key === "Escape") {
@@ -50,8 +51,8 @@ export function ShortcutsPanel() {
       });
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown, true);
+    return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [recordingId, settings]);
 
   if (!settings) {
@@ -100,7 +101,13 @@ export function ShortcutsPanel() {
                   ))}
                 </td>
                 <td className="shortcut-actions">
-                  <button className="btn btn-sm" onClick={() => setRecordingId(shortcut.id)}>
+                  <button
+                    className="btn btn-sm"
+                    onClick={(event) => {
+                      event.currentTarget.blur();
+                      setRecordingId(shortcut.id);
+                    }}
+                  >
                     {recordingId === shortcut.id ? "Press keys..." : "Edit"}
                   </button>
                   <button

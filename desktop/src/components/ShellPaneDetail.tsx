@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { RemoteJob, JobStatus, ShellPane, Transport } from "@clawtab/shared";
 import { JobDetailView, shortenPath } from "@clawtab/shared";
@@ -58,6 +58,9 @@ export function ShellPaneDetail({
   contentStyle?: unknown;
   titlePath?: string;
 }) {
+  const onStoppedRef = useRef(onStopped);
+  onStoppedRef.current = onStopped;
+
   const transport = useMemo(() => createShellTransport(shell), [shell]);
 
   const syntheticJob: RemoteJob = {
@@ -96,9 +99,20 @@ export function ShellPaneDetail({
     [shell.pane_id, shell.tmux_session, onStopped],
   );
 
+  const wrappedTransport = useMemo((): Transport => ({
+    ...transport,
+    stopJob: async (...args: Parameters<Transport["stopJob"]>) => {
+      onStoppedRef.current?.();
+      return transport.stopJob(...args);
+    },
+    sigintJob: transport.sigintJob ? async (...args: Parameters<NonNullable<Transport["sigintJob"]>>) => (
+      transport.sigintJob!(...args)
+    ) : undefined,
+  }), [transport]);
+
   return (
     <JobDetailView
-      transport={transport}
+      transport={wrappedTransport}
       job={syntheticJob}
       status={syntheticStatus}
       logs=""

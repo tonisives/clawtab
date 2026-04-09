@@ -91,6 +91,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
+  const [defaultProvider, setDefaultProvider] = useState<ProcessProvider>("claude");
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   const [jobOrder, setJobOrder] = useState<Record<string, string[]>>({});
   const [processOrder, setProcessOrder] = useState<Record<string, string[]>>(() => {
@@ -128,7 +129,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     paneId: string;
     title: string;
     label: string;
-    field: "display_name" | "first_query" | "last_query";
+    field: "display_name";
     initialValue: string;
     placeholder?: string;
   } | null>(null);
@@ -245,11 +246,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
-      .then((settings) => setShortcutSettings(resolveShortcutSettings(settings)))
+      .then((settings) => {
+        setShortcutSettings(resolveShortcutSettings(settings));
+        setDefaultProvider(settings.default_provider);
+      })
       .catch(() => setShortcutSettings(DEFAULT_SHORTCUTS));
 
     const unlistenPromise = listen<AppSettings>("settings-updated", (event) => {
       setShortcutSettings(resolveShortcutSettings(event.payload));
+      setDefaultProvider(event.payload.default_provider);
     });
 
     return () => {
@@ -260,27 +265,43 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   // Wrap select handlers to check tree first
   const handleSelectJob = useCallback((job: RemoteJob) => {
     const content: PaneContent = { kind: "job", slug: job.slug };
-    if (split.tree && split.handleSelectInTree(content)) return;
+    if (split.tree && split.handleSelectInTree(content)) {
+      onJobSelected?.();
+      blurSelectionFocus();
+      return;
+    }
     handleSelectJobDirect(job);
-  }, [split.tree, split.handleSelectInTree, handleSelectJobDirect]);
+  }, [split.tree, split.handleSelectInTree, handleSelectJobDirect, onJobSelected, blurSelectionFocus]);
 
   const handleSelectProcess = useCallback((process: DetectedProcess) => {
     if (process.cwd.endsWith("/clawtab/agent")) {
       const content: PaneContent = { kind: "agent" };
-      if (split.tree && split.handleSelectInTree(content)) return;
+      if (split.tree && split.handleSelectInTree(content)) {
+        onJobSelected?.();
+        blurSelectionFocus();
+        return;
+      }
       handleSelectProcessDirect(process);
       return;
     }
     const content: PaneContent = { kind: "process", paneId: process.pane_id };
-    if (split.tree && split.handleSelectInTree(content)) return;
+    if (split.tree && split.handleSelectInTree(content)) {
+      onJobSelected?.();
+      blurSelectionFocus();
+      return;
+    }
     handleSelectProcessDirect(process);
-  }, [split.tree, split.handleSelectInTree, handleSelectProcessDirect]);
+  }, [split.tree, split.handleSelectInTree, handleSelectProcessDirect, onJobSelected, blurSelectionFocus]);
 
   const handleSelectShell = useCallback((shell: ShellPane) => {
     const content: PaneContent = { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session };
-    if (split.tree && split.handleSelectInTree(content)) return;
+    if (split.tree && split.handleSelectInTree(content)) {
+      onJobSelected?.();
+      blurSelectionFocus();
+      return;
+    }
     handleSelectShellDirect(shell);
-  }, [split.tree, split.handleSelectInTree, handleSelectShellDirect]);
+  }, [split.tree, split.handleSelectInTree, handleSelectShellDirect, onJobSelected, blurSelectionFocus]);
 
   const importJob = useImportJob(core.jobs as Job[], core.reload);
 
@@ -859,21 +880,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [core]);
 
-  const openEditProcessQueryDialog = useCallback((
-    process: DetectedProcess,
-    field: "first_query" | "last_query",
-  ) => {
-    const isLatest = field === "last_query";
-    setEditProcessField({
-      paneId: process.pane_id,
-      title: isLatest ? "Edit latest query" : "Edit query",
-      label: isLatest ? "Latest" : "Query",
-      field,
-      initialValue: (field === "first_query" ? process.first_query : process.last_query) ?? "",
-      placeholder: isLatest ? "Latest query text" : "Query text",
-    });
-  }, []);
-
   const handleSaveProcessField = useCallback(async (value: string) => {
     if (!editProcessField) return;
     const normalizedValue = value.trim() || null;
@@ -893,31 +899,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         setPendingProcess((prev) => prev && prev.pane_id === paneId
           ? { ...prev, display_name: normalizedValue }
           : prev);
-      } else {
-        const proc = core.processes.find((item) => item.pane_id === paneId)
-          ?? (pendingProcess?.pane_id === paneId ? pendingProcess : null);
-        const nextFirstQuery = editProcessField.field === "first_query"
-          ? normalizedValue
-          : (proc?.first_query ?? null);
-        const nextLastQuery = editProcessField.field === "last_query"
-          ? normalizedValue
-          : (proc?.last_query ?? null);
-        core.setProcesses((prev) => prev.map((item) => (
-          item.pane_id === paneId
-            ? { ...item, first_query: nextFirstQuery, last_query: nextLastQuery }
-            : item
-        )));
-        setViewingProcess((prev) => prev && prev.pane_id === paneId
-          ? { ...prev, first_query: nextFirstQuery, last_query: nextLastQuery }
-          : prev);
-        setPendingProcess((prev) => prev && prev.pane_id === paneId
-          ? { ...prev, first_query: nextFirstQuery, last_query: nextLastQuery }
-          : prev);
-        await invoke("set_detected_process_queries", {
-          paneId,
-          firstQuery: nextFirstQuery,
-          lastQuery: nextLastQuery,
-        });
       }
       setEditProcessField(null);
       await core.reloadProcesses();
@@ -1120,15 +1101,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     return await transport.listAgentProviders?.() ?? [];
   }, []);
 
-  const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider: ProcessProvider = "claude") => {
-    const capabilities = providerCapabilities(provider);
+  const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider?: ProcessProvider) => {
+    const resolvedProvider = provider ?? defaultProvider;
+    const capabilities = providerCapabilities(resolvedProvider);
     if (workDir) {
       const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
       const matchedGroup = matchingJob ? (matchingJob.group || "default") : null;
       // Show a placeholder while waiting for the pane to be created
       const placeholder: DetectedProcess = {
         pane_id: `_pending_${Date.now()}`, cwd: workDir, version: "", tmux_session: "", window_name: "",
-        provider, ...capabilities,
+        provider: resolvedProvider, ...capabilities,
         matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
         last_query: null, session_started_at: new Date().toISOString(), _transient_state: "starting",
       };
@@ -1145,7 +1127,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         // Got the real pane - switch to it immediately
         const realProcess: DetectedProcess = {
           pane_id: result.pane_id, cwd: workDir, version: "", tmux_session: result.tmux_session, window_name: "",
-          provider, ...capabilities,
+          provider: resolvedProvider, ...capabilities,
           matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
           last_query: null, session_started_at: new Date().toISOString(),
         };
@@ -1168,7 +1150,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     } else {
       await actions.runAgent(prompt, workDir, provider);
     }
-  }, [actions, core.jobs, split.tree, split.openContent, split.replaceContent]);
+  }, [actions, core.jobs, defaultProvider, split.tree, split.openContent, split.replaceContent]);
 
   const handleHideGroup = useCallback((group: string) => {
     setHiddenGroups((prev) => {
@@ -1390,8 +1372,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           process={proc} questions={questions}
           onBack={() => split.handleClosePane(leafId)}
           onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-          onEditFirstQuery={() => openEditProcessQueryDialog(proc, "first_query")}
-          onEditLastQuery={() => openEditProcessQueryDialog(proc, "last_query")}
           autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
           onToggleAutoYes={() => {
             const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
@@ -1427,8 +1407,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         status={core.statuses[job.slug] ?? { state: "idle" as const }}
         firstQuery={matchedProcess?.first_query ?? undefined}
         lastQuery={matchedProcess?.last_query ?? undefined}
-        onEditFirstQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "first_query") : undefined}
-        onEditLastQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "last_query") : undefined}
         onBack={() => split.handleClosePane(leafId)}
         onEdit={() => { setEditingJob(job); split.handleClosePane(leafId); }}
         onOpen={() => handleOpen(job.slug)}
@@ -1594,8 +1572,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             process={singleProcess} questions={questions}
             onBack={() => setViewingProcess(null)}
             onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-            onEditFirstQuery={() => openEditProcessQueryDialog(singleProcess, "first_query")}
-            onEditLastQuery={() => openEditProcessQueryDialog(singleProcess, "last_query")}
             autoYesActive={autoYes.autoYesPaneIds.has(singleProcess.pane_id)}
             onToggleAutoYes={() => {
               const paneQuestion = questions.find((q) => q.pane_id === singleProcess.pane_id);
@@ -1664,8 +1640,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           status={core.statuses[singleJob.slug] ?? { state: "idle" as const }}
           firstQuery={matchedProcess?.first_query ?? undefined}
           lastQuery={matchedProcess?.last_query ?? undefined}
-          onEditFirstQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "first_query") : undefined}
-          onEditLastQuery={matchedProcess ? () => openEditProcessQueryDialog(matchedProcess, "last_query") : undefined}
           onBack={() => setViewingJob(null)}
           onEdit={() => { setEditingJob(singleJob); setViewingJob(null); }}
           onOpen={() => handleOpen(singleJob.slug)}
@@ -1866,6 +1840,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       focusedItemKey={split.focusedItemKey}
       onRunAgent={handleRunAgent}
       getAgentProviders={handleGetAgentProviders}
+      defaultAgentProvider={defaultProvider}
       onAddJob={handleAddJob}
       hiddenGroups={hiddenGroups}
       onHideGroup={handleHideGroup}

@@ -21,6 +21,8 @@ const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
   { value: "added", label: "Added" },
 ];
 
+const GROUP_AGENT_PROVIDER_STORAGE_KEY = "clawtab_group_agent_providers";
+
 function getStatusTimestamp(status: JobStatus | undefined): string | null {
   if (!status) return null;
   if (status.state === "running") return status.started_at;
@@ -109,6 +111,7 @@ export interface JobListViewProps {
   // Agent
   onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider) => void;
   getAgentProviders?: () => Promise<ProcessProvider[]>;
+  defaultAgentProvider?: ProcessProvider;
   // Desktop-only slots
   onAddJob?: (group: string, folderPath?: string) => void;
   onEditJob?: (job: RemoteJob) => void;
@@ -202,6 +205,7 @@ export function JobListView({
   selectedSlug,
   onRunAgent,
   getAgentProviders,
+  defaultAgentProvider = "claude",
   onAddJob,
   hiddenGroups,
   onHideGroup,
@@ -246,11 +250,62 @@ export function JobListView({
   }, [sidebarFocusRef]);
   const [sortOpen, setSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [agentProviders, setAgentProviders] = useState<ProcessProvider[]>([]);
+  const [groupAgentProviders, setGroupAgentProviders] = useState<Record<string, ProcessProvider>>(() => {
+    if (!isWeb || typeof localStorage === "undefined") return {};
+    const raw = localStorage.getItem(GROUP_AGENT_PROVIDER_STORAGE_KEY);
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw) as Record<string, ProcessProvider>;
+    } catch {
+      return {};
+    }
+  });
   const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string } | null>(null);
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const groupMenuDropdownRef = useRef<View>(null);
   const groupMenuTriggerRef = useRef<any>(null);
   const sortTriggerRef = useRef<any>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!getAgentProviders) return;
+    getAgentProviders()
+      .then((providers) => {
+        if (!cancelled) setAgentProviders(providers);
+      })
+      .catch(() => {
+        if (!cancelled) setAgentProviders([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [getAgentProviders]);
+
+  useEffect(() => {
+    if (!isWeb || typeof localStorage === "undefined") return;
+    localStorage.setItem(GROUP_AGENT_PROVIDER_STORAGE_KEY, JSON.stringify(groupAgentProviders));
+  }, [groupAgentProviders]);
+
+  const resolvedAgentProviders = useMemo(() => {
+    const next = agentProviders.includes(defaultAgentProvider)
+      ? agentProviders
+      : [defaultAgentProvider, ...agentProviders];
+    return next.filter((provider, index) => next.indexOf(provider) === index);
+  }, [agentProviders, defaultAgentProvider]);
+
+  const resolveGroupAgentProvider = useCallback((workDir: string) => {
+    const stored = groupAgentProviders[workDir];
+    if (stored && resolvedAgentProviders.includes(stored)) return stored;
+    return defaultAgentProvider;
+  }, [defaultAgentProvider, groupAgentProviders, resolvedAgentProviders]);
+
+  const handleSetGroupAgentProvider = useCallback((workDir: string, provider: ProcessProvider) => {
+    setGroupAgentProviders((prev) => {
+      if (prev[workDir] === provider) return prev;
+      return { ...prev, [workDir]: provider };
+    });
+  }, []);
 
   // Keyboard shortcut: Cmd+F (desktop) or / (web) to focus search
   useEffect(() => {
@@ -754,8 +809,10 @@ export function JobListView({
                 return (
                   <View key={key} style={{ marginTop: spacing.sm }}>
                     <GroupAgentRow
+                      provider={resolveGroupAgentProvider(item.workDir)}
+                      providers={resolvedAgentProviders}
+                      onProviderChange={(provider) => handleSetGroupAgentProvider(item.workDir, provider)}
                       onRunAgent={(prompt, provider) => onRunAgent!(prompt, item.workDir, provider)}
-                      getAgentProviders={getAgentProviders}
                     />
                   </View>
                 );

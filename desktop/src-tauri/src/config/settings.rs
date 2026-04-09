@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::claude_session::ProcessProvider;
 use crate::commands::processes::DetectedProcessOverride;
 use crate::telegram::TelegramConfig;
 
@@ -62,6 +63,7 @@ pub struct RelaySettings {
 pub struct AppSettings {
     pub default_tmux_session: String,
     pub default_work_dir: String,
+    pub default_provider: ProcessProvider,
     pub claude_path: String,
     pub preferred_editor: String,
     pub preferred_terminal: String,
@@ -98,6 +100,7 @@ impl Default for AppSettings {
         Self {
             default_tmux_session: "cwt".to_string(),
             default_work_dir: format!("{}/workspace/tgs/automation", home),
+            default_provider: ProcessProvider::Claude,
             claude_path: "claude".to_string(),
             preferred_editor: "nvim".to_string(),
             preferred_terminal: "auto".to_string(),
