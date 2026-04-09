@@ -1,7 +1,7 @@
 <h3 align="center">ClawTab - Agent Control Center</h3>
 
 <p align="center">
-  A desktop app for creating and managing groups of agents and monitoring them on the web and mobile.
+  Desktop app for creating and managing groups of agents from any provider and monitoring them on the web or mobile.
 <p align="center">
   <img src="docs/readme-pics/3-providers-in-separate-split-panes.png" alt="ClawTab" width="800" />
 </p>
