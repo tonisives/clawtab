@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/github-banner.png" alt="ClawTab" width="600" />
+  <img src="docs/3-providers-in-separate-split-panes.png" alt="ClawTab" width="600" />
 </p>
 
 <h3 align="center">Desktop Agent Control Center</h3>

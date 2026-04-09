@@ -5,14 +5,14 @@ import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_DEFINITIONS,
   eventToShortcutBinding,
-  formatShortcutKeys,
+  formatShortcutSteps,
   resolveShortcutSettings,
   type ShortcutId,
 } from "../shortcuts";
 
 export function ShortcutsPanel() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [recordingId, setRecordingId] = useState<ShortcutId | null>(null);
+  const [recording, setRecording] = useState<{ id: ShortcutId; strokes: string[] } | null>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -21,31 +21,93 @@ export function ShortcutsPanel() {
   }, []);
 
   useEffect(() => {
-    if (!recordingId) return;
+    if (!recording) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       event.stopPropagation();
       event.preventDefault();
 
       if (event.key === "Escape") {
-        setRecordingId(null);
+        setRecording(null);
         return;
       }
 
       if (!settings) return;
+      const currentShortcuts = resolveShortcutSettings(settings);
+      if (event.key === "Enter" && recording.strokes.length === 1) {
+        if (recording.id === "prefix_key") {
+          const newSettings: AppSettings = {
+            ...settings,
+            shortcuts: {
+              ...currentShortcuts,
+              prefix_key: recording.strokes[0],
+            },
+          };
+
+          setSettings(newSettings);
+          setRecording(null);
+          invoke("set_settings", { newSettings }).catch((e) => {
+            console.error("Failed to save shortcut:", e);
+          });
+          return;
+        }
+
+        const newSettings: AppSettings = {
+          ...settings,
+          shortcuts: {
+            ...currentShortcuts,
+            [recording.id]: recording.strokes[0],
+          },
+        };
+
+        setSettings(newSettings);
+        setRecording(null);
+        invoke("set_settings", { newSettings }).catch((e) => {
+          console.error("Failed to save shortcut:", e);
+        });
+        return;
+      }
+
       const binding = eventToShortcutBinding(event);
       if (!binding) return;
+
+      if (recording.id === "prefix_key") {
+        const newSettings: AppSettings = {
+          ...settings,
+          shortcuts: {
+            ...currentShortcuts,
+            prefix_key: binding,
+          },
+        };
+
+        setSettings(newSettings);
+        setRecording(null);
+        invoke("set_settings", { newSettings }).catch((e) => {
+          console.error("Failed to save shortcut:", e);
+        });
+        return;
+      }
+
+      const nextStrokes = [...recording.strokes, binding].slice(0, 2);
+      if (nextStrokes.length < 2) {
+        setRecording({ ...recording, strokes: nextStrokes });
+        return;
+      }
+
+      const resolvedBinding = nextStrokes[0] === currentShortcuts.prefix_key
+        ? `Prefix ${nextStrokes[1]}`
+        : nextStrokes.join(" ");
 
       const newSettings: AppSettings = {
         ...settings,
         shortcuts: {
-          ...resolveShortcutSettings(settings),
-          [recordingId]: binding,
+          ...currentShortcuts,
+          [recording.id]: resolvedBinding,
         },
       };
 
       setSettings(newSettings);
-      setRecordingId(null);
+      setRecording(null);
       invoke("set_settings", { newSettings }).catch((e) => {
         console.error("Failed to save shortcut:", e);
       });
@@ -53,7 +115,7 @@ export function ShortcutsPanel() {
 
     document.addEventListener("keydown", handleKeyDown, true);
     return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [recordingId, settings]);
+  }, [recording, settings]);
 
   if (!settings) {
     return <div className="loading">Loading shortcuts...</div>;
@@ -72,6 +134,24 @@ export function ShortcutsPanel() {
     });
   };
 
+  const saveShortcut = (id: ShortcutId, binding: string) => {
+    saveShortcuts({
+      ...shortcuts,
+      [id]: binding,
+    });
+  };
+
+  const getDisplayBinding = (id: ShortcutId): string => {
+    if (recording?.id !== id || recording.strokes.length === 0) return shortcuts[id];
+    if (id === "prefix_key") return recording.strokes[0];
+    if (recording.strokes[0] === shortcuts.prefix_key) {
+      return recording.strokes.length === 1
+        ? "Prefix"
+        : `Prefix ${recording.strokes[1]}`;
+    }
+    return recording.strokes.join(" ");
+  };
+
   return (
     <div className="settings-section">
       <h2>Keyboard Shortcuts</h2>
@@ -85,7 +165,13 @@ export function ShortcutsPanel() {
           </button>
         </div>
         <p className="section-description shortcuts-description">
-          Click Edit, then press the shortcut you want. Press Escape to cancel.
+          {recording
+            ? recording.id === "prefix_key"
+              ? "Press the key you want to use as the tmux-style prefix. Press Escape to cancel."
+              : recording.strokes.length === 0
+                ? "Press the first key. If it matches the prefix key, the shortcut will be saved as Prefix plus the second key. Enter saves a single keystroke. Escape cancels."
+                : "Press the second key for the sequence, Enter to save the first key as-is, or Escape to cancel."
+            : "Click Edit, then press the shortcut you want. Two-keystroke bindings and Prefix-based shortcuts are supported. Press Escape to cancel."}
         </p>
         <table className="shortcuts-table">
           <tbody>
@@ -93,10 +179,15 @@ export function ShortcutsPanel() {
               <tr key={shortcut.id}>
                 <td className="shortcut-label">{shortcut.label}</td>
                 <td className="shortcut-keys">
-                  {formatShortcutKeys(shortcuts[shortcut.id]).map((key, index) => (
-                    <span key={index}>
-                      {index > 0 && <span className="shortcut-plus">+</span>}
-                      <kbd>{key}</kbd>
+                  {formatShortcutSteps(getDisplayBinding(shortcut.id)).map((step, stepIndex) => (
+                    <span key={stepIndex}>
+                      {stepIndex > 0 && <span className="shortcut-plus" style={{ margin: "0 10px" }}>then</span>}
+                      {step.map((key, keyIndex) => (
+                        <span key={`${stepIndex}-${keyIndex}`}>
+                          {keyIndex > 0 && <span className="shortcut-plus">+</span>}
+                          <kbd>{key}</kbd>
+                        </span>
+                      ))}
                     </span>
                   ))}
                 </td>
@@ -105,14 +196,14 @@ export function ShortcutsPanel() {
                     className="btn btn-sm"
                     onClick={(event) => {
                       event.currentTarget.blur();
-                      setRecordingId(shortcut.id);
+                      setRecording({ id: shortcut.id, strokes: [] });
                     }}
                   >
-                    {recordingId === shortcut.id ? "Press keys..." : "Edit"}
+                    {recording?.id === shortcut.id ? "Recording..." : "Edit"}
                   </button>
                   <button
                     className="btn btn-sm btn-secondary"
-                    onClick={() => saveShortcuts({ ...shortcuts, [shortcut.id]: DEFAULT_SHORTCUTS[shortcut.id] })}
+                    onClick={() => saveShortcut(shortcut.id, DEFAULT_SHORTCUTS[shortcut.id])}
                   >
                     Reset
                   </button>

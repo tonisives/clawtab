@@ -85,11 +85,13 @@ export interface DetectedProcessOverride {
 }
 
 export interface ShortcutSettings {
+  prefix_key: string;
   next_sidebar_item: string;
   previous_sidebar_item: string;
   toggle_sidebar: string;
   split_pane_vertical: string;
   split_pane_horizontal: string;
+  kill_pane: string;
   move_pane_left: string;
   move_pane_down: string;
   move_pane_up: string;

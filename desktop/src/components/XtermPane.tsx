@@ -6,7 +6,13 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 import type { AppSettings } from "../types";
-import { DEFAULT_SHORTCUTS, resolveShortcutSettings, shortcutMatches } from "../shortcuts";
+import {
+  DEFAULT_SHORTCUTS,
+  eventToShortcutBinding,
+  resolveShortcutSettings,
+  shortcutMatches,
+  shortcutStartsWith,
+} from "../shortcuts";
 
 const pendingDestroyTimers = new Map<string, number>();
 
@@ -85,6 +91,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   const shortcutsRef = useRef(DEFAULT_SHORTCUTS);
+  const pendingShortcutStrokeRef = useRef<string | null>(null);
   const resolvedGroup = group ?? "default";
   const attachGenerationRef = useRef<number | null>(null);
 
@@ -163,16 +170,39 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       // Let our app shortcuts pass through instead of being consumed by the terminal
       t.attachCustomKeyEventHandler((e: KeyboardEvent) => {
         const shortcuts = shortcutsRef.current;
+        const appBindings = [
+          shortcuts.next_sidebar_item,
+          shortcuts.previous_sidebar_item,
+          shortcuts.toggle_sidebar,
+          shortcuts.split_pane_vertical,
+          shortcuts.split_pane_horizontal,
+          shortcuts.kill_pane,
+          shortcuts.move_pane_left,
+          shortcuts.move_pane_down,
+          shortcuts.move_pane_up,
+          shortcuts.move_pane_right,
+        ];
+
+        if (pendingShortcutStrokeRef.current && e.key === "Escape") {
+          pendingShortcutStrokeRef.current = null;
+          return false;
+        }
+
+        const stroke = eventToShortcutBinding(e);
+        if (pendingShortcutStrokeRef.current) {
+          if (stroke) pendingShortcutStrokeRef.current = null;
+          return false;
+        }
+
+        if (!stroke) return true;
+
+        if (appBindings.some((binding) => shortcutStartsWith(binding, stroke, shortcuts.prefix_key))) {
+          pendingShortcutStrokeRef.current = stroke;
+          return false;
+        }
+
         if (
-          shortcutMatches(e, shortcuts.next_sidebar_item)
-          || shortcutMatches(e, shortcuts.previous_sidebar_item)
-          || shortcutMatches(e, shortcuts.toggle_sidebar)
-          || shortcutMatches(e, shortcuts.split_pane_vertical)
-          || shortcutMatches(e, shortcuts.split_pane_horizontal)
-          || shortcutMatches(e, shortcuts.move_pane_left)
-          || shortcutMatches(e, shortcuts.move_pane_down)
-          || shortcutMatches(e, shortcuts.move_pane_up)
-          || shortcutMatches(e, shortcuts.move_pane_right)
+          appBindings.some((binding) => shortcutMatches(e, binding, shortcuts.prefix_key))
         ) return false;
         return true;
       });

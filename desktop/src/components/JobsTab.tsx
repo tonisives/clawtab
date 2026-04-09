@@ -40,7 +40,15 @@ import { EditTextDialog } from "./EditTextDialog";
 import { useQuestionPolling } from "../hooks/useQuestionPolling";
 import { useAutoYes } from "../hooks/useAutoYes";
 import { useImportJob } from "../hooks/useImportJob";
-import { DEFAULT_SHORTCUTS, resolveShortcutSettings, shortcutMatches, type ShortcutSettings } from "../shortcuts";
+import {
+  DEFAULT_SHORTCUTS,
+  eventToShortcutBinding,
+  resolveShortcutSettings,
+  shortcutCompletesSequence,
+  shortcutMatches,
+  shortcutStartsWith,
+  type ShortcutSettings,
+} from "../shortcuts";
 
 const transport = createTauriTransport();
 
@@ -626,6 +634,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarSelectableItems, setSidebarSelectableItems] = useState<SidebarSelectableItem[]>([]);
   const [recentSinglePaneContents, setRecentSinglePaneContents] = useState<PaneContent[]>([]);
+  const [pendingShortcutStroke, setPendingShortcutStroke] = useState<string | null>(null);
   const sidebarFocusRef = useRef<{ focus: () => void } | null>(null);
 
   const navigateSidebarItems = useCallback((direction: 1 | -1) => {
@@ -664,6 +673,89 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // Keyboard shortcuts
   useEffect(() => {
+    const runSplitPaneShortcut = (direction: "right" | "down") => {
+      const tree = split.tree;
+      if (!tree) return;
+      const leaves = collectLeaves(tree);
+      const focused = leaves.find(l => l.id === split.focusedLeafId) ?? leaves[0];
+      if (!focused) return;
+      const c = focused.content;
+      const paneId = (c.kind === "process" || c.kind === "terminal") ? c.paneId : null;
+      if (paneId) handleSplitPane(paneId, direction);
+    };
+
+    const runMovePaneShortcut = (direction: "backward" | "forward") => {
+      const tree = split.tree;
+      if (!tree) return;
+      const leaves = collectLeaves(tree);
+      if (leaves.length < 2) return;
+      const currentIdx = leaves.findIndex(l => l.id === split.focusedLeafId);
+      const idx = currentIdx === -1 ? 0 : currentIdx;
+      const next = direction === "backward"
+        ? (idx - 1 + leaves.length) % leaves.length
+        : (idx + 1) % leaves.length;
+      split.setFocusedLeafId(leaves[next].id);
+    };
+
+    const runKillPaneShortcut = () => {
+      const focusedLeaf = split.tree
+        ? collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId) ?? collectLeaves(split.tree)[0]
+        : null;
+      const content = focusedLeaf?.content ?? currentContent;
+      if (!content) return;
+
+      if (content.kind === "process") {
+        const proc = core.processes.find((p) => p.pane_id === content.paneId) ?? pendingProcess;
+        if (proc && proc.pane_id === content.paneId) {
+          setStoppingProcesses((prev) => {
+            if (prev.some((sp) => sp.process.pane_id === content.paneId)) return prev;
+            return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
+          });
+        }
+        core.requestFastPoll(`pane:${content.paneId}`);
+        invoke("stop_detected_process", { paneId: content.paneId });
+      } else if (content.kind === "terminal") {
+        setShellPanes((prev) => prev.filter((pane) => pane.pane_id !== content.paneId));
+        invoke("stop_detected_process", { paneId: content.paneId });
+      } else if (content.kind === "job") {
+        setStoppingJobSlugs((prev) => new Set(prev).add(content.slug));
+        core.requestFastPoll(`job:${content.slug}`);
+        transport.stopJob(content.slug);
+      }
+
+      if (focusedLeaf) {
+        split.handleClosePane(focusedLeaf.id);
+        return;
+      }
+
+      if (content.kind === "job") setViewingJob(null);
+      if (content.kind === "process") setViewingProcess(null);
+      if (content.kind === "terminal") setViewingShell(null);
+      if (content.kind === "agent") setViewingAgent(false);
+    };
+
+    const actions: { binding: string; run: () => void }[] = [
+      { binding: shortcutSettings.next_sidebar_item, run: () => navigateSidebarItems(1) },
+      { binding: shortcutSettings.previous_sidebar_item, run: () => navigateSidebarItems(-1) },
+      {
+        binding: shortcutSettings.toggle_sidebar,
+        run: () => {
+          setSidebarCollapsed(prev => {
+            const next = !prev;
+            if (!next) requestAnimationFrame(() => sidebarFocusRef.current?.focus());
+            return next;
+          });
+        },
+      },
+      { binding: shortcutSettings.split_pane_vertical, run: () => runSplitPaneShortcut("right") },
+      { binding: shortcutSettings.split_pane_horizontal, run: () => runSplitPaneShortcut("down") },
+      { binding: shortcutSettings.kill_pane, run: runKillPaneShortcut },
+      { binding: shortcutSettings.move_pane_left, run: () => runMovePaneShortcut("backward") },
+      { binding: shortcutSettings.move_pane_up, run: () => runMovePaneShortcut("backward") },
+      { binding: shortcutSettings.move_pane_down, run: () => runMovePaneShortcut("forward") },
+      { binding: shortcutSettings.move_pane_right, run: () => runMovePaneShortcut("forward") },
+    ];
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const tagName = target?.tagName;
@@ -676,84 +768,52 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       );
       if (isEditable && !inXterm) return;
 
-      if (shortcutMatches(e, shortcutSettings.next_sidebar_item)) {
+      if (pendingShortcutStroke && e.key === "Escape") {
         e.preventDefault();
-        navigateSidebarItems(1);
+        setPendingShortcutStroke(null);
         return;
       }
 
-      if (shortcutMatches(e, shortcutSettings.previous_sidebar_item)) {
-        e.preventDefault();
-        navigateSidebarItems(-1);
-        return;
-      }
-
-      if (shortcutMatches(e, shortcutSettings.toggle_sidebar)) {
-        e.preventDefault();
-        setSidebarCollapsed(prev => {
-          const next = !prev;
-          if (!next) requestAnimationFrame(() => sidebarFocusRef.current?.focus());
-          return next;
-        });
-        return;
-      }
-
-      if (shortcutMatches(e, shortcutSettings.split_pane_vertical)) {
-        e.preventDefault();
-        const tree = split.tree;
-        if (!tree) return;
-        const leaves = collectLeaves(tree);
-        const focused = leaves.find(l => l.id === split.focusedLeafId) ?? leaves[0];
-        if (!focused) return;
-        const c = focused.content;
-        const paneId = (c.kind === "process" || c.kind === "terminal") ? c.paneId : null;
-        if (paneId) handleSplitPane(paneId, "right");
-        return;
-      }
-
-      if (shortcutMatches(e, shortcutSettings.split_pane_horizontal)) {
-        e.preventDefault();
-        const tree = split.tree;
-        if (!tree) return;
-        const leaves = collectLeaves(tree);
-        const focused = leaves.find(l => l.id === split.focusedLeafId) ?? leaves[0];
-        if (!focused) return;
-        const c = focused.content;
-        const paneId = (c.kind === "process" || c.kind === "terminal") ? c.paneId : null;
-        if (paneId) handleSplitPane(paneId, "down");
-        return;
-      }
-
-      if (
-        shortcutMatches(e, shortcutSettings.move_pane_left)
-        || shortcutMatches(e, shortcutSettings.move_pane_down)
-        || shortcutMatches(e, shortcutSettings.move_pane_up)
-        || shortcutMatches(e, shortcutSettings.move_pane_right)
-      ) {
-        e.preventDefault();
-        const tree = split.tree;
-        if (!tree) return;
-        const leaves = collectLeaves(tree);
-        if (leaves.length < 2) return;
-        const currentIdx = leaves.findIndex(l => l.id === split.focusedLeafId);
-        const idx = currentIdx === -1 ? 0 : currentIdx;
-        let next = idx;
-        if (
-          shortcutMatches(e, shortcutSettings.move_pane_left)
-          || shortcutMatches(e, shortcutSettings.move_pane_up)
-        ) {
-          next = (idx - 1 + leaves.length) % leaves.length;
-        } else {
-          next = (idx + 1) % leaves.length;
+      const stroke = eventToShortcutBinding(e);
+      if (pendingShortcutStroke) {
+        if (!stroke) {
+          e.preventDefault();
+          return;
         }
-        split.setFocusedLeafId(leaves[next].id);
+
+        e.preventDefault();
+        const sequenceMatch = actions.find(({ binding }) => shortcutCompletesSequence(binding, [pendingShortcutStroke, stroke], shortcutSettings.prefix_key));
+        if (sequenceMatch) {
+          setPendingShortcutStroke(null);
+          sequenceMatch.run();
+          return;
+        }
+
+        const nextSequence = actions.find(({ binding }) => shortcutStartsWith(binding, stroke, shortcutSettings.prefix_key));
+        setPendingShortcutStroke(nextSequence ? stroke : null);
+        return;
+      }
+
+      if (!stroke) return;
+
+      const sequenceStart = actions.find(({ binding }) => shortcutStartsWith(binding, stroke, shortcutSettings.prefix_key));
+      if (sequenceStart) {
+        e.preventDefault();
+        setPendingShortcutStroke(stroke);
+        return;
+      }
+
+      const singleStrokeMatch = actions.find(({ binding }) => shortcutMatches(e, binding, shortcutSettings.prefix_key));
+      if (singleStrokeMatch) {
+        e.preventDefault();
+        singleStrokeMatch.run();
         return;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [split.tree, split.focusedLeafId, split.setFocusedLeafId, handleSplitPane, navigateSidebarItems, shortcutSettings]);
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings]);
 
   useEffect(() => {
     if (split.tree || !currentContent) return;
