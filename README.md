@@ -3,7 +3,7 @@
 <p align="center">
   A desktop app for creating and managing groups of agents and monitoring them on the web and mobile.
 <p align="center">
-  <img src="docs/3-providers-in-separate-split-panes.png" alt="ClawTab" width="600" />
+  <img src="docs/3-providers-in-separate-split-panes.png" alt="ClawTab" width="800" />
 </p>
 
 </p>
@@ -26,6 +26,19 @@
 - Remote Control - answer questions on web or ClawTab mobile app
 - Notifications - job failures or agent questions to mobile or Telegram
 - Secrets Management - Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
+
+## Full terminal support
+
+ClawTab uses [xterm](https://github.com/xtermjs/xterm.js) to display full interface of the Agent. You can 
+- answer agent uestions
+- edit in nvim
+- use your full shell configuration
+
+You can launch normal shells beside agents and run shell commands manually
+
+<p align="center">
+  <img src="docs/agent-and-shell-side-by-side.png" alt="ClawTab" width="800" />
+</p>
 
 ## Remote Control
 
