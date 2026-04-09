@@ -1,11 +1,11 @@
+<h3 align="center">Desktop Agent Control Center</h3>
+
+<p align="center">
+  A desktop app for creating and managing groups of agents and monitoring them on the web and mobile.
 <p align="center">
   <img src="docs/3-providers-in-separate-split-panes.png" alt="ClawTab" width="600" />
 </p>
 
-<h3 align="center">Desktop Agent Control Center</h3>
-
-<p align="center">
-  A desktop app for creating and managing groups of agents and monitoring them on the web and mobile. 
 </p>
 
 <p align="center">
