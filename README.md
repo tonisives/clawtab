@@ -1,4 +1,4 @@
-<h3 align="center">Desktop Agent Control Center</h3>
+<h3 align="center">ClawTab - Agent Control Center</h3>
 
 <p align="center">
   A desktop app for creating and managing groups of agents and monitoring them on the web and mobile.
@@ -18,7 +18,7 @@
 ## Features
 
 - Claude Code, Codex and OpenCode support
-- Split Agents into multiple panes
+- Split Agents into side-by-side panes
 - Display info about agent, task, and queries
 - Auto-yes - accept all questions as `Yes`
 - Scheduled jobs - create crons and read their past logs
@@ -61,3 +61,19 @@ Desktop (Tauri) -> Relay Server (Rust/Axum) -> Web/Mobile Client
 
 1. **Launch Agents** -- Launch any Agent software from single interface. Combine them into groups and split panes for project overview
 2. **Define Jobs** -- Create jobs in the GUI: Agent prompts, or project-based folder agents with centralized instructions.
+
+## FAQ
+
+### Why not just use tmux or other multiplexers? 
+
+ClawTab adds info about agent tasks, groups them together for projects, searches between them, and launches them in single interface. Tmux goes a long way, but gets harder to manage when workload increases.
+
+### What is the difference between OpenClaw and ClawTab?
+ClawTab includes many of OpenClaw features like autonomous agents, scheduled jobs and remote notifications. Main benefit is the full Desktop/Remote app that allows you to orchestrate agents visually.
+
+### Why not just use Claude Code?
+With Claude Code, you are locked into a single provider. Anthropic and ChatGPT are known to reduce model quality or increase pricing without prior notice. ClawTab allows you to be provider agnostic and prepare for model downtime. I use 3 different providers so I stay in control.
+
+### What is the pricing?
+Desktop app is MIT licensed and completely free. If you want to use Remote features, you can deploy the relay yourself for free or use the provided subscription.
+
