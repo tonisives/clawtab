@@ -21,9 +21,9 @@
 - Split Agents into side-by-side panes
 - Display info about agent, task and queries
 - Auto-yes - accept all questions as `Yes`
-- Scheduled jobs - create crons and read their past logs
-- Keep agents running in background and return at a later date
-- Remote Control - answer questions on web or ClawTab mobile app
+- Scheduled jobs - create cronjobs and read their past logs
+- Keep agents running in the background and return to them at a later date
+- Remote Control - view logs and answer questions on the web or ClawTab mobile app
 - Notifications - job failures or agent questions to mobile or Telegram
 - Secrets Management - Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
 
