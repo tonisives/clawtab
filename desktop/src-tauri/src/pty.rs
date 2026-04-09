@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
@@ -22,12 +22,14 @@ struct PaneViewer {
     window_id: String,
     /// Ephemeral grouped view session (clawtab-view-N); killed on stop.
     view_session: String,
+    /// Monotonic attachment generation for this pane viewer.
+    attach_generation: u64,
 }
 
 const MAX_RECENT_PANES: usize = 12;
 const MAX_CACHED_BYTES_PER_PANE: usize = 256 * 1024;
-const MAX_WARM_VIEWERS: usize = 8;
-
+const PTY_EMIT_BATCH_MS: u64 = 16;
+const PTY_EMIT_MAX_BYTES: usize = 32 * 1024;
 struct RecentPaneCache {
     order: VecDeque<String>,
     entries: HashMap<String, Vec<u8>>,
@@ -88,15 +90,16 @@ pub enum OutputSink {
 pub struct SpawnResult {
     pub native_cols: u16,
     pub native_rows: u16,
+    pub attach_generation: u64,
 }
 
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
     recent: Arc<Mutex<RecentPaneCache>>,
-    warm_order: VecDeque<String>,
 }
 
 static VIEW_COUNTER: AtomicU64 = AtomicU64::new(0);
+static ATTACH_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn tmux(args: &[&str]) -> Result<String, String> {
     let out = Command::new("tmux")
@@ -108,6 +111,50 @@ fn tmux(args: &[&str]) -> Result<String, String> {
         return Err(format!("tmux {}: {}", args[0], stderr.trim()));
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn emit_bytes(sink: &OutputSink, pane_id: &str, bytes: Vec<u8>) {
+    if bytes.is_empty() {
+        return;
+    }
+
+    match sink {
+        OutputSink::Tauri(app_handle) => {
+            let _ = app_handle.emit(&format!("pty-output-{}", pane_id.replace('%', "p")), bytes);
+        }
+        OutputSink::Channel(tx) => {
+            let _ = tx.send((pane_id.to_string(), bytes));
+        }
+    }
+}
+
+fn emit_initial_snapshot(
+    sink: &OutputSink,
+    recent: &Arc<Mutex<RecentPaneCache>>,
+    pane_id: &str,
+) {
+    // Clear the terminal before sending a fresh full-screen snapshot.
+    let clear = b"\x1bc".to_vec();
+    recent.lock().unwrap().append(pane_id, &clear);
+    emit_bytes(sink, pane_id, clear);
+
+    if let Ok(content) = tmux(&["capture-pane", "-e", "-p", "-t", pane_id]) {
+        let bytes = content.into_bytes();
+        if !bytes.is_empty() {
+            recent.lock().unwrap().append(pane_id, &bytes);
+            emit_bytes(sink, pane_id, bytes);
+        }
+    }
+}
+
+fn refresh_attached_pane(
+    sink: &OutputSink,
+    recent: &Arc<Mutex<RecentPaneCache>>,
+    pane_id: &str,
+) {
+    thread::sleep(Duration::from_millis(150));
+    emit_initial_snapshot(sink, recent, pane_id);
+    let _ = tmux(&["send-keys", "-t", pane_id, "C-l"]);
 }
 
 fn tmux_session_exists(session: &str) -> bool {
@@ -301,7 +348,6 @@ impl PtyManager {
         Self {
             sessions: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),
-            warm_order: VecDeque::new(),
         }
     }
 
@@ -318,9 +364,11 @@ impl PtyManager {
         group: &str,
         sink: OutputSink,
     ) -> Result<SpawnResult, String> {
-        if self.sessions.contains_key(pane_id) {
-            self.touch_warm_viewer(pane_id);
+        if let Some(viewer) = self.sessions.get_mut(pane_id) {
+            let attach_generation = ATTACH_COUNTER.fetch_add(1, Ordering::Relaxed);
+            viewer.attach_generation = attach_generation;
             self.resize(pane_id, cols, rows)?;
+            refresh_attached_pane(&sink, &self.recent, pane_id);
 
             let native_info = tmux(&[
                 "display-message", "-t", pane_id,
@@ -330,7 +378,7 @@ impl PtyManager {
             let native_cols: u16 = native_parts.first().and_then(|s| s.parse().ok()).unwrap_or(80);
             let native_rows: u16 = native_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(24);
 
-            return Ok(SpawnResult { native_cols, native_rows });
+            return Ok(SpawnResult { native_cols, native_rows, attach_generation });
         }
 
         // Read the pane's native size before capture. After capture + resize we
@@ -387,37 +435,10 @@ impl PtyManager {
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop_clone = Arc::clone(&stop);
+        let attach_generation = ATTACH_COUNTER.fetch_add(1, Ordering::Relaxed);
         let event_key = pane_id.replace('%', "p");
         let pane_id_for_thread = pane_id.to_string();
         let recent_cache = Arc::clone(&self.recent);
-
-        thread::spawn(move || {
-            let mut buf = [0u8; 8192];
-            loop {
-                if stop_clone.load(Ordering::Relaxed) { break; }
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let bytes = buf[..n].to_vec();
-                        recent_cache
-                            .lock()
-                            .unwrap()
-                            .append(&pane_id_for_thread, &bytes);
-                        match &sink {
-                            OutputSink::Tauri(app_handle) => {
-                                let _ = app_handle
-                                    .emit(&format!("pty-output-{}", event_key), bytes);
-                            }
-                            OutputSink::Channel(tx) => {
-                                let _ = tx.send((pane_id_for_thread.clone(), bytes));
-                            }
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            log::debug!("[pty {}] reader thread exited", event_key);
-        });
 
         // Resize the captured window to match the viewport so content reflows.
         if cols > 0 && rows > 0 {
@@ -427,6 +448,57 @@ impl PtyManager {
             ]);
         }
 
+        // Let attach-session settle, then push a full snapshot and force redraw.
+        refresh_attached_pane(&sink, &self.recent, pane_id);
+
+        thread::spawn(move || {
+            let mut buf = [0u8; 8192];
+            let mut pending = Vec::new();
+            let mut last_emit = Instant::now()
+                .checked_sub(Duration::from_millis(PTY_EMIT_BATCH_MS))
+                .unwrap_or_else(Instant::now);
+
+            let flush_pending = |pending: &mut Vec<u8>| {
+                if pending.is_empty() {
+                    return;
+                }
+                let bytes = std::mem::take(pending);
+                recent_cache
+                    .lock()
+                    .unwrap()
+                    .append(&pane_id_for_thread, &bytes);
+                match &sink {
+                    OutputSink::Tauri(app_handle) => {
+                        let _ = app_handle
+                            .emit(&format!("pty-output-{}", event_key), bytes);
+                    }
+                    OutputSink::Channel(tx) => {
+                        let _ = tx.send((pane_id_for_thread.clone(), bytes));
+                    }
+                }
+            };
+
+            loop {
+                if stop_clone.load(Ordering::Relaxed) { break; }
+                match reader.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        pending.extend_from_slice(&buf[..n]);
+                        let now = Instant::now();
+                        if pending.len() >= PTY_EMIT_MAX_BYTES
+                            || now.duration_since(last_emit) >= Duration::from_millis(PTY_EMIT_BATCH_MS)
+                        {
+                            flush_pending(&mut pending);
+                            last_emit = now;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            flush_pending(&mut pending);
+            log::debug!("[pty {}] reader thread exited", event_key);
+        });
+
         self.sessions.insert(
             pane_id.to_string(),
             PaneViewer {
@@ -435,12 +507,11 @@ impl PtyManager {
                 master,
                 window_id,
                 view_session,
+                attach_generation,
             },
         );
-        self.touch_warm_viewer(pane_id);
-        self.evict_warm_viewers();
 
-        Ok(SpawnResult { native_cols, native_rows })
+        Ok(SpawnResult { native_cols, native_rows, attach_generation })
     }
 
     pub fn get_cached_output(&self, pane_id: &str) -> Vec<u8> {
@@ -478,9 +549,18 @@ impl PtyManager {
         Ok(())
     }
 
-    pub fn destroy(&mut self, pane_id: &str) -> Result<(), String> {
+    pub fn destroy(&mut self, pane_id: &str, expected_generation: Option<u64>) -> Result<(), String> {
+        if let Some(expected) = expected_generation {
+            if let Some(viewer) = self.sessions.get(pane_id) {
+                if viewer.attach_generation != expected {
+                    return Ok(());
+                }
+            } else {
+                return Ok(());
+            }
+        }
+
         if let Some(viewer) = self.sessions.remove(pane_id) {
-            self.warm_order.retain(|id| id != pane_id);
             viewer.stop.store(true, Ordering::Relaxed);
             // Kill only the ephemeral view session. The captured window stays
             // in clawtab-<group> so the user can re-attach or release later.
@@ -490,7 +570,7 @@ impl PtyManager {
     }
 
     pub fn release(&mut self, pane_id: &str) -> Result<(), String> {
-        let _ = self.destroy(pane_id);
+        let _ = self.destroy(pane_id, None);
         // Give tmux a moment for the PTY to detach before moving the pane.
         thread::sleep(Duration::from_millis(100));
         release_captured_pane(pane_id)
@@ -499,21 +579,7 @@ impl PtyManager {
     pub fn destroy_all(&mut self) {
         let pane_ids: Vec<String> = self.sessions.keys().cloned().collect();
         for pane_id in pane_ids {
-            let _ = self.destroy(&pane_id);
-        }
-    }
-
-    fn touch_warm_viewer(&mut self, pane_id: &str) {
-        self.warm_order.retain(|id| id != pane_id);
-        self.warm_order.push_front(pane_id.to_string());
-    }
-
-    fn evict_warm_viewers(&mut self) {
-        while self.warm_order.len() > MAX_WARM_VIEWERS {
-            let Some(oldest) = self.warm_order.pop_back() else {
-                break;
-            };
-            let _ = self.destroy(&oldest);
+            let _ = self.destroy(&pane_id, None);
         }
     }
 }

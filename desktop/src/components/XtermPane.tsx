@@ -6,6 +6,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 
+const pendingDestroyTimers = new Map<string, number>();
+
 // Tauri event names can't contain %, so sanitize pane IDs
 function eventKey(paneId: string): string {
   return paneId.replace(/%/g, "p");
@@ -21,6 +23,7 @@ interface XtermPaneProps {
 interface PtySpawnResult {
   native_cols: number;
   native_rows: number;
+  attach_generation: number;
 }
 
 async function waitForViewportReady(
@@ -80,10 +83,16 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
   const resolvedGroup = group ?? "default";
+  const attachGenerationRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const el: HTMLDivElement = containerRef.current;
+    const pendingDestroy = pendingDestroyTimers.get(paneId);
+    if (pendingDestroy != null) {
+      window.clearTimeout(pendingDestroy);
+      pendingDestroyTimers.delete(paneId);
+    }
 
     let cancelled = false;
     let outputUnlisten: UnlistenFn | null = null;
@@ -181,8 +190,10 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       const result = await invoke<PtySpawnResult>("pty_spawn", {
         paneId, tmuxSession, cols, rows, group: resolvedGroup,
       });
+      attachGenerationRef.current = result.attach_generation;
 
       if (cancelled) {
+        invoke("pty_destroy", { paneId, attachGeneration: result.attach_generation }).catch(() => {});
         return;
       }
 
@@ -270,6 +281,15 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       exitUnlisten?.();
       dropUnlisten?.();
       term?.dispose();
+      const attachGeneration = attachGenerationRef.current;
+      attachGenerationRef.current = null;
+      if (attachGeneration != null) {
+        const timer = window.setTimeout(() => {
+          pendingDestroyTimers.delete(paneId);
+          invoke("pty_destroy", { paneId, attachGeneration }).catch(() => {});
+        }, 300);
+        pendingDestroyTimers.set(paneId, timer);
+      }
     };
     // The viewer lifecycle is keyed by the tmux pane id. Parent polling can
     // refresh tmux session metadata without changing the actual pane, and

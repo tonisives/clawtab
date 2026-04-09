@@ -286,7 +286,7 @@ pub async fn handle_incoming(
         }
 
         ClientMessage::UnsubscribePty { pane_id } => {
-            let _ = pty_manager.lock().unwrap().destroy(&pane_id);
+            let _ = pty_manager.lock().unwrap().destroy(&pane_id, None);
             None
         }
 

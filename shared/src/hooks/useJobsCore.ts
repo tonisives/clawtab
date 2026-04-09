@@ -5,17 +5,48 @@ import type { ClaudeProcess } from "../types/process";
 import { groupJobs, sortGroupNames } from "../util/jobs";
 
 const IDLE_STATUS: JobStatus = { state: "idle" };
+const LOCAL_CACHE_JOBS_KEY = "clawtab_desktop_cached_jobs";
+const LOCAL_CACHE_STATUSES_KEY = "clawtab_desktop_cached_statuses";
+
+function readLocalCache(): { jobs: RemoteJob[]; statuses: Record<string, JobStatus> } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const rawJobs = window.localStorage.getItem(LOCAL_CACHE_JOBS_KEY);
+    if (!rawJobs) return null;
+    const rawStatuses = window.localStorage.getItem(LOCAL_CACHE_STATUSES_KEY);
+    return {
+      jobs: JSON.parse(rawJobs) as RemoteJob[],
+      statuses: rawStatuses ? JSON.parse(rawStatuses) as Record<string, JobStatus> : {},
+    };
+  } catch (e) {
+    console.error("Failed to read local jobs cache:", e);
+    return null;
+  }
+}
+
+function writeLocalCache(jobs: RemoteJob[], statuses: Record<string, JobStatus>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LOCAL_CACHE_JOBS_KEY, JSON.stringify(jobs));
+    window.localStorage.setItem(LOCAL_CACHE_STATUSES_KEY, JSON.stringify(statuses));
+  } catch (e) {
+    console.error("Failed to write local jobs cache:", e);
+  }
+}
 
 export function useJobsCore(transport: Transport, pollInterval = 5000) {
-  const [jobs, setJobs] = useState<RemoteJob[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, JobStatus>>({});
+  const initialCacheRef = useRef<{ jobs: RemoteJob[]; statuses: Record<string, JobStatus> } | null>(readLocalCache());
+  const [jobs, setJobs] = useState<RemoteJob[]>(() => initialCacheRef.current?.jobs ?? []);
+  const [statuses, setStatuses] = useState<Record<string, JobStatus>>(() => initialCacheRef.current?.statuses ?? {});
   const [processes, setProcesses] = useState<ClaudeProcess[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const transportRef = useRef(transport);
   transportRef.current = transport;
-  const jobsSigRef = useRef("[]");
-  const statusesSigRef = useRef("{}");
+  const jobsRef = useRef<RemoteJob[]>(initialCacheRef.current?.jobs ?? []);
+  const loadedRef = useRef(false);
+  const jobsSigRef = useRef(initialCacheRef.current ? JSON.stringify(initialCacheRef.current.jobs) : "[]");
+  const statusesSigRef = useRef(initialCacheRef.current ? JSON.stringify(initialCacheRef.current.statuses) : "{}");
   const processesSigRef = useRef("[]");
   const fastPollTargetsRef = useRef<Map<string, number>>(new Map());
   const fastPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -39,12 +70,21 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       proc._last_log_change ?? null,
     ]));
 
+  const persistCache = useCallback((nextJobs: RemoteJob[], nextStatuses: Record<string, JobStatus>) => {
+    writeLocalCache(nextJobs, nextStatuses);
+    if (!transportRef.current.cacheJobs) return;
+    void transportRef.current.cacheJobs(nextJobs, nextStatuses).catch((e) => {
+      console.error("Failed to cache jobs:", e);
+    });
+  }, []);
+
   const loadAll = useCallback(async () => {
     try {
       const result = await transportRef.current.listJobs();
       const jobsSig = signatureForJobs(result.jobs);
       if (jobsSig !== jobsSigRef.current) {
         jobsSigRef.current = jobsSig;
+        jobsRef.current = result.jobs;
         setJobs(result.jobs);
       }
       const statusesSig = signatureForStatuses(result.statuses);
@@ -52,11 +92,13 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
         statusesSigRef.current = statusesSig;
         setStatuses(result.statuses);
       }
+      loadedRef.current = true;
       setLoaded(true);
+      persistCache(result.jobs, result.statuses);
     } catch (e) {
       console.error("Failed to load jobs:", e);
     }
-  }, []);
+  }, [persistCache]);
 
   const loadStatuses = useCallback(async () => {
     try {
@@ -65,10 +107,11 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       if (sig === statusesSigRef.current) return;
       statusesSigRef.current = sig;
       setStatuses(s);
+      persistCache(jobsRef.current, s);
     } catch (e) {
       console.error("Failed to load statuses:", e);
     }
-  }, []);
+  }, [persistCache]);
 
   const prevLogLinesRef = useRef<Map<string, string>>(new Map());
   const prevLastLogChangeRef = useRef<Map<string, number>>(new Map());
@@ -129,6 +172,29 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
     }
     void runFastPoll();
   }, [runFastPoll]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!transportRef.current.getCachedJobs) return () => {
+      cancelled = true;
+    };
+    void transportRef.current.getCachedJobs().then((cached) => {
+      if (cancelled || loadedRef.current || !cached) return;
+      const jobsSig = signatureForJobs(cached.jobs);
+      const statusesSig = signatureForStatuses(cached.statuses);
+      if (jobsSigRef.current !== "[]" || statusesSigRef.current !== "{}") return;
+      jobsSigRef.current = jobsSig;
+      statusesSigRef.current = statusesSig;
+      jobsRef.current = cached.jobs;
+      setJobs(cached.jobs);
+      setStatuses(cached.statuses);
+    }).catch((e) => {
+      console.error("Failed to load cached jobs:", e);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     loadAll();

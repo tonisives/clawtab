@@ -64,6 +64,10 @@ function paneContentCacheKey(content: PaneContent): string {
   return content.paneId;
 }
 
+function shouldCacheSinglePaneContent(content: PaneContent): boolean {
+  return content.kind === "job" || content.kind === "agent";
+}
+
 export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected }: JobsTabProps) {
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
@@ -494,9 +498,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarSelectableItems, setSidebarSelectableItems] = useState<SidebarSelectableItem[]>([]);
   const [recentSinglePaneContents, setRecentSinglePaneContents] = useState<PaneContent[]>([]);
+  const sidebarFocusRef = useRef<{ focus: () => void } | null>(null);
 
   const navigateSidebarItems = useCallback((direction: 1 | -1) => {
     if (sidebarSelectableItems.length === 0) return;
+    sidebarFocusRef.current?.focus();
 
     const currentKey = split.focusedItemKey
       ?? (viewingShell
@@ -550,7 +556,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       // Cmd+E: toggle sidebar
       if (e.metaKey && e.key === "e") {
         e.preventDefault();
-        setSidebarCollapsed(prev => !prev);
+        setSidebarCollapsed(prev => {
+          const next = !prev;
+          if (!next) requestAnimationFrame(() => sidebarFocusRef.current?.focus());
+          return next;
+        });
         return;
       }
 
@@ -610,7 +620,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (split.tree || !currentContent) return;
     setRecentSinglePaneContents((prev) => {
       const key = paneContentCacheKey(currentContent);
-      const next = [currentContent, ...prev.filter((item) => paneContentCacheKey(item) !== key)];
+      const retained = prev.filter((item) => shouldCacheSinglePaneContent(item));
+      const next = shouldCacheSinglePaneContent(currentContent)
+        ? [currentContent, ...retained.filter((item) => paneContentCacheKey(item) !== key)]
+        : retained;
       return next.slice(0, SINGLE_PANE_CACHE_LIMIT);
     });
   }, [split.tree, currentContent]);
@@ -712,6 +725,29 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       placeholder: shortenPath(process.cwd),
     });
   }, []);
+
+  const handleSaveProcessNameInline = useCallback(async (process: ClaudeProcess, name: string) => {
+    const normalizedValue = name.trim() || null;
+    const paneId = process.pane_id;
+    try {
+      core.setProcesses((prev) => prev.map((proc) => (
+        proc.pane_id === paneId ? { ...proc, display_name: normalizedValue } : proc
+      )));
+      setViewingProcess((prev) => prev && prev.pane_id === paneId
+        ? { ...prev, display_name: normalizedValue }
+        : prev);
+      await invoke("set_detected_process_display_name", {
+        paneId,
+        displayName: normalizedValue,
+      });
+      setPendingProcess((prev) => prev && prev.pane_id === paneId
+        ? { ...prev, display_name: normalizedValue }
+        : prev);
+      await core.reloadProcesses();
+    } catch (e) {
+      console.error("Failed to save process name:", e);
+    }
+  }, [core]);
 
   const openEditProcessQueryDialog = useCallback((
     process: ClaudeProcess,
@@ -1309,7 +1345,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => (
+    (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => (
       <DraggableProcessCard
         {...props}
         reorderEnabled
@@ -1543,24 +1579,39 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const detailPane = currentContent ? (
     <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-      {recentSinglePaneContents.map((content) => {
-        const key = paneContentCacheKey(content);
-        const isActive = paneContentCacheKey(currentContent) === key;
-        return (
-          <div
-            key={key}
-            style={{
-              display: isActive ? "flex" : "none",
-              flexDirection: "column",
-              position: "absolute",
-              inset: 0,
-              overflow: "hidden",
-            }}
-          >
-            {renderSinglePaneContent(content)}
-          </div>
-        );
-      })}
+      {shouldCacheSinglePaneContent(currentContent) ? (
+        recentSinglePaneContents.map((content) => {
+          const key = paneContentCacheKey(content);
+          const isActive = paneContentCacheKey(currentContent) === key;
+          return (
+            <div
+              key={key}
+              style={{
+                display: isActive ? "flex" : "none",
+                flexDirection: "column",
+                position: "absolute",
+                inset: 0,
+                overflow: "hidden",
+              }}
+            >
+              {renderSinglePaneContent(content)}
+            </div>
+          );
+        })
+      ) : (
+        <div
+          key={paneContentCacheKey(currentContent)}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            position: "absolute",
+            inset: 0,
+            overflow: "hidden",
+          }}
+        >
+          {renderSinglePaneContent(currentContent)}
+        </div>
+      )}
       {paramsDialog && currentContent.kind === "job" && (
         <ParamsOverlay
           job={paramsDialog.job} values={paramsDialog.values}
@@ -1706,6 +1757,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       scrollToSlug={scrollToSlug}
       scrollEnabled={!split.isDragging}
       onSelectableItemsChange={setSidebarSelectableItems}
+      sidebarFocusRef={sidebarFocusRef}
       onStopJob={(slug) => {
         setStoppingJobSlugs((prev) => new Set(prev).add(slug));
         core.requestFastPoll(`job:${slug}`);
@@ -1723,6 +1775,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         invoke("stop_detected_process", { paneId });
       }}
       onRenameProcess={openRenameProcessDialog}
+      onSaveProcessName={handleSaveProcessNameInline}
       onStopShell={(paneId) => {
         setShellPanes((prev) => prev.filter((p) => p.pane_id !== paneId));
         if (viewingShell?.pane_id === paneId) selectAdjacentItem(paneId);

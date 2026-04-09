@@ -16,6 +16,14 @@ export function createTauriTransport(): Transport {
       return invoke<Record<string, JobStatus>>("get_job_statuses");
     },
 
+    async getCachedJobs() {
+      return invoke<{ jobs: RemoteJob[]; statuses: Record<string, JobStatus> } | null>("get_cached_jobs_snapshot");
+    },
+
+    async cacheJobs(jobs, statuses) {
+      await invoke("save_cached_jobs_snapshot", { jobs, statuses });
+    },
+
     async runJob(name: string, params?: Record<string, string>) {
       return await invoke<{ pane_id: string; tmux_session: string } | null>("run_job_now", { name, params });
     },

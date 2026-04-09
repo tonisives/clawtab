@@ -133,12 +133,13 @@ export interface JobListViewProps {
   onStopJob?: (slug: string) => void;
   onStopProcess?: (paneId: string) => void;
   onRenameProcess?: (process: ClaudeProcess) => void;
+  onSaveProcessName?: (process: ClaudeProcess, name: string) => void;
   onStopShell?: (paneId: string) => void;
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string }) => React.ReactNode;
-  renderProcessCard?: (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => React.ReactNode;
+  renderProcessCard?: (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
   wrapProcessGroup?: (group: string, processPaneIds: string[], children: React.ReactNode) => React.ReactNode;
@@ -148,6 +149,8 @@ export interface JobListViewProps {
   stoppingSlugs?: Set<string>;
   // Visible selectable items in rendered sidebar order
   onSelectableItemsChange?: (items: SidebarSelectableItem[]) => void;
+  // Ref to focus the sidebar container (desktop only)
+  sidebarFocusRef?: React.MutableRefObject<{ focus: () => void } | null>;
 }
 
 type ListItem =
@@ -211,6 +214,7 @@ export function JobListView({
   onStopJob,
   onStopProcess,
   onRenameProcess,
+  onSaveProcessName,
   onStopShell,
   autoYesPaneIds,
   renderJobCard: customRenderJobCard,
@@ -221,9 +225,23 @@ export function JobListView({
   scrollEnabled = true,
   stoppingSlugs: stoppingSlugsExternal,
   onSelectableItemsChange,
+  sidebarFocusRef,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
+  const containerRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (sidebarFocusRef) {
+      sidebarFocusRef.current = {
+        focus: () => {
+          const el = (containerRef.current as any) as HTMLElement | undefined;
+          el?.focus?.();
+        },
+      };
+    }
+    return () => { if (sidebarFocusRef) sidebarFocusRef.current = null; };
+  }, [sidebarFocusRef]);
   const [sortOpen, setSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string } | null>(null);
@@ -235,13 +253,20 @@ export function JobListView({
   // Keyboard shortcut: Cmd+F (desktop) or / (web) to focus search
   useEffect(() => {
     if (Platform.OS !== "web") return;
+    const getContainer = () => (containerRef.current as any) as HTMLElement | undefined;
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
         e.preventDefault();
         searchRef.current?.focus();
       } else if (e.key === "/") {
-        const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        const el = e.target as HTMLElement;
+        const tag = el?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+        const container = getContainer();
+        if (!container) return;
+        const active = document.activeElement as HTMLElement | null;
+        const sidebarFocused = active === document.body || (active && container.contains(active));
+        if (!sidebarFocused) return;
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -579,15 +604,16 @@ export function JobListView({
     const procAutoYesActive = autoYesPaneIds?.has(item.process.pane_id) ?? false;
     const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
     const procOnRename = onRenameProcess ? () => onRenameProcess(item.process) : undefined;
+    const procOnSaveName = onSaveProcessName ? (name: string) => onSaveProcessName(item.process, name) : undefined;
     const marginTop = index > 0 ? spacing.sm : undefined;
     const sortGroup = item.process.matched_group ?? `cwd:${item.process.cwd}`;
     return customRenderProcessCard ? (
       <View key={key}>
-        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id })}
+        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, onSaveName: procOnSaveName, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id })}
       </View>
     ) : (
       <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={marginTop != null ? { marginTop } : undefined}>
-        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} autoYesActive={procAutoYesActive} />
+        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} onSaveName={procOnSaveName} autoYesActive={procAutoYesActive} />
       </View>
     );
   };
@@ -888,7 +914,26 @@ export function JobListView({
     return () => { node.removeEventListener("scroll", nudge); if (timer) clearTimeout(timer); };
   }, []);
 
+  const handleContainerMouseDown = useCallback(() => {
+    if (Platform.OS !== "web") return;
+    const container = (containerRef.current as any) as HTMLElement | undefined;
+    if (!container) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active && !container.contains(active)) {
+      (document.activeElement as HTMLElement)?.blur?.();
+    }
+  }, []);
+
+  const containerWebProps = Platform.OS === "web"
+    ? { tabIndex: -1 as const, onMouseDown: handleContainerMouseDown, style: { flex: 1, outline: "none" } as const }
+    : {};
+
   return (
+    <View
+      ref={containerRef}
+      style={Platform.OS !== "web" ? { flex: 1 } : undefined}
+      {...containerWebProps}
+    >
     <ScrollView
       ref={scrollRef}
       style={styles.scroll}
@@ -923,6 +968,7 @@ export function JobListView({
         />
       )}
     </ScrollView>
+    </View>
   );
 }
 

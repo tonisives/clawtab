@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { useCallback, useRef, useState } from "react";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { ClaudeProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { shortenPath } from "../util/format";
@@ -17,6 +17,7 @@ export function ProcessCard({
   selected,
   onStop,
   onRename,
+  onSaveName,
   autoYesActive,
 }: {
   process: ClaudeProcess;
@@ -25,6 +26,7 @@ export function ProcessCard({
   selected?: boolean | string;
   onStop?: () => void;
   onRename?: () => void;
+  onSaveName?: (name: string) => void;
   autoYesActive?: boolean;
 }) {
   const displayName = inGroup
@@ -42,8 +44,35 @@ export function ProcessCard({
   );
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
   const menuBtnRef = useRef<any>(null);
+  const editInputRef = useRef<TextInput>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  const canRename = !!(onRename || onSaveName) && !transient;
+
+  const startEditing = useCallback(() => {
+    if (!canRename) return;
+    setEditValue(process.display_name ?? "");
+    setEditing(true);
+    setMenuOpen(false);
+    setTimeout(() => { editInputRef.current?.focus(); }, 0);
+  }, [canRename, process.display_name]);
+
+  const commitEdit = useCallback(() => {
+    setEditing(false);
+    const trimmed = editValue.trim();
+    if (onSaveName) {
+      onSaveName(trimmed || (process.display_name ?? ""));
+    } else if (onRename) {
+      onRename();
+    }
+  }, [editValue, onSaveName, onRename, process.display_name]);
+
+  const cancelEdit = useCallback(() => {
+    setEditing(false);
+  }, []);
 
   const statusDot = transient ? (
     <View style={[
@@ -56,22 +85,53 @@ export function ProcessCard({
     </Tooltip>
   );
 
-  const showMenu = (onStop || onRename) && !transient;
+  const showMenu = (onStop || onRename || onSaveName) && !transient;
   const kind = kindForProcess(process);
 
   return (
     <View style={[styles.processCard, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 }]}>
       <TouchableOpacity
         style={styles.processRow}
-        onPress={onPress}
+        onPress={editing ? undefined : onPress}
         activeOpacity={0.7}
       >
         <JobKindIcon kind={kind} />
         <View style={styles.processInfo}>
-          <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
-            {displayName}
-          </Text>
-          {transient ? (
+          {editing ? (
+            <TextInput
+              ref={editInputRef}
+              value={editValue}
+              onChangeText={setEditValue}
+              onSubmitEditing={commitEdit}
+              onBlur={commitEdit}
+              onKeyPress={(e: any) => {
+                if (e?.key === "Escape") cancelEdit();
+              }}
+              style={styles.editInput}
+              placeholder={shortenPath(process.cwd)}
+              placeholderTextColor={colors.textMuted}
+              selectTextOnFocus
+            />
+          ) : (
+            <View style={styles.nameRow}>
+              <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {canRename ? (
+                <TouchableOpacity
+                  onPress={(e: any) => {
+                    e?.stopPropagation?.();
+                    startEditing();
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                  style={styles.renameBtn}
+                >
+                  <Text style={styles.renameBtnText}>{"\u270E"}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+          {!editing && (transient ? (
             <Text style={[styles.queryPreview, { fontStyle: "italic" }]} numberOfLines={1}>
               {transient === "starting" ? "Starting..." : "Stopping..."}
             </Text>
@@ -79,10 +139,10 @@ export function ProcessCard({
             <Text style={styles.queryPreview} numberOfLines={1}>
               {subtitle}
             </Text>
-          ) : null}
+          ) : null)}
         </View>
         <View style={[styles.rightCol, (showMenu || (autoYesActive && !transient)) && styles.rightColExpanded]}>
-          {showMenu ? (
+          {showMenu && !editing ? (
             <TouchableOpacity
               ref={menuBtnRef}
               onPress={(e: any) => {
@@ -109,14 +169,14 @@ export function ProcessCard({
           ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </TouchableOpacity>
-      {menuOpen && (onStop || onRename) && (
+      {menuOpen && (onStop || onRename || onSaveName) && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
-            ...(onRename ? [{ type: "item" as const, label: "Rename", onPress: () => { onRename(); setMenuOpen(false); } }] : []),
-            ...(onRename && onStop ? [{ type: "separator" as const }] : []),
+            ...(canRename ? [{ type: "item" as const, label: "Rename", onPress: () => { startEditing(); } }] : []),
+            ...(canRename && onStop ? [{ type: "separator" as const }] : []),
             ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}
         />
@@ -140,7 +200,21 @@ const styles = StyleSheet.create({
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
-  processName: { color: colors.text, fontSize: 13, fontWeight: "500" },
+  nameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  processName: { color: colors.text, fontSize: 13, fontWeight: "500", flexShrink: 1 },
+  renameBtn: { opacity: 0.4, paddingHorizontal: 2 },
+  renameBtnText: { color: colors.textSecondary, fontSize: 12, lineHeight: 13 },
+  editInput: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "500",
+    padding: 0,
+    margin: 0,
+    borderWidth: 0,
+    outlineStyle: "none" as any,
+    backgroundColor: "transparent",
+    minWidth: 0,
+  },
   queryPreview: {
     color: colors.textMuted,
     fontSize: 11,

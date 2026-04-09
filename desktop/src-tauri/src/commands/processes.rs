@@ -46,43 +46,10 @@ fn is_semver(s: &str) -> bool {
     parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-fn detect_process_type(pane_pid: &str) -> Option<String> {
-    fn command_for_pid(pid: &str) -> Option<String> {
-        let output = Command::new("ps")
-            .args(["-p", pid, "-o", "comm="])
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    }
-
-    fn child_pids(parent_pid: &str) -> Vec<String> {
-        let output = match Command::new("ps")
-            .args(["-o", "pid=,ppid="])
-            .arg("-A")
-            .output()
-        {
-            Ok(o) if o.status.success() => o,
-            _ => return Vec::new(),
-        };
-
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(|line| {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() == 2 && parts[1] == parent_pid {
-                    Some(parts[0].to_string())
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
+fn detect_process_type(
+    pane_pid: &str,
+    snapshot: &crate::claude_session::ProcessSnapshot,
+) -> Option<String> {
     fn process_type_for_command(command: &str) -> Option<String> {
         let lower = command.to_lowercase();
         if lower.contains("codex") {
@@ -94,21 +61,21 @@ fn detect_process_type(pane_pid: &str) -> Option<String> {
         }
     }
 
-    if let Some(command) = command_for_pid(pane_pid) {
+    if let Some(command) = snapshot.command_for_pid(pane_pid) {
         if let Some(kind) = process_type_for_command(&command) {
             return Some(kind);
         }
     }
 
-    for child in child_pids(pane_pid) {
-        if let Some(command) = command_for_pid(&child) {
+    for child in snapshot.child_pids(pane_pid) {
+        if let Some(command) = snapshot.command_for_pid(child) {
             if let Some(kind) = process_type_for_command(&command) {
                 return Some(kind);
             }
         }
 
-        for grandchild in child_pids(&child) {
-            if let Some(command) = command_for_pid(&grandchild) {
+        for grandchild in snapshot.child_pids(child) {
+            if let Some(command) = snapshot.command_for_pid(grandchild) {
                 if let Some(kind) = process_type_for_command(&command) {
                     return Some(kind);
                 }
@@ -187,6 +154,8 @@ fn detect_claude_processes_blocking(
     running_panes: HashMap<String, (String, String)>,
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<DetectionSnapshot, String> {
+    let process_snapshot = crate::claude_session::ProcessSnapshot::capture();
+
     let output = Command::new("tmux")
         .args([
             "list-panes",
@@ -232,7 +201,7 @@ fn detect_claude_processes_blocking(
 
         active_pane_ids.insert(pane_id.to_string());
 
-        let process_type = detect_process_type(pane_pid);
+        let process_type = detect_process_type(pane_pid, &process_snapshot);
         if !is_semver(command) && process_type.is_none() {
             continue;
         }
@@ -263,7 +232,8 @@ fn detect_claude_processes_blocking(
                 .to_string()
         };
 
-        let session_info = crate::claude_session::resolve_session_info(pane_pid);
+        let session_info =
+            crate::claude_session::resolve_session_info_with_snapshot(pane_pid, Some(&process_snapshot));
         let override_meta = overrides.get(pane_id);
 
         results.push(ClaudeProcess {

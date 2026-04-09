@@ -419,6 +419,8 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::jobs::get_jobs,
+            commands::jobs::get_cached_jobs_snapshot,
+            commands::jobs::save_cached_jobs_snapshot,
             commands::jobs::save_job,
             commands::jobs::rename_job,
             commands::jobs::import_job_folder,

@@ -114,6 +114,7 @@ export function DraggableProcessCard({
   selected,
   onStop,
   onRename,
+  onSaveName,
   autoYesActive,
   reorderEnabled,
   marginTop,
@@ -126,6 +127,7 @@ export function DraggableProcessCard({
   selected?: boolean | string;
   onStop?: () => void;
   onRename?: () => void;
+  onSaveName?: (name: string) => void;
   autoYesActive?: boolean;
   reorderEnabled?: boolean;
   marginTop?: number;
@@ -187,6 +189,7 @@ export function DraggableProcessCard({
         selected={selected}
         onStop={onStop}
         onRename={onRename}
+        onSaveName={onSaveName}
         autoYesActive={autoYesActive}
       />
     </div>

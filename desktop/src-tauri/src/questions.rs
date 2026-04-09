@@ -176,9 +176,9 @@ fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
     None
 }
 
-/// Runs the question detection loop. Checks every 2 seconds for Claude processes
-/// that have interactive numbered options, and sends them to the relay and stores
-/// them for the desktop frontend.
+/// Runs the question detection loop. The idle path is intentionally conservative:
+/// question detection is expensive because it scans tmux panes and captures output,
+/// so we back off heavily when there are no active prompts to watch.
 pub async fn question_detection_loop(
     jobs_config: Arc<Mutex<JobsConfig>>,
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
@@ -200,7 +200,7 @@ pub async fn question_detection_loop(
     loop {
         let detection = detect_question_processes(&jobs_config, &job_status);
         let processes = detection.processes;
-        log::info!("[questions] detected {} claude processes", processes.len());
+        log::debug!("[questions] detected {} claude processes", processes.len());
 
         // Prune auto_yes_panes: remove pane IDs where the pane no longer exists.
         // Keep panes that exist but don't have a Claude process yet (startup delay)
@@ -223,10 +223,9 @@ pub async fn question_detection_loop(
         for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in &processes {
             let options = parse_numbered_options(log_lines);
             if options.is_empty() {
-                log::info!("[questions] pane {} ({}): no options parsed, last_line={}", pane_id, cwd, log_lines.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or(""));
                 continue;
             }
-            log::info!("[questions] pane {} ({}): {} options", pane_id, cwd, options.len());
+            log::debug!("[questions] pane {} ({}): {} options", pane_id, cwd, options.len());
 
             detected_panes.insert(pane_id.clone());
 
@@ -273,7 +272,7 @@ pub async fn question_detection_loop(
         {
             let yes_panes = auto_yes_panes.lock().unwrap().clone();
             if !yes_panes.is_empty() {
-                log::info!("[questions] auto-yes panes: {:?}, questions: {}", yes_panes, questions.len());
+                log::debug!("[questions] auto-yes panes: {:?}, questions: {}", yes_panes, questions.len());
                 for q in &questions {
                     if !yes_panes.contains(&q.pane_id) {
                         log::debug!("[questions] pane {} not in auto-yes set, skipping", q.pane_id);
@@ -285,12 +284,12 @@ pub async fn question_detection_loop(
                             log::debug!("[questions] question {} already auto-answered ({} ticks ago), skipping", q.question_id, ticks);
                             continue;
                         }
-                        log::info!("[questions] question {} still present after {} ticks, retrying auto-answer", q.question_id, ticks);
+                        log::debug!("[questions] question {} still present after {} ticks, retrying auto-answer", q.question_id, ticks);
                     }
                     let options_summary: Vec<String> = q.options.iter()
                         .map(|o| format!("{}={}", o.number, o.label))
                         .collect();
-                    log::info!("[questions] checking auto-yes for pane {} question {} options: {:?}", q.pane_id, q.question_id, options_summary);
+                    log::debug!("[questions] checking auto-yes for pane {} question {} options: {:?}", q.pane_id, q.question_id, options_summary);
                     if let Some(opt) = find_yes_option(&q.options) {
                         log::info!("[questions] auto-answering pane {} question {} with option {}", q.pane_id, q.question_id, opt);
                         match crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt) {
@@ -320,7 +319,7 @@ pub async fn question_detection_loop(
         });
 
         // Store for desktop frontend
-        log::info!("[questions] storing {} active questions", questions.len());
+        log::debug!("[questions] storing {} active questions", questions.len());
         *active_questions.lock().unwrap() = questions.clone();
 
         // Fire local macOS notifications for new questions
@@ -360,9 +359,18 @@ pub async fn question_detection_loop(
             }
         }
 
-        // Poll faster when auto-yes is active so questions are answered promptly
+        // Question detection is one of the main steady-state CPU costs in the app.
+        // Keep it responsive when we have active prompts, but back off when idle.
         let has_auto_yes = !auto_yes_panes.lock().unwrap().is_empty();
-        let sleep_ms = if has_auto_yes { 500 } else { 2000 };
+        let sleep_ms = if has_auto_yes {
+            750
+        } else if !question_cache.is_empty() {
+            2000
+        } else if !processes.is_empty() {
+            10000
+        } else {
+            15000
+        };
         tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
     }
 }
@@ -485,7 +493,7 @@ fn detect_question_processes(
             (mg, None)
         };
 
-        let log_lines = crate::tmux::capture_pane(session, pane_id, 30)
+        let log_lines = crate::tmux::capture_pane(session, pane_id, 16)
             .unwrap_or_default().trim().to_string();
 
         results.push((

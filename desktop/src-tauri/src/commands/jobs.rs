@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
 use crate::config::jobs::{Job, JobStatus};
@@ -8,9 +10,47 @@ use crate::cwt::CwtFolder;
 use crate::scheduler;
 use crate::AppState;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedJobsSnapshot {
+    pub jobs: Vec<Job>,
+    pub statuses: HashMap<String, JobStatus>,
+}
+
+fn cached_jobs_snapshot_path() -> Option<std::path::PathBuf> {
+    crate::config::config_dir().map(|dir| dir.join("jobs-cache.json"))
+}
+
+fn write_cached_jobs_snapshot(snapshot: &CachedJobsSnapshot) -> Result<(), String> {
+    let path = cached_jobs_snapshot_path().ok_or_else(|| "Could not resolve config directory".to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache dir: {e}"))?;
+    }
+
+    let payload = serde_json::to_vec(snapshot).map_err(|e| format!("Failed to serialize cache: {e}"))?;
+    let tmp_path = path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, payload).map_err(|e| format!("Failed to write cache: {e}"))?;
+    std::fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to finalize cache: {e}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_jobs(state: State<AppState>) -> Vec<Job> {
     state.jobs_config.lock().unwrap().jobs.clone()
+}
+
+#[tauri::command]
+pub fn get_cached_jobs_snapshot() -> Option<CachedJobsSnapshot> {
+    let path = cached_jobs_snapshot_path()?;
+    let raw = std::fs::read(path).ok()?;
+    serde_json::from_slice(&raw).ok()
+}
+
+#[tauri::command]
+pub fn save_cached_jobs_snapshot(
+    jobs: Vec<Job>,
+    statuses: HashMap<String, JobStatus>,
+) -> Result<(), String> {
+    write_cached_jobs_snapshot(&CachedJobsSnapshot { jobs, statuses })
 }
 
 #[tauri::command]

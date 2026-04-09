@@ -8,6 +8,7 @@ use crate::AppState;
 pub struct PtySpawnResult {
     pub native_cols: u16,
     pub native_rows: u16,
+    pub attach_generation: u64,
 }
 
 #[tauri::command]
@@ -28,6 +29,7 @@ pub fn pty_spawn(
     Ok(PtySpawnResult {
         native_cols: result.native_cols,
         native_rows: result.native_rows,
+        attach_generation: result.attach_generation,
     })
 }
 
@@ -59,8 +61,16 @@ pub fn pty_resize(
 }
 
 #[tauri::command]
-pub fn pty_destroy(state: State<AppState>, pane_id: String) -> Result<(), String> {
-    state.pty_manager.lock().unwrap().destroy(&pane_id)
+pub fn pty_destroy(
+    state: State<AppState>,
+    pane_id: String,
+    attach_generation: Option<u64>,
+) -> Result<(), String> {
+    state
+        .pty_manager
+        .lock()
+        .unwrap()
+        .destroy(&pane_id, attach_generation)
 }
 
 #[tauri::command]
