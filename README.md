@@ -3,7 +3,7 @@
 <p align="center">
   A desktop app for creating and managing groups of agents and monitoring them on the web and mobile.
 <p align="center">
-  <img src="docs/3-providers-in-separate-split-panes.png" alt="ClawTab" width="800" />
+  <img src="docs/readme-pics/3-providers-in-separate-split-panes.png" alt="ClawTab" width="800" />
 </p>
 
 </p>
@@ -37,7 +37,7 @@ ClawTab uses [xterm](https://github.com/xtermjs/xterm.js) to display full interf
 You can launch normal shells beside agents and run shell commands manually
 
 <p align="center">
-  <img src="docs/agent-and-shell-side-by-side.png" alt="ClawTab" width="800" />
+  <img src="docs/readme-pics/agent-and-shell-side-by-side.png" alt="ClawTab" width="800" />
 </p>
 
 ## Remote Control
@@ -48,7 +48,7 @@ You can launch normal shells beside agents and run shell commands manually
 - **Multi-instance support** - Works across multiple terminal windows, agents providers and tabs simultaneously.
 
 <p align="center">
-  <img src="docs/remote-demo.gif" alt="Remote agent control demo" width="600" />
+  <img src="docs/readme-pics/remote-demo.gif" alt="Remote agent control demo" width="600" />
 </p>
 
 **Architecture:** A relay server (Rust/Axum) sits between your local machine and remote clients. The desktop app (Tauri) monitors your tmux panes, parses CLI output to detect when an agent is waiting for input, and pushes the state to the relay.
@@ -61,59 +61,3 @@ Desktop (Tauri) -> Relay Server (Rust/Axum) -> Web/Mobile Client
 
 1. **Launch Agents** -- Launch any Agent software from single interface. Combine them into groups and split panes for project overview
 2. **Define Jobs** -- Create jobs in the GUI: Agent prompts, or project-based folder agents with centralized instructions.
-3. **ClawTab Schedules** -- Jobs run on cron in tmux windows. Secrets are injected, output is captured, and status is tracked.
-4. **Monitor Anywhere** -- Watch from the GUI, Web App, Mobile App or Telegram. Get notifications on success or failure.
-
-## Save costs
-How to get a 50$ agent subscription? 
-
-Mix and match between providers
-
-- Use Claude promotion periods to use cheap tokens
-- Switch to ChatGPT when they are promoting their product
-- Switch to OpenCode when both tokens are exhausted and wait for the next reset
-
-## Install
-
-### Homebrew
-
-```sh
-brew install --cask tonisives/tap/clawtab
-```
-
-### Build from Source
-
-Requires macOS 10.15+, [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/), and [pnpm](https://pnpm.io/).
-
-```sh
-git clone https://github.com/tonisives/clawdtab.git
-cd clawdtab
-pnpm install
-cargo tauri build
-```
-
-Produces three binaries: `clawtab` (GUI), `cwtctl` (CLI), `cwttui` (TUI).
-
-### Runtime Dependencies
-
-- tmux (for Claude Code and folder jobs)
-- Claude Code, Codex or OpenCode
-
-## iOS App
-
-Download from the [App Store](https://apps.apple.com/us/app/clawtab/id6759683841)
-
-## Web remote
-
-Access at https://remote.clawtab.cc.
-
-## Relay
-Relay is required for Web Remote or iOS app. You can deploy relay yourself or use the provided subscription for relay.lawtab.cc.
-
-## Documentation
-
-Full docs are available in the [docs/](./docs/) folder or at [clawtab.cc](https://clawtab.cc).
-
-## License
-
-See [LICENSE](./LICENSE) for details.
