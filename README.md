@@ -26,10 +26,6 @@
 - Get notifications on job failures or agent questions on mobile or Telegram
 - Secrets Management -- Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
 
-<p align="center">
-  <img src="docs/promo.gif" alt="ClawTab demo" width="600" />
-</p>
-
 ## Controlling Agent Swarms Remotely
 
 <p align="center">
