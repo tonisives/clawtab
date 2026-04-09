@@ -19,7 +19,7 @@
 
 - Claude Code, Codex and OpenCode support
 - Split Agents into side-by-side panes
-- Display info about agent, task, and queries
+- Display info about agent, task and queries
 - Auto-yes - accept all questions as `Yes`
 - Scheduled jobs - create crons and read their past logs
 - Keep agents running in background and return at a later date
