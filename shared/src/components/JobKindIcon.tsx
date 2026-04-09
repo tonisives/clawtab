@@ -8,8 +8,9 @@ import cronIcon from "../assets/cron-icon.png";
 import manualIcon from "../assets/manual-icon.png";
 import shellIcon from "../assets/shell-icon.png";
 import codexIcon from "../assets/codex-icon.png";
+import opencodeIcon from "../assets/opencode-icon.png";
 
-export type JobKind = "cron" | "manual" | "claude" | "codex" | "shell";
+export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "shell";
 
 export function kindForJob(job: RemoteJob): JobKind {
   if (job.job_type === "claude") return "claude";
@@ -18,7 +19,14 @@ export function kindForJob(job: RemoteJob): JobKind {
 }
 
 export function kindForProcess(process: DetectedProcess): JobKind {
-  return process.provider === "codex" ? "codex" : "claude";
+  switch (process.provider) {
+    case "codex":
+      return "codex";
+    case "opencode":
+      return "opencode";
+    default:
+      return "claude";
+  }
 }
 
 export function kindForShell(): JobKind {
@@ -30,7 +38,9 @@ function paletteForKind(kind: JobKind) {
     case "claude":
       return { bg: colors.accentBg, fg: colors.accent };
     case "codex":
-      return { bg: "rgba(83, 156, 255, 0.14)", fg: "#68a0ff" };
+      return { bg: "transparent", fg: colors.text };
+    case "opencode":
+      return { bg: "transparent", fg: colors.text };
     case "shell":
       return { bg: colors.successBg ?? "rgba(52, 199, 89, 0.14)", fg: colors.success ?? "#34c759" };
     case "cron":
@@ -54,6 +64,8 @@ function sourceForKind(kind: JobKind) {
       return shellIcon;
     case "codex":
       return codexIcon;
+    case "opencode":
+      return opencodeIcon;
   }
 }
 
@@ -69,8 +81,8 @@ export function JobKindIcon({
   bare?: boolean;
 }) {
   const palette = paletteForKind(kind);
-  const isClaude = kind === "claude";
-  const imageSize = isClaude
+  const hasIntrinsicBadge = kind === "claude" || kind === "codex" || kind === "opencode";
+  const imageSize = hasIntrinsicBadge
     ? size
     : compact ? Math.round(size * 0.62) : Math.round(size * 0.66);
   const asset = sourceForKind(kind);
@@ -86,7 +98,7 @@ export function JobKindIcon({
               width: size,
               height: size,
               borderRadius: radius.sm,
-              backgroundColor: isClaude ? "transparent" : palette.bg,
+              backgroundColor: hasIntrinsicBadge ? "transparent" : palette.bg,
             },
       ]}
     >
@@ -95,7 +107,7 @@ export function JobKindIcon({
         style={{
           width: imageSize,
           height: imageSize,
-          borderRadius: isClaude ? radius.sm : 0,
+          borderRadius: hasIntrinsicBadge ? radius.sm : 0,
         }}
         resizeMode="contain"
       />

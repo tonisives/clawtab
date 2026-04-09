@@ -54,6 +54,7 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
     match provider {
         ProcessProvider::Claude => (true, true, true),
         ProcessProvider::Codex => (false, false, false),
+        ProcessProvider::Opencode => (false, false, false),
     }
 }
 
@@ -204,10 +205,11 @@ fn detect_processes_blocking(
                 .to_string()
         };
 
-        let session_info = crate::claude_session::resolve_session_info_for_provider(
+        let session_info = crate::claude_session::resolve_session_info_for_provider_with_cwd(
             pane_pid,
             Some(provider),
             Some(&process_snapshot),
+            Some(cwd),
         );
         let override_meta = overrides.get(pane_id);
         let (can_fork_session, can_send_skills, can_inject_secrets) = provider_capabilities(provider);

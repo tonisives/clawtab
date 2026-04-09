@@ -113,23 +113,9 @@ export function ProcessCard({
               selectTextOnFocus
             />
           ) : (
-            <View style={styles.nameRow}>
-              <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
-                {displayName}
-              </Text>
-              {canRename ? (
-                <TouchableOpacity
-                  onPress={(e: any) => {
-                    e?.stopPropagation?.();
-                    startEditing();
-                  }}
-                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                  style={styles.renameBtn}
-                >
-                  <Text style={styles.renameBtnText}>{"\u270E"}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+            <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
+              {displayName}
+            </Text>
           )}
           {!editing && (transient ? (
             <Text style={[styles.queryPreview, { fontStyle: "italic" }]} numberOfLines={1}>
@@ -200,10 +186,7 @@ const styles = StyleSheet.create({
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
-  nameRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   processName: { color: colors.text, fontSize: 13, fontWeight: "500", flexShrink: 1 },
-  renameBtn: { opacity: 0.4, paddingHorizontal: 2 },
-  renameBtnText: { color: colors.textSecondary, fontSize: 12, lineHeight: 13 },
   editInput: {
     color: colors.text,
     fontSize: 13,

@@ -639,10 +639,16 @@ fn detect_processes(
             .unwrap_or_default().trim().to_string();
 
         let session_info =
-            crate::claude_session::resolve_session_info_for_provider(pane_pid, Some(provider), None);
+            crate::claude_session::resolve_session_info_for_provider_with_cwd(
+                pane_pid,
+                Some(provider),
+                None,
+                Some(cwd),
+            );
         let (can_fork_session, can_send_skills, can_inject_secrets) = match provider {
             crate::claude_session::ProcessProvider::Claude => (true, true, true),
             crate::claude_session::ProcessProvider::Codex => (false, false, false),
+            crate::claude_session::ProcessProvider::Opencode => (false, false, false),
         };
 
         results.push(RemoteDetectedProcess {

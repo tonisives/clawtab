@@ -130,7 +130,7 @@ export interface DetectedProcess {
   pane_id: string;
   cwd: string;
   version: string;
-  provider: "claude" | "codex";
+  provider: "claude" | "codex" | "opencode";
   can_fork_session: boolean;
   can_send_skills: boolean;
   can_inject_secrets: boolean;
