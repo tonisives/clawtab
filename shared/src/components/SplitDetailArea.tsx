@@ -44,6 +44,19 @@ export function SplitDetailArea({
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!focusedLeafId) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const raf = requestAnimationFrame(() => {
+      const leafEl = container.querySelector(`[data-leaf-id="${focusedLeafId}"]`);
+      if (!leafEl) return;
+      const ta = leafEl.querySelector(".xterm-helper-textarea");
+      if (ta instanceof HTMLElement) ta.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [focusedLeafId]);
+
   return (
     <div
       ref={containerRef}
@@ -101,6 +114,7 @@ function SplitNodeRenderer({
     const isFocused = focusedLeafId === node.id;
     return (
       <div
+        data-leaf-id={node.id}
         style={{
           flex: 1,
           display: "flex",
