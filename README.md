@@ -2,10 +2,10 @@
   <img src="docs/github-banner.png" alt="ClawTab" width="600" />
 </p>
 
-<h3 align="center">Schedule and control Claude Code agent swarms</h3>
+<h3 align="center">Desktop Agent Control Center</h3>
 
 <p align="center">
-  A macOS app for running automated Claude Code agents on a cron schedule, monitoring them across tmux panes, and answering their questions remotely from your phone or browser.
+  A desktop app for creating and managing groups of agents and monitoring them on the web and mobile. 
 </p>
 
 <p align="center">
@@ -16,13 +16,14 @@
 ---
 
 ## Features
-
-- **Remote Agent Control** -- Detect when agents are asking questions, see them as cards, and answer with one tap from your phone or browser.
-- **Tmux Execution** -- Jobs run inside tmux windows. Output is captured, monitored, and logged. Pane splitting for concurrent runs.
-- **Cron Scheduling** -- Standard cron expressions with a 30-second polling loop. Run on schedule, manually, or via CLI.
-- **Secrets Management** -- Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
-- **Telegram Integration** -- Real-time output relay, completion notifications, and an agent mode for remote job control via bot commands.
-- **Three Interfaces** -- GUI menu bar app, `cwtctl` CLI, and `cwttui` terminal UI. All connected via IPC socket.
+  - Claude Code, Codex and OpenCode support
+  - Split the CLI software into multiple panes
+  - Extract job first and latest query and start times
+  - Return to agents at a later date
+  - Run scheduled jobs, read their past logs
+  - Remote Agent Control - answer questions on web or ClawTab mobile app.
+  - Get notifications on job failures or agent questions on mobile or Telegram
+  - Secrets Management -- Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
 
 <p align="center">
   <img src="docs/promo.gif" alt="ClawTab demo" width="600" />
@@ -48,8 +49,12 @@ Desktop (Tauri) -> Relay Server (Rust/Axum) -> Web/Mobile Client
 ## How It Works
 
 1. **Define Jobs** -- Create jobs in the GUI: shell scripts, Claude Code prompts, or project-based folder agents with centralized instructions.
-2. **ClawTab Schedules** -- Jobs run on cron in tmux windows. Secrets are injected, output is captured, and status is tracked.
-3. **Monitor Anywhere** -- Watch from the GUI, CLI, TUI, or Telegram. Get notifications on success or failure.
+2. **Start Agents** -- Built in UI to choose agent provider and launch any of them from single UI
+3. **ClawTab Schedules** -- Jobs run on cron in tmux windows. Secrets are injected, output is captured, and status is tracked.
+4. **Monitor Anywhere** -- Watch from the GUI, Web App, Mobile App or Telegram. Get notifications on success or failure.
+
+## Save costs
+Mix and match between providers. Use Claude promotion period to get cheap tokens. Switch to ChatGPT when they are promoting their product. Switch to OpenCode when both tokens are exhausted and wait for the next reset.
 
 ## Install
 
@@ -76,6 +81,12 @@ Produces three binaries: `clawtab` (GUI), `cwtctl` (CLI), `cwttui` (TUI).
 
 - tmux (for Claude Code and folder jobs)
 - Claude Code CLI (for AI jobs)
+
+## iOS App
+Download from the [App Store](https://apps.apple.com/us/app/clawtab/id6759683841)
+
+## Web remote
+Access at https://remote.clawtab.cc 
 
 ## Documentation
 
