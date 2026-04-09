@@ -16,14 +16,15 @@
 ---
 
 ## Features
-  - Claude Code, Codex and OpenCode support
-  - Split the CLI software into multiple panes
-  - Extract job first and latest query and start times
-  - Return to agents at a later date
-  - Run scheduled jobs, read their past logs
-  - Remote Agent Control - answer questions on web or ClawTab mobile app.
-  - Get notifications on job failures or agent questions on mobile or Telegram
-  - Secrets Management -- Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
+
+- Claude Code, Codex and OpenCode support
+- Split the CLI software into multiple panes
+- Extract job first and latest query and start times
+- Return to agents at a later date
+- Run scheduled jobs, read their past logs
+- Remote Agent Control - answer questions on web or ClawTab mobile app.
+- Get notifications on job failures or agent questions on mobile or Telegram
+- Secrets Management -- Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
 
 <p align="center">
   <img src="docs/promo.gif" alt="ClawTab demo" width="600" />
@@ -54,6 +55,7 @@ Desktop (Tauri) -> Relay Server (Rust/Axum) -> Web/Mobile Client
 4. **Monitor Anywhere** -- Watch from the GUI, Web App, Mobile App or Telegram. Get notifications on success or failure.
 
 ## Save costs
+
 Mix and match between providers. Use Claude promotion period to get cheap tokens. Switch to ChatGPT when they are promoting their product. Switch to OpenCode when both tokens are exhausted and wait for the next reset.
 
 ## Install
@@ -83,10 +85,12 @@ Produces three binaries: `clawtab` (GUI), `cwtctl` (CLI), `cwttui` (TUI).
 - Claude Code CLI (for AI jobs)
 
 ## iOS App
+
 Download from the [App Store](https://apps.apple.com/us/app/clawtab/id6759683841)
 
 ## Web remote
-Access at https://remote.clawtab.cc 
+
+Access at https://remote.clawtab.cc
 
 ## Documentation
 
