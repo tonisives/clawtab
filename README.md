@@ -30,7 +30,7 @@
 ## Full terminal support
 
 ClawTab uses [xterm](https://github.com/xtermjs/xterm.js) to display full interface of the Agent. You can 
-- answer agent questions
+- answer questions
 - edit in nvim
 - use your full shell configuration
 
@@ -59,8 +59,64 @@ Desktop (Tauri) -> Relay Server (Rust/Axum) -> Web/Mobile Client
 
 ## How It Works
 
-1. **Launch Agents** -- Launch any Agent software from single interface. Combine them into groups and split panes for project overview
+1. **Launch Agents** -- Launch any Agent software (Claude Code, Codex, etc) from a single interface. Combine them into groups and side-by-side tabs
 2. **Define Jobs** -- Create jobs in the GUI: Agent prompts, or project-based folder agents with centralized instructions.
+3. **ClawTab Schedules** -- Jobs run on cron in tmux windows. Secrets are injected, output is captured, and status is tracked.
+4. **Monitor Anywhere** -- Watch from the GUI, Web App, Mobile App or Telegram. Get notifications on success or failure.
+
+## Save costs
+How to get a 50$ LLM subscription? 
+
+Mix and match between providers
+
+- Use Claude promotion periods to use cheap tokens
+- Switch to ChatGPT when they are promoting their product
+- Switch to OpenCode when both tokens are exhausted and wait for the next reset
+
+## Install
+
+### Homebrew
+
+```sh
+brew install --cask tonisives/tap/clawtab
+```
+
+### Build from Source
+
+Requires macOS 10.15+, [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/), and [pnpm](https://pnpm.io/).
+
+```sh
+git clone https://github.com/tonisives/clawdtab.git
+cd clawdtab
+pnpm install
+cargo tauri build
+```
+
+Produces three binaries: `clawtab` (GUI), `cwtctl` (CLI), `cwttui` (TUI).
+
+### Runtime Dependencies
+
+- tmux (for Claude Code and folder jobs)
+- Claude Code, Codex or OpenCode
+
+## iOS App
+
+Download from the [App Store](https://apps.apple.com/us/app/clawtab/id6759683841)
+
+## Web remote
+
+Access at https://remote.clawtab.cc.
+
+## Relay
+Relay is required for Web Remote or iOS app. You can deploy relay yourself or use the provided subscription for relay.lawtab.cc.
+
+## Documentation
+
+Full docs are available in the [docs/](./docs/) folder or at [clawtab.cc](https://clawtab.cc).
+
+## License
+
+See [LICENSE](./LICENSE) for details.
 
 ## FAQ
 
