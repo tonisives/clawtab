@@ -169,10 +169,6 @@ export function JobDetailView({
   const scrollRef = useRef<ScrollView>(null);
   const [headerWidth, setHeaderWidth] = useState(0);
 
-  const webRefCb = useCallback((node: HTMLElement | null) => {
-    dragHandleProps?.ref?.(node);
-  }, [dragHandleProps]);
-
   // Clear run-pending spinner once the job actually starts (or timeout after 1s)
   useEffect(() => {
     if (!runPending) return;
@@ -301,24 +297,12 @@ export function JobDetailView({
   const showModePill = !(isManual && expandOutput);
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
-  const dragHandleWebProps = isWeb && dragHandleProps ? {
-    ref: webRefCb,
-    ...(dragHandleProps.attributes ?? {}),
-    ...(dragHandleProps.listeners ?? {}),
-  } as any : {};
 
   const detailInner = (
     <>
       {/* Header with back button (hidden when platform provides its own nav bar) */}
       {(showBackButton || onEditTitle) && (
-        <View
-          style={[
-            styles.headerRow,
-            dragHandleProps ? styles.dragHandleRow : null,
-            dragHandleProps?.isDragging ? styles.dragHandleRowDragging : null,
-          ]}
-          {...dragHandleWebProps}
-        >
+        <View style={styles.headerRow}>
           <View style={styles.headerTitleRow}>
             {showBackButton ? (
               <TouchableOpacity onPress={onBack} style={styles.backButton} activeOpacity={0.6}>
@@ -345,6 +329,32 @@ export function JobDetailView({
           <View style={styles.infoLeadingIcon} {...(isWeb ? { title: job.job_type } as any : {})}>
             <JobKindIcon kind={jobTypeIcon} size={compactLeadingPills ? 22 : 28} compact bare />
           </View>
+          {isWeb && dragHandleProps ? (
+            <div
+              ref={(node) => dragHandleProps.ref?.(node)}
+              {...(dragHandleProps.attributes ?? {})}
+              {...(dragHandleProps.listeners ?? {})}
+              title="Drag pane"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 20,
+                height: 20,
+                borderRadius: 6,
+                border: `1px solid ${colors.border}`,
+                background: colors.surface,
+                color: colors.textSecondary,
+                cursor: dragHandleProps.isDragging ? "grabbing" : "grab",
+                opacity: dragHandleProps.isDragging ? 0.55 : 0.9,
+                userSelect: "none",
+                touchAction: "none",
+                WebkitUserSelect: "none",
+              }}
+            >
+              <span style={{ fontSize: 11, lineHeight: 1, letterSpacing: 1 }}>⋮⋮</span>
+            </div>
+          ) : null}
           {job.cron ? (
             <View style={styles.infoPill} {...(isWeb ? { title: cronTooltip(job.cron) } as any : {})}>
               <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
@@ -385,10 +395,10 @@ export function JobDetailView({
             <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} compact />
           )}
           {!runPending && state === "success" && (
-            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
+            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact icon={jobTypeIcon} />
           )}
           {!runPending && state === "idle" && (
-            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
+            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact icon={jobTypeIcon} />
           )}
           <Text style={styles.headerTitleText} numberOfLines={1}>
             {job.name}
@@ -700,7 +710,6 @@ export function JobDetailView({
 
       {isWeb ? (
         <div
-          ref={webRefCb as any}
           style={{
             flex: 1,
             overflowY: "auto" as any,
@@ -773,14 +782,15 @@ function ActionButton({
   filled?: boolean;
   disabled?: boolean;
   compact?: boolean;
-  icon?: "run";
+  icon?: "run" | ReturnType<typeof kindForJob>;
 }) {
+  const iconIsJobKind = icon && icon !== "run";
   return (
     <TouchableOpacity
       style={[
         styles.actionBtn,
         compact && styles.actionBtnCompact,
-        icon === "run" && styles.actionBtnSquare,
+        (icon === "run" || iconIsJobKind) && styles.actionBtnSquare,
         filled
           ? { backgroundColor: color }
           : { borderColor: color, borderWidth: 1 },
@@ -792,6 +802,8 @@ function ActionButton({
     >
       {icon === "run" ? (
         <View style={styles.runTriangle} />
+      ) : iconIsJobKind ? (
+        <JobKindIcon kind={icon} size={18} compact bare />
       ) : (
         <Text style={[styles.actionText, compact && styles.actionTextCompact, { color: filled ? "#fff" : color }]}>
           {label}
@@ -1102,13 +1114,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: spacing.sm,
     zIndex: 200,
-  },
-  dragHandleRow: {
-    cursor: "grab" as any,
-  },
-  dragHandleRowDragging: {
-    opacity: 0.5,
-    cursor: "grabbing" as any,
   },
   headerTitleRow: {
     flexDirection: "row",

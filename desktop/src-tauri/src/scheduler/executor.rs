@@ -439,7 +439,9 @@ async fn execute_claude_job(
 
     let (provider, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
-        let provider = job.agent_provider.unwrap_or(s.default_provider);
+        let provider = job
+            .agent_provider
+            .unwrap_or(crate::claude_session::ProcessProvider::Claude);
         let session = job
             .tmux_session
             .clone()
@@ -614,7 +616,9 @@ async fn execute_folder_job(
 
     let (provider, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
-        let provider = job.agent_provider.unwrap_or(s.default_provider);
+        let provider = job
+            .agent_provider
+            .unwrap_or(crate::claude_session::ProcessProvider::Claude);
         let session = job
             .tmux_session
             .clone()

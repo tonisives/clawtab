@@ -58,6 +58,7 @@ const emptyJob: Job = {
   params: [],
   kill_on_end: false,
   auto_yes: false,
+  agent_provider: null,
   aerospace_workspace: null,
 };
 
@@ -1362,7 +1363,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             })
           }
         >
-          <option value="">Use app default</option>
+          <option value="">Claude Code (default)</option>
           {providers.map((provider) => (
             <option key={provider} value={provider}>
               {provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "OpenCode"}
@@ -1370,7 +1371,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           ))}
         </select>
         <span className="hint">
-          Leave unset to use the provider selected in the top bar.
+          Leave unset to run this job with Claude Code. Pick another provider here to override it for this job.
         </span>
       </div>
     );

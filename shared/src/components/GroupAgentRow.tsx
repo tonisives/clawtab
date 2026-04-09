@@ -10,6 +10,7 @@ const COLLAPSED_HEIGHT = 32;
 const LINE_HEIGHT = 17;
 const MAX_ROWS = 20;
 const VERTICAL_PADDING = 12;
+const MIN_ROWS = 2;
 const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 
 export function GroupAgentRow({
@@ -33,6 +34,8 @@ export function GroupAgentRow({
   const providerButtonRef = useRef<any>(null);
   // Expand only once the user inserts a newline (Enter key).
   const expanded = prompt.includes("\n");
+  const useWebTextarea = Platform.OS === "web";
+  const useMultilineInput = useWebTextarea || expanded;
   const providerOptions = useMemo(() => {
     const seen = new Set<ProcessProvider>();
     return providers.filter((entry) => {
@@ -58,15 +61,15 @@ export function GroupAgentRow({
   // Grow purely from the line count so there is no remeasure race.
   const lineCount = prompt.split("\n").length;
   const expandedHeight = Math.min(
-    Math.max(lineCount, 2) * LINE_HEIGHT + VERTICAL_PADDING,
+    Math.max(lineCount, MIN_ROWS) * LINE_HEIGHT + VERTICAL_PADDING,
     EXPANDED_MAX_HEIGHT,
   );
   const effectiveExpandedHeight = Math.max(expandedHeight, manualExpandedHeight ?? 0);
 
   useEffect(() => {
-    if (expanded) return;
+    if (expanded || useWebTextarea) return;
     setManualExpandedHeight(null);
-  }, [expanded]);
+  }, [expanded, useWebTextarea]);
 
   const runWithProvider = async (overrideProvider?: ProcessProvider) => {
     if (!prompt.trim() || sending) return;
@@ -170,10 +173,14 @@ export function GroupAgentRow({
       : {}),
   };
 
+  const inputHeight = useWebTextarea
+    ? Math.max(MIN_ROWS * LINE_HEIGHT + VERTICAL_PADDING, effectiveExpandedHeight)
+    : effectiveExpandedHeight;
+
   return (
-    <View style={[styles.row, expanded ? styles.rowExpanded : styles.rowCollapsed]}>
+    <View style={[styles.row, useMultilineInput ? styles.rowExpanded : styles.rowCollapsed]}>
       <View style={styles.inputWrap}>
-        {expanded ? (
+        {useMultilineInput ? (
           <TextInput
             {...commonProps}
             ref={setInputRef}
@@ -181,13 +188,13 @@ export function GroupAgentRow({
             style={[
               styles.input,
               {
-                height: effectiveExpandedHeight,
+                height: inputHeight,
                 maxHeight: EXPANDED_MAX_HEIGHT,
                 textAlignVertical: "top",
                 paddingVertical: 6,
-                paddingBottom: Platform.OS === "web" ? 18 : 6,
+                paddingBottom: useWebTextarea ? 18 : 6,
                 lineHeight: LINE_HEIGHT,
-                ...(Platform.OS === "web"
+                ...(useWebTextarea
                   ? ({ outlineStyle: "none" } as any)
                   : {}),
               },
@@ -200,56 +207,52 @@ export function GroupAgentRow({
             style={[styles.input, styles.inputCollapsed]}
           />
         )}
-        {expanded && Platform.OS === "web" && (
-          <>
-            <View
-              onMouseDown={handleResizeGripMouseDown as any}
-              style={styles.resizeHint}
-            >
-              <Text style={styles.resizeHintText}>resize</Text>
-            </View>
-            <View
-              onMouseDown={handleResizeGripMouseDown as any}
-              style={styles.resizeKnob}
-            >
-              <Text style={styles.resizeKnobText}>◢</Text>
-            </View>
-          </>
+        {useWebTextarea && (
+          <div onMouseDown={handleResizeGripMouseDown} style={styles.resizeKnob as any}>
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={styles.resizeKnobIcon as any}>
+              <path
+                d="M3 11L11 3M6.5 11L11 6.5M9.5 11L11 9.5"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
         )}
-        <View style={styles.providerOverlay}>
-          <TouchableOpacity
-            ref={providerButtonRef}
-            style={styles.providerButton}
-            onPress={(e: any) => {
-              if (Platform.OS === "web") {
-                const node = e?.currentTarget ?? e?.target;
-                if (node?.getBoundingClientRect) {
-                  const rect = node.getBoundingClientRect();
-                  setProviderMenuPos({ top: rect.bottom + 6, left: rect.right });
-                }
-              }
-              setProviderMenuOpen((open) => !open);
-            }}
-            activeOpacity={0.7}
-            disabled={providerOptions.length <= 1}
-          >
-            <JobKindIcon kind={provider} size={16} compact bare />
-            {providerOptions.length > 1 && (
-              <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
-            )}
-          </TouchableOpacity>
-        </View>
       </View>
-      <TouchableOpacity
-        style={[styles.btn, (!prompt.trim() || sending) && styles.btnDisabled]}
-        onPress={() => { void runWithProvider(); }}
-        disabled={!prompt.trim() || sending}
-        activeOpacity={0.7}
-      >
-        <View style={styles.btnIcon}>
-          <View style={styles.triangle} />
-        </View>
-      </TouchableOpacity>
+      <View style={styles.actionsCol}>
+        <TouchableOpacity
+          ref={providerButtonRef}
+          style={styles.providerButton}
+          onPress={(e: any) => {
+            if (Platform.OS === "web") {
+              const node = e?.currentTarget ?? e?.target;
+              if (node?.getBoundingClientRect) {
+                const rect = node.getBoundingClientRect();
+                setProviderMenuPos({ top: rect.bottom + 6, left: rect.right });
+              }
+            }
+            setProviderMenuOpen((open) => !open);
+          }}
+          activeOpacity={0.7}
+          disabled={providerOptions.length <= 1}
+        >
+          <JobKindIcon kind={provider} size={16} compact bare />
+          {providerOptions.length > 1 && (
+            <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btn, (!prompt.trim() || sending) && styles.btnDisabled]}
+          onPress={() => { void runWithProvider(); }}
+          disabled={!prompt.trim() || sending}
+          activeOpacity={0.7}
+        >
+          <View style={styles.btnIcon}>
+            <View style={styles.triangle} />
+          </View>
+        </TouchableOpacity>
+      </View>
       {providerMenuOpen && providerOptions.length > 1 && (
         <PopupMenu
           items={providerOptions.map((option) => ({
@@ -297,17 +300,17 @@ const styles = StyleSheet.create({
     height: COLLAPSED_HEIGHT,
     paddingVertical: 0,
   },
-  providerOverlay: {
-    position: "absolute",
-    top: 5,
-    right: 6,
-    zIndex: 5,
-    alignItems: "flex-end",
+  actionsCol: {
+    gap: spacing.xs,
+    alignItems: "center",
+    justifyContent: "flex-end",
   },
   providerButton: {
     height: 20,
+    minWidth: 32,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
     paddingLeft: 5,
     paddingRight: 4,
@@ -321,50 +324,22 @@ const styles = StyleSheet.create({
     fontSize: 9,
     marginTop: -1,
   },
-  resizeHint: {
-    position: "absolute",
-    right: 30,
-    bottom: 6,
-    height: 16,
-    paddingHorizontal: 6,
-    borderRadius: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.10)",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 4,
-    cursor: "ns-resize" as any,
-  },
-  resizeHintText: {
-    color: colors.textMuted,
-    fontSize: 9,
-    fontWeight: "600",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    userSelect: "none" as any,
-  },
   resizeKnob: {
     position: "absolute",
     right: 6,
-    bottom: 6,
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.10)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.14)",
+    bottom: 5,
+    width: 14,
+    height: 14,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 5,
     cursor: "ns-resize" as any,
-  },
-  resizeKnobText: {
-    color: colors.text,
-    fontSize: 12,
-    lineHeight: 12,
     userSelect: "none" as any,
-    transform: [{ translateY: 1 }],
+  },
+  resizeKnobIcon: {
+    color: colors.textMuted,
+    opacity: 0.95,
+    pointerEvents: "none" as any,
   },
   btn: {
     width: 32,
