@@ -30,11 +30,11 @@
 ## Full terminal support
 
 ClawTab uses [xterm](https://github.com/xtermjs/xterm.js) to display full interface of the Agent. You can 
-- answer agent uestions
+- answer agent questions
 - edit in nvim
 - use your full shell configuration
 
-You can launch normal shells beside agents and run shell commands manually
+You can launch normal shells beside agents and use them for any purpose
 
 <p align="center">
   <img src="docs/readme-pics/agent-and-shell-side-by-side.png" alt="ClawTab" width="800" />
