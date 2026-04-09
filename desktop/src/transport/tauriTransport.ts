@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
-import type { DetectedProcess, ProcessProvider } from "@clawtab/shared";
+import type { DetectedProcess, ProcessProvider, ShellPane } from "@clawtab/shared";
 
 export function createTauriTransport(): Transport {
   return {
@@ -127,6 +127,18 @@ export function createTauriTransport(): Transport {
 
     async sigintJob(name: string) {
       await invoke("sigint_job", { name });
+    },
+
+    async getExistingPaneInfo(paneId: string) {
+      const info = await invoke<{ pane_id: string; cwd: string; tmux_session: string; window_name: string } | null>("get_existing_pane_info", { paneId });
+      if (!info) return null;
+      const shell: ShellPane = {
+        pane_id: info.pane_id,
+        cwd: info.cwd,
+        tmux_session: info.tmux_session,
+        window_name: info.window_name,
+      };
+      return shell;
     },
   };
 }

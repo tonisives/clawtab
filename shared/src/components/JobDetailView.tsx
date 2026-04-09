@@ -28,6 +28,7 @@ import { isFreetextOption } from "../util/jobs";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { JobKindIcon, kindForJob } from "./JobKindIcon";
+import type { ShellPane } from "../types/process";
 
 export interface JobDetailViewProps {
   transport: Transport;
@@ -101,6 +102,7 @@ export interface JobDetailViewProps {
     listeners?: Record<string, unknown>;
     isDragging?: boolean;
   };
+  renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
 }
 
 export function JobDetailView({
@@ -147,6 +149,7 @@ export function JobDetailView({
   onRelease,
   onStopping,
   dragHandleProps,
+  renderRunTerminal,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -403,6 +406,14 @@ export function JobDetailView({
           <Text style={styles.headerTitleText} numberOfLines={1}>
             {job.name}
           </Text>
+          {isRunning && !!job.cron ? (
+            <View
+              style={styles.activeRunMarker}
+              {...(isWeb ? { title: "Running cron job" } as any : {})}
+            >
+              <View style={styles.runTriangleMuted} />
+            </View>
+          ) : null}
           {shortTitlePath ? (
             <Text style={styles.headerPathText} numberOfLines={1}>
               {shortTitlePath}
@@ -629,10 +640,12 @@ export function JobDetailView({
                   <RunRow
                     key={run.id}
                     run={run}
+                    job={job}
                     transport={transport}
                     currentState={state}
                     defaultExpanded={expandRunId ? run.id === expandRunId : (!isRunning && i === 0)}
                     onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
+                    renderRunTerminal={renderRunTerminal}
                   />
                 ))
               )}
@@ -881,16 +894,20 @@ function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onTog
 
 const RunRow = memo(function RunRow({
   run,
+  job,
   transport,
   currentState,
   defaultExpanded,
   onZoom,
+  renderRunTerminal,
 }: {
   run: RunRecord;
+  job: RemoteJob;
   transport: Transport;
   currentState: string;
   defaultExpanded?: boolean;
   onZoom?: (run: RunRecord, logContent: string) => void;
+  renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
 }) {
   const color = runStatusColor(run, currentState);
   const label = runStatusLabel(run, currentState);
@@ -898,8 +915,36 @@ const RunRow = memo(function RunRow({
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [detail, setDetail] = useState<RunDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [livePane, setLivePane] = useState<ShellPane | null>(null);
+  const [paneLookupPending, setPaneLookupPending] = useState(false);
+  const [stopPending, setStopPending] = useState(false);
+  const [sigintPending, setSigintPending] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const runWebRef = useRef<HTMLElement | null>(null);
+  const paneId = run.pane_id ?? detail?.pane_id ?? null;
+
+  useEffect(() => {
+    if (!transport.getExistingPaneInfo || !paneId) {
+      setLivePane(null);
+      setPaneLookupPending(false);
+      return;
+    }
+    let cancelled = false;
+    setPaneLookupPending(true);
+    transport.getExistingPaneInfo(paneId)
+      .then((pane) => {
+        if (!cancelled) setLivePane(pane);
+      })
+      .catch(() => {
+        if (!cancelled) setLivePane(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPaneLookupPending(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [paneId, transport]);
 
   useEffect(() => {
     if (defaultExpanded && !detail && !loading) {
@@ -928,7 +973,14 @@ const RunRow = memo(function RunRow({
     }
   }, [expanded, detail]);
 
+  const canExpand = !!livePane || (!!paneId && paneLookupPending);
+
+  useEffect(() => {
+    if (!canExpand && expanded) setExpanded(false);
+  }, [canExpand, expanded]);
+
   const handleToggle = () => {
+    if (!canExpand) return;
     const next = !expanded;
     setExpanded(next);
     if (next && !detail && !loading) {
@@ -953,8 +1005,39 @@ const RunRow = memo(function RunRow({
     [logContentRaw],
   );
 
+  const handleStop = useCallback(async () => {
+    try {
+      setStopPending(true);
+      await transport.stopJob(run.job_name);
+    } catch (e) {
+      console.error("Failed to stop running pane:", e);
+    } finally {
+      setTimeout(() => setStopPending(false), 1200);
+    }
+  }, [run.job_name, transport]);
+
+  const handleSigint = useCallback(async () => {
+    if (!transport.sigintJob) return;
+    try {
+      setSigintPending(true);
+      await transport.sigintJob(run.job_name);
+    } catch (e) {
+      console.error("Failed to send C-c to running pane:", e);
+    } finally {
+      setTimeout(() => setSigintPending(false), 1200);
+    }
+  }, [run.job_name, transport]);
+
+  const handleSendInput = useCallback(async (text: string) => {
+    try {
+      await transport.sendInput(run.job_name, text);
+    } catch (e) {
+      console.error("Failed to send input to running pane:", e);
+    }
+  }, [run.job_name, transport]);
+
   return (
-    <TouchableOpacity onPress={handleToggle} activeOpacity={0.7}>
+    <View>
       <View style={styles.runRow}>
         <View style={styles.runLeft}>
           <View style={[styles.statusDot, { backgroundColor: color }]} />
@@ -968,6 +1051,18 @@ const RunRow = memo(function RunRow({
         <View style={styles.runRight}>
           <View style={styles.runRightRow}>
             <Text style={styles.runTime}>{formatTime(run.started_at)}</Text>
+            {canExpand ? (
+              <TouchableOpacity
+                onPress={handleToggle}
+                style={styles.runExpandBtn}
+                activeOpacity={0.6}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.runExpandIcon}>
+                  {expanded ? "\u25BC" : "\u25B6"}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
             {expanded && logContent && onZoom && (
               <TouchableOpacity
                 onPress={(e) => { e.stopPropagation(); onZoom(run, logContent); }}
@@ -984,7 +1079,40 @@ const RunRow = memo(function RunRow({
       </View>
       {expanded && (
         <View style={styles.runLogs}>
-          {loading ? (
+          {livePane && renderRunTerminal ? (
+            <>
+              <View style={styles.runTerminalHeader}>
+                <View style={styles.runTerminalMeta}>
+                  <Text style={styles.runTerminalTitle}>Live shell</Text>
+                  <Text style={styles.runTerminalPath} numberOfLines={1}>
+                    {shortenPath(livePane.cwd)}
+                  </Text>
+                </View>
+                <View style={styles.runTerminalActions}>
+                  {transport.sigintJob ? (
+                    <ActionButton
+                      label={sigintPending ? "Sending C-c..." : "C-c"}
+                      color={colors.warning}
+                      onPress={handleSigint}
+                      disabled={sigintPending || stopPending}
+                      compact
+                    />
+                  ) : null}
+                  <ActionButton
+                    label={stopPending ? "Stopping..." : "Stop"}
+                    color={colors.danger}
+                    onPress={handleStop}
+                    disabled={stopPending || sigintPending}
+                    compact
+                  />
+                </View>
+              </View>
+              <View style={styles.runTerminalBody}>
+                {renderRunTerminal(livePane.pane_id, livePane.tmux_session)}
+              </View>
+              <MessageInput onSend={handleSendInput} placeholder={`Send input to ${job.name}...`} />
+            </>
+          ) : loading ? (
             <Text style={styles.runLogsText}>Loading...</Text>
           ) : logContent ? (
             isWeb ? (
@@ -1012,7 +1140,7 @@ const RunRow = memo(function RunRow({
           )}
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 })
 
@@ -1319,6 +1447,17 @@ const styles = StyleSheet.create({
     borderBottomColor: "transparent",
     marginLeft: 2,
   },
+  runTriangleMuted: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderTopWidth: 4,
+    borderBottomWidth: 4,
+    borderLeftColor: colors.accent,
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    marginLeft: 1,
+  },
   section: {
     gap: spacing.sm,
   },
@@ -1423,6 +1562,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textSecondary,
   },
+  runExpandBtn: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  runExpandIcon: {
+    fontSize: 9,
+    color: colors.textSecondary,
+    fontFamily: "monospace",
+  },
   runDuration: {
     fontSize: 11,
     color: colors.textMuted,
@@ -1501,12 +1655,56 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     marginTop: 4,
     marginBottom: 2,
+    gap: spacing.sm,
+  },
+  runTerminalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  runTerminalMeta: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  runTerminalTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  runTerminalPath: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: "monospace",
+  },
+  runTerminalActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  runTerminalBody: {
+    height: 320,
+    overflow: "hidden" as any,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   runLogsText: {
     color: colors.textSecondary,
     fontSize: 11,
     fontFamily: "monospace",
     lineHeight: 16,
+  },
+  activeRunMarker: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   zoomModal: {
     flex: 1,

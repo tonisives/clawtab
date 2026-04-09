@@ -449,6 +449,13 @@ export function DesktopJobDetail({
     [paneId, tmuxSession, job.group],
   );
 
+  const renderRunTerminal = useCallback(
+    (runPaneId: string, runTmuxSession: string) => (
+      <XtermPane paneId={runPaneId} tmuxSession={runTmuxSession} group={job.group} />
+    ),
+    [job.group],
+  );
+
   const handleRelease = useCallback(async () => {
     if (!paneId) return;
     try {
@@ -499,6 +506,7 @@ export function DesktopJobDetail({
         onRelease={paneId ? handleRelease : undefined}
         onStopping={onStopping}
         dragHandleProps={dragHandleProps}
+        renderRunTerminal={renderRunTerminal}
       />
       {showConfirm && (
         <ConfirmDialog

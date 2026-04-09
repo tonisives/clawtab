@@ -1,5 +1,5 @@
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "./types/job";
-import type { DetectedProcess, ProcessProvider } from "./types/process";
+import type { DetectedProcess, ProcessProvider, ShellPane } from "./types/process";
 
 export interface Transport {
   listJobs(): Promise<{ jobs: RemoteJob[]; statuses: Record<string, JobStatus> }>;
@@ -24,4 +24,5 @@ export interface Transport {
   saveJob?(job: RemoteJob): Promise<void>;
   restartJob?(name: string, params?: Record<string, string>): Promise<void>;
   sigintJob?(name: string): Promise<void>;
+  getExistingPaneInfo?(paneId: string): Promise<ShellPane | null>;
 }

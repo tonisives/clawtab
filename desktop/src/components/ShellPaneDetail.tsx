@@ -36,6 +36,16 @@ function createShellTransport(shell: ShellPane): Transport {
         windowName: shell.window_name,
       });
     },
+    getExistingPaneInfo: async (targetPaneId: string) => {
+      const info = await invoke<{ pane_id: string; cwd: string; tmux_session: string; window_name: string } | null>("get_existing_pane_info", { paneId: targetPaneId });
+      if (!info) return null;
+      return {
+        pane_id: info.pane_id,
+        cwd: info.cwd,
+        tmux_session: info.tmux_session,
+        window_name: info.window_name,
+      };
+    },
   };
 }
 

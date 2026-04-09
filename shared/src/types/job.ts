@@ -59,6 +59,7 @@ export interface RunRecord {
   trigger: string;
   stdout?: string;
   stderr?: string;
+  pane_id?: string | null;
 }
 
 export interface RunDetail {
@@ -70,4 +71,5 @@ export interface RunDetail {
   trigger: string;
   stdout: string;
   stderr: string;
+  pane_id?: string | null;
 }
