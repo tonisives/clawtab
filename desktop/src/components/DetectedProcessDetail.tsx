@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
+import type { DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared";
 import { JobDetailView, shortenPath } from "@clawtab/shared";
 import { XtermPane } from "./XtermPane";
 
-function createProcessTransport(process: ClaudeProcess): Transport {
+function createProcessTransport(process: DetectedProcess): Transport {
   const noopRunJob: Transport["runJob"] = async () => null;
   const noopVoid = async () => {};
   const paneId = process.pane_id;
@@ -59,7 +59,7 @@ export function DetectedProcessDetail({
   contentStyle,
   titlePath,
 }: {
-  process: ClaudeProcess;
+  process: DetectedProcess;
   questions: ClaudeQuestion[];
   onBack: () => void;
   onDismissQuestion: (questionId: string) => void;
@@ -90,7 +90,7 @@ export function DetectedProcessDetail({
 
   const syntheticJob: RemoteJob = {
     name: displayName,
-    job_type: process.process_type ?? "claude",
+    job_type: process.provider,
     enabled: true,
     cron: "",
     group: "detected",
@@ -169,10 +169,10 @@ export function DetectedProcessDetail({
       lastQuery={process.last_query ?? undefined}
       onEditFirstQuery={onEditFirstQuery}
       onEditLastQuery={onEditLastQuery}
-      onFork={onFork}
+      onFork={process.can_fork_session ? onFork : undefined}
       onSplitPane={onSplitPane}
-      onInjectSecrets={onInjectSecrets}
-      onSearchSkills={onSearchSkills}
+      onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}
+      onSearchSkills={process.can_send_skills ? onSearchSkills : undefined}
     />
   );
 }

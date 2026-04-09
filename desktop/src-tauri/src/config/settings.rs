@@ -5,6 +5,36 @@ use std::path::PathBuf;
 use crate::commands::processes::DetectedProcessOverride;
 use crate::telegram::TelegramConfig;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ShortcutSettings {
+    pub next_sidebar_item: String,
+    pub previous_sidebar_item: String,
+    pub toggle_sidebar: String,
+    pub split_pane_vertical: String,
+    pub split_pane_horizontal: String,
+    pub move_pane_left: String,
+    pub move_pane_down: String,
+    pub move_pane_up: String,
+    pub move_pane_right: String,
+}
+
+impl Default for ShortcutSettings {
+    fn default() -> Self {
+        Self {
+            next_sidebar_item: "Tab".to_string(),
+            previous_sidebar_item: "Shift+Tab".to_string(),
+            toggle_sidebar: "Meta+e".to_string(),
+            split_pane_vertical: "Ctrl+v".to_string(),
+            split_pane_horizontal: "Ctrl+s".to_string(),
+            move_pane_left: "Ctrl+h".to_string(),
+            move_pane_down: "Ctrl+j".to_string(),
+            move_pane_up: "Ctrl+k".to_string(),
+            move_pane_right: "Ctrl+l".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RelaySettings {
     pub enabled: bool,
@@ -47,6 +77,8 @@ pub struct AppSettings {
     pub hide_titlebar: bool,
     /// Per-pane detected process metadata overrides.
     pub process_overrides: HashMap<String, DetectedProcessOverride>,
+    /// User-configurable desktop keyboard shortcuts.
+    pub shortcuts: ShortcutSettings,
 }
 
 impl Default for AppSettings {
@@ -73,6 +105,7 @@ impl Default for AppSettings {
             show_in_dock: true,
             hide_titlebar: true,
             process_overrides: HashMap::new(),
+            shortcuts: ShortcutSettings::default(),
         }
     }
 }

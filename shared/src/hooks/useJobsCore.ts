@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Transport } from "../transport";
 import type { RemoteJob, JobStatus } from "../types/job";
-import type { ClaudeProcess } from "../types/process";
+import type { DetectedProcess } from "../types/process";
 import { groupJobs, sortGroupNames } from "../util/jobs";
 
 const IDLE_STATUS: JobStatus = { state: "idle" };
@@ -38,7 +38,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const initialCacheRef = useRef<{ jobs: RemoteJob[]; statuses: Record<string, JobStatus> } | null>(readLocalCache());
   const [jobs, setJobs] = useState<RemoteJob[]>(() => initialCacheRef.current?.jobs ?? []);
   const [statuses, setStatuses] = useState<Record<string, JobStatus>>(() => initialCacheRef.current?.statuses ?? {});
-  const [processes, setProcesses] = useState<ClaudeProcess[]>([]);
+  const [processes, setProcesses] = useState<DetectedProcess[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const transportRef = useRef(transport);
@@ -53,12 +53,16 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
 
   const signatureForJobs = (items: RemoteJob[]) => JSON.stringify(items);
   const signatureForStatuses = (items: Record<string, JobStatus>) => JSON.stringify(items);
-  const signatureForProcesses = (items: ClaudeProcess[]) =>
+  const signatureForProcesses = (items: DetectedProcess[]) =>
     JSON.stringify(items.map((proc) => [
       proc.pane_id,
       proc.cwd,
       proc.version,
       proc.display_name ?? null,
+      proc.provider,
+      proc.can_fork_session,
+      proc.can_send_skills,
+      proc.can_inject_secrets,
       proc.tmux_session,
       proc.window_name,
       proc.matched_group,

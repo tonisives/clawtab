@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use clawtab_protocol::{
-    ClaudeProcess as RemoteClaudeProcess, ClientMessage, DesktopMessage,
+    DetectedProcess as RemoteDetectedProcess, ClientMessage, DesktopMessage,
     JobStatus as RemoteJobStatus, RemoteJob,
 };
 
@@ -567,7 +567,7 @@ fn get_run_detail_full(
 fn detect_processes(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-) -> Vec<RemoteClaudeProcess> {
+) -> Vec<RemoteDetectedProcess> {
     use std::collections::HashSet;
     use std::process::Command;
 
@@ -620,7 +620,9 @@ fn detect_processes(
         let (pane_id, command, cwd, session, window, pane_pid) =
             (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
 
-        if !is_semver(command) { continue; }
+        let provider = crate::claude_session::detect_process_provider(pane_pid, None)
+            .or_else(|| is_semver(command).then_some(crate::claude_session::ProcessProvider::Claude));
+        let Some(provider) = provider else { continue; };
         if !seen.insert(pane_id.to_string()) { continue; }
         if tracked_panes.contains(pane_id) { continue; }
 
@@ -636,13 +638,21 @@ fn detect_processes(
         let log_lines = crate::tmux::capture_pane(session, pane_id, 5)
             .unwrap_or_default().trim().to_string();
 
-        let session_info = crate::claude_session::resolve_session_info(pane_pid);
+        let session_info =
+            crate::claude_session::resolve_session_info_for_provider(pane_pid, Some(provider), None);
+        let (can_fork_session, can_send_skills, can_inject_secrets) = match provider {
+            crate::claude_session::ProcessProvider::Claude => (true, true, true),
+            crate::claude_session::ProcessProvider::Codex => (false, false, false),
+        };
 
-        results.push(RemoteClaudeProcess {
+        results.push(RemoteDetectedProcess {
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
-            version: command.to_string(),
-            process_type: None,
+            version: if is_semver(command) { command.to_string() } else { String::new() },
+            provider: provider.as_str().to_string(),
+            can_fork_session,
+            can_send_skills,
+            can_inject_secrets,
             tmux_session: session.to_string(),
             window_name: window.to_string(),
             matched_group,

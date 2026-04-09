@@ -6,6 +6,7 @@ use clawtab_protocol::DesktopMessage;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::claude_session::{detect_process_provider, detect_version_from_command, ProcessProvider};
 use crate::config::jobs::JobStatus;
 use crate::AppState;
 
@@ -17,12 +18,15 @@ pub struct DetectedProcessOverride {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ClaudeProcess {
+pub struct DetectedProcess {
     pub pane_id: String,
     pub cwd: String,
     pub version: String,
     pub display_name: Option<String>,
-    pub process_type: Option<String>,
+    pub provider: String,
+    pub can_fork_session: bool,
+    pub can_send_skills: bool,
+    pub can_inject_secrets: bool,
     pub tmux_session: String,
     pub window_name: String,
     pub matched_group: Option<String>,
@@ -34,7 +38,7 @@ pub struct ClaudeProcess {
 }
 
 struct DetectionSnapshot {
-    processes: Vec<ClaudeProcess>,
+    processes: Vec<DetectedProcess>,
     active_pane_ids: HashSet<String>,
 }
 
@@ -46,48 +50,15 @@ fn is_semver(s: &str) -> bool {
     parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-fn detect_process_type(
-    pane_pid: &str,
-    snapshot: &crate::claude_session::ProcessSnapshot,
-) -> Option<String> {
-    fn process_type_for_command(command: &str) -> Option<String> {
-        let lower = command.to_lowercase();
-        if lower.contains("codex") {
-            Some("codex".to_string())
-        } else if lower.contains("claude") && !lower.contains("claude.app") {
-            Some("claude".to_string())
-        } else {
-            None
-        }
+fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
+    match provider {
+        ProcessProvider::Claude => (true, true, true),
+        ProcessProvider::Codex => (false, false, false),
     }
-
-    if let Some(command) = snapshot.command_for_pid(pane_pid) {
-        if let Some(kind) = process_type_for_command(&command) {
-            return Some(kind);
-        }
-    }
-
-    for child in snapshot.child_pids(pane_pid) {
-        if let Some(command) = snapshot.command_for_pid(child) {
-            if let Some(kind) = process_type_for_command(&command) {
-                return Some(kind);
-            }
-        }
-
-        for grandchild in snapshot.child_pids(child) {
-            if let Some(command) = snapshot.command_for_pid(grandchild) {
-                if let Some(kind) = process_type_for_command(&command) {
-                    return Some(kind);
-                }
-            }
-        }
-    }
-
-    None
 }
 
 #[tauri::command]
-pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<ClaudeProcess>, String> {
+pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<DetectedProcess>, String> {
     // Snapshot shared state under the lock, then release before spawning blocking work
     let live_viewer_panes: HashSet<String> = {
         state.pty_manager.lock().unwrap().active_pane_ids()
@@ -133,7 +104,7 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
 
     // Run all subprocess-heavy work off the async runtime
     let snapshot = tokio::task::spawn_blocking(move || {
-        detect_claude_processes_blocking(
+        detect_processes_blocking(
             live_viewer_panes,
             match_entries,
             running_panes,
@@ -148,7 +119,7 @@ pub async fn detect_claude_processes(state: State<'_, AppState>) -> Result<Vec<C
     Ok(snapshot.processes)
 }
 
-fn detect_claude_processes_blocking(
+fn detect_processes_blocking(
     live_viewer_panes: HashSet<String>,
     match_entries: Vec<(String, String, String)>,
     running_panes: HashMap<String, (String, String)>,
@@ -201,10 +172,11 @@ fn detect_claude_processes_blocking(
 
         active_pane_ids.insert(pane_id.to_string());
 
-        let process_type = detect_process_type(pane_pid, &process_snapshot);
-        if !is_semver(command) && process_type.is_none() {
+        let provider = detect_process_provider(pane_pid, Some(&process_snapshot))
+            .or_else(|| is_semver(command).then_some(ProcessProvider::Claude));
+        let Some(provider) = provider else {
             continue;
-        }
+        };
 
         if !seen_panes.insert(pane_id.to_string()) {
             continue;
@@ -232,16 +204,31 @@ fn detect_claude_processes_blocking(
                 .to_string()
         };
 
-        let session_info =
-            crate::claude_session::resolve_session_info_with_snapshot(pane_pid, Some(&process_snapshot));
+        let session_info = crate::claude_session::resolve_session_info_for_provider(
+            pane_pid,
+            Some(provider),
+            Some(&process_snapshot),
+        );
         let override_meta = overrides.get(pane_id);
+        let (can_fork_session, can_send_skills, can_inject_secrets) = provider_capabilities(provider);
+        let version = if is_semver(command) {
+            command.to_string()
+        } else {
+            process_snapshot
+                .command_for_pid(pane_pid)
+                .and_then(detect_version_from_command)
+                .unwrap_or_default()
+        };
 
-        results.push(ClaudeProcess {
+        results.push(DetectedProcess {
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
-            version: if is_semver(command) { command.to_string() } else { String::new() },
+            version,
             display_name: override_meta.and_then(|meta| meta.display_name.clone()),
-            process_type,
+            provider: provider.as_str().to_string(),
+            can_fork_session,
+            can_send_skills,
+            can_inject_secrets,
             tmux_session: session.to_string(),
             window_name: window.to_string(),
             matched_group,

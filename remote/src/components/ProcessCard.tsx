@@ -3,14 +3,15 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-nativ
 import { useRouter } from "expo-router"
 import { colors } from "../theme/colors"
 import { radius, spacing } from "../theme/spacing"
-import type { ClaudeProcess } from "../types/job"
+import type { DetectedProcess } from "../types/job"
+import { JobKindIcon, kindForProcess } from "@clawtab/shared"
 
 export function ProcessCard({
   process,
   onPress,
   onSendInput,
 }: {
-  process: ClaudeProcess
+  process: DetectedProcess
   onPress?: () => void
   onSendInput?: (paneId: string, text: string) => void
 }) {
@@ -36,6 +37,7 @@ export function ProcessCard({
   const logPreview = process.log_lines
     ? process.log_lines.split("\n").filter((l: string) => l.trim()).slice(-10).join("\n")
     : null
+  const kind = kindForProcess(process)
 
   return (
     <View style={styles.processCard}>
@@ -45,9 +47,7 @@ export function ProcessCard({
           onPress={handlePress}
           activeOpacity={0.7}
         >
-          <View style={styles.processTypeIcon}>
-            <Text style={styles.processTypeIconText}>C</Text>
-          </View>
+          <JobKindIcon kind={kind} />
           <View style={styles.processInfo}>
             <Text style={styles.processName} numberOfLines={1}>
               {displayName}
@@ -137,21 +137,6 @@ const styles = StyleSheet.create({
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   processMain: { flex: 1, flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 0 },
-  processTypeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentBg,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  processTypeIconText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontWeight: "600",
-    fontFamily: "monospace",
-    fontStyle: "italic",
-  },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
   processName: { color: colors.text, fontSize: 13, fontWeight: "500" },
   queryPreview: {

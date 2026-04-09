@@ -5,6 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
+import type { AppSettings } from "../types";
+import { DEFAULT_SHORTCUTS, resolveShortcutSettings, shortcutMatches } from "../shortcuts";
 
 const pendingDestroyTimers = new Map<string, number>();
 
@@ -82,8 +84,27 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
   const containerRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
+  const shortcutsRef = useRef(DEFAULT_SHORTCUTS);
   const resolvedGroup = group ?? "default";
   const attachGenerationRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    invoke<AppSettings>("get_settings")
+      .then((settings) => {
+        shortcutsRef.current = resolveShortcutSettings(settings);
+      })
+      .catch(() => {
+        shortcutsRef.current = DEFAULT_SHORTCUTS;
+      });
+
+    const unlistenPromise = listen<AppSettings>("settings-updated", (event) => {
+      shortcutsRef.current = resolveShortcutSettings(event.payload);
+    });
+
+    return () => {
+      unlistenPromise.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -141,14 +162,18 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
       // Let our app shortcuts pass through instead of being consumed by the terminal
       t.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-        // Tab / Shift+Tab: navigate sidebar items
-        if (e.key === "Tab") return false;
-        // Cmd+E: toggle sidebar
-        if (e.metaKey && e.key === "e") return false;
-        // Ctrl+V/S: split pane
-        if (e.ctrlKey && (e.key === "v" || e.key === "s")) return false;
-        // Ctrl+H/J/K/L: move between panes
-        if (e.ctrlKey && !e.metaKey && "hjkl".includes(e.key)) return false;
+        const shortcuts = shortcutsRef.current;
+        if (
+          shortcutMatches(e, shortcuts.next_sidebar_item)
+          || shortcutMatches(e, shortcuts.previous_sidebar_item)
+          || shortcutMatches(e, shortcuts.toggle_sidebar)
+          || shortcutMatches(e, shortcuts.split_pane_vertical)
+          || shortcutMatches(e, shortcuts.split_pane_horizontal)
+          || shortcutMatches(e, shortcuts.move_pane_left)
+          || shortcutMatches(e, shortcuts.move_pane_down)
+          || shortcutMatches(e, shortcuts.move_pane_up)
+          || shortcutMatches(e, shortcuts.move_pane_right)
+        ) return false;
         return true;
       });
 

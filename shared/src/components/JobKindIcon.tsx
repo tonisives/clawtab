@@ -1,6 +1,6 @@
 import { Platform, StyleSheet, View, Image } from "react-native";
 import type { RemoteJob } from "../types/job";
-import type { ClaudeProcess } from "../types/process";
+import type { DetectedProcess } from "../types/process";
 import { colors } from "../theme/colors";
 import { radius } from "../theme/spacing";
 import claudeIcon from "../assets/claude-icon.png";
@@ -17,8 +17,8 @@ export function kindForJob(job: RemoteJob): JobKind {
   return job.cron ? "cron" : "manual";
 }
 
-export function kindForProcess(process: ClaudeProcess): JobKind {
-  return process.process_type === "codex" ? "codex" : "claude";
+export function kindForProcess(process: DetectedProcess): JobKind {
+  return process.provider === "codex" ? "codex" : "claude";
 }
 
 export function kindForShell(): JobKind {

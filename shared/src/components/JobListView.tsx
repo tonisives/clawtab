@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, RefreshControl, St
 
 const isWeb = Platform.OS === "web";
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
-import type { ClaudeProcess, ShellPane } from "../types/process";
+import type { DetectedProcess, ShellPane } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
@@ -85,7 +85,7 @@ function newestAdded(jobs: RemoteJob[]): string | null {
 export interface JobListViewProps {
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
-  detectedProcesses: ClaudeProcess[];
+  detectedProcesses: DetectedProcess[];
   shellPanes?: ShellPane[];
   collapsedGroups: Set<string>;
   onToggleGroup: (group: string) => void;
@@ -98,7 +98,7 @@ export interface JobListViewProps {
   onSortChange?: (mode: JobSortMode) => void;
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
-  onSelectProcess?: (process: ClaudeProcess) => void;
+  onSelectProcess?: (process: DetectedProcess) => void;
   onSelectShell?: (shell: ShellPane) => void;
   // Map of slug/pane_id -> color hex for highlighted items (supports multi-selection)
   selectedItems?: Map<string, string> | null;
@@ -132,14 +132,14 @@ export interface JobListViewProps {
   // Stop job/process from sidebar
   onStopJob?: (slug: string) => void;
   onStopProcess?: (paneId: string) => void;
-  onRenameProcess?: (process: ClaudeProcess) => void;
-  onSaveProcessName?: (process: ClaudeProcess, name: string) => void;
+  onRenameProcess?: (process: DetectedProcess) => void;
+  onSaveProcessName?: (process: DetectedProcess, name: string) => void;
   onStopShell?: (paneId: string) => void;
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string }) => React.ReactNode;
-  renderProcessCard?: (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => React.ReactNode;
+  renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
   wrapProcessGroup?: (group: string, processPaneIds: string[], children: React.ReactNode) => React.ReactNode;
@@ -156,7 +156,7 @@ export interface JobListViewProps {
 type ListItem =
   | { kind: "header"; group: string; displayGroup: string; folderPath?: string }
   | { kind: "job"; job: RemoteJob; idx: number }
-  | { kind: "process"; process: ClaudeProcess; inGroup?: boolean }
+  | { kind: "process"; process: DetectedProcess; inGroup?: boolean }
   | { kind: "shell"; shell: ShellPane }
   | { kind: "group-agent"; workDir: string }
   | { kind: "hidden-section" }
@@ -164,7 +164,7 @@ type ListItem =
 
 export type SidebarSelectableItem =
   | { kind: "job"; key: string; job: RemoteJob }
-  | { kind: "process"; key: string; process: ClaudeProcess }
+  | { kind: "process"; key: string; process: DetectedProcess }
   | { kind: "shell"; key: string; shell: ShellPane };
 
 function areSelectableItemsEqual(
@@ -315,7 +315,7 @@ export function JobListView({
   );
 
   const matchedProcessesByGroup = useMemo(() => {
-    const map = new Map<string, ClaudeProcess[]>();
+    const map = new Map<string, DetectedProcess[]>();
     for (const proc of detectedProcesses) {
       if (proc.matched_group) {
         const list = map.get(proc.matched_group) ?? [];
@@ -363,10 +363,10 @@ export function JobListView({
     const result: ListItem[] = [];
 
     // Build detected-process folder groups and ungrouped list
-    const detFolderGroups: [string, ClaudeProcess[]][] = [];
-    const detUngrouped: ClaudeProcess[] = [];
+    const detFolderGroups: [string, DetectedProcess[]][] = [];
+    const detUngrouped: DetectedProcess[] = [];
     if (unmatchedProcesses.length > 0) {
-      const byFolder = new Map<string, ClaudeProcess[]>();
+      const byFolder = new Map<string, DetectedProcess[]>();
       for (const proc of unmatchedProcesses) {
         const list = byFolder.get(proc.cwd) ?? [];
         list.push(proc);
@@ -383,9 +383,9 @@ export function JobListView({
 
     // Unified group entries for interleaved sorting
     type GroupEntry =
-      | { type: "job"; group: string; displayGroup: string; folderPath?: string; jobs: RemoteJob[]; procs: ClaudeProcess[] }
-      | { type: "detected"; groupKey: string; displayGroup: string; folderPath: string; procs: ClaudeProcess[] }
-      | { type: "ungrouped"; procs: ClaudeProcess[] };
+      | { type: "job"; group: string; displayGroup: string; folderPath?: string; jobs: RemoteJob[]; procs: DetectedProcess[] }
+      | { type: "detected"; groupKey: string; displayGroup: string; folderPath: string; procs: DetectedProcess[] }
+      | { type: "ungrouped"; procs: DetectedProcess[] };
 
     const allGroups: GroupEntry[] = [];
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::job::{ClaudeProcess, ClaudeQuestion, JobStatus, RemoteJob, RunDetail, RunRecord};
+use crate::job::{DetectedProcess, ClaudeQuestion, JobStatus, RemoteJob, RunDetail, RunRecord};
 
 /// Messages sent by mobile/web clients to the relay server.
 /// The relay forwards these to the appropriate desktop app.
@@ -226,7 +226,7 @@ pub enum DesktopMessage {
     /// Response to detect_processes
     DetectedProcesses {
         id: String,
-        processes: Vec<ClaudeProcess>,
+        processes: Vec<DetectedProcess>,
     },
     /// Response to get_run_detail
     RunDetailResponse {

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { JobStatus } from "../types/job";
-import type { ClaudeProcess } from "../types/process";
+import type { DetectedProcess } from "../types/process";
 import { StatusBadge } from "./StatusBadge";
 import { ProcessCard } from "./ProcessCard";
 import { colors } from "../theme/colors";
@@ -16,7 +16,7 @@ export function AgentSection({
   onSelectProcess,
 }: {
   agentStatus: JobStatus;
-  agentProcess: ClaudeProcess | null;
+  agentProcess: DetectedProcess | null;
   collapsed: boolean;
   onToggleCollapse: () => void;
   onRunAgent: (prompt: string) => void | Promise<void>;

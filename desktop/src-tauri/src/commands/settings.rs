@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::config::settings::AppSettings;
 use crate::AppState;
@@ -16,6 +16,7 @@ pub fn get_settings(state: State<AppState>) -> AppSettings {
 
 #[tauri::command]
 pub fn set_settings(
+    app: tauri::AppHandle,
     state: State<AppState>,
     new_settings: AppSettings,
 ) -> Result<(), String> {
@@ -37,6 +38,7 @@ pub fn set_settings(
     let jobs = state.jobs_config.lock().unwrap().jobs.clone();
     super::jobs::ensure_agent_dir(&settings_clone, &jobs);
     super::jobs::regenerate_all_cwt_contexts(&settings_clone, &jobs);
+    let _ = app.emit("settings-updated", &settings_clone);
 
     Ok(())
 }

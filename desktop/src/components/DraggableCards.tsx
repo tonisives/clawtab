@@ -2,12 +2,12 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { RemoteJob, JobStatus } from "@clawtab/shared";
-import type { ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
+import type { DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 import { JobCard, RunningJobCard, ProcessCard } from "@clawtab/shared";
 
 export type DragData =
   | { kind: "job"; slug: string; job: RemoteJob }
-  | { kind: "process"; paneId: string; process?: ClaudeProcess; question?: ClaudeQuestion; resolvedJob?: string | null };
+  | { kind: "process"; paneId: string; process?: DetectedProcess; question?: ClaudeQuestion; resolvedJob?: string | null };
 
 export function DraggableJobCard({
   job,
@@ -120,7 +120,7 @@ export function DraggableProcessCard({
   marginTop,
   dataProcessId,
 }: {
-  process: ClaudeProcess;
+  process: DetectedProcess;
   sortGroup: string;
   onPress?: () => void;
   inGroup?: boolean;

@@ -1,5 +1,5 @@
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "./types/job";
-import type { ClaudeProcess } from "./types/process";
+import type { DetectedProcess } from "./types/process";
 
 export interface Transport {
   listJobs(): Promise<{ jobs: RemoteJob[]; statuses: Record<string, JobStatus> }>;
@@ -14,7 +14,7 @@ export interface Transport {
   deleteJob(name: string): Promise<void>;
   getRunHistory(name: string): Promise<RunRecord[]>;
   getRunDetail(runId: string): Promise<RunDetail | null>;
-  detectProcesses(): Promise<ClaudeProcess[]>;
+  detectProcesses(): Promise<DetectedProcess[]>;
   sendInput(name: string, text: string, freetext?: string): Promise<void>;
   subscribeLogs(name: string, onChunk: (content: string) => void): () => void;
   runAgent(prompt: string, workDir?: string): Promise<{ pane_id: string; tmux_session: string } | null>;

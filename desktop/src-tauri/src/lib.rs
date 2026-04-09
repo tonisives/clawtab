@@ -516,7 +516,7 @@ pub fn run() {
             commands::relay::relay_update_share,
             commands::relay::relay_remove_share,
             commands::relay::relay_get_groups,
-            commands::processes::detect_claude_processes,
+            commands::processes::detect_processes,
             commands::processes::focus_detected_process,
             commands::processes::get_detected_process_logs,
             commands::processes::send_detected_process_input,

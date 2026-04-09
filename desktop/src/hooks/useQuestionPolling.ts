@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ClaudeQuestion, ClaudeProcess } from "@clawtab/shared";
+import type { ClaudeQuestion, DetectedProcess } from "@clawtab/shared";
 import type { Job } from "../types";
 
 export function useQuestionPolling() {
@@ -70,9 +70,9 @@ export function useQuestionPolling() {
     q: ClaudeQuestion,
     resolvedJob: string | null,
     jobs: Job[],
-    processes: ClaudeProcess[],
+    processes: DetectedProcess[],
     setViewingJob: (job: Job | null) => void,
-    setViewingProcess: (proc: ClaudeProcess | null) => void,
+    setViewingProcess: (proc: DetectedProcess | null) => void,
   ) => {
     if (resolvedJob) {
       const job = jobs.find((j) => j.slug === resolvedJob);

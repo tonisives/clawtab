@@ -1,6 +1,6 @@
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
-import type { ClaudeProcess } from "@clawtab/shared";
+import type { DetectedProcess } from "@clawtab/shared";
 import { getWsSend, nextId } from "../hooks/useWebSocket";
 import { registerRequest } from "../lib/useRequestMap";
 import { useJobsStore } from "../store/jobs";

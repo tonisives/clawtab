@@ -6,7 +6,7 @@ export type {
 } from "@clawtab/shared";
 
 export type {
-  ClaudeProcess,
+  DetectedProcess,
   QuestionOption,
   ClaudeQuestion,
 } from "@clawtab/shared";

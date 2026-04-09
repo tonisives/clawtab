@@ -5,7 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { DndContext, DragOverlay, type DragEndEvent, type DragMoveEvent, type DragStartEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared";
-import type { ClaudeProcess, ClaudeQuestion, ShellPane } from "@clawtab/shared";
+import type { DetectedProcess, ClaudeQuestion, ShellPane } from "@clawtab/shared";
 import {
   JobListView,
   NotificationSection,
@@ -40,6 +40,7 @@ import { EditTextDialog } from "./EditTextDialog";
 import { useQuestionPolling } from "../hooks/useQuestionPolling";
 import { useAutoYes } from "../hooks/useAutoYes";
 import { useImportJob } from "../hooks/useImportJob";
+import { DEFAULT_SHORTCUTS, resolveShortcutSettings, shortcutMatches, type ShortcutSettings } from "../shortcuts";
 
 const transport = createTauriTransport();
 
@@ -71,6 +72,7 @@ function shouldCacheSinglePaneContent(content: PaneContent): boolean {
 export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected }: JobsTabProps) {
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
+  const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   const [jobOrder, setJobOrder] = useState<Record<string, string[]>>({});
   const [processOrder, setProcessOrder] = useState<Record<string, string[]>>(() => {
@@ -92,15 +94,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [pickerTemplateId, setPickerTemplateId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [viewingJob, setViewingJob] = useState<Job | null>(null);
-  const [viewingProcess, setViewingProcess] = useState<ClaudeProcess | null>(null);
+  const [viewingProcess, setViewingProcess] = useState<DetectedProcess | null>(null);
   const [viewingShell, setViewingShell] = useState<ShellPane | null>(null);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
   const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
   const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
-  const [pendingProcess, setPendingProcess] = useState<ClaudeProcess | null>(null);
-  const [stoppingProcesses, setStoppingProcesses] = useState<{ process: ClaudeProcess; stoppedAt: number }[]>([]);
+  const [pendingProcess, setPendingProcess] = useState<DetectedProcess | null>(null);
+  const [stoppingProcesses, setStoppingProcesses] = useState<{ process: DetectedProcess; stoppedAt: number }[]>([]);
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
   const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
   const [editProcessField, setEditProcessField] = useState<{
@@ -159,7 +161,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     onJobSelected?.();
   }, [blurSelectionFocus, onJobSelected]);
 
-  const handleSelectProcessDirect = useCallback((process: ClaudeProcess) => {
+  const handleSelectProcessDirect = useCallback((process: DetectedProcess) => {
     setViewingJob(null);
     setViewingShell(null);
     if (process.cwd.endsWith("/clawtab/agent")) {
@@ -222,6 +224,20 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     currentContent,
   });
 
+  useEffect(() => {
+    invoke<AppSettings>("get_settings")
+      .then((settings) => setShortcutSettings(resolveShortcutSettings(settings)))
+      .catch(() => setShortcutSettings(DEFAULT_SHORTCUTS));
+
+    const unlistenPromise = listen<AppSettings>("settings-updated", (event) => {
+      setShortcutSettings(resolveShortcutSettings(event.payload));
+    });
+
+    return () => {
+      unlistenPromise.then((fn) => fn());
+    };
+  }, []);
+
   // Wrap select handlers to check tree first
   const handleSelectJob = useCallback((job: RemoteJob) => {
     const content: PaneContent = { kind: "job", slug: job.slug };
@@ -229,7 +245,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     handleSelectJobDirect(job);
   }, [split.tree, split.handleSelectInTree, handleSelectJobDirect]);
 
-  const handleSelectProcess = useCallback((process: ClaudeProcess) => {
+  const handleSelectProcess = useCallback((process: DetectedProcess) => {
     if (process.cwd.endsWith("/clawtab/agent")) {
       const content: PaneContent = { kind: "agent" };
       if (split.tree && split.handleSelectInTree(content)) return;
@@ -539,22 +555,28 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const tagName = target?.tagName;
+      const inXterm = !!target?.closest(".xterm");
       const isEditable = !!target && (
         target.isContentEditable ||
         tagName === "INPUT" ||
         tagName === "TEXTAREA" ||
         tagName === "SELECT"
       );
-      if (isEditable) return;
+      if (isEditable && !inXterm) return;
 
-      if (e.key === "Tab") {
+      if (shortcutMatches(e, shortcutSettings.next_sidebar_item)) {
         e.preventDefault();
-        navigateSidebarItems(e.shiftKey ? -1 : 1);
+        navigateSidebarItems(1);
         return;
       }
 
-      // Cmd+E: toggle sidebar
-      if (e.metaKey && e.key === "e") {
+      if (shortcutMatches(e, shortcutSettings.previous_sidebar_item)) {
+        e.preventDefault();
+        navigateSidebarItems(-1);
+        return;
+      }
+
+      if (shortcutMatches(e, shortcutSettings.toggle_sidebar)) {
         e.preventDefault();
         setSidebarCollapsed(prev => {
           const next = !prev;
@@ -564,8 +586,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return;
       }
 
-      // Ctrl+V: split focused pane vertically (side by side)
-      if (e.ctrlKey && e.key === "v") {
+      if (shortcutMatches(e, shortcutSettings.split_pane_vertical)) {
         e.preventDefault();
         const tree = split.tree;
         if (!tree) return;
@@ -578,8 +599,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return;
       }
 
-      // Ctrl+S: split focused pane horizontally (top/bottom)
-      if (e.ctrlKey && e.key === "s") {
+      if (shortcutMatches(e, shortcutSettings.split_pane_horizontal)) {
         e.preventDefault();
         const tree = split.tree;
         if (!tree) return;
@@ -592,8 +612,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return;
       }
 
-      // Ctrl+H/J/K/L: navigate between panes
-      if (e.ctrlKey && !e.metaKey && "hjkl".includes(e.key)) {
+      if (
+        shortcutMatches(e, shortcutSettings.move_pane_left)
+        || shortcutMatches(e, shortcutSettings.move_pane_down)
+        || shortcutMatches(e, shortcutSettings.move_pane_up)
+        || shortcutMatches(e, shortcutSettings.move_pane_right)
+      ) {
         e.preventDefault();
         const tree = split.tree;
         if (!tree) return;
@@ -602,7 +626,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         const currentIdx = leaves.findIndex(l => l.id === split.focusedLeafId);
         const idx = currentIdx === -1 ? 0 : currentIdx;
         let next = idx;
-        if (e.key === "h" || e.key === "k") {
+        if (
+          shortcutMatches(e, shortcutSettings.move_pane_left)
+          || shortcutMatches(e, shortcutSettings.move_pane_up)
+        ) {
           next = (idx - 1 + leaves.length) % leaves.length;
         } else {
           next = (idx + 1) % leaves.length;
@@ -614,7 +641,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [split.tree, split.focusedLeafId, split.setFocusedLeafId, handleSplitPane, navigateSidebarItems]);
+  }, [split.tree, split.focusedLeafId, split.setFocusedLeafId, handleSplitPane, navigateSidebarItems, shortcutSettings]);
 
   useEffect(() => {
     if (split.tree || !currentContent) return;
@@ -715,7 +742,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     await invoke("focus_job_window", { name });
   }, []);
 
-  const openRenameProcessDialog = useCallback((process: ClaudeProcess) => {
+  const openRenameProcessDialog = useCallback((process: DetectedProcess) => {
     setEditProcessField({
       paneId: process.pane_id,
       title: "Edit pane title",
@@ -726,7 +753,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     });
   }, []);
 
-  const handleSaveProcessNameInline = useCallback(async (process: ClaudeProcess, name: string) => {
+  const handleSaveProcessNameInline = useCallback(async (process: DetectedProcess, name: string) => {
     const normalizedValue = name.trim() || null;
     const paneId = process.pane_id;
     try {
@@ -750,7 +777,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [core]);
 
   const openEditProcessQueryDialog = useCallback((
-    process: ClaudeProcess,
+    process: DetectedProcess,
     field: "first_query" | "last_query",
   ) => {
     const isLatest = field === "last_query";
@@ -818,7 +845,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   type ListItemRef =
     | { kind: "job"; slug: string; job: Job }
-    | { kind: "process"; paneId: string; process: ClaudeProcess }
+    | { kind: "process"; paneId: string; process: DetectedProcess }
     | { kind: "terminal"; paneId: string; shell: ShellPane };
   const orderedItems = useMemo(() => {
     const result: ListItemRef[] = [];
@@ -1011,8 +1038,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
       const matchedGroup = matchingJob ? (matchingJob.group || "default") : null;
       // Show a placeholder while waiting for the pane to be created
-      const placeholder: ClaudeProcess = {
+      const placeholder: DetectedProcess = {
         pane_id: `_pending_${Date.now()}`, cwd: workDir, version: "", tmux_session: "", window_name: "",
+        provider: "claude", can_fork_session: true, can_send_skills: true, can_inject_secrets: true,
         matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
         last_query: null, session_started_at: new Date().toISOString(), _transient_state: "starting",
       };
@@ -1027,8 +1055,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const result = await actions.runAgent(prompt, workDir);
       if (result) {
         // Got the real pane - switch to it immediately
-        const realProcess: ClaudeProcess = {
+        const realProcess: DetectedProcess = {
           pane_id: result.pane_id, cwd: workDir, version: "", tmux_session: result.tmux_session, window_name: "",
+          provider: "claude", can_fork_session: true, can_send_skills: true, can_inject_secrets: true,
           matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
           last_query: null, session_started_at: new Date().toISOString(),
         };
@@ -1194,7 +1223,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     return sourcePath ? shortenPath(sourcePath) : undefined;
   }, []);
 
-  const buildProcessTitlePath = useCallback((process: ClaudeProcess) => {
+  const buildProcessTitlePath = useCallback((process: DetectedProcess) => {
     return shortenPath(process.cwd);
   }, []);
 
@@ -1345,7 +1374,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: ClaudeProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => (
+    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => (
       <DraggableProcessCard
         {...props}
         reorderEnabled

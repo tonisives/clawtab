@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
-import type { ClaudeProcess } from "@clawtab/shared";
+import type { DetectedProcess } from "@clawtab/shared";
 
 export function createTauriTransport(): Transport {
   return {
@@ -63,7 +63,7 @@ export function createTauriTransport(): Transport {
     },
 
     async detectProcesses() {
-      return invoke<ClaudeProcess[]>("detect_claude_processes");
+      return invoke<DetectedProcess[]>("detect_processes");
     },
 
     async sendInput(name: string, text: string, freetext?: string) {

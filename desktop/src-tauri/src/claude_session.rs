@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use rusqlite::{Connection, OptionalExtension};
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
@@ -39,6 +40,21 @@ pub struct SessionInfo {
     pub last_query: Option<String>,
     pub session_started_at: Option<String>,
     pub started_epoch: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessProvider {
+    Claude,
+    Codex,
+}
+
+impl ProcessProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ProcessProvider::Claude => "claude",
+            ProcessProvider::Codex => "codex",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -115,6 +131,77 @@ pub fn resolve_session_info_with_snapshot(
     pane_pid: &str,
     snapshot: Option<&ProcessSnapshot>,
 ) -> SessionInfo {
+    let provider = detect_process_provider(pane_pid, snapshot);
+    resolve_session_info_for_provider(pane_pid, provider, snapshot)
+}
+
+pub fn resolve_session_info_for_provider(
+    pane_pid: &str,
+    provider: Option<ProcessProvider>,
+    snapshot: Option<&ProcessSnapshot>,
+) -> SessionInfo {
+    match provider {
+        Some(ProcessProvider::Claude) => resolve_claude_session_info(pane_pid, snapshot),
+        Some(ProcessProvider::Codex) => resolve_codex_session_info(pane_pid, snapshot),
+        None => SessionInfo::default(),
+    }
+}
+
+pub fn detect_process_provider(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+) -> Option<ProcessProvider> {
+    let owned_snapshot;
+    let snapshot = match snapshot {
+        Some(snapshot) => snapshot,
+        None => {
+            owned_snapshot = ProcessSnapshot::capture();
+            &owned_snapshot
+        }
+    };
+
+    if let Some(provider) = provider_for_command(snapshot.command_for_pid(pane_pid)) {
+        return Some(provider);
+    }
+
+    for child in snapshot.child_pids(pane_pid) {
+        if let Some(provider) = provider_for_command(snapshot.command_for_pid(child)) {
+            return Some(provider);
+        }
+
+        for grandchild in snapshot.child_pids(child) {
+            if let Some(provider) = provider_for_command(snapshot.command_for_pid(grandchild)) {
+                return Some(provider);
+            }
+        }
+    }
+
+    None
+}
+
+pub fn detect_version_from_command(command: &str) -> Option<String> {
+    let mut token = String::new();
+    let mut found = Vec::new();
+
+    for ch in command.chars() {
+        if ch.is_ascii_digit() || ch == '.' {
+            token.push(ch);
+        } else if !token.is_empty() {
+            found.push(token.clone());
+            token.clear();
+        }
+    }
+    if !token.is_empty() {
+        found.push(token);
+    }
+
+    found.into_iter().find(|item| is_semver(item))
+}
+
+fn resolve_claude_session_info(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+) -> SessionInfo {
     let mut info = SessionInfo::default();
 
     // The pane_pid might be claude itself (e.g. forked sessions), or a shell with claude as child
@@ -168,6 +255,58 @@ pub fn resolve_session_info_with_snapshot(
     info
 }
 
+fn resolve_codex_session_info(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+) -> SessionInfo {
+    let mut info = SessionInfo::default();
+
+    let codex_pid = if is_codex_process_with_snapshot(pane_pid, snapshot) {
+        pane_pid.to_string()
+    } else {
+        match find_codex_child(pane_pid, snapshot) {
+            Some(pid) => pid,
+            None => return info,
+        }
+    };
+
+    let Some(thread_id) = find_codex_thread_id_by_pid(&codex_pid) else {
+        return info;
+    };
+
+    let Some(thread) = read_codex_thread(&thread_id) else {
+        return info;
+    };
+
+    info.first_query = normalize_optional_owned(thread.first_user_message);
+    info.last_query = read_codex_last_query(&thread.id);
+
+    let started_secs = thread.created_at / 1000;
+    info.started_epoch = Some(started_secs as u64);
+    info.session_started_at = format_local_timestamp(started_secs);
+
+    if info.first_query.is_none() || info.last_query.is_none() {
+        if let Some(rollout_path) = thread.rollout_path {
+            let rollout = PathBuf::from(rollout_path);
+            let (first, last) = read_codex_rollout_messages(&rollout);
+            if info.first_query.is_none() {
+                info.first_query = first;
+            }
+            if info.last_query.is_none() {
+                info.last_query = last;
+            }
+        }
+    }
+
+    if info.last_query.is_none() {
+        info.last_query = info.first_query.clone();
+    } else if info.first_query == info.last_query {
+        info.last_query = None;
+    }
+
+    info
+}
+
 /// Check if a session file exists for this PID.
 fn has_session_file(pid: &str) -> bool {
     dirs::home_dir()
@@ -175,6 +314,17 @@ fn has_session_file(pid: &str) -> bool {
         .join(".claude/sessions")
         .join(format!("{}.json", pid))
         .exists()
+}
+
+fn provider_for_command(command: Option<&str>) -> Option<ProcessProvider> {
+    let lower = command?.to_ascii_lowercase();
+    if lower.contains("codex") {
+        Some(ProcessProvider::Codex)
+    } else if lower.contains("claude") && !lower.contains("claude.app") {
+        Some(ProcessProvider::Claude)
+    } else {
+        None
+    }
 }
 
 /// Find a child process of the given PID that is the claude CLI binary.
@@ -228,6 +378,229 @@ fn is_claude_process_with_snapshot(pid: &str, snapshot: Option<&ProcessSnapshot>
         }
         _ => false,
     }
+}
+
+fn find_codex_child(parent_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {
+    let owned_snapshot;
+    let snapshot = match snapshot {
+        Some(snapshot) => snapshot,
+        None => {
+            owned_snapshot = ProcessSnapshot::capture();
+            &owned_snapshot
+        }
+    };
+
+    let children = snapshot.child_pids(parent_pid);
+    for child_pid in children {
+        if is_codex_process_with_snapshot(child_pid, Some(snapshot)) {
+            return Some(child_pid.clone());
+        }
+    }
+
+    for child_pid in children {
+        if let Some(pid) = find_codex_child(child_pid, Some(snapshot)) {
+            return Some(pid);
+        }
+    }
+
+    None
+}
+
+fn is_codex_process_with_snapshot(pid: &str, snapshot: Option<&ProcessSnapshot>) -> bool {
+    match snapshot.and_then(|snap| snap.command_for_pid(pid)) {
+        Some(command) => command.to_ascii_lowercase().contains("codex"),
+        None => false,
+    }
+}
+
+fn codex_dir() -> PathBuf {
+    dirs::home_dir().unwrap_or_default().join(".codex")
+}
+
+fn latest_codex_sqlite(prefix: &str) -> Option<PathBuf> {
+    let dir = codex_dir();
+    let entries = fs::read_dir(dir).ok()?;
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.starts_with(prefix) && name.ends_with(".sqlite"))
+                .unwrap_or(false)
+        })
+        .filter_map(|path| {
+            let modified = fs::metadata(&path).ok()?.modified().ok()?;
+            Some((modified, path))
+        })
+        .max_by_key(|(modified, _)| *modified)
+        .map(|(_, path)| path)
+}
+
+fn find_codex_thread_id_by_pid(pid: &str) -> Option<String> {
+    let db_path = latest_codex_sqlite("logs_")?;
+    let conn = Connection::open(db_path).ok()?;
+    conn.query_row(
+        "select thread_id from logs
+         where process_uuid like ?1 and thread_id is not null
+         order by ts desc, ts_nanos desc, id desc
+         limit 1",
+        [format!("pid:{}:%", pid)],
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+struct CodexThreadInfo {
+    id: String,
+    created_at: i64,
+    first_user_message: String,
+    rollout_path: Option<String>,
+}
+
+fn read_codex_thread(thread_id: &str) -> Option<CodexThreadInfo> {
+    let db_path = latest_codex_sqlite("state_")?;
+    let conn = Connection::open(db_path).ok()?;
+    conn.query_row(
+        "select id, created_at, first_user_message, rollout_path
+         from threads where id = ?1 limit 1",
+        [thread_id],
+        |row| {
+            Ok(CodexThreadInfo {
+                id: row.get(0)?,
+                created_at: row.get(1)?,
+                first_user_message: row.get(2)?,
+                rollout_path: row.get(3).ok(),
+            })
+        },
+    )
+    .optional()
+    .ok()
+    .flatten()
+}
+
+fn read_codex_last_query(thread_id: &str) -> Option<String> {
+    let path = codex_dir().join("history.jsonl");
+    let file = fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    let mut last = None;
+
+    for line in reader.lines() {
+        let line = line.ok()?;
+        let value: serde_json::Value = serde_json::from_str(&line).ok()?;
+        if value.get("session_id")?.as_str()? != thread_id {
+            continue;
+        }
+        last = value
+            .get("text")
+            .and_then(|v| v.as_str())
+            .and_then(normalize_optional_str);
+    }
+
+    last
+}
+
+fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String>) {
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return (None, None),
+    };
+    let reader = std::io::BufReader::new(file);
+    let mut first = None;
+    let mut last = None;
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(line) => line,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+
+        let text = value
+            .get("payload")
+            .and_then(|payload| payload.get("message"))
+            .and_then(|message| message.as_str())
+            .or_else(|| {
+                value.get("payload")
+                    .and_then(|payload| payload.get("content"))
+                    .and_then(|content| content.as_array())
+                    .and_then(|items| {
+                        items.iter().find_map(|item| {
+                            if item.get("type")?.as_str()? == "input_text" {
+                                item.get("text")?.as_str()
+                            } else {
+                                None
+                            }
+                        })
+                    })
+            })
+            .and_then(normalize_optional_str);
+
+        if value.get("type").and_then(|v| v.as_str()) == Some("event_msg")
+            && value
+                .get("payload")
+                .and_then(|payload| payload.get("type"))
+                .and_then(|v| v.as_str())
+                == Some("user_message")
+        {
+            if first.is_none() {
+                first = text.clone();
+            }
+            if text.is_some() {
+                last = text;
+            }
+        } else if value.get("type").and_then(|v| v.as_str()) == Some("response_item")
+            && value
+                .get("payload")
+                .and_then(|payload| payload.get("role"))
+                .and_then(|v| v.as_str())
+                == Some("user")
+        {
+            if first.is_none() {
+                first = text.clone();
+            }
+            if text.is_some() {
+                last = text;
+            }
+        }
+    }
+
+    if first.is_some() && first == last {
+        (first, None)
+    } else {
+        (first, last)
+    }
+}
+
+fn normalize_optional_owned(value: String) -> Option<String> {
+    normalize_optional_str(value.as_str())
+}
+
+fn normalize_optional_str(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn format_local_timestamp(epoch_secs: i64) -> Option<String> {
+    chrono::DateTime::from_timestamp(epoch_secs, 0)
+        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+}
+
+fn is_semver(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
 }
 
 /// Read the first and last user messages from a JSONL conversation file.

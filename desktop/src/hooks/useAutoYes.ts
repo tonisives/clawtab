@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { ClaudeQuestion, ClaudeProcess, AutoYesEntry } from "@clawtab/shared";
+import type { ClaudeQuestion, DetectedProcess, AutoYesEntry } from "@clawtab/shared";
 import type { Job } from "../types";
 
 export function useAutoYes(
   questions: ClaudeQuestion[],
-  processes: ClaudeProcess[],
+  processes: DetectedProcess[],
   jobs: Job[],
   startFastQuestionPoll: () => void,
 ) {

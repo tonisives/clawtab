@@ -1,19 +1,19 @@
 import { create } from "zustand";
-import type { ClaudeProcess, JobStatus, RemoteJob } from "../types/job";
+import type { DetectedProcess, JobStatus, RemoteJob } from "../types/job";
 
 const IDLE_STATUS: JobStatus = { state: "idle" };
 
 interface JobsState {
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
-  detectedProcesses: ClaudeProcess[];
+  detectedProcesses: DetectedProcess[];
   loaded: boolean;
   cachedLoad: boolean;
   processesLoaded: boolean;
 
   setJobs: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   updateStatus: (name: string, status: JobStatus) => void;
-  setDetectedProcesses: (processes: ClaudeProcess[]) => void;
+  setDetectedProcesses: (processes: DetectedProcess[]) => void;
   hydrateFromCache: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
 }
 

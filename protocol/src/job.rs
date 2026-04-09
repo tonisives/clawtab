@@ -58,12 +58,14 @@ pub enum JobStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClaudeProcess {
+pub struct DetectedProcess {
     pub pane_id: String,
     pub cwd: String,
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub process_type: Option<String>,
+    pub provider: String,
+    pub can_fork_session: bool,
+    pub can_send_skills: bool,
+    pub can_inject_secrets: bool,
     pub tmux_session: String,
     pub window_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]

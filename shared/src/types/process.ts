@@ -1,9 +1,14 @@
-export interface ClaudeProcess {
+export type ProcessProvider = "claude" | "codex";
+
+export interface DetectedProcess {
   pane_id: string;
   cwd: string;
   version: string;
   display_name?: string | null;
-  process_type?: "claude" | "codex";
+  provider: ProcessProvider;
+  can_fork_session: boolean;
+  can_send_skills: boolean;
+  can_inject_secrets: boolean;
   tmux_session: string;
   window_name: string;
   matched_group: string | null;

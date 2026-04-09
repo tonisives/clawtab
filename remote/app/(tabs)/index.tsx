@@ -31,7 +31,7 @@ import { DEMO_JOBS, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
 import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared"
-import type { ClaudeProcess } from "@clawtab/shared"
+import type { DetectedProcess } from "@clawtab/shared"
 
 // Capture URL params before expo-router rewrites them on init
 const _initParams = Platform.OS === "web"
@@ -127,7 +127,7 @@ export default function JobsScreen() {
     }
   }, [router, isDemo, isWide])
 
-  const handleSelectProcess = useCallback((process: ClaudeProcess) => {
+  const handleSelectProcess = useCallback((process: DetectedProcess) => {
     if (isWide) {
       setSelectedProcess(process.pane_id)
       setSelectedJob(null)
@@ -190,7 +190,7 @@ export default function JobsScreen() {
     handleSelectJob(job)
   }, [isWide, isDemo, router, split.tree, split.handleSelectInTree, handleSelectJob])
 
-  const handleSelectProcessWithTree = useCallback((process: ClaudeProcess) => {
+  const handleSelectProcessWithTree = useCallback((process: DetectedProcess) => {
     if (!isWide) {
       router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
       return
@@ -208,7 +208,7 @@ export default function JobsScreen() {
   )
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: ClaudeProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string }) => (
+    (props: { process: DetectedProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string }) => (
       <DraggableProcessCard {...props} />
     ),
     [],

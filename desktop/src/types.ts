@@ -81,6 +81,18 @@ export interface DetectedProcessOverride {
   last_query?: string | null;
 }
 
+export interface ShortcutSettings {
+  next_sidebar_item: string;
+  previous_sidebar_item: string;
+  toggle_sidebar: string;
+  split_pane_vertical: string;
+  split_pane_horizontal: string;
+  move_pane_left: string;
+  move_pane_down: string;
+  move_pane_up: string;
+  move_pane_right: string;
+}
+
 export interface AppSettings {
   default_tmux_session: string;
   default_work_dir: string;
@@ -100,6 +112,7 @@ export interface AppSettings {
   show_in_dock: boolean;
   hide_titlebar: boolean;
   process_overrides: Record<string, DetectedProcessOverride>;
+  shortcuts: ShortcutSettings;
 }
 
 export interface ToolInfo {
@@ -113,10 +126,14 @@ export interface ToolInfo {
   brew_formula: string | null;
 }
 
-export interface ClaudeProcess {
+export interface DetectedProcess {
   pane_id: string;
   cwd: string;
   version: string;
+  provider: "claude" | "codex";
+  can_fork_session: boolean;
+  can_send_skills: boolean;
+  can_inject_secrets: boolean;
   tmux_session: string;
   window_name: string;
   matched_group: string | null;

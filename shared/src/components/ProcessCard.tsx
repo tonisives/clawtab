@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
-import type { ClaudeProcess } from "../types/process";
+import type { DetectedProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { shortenPath } from "../util/format";
 import { Tooltip } from "./Tooltip";
@@ -20,7 +20,7 @@ export function ProcessCard({
   onSaveName,
   autoYesActive,
 }: {
-  process: ClaudeProcess;
+  process: DetectedProcess;
   onPress?: () => void;
   inGroup?: boolean;
   selected?: boolean | string;

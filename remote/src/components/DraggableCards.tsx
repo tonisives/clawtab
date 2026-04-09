@@ -1,11 +1,11 @@
 import { useDraggable } from "@dnd-kit/core"
 import type { RemoteJob, JobStatus } from "@clawtab/shared"
-import type { ClaudeProcess } from "@clawtab/shared"
+import type { DetectedProcess } from "@clawtab/shared"
 import { JobCard, RunningJobCard, ProcessCard } from "@clawtab/shared"
 
 export type DragData =
   | { kind: "job"; slug: string; job: RemoteJob }
-  | { kind: "process"; paneId: string; process: ClaudeProcess }
+  | { kind: "process"; paneId: string; process: DetectedProcess }
 
 // Use plain div since @dnd-kit spreads DOM-specific attributes that
 // conflict with React Native View types. Web wide-mode only.
@@ -48,7 +48,7 @@ export function DraggableProcessCard({
   inGroup,
   selected,
 }: {
-  process: ClaudeProcess
+  process: DetectedProcess
   onPress?: () => void
   inGroup?: boolean
   selected?: boolean | string

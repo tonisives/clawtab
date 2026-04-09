@@ -284,6 +284,7 @@ export function JobDetailView({
   const shortTitlePath = titlePath ? shortenPath(titlePath) : null;
   const compactLeadingPills = headerWidth > 0 && headerWidth < 940;
   const jobTypeIcon = kindForJob(job);
+  const showModePill = !(isManual && expandOutput);
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
 
@@ -331,7 +332,7 @@ export function JobDetailView({
               </View>
             ) : null;
           })() : null}
-          {isManual ? (
+          {showModePill && isManual ? (
             <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: modeLabel } as any : {})}>
               {compactLeadingPills ? (
                 <Text style={styles.infoLabel}>{modeCompactLabel}</Text>
@@ -339,13 +340,13 @@ export function JobDetailView({
                 <Text style={styles.infoLabel}>{modeLabel}</Text>
               )}
             </View>
-          ) : (
+          ) : showModePill ? (
             <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: modeLabel } as any : {})}>
               <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
                 {compactLeadingPills ? modeCompactLabel : modeLabel}
               </Text>
             </View>
-          )}
+          ) : null}
         </View>
         <View style={styles.actions}>
           {isRunning && sigintPending && (

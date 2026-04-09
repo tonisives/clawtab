@@ -154,7 +154,6 @@ fn refresh_attached_pane(
 ) {
     thread::sleep(Duration::from_millis(150));
     emit_initial_snapshot(sink, recent, pane_id);
-    let _ = tmux(&["send-keys", "-t", pane_id, "C-l"]);
 }
 
 fn tmux_session_exists(session: &str) -> bool {

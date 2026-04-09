@@ -9,7 +9,7 @@ import { dismissQuestionNotification } from "../lib/notifications";
 import { NotificationSection, AutoYesBanner, findYesOption } from "@clawtab/shared";
 import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
-import type { AutoYesEntry, ClaudeProcess, ClaudeQuestion } from "@clawtab/shared";
+import type { AutoYesEntry, DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 
 function syncAutoYesToRelay(paneIds: Set<string>) {
   const send = getWsSend();
@@ -30,7 +30,7 @@ export function NotificationStack() {
 
   const [collapsed, setCollapsed] = useState(false);
 
-  const processMap = new Map<string, ClaudeProcess>();
+  const processMap = new Map<string, DetectedProcess>();
   for (const proc of detectedProcesses) {
     processMap.set(proc.pane_id, proc);
   }
