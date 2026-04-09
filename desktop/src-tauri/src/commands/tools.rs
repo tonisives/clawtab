@@ -1,5 +1,6 @@
 use tauri::State;
 
+use crate::claude_session::ProcessProvider;
 use crate::tools;
 use crate::AppState;
 
@@ -12,6 +13,24 @@ pub async fn detect_tools(state: State<'_, AppState>) -> Result<Vec<tools::ToolI
     tokio::task::spawn_blocking(move || tools::detect_tools(&custom_paths))
         .await
         .map_err(|e| format!("Detection failed: {}", e))
+}
+
+#[tauri::command]
+pub async fn detect_agent_providers() -> Result<Vec<ProcessProvider>, String> {
+    tokio::task::spawn_blocking(move || {
+        Ok::<Vec<ProcessProvider>, String>(
+            [
+                ProcessProvider::Claude,
+                ProcessProvider::Codex,
+                ProcessProvider::Opencode,
+            ]
+            .into_iter()
+            .filter(|provider| tools::which(provider.binary_name()).is_some())
+            .collect(),
+        )
+    })
+    .await
+    .map_err(|e| format!("Detection failed: {}", e))?
 }
 
 #[tauri::command]

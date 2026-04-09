@@ -36,15 +36,21 @@ interface PopupMenuProps {
   dropdownRef?: React.RefObject<View | null>;
   /** Ref to the trigger button - clicks on it are ignored so the button's own toggle works */
   triggerRef?: React.RefObject<any>;
+  autoFocus?: boolean;
 }
 
-function HoverableItem({ item, onPress }: {
+function HoverableItem({ item, onPress, highlighted = false, onHover }: {
   item: Extract<PopupMenuItem, { type: "item" }> | Extract<PopupMenuItem, { type: "submenu" }>;
   onPress: () => void;
+  highlighted?: boolean;
+  onHover?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const webProps = isWeb ? {
-    onMouseEnter: () => setHovered(true),
+    onMouseEnter: () => {
+      setHovered(true);
+      onHover?.();
+    },
     onMouseLeave: () => setHovered(false),
   } : {};
 
@@ -57,6 +63,7 @@ function HoverableItem({ item, onPress }: {
       style={[
         styles.item,
         active && styles.itemActive,
+        highlighted && styles.itemHover,
         hovered && styles.itemHover,
       ]}
       onPress={onPress}
@@ -79,11 +86,29 @@ function HoverableItem({ item, onPress }: {
   );
 }
 
-export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef }: PopupMenuProps) {
+export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false }: PopupMenuProps) {
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
   const [submenu, setSubmenu] = useState<{ label: string; items: PopupMenuItem[] } | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
 
+  const activeItems = submenu ? submenu.items : items;
+  const actionableIndexes = activeItems
+    .map((item, index) => (item.type === "separator" ? -1 : index))
+    .filter((index) => index >= 0);
+
+  useEffect(() => {
+    setHighlightedIndex(actionableIndexes[0] ?? -1);
+  }, [submenu, items.length, actionableIndexes.join(",")]);
+
+  useEffect(() => {
+    if (!isWeb || !autoFocus) return;
+    const timeout = window.setTimeout(() => {
+      const node = ref.current as any;
+      node?.focus?.();
+    }, 0);
+    return () => window.clearTimeout(timeout);
+  }, [autoFocus, ref, submenu]);
 
   useEffect(() => {
     if (!isWeb) return;
@@ -113,15 +138,94 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef }:
     paddingVertical: 4,
   } as any : styles.menu;
 
-  const activeItems = submenu ? submenu.items : items;
+  const stepHighlight = (direction: 1 | -1) => {
+    if (actionableIndexes.length === 0) return;
+    const currentPosition = actionableIndexes.indexOf(highlightedIndex);
+    const nextPosition = currentPosition === -1
+      ? (direction === 1 ? 0 : actionableIndexes.length - 1)
+      : (currentPosition + direction + actionableIndexes.length) % actionableIndexes.length;
+    setHighlightedIndex(actionableIndexes[nextPosition] ?? -1);
+  };
+
+  const activateIndex = (index: number) => {
+    const item = activeItems[index];
+    if (!item || item.type === "separator") return;
+    if (item.type === "submenu") {
+      setSubmenu({ label: item.label, items: item.items });
+      return;
+    }
+    onClose();
+    item.onPress();
+  };
+
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (!isWeb) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (submenu) {
+        setSubmenu(null);
+      } else {
+        onClose();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      stepHighlight(1);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      stepHighlight(-1);
+      return;
+    }
+    if (e.key === "Home") {
+      e.preventDefault();
+      setHighlightedIndex(actionableIndexes[0] ?? -1);
+      return;
+    }
+    if (e.key === "End") {
+      e.preventDefault();
+      setHighlightedIndex(actionableIndexes[actionableIndexes.length - 1] ?? -1);
+      return;
+    }
+    if (e.key === "ArrowLeft" && submenu) {
+      e.preventDefault();
+      setSubmenu(null);
+      return;
+    }
+    if (e.key === "ArrowRight" && highlightedIndex >= 0) {
+      const item = activeItems[highlightedIndex];
+      if (item?.type === "submenu") {
+        e.preventDefault();
+        setSubmenu({ label: item.label, items: item.items });
+      }
+      return;
+    }
+    if (e.key === "Enter" || e.key === " ") {
+      if (highlightedIndex < 0) return;
+      e.preventDefault();
+      activateIndex(highlightedIndex);
+    }
+  };
 
   return (
     <PortalWeb>
-      <View ref={ref} style={menuStyle}>
+      <View
+        ref={ref}
+        style={menuStyle}
+        {...(isWeb ? {
+          tabIndex: -1,
+          onKeyDown: handleKeyDown,
+        } : {})}
+      >
         {submenu && (
           <TouchableOpacity
             style={styles.backItem}
-            onPress={() => setSubmenu(null)}
+            onPress={() => {
+              setSubmenu(null);
+              setHighlightedIndex(actionableIndexes[0] ?? -1);
+            }}
             activeOpacity={0.6}
           >
             <Text style={styles.backText}>{"\u2039"} {submenu.label}</Text>
@@ -136,18 +240,21 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef }:
               <HoverableItem
                 key={`${item.label}-${i}`}
                 item={item}
-
+                highlighted={i === highlightedIndex}
+                onHover={() => setHighlightedIndex(i)}
                 onPress={() => setSubmenu({ label: item.label, items: item.items })}
               />
             );
           }
           return (
-            <HoverableItem
-              key={`${item.label}-${i}`}
-              item={item}
-              onPress={() => { onClose(); item.onPress(); }}
-            />
-          );
+              <HoverableItem
+                key={`${item.label}-${i}`}
+                item={item}
+                highlighted={i === highlightedIndex}
+                onHover={() => setHighlightedIndex(i)}
+                onPress={() => { onClose(); item.onPress(); }}
+              />
+            );
         })}
       </View>
     </PortalWeb>

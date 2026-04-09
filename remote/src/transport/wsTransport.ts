@@ -1,6 +1,6 @@
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
-import type { DetectedProcess } from "@clawtab/shared";
+import type { DetectedProcess, ProcessProvider } from "@clawtab/shared";
 import { getWsSend, nextId } from "../hooks/useWebSocket";
 import { registerRequest } from "../lib/useRequestMap";
 import { useJobsStore } from "../store/jobs";
@@ -105,7 +105,7 @@ export function createWsTransport(): Transport {
       };
     },
 
-    async runAgent(prompt: string, workDir?: string) {
+    async runAgent(prompt: string, workDir?: string, _provider?: ProcessProvider) {
       const id = nextId();
       send({ type: "run_agent", id, prompt, work_dir: workDir });
       return null;

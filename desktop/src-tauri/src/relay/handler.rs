@@ -501,7 +501,7 @@ fn run_agent(
         let j = jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs, work_dir)?;
+    let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs, work_dir, None)?;
     let job_name = job.name.clone();
 
     let secrets = Arc::clone(secrets);

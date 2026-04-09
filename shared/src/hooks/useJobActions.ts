@@ -1,5 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { Transport } from "../transport";
+import type { ProcessProvider } from "../types/process";
 
 export function useJobActions(transport: Transport, onStatusChange?: () => void) {
   const transportRef = useRef(transport);
@@ -77,8 +78,8 @@ export function useJobActions(transport: Transport, onStatusChange?: () => void)
   }, []);
 
   const runAgent = useCallback(
-    async (prompt: string, workDir?: string) => {
-      const result = await transportRef.current.runAgent(prompt, workDir);
+    async (prompt: string, workDir?: string, provider?: ProcessProvider) => {
+      const result = await transportRef.current.runAgent(prompt, workDir, provider);
       delayedRefresh();
       return result;
     },

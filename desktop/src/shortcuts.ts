@@ -18,8 +18,8 @@ export interface ShortcutDefinition {
 }
 
 export const DEFAULT_SHORTCUTS: ShortcutSettings = {
-  next_sidebar_item: "Tab",
-  previous_sidebar_item: "Shift+Tab",
+  next_sidebar_item: "Alt+Tab",
+  previous_sidebar_item: "Alt+Shift+Tab",
   toggle_sidebar: "Meta+e",
   split_pane_vertical: "Ctrl+v",
   split_pane_horizontal: "Ctrl+s",

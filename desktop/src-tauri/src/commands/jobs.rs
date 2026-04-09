@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
+use crate::claude_session::ProcessProvider;
 use crate::config::jobs::{Job, JobStatus};
 use crate::config::settings::AppSettings;
 use crate::cwt::CwtFolder;
@@ -221,6 +222,7 @@ pub fn import_job_folder(
         params: Vec::new(),
         kill_on_end: true,
         auto_yes: false,
+        agent_provider: None,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
     };
 
@@ -333,6 +335,7 @@ pub fn duplicate_job(
         params: source.params.clone(),
         kill_on_end: source.kill_on_end,
         auto_yes: source.auto_yes,
+        agent_provider: source.agent_provider,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
     };
 
@@ -1234,6 +1237,7 @@ pub fn build_agent_job(
     settings: &AppSettings,
     jobs: &[Job],
     target_dir: Option<&str>,
+    provider: Option<ProcessProvider>,
 ) -> Result<Job, String> {
     let agent_dir = agent_dir_path();
     std::fs::create_dir_all(&agent_dir)
@@ -1298,6 +1302,7 @@ pub fn build_agent_job(
         params: Vec::new(),
         kill_on_end: true,
         auto_yes: false,
+        agent_provider: provider,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
     })
 }
@@ -1309,13 +1314,18 @@ pub struct RunAgentResult {
 }
 
 #[tauri::command]
-pub async fn run_agent(state: State<'_, AppState>, prompt: String, work_dir: Option<String>) -> Result<Option<RunAgentResult>, String> {
+pub async fn run_agent(
+    state: State<'_, AppState>,
+    prompt: String,
+    work_dir: Option<String>,
+    provider: Option<ProcessProvider>,
+) -> Result<Option<RunAgentResult>, String> {
     let (settings, jobs) = {
         let s = state.settings.lock().unwrap().clone();
         let j = state.jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = build_agent_job(&prompt, None, &settings, &jobs, work_dir.as_deref())?;
+    let job = build_agent_job(&prompt, None, &settings, &jobs, work_dir.as_deref(), provider)?;
 
     let secrets = Arc::clone(&state.secrets);
     let history = Arc::clone(&state.history);

@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, RefreshControl, St
 
 const isWeb = Platform.OS === "web";
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
-import type { DetectedProcess, ShellPane } from "../types/process";
+import type { DetectedProcess, ProcessProvider, ShellPane } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
@@ -107,7 +107,8 @@ export interface JobListViewProps {
   // Single selection (backward compat with desktop) - uses accent color
   selectedSlug?: string | null;
   // Agent
-  onRunAgent?: (prompt: string, workDir?: string) => void;
+  onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider) => void;
+  getAgentProviders?: () => Promise<ProcessProvider[]>;
   // Desktop-only slots
   onAddJob?: (group: string, folderPath?: string) => void;
   onEditJob?: (job: RemoteJob) => void;
@@ -200,6 +201,7 @@ export function JobListView({
   focusedItemKey,
   selectedSlug,
   onRunAgent,
+  getAgentProviders,
   onAddJob,
   hiddenGroups,
   onHideGroup,
@@ -752,7 +754,8 @@ export function JobListView({
                 return (
                   <View key={key} style={{ marginTop: spacing.sm }}>
                     <GroupAgentRow
-                      onRunAgent={(prompt) => onRunAgent!(prompt, item.workDir)}
+                      onRunAgent={(prompt, provider) => onRunAgent!(prompt, item.workDir, provider)}
+                      getAgentProviders={getAgentProviders}
                     />
                   </View>
                 );

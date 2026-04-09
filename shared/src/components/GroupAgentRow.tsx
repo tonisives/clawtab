@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import type { ProcessProvider } from "../types/process";
+import { PopupMenu } from "./PopupMenu";
 
 const COLLAPSED_HEIGHT = 32;
 const LINE_HEIGHT = 17;
@@ -11,12 +13,18 @@ const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 
 export function GroupAgentRow({
   onRunAgent,
+  getAgentProviders,
 }: {
-  onRunAgent: (prompt: string) => void | Promise<void>;
+  onRunAgent: (prompt: string, provider?: ProcessProvider) => void | Promise<void>;
+  getAgentProviders?: () => Promise<ProcessProvider[]>;
 }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
+  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
+  const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [availableProviders, setAvailableProviders] = useState<ProcessProvider[] | null>(null);
   const inputRef = useRef<TextInput>(null);
+  const buttonRef = useRef<any>(null);
   const hadFocusRef = useRef(false);
   // Expand only once the user inserts a newline (Enter key).
   const expanded = prompt.includes("\n");
@@ -41,17 +49,48 @@ export function GroupAgentRow({
     EXPANDED_MAX_HEIGHT,
   );
 
-  const handleRun = async () => {
+  const loadProviders = useCallback(async () => {
+    if (!getAgentProviders) return [] as ProcessProvider[];
+    const providers = await getAgentProviders();
+    setAvailableProviders(providers);
+    return providers;
+  }, [getAgentProviders]);
+
+  useEffect(() => {
+    if (!getAgentProviders) return;
+    void loadProviders();
+  }, [getAgentProviders, loadProviders]);
+
+  const runWithProvider = async (provider?: ProcessProvider) => {
     if (!prompt.trim() || sending) return;
     const nextPrompt = prompt.trim();
     setSending(true);
     try {
-      await onRunAgent(nextPrompt);
+      await onRunAgent(nextPrompt, provider);
       setPrompt("");
+      setProviderMenuOpen(false);
     } finally {
       setSending(false);
     }
   };
+
+  const openProviderMenu = async (node?: any) => {
+    const providers = availableProviders ?? await loadProviders();
+    if (providers.length <= 1) {
+      await runWithProvider(providers[0]);
+      return;
+    }
+    if (isWeb) {
+      const target = node ?? buttonRef.current;
+      const rect = target?.getBoundingClientRect?.();
+      if (rect) {
+        setProviderMenuPos({ top: rect.bottom + 4, left: rect.right });
+      }
+    }
+    setProviderMenuOpen(true);
+  };
+
+  const isWeb = Platform.OS === "web";
 
   const commonProps = {
     value: prompt,
@@ -70,7 +109,7 @@ export function GroupAgentRow({
       if (ne.key !== "Enter") return;
       if (ne.metaKey || ne.ctrlKey) {
         e.preventDefault?.();
-        void handleRun();
+        void openProviderMenu((e as any)?.currentTarget ?? (e as any)?.target);
         return;
       }
       // Plain Enter in the collapsed (single-line) input would submit the form
@@ -109,8 +148,9 @@ export function GroupAgentRow({
         />
       )}
       <TouchableOpacity
+        ref={buttonRef}
         style={[styles.btn, (!prompt.trim() || sending) && styles.btnDisabled]}
-        onPress={() => { void handleRun(); }}
+        onPress={(e: any) => { void openProviderMenu(e?.currentTarget ?? e?.target); }}
         disabled={!prompt.trim() || sending}
         activeOpacity={0.7}
       >
@@ -118,6 +158,19 @@ export function GroupAgentRow({
           <View style={styles.triangle} />
         </View>
       </TouchableOpacity>
+      {providerMenuOpen && (
+        <PopupMenu
+          position={providerMenuPos}
+          triggerRef={buttonRef}
+          autoFocus
+          onClose={() => setProviderMenuOpen(false)}
+          items={(availableProviders ?? []).map((provider) => ({
+            type: "item" as const,
+            label: provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "OpenCode",
+            onPress: () => { void runWithProvider(provider); },
+          }))}
+        />
+      )}
     </View>
   );
 }

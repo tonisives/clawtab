@@ -42,7 +42,8 @@ pub struct SessionInfo {
     pub started_epoch: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ProcessProvider {
     Claude,
     Codex,
@@ -56,6 +57,10 @@ impl ProcessProvider {
             ProcessProvider::Codex => "codex",
             ProcessProvider::Opencode => "opencode",
         }
+    }
+
+    pub fn binary_name(self) -> &'static str {
+        self.as_str()
     }
 }
 

@@ -195,7 +195,7 @@ const TOOLS: &[ToolSpec] = &[
     },
 ];
 
-fn which(binary: &str) -> Option<String> {
+pub fn which(binary: &str) -> Option<String> {
     let output = Command::new("which").arg(binary).output().ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();

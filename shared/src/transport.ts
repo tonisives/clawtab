@@ -1,5 +1,5 @@
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "./types/job";
-import type { DetectedProcess } from "./types/process";
+import type { DetectedProcess, ProcessProvider } from "./types/process";
 
 export interface Transport {
   listJobs(): Promise<{ jobs: RemoteJob[]; statuses: Record<string, JobStatus> }>;
@@ -17,7 +17,8 @@ export interface Transport {
   detectProcesses(): Promise<DetectedProcess[]>;
   sendInput(name: string, text: string, freetext?: string): Promise<void>;
   subscribeLogs(name: string, onChunk: (content: string) => void): () => void;
-  runAgent(prompt: string, workDir?: string): Promise<{ pane_id: string; tmux_session: string } | null>;
+  runAgent(prompt: string, workDir?: string, provider?: ProcessProvider): Promise<{ pane_id: string; tmux_session: string } | null>;
+  listAgentProviders?(): Promise<ProcessProvider[]>;
   // Desktop-only (optional)
   focusJobWindow?(name: string): Promise<void>;
   saveJob?(job: RemoteJob): Promise<void>;

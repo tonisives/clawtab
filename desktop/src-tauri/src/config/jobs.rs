@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use crate::claude_session::ProcessProvider;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -126,6 +127,8 @@ pub struct Job {
     pub kill_on_end: bool,
     #[serde(default)]
     pub auto_yes: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_provider: Option<ProcessProvider>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<String>,
 }

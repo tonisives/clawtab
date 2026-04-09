@@ -37,6 +37,14 @@ pub struct DetectedProcess {
     pub session_started_at: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ExistingPaneInfo {
+    pub pane_id: String,
+    pub cwd: String,
+    pub tmux_session: String,
+    pub window_name: String,
+}
+
 struct DetectionSnapshot {
     processes: Vec<DetectedProcess>,
     active_pane_ids: HashSet<String>,
@@ -388,4 +396,52 @@ pub fn stop_detected_process(state: State<'_, AppState>, pane_id: String) -> Res
     let snapshot = overrides.clone();
     drop(overrides);
     persist_process_overrides(&state, snapshot)
+}
+
+#[tauri::command]
+pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo>, String> {
+    if !crate::tmux::pane_exists(&pane_id) {
+        return Ok(None);
+    }
+
+    let output = Command::new("tmux")
+        .args([
+            "display-message",
+            "-t",
+            &pane_id,
+            "-p",
+            "#{pane_id}\t#{pane_current_path}\t#{session_name}\t#{window_name}",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to inspect tmux pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("can't find pane") || stderr.contains("no server running") {
+            return Ok(None);
+        }
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut parts = stdout.trim_end().splitn(4, '\t');
+    let Some(found_pane_id) = parts.next() else {
+        return Ok(None);
+    };
+    let Some(cwd) = parts.next() else {
+        return Ok(None);
+    };
+    let Some(tmux_session) = parts.next() else {
+        return Ok(None);
+    };
+    let Some(window_name) = parts.next() else {
+        return Ok(None);
+    };
+
+    Ok(Some(ExistingPaneInfo {
+        pane_id: found_pane_id.to_string(),
+        cwd: cwd.to_string(),
+        tmux_session: tmux_session.to_string(),
+        window_name: window_name.to_string(),
+    }))
 }

@@ -125,10 +125,9 @@ export function DetectedProcessDetail({
       onStoppedRef.current?.();
       return transport.stopJob(...args);
     },
-    sigintJob: transport.sigintJob ? async (...args: Parameters<NonNullable<Transport["sigintJob"]>>) => {
-      onStoppedRef.current?.();
-      return transport.sigintJob!(...args);
-    } : undefined,
+    sigintJob: transport.sigintJob ? async (...args: Parameters<NonNullable<Transport["sigintJob"]>>) => (
+      transport.sigintJob!(...args)
+    ) : undefined,
   }), [transport, handleSendInput]);
 
   const renderTerminal = useCallback(

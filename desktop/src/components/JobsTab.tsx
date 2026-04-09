@@ -5,7 +5,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { DndContext, DragOverlay, type DragEndEvent, type DragMoveEvent, type DragStartEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared";
-import type { DetectedProcess, ClaudeQuestion, ShellPane } from "@clawtab/shared";
+import type { DetectedProcess, ClaudeQuestion, ProcessProvider, ShellPane } from "@clawtab/shared";
 import {
   JobListView,
   NotificationSection,
@@ -56,6 +56,17 @@ interface JobsTabProps {
   onJobSelected?: () => void;
 }
 
+interface ExistingPaneInfo {
+  pane_id: string;
+  cwd: string;
+  tmux_session: string;
+  window_name: string;
+}
+
+function isShellPane(value: ShellPane | null): value is ShellPane {
+  return value !== null;
+}
+
 const SINGLE_PANE_CACHE_LIMIT = 10;
 
 function paneContentCacheKey(content: PaneContent): string {
@@ -67,6 +78,13 @@ function paneContentCacheKey(content: PaneContent): string {
 
 function shouldCacheSinglePaneContent(content: PaneContent): boolean {
   return content.kind === "job" || content.kind === "agent";
+}
+
+function providerCapabilities(provider: ProcessProvider): Pick<DetectedProcess, "can_fork_session" | "can_send_skills" | "can_inject_secrets"> {
+  if (provider === "claude") {
+    return { can_fork_session: true, can_send_skills: true, can_inject_secrets: true };
+  }
+  return { can_fork_session: false, can_send_skills: false, can_inject_secrets: false };
 }
 
 export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected }: JobsTabProps) {
@@ -105,6 +123,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: DetectedProcess; stoppedAt: number }[]>([]);
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
   const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
+  const previousProcessesRef = useRef<Map<string, DetectedProcess>>(new Map());
   const [editProcessField, setEditProcessField] = useState<{
     paneId: string;
     title: string;
@@ -386,6 +405,70 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (!fresh) setViewingShell(null);
     else if (fresh !== viewingShell) setViewingShell(fresh);
   }, [shellPanes, viewingShell]);
+
+  useEffect(() => {
+    const previous = previousProcessesRef.current;
+    const currentMap = new Map(core.processes.map((process) => [process.pane_id, process]));
+    const stoppingIds = new Set(stoppingProcesses.map((entry) => entry.process.pane_id));
+    const shellPaneIds = new Set(shellPanes.map((pane) => pane.pane_id));
+    const removed = Array.from(previous.values()).filter((process) =>
+      !currentMap.has(process.pane_id)
+      && !stoppingIds.has(process.pane_id)
+      && process.pane_id !== pendingProcess?.pane_id
+      && !shellPaneIds.has(process.pane_id),
+    );
+
+    previousProcessesRef.current = currentMap;
+
+    if (removed.length === 0) return;
+
+    let cancelled = false;
+
+    Promise.all(
+      removed.map(async (process): Promise<ShellPane | null> => {
+        const info = await invoke<ExistingPaneInfo | null>("get_existing_pane_info", { paneId: process.pane_id }).catch(() => null);
+        if (!info) return null;
+        const shell: ShellPane = {
+          pane_id: info.pane_id,
+          cwd: info.cwd,
+          tmux_session: info.tmux_session,
+          window_name: info.window_name,
+          matched_group: process.matched_group ?? null,
+        };
+        return shell;
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const demoted = results.filter(isShellPane);
+      if (demoted.length === 0) return;
+
+      const demotedIds = new Set(demoted.map((shell) => shell.pane_id));
+      setShellPanes((prev) => {
+        const existing = new Set(prev.map((pane) => pane.pane_id));
+        const additions = demoted.filter((shell) => !existing.has(shell.pane_id));
+        return additions.length > 0 ? [...prev, ...additions] : prev;
+      });
+
+      for (const shell of demoted) {
+        split.replaceContent(
+          { kind: "process", paneId: shell.pane_id },
+          { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
+        );
+      }
+
+      if (viewingProcess && demotedIds.has(viewingProcess.pane_id)) {
+        const shell = demoted.find((entry) => entry.pane_id === viewingProcess.pane_id);
+        if (shell) {
+          setViewingProcess(null);
+          setViewingShell(shell);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [core.processes, pendingProcess, shellPanes, split.replaceContent, stoppingProcesses, viewingProcess]);
 
   useEffect(() => {
     if (!pendingAgentWorkDir) return;
@@ -1033,14 +1116,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     blurActiveListElement();
   }, [blurActiveListElement, split.handleDragCancel]);
 
-  const handleRunAgent = useCallback(async (prompt: string, workDir?: string) => {
+  const handleGetAgentProviders = useCallback(async () => {
+    return await transport.listAgentProviders?.() ?? [];
+  }, []);
+
+  const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider: ProcessProvider = "claude") => {
+    const capabilities = providerCapabilities(provider);
     if (workDir) {
       const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
       const matchedGroup = matchingJob ? (matchingJob.group || "default") : null;
       // Show a placeholder while waiting for the pane to be created
       const placeholder: DetectedProcess = {
         pane_id: `_pending_${Date.now()}`, cwd: workDir, version: "", tmux_session: "", window_name: "",
-        provider: "claude", can_fork_session: true, can_send_skills: true, can_inject_secrets: true,
+        provider, ...capabilities,
         matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
         last_query: null, session_started_at: new Date().toISOString(), _transient_state: "starting",
       };
@@ -1052,12 +1140,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       }
       setScrollToSlug(placeholder.pane_id);
 
-      const result = await actions.runAgent(prompt, workDir);
+      const result = await actions.runAgent(prompt, workDir, provider);
       if (result) {
         // Got the real pane - switch to it immediately
         const realProcess: DetectedProcess = {
           pane_id: result.pane_id, cwd: workDir, version: "", tmux_session: result.tmux_session, window_name: "",
-          provider: "claude", can_fork_session: true, can_send_skills: true, can_inject_secrets: true,
+          provider, ...capabilities,
           matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
           last_query: null, session_started_at: new Date().toISOString(),
         };
@@ -1078,7 +1166,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
       }
     } else {
-      await actions.runAgent(prompt, workDir);
+      await actions.runAgent(prompt, workDir, provider);
     }
   }, [actions, core.jobs, split.tree, split.openContent, split.replaceContent]);
 
@@ -1149,6 +1237,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     split.cleanStaleLeaves((content) => {
       if (content.kind === "process") {
         if (pendingProcess?.pane_id === content.paneId) return false;
+        if (shellPanes.find((p) => p.pane_id === content.paneId)) return false;
         return !core.processes.find(p => p.pane_id === content.paneId);
       }
       if (content.kind === "terminal") {
@@ -1776,6 +1865,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       selectedItems={split.selectedItems}
       focusedItemKey={split.focusedItemKey}
       onRunAgent={handleRunAgent}
+      getAgentProviders={handleGetAgentProviders}
       onAddJob={handleAddJob}
       hiddenGroups={hiddenGroups}
       onHideGroup={handleHideGroup}

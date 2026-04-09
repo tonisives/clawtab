@@ -436,7 +436,10 @@ async fn execute_claude_job(
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::tmux;
 
-    let (tmux_session, work_dir, claude_path) = {
+    let provider = job
+        .agent_provider
+        .unwrap_or(crate::claude_session::ProcessProvider::Claude);
+    let (tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
         let session = job
             .tmux_session
@@ -446,8 +449,11 @@ async fn execute_claude_job(
             .work_dir
             .clone()
             .unwrap_or_else(|| s.default_work_dir.clone());
-        let cp = s.claude_path.clone();
-        (session, wd, cp)
+        let command = match provider {
+            crate::claude_session::ProcessProvider::Claude => s.claude_path.clone(),
+            _ => provider.binary_name().to_string(),
+        };
+        (session, wd, command)
     };
 
     let env_vars = collect_env_vars(job, secrets, settings);
@@ -492,10 +498,14 @@ async fn execute_claude_job(
     };
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
-    let send_cmd = format!(
-        "cd {} && {} $'{}'",
-        work_dir, claude_path, escaped_prompt
-    );
+    let send_cmd = match provider {
+        crate::claude_session::ProcessProvider::Claude | crate::claude_session::ProcessProvider::Codex => {
+            format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
+        }
+        crate::claude_session::ProcessProvider::Opencode => {
+            format!("cd {} && {} --prompt $'{}'", work_dir, agent_command, escaped_prompt)
+        }
+    };
 
     // If the window already existed, always split a new pane (other jobs may occupy it).
     // If we just created it, use the initial pane.

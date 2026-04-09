@@ -183,6 +183,7 @@ export function JobDetailView({
   // (outside-click for menus handled by PopupMenu)
 
   const [sigintPending, setSigintPending] = useState(false);
+  const [sigintPendingLabel, setSigintPendingLabel] = useState<"Stopping..." | "Sending C-c...">("Stopping...");
   const [liveZoom, setLiveZoom] = useState(false);
   const [logsHeight, setLogsHeight] = useState(400);
 
@@ -215,17 +216,24 @@ export function JobDetailView({
             break;
           case "sigint":
             if (transport.sigintJob) {
+              setSigintPendingLabel("Sending C-c...");
               setSigintPending(true);
-              onStopping?.();
               await transport.sigintJob(job.slug);
-              setTimeout(() => setSigintPending(false), 2000);
+              setTimeout(() => {
+                setSigintPending(false);
+                setSigintPendingLabel("Stopping...");
+              }, 2000);
             }
             break;
           case "stop":
+            setSigintPendingLabel("Stopping...");
             setSigintPending(true);
             onStopping?.();
             await transport.stopJob(job.slug);
-            setTimeout(() => setSigintPending(false), 2000);
+            setTimeout(() => {
+              setSigintPending(false);
+              setSigintPendingLabel("Stopping...");
+            }, 2000);
             break;
           case "pause":
             await transport.pauseJob(job.slug);
@@ -350,7 +358,7 @@ export function JobDetailView({
         </View>
         <View style={styles.actions}>
           {isRunning && sigintPending && (
-            <ActionButton label="Stopping..." color={colors.danger} onPress={() => {}} disabled compact />
+            <ActionButton label={sigintPendingLabel} color={colors.danger} onPress={() => {}} disabled compact />
           )}
           {runPending && !isRunning && (
             <ActionButton label="Starting..." color={colors.accent} filled onPress={() => {}} disabled compact />
@@ -457,6 +465,7 @@ export function JobDetailView({
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),
+                    ...(isRunning && !sigintPending && transport.sigintJob ? [{ type: "item" as const, label: "Send C-c", onPress: () => handleAction("sigint") }] : []),
                     ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction("stop"), color: colors.danger }] : []),
                     ...(onDelete && !isRunning ? [{ type: "separator" as const }, { type: "item" as const, label: "Delete", onPress: () => onDelete(), color: colors.danger }] : []),
                   ]}

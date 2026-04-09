@@ -22,8 +22,8 @@ pub struct ShortcutSettings {
 impl Default for ShortcutSettings {
     fn default() -> Self {
         Self {
-            next_sidebar_item: "Tab".to_string(),
-            previous_sidebar_item: "Shift+Tab".to_string(),
+            next_sidebar_item: "Alt+Tab".to_string(),
+            previous_sidebar_item: "Alt+Shift+Tab".to_string(),
             toggle_sidebar: "Meta+e".to_string(),
             split_pane_vertical: "Ctrl+v".to_string(),
             split_pane_horizontal: "Ctrl+s".to_string(),
@@ -31,6 +31,15 @@ impl Default for ShortcutSettings {
             move_pane_down: "Ctrl+j".to_string(),
             move_pane_up: "Ctrl+k".to_string(),
             move_pane_right: "Ctrl+l".to_string(),
+        }
+    }
+}
+
+impl ShortcutSettings {
+    fn migrate_legacy_tab_navigation(&mut self) {
+        if self.next_sidebar_item == "Tab" && self.previous_sidebar_item == "Shift+Tab" {
+            self.next_sidebar_item = "Alt+Tab".to_string();
+            self.previous_sidebar_item = "Alt+Shift+Tab".to_string();
         }
     }
 }
@@ -118,7 +127,8 @@ impl AppSettings {
     pub fn load() -> Self {
         if let Some(path) = Self::file_path() {
             if let Ok(contents) = std::fs::read_to_string(&path) {
-                if let Ok(settings) = serde_yml::from_str(&contents) {
+                if let Ok(mut settings) = serde_yml::from_str::<Self>(&contents) {
+                    settings.shortcuts.migrate_legacy_tab_navigation();
                     return settings;
                 }
             }
