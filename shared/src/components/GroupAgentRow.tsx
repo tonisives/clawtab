@@ -13,18 +13,33 @@ const VERTICAL_PADDING = 12;
 const MIN_ROWS = 2;
 const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 
+function labelForProvider(provider: ProcessProvider): string {
+  switch (provider) {
+    case "claude":
+      return "Claude";
+    case "codex":
+      return "Codex";
+    case "opencode":
+      return "OpenCode";
+    case "shell":
+      return "Shell";
+  }
+}
+
 export function GroupAgentRow({
   onRunAgent,
   provider,
   providers = [provider],
   onProviderChange,
   focusSignal,
+  workDir,
 }: {
   onRunAgent: (prompt: string, provider?: ProcessProvider) => void | Promise<void>;
   provider: ProcessProvider;
   providers?: ProcessProvider[];
   onProviderChange?: (provider: ProcessProvider) => void;
   focusSignal?: number;
+  workDir?: string;
 }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
@@ -189,13 +204,17 @@ export function GroupAgentRow({
     : effectiveExpandedHeight;
 
   return (
-    <View style={[styles.row, useMultilineInput ? styles.rowExpanded : styles.rowCollapsed]}>
+    <View
+      style={[styles.row, useMultilineInput ? styles.rowExpanded : styles.rowCollapsed]}
+      {...(Platform.OS === "web" && workDir ? { dataSet: { agentWorkdir: workDir } } : {})}
+    >
       <View style={styles.inputWrap}>
         {useMultilineInput ? (
           <TextInput
             {...commonProps}
             ref={setInputRef}
             multiline
+            {...(Platform.OS === "web" && workDir ? { dataSet: { agentInput: workDir } } : {})}
             style={[
               styles.input,
               {
@@ -215,6 +234,7 @@ export function GroupAgentRow({
           <TextInput
             {...commonProps}
             ref={setInputRef}
+            {...(Platform.OS === "web" && workDir ? { dataSet: { agentInput: workDir } } : {})}
             style={[styles.input, styles.inputCollapsed]}
           />
         )}
@@ -269,7 +289,7 @@ export function GroupAgentRow({
         <PopupMenu
           items={providerOptions.map((option) => ({
             type: "item" as const,
-            label: option === "claude" ? "Claude" : option === "codex" ? "Codex" : "OpenCode",
+            label: labelForProvider(option),
             active: option === provider,
             icon: <JobKindIcon kind={option} size={16} compact bare />,
             onPress: () => {

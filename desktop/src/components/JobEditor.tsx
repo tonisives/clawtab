@@ -1344,6 +1344,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     const knownProviders = availableProviders.includes("claude")
       || availableProviders.includes("codex")
       || availableProviders.includes("opencode")
+      || availableProviders.includes("shell")
       ? availableProviders
       : ([] as ProcessProvider[]);
     const currentProvider = form.agent_provider ?? null;
@@ -1366,7 +1367,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           <option value="">Claude Code (default)</option>
           {providers.map((provider) => (
             <option key={provider} value={provider}>
-              {provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : "OpenCode"}
+              {provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : provider === "opencode" ? "OpenCode" : "Shell"}
             </option>
           ))}
         </select>

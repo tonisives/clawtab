@@ -96,6 +96,27 @@ export function ProcessCard({
     }
   }, [startEditing, startRenameSignal]);
 
+  useEffect(() => {
+    if (!editing || !isWeb) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelEdit();
+    };
+    const handlePointerDown = (event: MouseEvent) => {
+      const input = editInputRef.current as unknown as HTMLElement | null;
+      if (input?.contains(event.target as Node)) return;
+      cancelEdit();
+    };
+    document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("mousedown", handlePointerDown, true);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("mousedown", handlePointerDown, true);
+    };
+  }, [cancelEdit, editing]);
+
   const statusDot = transient ? (
     <View style={[
       styles.statusDot,
@@ -128,7 +149,7 @@ export function ProcessCard({
                 onRenameDraftChange?.(value);
               }}
               onSubmitEditing={commitEdit}
-              onBlur={commitEdit}
+              onBlur={cancelEdit}
               onKeyPress={(e: any) => {
                 if (e?.key === "Escape") cancelEdit();
               }}

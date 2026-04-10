@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Show auto-yes status in pane border - only for Claude Code panes
+# Show auto-yes status in pane border for supported agent panes.
 # Args: $1=pane_id $2=pane_current_command
 
 pane_id="$1"
@@ -9,8 +9,8 @@ if [ -z "$pane_id" ] || [ -z "$cmd" ]; then
     exit 0
 fi
 
-# Only show for Claude Code panes (pane_current_command is a semver like 2.1.79)
-if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+# Only show for panes that support auto-yes.
+if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && ! echo "$cmd" | grep -qiE 'claude|codex'; then
     exit 0
 fi
 

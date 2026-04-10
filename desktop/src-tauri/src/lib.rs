@@ -1,6 +1,6 @@
 mod aerospace;
+pub mod agent_session;
 mod browser;
-pub mod claude_session;
 mod claude_usage;
 mod commands;
 pub mod config;
@@ -390,7 +390,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                     session_started_at: None,
                 }
             } else {
-                let info = claude_session::resolve_session_info(&pane_pid);
+                let info = agent_session::resolve_session_info(&pane_pid);
                 IpcResponse::PaneInfo {
                     first_query: info.first_query,
                     last_query: info.last_query,

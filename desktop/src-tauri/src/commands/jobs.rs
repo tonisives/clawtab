@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
-use crate::claude_session::ProcessProvider;
+use crate::agent_session::ProcessProvider;
 use crate::config::jobs::{Job, JobStatus};
 use crate::config::settings::AppSettings;
 use crate::cwt::CwtFolder;

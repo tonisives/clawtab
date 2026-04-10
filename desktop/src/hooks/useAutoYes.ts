@@ -13,6 +13,15 @@ export function useAutoYes(
   const [autoYesPaneIds, setAutoYesPaneIds] = useState<Set<string>>(new Set());
   const [pendingAutoYes, setPendingAutoYes] = useState<{ paneId: string; title: string } | null>(null);
 
+  const syncAutoYesPaneIds = useCallback((next: Set<string>) => {
+    const paneIds = [...next];
+    setAutoYesPaneIds(next);
+    invoke("set_auto_yes_panes", { paneIds })
+      .then(() => invoke<string[]>("get_auto_yes_panes"))
+      .then((confirmedPaneIds) => setAutoYesPaneIds(new Set(confirmedPaneIds)))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     invoke<string[]>("get_auto_yes_panes").then((paneIds) => {
       setAutoYesPaneIds(new Set(paneIds));
@@ -32,34 +41,31 @@ export function useAutoYes(
     if (autoYesPaneIds.has(q.pane_id)) {
       const next = new Set(autoYesPaneIds);
       next.delete(q.pane_id);
-      setAutoYesPaneIds(next);
-      invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
+      syncAutoYesPaneIds(next);
       return;
     }
     const title = q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~");
     setPendingAutoYes({ paneId: q.pane_id, title });
-  }, [autoYesPaneIds]);
+  }, [autoYesPaneIds, syncAutoYesPaneIds]);
 
   const confirmAutoYes = useCallback(() => {
     if (!pendingAutoYes) return;
     const next = new Set(autoYesPaneIds);
     next.add(pendingAutoYes.paneId);
-    setAutoYesPaneIds(next);
-    invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
+    syncAutoYesPaneIds(next);
     startFastQuestionPoll();
     setPendingAutoYes(null);
-  }, [pendingAutoYes, autoYesPaneIds, startFastQuestionPoll]);
+  }, [pendingAutoYes, autoYesPaneIds, startFastQuestionPoll, syncAutoYesPaneIds]);
 
   const handleToggleAutoYesByPaneId = useCallback((paneId: string, title: string) => {
     if (autoYesPaneIds.has(paneId)) {
       const next = new Set(autoYesPaneIds);
       next.delete(paneId);
-      setAutoYesPaneIds(next);
-      invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
+      syncAutoYesPaneIds(next);
       return;
     }
     setPendingAutoYes({ paneId, title });
-  }, [autoYesPaneIds]);
+  }, [autoYesPaneIds, syncAutoYesPaneIds]);
 
   const handleAutoYesPress = useCallback((entry: AutoYesEntry) => {
     if (entry.jobSlug) {
@@ -81,9 +87,8 @@ export function useAutoYes(
   const handleDisableAutoYes = useCallback((paneId: string) => {
     const next = new Set(autoYesPaneIds);
     next.delete(paneId);
-    setAutoYesPaneIds(next);
-    invoke("set_auto_yes_panes", { paneIds: [...next] }).catch(() => {});
-  }, [autoYesPaneIds]);
+    syncAutoYesPaneIds(next);
+  }, [autoYesPaneIds, syncAutoYesPaneIds]);
 
   const autoYesEntries: AutoYesEntry[] = useMemo(() => {
     const entries: AutoYesEntry[] = [];

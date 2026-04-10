@@ -4,11 +4,9 @@ use std::process::Command;
 use clawtab_protocol::DesktopMessage;
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{Emitter, State};
 
-use crate::claude_session::{
-    detect_process_provider, detect_version_from_command, ProcessProvider,
-};
+use crate::agent_session::{detect_process_provider, detect_version_from_command, ProcessProvider};
 use crate::config::jobs::JobStatus;
 use crate::AppState;
 
@@ -67,6 +65,7 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
         ProcessProvider::Claude => (true, true, true),
         ProcessProvider::Codex => (false, false, false),
         ProcessProvider::Opencode => (false, false, false),
+        ProcessProvider::Shell => (false, false, false),
     }
 }
 
@@ -132,7 +131,7 @@ fn detect_processes_blocking(
     running_panes: HashMap<String, (String, String)>,
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<DetectionSnapshot, String> {
-    let process_snapshot = crate::claude_session::ProcessSnapshot::capture();
+    let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
 
     let output = Command::new("tmux")
         .args([
@@ -211,7 +210,7 @@ fn detect_processes_blocking(
                 .to_string()
         };
 
-        let session_info = crate::claude_session::resolve_session_info_for_provider_with_cwd(
+        let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
             pane_pid,
             Some(provider),
             Some(&process_snapshot),
@@ -376,6 +375,9 @@ pub fn get_auto_yes_panes(state: State<AppState>) -> Vec<String> {
 pub fn set_auto_yes_panes(state: State<AppState>, pane_ids: Vec<String>) {
     let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
     *state.auto_yes_panes.lock().unwrap() = pane_set;
+    if let Some(handle) = state.app_handle.lock().unwrap().as_ref() {
+        let _ = handle.emit("auto-yes-changed", ());
+    }
 
     // Push to relay for cross-device sync
     if let Ok(guard) = state.relay.lock() {

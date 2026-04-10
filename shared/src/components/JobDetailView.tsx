@@ -504,7 +504,7 @@ export function JobDetailView({
                       { type: "item" as const, label: "Right", hint: "Prefix V", onPress: () => onSplitPane("right") },
                       { type: "item" as const, label: "Down", hint: "Prefix S", onPress: () => onSplitPane("down") },
                     ] }] : []),
-                    ...(onZoomPane ? [{ type: "item" as const, label: "Zoom Pane", hint: "Cmd+Z", onPress: () => onZoomPane() }] : []),
+                    ...(onZoomPane ? [{ type: "item" as const, label: "Zoom Pane", hint: "Prefix Z", onPress: () => onZoomPane() }] : []),
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),

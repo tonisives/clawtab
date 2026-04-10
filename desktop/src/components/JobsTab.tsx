@@ -132,8 +132,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: DetectedProcess; stoppedAt: number }[]>([]);
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
   const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
+  const [demotingPaneIds, setDemotingPaneIds] = useState<Set<string>>(new Set());
   const [focusAgentSignal, setFocusAgentSignal] = useState(0);
-  const [renameProcessSignal, setRenameProcessSignal] = useState(0);
+  const renameProcessSignal = 0;
   const [renameProcessPaneId, setRenameProcessPaneId] = useState<string | null>(null);
   const [processRenameDrafts, setProcessRenameDrafts] = useState<Record<string, string | null>>({});
   const previousProcessesRef = useRef<Map<string, DetectedProcess>>(new Map());
@@ -430,6 +431,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       if (viewingProcess.pane_id.startsWith("_pending_")) return;
       const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
       if (!fresh) {
+        if (demotingPaneIds.has(viewingProcess.pane_id)) return;
         const awaitingDetection =
           !!pendingAgentWorkDir &&
           pendingProcess?.pane_id === viewingProcess.pane_id;
@@ -438,7 +440,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       }
       else if (fresh !== viewingProcess) setViewingProcess(fresh);
     }
-  }, [core.processes, viewingProcess, pendingAgentWorkDir, pendingProcess]);
+  }, [core.processes, viewingProcess, pendingAgentWorkDir, pendingProcess, demotingPaneIds]);
 
   useEffect(() => {
     if (!viewingShell) return;
@@ -464,6 +466,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (removed.length === 0) return;
 
     let cancelled = false;
+    const removedIds = new Set(removed.map((process) => process.pane_id));
+    setDemotingPaneIds((prev) => {
+      const next = new Set(prev);
+      for (const paneId of removedIds) next.add(paneId);
+      return next;
+    });
 
     Promise.all(
       removed.map(async (process): Promise<ShellPane | null> => {
@@ -481,9 +489,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     ).then((results) => {
       if (cancelled) return;
       const demoted = results.filter(isShellPane);
+      const demotedIds = new Set(demoted.map((shell) => shell.pane_id));
+      const vanishedIds = new Set(Array.from(removedIds).filter((paneId) => !demotedIds.has(paneId)));
+      setDemotingPaneIds((prev) => {
+        const next = new Set(prev);
+        for (const paneId of removedIds) next.delete(paneId);
+        return next;
+      });
       if (demoted.length === 0) return;
 
-      const demotedIds = new Set(demoted.map((shell) => shell.pane_id));
       setShellPanes((prev) => {
         const existing = new Set(prev.map((pane) => pane.pane_id));
         const additions = demoted.filter((shell) => !existing.has(shell.pane_id));
@@ -503,11 +517,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           setViewingProcess(null);
           setViewingShell(shell);
         }
+      } else if (viewingProcess && vanishedIds.has(viewingProcess.pane_id)) {
+        setViewingProcess(null);
       }
     });
 
     return () => {
       cancelled = true;
+      setDemotingPaneIds((prev) => {
+        const next = new Set(prev);
+        for (const paneId of removedIds) next.delete(paneId);
+        return next;
+      });
     };
   }, [core.processes, pendingProcess, shellPanes, split.replaceContent, stoppingProcesses, viewingProcess]);
 
@@ -640,30 +661,55 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [recentSinglePaneContents, setRecentSinglePaneContents] = useState<PaneContent[]>([]);
   const [pendingShortcutStroke, setPendingShortcutStroke] = useState<string | null>(null);
   const sidebarFocusRef = useRef<{ focus: () => void } | null>(null);
+  const activePaneContent = useMemo(() => {
+    if (!split.tree) return currentContent;
+    const leaves = collectLeaves(split.tree);
+    return leaves.find((leaf) => leaf.id === split.focusedLeafId)?.content ?? leaves[0]?.content ?? currentContent;
+  }, [currentContent, split.focusedLeafId, split.tree]);
   const activeProcessForRename = useMemo(() => {
-    if (currentContent?.kind === "process") {
-      return core.processes.find((process) => process.pane_id === currentContent.paneId)
-        ?? (pendingProcess?.pane_id === currentContent.paneId ? pendingProcess : null);
+    if (activePaneContent?.kind === "process") {
+      return core.processes.find((process) => process.pane_id === activePaneContent.paneId)
+        ?? (pendingProcess?.pane_id === activePaneContent.paneId ? pendingProcess : null);
     }
-    if (currentContent?.kind === "agent") {
+    if (activePaneContent?.kind === "agent") {
       return core.processes.find((process) => process.cwd.endsWith("/clawtab/agent")) ?? null;
     }
     return null;
-  }, [core.processes, currentContent, pendingProcess]);
-  const activeAgentWorkDir = useMemo(() => {
-    if (currentContent?.kind === "job") {
-      const job = (core.jobs as Job[]).find((entry) => entry.slug === currentContent.slug);
-      return job?.folder_path ?? job?.work_dir ?? null;
+  }, [activePaneContent, core.processes, pendingProcess]);
+  const resolveGroupDisplayKey = useCallback((group: string | null | undefined, folderPath?: string | null) => {
+    if (!group || group === "default") {
+      return folderPath ? (folderPath.split("/").filter(Boolean).pop() ?? "General") : "General";
     }
-    if (currentContent?.kind === "process") {
-      return core.processes.find((process) => process.pane_id === currentContent.paneId)?.cwd
-        ?? (pendingProcess?.pane_id === currentContent.paneId ? pendingProcess.cwd : null);
+    return group;
+  }, []);
+  const activeSidebarAgentTarget = useMemo(() => {
+    if (activePaneContent?.kind === "job") {
+      const job = (core.jobs as Job[]).find((entry) => entry.slug === activePaneContent.slug);
+      const workDir = job?.folder_path ?? job?.work_dir;
+      return job && workDir ? { workDir, groupKey: resolveGroupDisplayKey(job.group, workDir) } : null;
     }
-    if (currentContent?.kind === "terminal") {
-      return shellPanes.find((pane) => pane.pane_id === currentContent.paneId)?.cwd ?? null;
+    if (activePaneContent?.kind === "process") {
+      const process = core.processes.find((entry) => entry.pane_id === activePaneContent.paneId)
+        ?? (pendingProcess?.pane_id === activePaneContent.paneId ? pendingProcess : null);
+      if (!process) return null;
+      if (process.matched_group) {
+        const groupJobs = (core.jobs as Job[]).filter((job) => (job.group || "default") === process.matched_group);
+        const workDir = groupJobs[0]?.folder_path ?? groupJobs[0]?.work_dir;
+        return workDir ? { workDir, groupKey: resolveGroupDisplayKey(process.matched_group, workDir) } : null;
+      }
+      const sameFolderCount = core.processes.filter((entry) => !entry.matched_group && entry.cwd === process.cwd).length;
+      return sameFolderCount >= 2 ? { workDir: process.cwd, groupKey: `_det_${process.cwd}` } : null;
+    }
+    if (activePaneContent?.kind === "terminal") {
+      const shell = shellPanes.find((entry) => entry.pane_id === activePaneContent.paneId);
+      if (!shell?.matched_group) return null;
+      const groupJobs = (core.jobs as Job[]).filter((job) => (job.group || "default") === shell.matched_group);
+      const workDir = groupJobs[0]?.folder_path ?? groupJobs[0]?.work_dir;
+      return workDir ? { workDir, groupKey: resolveGroupDisplayKey(shell.matched_group, workDir) } : null;
     }
     return null;
-  }, [core.jobs, core.processes, currentContent, pendingProcess, shellPanes]);
+  }, [activePaneContent, core.jobs, core.processes, pendingProcess, resolveGroupDisplayKey, shellPanes]);
+  const activeAgentWorkDir = activeSidebarAgentTarget?.workDir ?? null;
   const getPaneIdForContent = useCallback((content: PaneContent | null): string | null => {
     if (!content) return null;
     if (content.kind === "process" || content.kind === "terminal") return content.paneId;
@@ -682,28 +728,57 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     return process.display_name ?? shortenPath(process.cwd);
   }, [processRenameDrafts]);
 
+  const focusSidebarAgentInput = useCallback((workDir: string) => {
+    if (typeof document === "undefined") return false;
+    const escaped = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(workDir) : workDir.replace(/"/g, '\\"');
+    const selector = `[data-agent-input="${escaped}"]`;
+    const input = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
+    if (!input) return false;
+    input.focus();
+    const len = input.value.length;
+    try { input.setSelectionRange(len, len); } catch {}
+    return true;
+  }, []);
+
+  const openRenameProcessDialog = useCallback((process: DetectedProcess) => {
+    setEditProcessField({
+      paneId: process.pane_id,
+      title: "Edit pane title",
+      label: "Title",
+      field: "display_name",
+      initialValue: process.display_name ?? "",
+      placeholder: shortenPath(process.cwd),
+    });
+  }, []);
+
   const triggerRenameActivePane = useCallback(() => {
     if (!activeProcessForRename || activeProcessForRename._transient_state) return;
-    if (sidebarCollapsed) setSidebarCollapsed(false);
-    requestAnimationFrame(() => sidebarFocusRef.current?.focus());
-    setRenameProcessPaneId(activeProcessForRename.pane_id);
-    setRenameProcessSignal((value) => value + 1);
-  }, [activeProcessForRename, sidebarCollapsed]);
+    openRenameProcessDialog(activeProcessForRename);
+  }, [activeProcessForRename, openRenameProcessDialog]);
 
   const triggerFocusAgentInput = useCallback(() => {
-    if (!activeAgentWorkDir) return;
+    if (!activeSidebarAgentTarget?.workDir) return;
+    if (activeSidebarAgentTarget.groupKey && core.collapsedGroups.has(activeSidebarAgentTarget.groupKey)) {
+      core.toggleGroup(activeSidebarAgentTarget.groupKey);
+    }
     if (sidebarCollapsed) setSidebarCollapsed(false);
     requestAnimationFrame(() => sidebarFocusRef.current?.focus());
     setFocusAgentSignal((value) => value + 1);
-  }, [activeAgentWorkDir, sidebarCollapsed]);
+    requestAnimationFrame(() => {
+      if (focusSidebarAgentInput(activeSidebarAgentTarget.workDir)) return;
+      setTimeout(() => { focusSidebarAgentInput(activeSidebarAgentTarget.workDir); }, 40);
+    });
+  }, [activeSidebarAgentTarget, core.collapsedGroups, core.toggleGroup, focusSidebarAgentInput, sidebarCollapsed]);
 
   const triggerZoomActivePane = useCallback(() => {
-    if (!split.tree) return;
-    const leaves = collectLeaves(split.tree);
+    const leaves = split.tree ? collectLeaves(split.tree) : [];
     const focusedLeaf = leaves.find((leaf) => leaf.id === split.focusedLeafId) ?? leaves[0];
-    if (!focusedLeaf) return;
-    split.zoomToLeaf(focusedLeaf.id);
-  }, [split.tree, split.focusedLeafId, split.zoomToLeaf]);
+    if (focusedLeaf) {
+      split.toggleZoomLeaf(focusedLeaf.id);
+      return;
+    }
+    split.toggleZoomLeaf("");
+  }, [split.tree, split.focusedLeafId, split.toggleZoomLeaf]);
 
   const navigateSidebarItems = useCallback((direction: 1 | -1) => {
     if (sidebarSelectableItems.length === 0) return;
@@ -1000,17 +1075,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     await invoke("focus_job_window", { name });
   }, []);
 
-  const openRenameProcessDialog = useCallback((process: DetectedProcess) => {
-    setEditProcessField({
-      paneId: process.pane_id,
-      title: "Edit pane title",
-      label: "Title",
-      field: "display_name",
-      initialValue: process.display_name ?? "",
-      placeholder: shortenPath(process.cwd),
-    });
-  }, []);
-
   const handleSaveProcessNameInline = useCallback(async (process: DetectedProcess, name: string) => {
     const normalizedValue = name.trim() || null;
     const paneId = process.pane_id;
@@ -1268,6 +1332,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     if (workDir) {
       const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
       const matchedGroup = matchingJob ? (matchingJob.group || "default") : null;
+      const launchingShell = resolvedProvider === "shell";
       // Show a placeholder while waiting for the pane to be created
       const placeholder: DetectedProcess = {
         pane_id: `_pending_${Date.now()}`, cwd: workDir, version: "", tmux_session: "", window_name: "",
@@ -1275,38 +1340,60 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
         last_query: null, session_started_at: new Date().toISOString(), _transient_state: "starting",
       };
-      setPendingProcess(placeholder);
-      if (split.tree) {
-        split.openContent({ kind: "process", paneId: placeholder.pane_id });
-      } else {
-        setViewingJob(null); setViewingAgent(false); setViewingProcess(placeholder);
+      if (!launchingShell) {
+        setPendingProcess(placeholder);
+        if (split.tree) {
+          split.openContent({ kind: "process", paneId: placeholder.pane_id });
+        } else {
+          setViewingJob(null); setViewingAgent(false); setViewingProcess(placeholder);
+        }
+        setScrollToSlug(placeholder.pane_id);
       }
-      setScrollToSlug(placeholder.pane_id);
 
       const result = await actions.runAgent(prompt, workDir, provider);
       if (result) {
-        // Got the real pane - switch to it immediately
-        const realProcess: DetectedProcess = {
-          pane_id: result.pane_id, cwd: workDir, version: "", tmux_session: result.tmux_session, window_name: "",
-          provider: resolvedProvider, ...capabilities,
-          matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
-          last_query: null, session_started_at: new Date().toISOString(),
-        };
-        setPendingProcess(realProcess);
-        if (split.tree) {
-          const realContent: PaneContent = { kind: "process", paneId: realProcess.pane_id };
-          if (!split.replaceContent({ kind: "process", paneId: placeholder.pane_id }, realContent)) {
-            split.openContent(realContent);
+        if (launchingShell) {
+          const shellInfo = transport.getExistingPaneInfo
+            ? await transport.getExistingPaneInfo(result.pane_id)
+            : null;
+          const shell: ShellPane = shellInfo ?? {
+            pane_id: result.pane_id,
+            cwd: workDir,
+            tmux_session: result.tmux_session,
+            window_name: "",
+          };
+          const nextShell: ShellPane = { ...shell, matched_group: matchedGroup };
+          setShellPanes((prev) => prev.some((pane) => pane.pane_id === nextShell.pane_id) ? prev : [...prev, nextShell]);
+          if (split.tree) {
+            split.openContent({ kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session });
+          } else {
+            setViewingJob(null); setViewingAgent(false); setViewingProcess(null); setViewingShell(nextShell);
           }
+          setScrollToSlug(nextShell.pane_id);
         } else {
-          setViewingProcess(realProcess);
+          // Got the real pane - switch to it immediately
+          const realProcess: DetectedProcess = {
+            pane_id: result.pane_id, cwd: workDir, version: "", tmux_session: result.tmux_session, window_name: "",
+            provider: resolvedProvider, ...capabilities,
+            matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
+            last_query: null, session_started_at: new Date().toISOString(),
+          };
+          setPendingProcess(realProcess);
+          if (split.tree) {
+            const realContent: PaneContent = { kind: "process", paneId: realProcess.pane_id };
+            if (!split.replaceContent({ kind: "process", paneId: placeholder.pane_id }, realContent)) {
+              split.openContent(realContent);
+            }
+          } else {
+            setViewingProcess(realProcess);
+          }
+          setScrollToSlug(result.pane_id);
+          // Clear pending state after next process poll picks it up
+          setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
         }
-        setScrollToSlug(result.pane_id);
-        // Clear pending state after next process poll picks it up
-        setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
       } else {
         // Fallback: poll for the process (timeout case)
-        setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
+        if (!launchingShell) setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
       }
     } else {
       await actions.runAgent(prompt, workDir, provider);
@@ -1380,6 +1467,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     split.cleanStaleLeaves((content) => {
       if (content.kind === "process") {
         if (pendingProcess?.pane_id === content.paneId) return false;
+        if (demotingPaneIds.has(content.paneId)) return false;
         if (shellPanes.find((p) => p.pane_id === content.paneId)) return false;
         return !core.processes.find(p => p.pane_id === content.paneId);
       }
@@ -1388,7 +1476,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       }
       return false;
     });
-  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes]);
+  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes, demotingPaneIds]);
 
   // Promote shell panes to detected processes when claude/codex is launched inside them
   useEffect(() => {
@@ -1448,12 +1536,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
       return paneId ? () => setSkillSearchPaneId(paneId) : undefined;
     })(),
-    onZoomPane: split.tree ? () => {
-      const leaves = collectLeaves(split.tree!);
-      const currentLeaf = leaves.find((leaf) => leaf.content.kind === "job" && leaf.content.slug === job.slug);
-      if (currentLeaf) split.zoomToLeaf(currentLeaf.id);
-    } : undefined,
-  }), [core.statuses, autoYes, handleFork, handleSplitPane, split.tree, split.zoomToLeaf]);
+    onZoomPane: () => {
+      if (split.tree) {
+        const leaves = collectLeaves(split.tree);
+        const currentLeaf = leaves.find((leaf) => leaf.content.kind === "job" && leaf.content.slug === job.slug);
+        if (currentLeaf) {
+          split.toggleZoomLeaf(currentLeaf.id);
+          return;
+        }
+      }
+      split.toggleZoomLeaf("");
+    },
+  }), [core.statuses, autoYes, handleFork, handleSplitPane, split.tree, split.toggleZoomLeaf]);
 
   const buildJobTitlePath = useCallback((job: Job, _jobQuestion: ClaudeQuestion | undefined) => {
     const sourcePath = job.work_dir || job.folder_path || job.path;
@@ -1491,7 +1585,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               onBack={() => split.handleClosePane(leafId)}
               onOpen={() => handleOpen("agent")}
               onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
-              onZoomPane={() => split.zoomToLeaf(leafId)}
+              onZoomPane={() => split.toggleZoomLeaf(leafId)}
               showBackButton={!isWide}
               hidePath
               contentStyle={trafficLightInsetStyle}
@@ -1521,7 +1615,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                 split.handleClosePane(leafId);
               }}
               onSplitPane={(nextDirection: "right" | "down") => handleSplitPane(shell.pane_id, nextDirection)}
-              onZoomPane={() => split.zoomToLeaf(leafId)}
+              onZoomPane={() => split.toggleZoomLeaf(leafId)}
               contentStyle={trafficLightInsetStyle}
               titlePath={shortenPath(shell.cwd)}
               dragHandleProps={dragHandleProps}
@@ -1569,7 +1663,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               }}
               onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
               onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
-              onZoomPane={() => split.zoomToLeaf(leafId)}
+              onZoomPane={() => split.toggleZoomLeaf(leafId)}
               onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
               onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
               contentStyle={trafficLightInsetStyle}
@@ -1617,7 +1711,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         )}
       </DraggableSplitPane>
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.zoomToLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
@@ -1735,6 +1829,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           onBack={() => setViewingAgent(false)}
           onOpen={() => handleOpen("agent")}
           onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
+          onZoomPane={() => split.toggleZoomLeaf("")}
           showBackButton={!isWide}
           hidePath
           contentStyle={trafficLightInsetStyle}
@@ -1786,6 +1881,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             }}
             onFork={(direction: "right" | "down") => handleFork(singleProcess.pane_id, direction)}
             onSplitPane={(direction: "right" | "down") => handleSplitPane(singleProcess.pane_id, direction)}
+            onZoomPane={() => split.toggleZoomLeaf("")}
             onInjectSecrets={() => setInjectSecretsPaneId(singleProcess.pane_id)}
             onSearchSkills={() => setSkillSearchPaneId(singleProcess.pane_id)}
             contentStyle={trafficLightInsetStyle}
@@ -1815,6 +1911,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             selectAdjacentItem(singleShell.pane_id);
           }}
           onSplitPane={(direction: "right" | "down") => handleSplitPane(singleShell.pane_id, direction)}
+          onZoomPane={() => split.toggleZoomLeaf("")}
           contentStyle={trafficLightInsetStyle}
           titlePath={shortenPath(singleShell.cwd)}
         />
@@ -1865,7 +1962,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Select a job to view details</span>
       </div>
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf]);
 
   const detailPane = currentContent ? (
     <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>

@@ -502,7 +502,7 @@ async fn execute_claude_job(
         let s = settings.lock().unwrap();
         let provider = job
             .agent_provider
-            .unwrap_or(crate::claude_session::ProcessProvider::Claude);
+            .unwrap_or(crate::agent_session::ProcessProvider::Claude);
         let session = job
             .tmux_session
             .clone()
@@ -512,8 +512,10 @@ async fn execute_claude_job(
             .clone()
             .unwrap_or_else(|| s.default_work_dir.clone());
         let command = match provider {
-            crate::claude_session::ProcessProvider::Claude => s.claude_path.clone(),
-            _ => provider.binary_name().to_string(),
+            crate::agent_session::ProcessProvider::Claude => s.claude_path.clone(),
+            crate::agent_session::ProcessProvider::Codex
+            | crate::agent_session::ProcessProvider::Opencode => provider.binary_name().to_string(),
+            crate::agent_session::ProcessProvider::Shell => String::new(),
         };
         (provider, session, wd, command)
     };
@@ -561,15 +563,18 @@ async fn execute_claude_job(
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
-        crate::claude_session::ProcessProvider::Claude
-        | crate::claude_session::ProcessProvider::Codex => {
+        crate::agent_session::ProcessProvider::Claude
+        | crate::agent_session::ProcessProvider::Codex => {
             format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
         }
-        crate::claude_session::ProcessProvider::Opencode => {
+        crate::agent_session::ProcessProvider::Opencode => {
             format!(
                 "cd {} && {} --prompt $'{}'",
                 work_dir, agent_command, escaped_prompt
             )
+        }
+        crate::agent_session::ProcessProvider::Shell => {
+            format!("cd {} && {}", work_dir, escaped_prompt)
         }
     };
 
@@ -687,14 +692,16 @@ async fn execute_folder_job(
         let s = settings.lock().unwrap();
         let provider = job
             .agent_provider
-            .unwrap_or(crate::claude_session::ProcessProvider::Claude);
+            .unwrap_or(crate::agent_session::ProcessProvider::Claude);
         let session = job
             .tmux_session
             .clone()
             .unwrap_or_else(|| s.default_tmux_session.clone());
         let command = match provider {
-            crate::claude_session::ProcessProvider::Claude => s.claude_path.clone(),
-            _ => provider.binary_name().to_string(),
+            crate::agent_session::ProcessProvider::Claude => s.claude_path.clone(),
+            crate::agent_session::ProcessProvider::Codex
+            | crate::agent_session::ProcessProvider::Opencode => provider.binary_name().to_string(),
+            crate::agent_session::ProcessProvider::Shell => String::new(),
         };
         (provider, session, folder_path.clone(), command)
     };
@@ -718,15 +725,18 @@ async fn execute_folder_job(
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
-        crate::claude_session::ProcessProvider::Claude
-        | crate::claude_session::ProcessProvider::Codex => {
+        crate::agent_session::ProcessProvider::Claude
+        | crate::agent_session::ProcessProvider::Codex => {
             format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
         }
-        crate::claude_session::ProcessProvider::Opencode => {
+        crate::agent_session::ProcessProvider::Opencode => {
             format!(
                 "cd {} && {} --prompt $'{}'",
                 work_dir, agent_command, escaped_prompt
             )
+        }
+        crate::agent_session::ProcessProvider::Shell => {
+            format!("cd {} && {}", work_dir, escaped_prompt)
         }
     };
 

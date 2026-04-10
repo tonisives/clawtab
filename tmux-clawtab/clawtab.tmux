@@ -12,7 +12,7 @@
 #   prefix + f   Fork current Claude Code session into new pane below
 #
 # Pane title bar (top, right side):
-#   [Y] green=on, dim=off - only shown for Claude Code panes
+#   [Y] green=on, dim=off - only shown for supported agent panes
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -41,7 +41,7 @@ tmux bind-key "$fork_key" run-shell "$CURRENT_DIR/scripts/fork-session.sh"
 # Uses pane option @clawtab-auto-yes for instant toggle feedback (no shell cache delay)
 current_border=$(tmux show-option -gqv pane-border-format)
 if [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
-    clawtab_part="#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{m:*.*.*,#{pane_current_command}},#[fg=colour240][y]#[default],}}"
+    clawtab_part="#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}}"
     tmux set-option -g pane-border-format "${current_border}${clawtab_part}"
 fi
 

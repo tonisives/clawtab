@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::claude_session::ProcessProvider;
+use crate::agent_session::ProcessProvider;
 use crate::commands::processes::DetectedProcessOverride;
 use crate::telegram::TelegramConfig;
 
@@ -34,7 +34,7 @@ impl Default for ShortcutSettings {
             toggle_sidebar: "Meta+e".to_string(),
             rename_active_pane: "Meta+r".to_string(),
             focus_agent_input: "Meta+n".to_string(),
-            zoom_active_pane: "Meta+z".to_string(),
+            zoom_active_pane: "Prefix z".to_string(),
             split_pane_vertical: "Prefix v".to_string(),
             split_pane_horizontal: "Prefix s".to_string(),
             kill_pane: "Prefix q".to_string(),

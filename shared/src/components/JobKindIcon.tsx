@@ -15,6 +15,7 @@ export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "she
 export function kindForJob(job: RemoteJob): JobKind {
   if (job.agent_provider === "codex" || job.job_type === "codex") return "codex";
   if (job.agent_provider === "opencode" || job.job_type === "opencode") return "opencode";
+  if (job.agent_provider === "shell") return "shell";
   if (job.job_type === "claude") return "claude";
   if (job.job_type === "shell") return "shell";
   if (job.agent_provider === "claude") return "claude";

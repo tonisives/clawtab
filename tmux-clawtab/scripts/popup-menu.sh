@@ -22,10 +22,10 @@ if [ -z "$PANE_ID" ]; then
     exit 1
 fi
 
-# Verify it's a Claude Code pane (semver = running, claude = starting up)
+# Verify it's a supported agent pane.
 cmd=$(tmux list-panes -t "$PANE_ID" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | grep "^${PANE_ID} " | cut -d' ' -f2)
-if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && ! echo "$cmd" | grep -qi 'claude'; then
-    echo "Not a Claude Code pane (got: $cmd)"
+if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && ! echo "$cmd" | grep -qiE 'claude|codex'; then
+    echo "Not a supported agent pane (got: $cmd)"
     sleep 2
     exit 0
 fi

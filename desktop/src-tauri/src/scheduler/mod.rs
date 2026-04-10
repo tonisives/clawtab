@@ -217,6 +217,45 @@ async fn run_loop(
             }
         }
 
+        // Clean up stale running jobs whose tmux pane no longer exists.
+        // This catches cases where the monitor task was dropped or the pane
+        // was killed externally without the monitor detecting it, leaving the
+        // job stuck as Running in the UI.
+        {
+            let stale: Vec<(String, String)> = {
+                let statuses = job_status.lock().unwrap();
+                statuses
+                    .iter()
+                    .filter_map(|(slug, status)| {
+                        if let JobStatus::Running {
+                            pane_id: Some(pid), ..
+                        } = status
+                        {
+                            if !crate::tmux::pane_exists(pid) {
+                                return Some((slug.clone(), pid.clone()));
+                            }
+                        }
+                        None
+                    })
+                    .collect()
+            };
+            if !stale.is_empty() {
+                let mut statuses = job_status.lock().unwrap();
+                for (slug, pane_id) in &stale {
+                    log::warn!(
+                        "Stale running job '{}' (pane {} gone) - resetting to Idle",
+                        slug,
+                        pane_id,
+                    );
+                    let next = JobStatus::Idle;
+                    statuses.insert(slug.clone(), next.clone());
+                    crate::relay::push_status_update(&relay, slug, &next);
+                }
+                drop(statuses);
+                let _ = app_handle.emit("jobs-changed", ());
+            }
+        }
+
         last_check = now;
     }
 }

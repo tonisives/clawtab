@@ -172,6 +172,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
   // Split tree state
   const [splitTree, setSplitTree] = useState<SplitNode | null>(() => loadTree(storageKey));
   const [focusedLeafId, setFocusedLeafId] = useState<string | null>(null);
+  const [zoomSnapshot, setZoomSnapshot] = useState<{ tree: SplitNode; focusedLeafId: string | null; content: PaneContent } | null>(null);
 
   // Persist tree on change
   useEffect(() => {
@@ -486,16 +487,24 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     return true;
   }, []);
 
-  const zoomToLeaf = useCallback((leafId: string) => {
+  const toggleZoomLeaf = useCallback((leafId: string) => {
     const currentTree = splitTreeRef.current;
-    if (!currentTree) return false;
+    if (!currentTree) {
+      const content = currentContentRef.current;
+      if (!zoomSnapshot || !content || !contentEquals(content, zoomSnapshot.content)) return false;
+      setSplitTree(zoomSnapshot.tree);
+      setFocusedLeafId(zoomSnapshot.focusedLeafId);
+      setZoomSnapshot(null);
+      return true;
+    }
     const leaf = collectLeaves(currentTree).find((entry) => entry.id === leafId);
     if (!leaf) return false;
+    setZoomSnapshot({ tree: currentTree, focusedLeafId, content: leaf.content });
     setSplitTree(null);
     setFocusedLeafId(null);
     onCollapseRef.current(leaf.content);
     return true;
-  }, []);
+  }, [focusedLeafId, zoomSnapshot]);
 
   // Compute selectedItems map for sidebar highlighting
   const selectedItems = useMemo((): Map<string, string> | null => {
@@ -557,7 +566,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     addSplitLeaf,
     openContent,
     replaceContent,
-    zoomToLeaf,
+    toggleZoomLeaf,
     // Sidebar data
     selectedItems,
     focusedItemKey,

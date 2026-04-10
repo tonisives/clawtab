@@ -1,4 +1,4 @@
-use crate::claude_session::ProcessProvider;
+use crate::agent_session::ProcessProvider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;

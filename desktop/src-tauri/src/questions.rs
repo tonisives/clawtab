@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
-use crate::claude_session::{detect_process_provider, ProcessSnapshot};
+use crate::agent_session::{detect_process_provider, ProcessSnapshot};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::relay::RelayHandle;
 
@@ -181,23 +181,69 @@ struct CachedQuestion {
     miss_count: u32,
 }
 
-/// Find the best "yes" option from a list of question options.
-/// Prefers "Yes, during this session" over plain "Yes".
+/// Find the best affirmative option from a list of question options.
+/// Prefers session/one-time approvals over persistent allowlist entries.
 fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
-    // Prefer "Yes, during this session" or similar session-scoped option
+    let mut best: Option<(&QuestionOption, i32)> = None;
+
     for opt in options {
-        if opt.label.to_lowercase().contains("yes") && opt.label.to_lowercase().contains("session")
+        let lower = opt.label.to_lowercase();
+
+        if lower.starts_with("no")
+            || lower.contains(" cancel")
+            || lower.starts_with("cancel")
+            || lower.contains(" deny")
+            || lower.starts_with("deny")
+            || lower.contains(" reject")
+            || lower.starts_with("reject")
+            || lower.contains("tell codex what to do differently")
         {
-            return Some(opt.number.clone());
+            continue;
+        }
+
+        let mut score = 0;
+
+        if lower.starts_with("yes") || lower.contains(" yes") {
+            score += 100;
+        }
+        if lower.contains("during this session") || lower.contains("this session") {
+            score += 80;
+        }
+        if lower.contains("proceed")
+            || lower.contains("approve")
+            || lower.contains("allow")
+            || lower.contains("run")
+        {
+            score += 60;
+        }
+        if lower.contains(" once")
+            || lower.starts_with("once ")
+            || lower.contains(" this time")
+            || lower.contains(" for now")
+        {
+            score += 40;
+        }
+        if lower.contains("don't ask again")
+            || lower.contains("do not ask again")
+            || lower.contains("always")
+            || lower.contains("all future")
+            || lower.contains("remember")
+            || lower.contains("for commands that start with")
+        {
+            score -= 70;
+        }
+
+        if score <= 0 {
+            continue;
+        }
+
+        match best {
+            Some((_, best_score)) if score <= best_score => {}
+            _ => best = Some((opt, score)),
         }
     }
-    // Fall back to plain "Yes"
-    for opt in options {
-        if opt.label.to_lowercase().starts_with("yes") {
-            return Some(opt.number.clone());
-        }
-    }
-    None
+
+    best.map(|(opt, _)| opt.number.clone())
 }
 
 /// Runs the question detection loop. The idle path is intentionally conservative:
@@ -604,7 +650,8 @@ fn detect_question_processes(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_numbered_options;
+    use super::{find_yes_option, parse_numbered_options};
+    use clawtab_protocol::QuestionOption;
 
     #[test]
     fn parses_claude_style_numbered_prompt() {
@@ -655,5 +702,45 @@ Plan:
 
         let options = parse_numbered_options(text);
         assert!(options.is_empty());
+    }
+
+    #[test]
+    fn prefers_session_scoped_yes_over_broader_yes() {
+        let options = vec![
+            QuestionOption {
+                number: "1".to_string(),
+                label: "Yes".to_string(),
+            },
+            QuestionOption {
+                number: "2".to_string(),
+                label: "Yes, during this session".to_string(),
+            },
+            QuestionOption {
+                number: "3".to_string(),
+                label: "No".to_string(),
+            },
+        ];
+
+        assert_eq!(find_yes_option(&options), Some("2".to_string()));
+    }
+
+    #[test]
+    fn prefers_one_time_codex_approval_over_persistent_allowlist() {
+        let options = vec![
+            QuestionOption {
+                number: "1".to_string(),
+                label: "Approve once".to_string(),
+            },
+            QuestionOption {
+                number: "2".to_string(),
+                label: "Always allow commands that start with 'npm test'".to_string(),
+            },
+            QuestionOption {
+                number: "3".to_string(),
+                label: "Tell Codex what to do differently".to_string(),
+            },
+        ];
+
+        assert_eq!(find_yes_option(&options), Some("1".to_string()));
     }
 }

@@ -29,7 +29,7 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   toggle_sidebar: "Meta+e",
   rename_active_pane: "Meta+r",
   focus_agent_input: "Meta+n",
-  zoom_active_pane: "Meta+z",
+  zoom_active_pane: "Prefix z",
   split_pane_vertical: "Prefix v",
   split_pane_horizontal: "Prefix s",
   kill_pane: "Prefix q",

@@ -1,4 +1,4 @@
-export type ProcessProvider = "claude" | "codex" | "opencode";
+export type ProcessProvider = "claude" | "codex" | "opencode" | "shell";
 
 export interface DetectedProcess {
   pane_id: string;

@@ -1,6 +1,6 @@
 use tauri::State;
 
-use crate::claude_session::ProcessProvider;
+use crate::agent_session::ProcessProvider;
 use crate::tools;
 use crate::AppState;
 
@@ -23,9 +23,13 @@ pub async fn detect_agent_providers() -> Result<Vec<ProcessProvider>, String> {
                 ProcessProvider::Claude,
                 ProcessProvider::Codex,
                 ProcessProvider::Opencode,
+                ProcessProvider::Shell,
             ]
             .into_iter()
-            .filter(|provider| tools::which(provider.binary_name()).is_some())
+            .filter(|provider| {
+                matches!(provider, ProcessProvider::Shell)
+                    || tools::which(provider.binary_name()).is_some()
+            })
             .collect(),
         )
     })

@@ -126,7 +126,7 @@ async fn main() {
                 std::process::exit(1);
             }
 
-            let info = clawtab_lib::claude_session::resolve_session_info(&pane_pid);
+            let info = clawtab_lib::agent_session::resolve_session_info(&pane_pid);
             if let Some(ref date) = info.session_started_at {
                 println!("started_at={}", date);
             }

@@ -826,6 +826,7 @@ export function JobListView({
                       onProviderChange={(provider) => handleSetGroupAgentProvider(item.workDir, provider)}
                       onRunAgent={(prompt, provider) => onRunAgent!(prompt, item.workDir, provider)}
                       focusSignal={focusAgentWorkDir === item.workDir ? focusAgentSignal : undefined}
+                      workDir={item.workDir}
                     />
                   </View>
                 );

@@ -681,8 +681,8 @@ fn detect_processes(
             (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
 
         let provider =
-            crate::claude_session::detect_process_provider(pane_pid, None).or_else(|| {
-                is_semver(command).then_some(crate::claude_session::ProcessProvider::Claude)
+            crate::agent_session::detect_process_provider(pane_pid, None).or_else(|| {
+                is_semver(command).then_some(crate::agent_session::ProcessProvider::Claude)
             });
         let Some(provider) = provider else {
             continue;
@@ -708,16 +708,17 @@ fn detect_processes(
             .trim()
             .to_string();
 
-        let session_info = crate::claude_session::resolve_session_info_for_provider_with_cwd(
+        let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
             pane_pid,
             Some(provider),
             None,
             Some(cwd),
         );
         let (can_fork_session, can_send_skills, can_inject_secrets) = match provider {
-            crate::claude_session::ProcessProvider::Claude => (true, true, true),
-            crate::claude_session::ProcessProvider::Codex => (false, false, false),
-            crate::claude_session::ProcessProvider::Opencode => (false, false, false),
+            crate::agent_session::ProcessProvider::Claude => (true, true, true),
+            crate::agent_session::ProcessProvider::Codex => (false, false, false),
+            crate::agent_session::ProcessProvider::Opencode => (false, false, false),
+            crate::agent_session::ProcessProvider::Shell => (false, false, false),
         };
 
         results.push(RemoteDetectedProcess {

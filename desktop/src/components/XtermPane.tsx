@@ -15,6 +15,10 @@ import {
 } from "../shortcuts";
 
 const pendingDestroyTimers = new Map<string, number>();
+// Tracks pane IDs whose xterm had DOM focus at the moment of unmount, so a
+// remount (e.g. shell promoted to detected process swaps the detail component)
+// can re-focus the new terminal and preserve the user's typing position.
+const pendingFocusPaneIds = new Set<string>();
 
 // Tauri event names can't contain %, so sanitize pane IDs
 function eventKey(paneId: string): string {
@@ -232,6 +236,14 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
       if (cancelled) { t.dispose(); return; }
 
+      // If this pane's terminal had focus at the last unmount (e.g. a shell
+      // was just promoted to a detected process and the detail component
+      // swapped), restore input focus to the new xterm instance.
+      if (pendingFocusPaneIds.has(paneId)) {
+        pendingFocusPaneIds.delete(paneId);
+        t.focus();
+      }
+
       const cachedBytes = await invoke<number[]>("pty_get_cached_output", { paneId }).catch(() => []);
       if (cancelled) {
         t.dispose();
@@ -350,6 +362,16 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
     return () => {
       cancelled = true;
+      // If the terminal currently has DOM focus, mark this pane so the next
+      // mount (same paneId) can restore focus. Covers shell->process promotion
+      // and any other parent-component swap that keeps the same underlying pane.
+      // Clears itself after 1s if no remount happens, so a stale flag can't
+      // surprise-focus a later re-open of the same pane id.
+      const termEl = el.querySelector("textarea");
+      if (termEl && document.activeElement === termEl) {
+        pendingFocusPaneIds.add(paneId);
+        window.setTimeout(() => pendingFocusPaneIds.delete(paneId), 1000);
+      }
       observer?.disconnect();
       dataDisposable?.dispose();
       outputUnlisten?.();
