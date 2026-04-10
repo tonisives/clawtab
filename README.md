@@ -27,7 +27,7 @@
 - Notifications - job failures or agent questions sent to mobile or Telegram
 - Secrets Management - Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
 
-## Small bundle
+### Small bundle
 
 Written with Rust+Tauri. <20MB bundle size and efficient backend.
 
