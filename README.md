@@ -29,7 +29,7 @@
 
 ### Small bundle
 
-Written with Rust🦀+Tauri. <20MB bundle size and efficient backend.
+Written with Rust+Tauri. <20MB bundle size and efficient backend.
 
 ## Full terminal support
 
