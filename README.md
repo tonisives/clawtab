@@ -22,10 +22,14 @@
 - Display info about agent, task and queries
 - Auto-yes - accept all questions as `Yes`
 - Scheduled jobs - create cronjobs and read their past logs
-- Keep agents running in the background and return to them at a later date
+- Background jbos - Keep agents running in the background and return to them at a later date
 - Remote Control - view logs and answer questions on the web or ClawTab mobile app
-- Notifications - job failures or agent questions to mobile or Telegram
+- Notifications - job failures or agent questions sent to mobile or Telegram
 - Secrets Management - Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
+
+## Small bundle
+
+Written with Rust+Tauri. <20MB bundle size and efficient backend.
 
 ## Full terminal support
 
