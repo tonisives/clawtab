@@ -92,6 +92,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
   onExitRef.current = onExit;
   const shortcutsRef = useRef(DEFAULT_SHORTCUTS);
   const pendingShortcutStrokeRef = useRef<string | null>(null);
+  const suppressedKeyRef = useRef<string | null>(null);
   const resolvedGroup = group ?? "default";
   const attachGenerationRef = useRef<number | null>(null);
 
@@ -169,6 +170,14 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
       // Let our app shortcuts pass through instead of being consumed by the terminal
       t.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+        if (e.type !== "keydown") {
+          if (suppressedKeyRef.current && e.key === suppressedKeyRef.current) {
+            if (e.type === "keyup") suppressedKeyRef.current = null;
+            return false;
+          }
+          return true;
+        }
+
         const shortcuts = shortcutsRef.current;
         const appBindings = [
           shortcuts.next_sidebar_item,
@@ -185,12 +194,16 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
         if (pendingShortcutStrokeRef.current && e.key === "Escape") {
           pendingShortcutStrokeRef.current = null;
+          suppressedKeyRef.current = "Escape";
           return false;
         }
 
         const stroke = eventToShortcutBinding(e);
         if (pendingShortcutStrokeRef.current) {
-          if (stroke) pendingShortcutStrokeRef.current = null;
+          if (stroke) {
+            pendingShortcutStrokeRef.current = null;
+            suppressedKeyRef.current = e.key;
+          }
           return false;
         }
 
@@ -198,12 +211,16 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
         if (appBindings.some((binding) => shortcutStartsWith(binding, stroke, shortcuts.prefix_key))) {
           pendingShortcutStrokeRef.current = stroke;
+          suppressedKeyRef.current = e.key;
           return false;
         }
 
         if (
           appBindings.some((binding) => shortcutMatches(e, binding, shortcuts.prefix_key))
-        ) return false;
+        ) {
+          suppressedKeyRef.current = e.key;
+          return false;
+        }
         return true;
       });
 

@@ -168,6 +168,7 @@ export function JobDetailView({
   const settingsDropdownRef = useRef<View>(null);
   const settingsBtnRef = useRef<any>(null);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
+  const [liveRunZoom, setLiveRunZoom] = useState<{ run: RunRecord; pane: ShellPane } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const [headerWidth, setHeaderWidth] = useState(0);
@@ -640,12 +641,12 @@ export function JobDetailView({
                   <RunRow
                     key={run.id}
                     run={run}
-                    job={job}
                     transport={transport}
                     currentState={state}
                     defaultExpanded={expandRunId ? run.id === expandRunId : (!isRunning && i === 0)}
                     onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
                     renderRunTerminal={renderRunTerminal}
+                    onOpenLiveRunZoom={(runRecord, pane) => setLiveRunZoom({ run: runRecord, pane })}
                   />
                 ))
               )}
@@ -759,6 +760,16 @@ export function JobDetailView({
           logContent={zoomRun.logContent}
           currentState={state}
           onClose={() => setZoomRun(null)}
+        />
+      )}
+
+      {liveRunZoom && renderRunTerminal && (
+        <LiveRunZoomOverlay
+          run={liveRunZoom.run}
+          pane={liveRunZoom.pane}
+          currentState={state}
+          renderTerminal={renderRunTerminal}
+          onClose={() => setLiveRunZoom(null)}
         />
       )}
 
@@ -894,20 +905,20 @@ function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onTog
 
 const RunRow = memo(function RunRow({
   run,
-  job,
   transport,
   currentState,
   defaultExpanded,
   onZoom,
   renderRunTerminal,
+  onOpenLiveRunZoom,
 }: {
   run: RunRecord;
-  job: RemoteJob;
   transport: Transport;
   currentState: string;
   defaultExpanded?: boolean;
   onZoom?: (run: RunRecord, logContent: string) => void;
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
+  onOpenLiveRunZoom?: (run: RunRecord, pane: ShellPane) => void;
 }) {
   const color = runStatusColor(run, currentState);
   const label = runStatusLabel(run, currentState);
@@ -1028,55 +1039,51 @@ const RunRow = memo(function RunRow({
     }
   }, [run.job_name, transport]);
 
-  const handleSendInput = useCallback(async (text: string) => {
-    try {
-      await transport.sendInput(run.job_name, text);
-    } catch (e) {
-      console.error("Failed to send input to running pane:", e);
-    }
-  }, [run.job_name, transport]);
-
   return (
     <View>
-      <View style={styles.runRow}>
-        <View style={styles.runLeft}>
-          <View style={[styles.statusDot, { backgroundColor: color }]} />
-          <View style={styles.runInfo}>
-            <Text style={[styles.runStatus, { color }]}>{label}</Text>
-            {run.trigger !== "reattach" && (
-              <Text style={styles.runTrigger}>{run.trigger}</Text>
-            )}
+      <TouchableOpacity onPress={handleToggle} activeOpacity={canExpand ? 0.7 : 1}>
+        <View style={[styles.runRow, expanded && styles.runRowExpanded]}>
+          <View style={styles.runLeft}>
+            <View style={[styles.statusDot, { backgroundColor: color }]} />
+            <View style={styles.runInfo}>
+              <Text style={[styles.runStatus, { color }]}>{label}</Text>
+              {run.trigger !== "reattach" && (
+                <Text style={styles.runTrigger}>{run.trigger}</Text>
+              )}
+            </View>
+          </View>
+          <View style={styles.runRight}>
+            <View style={styles.runRightRow}>
+              <Text style={styles.runTime}>{formatTime(run.started_at)}</Text>
+              {livePane && renderRunTerminal ? (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onOpenLiveRunZoom?.(run, livePane);
+                  }}
+                  style={styles.runExpandBtn}
+                  activeOpacity={0.6}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.runExpandIcon}>
+                    {"\u2922"}
+                  </Text>
+                </TouchableOpacity>
+              ) : expanded && logContent && onZoom ? (
+                <TouchableOpacity
+                  onPress={(e) => { e.stopPropagation(); onZoom(run, logContent); }}
+                  style={styles.zoomBtn}
+                  activeOpacity={0.6}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.zoomIcon}>{"\u2922"}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <Text style={styles.runDuration}>{duration}</Text>
           </View>
         </View>
-        <View style={styles.runRight}>
-          <View style={styles.runRightRow}>
-            <Text style={styles.runTime}>{formatTime(run.started_at)}</Text>
-            {canExpand ? (
-              <TouchableOpacity
-                onPress={handleToggle}
-                style={styles.runExpandBtn}
-                activeOpacity={0.6}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.runExpandIcon}>
-                  {expanded ? "\u25BC" : "\u25B6"}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            {expanded && logContent && onZoom && (
-              <TouchableOpacity
-                onPress={(e) => { e.stopPropagation(); onZoom(run, logContent); }}
-                style={styles.zoomBtn}
-                activeOpacity={0.6}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.zoomIcon}>{"\u2922"}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          <Text style={styles.runDuration}>{duration}</Text>
-        </View>
-      </View>
+      </TouchableOpacity>
       {expanded && (
         <View style={styles.runLogs}>
           {livePane && renderRunTerminal ? (
@@ -1110,7 +1117,6 @@ const RunRow = memo(function RunRow({
               <View style={styles.runTerminalBody}>
                 {renderRunTerminal(livePane.pane_id, livePane.tmux_session)}
               </View>
-              <MessageInput onSend={handleSendInput} placeholder={`Send input to ${job.name}...`} />
             </>
           ) : loading ? (
             <Text style={styles.runLogsText}>Loading...</Text>
@@ -1143,6 +1149,48 @@ const RunRow = memo(function RunRow({
     </View>
   );
 })
+
+function LiveRunZoomOverlay({
+  run,
+  pane,
+  currentState,
+  renderTerminal,
+  onClose,
+}: {
+  run: RunRecord;
+  pane: ShellPane;
+  currentState: string;
+  renderTerminal: (paneId: string, tmuxSession: string) => ReactNode;
+  onClose: () => void;
+}) {
+  const color = runStatusColor(run, currentState);
+  const label = runStatusLabel(run, currentState);
+  const duration = formatDuration(run.started_at, run.finished_at);
+
+  return (
+    <View style={styles.liveRunZoomOverlay}>
+      <View style={styles.liveRunZoomCard}>
+        <View style={styles.zoomHeader}>
+          <View style={styles.zoomHeaderLeft}>
+            <View style={[styles.statusDot, { backgroundColor: color }]} />
+            <Text style={styles.zoomHeaderLabel}>{label}</Text>
+            <Text style={styles.zoomHeaderTime}>{formatTime(run.started_at)}</Text>
+            <Text style={styles.zoomHeaderDuration}>{duration}</Text>
+            <Text style={styles.liveRunZoomPath} numberOfLines={1}>
+              {shortenPath(pane.cwd)}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.zoomCloseBtn} activeOpacity={0.6}>
+            <Text style={styles.zoomCloseText}>{"\u2715"}</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.liveRunZoomTerminal}>
+          {renderTerminal(pane.pane_id, pane.tmux_session)}
+        </View>
+      </View>
+    </View>
+  );
+}
 
 function LogZoomModal({
   run,
@@ -1532,6 +1580,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     marginBottom: 2,
   },
+  runRowExpanded: {
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+  },
   runLeft: {
     flexDirection: "row",
     alignItems: "center",
@@ -1573,7 +1625,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   runExpandIcon: {
-    fontSize: 9,
+    fontSize: 12,
     color: colors.textSecondary,
     fontFamily: "monospace",
   },
@@ -1689,6 +1741,36 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  liveRunZoomOverlay: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    padding: spacing.lg,
+    zIndex: 500,
+  },
+  liveRunZoomCard: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: colors.bg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden" as const,
+  },
+  liveRunZoomPath: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: "monospace",
+    maxWidth: 240,
+  },
+  liveRunZoomTerminal: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: "#000",
   },
   runLogsText: {
     color: colors.textSecondary,

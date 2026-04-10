@@ -18,6 +18,7 @@ mod terminal;
 mod tmux;
 mod tools;
 mod updater;
+mod usage;
 mod watcher;
 
 use std::collections::{HashMap, HashSet};
@@ -502,6 +503,7 @@ pub fn run() {
             commands::updater::check_for_update,
             commands::updater::restart_app,
             commands::claude_usage::get_claude_usage,
+            commands::usage::get_usage_snapshot,
             commands::relay::get_relay_settings,
             commands::relay::set_relay_settings,
             commands::relay::get_relay_status,
@@ -563,19 +565,35 @@ pub fn run() {
             let settings_item =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
-            let session_item =
-                MenuItem::with_id(app, "usage_session", "Session: --%", false, None::<&str>)?;
-            let week_item =
-                MenuItem::with_id(app, "usage_week", "Week: --%", false, None::<&str>)?;
+            let claude_item =
+                MenuItem::with_id(app, "usage_claude", "Claude: loading...", false, None::<&str>)?;
+            let codex_item =
+                MenuItem::with_id(app, "usage_codex", "Codex: loading...", false, None::<&str>)?;
+            let opencode_item = MenuItem::with_id(
+                app,
+                "usage_opencode",
+                "OpenCode: loading...",
+                false,
+                None::<&str>,
+            )?;
             let sep2 = PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let tray_menu = Menu::with_items(
                 app,
-                &[&settings_item, &sep1, &session_item, &week_item, &sep2, &quit_item],
+                &[
+                    &settings_item,
+                    &sep1,
+                    &claude_item,
+                    &codex_item,
+                    &opencode_item,
+                    &sep2,
+                    &quit_item,
+                ],
             )?;
 
-            let session_handle = session_item.clone();
-            let week_handle = week_item.clone();
+            let claude_handle = claude_item.clone();
+            let codex_handle = codex_item.clone();
+            let opencode_handle = opencode_item.clone();
 
             if let Some(tray) = app.tray_by_id("main") {
                 tray.set_menu(Some(tray_menu))?;
@@ -619,34 +637,13 @@ pub fn run() {
                 }
             });
 
-            // Background task: refresh Claude usage stats every 5 minutes
+            // Background task: refresh provider usage stats every 5 minutes
             tauri::async_runtime::spawn(async move {
                 loop {
-                    match claude_usage::fetch_usage().await {
-                        Ok(usage) => {
-                            let session_text = match usage.five_hour {
-                                Some(ref b) => match b.resets_in_human() {
-                                    Some(t) => format!("Session: {:.0}% (resets {})", b.utilization, t),
-                                    None => format!("Session: {:.0}%", b.utilization),
-                                },
-                                None => "Session: n/a".to_string(),
-                            };
-                            let week_text = match usage.seven_day {
-                                Some(ref b) => match b.resets_in_human() {
-                                    Some(t) => format!("Week: {:.0}% (resets {})", b.utilization, t),
-                                    None => format!("Week: {:.0}%", b.utilization),
-                                },
-                                None => "Week: n/a".to_string(),
-                            };
-                            let _ = session_handle.set_text(session_text);
-                            let _ = week_handle.set_text(week_text);
-                        }
-                        Err(e) => {
-                            log::warn!("Claude usage fetch failed: {}", e);
-                            let _ = session_handle.set_text("Session: n/a");
-                            let _ = week_handle.set_text("Week: n/a");
-                        }
-                    }
+                    let usage = usage::fetch_usage_snapshot().await;
+                    let _ = claude_handle.set_text(format!("Claude: {}", usage.claude.summary));
+                    let _ = codex_handle.set_text(format!("Codex: {}", usage.codex.summary));
+                    let _ = opencode_handle.set_text(format!("OpenCode: {}", usage.opencode.summary));
                     tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
                 }
             });

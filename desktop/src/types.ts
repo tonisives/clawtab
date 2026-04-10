@@ -132,6 +132,26 @@ export interface ToolInfo {
   brew_formula: string | null;
 }
 
+export interface UsageEntry {
+  label: string;
+  value: string;
+}
+
+export interface ProviderUsageSnapshot {
+  provider: string;
+  status: "available" | "partial" | "unavailable" | string;
+  summary: string;
+  note: string | null;
+  entries: UsageEntry[];
+}
+
+export interface UsageSnapshot {
+  refreshed_at: string;
+  claude: ProviderUsageSnapshot;
+  codex: ProviderUsageSnapshot;
+  opencode: ProviderUsageSnapshot;
+}
+
 export interface DetectedProcess {
   pane_id: string;
   cwd: string;

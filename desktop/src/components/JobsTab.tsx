@@ -811,8 +811,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings]);
 
   useEffect(() => {

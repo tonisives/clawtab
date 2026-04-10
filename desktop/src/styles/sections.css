@@ -33,3 +33,79 @@
   --input-bar-bg: var(--bg-primary);
 }
 
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.usage-card {
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 12px;
+}
+
+.usage-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.usage-badge {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.usage-available {
+  color: var(--success-color);
+  background: var(--success-bg);
+}
+
+.usage-partial {
+  color: var(--warning-color);
+  background: var(--warning-bg);
+}
+
+.usage-unavailable {
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+}
+
+.usage-summary {
+  color: var(--text-primary);
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.usage-row strong {
+  color: var(--text-primary);
+}
+
+.usage-note {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { AppSettings } from "../types";
+import type { AppSettings, ProviderUsageSnapshot, UsageSnapshot } from "../types";
 import { ToolsPanel } from "./ToolsPanel";
 import { TelegramPanel } from "./TelegramPanel";
 import { RelayPanel } from "./RelayPanel";
@@ -70,13 +70,31 @@ function GeneralSettingsContent() {
   >("idle");
   const [updateVersion, setUpdateVersion] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
       .then(setSettings)
       .catch((e) => console.error("Failed to load settings:", e));
     invoke<string>("get_version").then(setVersion);
+    void refreshUsage();
   }, []);
+
+  const refreshUsage = async () => {
+    setUsageLoading(true);
+    setUsageError(null);
+    try {
+      const nextUsage = await invoke<UsageSnapshot>("get_usage_snapshot");
+      setUsage(nextUsage);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setUsageError(message);
+    } finally {
+      setUsageLoading(false);
+    }
+  };
 
   const update = async (updates: Partial<AppSettings>) => {
     if (!settings) return;
@@ -232,6 +250,45 @@ function GeneralSettingsContent() {
       </div>
 
       <div className="field-group">
+        <span className="field-group-title">Usage</span>
+        <div className="form-group">
+          <label>Provider Usage</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <button
+              className="btn"
+              disabled={usageLoading}
+              onClick={() => void refreshUsage()}
+            >
+              {usageLoading ? "Refreshing..." : "Refresh usage"}
+            </button>
+            {usage?.refreshed_at && (
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                Updated {formatLastChecked(new Date(usage.refreshed_at))}
+              </span>
+            )}
+          </div>
+          {usageError && (
+            <span className="hint">Failed to load usage: {usageError}</span>
+          )}
+          <div className="usage-grid">
+            {usage ? (
+              <>
+                <UsageCard title="Claude" usage={usage.claude} />
+                <UsageCard title="Codex" usage={usage.codex} />
+                <UsageCard title="OpenCode" usage={usage.opencode} />
+              </>
+            ) : (
+              <div className="usage-card">
+                <div className="usage-card-header">
+                  <strong>Loading usage data...</strong>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="field-group">
         <span className="field-group-title">Paths</span>
         <div className="form-group">
           <label>Claude CLI Path</label>
@@ -340,6 +397,29 @@ function GeneralSettingsContent() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapshot }) {
+  return (
+    <div className="usage-card">
+      <div className="usage-card-header">
+        <strong>{title}</strong>
+        <span className={`usage-badge usage-${usage.status}`}>{usage.status}</span>
+      </div>
+      <div className="usage-summary">{usage.summary}</div>
+      {usage.entries.length > 0 && (
+        <div className="usage-list">
+          {usage.entries.map((entry) => (
+            <div className="usage-row" key={`${title}-${entry.label}`}>
+              <span>{entry.label}</span>
+              <strong>{entry.value}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      {usage.note && <div className="usage-note">{usage.note}</div>}
     </div>
   );
 }

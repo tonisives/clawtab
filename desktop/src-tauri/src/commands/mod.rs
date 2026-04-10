@@ -14,3 +14,4 @@ pub mod telegram;
 pub mod tmux;
 pub mod tools;
 pub mod updater;
+pub mod usage;

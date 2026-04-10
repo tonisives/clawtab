@@ -6,7 +6,6 @@ import { PopupMenu } from "./PopupMenu";
 import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
-import { JobKindIcon, kindForJob } from "./JobKindIcon";
 
 const isWeb = Platform.OS === "web";
 
@@ -33,8 +32,6 @@ export const RunningJobCard = memo(function RunningJobCard({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const showMenu = onStop && !stopping;
-  const kind = kindForJob(job);
-
   return (
     <TouchableOpacity
       style={[styles.card, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2 }]}
@@ -42,7 +39,9 @@ export const RunningJobCard = memo(function RunningJobCard({
       activeOpacity={0.7}
     >
       <View style={styles.row}>
-        <JobKindIcon kind={kind} />
+        <View style={styles.runningIconWrap}>
+          <View style={styles.runningTriangle} />
+        </View>
         <View style={styles.info}>
           <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{job.name}</Text>
           {stopping ? (
@@ -109,6 +108,25 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 0 },
+  runningIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
+    backgroundColor: colors.accentBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  runningTriangle: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderTopWidth: 7,
+    borderBottomWidth: 7,
+    borderLeftColor: colors.accent,
+    borderTopColor: "transparent",
+    borderBottomColor: "transparent",
+    marginLeft: 2,
+  },
   info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
   metaText: { color: colors.textSecondary, fontSize: 12 },
