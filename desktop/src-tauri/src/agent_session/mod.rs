@@ -43,12 +43,13 @@ impl ProcessProvider {
 pub struct ProcessSnapshot {
     commands: HashMap<String, String>,
     children: HashMap<String, Vec<String>>,
+    start_epoch: HashMap<String, i64>,
 }
 
 impl ProcessSnapshot {
     pub fn capture() -> Self {
         let output = match Command::new("ps")
-            .args(["-Ao", "pid=,ppid=,command="])
+            .args(["-Ao", "pid=,ppid=,lstart=,command="])
             .output()
         {
             Ok(o) if o.status.success() => o,
@@ -66,6 +67,12 @@ impl ProcessSnapshot {
                 Some(ppid) => ppid,
                 None => continue,
             };
+            // lstart= emits exactly 5 fixed tokens: "Day Mon DoM HH:MM:SS Year"
+            let lstart_tokens: Vec<&str> = (0..5).filter_map(|_| parts.next()).collect();
+            if lstart_tokens.len() < 5 {
+                continue;
+            }
+            let lstart_str = lstart_tokens.join(" ");
             let command = parts.collect::<Vec<_>>().join(" ");
             if command.is_empty() {
                 continue;
@@ -76,6 +83,9 @@ impl ProcessSnapshot {
                 .entry(ppid.to_string())
                 .or_default()
                 .push(pid.to_string());
+            if let Some(epoch) = parse_lstart(&lstart_str) {
+                snapshot.start_epoch.insert(pid.to_string(), epoch);
+            }
         }
         snapshot
     }
@@ -87,6 +97,16 @@ impl ProcessSnapshot {
     pub fn child_pids(&self, pid: &str) -> &[String] {
         self.children.get(pid).map(Vec::as_slice).unwrap_or(&[])
     }
+
+    pub fn start_epoch_for_pid(&self, pid: &str) -> Option<i64> {
+        self.start_epoch.get(pid).copied()
+    }
+}
+
+fn parse_lstart(s: &str) -> Option<i64> {
+    use chrono::{NaiveDateTime, TimeZone};
+    let naive = NaiveDateTime::parse_from_str(s, "%a %b %e %H:%M:%S %Y").ok()?;
+    chrono::Local.from_local_datetime(&naive).single().map(|dt| dt.timestamp())
 }
 
 /// Resolve session info for an agent pane.

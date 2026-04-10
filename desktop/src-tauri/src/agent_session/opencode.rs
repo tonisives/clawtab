@@ -23,8 +23,26 @@ pub(super) fn resolve_session_info(
         return info;
     };
 
-    let prompt = find_opencode_prompt(pane_pid, snapshot);
-    let Some(session) = find_opencode_session(&cwd, prompt.as_deref()) else {
+    let owned_snapshot;
+    let snapshot = match snapshot {
+        Some(s) => s,
+        None => {
+            owned_snapshot = ProcessSnapshot::capture();
+            &owned_snapshot
+        }
+    };
+
+    let opencode_pid = resolve_opencode_pid(pane_pid, snapshot);
+    let process_start_epoch = opencode_pid
+        .as_deref()
+        .and_then(|pid| snapshot.start_epoch_for_pid(pid));
+
+    let prompt = opencode_pid
+        .as_deref()
+        .and_then(|pid| snapshot.command_for_pid(pid))
+        .and_then(parse_opencode_prompt_from_command);
+
+    let Some(session) = find_opencode_session(&cwd, prompt.as_deref(), process_start_epoch) else {
         return info;
     };
 
@@ -62,14 +80,28 @@ fn opencode_db_path() -> PathBuf {
         .join(".local/share/opencode/opencode.db")
 }
 
-fn find_opencode_session(cwd: &str, prompt: Option<&str>) -> Option<OpencodeSessionInfo> {
+/// Find the opencode session belonging to a running process.
+///
+/// Prompt-match path (explicit `--prompt` arg) wins unconditionally — the command-line
+/// prompt is a strong enough signal to trust.
+///
+/// Fallback path requires a `process_start_epoch`: we only return a candidate whose
+/// `session.time_created` is on-or-after the process's own start time (with a small
+/// slack). This prevents a fresh interactive opencode from inheriting a sibling pane's
+/// session in the same cwd. If no start epoch is known, we refuse to guess and return
+/// `None` — an empty display is better than a wrong one.
+fn find_opencode_session(
+    cwd: &str,
+    prompt: Option<&str>,
+    process_start_epoch: Option<i64>,
+) -> Option<OpencodeSessionInfo> {
     let conn = Connection::open(opencode_db_path()).ok()?;
     let mut stmt = conn
         .prepare(
             "select id, title, time_created
              from session
              where ?1 = directory or ?1 like directory || '/%'
-             order by length(directory) desc, time_updated desc, time_created desc
+             order by length(directory) desc, time_created desc, time_updated desc
              limit 12",
         )
         .ok()?;
@@ -112,7 +144,13 @@ fn find_opencode_session(cwd: &str, prompt: Option<&str>) -> Option<OpencodeSess
         }
     }
 
-    candidates.into_iter().next()
+    // Fallback: only accept a session created at or after this process started.
+    // 2 second slack absorbs fork-to-insert latency and small clock drift.
+    let proc_start = process_start_epoch?;
+    let cutoff_ms = (proc_start - 2) * 1000;
+    candidates
+        .into_iter()
+        .find(|c| c.time_created >= cutoff_ms)
 }
 
 fn read_opencode_user_messages(session_id: &str) -> (Option<String>, Option<String>) {
@@ -185,25 +223,12 @@ fn is_opencode_command(command: &str) -> bool {
     command.to_ascii_lowercase().contains("opencode")
 }
 
-fn find_opencode_prompt(pane_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {
-    let owned_snapshot;
-    let snapshot = match snapshot {
-        Some(snapshot) => snapshot,
-        None => {
-            owned_snapshot = ProcessSnapshot::capture();
-            &owned_snapshot
-        }
-    };
-
-    let opencode_pid = if is_opencode_process_with_snapshot(pane_pid, Some(snapshot)) {
+fn resolve_opencode_pid(pane_pid: &str, snapshot: &ProcessSnapshot) -> Option<String> {
+    if is_opencode_process_with_snapshot(pane_pid, Some(snapshot)) {
         Some(pane_pid.to_string())
     } else {
         find_opencode_child(pane_pid, Some(snapshot))
-    }?;
-
-    snapshot
-        .command_for_pid(&opencode_pid)
-        .and_then(parse_opencode_prompt_from_command)
+    }
 }
 
 fn parse_opencode_prompt_from_command(command: &str) -> Option<String> {

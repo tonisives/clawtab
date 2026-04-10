@@ -47,7 +47,6 @@ pub struct ExistingPaneInfo {
 
 struct DetectionSnapshot {
     processes: Vec<DetectedProcess>,
-    active_pane_ids: HashSet<String>,
 }
 
 fn is_semver(s: &str) -> bool {
@@ -120,7 +119,9 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))??;
 
-    prune_stale_process_overrides(&state, &snapshot.active_pane_ids)?;
+    let detected_pane_ids: HashSet<String> =
+        snapshot.processes.iter().map(|p| p.pane_id.clone()).collect();
+    prune_stale_process_overrides(&state, &detected_pane_ids)?;
 
     Ok(snapshot.processes)
 }
@@ -149,7 +150,6 @@ fn detect_processes_blocking(
             if stderr.contains("no server running") || stderr.contains("no sessions") {
                 return Ok(DetectionSnapshot {
                     processes: Vec::new(),
-                    active_pane_ids: HashSet::new(),
                 });
             }
             return Err(format!("tmux error: {}", stderr.trim()));
@@ -159,7 +159,6 @@ fn detect_processes_blocking(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    let mut active_pane_ids = HashSet::new();
     let mut seen_panes = HashSet::new();
     let mut results = Vec::new();
 
@@ -175,8 +174,6 @@ fn detect_processes_blocking(
         let session = parts[3];
         let window = parts[4];
         let pane_pid = parts[5];
-
-        active_pane_ids.insert(pane_id.to_string());
 
         let provider = detect_process_provider(pane_pid, Some(&process_snapshot))
             .or_else(|| is_semver(command).then_some(ProcessProvider::Claude));
@@ -252,10 +249,7 @@ fn detect_processes_blocking(
         });
     }
 
-    Ok(DetectionSnapshot {
-        processes: results,
-        active_pane_ids,
-    })
+    Ok(DetectionSnapshot { processes: results })
 }
 
 #[tauri::command]
@@ -292,11 +286,11 @@ pub fn set_detected_process_queries(
 
 fn prune_stale_process_overrides(
     state: &State<'_, AppState>,
-    active_pane_ids: &HashSet<String>,
+    detected_pane_ids: &HashSet<String>,
 ) -> Result<(), String> {
     let mut overrides = state.process_overrides.lock().unwrap();
     let before_len = overrides.len();
-    overrides.retain(|pane_id, _| active_pane_ids.contains(pane_id));
+    overrides.retain(|pane_id, _| detected_pane_ids.contains(pane_id));
     if overrides.len() == before_len {
         return Ok(());
     }

@@ -426,21 +426,47 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [core.jobs, viewingJob]);
 
-  useEffect(() => {
-    if (viewingProcess) {
-      if (viewingProcess.pane_id.startsWith("_pending_")) return;
-      const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
-      if (!fresh) {
-        if (demotingPaneIds.has(viewingProcess.pane_id)) return;
-        const awaitingDetection =
-          !!pendingAgentWorkDir &&
-          pendingProcess?.pane_id === viewingProcess.pane_id;
-        if (awaitingDetection) return;
-        setViewingProcess(null);
-      }
-      else if (fresh !== viewingProcess) setViewingProcess(fresh);
+  // Pane ids that disappeared from core.processes this tick and are candidates for
+  // demotion to shell. Computed synchronously so the clearing effect below can see
+  // them before the demotion effect has had a chance to populate demotingPaneIds.
+  const demotionCandidateIds = useMemo(() => {
+    const previous = previousProcessesRef.current;
+    const currentIds = new Set(core.processes.map((p) => p.pane_id));
+    const shellIds = new Set(shellPanes.map((p) => p.pane_id));
+    const stoppingIds = new Set(stoppingProcesses.map((e) => e.process.pane_id));
+    const out = new Set<string>();
+    for (const process of previous.values()) {
+      if (currentIds.has(process.pane_id)) continue;
+      if (shellIds.has(process.pane_id)) continue;
+      if (stoppingIds.has(process.pane_id)) continue;
+      if (process.pane_id === pendingProcess?.pane_id) continue;
+      out.add(process.pane_id);
     }
-  }, [core.processes, viewingProcess, pendingAgentWorkDir, pendingProcess, demotingPaneIds]);
+    return out;
+  }, [core.processes, shellPanes, stoppingProcesses, pendingProcess]);
+
+  // Never clear viewingProcess while its pane_id still exists anywhere in the UI
+  // (demoting, candidate for demotion, or already a shell pane). The demotion effect
+  // owns the final transfer to viewingShell or explicit null when a pane truly vanished.
+  useEffect(() => {
+    if (!viewingProcess) return;
+    if (viewingProcess.pane_id.startsWith("_pending_")) return;
+    const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
+    if (fresh) {
+      if (fresh !== viewingProcess) setViewingProcess(fresh);
+      return;
+    }
+    if (demotingPaneIds.has(viewingProcess.pane_id)) return;
+    if (demotionCandidateIds.has(viewingProcess.pane_id)) return;
+    if (shellPanes.some((s) => s.pane_id === viewingProcess.pane_id)) return;
+    const awaitingDetection =
+      !!pendingAgentWorkDir && pendingProcess?.pane_id === viewingProcess.pane_id;
+    if (awaitingDetection) return;
+    setViewingProcess(null);
+  }, [
+    core.processes, viewingProcess, pendingAgentWorkDir, pendingProcess,
+    demotingPaneIds, demotionCandidateIds, shellPanes,
+  ]);
 
   useEffect(() => {
     if (!viewingShell) return;
@@ -511,11 +537,24 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         );
       }
 
-      if (viewingProcess && demotedIds.has(viewingProcess.pane_id)) {
+      const activeContent = split.tree
+        ? (collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId)?.content ?? currentContent)
+        : currentContent;
+      const activeDemotedShell = activeContent?.kind === "process"
+        ? demoted.find((entry) => entry.pane_id === activeContent.paneId)
+        : null;
+      if (activeDemotedShell) {
+        setViewingJob(null);
+        setViewingAgent(false);
+        setViewingProcess(null);
+        setViewingShell(activeDemotedShell);
+        setScrollToSlug(activeDemotedShell.pane_id);
+      } else if (viewingProcess && demotedIds.has(viewingProcess.pane_id)) {
         const shell = demoted.find((entry) => entry.pane_id === viewingProcess.pane_id);
         if (shell) {
           setViewingProcess(null);
           setViewingShell(shell);
+          setScrollToSlug(shell.pane_id);
         }
       } else if (viewingProcess && vanishedIds.has(viewingProcess.pane_id)) {
         setViewingProcess(null);
@@ -530,7 +569,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         return next;
       });
     };
-  }, [core.processes, pendingProcess, shellPanes, split.replaceContent, stoppingProcesses, viewingProcess]);
+  }, [core.processes, currentContent, pendingProcess, shellPanes, split.focusedLeafId, split.replaceContent, split.tree, stoppingProcesses, viewingProcess]);
 
   useEffect(() => {
     if (!pendingAgentWorkDir) return;
@@ -1168,10 +1207,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       });
     }
     const stoppingIds = new Set(stoppingProcesses.map((sp) => sp.process.pane_id));
+    // A shell pane is authoritative over a stale process entry with the same pane_id.
+    // This prevents duplicate sidebar rows + double-selection during demotion races.
+    const shellPaneIds = new Set(shellPanes.map((s) => s.pane_id));
     const allProcs = [
-      ...core.processes.filter((p) => !stoppingIds.has(p.pane_id)),
-      ...stoppingProcesses.map((sp) => sp.process),
-      ...(pendingProcess ? [pendingProcess] : []),
+      ...core.processes.filter((p) => !stoppingIds.has(p.pane_id) && !shellPaneIds.has(p.pane_id)),
+      ...stoppingProcesses.map((sp) => sp.process).filter((p) => !shellPaneIds.has(p.pane_id)),
+      ...(pendingProcess && !shellPaneIds.has(pendingProcess.pane_id) ? [pendingProcess] : []),
     ];
     for (const key of keys) {
       for (const job of grouped.get(key) ?? []) result.push({ kind: "job", slug: job.slug, job });
