@@ -42,6 +42,8 @@ You can launch normal shells beside agents and use them for any purpose
 
 Think of it like [tmux](https://github.com/tmux/tmux) on steroids. Every Agent related inconvenience that cannot be handled in shell is fixed in the supporting GUI.
 
+Shells are running in a background tmux process, and they stay alive through app restarts. Never worry about losing your work again!
+
 ## Remote Control
 
 - **Auto-detect questions** - Detects when Claude Code agents are waiting for input across your panes.
