@@ -12,10 +12,7 @@ pub enum TerminalApp {
 
 /// Detect running terminal emulators via process list
 pub fn detect_terminal() -> TerminalApp {
-    let output = Command::new("ps")
-        .args(["-eo", "comm"])
-        .output()
-        .ok();
+    let output = Command::new("ps").args(["-eo", "comm"]).output().ok();
 
     let procs = output
         .as_ref()
@@ -74,10 +71,7 @@ pub fn open_in_terminal(cmd: &str) -> Result<(), String> {
             } else {
                 "Terminal"
             };
-            let script = format!(
-                r#"tell application "{}" to do script "{}""#,
-                app_name, cmd
-            );
+            let script = format!(r#"tell application "{}" to do script "{}""#, app_name, cmd);
             Command::new("osascript")
                 .args(["-e", &script])
                 .spawn()
@@ -87,4 +81,3 @@ pub fn open_in_terminal(cmd: &str) -> Result<(), String> {
 
     Ok(())
 }
-

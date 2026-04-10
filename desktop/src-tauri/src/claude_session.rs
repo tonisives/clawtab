@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
@@ -215,10 +215,7 @@ pub fn detect_version_from_command(command: &str) -> Option<String> {
     found.into_iter().find(|item| is_semver(item))
 }
 
-fn resolve_claude_session_info(
-    pane_pid: &str,
-    snapshot: Option<&ProcessSnapshot>,
-) -> SessionInfo {
+fn resolve_claude_session_info(pane_pid: &str, snapshot: Option<&ProcessSnapshot>) -> SessionInfo {
     let mut info = SessionInfo::default();
 
     // The pane_pid might be claude itself (e.g. forked sessions), or a shell with claude as child
@@ -255,7 +252,11 @@ fn resolve_claude_session_info(
 
     // Derive project directory name to match Claude Code's convention:
     // /Users/foo/.bar -> -Users-foo-bar (slashes and tildes become dashes, dots removed)
-    let project_dir = session.cwd.replace('/', "-").replace('~', "-").replace('.', "");
+    let project_dir = session
+        .cwd
+        .replace('/', "-")
+        .replace('~', "-")
+        .replace('.', "");
     let project_path = dirs::home_dir()
         .unwrap_or_default()
         .join(".claude/projects")
@@ -272,10 +273,7 @@ fn resolve_claude_session_info(
     info
 }
 
-fn resolve_codex_session_info(
-    pane_pid: &str,
-    snapshot: Option<&ProcessSnapshot>,
-) -> SessionInfo {
+fn resolve_codex_session_info(pane_pid: &str, snapshot: Option<&ProcessSnapshot>) -> SessionInfo {
     let mut info = SessionInfo::default();
 
     let codex_pid = if is_codex_process_with_snapshot(pane_pid, snapshot) {
@@ -595,7 +593,8 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
             .and_then(|payload| payload.get("message"))
             .and_then(|message| message.as_str())
             .or_else(|| {
-                value.get("payload")
+                value
+                    .get("payload")
                     .and_then(|payload| payload.get("content"))
                     .and_then(|content| content.as_array())
                     .and_then(|items| {
@@ -684,10 +683,7 @@ fn find_opencode_session(cwd: &str, prompt: Option<&str>) -> Option<OpencodeSess
     if let Some(ref prompt_text) = normalized_prompt {
         for candidate in &candidates {
             let (first, _) = read_opencode_user_messages(&candidate.id);
-            if first
-                .as_deref()
-                .and_then(normalize_prompt_text)
-                .as_deref()
+            if first.as_deref().and_then(normalize_prompt_text).as_deref()
                 == Some(prompt_text.as_str())
             {
                 return Some(candidate.clone());
@@ -740,7 +736,12 @@ fn read_opencode_user_messages(session_id: &str) -> (Option<String>, Option<Stri
         };
         let text = serde_json::from_str::<serde_json::Value>(&data)
             .ok()
-            .and_then(|value| value.get("text").and_then(|v| v.as_str()).map(str::to_string))
+            .and_then(|value| {
+                value
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
             .and_then(normalize_optional_owned);
 
         if first.is_none() {
@@ -841,8 +842,11 @@ fn normalize_prompt_text(value: &str) -> Option<String> {
 }
 
 fn format_local_timestamp(epoch_secs: i64) -> Option<String> {
-    chrono::DateTime::from_timestamp(epoch_secs, 0)
-        .map(|dt| dt.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M").to_string())
+    chrono::DateTime::from_timestamp(epoch_secs, 0).map(|dt| {
+        dt.with_timezone(&chrono::Local)
+            .format("%Y-%m-%d %H:%M")
+            .to_string()
+    })
 }
 
 fn is_semver(s: &str) -> bool {
@@ -873,7 +877,11 @@ fn read_user_messages(path: &PathBuf) -> (Option<String>, Option<String>) {
 
     let first = read_first_user_message(path);
     let last = read_last_user_message(path);
-    let last = if first.is_some() && first == last { None } else { last };
+    let last = if first.is_some() && first == last {
+        None
+    } else {
+        last
+    };
 
     if let Ok(mut cache) = jsonl_cache().lock() {
         cache.insert(

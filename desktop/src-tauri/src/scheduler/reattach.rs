@@ -258,7 +258,10 @@ pub fn reattach_running_jobs(
     }
 
     if reattached > 0 {
-        log::info!("Reattached {} running job(s) from previous session", reattached);
+        log::info!(
+            "Reattached {} running job(s) from previous session",
+            reattached
+        );
         let _ = app_handle.emit("jobs-changed", ());
     }
 }

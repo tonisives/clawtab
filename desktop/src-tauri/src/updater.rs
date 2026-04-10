@@ -58,9 +58,10 @@ pub fn start_update_checker(app: AppHandle, settings: Arc<std::sync::Mutex<AppSe
                 log::info!("Checking for updates...");
                 match check_and_install_update(&app).await {
                     Ok(Some(version)) => {
-                        if let Err(e) =
-                            app.emit("update-installed", serde_json::json!({ "version": version }))
-                        {
+                        if let Err(e) = app.emit(
+                            "update-installed",
+                            serde_json::json!({ "version": version }),
+                        ) {
                             log::error!("Failed to emit update-installed event: {}", e);
                         }
                     }

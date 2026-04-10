@@ -57,13 +57,24 @@ pub async fn monitor_pane(params: MonitorParams) {
                     "<b>ClawTab</b>: Job <code>{}</code> started",
                     params.job_name
                 );
-                if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await {
-                    log::error!("[{}] Failed to send start notification: {}", params.run_id, e);
+                if let Err(e) =
+                    crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
+                {
+                    log::error!(
+                        "[{}] Failed to send start notification: {}",
+                        params.run_id,
+                        e
+                    );
                 }
             }
         }
         if use_app {
-            crate::relay::push_job_notification(&params.relay, &params.slug, "started", &params.run_id);
+            crate::relay::push_job_notification(
+                &params.relay,
+                &params.slug,
+                "started",
+                &params.run_id,
+            );
             if let Some(ref handle) = params.app_handle {
                 crate::notifications::notify_job(handle, &params.job_name, "started");
             }
@@ -91,17 +102,13 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Capture whatever is already in the pane before the job produces output.
     // This seeds the baseline so we only relay genuinely new content to Telegram,
     // avoiding re-sending scrollback from previous runs in the same pane.
-    let mut last_content = tmux::capture_pane(
-        &params.tmux_session,
-        &params.pane_id,
-        CAPTURE_LINES,
-    )
-    .unwrap_or_default()
-    .lines()
-    .collect::<Vec<_>>()
-    .join("\n")
-    .trim()
-    .to_string();
+    let mut last_content = tmux::capture_pane(&params.tmux_session, &params.pane_id, CAPTURE_LINES)
+        .unwrap_or_default()
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
 
     // Brief pause to let the process start
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -139,11 +146,8 @@ pub async fn monitor_pane(params: MonitorParams) {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL_SECS)).await;
         tick_counter += 1;
 
-        let capture = match tmux::capture_pane(
-            &params.tmux_session,
-            &params.pane_id,
-            CAPTURE_LINES,
-        ) {
+        let capture = match tmux::capture_pane(&params.tmux_session, &params.pane_id, CAPTURE_LINES)
+        {
             Ok(c) => c,
             Err(e) => {
                 log::warn!(
@@ -156,7 +160,12 @@ pub async fn monitor_pane(params: MonitorParams) {
             }
         };
 
-        let trimmed: String = capture.lines().collect::<Vec<_>>().join("\n").trim().to_string();
+        let trimmed: String = capture
+            .lines()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
 
         // Update working message and typing indicator every ~4 ticks (8 seconds, Telegram only)
         if notify.working && use_telegram && tick_counter % 4 == 0 {
@@ -173,7 +182,11 @@ pub async fn monitor_pane(params: MonitorParams) {
                     )
                     .await
                     {
-                        log::warn!("[{}] Failed to update working message: {}", params.run_id, e);
+                        log::warn!(
+                            "[{}] Failed to update working message: {}",
+                            params.run_id,
+                            e
+                        );
                     }
                 }
 
@@ -187,9 +200,9 @@ pub async fn monitor_pane(params: MonitorParams) {
             last_content = trimmed;
             stale_ticks = 0;
 
-            let is_substantial = new_content.lines().any(|line| {
-                line.chars().filter(|c| !c.is_whitespace()).count() >= 5
-            });
+            let is_substantial = new_content
+                .lines()
+                .any(|line| line.chars().filter(|c| !c.is_whitespace()).count() >= 5);
 
             if is_substantial {
                 idle_ticks = 0;
@@ -227,14 +240,9 @@ pub async fn monitor_pane(params: MonitorParams) {
                     if let Some(ref tg) = params.telegram {
                         let msg = format!("<pre>{}</pre>", html_escape(&pending_diff));
                         if let Err(e) =
-                            crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg)
-                                .await
+                            crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg).await
                         {
-                            log::error!(
-                                "[{}] Failed to send log snapshot: {}",
-                                params.run_id,
-                                e
-                            );
+                            log::error!("[{}] Failed to send log snapshot: {}", params.run_id, e);
                         }
                     }
                     pending_diff.clear();
@@ -285,7 +293,11 @@ pub async fn monitor_pane(params: MonitorParams) {
                 if let Err(e) =
                     crate::telegram::delete_message(&tg.bot_token, tg.chat_id, mid).await
                 {
-                    log::warn!("[{}] Failed to delete working message: {}", params.run_id, e);
+                    log::warn!(
+                        "[{}] Failed to delete working message: {}",
+                        params.run_id,
+                        e
+                    );
                 }
             }
         }
@@ -294,12 +306,9 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Send final pane snapshot to Telegram (last visible state before exit)
     if notify.finish && use_telegram {
         if let Some(ref tg) = params.telegram {
-            let final_capture = tmux::capture_pane(
-                &params.tmux_session,
-                &params.pane_id,
-                CAPTURE_LINES,
-            )
-            .unwrap_or_default();
+            let final_capture =
+                tmux::capture_pane(&params.tmux_session, &params.pane_id, CAPTURE_LINES)
+                    .unwrap_or_default();
             let final_trimmed: String = final_capture
                 .lines()
                 .collect::<Vec<_>>()
@@ -350,7 +359,12 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Close the tmux pane only when the job is configured to do so.
     if params.kill_on_end {
         if let Err(e) = tmux::kill_pane(&params.pane_id) {
-            log::warn!("[{}] Failed to kill pane {}: {}", params.run_id, params.pane_id, e);
+            log::warn!(
+                "[{}] Failed to kill pane {}: {}",
+                params.run_id,
+                params.pane_id,
+                e
+            );
         }
     }
 
@@ -359,8 +373,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Update history with captured output
     {
         let h = params.history.lock().unwrap();
-        if let Err(e) = h.update_finished(&params.run_id, &finished_at, Some(0), &full_output, "")
-        {
+        if let Err(e) = h.update_finished(&params.run_id, &finished_at, Some(0), &full_output, "") {
             log::error!("[{}] Failed to update history: {}", params.run_id, e);
         }
     }
@@ -385,15 +398,25 @@ pub async fn monitor_pane(params: MonitorParams) {
                         "<b>ClawTab</b>: Job <code>{}</code> completed",
                         params.job_name
                     );
-                    if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
+                    if let Err(e) =
+                        crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
                     {
-                        log::error!("[{}] Failed to send completion notification: {}", params.run_id, e);
+                        log::error!(
+                            "[{}] Failed to send completion notification: {}",
+                            params.run_id,
+                            e
+                        );
                     }
                 }
             }
         }
         if use_app {
-            crate::relay::push_job_notification(&params.relay, &params.slug, "completed", &params.run_id);
+            crate::relay::push_job_notification(
+                &params.relay,
+                &params.slug,
+                "completed",
+                &params.run_id,
+            );
             if let Some(ref handle) = params.app_handle {
                 crate::notifications::notify_job(handle, &params.job_name, "completed");
             }

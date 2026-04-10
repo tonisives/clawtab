@@ -46,5 +46,4 @@ impl GopassBackend {
 
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
-
 }

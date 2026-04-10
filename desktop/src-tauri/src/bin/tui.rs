@@ -3,7 +3,9 @@ use std::io;
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
@@ -91,7 +93,9 @@ async fn main() {
     let mut last_refresh = std::time::Instant::now();
 
     while app.running {
-        terminal.draw(|f| draw(f, &mut app)).expect("Failed to draw");
+        terminal
+            .draw(|f| draw(f, &mut app))
+            .expect("Failed to draw");
 
         // Poll for events with timeout
         if event::poll(Duration::from_millis(200)).expect("Failed to poll") {
@@ -261,11 +265,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         .collect();
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" ClawTab "),
-        )
+        .block(Block::default().borders(Borders::ALL).title(" ClawTab "))
         .highlight_style(Style::default().bg(Color::DarkGray).bold())
         .highlight_symbol("> ");
 
@@ -273,8 +273,8 @@ fn draw(f: &mut Frame, app: &mut App) {
 
     // Message bar
     let msg = app.message.as_deref().unwrap_or("");
-    let msg_widget = Paragraph::new(msg)
-        .block(Block::default().borders(Borders::ALL).title(" Status "));
+    let msg_widget =
+        Paragraph::new(msg).block(Block::default().borders(Borders::ALL).title(" Status "));
     f.render_widget(msg_widget, chunks[1]);
 
     // Keybindings

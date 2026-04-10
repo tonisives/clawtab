@@ -45,7 +45,12 @@ fn compact_cwd(cwd: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
     for (i, seg) in segments.iter().enumerate() {
         if i < abbrev_count {
-            parts.push(seg.chars().next().map(|c| c.to_string()).unwrap_or_default());
+            parts.push(
+                seg.chars()
+                    .next()
+                    .map(|c| c.to_string())
+                    .unwrap_or_default(),
+            );
         } else {
             parts.push(seg.to_string());
         }
@@ -132,7 +137,10 @@ pub fn notify_question(app: &tauri::AppHandle, question: &ClaudeQuestion) {
             );
         }
         Err(e) => {
-            log::error!("[notifications] failed to send question notification: {}", e);
+            log::error!(
+                "[notifications] failed to send question notification: {}",
+                e
+            );
         }
     }
 }

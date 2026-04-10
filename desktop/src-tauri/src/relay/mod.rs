@@ -156,8 +156,14 @@ pub async fn check_subscription_http(
             .await
             .map_err(|e| format!("Invalid refresh response: {}", e))?;
 
-        let new_access = body["access_token"].as_str().unwrap_or_default().to_string();
-        let new_refresh = body["refresh_token"].as_str().unwrap_or_default().to_string();
+        let new_access = body["access_token"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        let new_refresh = body["refresh_token"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
 
         // Retry subscription check with new token
         let retry_resp = client
@@ -168,7 +174,10 @@ pub async fn check_subscription_http(
             .map_err(|e| format!("Retry request failed: {}", e))?;
 
         if !retry_resp.status().is_success() {
-            return Err(format!("Subscription check failed: {}", retry_resp.status()));
+            return Err(format!(
+                "Subscription check failed: {}",
+                retry_resp.status()
+            ));
         }
 
         let sub: serde_json::Value = retry_resp
@@ -241,7 +250,10 @@ pub async fn connect_loop(
                     *relay_sub_required.lock().unwrap() = false;
                 }
                 Err(e) => {
-                    log::warn!("Relay: subscription check failed: {}, proceeding with WS", e);
+                    log::warn!(
+                        "Relay: subscription check failed: {}, proceeding with WS",
+                        e
+                    );
                 }
             }
         }
@@ -267,7 +279,8 @@ pub async fn connect_loop(
                 push_full_state(&handle, &jobs_config, &job_status);
                 // Push auto-yes pane state
                 {
-                    let pane_ids: Vec<String> = auto_yes_panes.lock().unwrap().iter().cloned().collect();
+                    let pane_ids: Vec<String> =
+                        auto_yes_panes.lock().unwrap().iter().cloned().collect();
                     handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
                 }
 
@@ -400,11 +413,10 @@ async fn run_session<S, R>(
 
 fn job_to_remote(job: &Job) -> RemoteJob {
     // Compute effective work_dir: prefer explicit work_dir, then folder_path root
-    let work_dir = job.work_dir.clone().or_else(|| {
-        job.folder_path.as_ref().map(|fp| {
-            fp.to_string()
-        })
-    });
+    let work_dir = job
+        .work_dir
+        .clone()
+        .or_else(|| job.folder_path.as_ref().map(|fp| fp.to_string()));
     RemoteJob {
         name: job.name.clone(),
         job_type: match job.job_type {

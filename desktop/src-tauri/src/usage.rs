@@ -230,9 +230,10 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
     let _ = child.kill();
     let _ = child.wait();
 
-    let account = account.ok_or_else(|| "codex account/read did not return a result".to_string())?;
-    let limits =
-        limits.ok_or_else(|| "codex account/rateLimits/read did not return a result".to_string())?;
+    let account =
+        account.ok_or_else(|| "codex account/read did not return a result".to_string())?;
+    let limits = limits
+        .ok_or_else(|| "codex account/rateLimits/read did not return a result".to_string())?;
     let snapshot = limits
         .rate_limits_by_limit_id
         .as_ref()
@@ -297,8 +298,10 @@ fn write_jsonrpc(stdin: &mut dyn Write, value: serde_json::Value) -> Result<(), 
 async fn fetch_opencode_snapshot() -> ProviderUsageSnapshot {
     match tokio::task::spawn_blocking(|| read_opencode_totals(7)).await {
         Ok(Ok(Some(stats))) => {
-            let total_tokens =
-                stats.input_tokens + stats.output_tokens + stats.cache_read_tokens + stats.cache_write_tokens;
+            let total_tokens = stats.input_tokens
+                + stats.output_tokens
+                + stats.cache_read_tokens
+                + stats.cache_write_tokens;
             ProviderUsageSnapshot {
                 provider: "opencode".to_string(),
                 status: "available".to_string(),
@@ -423,7 +426,9 @@ async fn read_zai_quota(token: &str) -> Result<ProviderUsageSnapshot, String> {
         .iter()
         .find(|limit| limit.limit_type.as_deref() == Some("TOKENS_LIMIT"))
         .or_else(|| limits.first());
-    let secondary = limits.iter().find(|limit| limit.limit_type.as_deref() == Some("TIME_LIMIT"));
+    let secondary = limits
+        .iter()
+        .find(|limit| limit.limit_type.as_deref() == Some("TIME_LIMIT"));
 
     let summary = primary
         .map(|limit| zai_limit_summary(limit))
@@ -454,10 +459,7 @@ async fn read_zai_quota(token: &str) -> Result<ProviderUsageSnapshot, String> {
         });
     }
     for detail in data.usage_details.unwrap_or_default().into_iter().take(3) {
-        let label = detail
-            .model
-            .clone()
-            .unwrap_or_else(|| "Model".to_string());
+        let label = detail.model.clone().unwrap_or_else(|| "Model".to_string());
         entries.push(UsageEntry {
             label,
             value: detail.summary(),
@@ -512,7 +514,10 @@ fn format_codex_credits(credits: &CodexCreditsSnapshot) -> String {
     if credits.unlimited {
         "Unlimited".to_string()
     } else if credits.has_credits {
-        credits.balance.clone().unwrap_or_else(|| "Available".to_string())
+        credits
+            .balance
+            .clone()
+            .unwrap_or_else(|| "Available".to_string())
     } else {
         credits.balance.clone().unwrap_or_else(|| "0".to_string())
     }
@@ -571,7 +576,11 @@ fn latest_codex_sqlite(prefix: &str) -> Option<PathBuf> {
                 None
             }
         })
-        .max_by_key(|path| std::fs::metadata(path).and_then(|meta| meta.modified()).ok())
+        .max_by_key(|path| {
+            std::fs::metadata(path)
+                .and_then(|meta| meta.modified())
+                .ok()
+        })
 }
 
 fn read_codex_totals() -> Result<Option<(i64, i64)>, String> {
@@ -672,13 +681,17 @@ fn read_opencode_totals(days: i64) -> Result<Option<OpenCodeStats>, String> {
 fn open_read_only_sqlite(path: &PathBuf) -> Result<Connection, String> {
     Connection::open_with_flags(
         path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_URI,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_URI,
     )
     .map_err(|err| format!("failed to open {}: {}", path.display(), err))
 }
 
 fn zai_limit_summary(limit: &ZaiLimit) -> String {
-    let pct = limit.used_ratio_percent().map(|value| format!("{}%", value));
+    let pct = limit
+        .used_ratio_percent()
+        .map(|value| format!("{}%", value));
     let reset = limit.next_reset_time.and_then(epoch_millis_to_human);
     match (pct, reset) {
         (Some(pct), Some(reset)) => format!("{} used, resets {}", pct, reset),
@@ -853,7 +866,9 @@ struct ZaiLimit {
 impl ZaiLimit {
     fn used_ratio_percent(&self) -> Option<i64> {
         match (self.used, self.limit) {
-            (Some(used), Some(limit)) if limit > 0.0 => Some(((used / limit) * 100.0).round() as i64),
+            (Some(used), Some(limit)) if limit > 0.0 => {
+                Some(((used / limit) * 100.0).round() as i64)
+            }
             _ => None,
         }
     }
@@ -870,7 +885,9 @@ struct ZaiUsageDetail {
 impl ZaiUsageDetail {
     fn summary(&self) -> String {
         match (self.used, self.limit) {
-            (Some(used), Some(limit)) => format!("{}/{}", format_numberish(used), format_numberish(limit)),
+            (Some(used), Some(limit)) => {
+                format!("{}/{}", format_numberish(used), format_numberish(limit))
+            }
             (Some(used), None) => format_numberish(used),
             _ => "n/a".to_string(),
         }

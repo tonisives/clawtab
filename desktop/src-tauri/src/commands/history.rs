@@ -16,10 +16,7 @@ pub fn get_run_detail(state: State<AppState>, id: String) -> Result<Option<RunRe
 }
 
 #[tauri::command]
-pub fn get_job_runs(
-    state: State<AppState>,
-    job_name: String,
-) -> Result<Vec<RunRecord>, String> {
+pub fn get_job_runs(state: State<AppState>, job_name: String) -> Result<Vec<RunRecord>, String> {
     let history = state.history.lock().unwrap();
     history.get_by_job_name(&job_name, 10)
 }
@@ -56,11 +53,9 @@ pub fn open_run_log(state: State<AppState>, run_id: String) -> Result<(), String
 
     // Write to a temp file
     let tmp_dir = std::env::temp_dir().join("clawtab-logs");
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("Failed to create log dir: {}", e))?;
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create log dir: {}", e))?;
     let file_path = tmp_dir.join(format!("{}.log", run_id));
-    std::fs::write(&file_path, &content)
-        .map_err(|e| format!("Failed to write log file: {}", e))?;
+    std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write log file: {}", e))?;
 
     let preferred_editor = {
         let s = state.settings.lock().unwrap();

@@ -21,11 +21,14 @@ pub fn pty_spawn(
     rows: u16,
     group: String,
 ) -> Result<PtySpawnResult, String> {
-    let result = state
-        .pty_manager
-        .lock()
-        .unwrap()
-        .spawn(&pane_id, &tmux_session, cols, rows, &group, crate::pty::OutputSink::Tauri(app))?;
+    let result = state.pty_manager.lock().unwrap().spawn(
+        &pane_id,
+        &tmux_session,
+        cols,
+        rows,
+        &group,
+        crate::pty::OutputSink::Tauri(app),
+    )?;
     Ok(PtySpawnResult {
         native_cols: result.native_cols,
         native_rows: result.native_rows,

@@ -33,7 +33,18 @@ pub fn start(
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
 ) -> SchedulerHandle {
     let handle = tauri::async_runtime::spawn(async move {
-        run_loop(app_handle, jobs_config, secrets, history, settings, job_status, active_agents, relay, auto_yes_panes).await;
+        run_loop(
+            app_handle,
+            jobs_config,
+            secrets,
+            history,
+            settings,
+            job_status,
+            active_agents,
+            relay,
+            auto_yes_panes,
+        )
+        .await;
     });
     SchedulerHandle { _handle: handle }
 }
@@ -71,7 +82,11 @@ async fn run_loop(
             let schedules = match parse_cron(&job.cron) {
                 Some(s) => s,
                 None => {
-                    log::warn!("Invalid cron expression for job '{}': {}", job.name, job.cron);
+                    log::warn!(
+                        "Invalid cron expression for job '{}': {}",
+                        job.name,
+                        job.cron
+                    );
                     continue;
                 }
             };
@@ -103,7 +118,10 @@ async fn run_loop(
         }
 
         if !missed_jobs.is_empty() {
-            log::info!("Emitting missed-cron-jobs event with {} jobs", missed_jobs.len());
+            log::info!(
+                "Emitting missed-cron-jobs event with {} jobs",
+                missed_jobs.len()
+            );
             let _ = app_handle.emit("missed-cron-jobs", missed_jobs);
         }
     }
@@ -116,7 +134,10 @@ async fn run_loop(
             let config = jobs_config.lock().unwrap();
             config.jobs.clone()
         };
-        let cron_jobs: Vec<_> = jobs.iter().filter(|j| j.enabled && !j.cron.is_empty()).collect();
+        let cron_jobs: Vec<_> = jobs
+            .iter()
+            .filter(|j| j.enabled && !j.cron.is_empty())
+            .collect();
         log::info!("Scheduler tracking {} cron-enabled job(s)", cron_jobs.len());
         for job in &cron_jobs {
             if let Some(schedules) = parse_cron(&job.cron) {
@@ -149,7 +170,11 @@ async fn run_loop(
             let schedules = match parse_cron(&job.cron) {
                 Some(s) => s,
                 None => {
-                    log::warn!("Invalid cron expression for job '{}': {}", job.name, job.cron);
+                    log::warn!(
+                        "Invalid cron expression for job '{}': {}",
+                        job.name,
+                        job.cron
+                    );
                     continue;
                 }
             };
@@ -175,9 +200,17 @@ async fn run_loop(
                 let auto_yes_panes = Arc::clone(&auto_yes_panes);
                 tauri::async_runtime::spawn(async move {
                     executor::execute_job_with_auto_yes(
-                        &job, &secrets, &history, &settings, &job_status, "cron",
-                        &active_agents, &relay, &std::collections::HashMap::new(),
-                        Some(&auto_yes_panes), None,
+                        &job,
+                        &secrets,
+                        &history,
+                        &settings,
+                        &job_status,
+                        "cron",
+                        &active_agents,
+                        &relay,
+                        &std::collections::HashMap::new(),
+                        Some(&auto_yes_panes),
+                        None,
                     )
                     .await;
                 });
@@ -193,11 +226,17 @@ fn parse_single_cron(cron: &str) -> Option<Schedule> {
     let expr = if parts.len() == 5 {
         // 5-field cron: min hour dom month dow - prepend seconds
         let dow = translate_dow(parts[4]);
-        format!("0 {} {} {} {} {}", parts[0], parts[1], parts[2], parts[3], dow)
+        format!(
+            "0 {} {} {} {} {}",
+            parts[0], parts[1], parts[2], parts[3], dow
+        )
     } else if parts.len() == 6 {
         // 6-field cron: sec min hour dom month dow
         let dow = translate_dow(parts[5]);
-        format!("{} {} {} {} {} {}", parts[0], parts[1], parts[2], parts[3], parts[4], dow)
+        format!(
+            "{} {} {} {} {} {}",
+            parts[0], parts[1], parts[2], parts[3], parts[4], dow
+        )
     } else {
         cron.to_string()
     };
@@ -217,14 +256,25 @@ fn translate_dow(dow: &str) -> String {
                 // Handle ranges like 0-5
                 let bounds: Vec<&str> = part.split('-').collect();
                 if bounds.len() == 2 {
-                    let lo = bounds[0].parse::<u8>().map(|v| if v <= 6 { v + 1 } else { v }).map(|v| v.to_string()).unwrap_or_else(|_| bounds[0].to_string());
-                    let hi = bounds[1].parse::<u8>().map(|v| if v <= 6 { v + 1 } else { v }).map(|v| v.to_string()).unwrap_or_else(|_| bounds[1].to_string());
+                    let lo = bounds[0]
+                        .parse::<u8>()
+                        .map(|v| if v <= 6 { v + 1 } else { v })
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|_| bounds[0].to_string());
+                    let hi = bounds[1]
+                        .parse::<u8>()
+                        .map(|v| if v <= 6 { v + 1 } else { v })
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|_| bounds[1].to_string());
                     format!("{}-{}", lo, hi)
                 } else {
                     part.to_string()
                 }
             } else {
-                part.parse::<u8>().map(|v| if v <= 6 { v + 1 } else { v }).map(|v| v.to_string()).unwrap_or_else(|_| part.to_string())
+                part.parse::<u8>()
+                    .map(|v| if v <= 6 { v + 1 } else { v })
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|_| part.to_string())
             }
         })
         .collect::<Vec<_>>()
@@ -232,7 +282,11 @@ fn translate_dow(dow: &str) -> String {
 }
 
 fn parse_cron(cron: &str) -> Option<Vec<Schedule>> {
-    let parts: Vec<&str> = cron.split('|').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let parts: Vec<&str> = cron
+        .split('|')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
     if parts.is_empty() {
         return None;
     }

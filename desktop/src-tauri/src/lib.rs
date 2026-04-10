@@ -50,7 +50,8 @@ pub struct AppState {
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
-    pub process_overrides: Arc<Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>>,
+    pub process_overrides:
+        Arc<Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>>,
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
     pub pty_manager: pty::SharedPtyManager,
@@ -62,11 +63,18 @@ const MENU_SHORTCUT_ZOOM_ACTIVE_PANE: &str = "shortcut_zoom_active_pane";
 
 fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
     let trimmed = binding.trim();
-    if trimmed.is_empty() || trimmed.to_ascii_lowercase().contains("prefix") || trimmed.contains(' ') {
+    if trimmed.is_empty()
+        || trimmed.to_ascii_lowercase().contains("prefix")
+        || trimmed.contains(' ')
+    {
         return None;
     }
 
-    let mut parts = trimmed.split('+').map(str::trim).filter(|part| !part.is_empty()).peekable();
+    let mut parts = trimmed
+        .split('+')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .peekable();
     let mut normalized: Vec<String> = Vec::new();
     let mut key: Option<String> = None;
 
@@ -106,18 +114,19 @@ fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
 }
 
 fn find_submenu(menu: &Menu<tauri::Wry>, title: &str) -> Option<Submenu<tauri::Wry>> {
-    menu.items()
-        .ok()?
-        .into_iter()
-        .find_map(|item| item.as_submenu().filter(|submenu| submenu.text().ok().as_deref() == Some(title)).cloned())
+    menu.items().ok()?.into_iter().find_map(|item| {
+        item.as_submenu()
+            .filter(|submenu| submenu.text().ok().as_deref() == Some(title))
+            .cloned()
+    })
 }
 
 fn find_menu_item(submenu: &Submenu<tauri::Wry>, label: &str) -> Option<MenuItem<tauri::Wry>> {
-    submenu
-        .items()
-        .ok()?
-        .into_iter()
-        .find_map(|item| item.as_menuitem().filter(|entry| entry.text().ok().as_deref() == Some(label)).cloned())
+    submenu.items().ok()?.into_iter().find_map(|item| {
+        item.as_menuitem()
+            .filter(|entry| entry.text().ok().as_deref() == Some(label))
+            .cloned()
+    })
 }
 
 fn ensure_shortcut_menu_item(
@@ -136,7 +145,10 @@ fn ensure_shortcut_menu_item(
     Ok(item)
 }
 
-pub fn refresh_shortcut_menu(app: &tauri::AppHandle, shortcuts: &ShortcutSettings) -> tauri::Result<()> {
+pub fn refresh_shortcut_menu(
+    app: &tauri::AppHandle,
+    shortcuts: &ShortcutSettings,
+) -> tauri::Result<()> {
     let Some(menu) = app.menu() else {
         return Ok(());
     };
@@ -309,7 +321,13 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             IpcResponse::Ok
         }
         IpcCommand::GetAutoYesPanes => {
-            let panes: Vec<String> = state.auto_yes_panes.lock().unwrap().iter().cloned().collect();
+            let panes: Vec<String> = state
+                .auto_yes_panes
+                .lock()
+                .unwrap()
+                .iter()
+                .cloned()
+                .collect();
             IpcResponse::AutoYesPanes(panes)
         }
         IpcCommand::ToggleAutoYes { pane_id } => {
@@ -326,9 +344,8 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             // Push to relay for cross-device sync
             if let Ok(guard) = state.relay.lock() {
                 if let Some(handle) = guard.as_ref() {
-                    handle.send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes {
-                        pane_ids,
-                    });
+                    handle
+                        .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
                 }
             }
 
@@ -355,7 +372,8 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                 .and_then(|o| {
                     if o.status.success() {
                         let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                        stdout.lines()
+                        stdout
+                            .lines()
                             .find(|l| l.starts_with(&format!("{} ", pane_id)))
                             .and_then(|l| l.split_whitespace().nth(1))
                             .map(|s| s.to_string())
@@ -435,17 +453,16 @@ pub fn run() {
         commands::jobs::regenerate_all_cwt_contexts(&s, &j.jobs);
     }
 
-    let job_status: Arc<Mutex<HashMap<String, JobStatus>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let job_status: Arc<Mutex<HashMap<String, JobStatus>>> = Arc::new(Mutex::new(HashMap::new()));
     let active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let relay_handle: Arc<Mutex<Option<relay::RelayHandle>>> = Arc::new(Mutex::new(None));
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-    let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> =
-        Arc::new(Mutex::new(Vec::new()));
-    let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
-        Arc::new(Mutex::new(HashSet::new()));
-    let process_overrides: Arc<Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>> = {
+    let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> = Arc::new(Mutex::new(Vec::new()));
+    let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let process_overrides: Arc<
+        Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>,
+    > = {
         let loaded = settings.lock().unwrap().process_overrides.clone();
         Arc::new(Mutex::new(loaded))
     };
@@ -453,8 +470,7 @@ pub fn run() {
         Arc::new(Mutex::new(notifications::NotificationState::new()));
 
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
-    let pty_manager: pty::SharedPtyManager =
-        Arc::new(Mutex::new(pty::PtyManager::new()));
+    let pty_manager: pty::SharedPtyManager = Arc::new(Mutex::new(pty::PtyManager::new()));
 
     let app_state = AppState {
         settings: Arc::clone(&settings),
@@ -703,8 +719,13 @@ pub fn run() {
             let settings_item =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
-            let claude_item =
-                MenuItem::with_id(app, "usage_claude", "Claude: loading...", false, None::<&str>)?;
+            let claude_item = MenuItem::with_id(
+                app,
+                "usage_claude",
+                "Claude: loading...",
+                false,
+                None::<&str>,
+            )?;
             let codex_item =
                 MenuItem::with_id(app, "usage_codex", "Codex: loading...", false, None::<&str>)?;
             let opencode_item = MenuItem::with_id(
@@ -750,7 +771,11 @@ pub fn run() {
                         }
                     }
                     "quit" => {
-                        app.state::<AppState>().pty_manager.lock().unwrap().destroy_all();
+                        app.state::<AppState>()
+                            .pty_manager
+                            .lock()
+                            .unwrap()
+                            .destroy_all();
                         app.exit(0);
                     }
                     _ => {}
@@ -805,7 +830,8 @@ pub fn run() {
                     let usage = usage::fetch_usage_snapshot(zai_token).await;
                     let _ = claude_handle.set_text(format!("Claude: {}", usage.claude.summary));
                     let _ = codex_handle.set_text(format!("Codex: {}", usage.codex.summary));
-                    let _ = opencode_handle.set_text(format!("OpenCode: {}", usage.opencode.summary));
+                    let _ =
+                        opencode_handle.set_text(format!("OpenCode: {}", usage.opencode.summary));
                     let _ = zai_handle.set_text(format!("z.ai: {}", usage.zai.summary));
                     tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
                 }
@@ -821,9 +847,15 @@ pub fn run() {
                         let _ = window.hide();
                         #[cfg(target_os = "macos")]
                         {
-                            let show = app_handle.state::<AppState>().settings.lock().unwrap().show_in_dock;
+                            let show = app_handle
+                                .state::<AppState>()
+                                .settings
+                                .lock()
+                                .unwrap()
+                                .show_in_dock;
                             if !show {
-                                let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                                let _ = app_handle
+                                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
                             }
                         }
                     }
@@ -878,7 +910,9 @@ pub fn run() {
                 if let Some(rs) = relay_settings {
                     // Read device_token from yaml, fall back to keychain
                     let device_token = if rs.device_token.is_empty() {
-                        secrets_for_relay.lock().unwrap()
+                        secrets_for_relay
+                            .lock()
+                            .unwrap()
                             .get("relay_device_token")
                             .cloned()
                             .unwrap_or_default()

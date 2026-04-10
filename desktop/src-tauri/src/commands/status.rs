@@ -30,7 +30,12 @@ pub fn get_running_job_logs(state: State<AppState>, name: String) -> Result<Stri
 }
 
 #[tauri::command]
-pub fn send_job_input(state: State<AppState>, name: String, text: String, freetext: Option<String>) -> Result<(), String> {
+pub fn send_job_input(
+    state: State<AppState>,
+    name: String,
+    text: String,
+    freetext: Option<String>,
+) -> Result<(), String> {
     let statuses = state.job_status.lock().unwrap();
     let status = statuses.get(&name).ok_or("Job not found")?;
 

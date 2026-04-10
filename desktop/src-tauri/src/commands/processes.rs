@@ -6,7 +6,9 @@ use clawtab_protocol::DesktopMessage;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::claude_session::{detect_process_provider, detect_version_from_command, ProcessProvider};
+use crate::claude_session::{
+    detect_process_provider, detect_version_from_command, ProcessProvider,
+};
 use crate::config::jobs::JobStatus;
 use crate::AppState;
 
@@ -55,7 +57,9 @@ fn is_semver(s: &str) -> bool {
     if parts.len() != 3 {
         return false;
     }
-    parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    parts
+        .iter()
+        .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
 fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
@@ -69,9 +73,8 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
 #[tauri::command]
 pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<DetectedProcess>, String> {
     // Snapshot shared state under the lock, then release before spawning blocking work
-    let live_viewer_panes: HashSet<String> = {
-        state.pty_manager.lock().unwrap().active_pane_ids()
-    };
+    let live_viewer_panes: HashSet<String> =
+        { state.pty_manager.lock().unwrap().active_pane_ids() };
 
     let match_entries: Vec<(String, String, String)> = {
         let config = state.jobs_config.lock().unwrap();
@@ -113,12 +116,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
 
     // Run all subprocess-heavy work off the async runtime
     let snapshot = tokio::task::spawn_blocking(move || {
-        detect_processes_blocking(
-            live_viewer_panes,
-            match_entries,
-            running_panes,
-            overrides,
-        )
+        detect_processes_blocking(live_viewer_panes, match_entries, running_panes, overrides)
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))??;
@@ -220,7 +218,8 @@ fn detect_processes_blocking(
             Some(cwd),
         );
         let override_meta = overrides.get(pane_id);
-        let (can_fork_session, can_send_skills, can_inject_secrets) = provider_capabilities(provider);
+        let (can_fork_session, can_send_skills, can_inject_secrets) =
+            provider_capabilities(provider);
         let version = if is_semver(command) {
             command.to_string()
         } else {
@@ -352,7 +351,10 @@ pub fn send_detected_process_input(pane_id: String, text: String) -> Result<(), 
 #[tauri::command]
 pub fn get_active_questions(state: State<AppState>) -> Vec<clawtab_protocol::ClaudeQuestion> {
     let yes_panes = state.auto_yes_panes.lock().unwrap();
-    state.active_questions.lock().unwrap()
+    state
+        .active_questions
+        .lock()
+        .unwrap()
         .iter()
         .filter(|q| !yes_panes.contains(&q.pane_id))
         .cloned()
@@ -361,7 +363,13 @@ pub fn get_active_questions(state: State<AppState>) -> Vec<clawtab_protocol::Cla
 
 #[tauri::command]
 pub fn get_auto_yes_panes(state: State<AppState>) -> Vec<String> {
-    state.auto_yes_panes.lock().unwrap().iter().cloned().collect()
+    state
+        .auto_yes_panes
+        .lock()
+        .unwrap()
+        .iter()
+        .cloned()
+        .collect()
 }
 
 #[tauri::command]
@@ -372,9 +380,7 @@ pub fn set_auto_yes_panes(state: State<AppState>, pane_ids: Vec<String>) {
     // Push to relay for cross-device sync
     if let Ok(guard) = state.relay.lock() {
         if let Some(handle) = guard.as_ref() {
-            handle.send_message(&DesktopMessage::AutoYesPanes {
-                pane_ids,
-            });
+            handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
         }
     }
 }

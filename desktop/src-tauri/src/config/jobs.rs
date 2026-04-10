@@ -1,7 +1,7 @@
+use crate::claude_session::ProcessProvider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::claude_session::ProcessProvider;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -439,7 +439,11 @@ impl JobsConfig {
             if job.job_name.is_some() {
                 // If it has a job_name but is still flat, move it
                 // Actually, check if slug contains '/' -- if so, it's already nested
-                let dir_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let dir_name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if dir_name.contains('/') {
                     continue;
                 }
@@ -462,7 +466,10 @@ impl JobsConfig {
                 slugify(&job.name, 20)
             };
 
-            let job_name = job.job_name.clone().unwrap_or_else(|| "default".to_string());
+            let job_name = job
+                .job_name
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
             let new_dir = jobs_dir.join(&project_slug).join(&job_name);
 
             if new_dir.exists() {
@@ -648,7 +655,11 @@ pub fn migrate_cwt_to_central(jobs: &[Job]) {
                     if !path.is_file() {
                         continue;
                     }
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     // Skip auto-generated cwt.md and already-migrated job.md
                     if name == "cwt.md" || name == "job.md" {
                         continue;
@@ -674,13 +685,21 @@ pub fn migrate_cwt_to_central(jobs: &[Job]) {
                     if !path.is_file() {
                         continue;
                     }
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     // Migrate shared cwt.md as context.md
                     if name == "cwt.md" {
                         let dest = central_project_dir.join("context.md");
                         if !dest.exists() {
                             let _ = std::fs::copy(&path, &dest);
-                            log::info!("Migrated shared context {} to {}", path.display(), dest.display());
+                            log::info!(
+                                "Migrated shared context {} to {}",
+                                path.display(),
+                                dest.display()
+                            );
                         }
                         continue;
                     }

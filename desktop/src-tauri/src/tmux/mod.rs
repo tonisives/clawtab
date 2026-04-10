@@ -99,7 +99,11 @@ pub fn window_exists(session: &str, window_name: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn create_window(session: &str, name: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+pub fn create_window(
+    session: &str,
+    name: &str,
+    env_vars: &[(String, String)],
+) -> Result<String, String> {
     create_window_with_cwd(session, name, None, env_vars)
 }
 
@@ -123,7 +127,10 @@ pub fn create_window_with_cwd(
         args.push("-c");
         args.push(cwd);
     }
-    let env_pairs: Vec<String> = env_vars.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+    let env_pairs: Vec<String> = env_vars
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect();
     for pair in &env_pairs {
         args.push("-e");
         args.push(pair);
@@ -156,7 +163,11 @@ pub fn set_pane_title(pane_id: &str, title: &str) -> Result<(), String> {
 }
 
 /// Split a window to create a new pane, returning the new pane ID (e.g. "%42").
-pub fn split_pane(session: &str, window: &str, env_vars: &[(String, String)]) -> Result<String, String> {
+pub fn split_pane(
+    session: &str,
+    window: &str,
+    env_vars: &[(String, String)],
+) -> Result<String, String> {
     let target = format!("{}:{}", session, window);
     let mut args = vec![
         "split-window".to_string(),
@@ -228,7 +239,11 @@ pub fn send_keys_to_tui_pane(pane_id: &str, text: &str) -> Result<(), String> {
 
 /// Send a keystroke to select a "Type something" option, then type freetext and press Enter.
 /// The keystroke is sent without -l so it acts as navigation, then the freetext is sent literally.
-pub fn send_keys_to_tui_pane_freetext(pane_id: &str, keystroke: &str, freetext: &str) -> Result<(), String> {
+pub fn send_keys_to_tui_pane_freetext(
+    pane_id: &str,
+    keystroke: &str,
+    freetext: &str,
+) -> Result<(), String> {
     // Send the option number as a keystroke (navigates to the option)
     let output = Command::new("tmux")
         .args(["send-keys", "-t", pane_id, keystroke])
@@ -267,15 +282,7 @@ pub fn send_keys_to_tui_pane_freetext(pane_id: &str, keystroke: &str, freetext: 
 pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String, String> {
     let start = format!("-{}", lines);
     let output = Command::new("tmux")
-        .args([
-            "capture-pane",
-            "-t",
-            pane_id,
-            "-p",
-            "-e",
-            "-S",
-            &start,
-        ])
+        .args(["capture-pane", "-t", pane_id, "-p", "-e", "-S", &start])
         .output()
         .map_err(|e| format!("Failed to capture pane: {}", e))?;
 
@@ -316,10 +323,7 @@ pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {
                 if let Some((id, cmd)) = line.split_once(':') {
                     id == pane_id
                         && !cmd.trim().is_empty()
-                        && !matches!(
-                            cmd.trim(),
-                            "bash" | "zsh" | "fish" | "sh" | "dash"
-                        )
+                        && !matches!(cmd.trim(), "bash" | "zsh" | "fish" | "sh" | "dash")
                 } else {
                     false
                 }
@@ -328,7 +332,6 @@ pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {
         _ => false,
     }
 }
-
 
 /// Capture the entire scrollback from a pane.
 pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
@@ -393,7 +396,13 @@ pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
 /// Get the working directory of a pane.
 pub fn get_pane_path(pane_id: &str) -> Result<String, String> {
     let output = Command::new("tmux")
-        .args(["display-message", "-t", pane_id, "-p", "#{pane_current_path}"])
+        .args([
+            "display-message",
+            "-t",
+            pane_id,
+            "-p",
+            "#{pane_current_path}",
+        ])
         .output()
         .map_err(|e| format!("Failed to get pane path: {}", e))?;
 
@@ -411,7 +420,12 @@ pub fn get_pane_path(pane_id: &str) -> Result<String, String> {
 
 /// Split a pane by its ID, returning the new pane ID.
 /// When `horizontal` is true, splits right (-h); otherwise splits down (-v).
-pub fn split_pane_by_id(pane_id: &str, cwd: &str, env_vars: &[(String, String)], horizontal: bool) -> Result<String, String> {
+pub fn split_pane_by_id(
+    pane_id: &str,
+    cwd: &str,
+    env_vars: &[(String, String)],
+    horizontal: bool,
+) -> Result<String, String> {
     let flag = if horizontal { "-h" } else { "-v" };
     let mut args = vec![
         "split-window".to_string(),
@@ -446,13 +460,7 @@ pub fn split_pane_by_id(pane_id: &str, cwd: &str, env_vars: &[(String, String)],
 fn activate_terminal_for_session(session: &str) -> Result<(), String> {
     // Get the TTY of the client attached to this session
     let output = Command::new("tmux")
-        .args([
-            "list-clients",
-            "-t",
-            session,
-            "-F",
-            "#{client_tty}",
-        ])
+        .args(["list-clients", "-t", session, "-F", "#{client_tty}"])
         .output()
         .map_err(|e| format!("Failed to list clients: {}", e))?;
 

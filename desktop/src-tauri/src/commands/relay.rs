@@ -40,7 +40,11 @@ pub fn set_relay_settings(state: State<AppState>, settings: RelaySettings) -> Re
 
     // Store device_token in keychain, save empty string in yaml
     if !device_token.is_empty() {
-        state.secrets.lock().unwrap().set(KEYCHAIN_DEVICE_TOKEN_KEY, &device_token)?;
+        state
+            .secrets
+            .lock()
+            .unwrap()
+            .set(KEYCHAIN_DEVICE_TOKEN_KEY, &device_token)?;
     }
 
     let mut s = state.settings.lock().unwrap();
@@ -56,7 +60,10 @@ pub fn get_relay_status(state: State<AppState>) -> RelayStatus {
     let settings = state.settings.lock().unwrap();
     let relay = settings.relay.clone().unwrap_or_default();
     let connected = state.relay.lock().map(|g| g.is_some()).unwrap_or(false);
-    let subscription_required = *state.relay_sub_required.lock().unwrap_or_else(|e| e.into_inner());
+    let subscription_required = *state
+        .relay_sub_required
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     RelayStatus {
         enabled: relay.enabled,
         connected,
@@ -187,7 +194,10 @@ pub fn relay_connect(app: tauri::AppHandle, state: State<AppState>) -> Result<()
     // Read device_token from yaml, fall back to keychain
     let device_token = if rs.device_token.is_empty() {
         drop(settings);
-        state.secrets.lock().unwrap()
+        state
+            .secrets
+            .lock()
+            .unwrap()
             .get(KEYCHAIN_DEVICE_TOKEN_KEY)
             .cloned()
             .unwrap_or_default()
@@ -260,11 +270,12 @@ pub fn relay_save_tokens(
 }
 
 #[tauri::command]
-pub fn relay_get_pending_token(
-    state: State<AppState>,
-) -> Result<Option<String>, String> {
+pub fn relay_get_pending_token(state: State<AppState>) -> Result<Option<String>, String> {
     let secrets = state.secrets.lock().unwrap();
-    Ok(secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).cloned().filter(|t| !t.is_empty()))
+    Ok(secrets
+        .get(KEYCHAIN_ACCESS_TOKEN_KEY)
+        .cloned()
+        .filter(|t| !t.is_empty()))
 }
 
 #[derive(Serialize)]
@@ -291,20 +302,22 @@ pub async fn relay_check_subscription(
     let (access_token, refresh_token_val) = {
         let secrets = state.secrets.lock().unwrap();
         (
-            secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).cloned().unwrap_or_default(),
-            secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY).cloned().unwrap_or_default(),
+            secrets
+                .get(KEYCHAIN_ACCESS_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
+            secrets
+                .get(KEYCHAIN_REFRESH_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
         )
     };
     if access_token.is_empty() {
         return Err("No access token stored".to_string());
     }
 
-    let result = crate::relay::check_subscription_http(
-        &server_url,
-        &access_token,
-        &refresh_token_val,
-    )
-    .await;
+    let result =
+        crate::relay::check_subscription_http(&server_url, &access_token, &refresh_token_val).await;
 
     match result {
         Ok((subscribed, new_access, new_refresh)) => {
@@ -363,8 +376,14 @@ fn get_relay_auth(state: &AppState) -> Result<(String, String, String), String> 
     let (access_token, refresh_token) = {
         let secrets = state.secrets.lock().unwrap();
         (
-            secrets.get(KEYCHAIN_ACCESS_TOKEN_KEY).cloned().unwrap_or_default(),
-            secrets.get(KEYCHAIN_REFRESH_TOKEN_KEY).cloned().unwrap_or_default(),
+            secrets
+                .get(KEYCHAIN_ACCESS_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
+            secrets
+                .get(KEYCHAIN_REFRESH_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
         )
     };
     if access_token.is_empty() {
@@ -385,14 +404,18 @@ async fn relay_request(
 ) -> Result<serde_json::Value, String> {
     let client = reqwest::Client::new();
 
-    let mut req = client.request(method.clone(), url)
+    let mut req = client
+        .request(method.clone(), url)
         .header("Authorization", format!("Bearer {}", access_token))
         .header("Content-Type", "application/json");
     if let Some(ref b) = body {
         req = req.json(b);
     }
 
-    let resp = req.send().await.map_err(|e| format!("Request failed: {}", e))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
 
     if resp.status().as_u16() == 401 && !refresh_token.is_empty() {
         let refresh_url = format!("{}/auth/refresh", server_url.trim_end_matches('/'));
@@ -407,7 +430,9 @@ async fn relay_request(
             return Err("Token refresh failed".to_string());
         }
 
-        let rb: serde_json::Value = refresh_resp.json().await
+        let rb: serde_json::Value = refresh_resp
+            .json()
+            .await
             .map_err(|e| format!("Invalid refresh response: {}", e))?;
         let new_access = rb["access_token"].as_str().unwrap_or_default().to_string();
         let new_refresh = rb["refresh_token"].as_str().unwrap_or_default().to_string();
@@ -419,20 +444,25 @@ async fn relay_request(
             let _ = secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &new_refresh);
         }
 
-        let mut retry = client.request(method, url)
+        let mut retry = client
+            .request(method, url)
             .header("Authorization", format!("Bearer {}", new_access))
             .header("Content-Type", "application/json");
         if let Some(ref b) = body {
             retry = retry.json(b);
         }
-        let retry_resp = retry.send().await
+        let retry_resp = retry
+            .send()
+            .await
             .map_err(|e| format!("Retry request failed: {}", e))?;
 
         if !retry_resp.status().is_success() {
             let text = retry_resp.text().await.unwrap_or_default();
             return Err(extract_error_message(&text, "Request failed"));
         }
-        return retry_resp.json().await
+        return retry_resp
+            .json()
+            .await
             .map_err(|e| format!("Invalid response: {}", e));
     }
 
@@ -441,7 +471,9 @@ async fn relay_request(
         return Err(extract_error_message(&text, "Request failed"));
     }
 
-    resp.json().await.map_err(|e| format!("Invalid response: {}", e))
+    resp.json()
+        .await
+        .map_err(|e| format!("Invalid response: {}", e))
 }
 
 fn extract_error_message(text: &str, fallback: &str) -> String {
@@ -453,18 +485,27 @@ fn extract_error_message(text: &str, fallback: &str) -> String {
             return m.to_string();
         }
     }
-    if text.is_empty() { fallback.to_string() } else { text.to_string() }
+    if text.is_empty() {
+        fallback.to_string()
+    } else {
+        text.to_string()
+    }
 }
 
 #[tauri::command]
-pub async fn relay_get_shares(
-    state: State<'_, AppState>,
-) -> Result<SharesResponse, String> {
+pub async fn relay_get_shares(state: State<'_, AppState>) -> Result<SharesResponse, String> {
     let (server_url, access_token, refresh_token) = get_relay_auth(&state)?;
     let url = format!("{}/shares", server_url.trim_end_matches('/'));
     let val = relay_request(
-        reqwest::Method::GET, &url, &access_token, &refresh_token, &server_url, None, &state,
-    ).await?;
+        reqwest::Method::GET,
+        &url,
+        &access_token,
+        &refresh_token,
+        &server_url,
+        None,
+        &state,
+    )
+    .await?;
     serde_json::from_value(val).map_err(|e| format!("Invalid shares response: {}", e))
 }
 
@@ -478,8 +519,15 @@ pub async fn relay_add_share(
     let url = format!("{}/shares", server_url.trim_end_matches('/'));
     let body = serde_json::json!({ "email": email, "allowed_groups": allowed_groups });
     let val = relay_request(
-        reqwest::Method::POST, &url, &access_token, &refresh_token, &server_url, Some(body), &state,
-    ).await?;
+        reqwest::Method::POST,
+        &url,
+        &access_token,
+        &refresh_token,
+        &server_url,
+        Some(body),
+        &state,
+    )
+    .await?;
     serde_json::from_value(val).map_err(|e| format!("Invalid share response: {}", e))
 }
 
@@ -493,8 +541,15 @@ pub async fn relay_update_share(
     let url = format!("{}/shares/{}", server_url.trim_end_matches('/'), share_id);
     let body = serde_json::json!({ "allowed_groups": allowed_groups });
     relay_request(
-        reqwest::Method::PATCH, &url, &access_token, &refresh_token, &server_url, Some(body), &state,
-    ).await?;
+        reqwest::Method::PATCH,
+        &url,
+        &access_token,
+        &refresh_token,
+        &server_url,
+        Some(body),
+        &state,
+    )
+    .await?;
     Ok(())
 }
 
@@ -506,15 +561,24 @@ pub async fn relay_remove_share(
     let (server_url, access_token, refresh_token) = get_relay_auth(&state)?;
     let url = format!("{}/shares/{}", server_url.trim_end_matches('/'), share_id);
     relay_request(
-        reqwest::Method::DELETE, &url, &access_token, &refresh_token, &server_url, None, &state,
-    ).await?;
+        reqwest::Method::DELETE,
+        &url,
+        &access_token,
+        &refresh_token,
+        &server_url,
+        None,
+        &state,
+    )
+    .await?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn relay_get_groups(state: State<AppState>) -> Vec<String> {
     let config = state.jobs_config.lock().unwrap();
-    let mut groups: Vec<String> = config.jobs.iter()
+    let mut groups: Vec<String> = config
+        .jobs
+        .iter()
         .map(|j| j.group.clone())
         .collect::<std::collections::HashSet<_>>()
         .into_iter()

@@ -22,12 +22,14 @@ fn cached_jobs_snapshot_path() -> Option<std::path::PathBuf> {
 }
 
 fn write_cached_jobs_snapshot(snapshot: &CachedJobsSnapshot) -> Result<(), String> {
-    let path = cached_jobs_snapshot_path().ok_or_else(|| "Could not resolve config directory".to_string())?;
+    let path = cached_jobs_snapshot_path()
+        .ok_or_else(|| "Could not resolve config directory".to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create cache dir: {e}"))?;
     }
 
-    let payload = serde_json::to_vec(snapshot).map_err(|e| format!("Failed to serialize cache: {e}"))?;
+    let payload =
+        serde_json::to_vec(snapshot).map_err(|e| format!("Failed to serialize cache: {e}"))?;
     let tmp_path = path.with_extension("json.tmp");
     std::fs::write(&tmp_path, payload).map_err(|e| format!("Failed to write cache: {e}"))?;
     std::fs::rename(&tmp_path, &path).map_err(|e| format!("Failed to finalize cache: {e}"))?;
@@ -87,11 +89,7 @@ pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Resu
     regenerate_all_cwt_contexts(&settings, &jobs);
 
     // Push updated jobs to relay
-    crate::relay::push_full_state_if_connected(
-        &state.relay,
-        &state.jobs_config,
-        &state.job_status,
-    );
+    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -121,11 +119,8 @@ pub fn rename_job(
         if let Some(ref fp) = old_job.folder_path {
             if let Some(jobs_dir) = crate::config::config_dir().map(|p| p.join("jobs")) {
                 let old_central = jobs_dir.join(&old_job.slug);
-                let new_central_slug = crate::config::jobs::derive_slug(
-                    fp,
-                    Some(new_jn),
-                    &config.jobs,
-                );
+                let new_central_slug =
+                    crate::config::jobs::derive_slug(fp, Some(new_jn), &config.jobs);
                 let new_central = jobs_dir.join(&new_central_slug);
                 if old_central.is_dir() && !new_central.exists() {
                     let _ = std::fs::create_dir_all(new_central.parent().unwrap_or(&jobs_dir));
@@ -159,11 +154,7 @@ pub fn rename_job(
     regenerate_all_cwt_contexts(&settings, &jobs);
 
     // Push updated jobs to relay
-    crate::relay::push_full_state_if_connected(
-        &state.relay,
-        &state.jobs_config,
-        &state.job_status,
-    );
+    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -227,11 +218,7 @@ pub fn import_job_folder(
     };
 
     // Copy job.md to central location
-    let slug = crate::config::jobs::derive_slug(
-        &project_root_str,
-        Some(&job_name),
-        &config.jobs,
-    );
+    let slug = crate::config::jobs::derive_slug(&project_root_str, Some(&job_name), &config.jobs);
     if let Some(jobs_dir) = crate::config::config_dir().map(|p| p.join("jobs")) {
         let central_dir = jobs_dir.join(&slug);
         let _ = std::fs::create_dir_all(&central_dir);
@@ -249,11 +236,7 @@ pub fn import_job_folder(
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
 
-    crate::relay::push_full_state_if_connected(
-        &state.relay,
-        &state.jobs_config,
-        &state.job_status,
-    );
+    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -308,7 +291,10 @@ pub fn duplicate_job(
         }
     };
 
-    let job_name = source.job_name.clone().unwrap_or_else(|| "default".to_string());
+    let job_name = source
+        .job_name
+        .clone()
+        .unwrap_or_else(|| "default".to_string());
 
     // Create new Job cloning config from source
     let mut new_job = Job {
@@ -340,11 +326,8 @@ pub fn duplicate_job(
     };
 
     // Derive slug and save
-    new_job.slug = crate::config::jobs::derive_slug(
-        &target_project_path,
-        Some(&job_name),
-        &config.jobs,
-    );
+    new_job.slug =
+        crate::config::jobs::derive_slug(&target_project_path, Some(&job_name), &config.jobs);
     config.save_job(&new_job)?;
 
     // Save job.md to central location
@@ -362,18 +345,18 @@ pub fn duplicate_job(
     let jobs = config.jobs.clone();
 
     // Find the saved job to return
-    let result = config.jobs.iter().find(|j| j.slug == new_job.slug).cloned()
+    let result = config
+        .jobs
+        .iter()
+        .find(|j| j.slug == new_job.slug)
+        .cloned()
         .unwrap_or(new_job);
 
     drop(config);
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
 
-    crate::relay::push_full_state_if_connected(
-        &state.relay,
-        &state.jobs_config,
-        &state.job_status,
-    );
+    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -381,7 +364,11 @@ pub fn duplicate_job(
 }
 
 #[tauri::command]
-pub fn delete_job(app: tauri::AppHandle, state: State<AppState>, name: String) -> Result<(), String> {
+pub fn delete_job(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    name: String,
+) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
 
     let slug = config
@@ -398,11 +385,7 @@ pub fn delete_job(app: tauri::AppHandle, state: State<AppState>, name: String) -
     drop(config);
 
     // Push updated jobs to relay
-    crate::relay::push_full_state_if_connected(
-        &state.relay,
-        &state.jobs_config,
-        &state.job_status,
-    );
+    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -472,7 +455,10 @@ pub async fn run_job_now(
         });
 
         match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
-            Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult { pane_id, tmux_session })),
+            Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult {
+                pane_id,
+                tmux_session,
+            })),
             _ => Ok(None),
         }
     } else {
@@ -526,7 +512,10 @@ pub fn resume_job(state: State<AppState>, name: String) -> Result<(), String> {
 pub fn sigint_job(state: State<AppState>, name: String) -> Result<(), String> {
     let status = state.job_status.lock().unwrap();
     match status.get(&name).cloned() {
-        Some(JobStatus::Running { pane_id: Some(pane_id), .. }) => {
+        Some(JobStatus::Running {
+            pane_id: Some(pane_id),
+            ..
+        }) => {
             drop(status);
             crate::tmux::send_sigint_to_pane(&pane_id)?;
             std::thread::sleep(std::time::Duration::from_millis(200));
@@ -540,7 +529,10 @@ pub fn sigint_job(state: State<AppState>, name: String) -> Result<(), String> {
 pub fn stop_job(state: State<AppState>, name: String) -> Result<(), String> {
     let mut status = state.job_status.lock().unwrap();
     match status.get(&name).cloned() {
-        Some(JobStatus::Running { pane_id: Some(pane_id), .. }) => {
+        Some(JobStatus::Running {
+            pane_id: Some(pane_id),
+            ..
+        }) => {
             let _ = crate::tmux::kill_pane(&pane_id);
             status.insert(name, JobStatus::Idle);
             Ok(())
@@ -760,7 +752,11 @@ pub fn read_cwt_entry(folder_path: String, job_name: Option<String>) -> Result<S
 }
 
 #[tauri::command]
-pub fn write_cwt_entry(folder_path: String, job_name: Option<String>, content: String) -> Result<(), String> {
+pub fn write_cwt_entry(
+    folder_path: String,
+    job_name: Option<String>,
+    content: String,
+) -> Result<(), String> {
     // Write job.md to central location
     let jn = job_name.as_deref().unwrap_or("default");
     let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
@@ -825,7 +821,11 @@ pub fn derive_job_slug(
 
 /// Generate the auto-generated context for the agent directory.
 /// Contains workspace info, available tools, and Telegram communication instructions.
-fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Option<i64>) -> String {
+fn generate_agent_cwt_context(
+    settings: &AppSettings,
+    jobs: &[Job],
+    chat_id: Option<i64>,
+) -> String {
     let mut out = String::new();
 
     out.push_str("<!-- Auto-generated by ClawTab. Regenerated on agent start. -->\n");
@@ -837,15 +837,23 @@ fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Opt
     out.push_str("IMPORTANT: You MUST send ALL your responses and questions to the user via Telegram using curl.\n");
     out.push_str("The user cannot see your terminal output. Telegram is your ONLY communication channel.\n\n");
 
-    let has_token = settings.telegram.as_ref().map_or(false, |tg| !tg.bot_token.is_empty());
+    let has_token = settings
+        .telegram
+        .as_ref()
+        .map_or(false, |tg| !tg.bot_token.is_empty());
     let cid = chat_id.or_else(|| {
-        settings.telegram.as_ref().and_then(|tg| tg.chat_ids.first().copied())
+        settings
+            .telegram
+            .as_ref()
+            .and_then(|tg| tg.chat_ids.first().copied())
     });
 
     if has_token {
         if let Some(cid) = cid {
             out.push_str("### Sending messages\n\n");
-            out.push_str("Send every response, question, status update, or result to Telegram:\n\n");
+            out.push_str(
+                "Send every response, question, status update, or result to Telegram:\n\n",
+            );
             out.push_str("```bash\n");
             out.push_str(&format!(
                 "curl -s -X POST \"https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{{\"chat_id\": {}, \"text\": \"Your message here\"}}'\n",
@@ -863,7 +871,9 @@ fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Opt
     out.push_str("- ALWAYS send your answers and questions via the Telegram curl command above.\n");
     out.push_str("- After completing a task or asking a question, wait for the next input.\n");
     out.push_str("- Do NOT terminate or exit unless the user explicitly asks you to.\n");
-    out.push_str("- Keep messages concise. For long output, summarize and offer to share details.\n");
+    out.push_str(
+        "- Keep messages concise. For long output, summarize and offer to share details.\n",
+    );
     out.push_str("- Only operate within the allowed directories listed below.\n");
 
     // Collect unique allowed directories from jobs
@@ -900,9 +910,17 @@ fn generate_agent_cwt_context(settings: &AppSettings, jobs: &[Job], chat_id: Opt
             let jt = match job.job_type {
                 crate::config::jobs::JobType::Binary => "bin",
                 crate::config::jobs::JobType::Claude => "claude",
-                crate::config::jobs::JobType::Job => if job.cron.is_empty() { "job" } else { "cronjob" },
+                crate::config::jobs::JobType::Job => {
+                    if job.cron.is_empty() {
+                        "job"
+                    } else {
+                        "cronjob"
+                    }
+                }
             };
-            let dir = job.folder_path.as_deref()
+            let dir = job
+                .folder_path
+                .as_deref()
                 .or(job.work_dir.as_deref())
                 .unwrap_or("-");
             out.push_str(&format!("- `{}` [{}] dir: `{}`\n", job.name, jt, dir));
@@ -1066,7 +1084,9 @@ pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
                 if let Some(ref folder_path) = job.folder_path {
                     let content = generate_cwt_context(job, settings);
                     // Write context.md to central: ~/.config/clawtab/jobs/{slug}/context.md
-                    if let Some(context_path) = crate::config::jobs::central_job_context_path(&job.slug) {
+                    if let Some(context_path) =
+                        crate::config::jobs::central_job_context_path(&job.slug)
+                    {
                         if let Some(parent) = context_path.parent() {
                             let _ = std::fs::create_dir_all(parent);
                         }
@@ -1179,8 +1199,7 @@ pub fn read_agent_context() -> Result<String, String> {
     if !path.exists() {
         return Ok(String::new());
     }
-    std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))
+    std::fs::read_to_string(&path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))
 }
 
 fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
@@ -1263,9 +1282,17 @@ pub fn build_agent_job(
             .and_then(|n| n.to_str())
             .unwrap_or("agent");
         let slug = format!("agent-{}", folder);
-        (slug.clone(), slug, project_dir.to_string_lossy().to_string())
+        (
+            slug.clone(),
+            slug,
+            project_dir.to_string_lossy().to_string(),
+        )
     } else {
-        ("agent".to_string(), "agent".to_string(), agent_dir.display().to_string())
+        (
+            "agent".to_string(),
+            "agent".to_string(),
+            agent_dir.display().to_string(),
+        )
     };
 
     // Write prompt to a per-agent file to avoid collisions
@@ -1325,7 +1352,14 @@ pub async fn run_agent(
         let j = state.jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = build_agent_job(&prompt, None, &settings, &jobs, work_dir.as_deref(), provider)?;
+    let job = build_agent_job(
+        &prompt,
+        None,
+        &settings,
+        &jobs,
+        work_dir.as_deref(),
+        provider,
+    )?;
 
     let secrets = Arc::clone(&state.secrets);
     let history = Arc::clone(&state.history);
@@ -1338,15 +1372,27 @@ pub async fn run_agent(
 
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job_with_pane_notify(
-            &job, &secrets, &history, &settings_arc, &job_status, "manual", &active_agents,
-            &relay, &std::collections::HashMap::new(), pane_tx, None,
+            &job,
+            &secrets,
+            &history,
+            &settings_arc,
+            &job_status,
+            "manual",
+            &active_agents,
+            &relay,
+            &std::collections::HashMap::new(),
+            pane_tx,
+            None,
         )
         .await;
     });
 
     // Wait for the pane to be created (up to 10s)
     match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
-        Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult { pane_id, tmux_session })),
+        Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult {
+            pane_id,
+            tmux_session,
+        })),
         _ => Ok(None),
     }
 }

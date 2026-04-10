@@ -118,7 +118,10 @@ pub async fn fork_pane(pane_id: String, direction: String) -> Result<String, Str
 
 /// Split a tmux pane without launching Claude (plain terminal).
 #[tauri::command]
-pub async fn split_pane_plain(pane_id: String, direction: String) -> Result<ShellPaneResult, String> {
+pub async fn split_pane_plain(
+    pane_id: String,
+    direction: String,
+) -> Result<ShellPaneResult, String> {
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
@@ -145,7 +148,8 @@ pub async fn split_pane_plain(pane_id: String, direction: String) -> Result<Shel
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let window_name = format!("clawtab-shell-{}", suffix);
-    let new_pane = tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&pane_path), &[])?;
+    let new_pane =
+        tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&pane_path), &[])?;
 
     Ok(ShellPaneResult {
         pane_id: new_pane,
@@ -179,9 +183,7 @@ pub async fn fork_pane_with_secrets(
         let store = secrets.lock().unwrap();
         secret_keys
             .iter()
-            .filter_map(|key| {
-                store.get(key).map(|val| (key.clone(), val.clone()))
-            })
+            .filter_map(|key| store.get(key).map(|val| (key.clone(), val.clone())))
             .collect()
     };
 

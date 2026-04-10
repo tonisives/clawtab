@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
+use crate::claude_session::{detect_process_provider, ProcessSnapshot};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::relay::RelayHandle;
 
@@ -28,15 +29,21 @@ fn strip_ansi(text: &str) -> String {
                     chars.next();
                     while let Some(&next) = chars.peek() {
                         chars.next();
-                        if next == '\x07' { break; } // BEL
+                        if next == '\x07' {
+                            break;
+                        } // BEL
                         if next == '\x1b' {
-                            if chars.peek() == Some(&'\\') { chars.next(); }
+                            if chars.peek() == Some(&'\\') {
+                                chars.next();
+                            }
                             break;
                         }
                     }
                 }
                 // Other ESC sequences (ESC + single char like ESC ( B)
-                Some(_) => { chars.next(); }
+                Some(_) => {
+                    chars.next();
+                }
                 None => {}
             }
         } else {
@@ -46,14 +53,18 @@ fn strip_ansi(text: &str) -> String {
     result
 }
 
-/// Parse numbered options from Claude output text.
+/// Parse numbered options from interactive terminal output.
 /// Matches lines like "1. Fix the bug" or "  > 2. Skip this step"
 /// Only returns options if the output looks like an interactive prompt
-/// (contains prompt indicators like "Enter to select", arrow navigation hints, etc.)
+/// (contains prompt indicators like navigation hints or approval text.)
 pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     let text = &strip_ansi(text);
     let lines: Vec<&str> = text.lines().collect();
-    let tail = if lines.len() > 30 { &lines[lines.len() - 30..] } else { &lines };
+    let tail = if lines.len() > 30 {
+        &lines[lines.len() - 30..]
+    } else {
+        &lines
+    };
 
     // Collect all contiguous groups of numbered items, keep only the last group.
     // This avoids picking up numbered plans/lists that appear before the actual prompt.
@@ -61,7 +72,8 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     let mut current_group: Vec<QuestionOption> = Vec::new();
 
     for line in tail {
-        let trimmed = line.trim_start_matches(|c: char| c.is_whitespace() || ">~`|›»❯▸▶".contains(c));
+        let trimmed =
+            line.trim_start_matches(|c: char| c.is_whitespace() || ">~`|›»❯▸▶".contains(c));
         if let Some(rest) = trimmed.strip_prefix(|c: char| c.is_ascii_digit()) {
             let digit_end = rest.find(". ");
             if let Some(dot_pos) = digit_end {
@@ -72,7 +84,9 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
                         // Truncate long labels (e.g. "Yes, and don't ask again: mkdir -p ...")
                         if label.len() > 60 {
                             let mut end = 60;
-                            while end > 0 && !label.is_char_boundary(end) { end -= 1; }
+                            while end > 0 && !label.is_char_boundary(end) {
+                                end -= 1;
+                            }
                             label = format!("{}...", label[..end].trim_end());
                         }
                         current_group.push(QuestionOption {
@@ -92,7 +106,8 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
         if !current_group.is_empty() {
             let stripped = line.trim();
             let is_blank = stripped.is_empty();
-            let is_separator = !stripped.is_empty() && stripped.chars().all(|c| "─━═-—–_│|┊┆".contains(c));
+            let is_separator =
+                !stripped.is_empty() && stripped.chars().all(|c| "─━═-—–_│|┊┆".contains(c));
             let is_indented_desc = line.starts_with("  ") || line.starts_with('\t');
             if !is_blank && !is_separator && !is_indented_desc {
                 groups.push(std::mem::take(&mut current_group));
@@ -117,18 +132,22 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
 }
 
 /// Check whether the terminal output contains indicators of an interactive prompt.
-/// Claude CLI uses two kinds of numbered prompts:
+/// Claude/Codex use two common kinds of numbered prompts:
 ///   Option menus: "Enter to select · ↑/↓ to navigate · Esc to cancel"
 ///   Tool permissions: "Esc to cancel · Tab to amend · ctrl+e to explain"
 /// Both should be detected so notification cards appear for all interactive prompts.
-/// Checks the last 5 non-empty lines (not just the very last) to handle trailing
+/// Checks the last 12 non-empty lines (not just the very last) to handle trailing
 /// whitespace or invisible characters left by TUI rendering.
 fn has_interactive_prompt_indicator(text: &str) -> bool {
-    for line in text.lines().rev()
+    let tail: Vec<String> = text
+        .lines()
+        .rev()
         .filter(|l| !l.trim().is_empty())
-        .take(5)
-    {
-        let lower = line.to_lowercase();
+        .take(12)
+        .map(|line| line.to_lowercase())
+        .collect();
+
+    for lower in &tail {
         if lower.contains("enter to select")
             || lower.contains("to navigate")
             || lower.contains("tab to amend")
@@ -137,7 +156,11 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
             return true;
         }
     }
-    false
+
+    let joined = tail.join("\n");
+    joined.contains("would you like to run the following command")
+        || joined.contains("would you like to run this command")
+        || joined.contains("yes, proceed (y)")
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.
@@ -163,7 +186,8 @@ struct CachedQuestion {
 fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
     // Prefer "Yes, during this session" or similar session-scoped option
     for opt in options {
-        if opt.label.to_lowercase().contains("yes") && opt.label.to_lowercase().contains("session") {
+        if opt.label.to_lowercase().contains("yes") && opt.label.to_lowercase().contains("session")
+        {
             return Some(opt.number.clone());
         }
     }
@@ -220,12 +244,19 @@ pub async fn question_detection_loop(
         // Track which panes were detected this tick
         let mut detected_panes = std::collections::HashSet::new();
 
-        for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in &processes {
+        for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in
+            &processes
+        {
             let options = parse_numbered_options(log_lines);
             if options.is_empty() {
                 continue;
             }
-            log::debug!("[questions] pane {} ({}): {} options", pane_id, cwd, options.len());
+            log::debug!(
+                "[questions] pane {} ({}): {} options",
+                pane_id,
+                cwd,
+                options.len()
+            );
 
             detected_panes.insert(pane_id.clone());
 
@@ -243,14 +274,18 @@ pub async fn question_detection_loop(
                 matched_job: matched_job.clone(),
             };
 
-            question_cache.insert(pane_id.clone(), CachedQuestion {
-                question: q,
-                miss_count: 0,
-            });
+            question_cache.insert(
+                pane_id.clone(),
+                CachedQuestion {
+                    question: q,
+                    miss_count: 0,
+                },
+            );
         }
 
         // For panes not detected this tick, increment miss count or remove
-        let stale_panes: Vec<String> = question_cache.keys()
+        let stale_panes: Vec<String> = question_cache
+            .keys()
             .filter(|p| !detected_panes.contains(p.as_str()))
             .cloned()
             .collect();
@@ -264,7 +299,8 @@ pub async fn question_detection_loop(
         }
 
         // Build final question list from cache (includes grace-period entries)
-        let questions: Vec<ClaudeQuestion> = question_cache.values()
+        let questions: Vec<ClaudeQuestion> = question_cache
+            .values()
             .map(|c| c.question.clone())
             .collect();
 
@@ -272,10 +308,17 @@ pub async fn question_detection_loop(
         {
             let yes_panes = auto_yes_panes.lock().unwrap().clone();
             if !yes_panes.is_empty() {
-                log::debug!("[questions] auto-yes panes: {:?}, questions: {}", yes_panes, questions.len());
+                log::debug!(
+                    "[questions] auto-yes panes: {:?}, questions: {}",
+                    yes_panes,
+                    questions.len()
+                );
                 for q in &questions {
                     if !yes_panes.contains(&q.pane_id) {
-                        log::debug!("[questions] pane {} not in auto-yes set, skipping", q.pane_id);
+                        log::debug!(
+                            "[questions] pane {} not in auto-yes set, skipping",
+                            q.pane_id
+                        );
                         continue;
                     }
                     if let Some(ticks) = auto_answered_ids.get(&q.question_id) {
@@ -286,12 +329,24 @@ pub async fn question_detection_loop(
                         }
                         log::debug!("[questions] question {} still present after {} ticks, retrying auto-answer", q.question_id, ticks);
                     }
-                    let options_summary: Vec<String> = q.options.iter()
+                    let options_summary: Vec<String> = q
+                        .options
+                        .iter()
                         .map(|o| format!("{}={}", o.number, o.label))
                         .collect();
-                    log::debug!("[questions] checking auto-yes for pane {} question {} options: {:?}", q.pane_id, q.question_id, options_summary);
+                    log::debug!(
+                        "[questions] checking auto-yes for pane {} question {} options: {:?}",
+                        q.pane_id,
+                        q.question_id,
+                        options_summary
+                    );
                     if let Some(opt) = find_yes_option(&q.options) {
-                        log::info!("[questions] auto-answering pane {} question {} with option {}", q.pane_id, q.question_id, opt);
+                        log::info!(
+                            "[questions] auto-answering pane {} question {} with option {}",
+                            q.pane_id,
+                            q.question_id,
+                            opt
+                        );
                         match crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt) {
                             Ok(()) => {
                                 auto_answered_ids.insert(q.question_id.clone(), 0);
@@ -309,7 +364,8 @@ pub async fn question_detection_loop(
         }
 
         // Increment tick counts for auto-answered questions still present, remove stale
-        let current_qids: HashSet<String> = questions.iter().map(|q| q.question_id.clone()).collect();
+        let current_qids: HashSet<String> =
+            questions.iter().map(|q| q.question_id.clone()).collect();
         auto_answered_ids.retain(|id, ticks| {
             if !current_qids.contains(id) {
                 return false;
@@ -334,7 +390,8 @@ pub async fn question_detection_loop(
         // mobile about questions that will be auto-answered locally
         let relay_questions: Vec<ClaudeQuestion> = {
             let yes_panes = auto_yes_panes.lock().unwrap();
-            questions.into_iter()
+            questions
+                .into_iter()
                 .filter(|q| !yes_panes.contains(&q.pane_id))
                 .collect()
         };
@@ -351,7 +408,9 @@ pub async fn question_detection_loop(
         if changed || periodic_resend {
             last_sent_ids = current_ids;
             ticks_since_send = 0;
-            let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions { questions: relay_questions };
+            let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions {
+                questions: relay_questions,
+            };
             if let Ok(guard) = relay.lock() {
                 if let Some(handle) = guard.as_ref() {
                     handle.send_message(&msg);
@@ -381,12 +440,19 @@ pub async fn question_detection_loop(
 fn last_context_lines(text: &str) -> String {
     let clean = strip_ansi(text);
     let lines: Vec<&str> = clean.lines().collect();
-    let tail = if lines.len() > 30 { &lines[lines.len() - 30..] } else { &lines };
+    let tail = if lines.len() > 30 {
+        &lines[lines.len() - 30..]
+    } else {
+        &lines
+    };
     let mut context = Vec::new();
     for line in tail {
         let lower = line.trim().to_lowercase();
         // Skip interactive prompt instruction lines
-        if lower.contains("enter to select") || lower.contains("to navigate") || lower.contains("esc to cancel") {
+        if lower.contains("enter to select")
+            || lower.contains("to navigate")
+            || lower.contains("esc to cancel")
+        {
             continue;
         }
         context.push(*line);
@@ -402,7 +468,15 @@ fn last_context_lines(text: &str) -> String {
 }
 
 struct DetectionResult {
-    processes: Vec<(String, String, String, String, String, Option<String>, Option<String>)>,
+    processes: Vec<(
+        String,
+        String,
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+    )>,
     /// All pane IDs that currently exist in tmux (not just Claude processes).
     all_pane_ids: HashSet<String>,
 }
@@ -414,16 +488,12 @@ fn detect_question_processes(
 ) -> DetectionResult {
     use std::collections::HashSet;
     use std::process::Command;
-
-    fn is_semver(s: &str) -> bool {
-        let parts: Vec<&str> = s.split('.').collect();
-        parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
-    }
+    let process_snapshot = ProcessSnapshot::capture();
 
     let output = match Command::new("tmux")
         .args([
             "list-panes", "-a", "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}",
+            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
         ])
         .output()
     {
@@ -437,28 +507,38 @@ fn detect_question_processes(
     let running_panes: HashMap<String, (String, String)> = {
         let statuses = job_status.lock().unwrap();
         let config = jobs_config.lock().unwrap();
-        statuses.iter().filter_map(|(slug, s)| {
-            if let JobStatus::Running { pane_id: Some(pid), .. } = s {
-                let job = config.jobs.iter().find(|j| j.slug == *slug);
-                let group = job.map(|j| j.group.clone());
-                Some((pid.clone(), (slug.clone(), group.unwrap_or_default())))
-            } else {
-                None
-            }
-        }).collect()
+        statuses
+            .iter()
+            .filter_map(|(slug, s)| {
+                if let JobStatus::Running {
+                    pane_id: Some(pid), ..
+                } = s
+                {
+                    let job = config.jobs.iter().find(|j| j.slug == *slug);
+                    let group = job.map(|j| j.group.clone());
+                    Some((pid.clone(), (slug.clone(), group.unwrap_or_default())))
+                } else {
+                    None
+                }
+            })
+            .collect()
     };
 
     let match_entries: Vec<(String, String, String)> = {
         let config = jobs_config.lock().unwrap();
-        config.jobs.iter().filter_map(|job| {
-            if let Some(ref fp) = job.folder_path {
-                Some((fp.clone(), job.group.clone(), job.slug.clone()))
-            } else if let Some(ref wd) = job.work_dir {
-                Some((wd.clone(), job.group.clone(), job.slug.clone()))
-            } else {
-                None
-            }
-        }).collect()
+        config
+            .jobs
+            .iter()
+            .filter_map(|job| {
+                if let Some(ref fp) = job.folder_path {
+                    Some((fp.clone(), job.group.clone(), job.slug.clone()))
+                } else if let Some(ref wd) = job.work_dir {
+                    Some((wd.clone(), job.group.clone(), job.slug.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
     };
 
     let mut all_pane_ids = HashSet::new();
@@ -466,35 +546,44 @@ fn detect_question_processes(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(5, '\t').collect();
-        if parts.len() < 5 { continue; }
+        let parts: Vec<&str> = line.splitn(6, '\t').collect();
+        if parts.len() < 6 {
+            continue;
+        }
 
-        let (pane_id, command, cwd, session, window) =
-            (parts[0], parts[1], parts[2], parts[3], parts[4]);
+        let (pane_id, _command, cwd, session, window, pane_pid) =
+            (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
 
         all_pane_ids.insert(pane_id.to_string());
 
-        if !is_semver(command) { continue; }
+        if detect_process_provider(pane_pid, Some(&process_snapshot)).is_none() {
+            continue;
+        }
 
-        if !seen.insert(pane_id.to_string()) { continue; }
+        if !seen.insert(pane_id.to_string()) {
+            continue;
+        }
 
         // Check if this is a tracked running job
-        let (matched_group, matched_job) = if let Some((job_name, group)) = running_panes.get(pane_id) {
-            (Some(group.clone()), Some(job_name.clone()))
-        } else {
-            // Try to match against configured job folders
-            let mut mg = None;
-            for (root, group, _name) in &match_entries {
-                if cwd == root || cwd.starts_with(&format!("{}/", root)) {
-                    mg = Some(group.clone());
-                    break;
+        let (matched_group, matched_job) =
+            if let Some((job_name, group)) = running_panes.get(pane_id) {
+                (Some(group.clone()), Some(job_name.clone()))
+            } else {
+                // Try to match against configured job folders
+                let mut mg = None;
+                for (root, group, _name) in &match_entries {
+                    if cwd == root || cwd.starts_with(&format!("{}/", root)) {
+                        mg = Some(group.clone());
+                        break;
+                    }
                 }
-            }
-            (mg, None)
-        };
+                (mg, None)
+            };
 
         let log_lines = crate::tmux::capture_pane(session, pane_id, 16)
-            .unwrap_or_default().trim().to_string();
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
         results.push((
             pane_id.to_string(),
@@ -507,5 +596,64 @@ fn detect_question_processes(
         ));
     }
 
-    DetectionResult { processes: results, all_pane_ids }
+    DetectionResult {
+        processes: results,
+        all_pane_ids,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_numbered_options;
+
+    #[test]
+    fn parses_claude_style_numbered_prompt() {
+        let text = r#"
+Would you like to continue?
+
+› 1. Yes
+  2. No
+
+Enter to select · Esc to cancel
+"#;
+
+        let options = parse_numbered_options(text);
+        assert_eq!(options.len(), 2);
+        assert_eq!(options[0].number, "1");
+        assert_eq!(options[0].label, "Yes");
+        assert_eq!(options[1].number, "2");
+        assert_eq!(options[1].label, "No");
+    }
+
+    #[test]
+    fn parses_codex_command_approval_prompt() {
+        let text = r#"
+Would you like to run the following command?
+Reason: Do you want me to verify whether Slack's careers page is backed by Greenhouse
+$ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
+› 1. Yes, proceed (y)
+2. Yes, and don't ask again for commands that start with 'curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs' (p)
+3. No, and tell Codex what to do differently
+"#;
+
+        let options = parse_numbered_options(text);
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].number, "1");
+        assert_eq!(options[0].label, "Yes, proceed (y)");
+        assert_eq!(options[1].number, "2");
+        assert_eq!(options[2].number, "3");
+    }
+
+    #[test]
+    fn ignores_plain_numbered_lists_without_prompt_signal() {
+        let text = r#"
+Plan:
+1. Inspect the parser
+2. Patch the filter
+3. Run tests
+"#;
+
+        let options = parse_numbered_options(text);
+        assert!(options.is_empty());
+    }
 }

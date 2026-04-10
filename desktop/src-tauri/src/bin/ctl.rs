@@ -55,7 +55,9 @@ async fn main() {
                 args[2].clone()
             } else {
                 env::var("TMUX_PANE").unwrap_or_else(|_| {
-                    eprintln!("Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly.");
+                    eprintln!(
+                        "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
+                    );
                     std::process::exit(1);
                 })
             };
@@ -94,7 +96,9 @@ async fn main() {
                 args[2].clone()
             } else {
                 env::var("TMUX_PANE").unwrap_or_else(|_| {
-                    eprintln!("Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly.");
+                    eprintln!(
+                        "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
+                    );
                     std::process::exit(1);
                 })
             };
@@ -106,7 +110,8 @@ async fn main() {
                 .and_then(|o| {
                     if o.status.success() {
                         let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                        stdout.lines()
+                        stdout
+                            .lines()
                             .find(|l| l.starts_with(&format!("{} ", pane_id)))
                             .and_then(|l| l.split_whitespace().nth(1))
                             .map(|s| s.to_string())
@@ -177,7 +182,9 @@ async fn main() {
                     args[3].clone()
                 } else {
                     env::var("TMUX_PANE").unwrap_or_else(|_| {
-                        eprintln!("Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly.");
+                        eprintln!(
+                            "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
+                        );
                         std::process::exit(1);
                     })
                 };
@@ -251,7 +258,11 @@ async fn main() {
                     println!("{}={}", k, v);
                 }
             }
-            IpcResponse::PaneInfo { first_query, last_query, session_started_at } => {
+            IpcResponse::PaneInfo {
+                first_query,
+                last_query,
+                session_started_at,
+            } => {
                 if let Some(ref date) = session_started_at {
                     println!("started_at={}", date);
                 }

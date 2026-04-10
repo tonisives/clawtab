@@ -108,7 +108,9 @@ pub fn set_titlebar_visibility(app: tauri::AppHandle, hidden: bool) -> Result<()
             } else {
                 TitleBarStyle::Visible
             };
-            window.set_title_bar_style(style).map_err(|e| e.to_string())?;
+            window
+                .set_title_bar_style(style)
+                .map_err(|e| e.to_string())?;
         }
     }
     Ok(())

@@ -61,11 +61,7 @@ impl TelegramConfig {
 }
 
 /// Send a message to a specific chat. Splits long messages into chunks.
-pub async fn send_message(
-    bot_token: &str,
-    chat_id: i64,
-    text: &str,
-) -> Result<(), String> {
+pub async fn send_message(bot_token: &str, chat_id: i64, text: &str) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -143,7 +139,12 @@ pub async fn notify_job_result(
 
 /// Test the bot connection by sending a test message
 pub async fn test_connection(bot_token: &str, chat_id: i64) -> Result<(), String> {
-    send_message(bot_token, chat_id, "ClawTab test message - connection successful.").await
+    send_message(
+        bot_token,
+        chat_id,
+        "ClawTab test message - connection successful.",
+    )
+    .await
 }
 
 /// Check if the bot has group privacy mode disabled (can_read_all_group_messages).
@@ -232,10 +233,7 @@ pub async fn edit_message_text(
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let url = format!(
-        "https://api.telegram.org/bot{}/editMessageText",
-        bot_token
-    );
+    let url = format!("https://api.telegram.org/bot{}/editMessageText", bot_token);
 
     let resp = client
         .post(&url)
@@ -258,20 +256,13 @@ pub async fn edit_message_text(
 }
 
 /// Delete a message by ID.
-pub async fn delete_message(
-    bot_token: &str,
-    chat_id: i64,
-    message_id: i64,
-) -> Result<(), String> {
+pub async fn delete_message(bot_token: &str, chat_id: i64, message_id: i64) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let url = format!(
-        "https://api.telegram.org/bot{}/deleteMessage",
-        bot_token
-    );
+    let url = format!("https://api.telegram.org/bot{}/deleteMessage", bot_token);
 
     let resp = client
         .post(&url)
@@ -292,20 +283,13 @@ pub async fn delete_message(
 }
 
 /// Send a chat action (e.g. "typing") to show activity indicator.
-pub async fn send_chat_action(
-    bot_token: &str,
-    chat_id: i64,
-    action: &str,
-) -> Result<(), String> {
+pub async fn send_chat_action(bot_token: &str, chat_id: i64, action: &str) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let url = format!(
-        "https://api.telegram.org/bot{}/sendChatAction",
-        bot_token
-    );
+    let url = format!("https://api.telegram.org/bot{}/sendChatAction", bot_token);
 
     let resp = client
         .post(&url)
@@ -326,10 +310,7 @@ pub async fn send_chat_action(
 }
 
 /// Answer a callback query (dismiss the loading spinner on the button).
-pub async fn answer_callback_query(
-    bot_token: &str,
-    callback_query_id: &str,
-) -> Result<(), String> {
+pub async fn answer_callback_query(bot_token: &str, callback_query_id: &str) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()

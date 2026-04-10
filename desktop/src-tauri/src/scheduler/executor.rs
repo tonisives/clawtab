@@ -31,7 +31,21 @@ pub async fn execute_job(
     params: &HashMap<String, String>,
     app_handle: Option<tauri::AppHandle>,
 ) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None, app_handle, None).await;
+    execute_job_inner(
+        job,
+        secrets,
+        history,
+        settings,
+        job_status,
+        trigger,
+        active_agents,
+        relay,
+        params,
+        None,
+        app_handle,
+        None,
+    )
+    .await;
 }
 
 pub async fn execute_job_with_auto_yes(
@@ -47,7 +61,21 @@ pub async fn execute_job_with_auto_yes(
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     app_handle: Option<tauri::AppHandle>,
 ) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, auto_yes_panes, app_handle, None).await;
+    execute_job_inner(
+        job,
+        secrets,
+        history,
+        settings,
+        job_status,
+        trigger,
+        active_agents,
+        relay,
+        params,
+        auto_yes_panes,
+        app_handle,
+        None,
+    )
+    .await;
 }
 
 pub async fn execute_job_with_auto_yes_and_pane_notify(
@@ -94,7 +122,21 @@ pub async fn execute_job_with_pane_notify(
     pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
     app_handle: Option<tauri::AppHandle>,
 ) {
-    execute_job_inner(job, secrets, history, settings, job_status, trigger, active_agents, relay, params, None, app_handle, Some(pane_tx)).await;
+    execute_job_inner(
+        job,
+        secrets,
+        history,
+        settings,
+        job_status,
+        trigger,
+        active_agents,
+        relay,
+        params,
+        None,
+        app_handle,
+        Some(pane_tx),
+    )
+    .await;
 }
 
 async fn execute_job_inner(
@@ -194,19 +236,21 @@ async fn execute_job_inner(
                     if let Some(ay_panes) = auto_yes_panes {
                         let mut panes = ay_panes.lock().unwrap();
                         panes.insert(handle.pane_id.clone());
-                        log::info!("Auto-yes enabled for job '{}' pane '{}'", job.name, handle.pane_id);
+                        log::info!(
+                            "Auto-yes enabled for job '{}' pane '{}'",
+                            job.name,
+                            handle.pane_id
+                        );
                     }
                 }
                 // Register in active_agents so Telegram replies can be relayed
                 // (only needed when using Telegram notifications)
                 if job.notify_target == NotifyTarget::Telegram {
-                    let chat_id = job
-                        .telegram_chat_id
-                        .or_else(|| {
-                            telegram_config
-                                .as_ref()
-                                .and_then(|c| c.chat_ids.first().copied())
-                        });
+                    let chat_id = job.telegram_chat_id.or_else(|| {
+                        telegram_config
+                            .as_ref()
+                            .and_then(|c| c.chat_ids.first().copied())
+                    });
                     if let Some(chat_id) = chat_id {
                         if let Ok(mut map) = active_agents.lock() {
                             log::info!(
@@ -300,8 +344,16 @@ async fn execute_job_inner(
             match job.notify_target {
                 NotifyTarget::Telegram => {
                     if let Some(ref tg) = telegram_config {
-                        send_job_notification(tg, job.telegram_chat_id, &job.name, exit_code, success, &stdout, &stderr)
-                            .await;
+                        send_job_notification(
+                            tg,
+                            job.telegram_chat_id,
+                            &job.name,
+                            exit_code,
+                            success,
+                            &stdout,
+                            &stderr,
+                        )
+                        .await;
                     }
                 }
                 NotifyTarget::App => {
@@ -341,7 +393,16 @@ async fn execute_job_inner(
             match job.notify_target {
                 NotifyTarget::Telegram => {
                     if let Some(ref tg) = telegram_config {
-                        send_job_notification(tg, job.telegram_chat_id, &job.name, Some(-1), false, "", &e).await;
+                        send_job_notification(
+                            tg,
+                            job.telegram_chat_id,
+                            &job.name,
+                            Some(-1),
+                            false,
+                            "",
+                            &e,
+                        )
+                        .await;
                     }
                 }
                 NotifyTarget::App => {
@@ -500,11 +561,15 @@ async fn execute_claude_job(
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
-        crate::claude_session::ProcessProvider::Claude | crate::claude_session::ProcessProvider::Codex => {
+        crate::claude_session::ProcessProvider::Claude
+        | crate::claude_session::ProcessProvider::Codex => {
             format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
         }
         crate::claude_session::ProcessProvider::Opencode => {
-            format!("cd {} && {} --prompt $'{}'", work_dir, agent_command, escaped_prompt)
+            format!(
+                "cd {} && {} --prompt $'{}'",
+                work_dir, agent_command, escaped_prompt
+            )
         }
     };
 
@@ -531,7 +596,11 @@ async fn execute_claude_job(
             let _ = tmux::focus_window(&tmux_session, &window_name);
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             if let Err(e) = crate::aerospace::move_window_to_workspace(workspace) {
-                log::warn!("Failed to move window to aerospace workspace '{}': {}", workspace, e);
+                log::warn!(
+                    "Failed to move window to aerospace workspace '{}': {}",
+                    workspace,
+                    e
+                );
             }
         }
     }
@@ -649,11 +718,15 @@ async fn execute_folder_job(
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
-        crate::claude_session::ProcessProvider::Claude | crate::claude_session::ProcessProvider::Codex => {
+        crate::claude_session::ProcessProvider::Claude
+        | crate::claude_session::ProcessProvider::Codex => {
             format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
         }
         crate::claude_session::ProcessProvider::Opencode => {
-            format!("cd {} && {} --prompt $'{}'", work_dir, agent_command, escaped_prompt)
+            format!(
+                "cd {} && {} --prompt $'{}'",
+                work_dir, agent_command, escaped_prompt
+            )
         }
     };
 

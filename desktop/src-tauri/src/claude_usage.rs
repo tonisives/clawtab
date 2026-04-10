@@ -47,7 +47,12 @@ pub struct UsageResponse {
 
 fn read_oauth_token() -> Result<String, String> {
     let output = Command::new("security")
-        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ])
         .output()
         .map_err(|e| format!("failed to run security command: {}", e))?;
 
@@ -59,8 +64,8 @@ fn read_oauth_token() -> Result<String, String> {
         .map_err(|e| format!("invalid utf8 from keychain: {}", e))?;
     let json_str = json_str.trim();
 
-    let parsed: serde_json::Value =
-        serde_json::from_str(json_str).map_err(|e| format!("failed to parse credentials: {}", e))?;
+    let parsed: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| format!("failed to parse credentials: {}", e))?;
 
     parsed["claudeAiOauth"]["accessToken"]
         .as_str()

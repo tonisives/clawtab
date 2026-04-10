@@ -110,7 +110,10 @@ fn ensure_playwright_installed(browser: &str) -> Result<(), String> {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("playwright install {} failed: {}", browser_prefix, stderr));
+            return Err(format!(
+                "playwright install {} failed: {}",
+                browser_prefix, stderr
+            ));
         }
     }
 
@@ -118,12 +121,7 @@ fn ensure_playwright_installed(browser: &str) -> Result<(), String> {
 }
 
 /// Build the playwright JS script based on browser choice.
-fn build_auth_script(
-    browser: &str,
-    user_data_dir: &str,
-    url: &str,
-    auth_path: &str,
-) -> String {
+fn build_auth_script(browser: &str, user_data_dir: &str, url: &str, auth_path: &str) -> String {
     let (require_name, launch_opts) = match browser {
         "chrome" => (
             "chromium",

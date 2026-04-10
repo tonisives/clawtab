@@ -4,7 +4,9 @@ use crate::usage;
 use crate::AppState;
 
 #[tauri::command]
-pub async fn get_usage_snapshot(state: State<'_, AppState>) -> Result<usage::UsageSnapshot, String> {
+pub async fn get_usage_snapshot(
+    state: State<'_, AppState>,
+) -> Result<usage::UsageSnapshot, String> {
     let zai_token = {
         let secrets = state.secrets.lock().unwrap();
         let explicit = secrets

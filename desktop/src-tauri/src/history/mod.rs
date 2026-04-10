@@ -49,10 +49,8 @@ impl HistoryStore {
         .map_err(|e| format!("Failed to create tables: {}", e))?;
 
         // Add pane_id column if missing (migration for existing databases)
-        conn.execute_batch(
-            "ALTER TABLE runs ADD COLUMN pane_id TEXT;",
-        )
-        .ok();
+        conn.execute_batch("ALTER TABLE runs ADD COLUMN pane_id TEXT;")
+            .ok();
 
         // Auto-prune entries older than 30 days
         conn.execute(

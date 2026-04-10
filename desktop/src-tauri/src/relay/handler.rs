@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use clawtab_protocol::{
-    DetectedProcess as RemoteDetectedProcess, ClientMessage, DesktopMessage,
+    ClientMessage, DesktopMessage, DetectedProcess as RemoteDetectedProcess,
     JobStatus as RemoteJobStatus, RemoteJob,
 };
 
@@ -111,7 +111,12 @@ pub async fn handle_incoming(
             })
         }
 
-        ClientMessage::SendInput { id, name, text, freetext } => {
+        ClientMessage::SendInput {
+            id,
+            name,
+            text,
+            freetext,
+        } => {
             let result = if let Some(ref ft) = freetext {
                 send_input_freetext(&name, &text, ft, job_status)
             } else {
@@ -150,7 +155,11 @@ pub async fn handle_incoming(
             Some(DesktopMessage::RunHistory { id, runs })
         }
 
-        ClientMessage::RunAgent { id, prompt, work_dir } => {
+        ClientMessage::RunAgent {
+            id,
+            prompt,
+            work_dir,
+        } => {
             let result = run_agent(
                 &prompt,
                 work_dir.as_deref(),
@@ -179,7 +188,14 @@ pub async fn handle_incoming(
             group,
         } => {
             let result = create_job(
-                &name, &job_type, &path, &prompt, &cron, &group, jobs_config, settings,
+                &name,
+                &job_type,
+                &path,
+                &prompt,
+                &cron,
+                &group,
+                jobs_config,
+                settings,
             );
             if result.is_ok() {
                 let _ = app_handle.emit("jobs-changed", ());
@@ -194,11 +210,9 @@ pub async fn handle_incoming(
         ClientMessage::DetectProcesses { id } => {
             let jc = Arc::clone(jobs_config);
             let js = Arc::clone(job_status);
-            let processes = tokio::task::spawn_blocking(move || {
-                detect_processes(&jc, &js)
-            })
-            .await
-            .unwrap_or_default();
+            let processes = tokio::task::spawn_blocking(move || detect_processes(&jc, &js))
+                .await
+                .unwrap_or_default();
             Some(DesktopMessage::DetectedProcesses { id, processes })
         }
 
@@ -207,9 +221,12 @@ pub async fn handle_incoming(
             Some(DesktopMessage::RunDetailResponse { id, detail })
         }
 
-        ClientMessage::GetDetectedProcessLogs { id, tmux_session, pane_id } => {
-            let logs = crate::tmux::capture_pane(&tmux_session, &pane_id, 200)
-                .unwrap_or_default();
+        ClientMessage::GetDetectedProcessLogs {
+            id,
+            tmux_session,
+            pane_id,
+        } => {
+            let logs = crate::tmux::capture_pane(&tmux_session, &pane_id, 200).unwrap_or_default();
             Some(DesktopMessage::DetectedProcessLogs { id, logs })
         }
 
@@ -230,7 +247,13 @@ pub async fn handle_incoming(
             })
         }
 
-        ClientMessage::AnswerQuestion { id, pane_id, answer, freetext, .. } => {
+        ClientMessage::AnswerQuestion {
+            id,
+            pane_id,
+            answer,
+            freetext,
+            ..
+        } => {
             let result = if let Some(ref text) = freetext {
                 crate::tmux::send_keys_to_tui_pane_freetext(&pane_id, &answer, text)
             } else {
@@ -257,11 +280,20 @@ pub async fn handle_incoming(
             None
         }
 
-        ClientMessage::SubscribePty { id, pane_id, tmux_session, cols, rows } => {
+        ClientMessage::SubscribePty {
+            id,
+            pane_id,
+            tmux_session,
+            cols,
+            rows,
+        } => {
             let relay_for_pty = Arc::clone(relay);
             let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
             let result = pty_manager.lock().unwrap().spawn(
-                &pane_id, &tmux_session, cols as u16, rows as u16,
+                &pane_id,
+                &tmux_session,
+                cols as u16,
+                rows as u16,
                 "default",
                 OutputSink::Channel(tx),
             );
@@ -272,7 +304,10 @@ pub async fn handle_incoming(
                 std::thread::spawn(move || {
                     while let Ok((pid, data)) = rx.recv() {
                         let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
-                        let msg = DesktopMessage::PtyOutput { pane_id: pid, data: encoded };
+                        let msg = DesktopMessage::PtyOutput {
+                            pane_id: pid,
+                            data: encoded,
+                        };
                         if let Ok(guard) = relay_for_pty.lock() {
                             if let Some(handle) = guard.as_ref() {
                                 handle.send_message(&msg);
@@ -282,7 +317,10 @@ pub async fn handle_incoming(
                     log::debug!("PTY relay forwarder exited for {}", pane_id_clone);
                 });
             }
-            Some(DesktopMessage::SubscribePtyAck { id, success: result.is_ok() })
+            Some(DesktopMessage::SubscribePtyAck {
+                id,
+                success: result.is_ok(),
+            })
         }
 
         ClientMessage::UnsubscribePty { pane_id } => {
@@ -297,14 +335,22 @@ pub async fn handle_incoming(
             None
         }
 
-        ClientMessage::PtyResize { pane_id, cols, rows } => {
-            let _ = pty_manager.lock().unwrap().resize(&pane_id, cols as u16, rows as u16);
+        ClientMessage::PtyResize {
+            pane_id,
+            cols,
+            rows,
+        } => {
+            let _ = pty_manager
+                .lock()
+                .unwrap()
+                .resize(&pane_id, cols as u16, rows as u16);
             None
         }
 
         // These are handled by the relay server, never forwarded to desktop
-        ClientMessage::RegisterPushToken { .. }
-        | ClientMessage::GetNotificationHistory { .. } => None,
+        ClientMessage::RegisterPushToken { .. } | ClientMessage::GetNotificationHistory { .. } => {
+            None
+        }
     };
 
     match response {
@@ -573,7 +619,10 @@ fn detect_processes(
 
     fn is_semver(s: &str) -> bool {
         let parts: Vec<&str> = s.split('.').collect();
-        parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+        parts.len() == 3
+            && parts
+                .iter()
+                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
     }
 
     let output = match Command::new("tmux")
@@ -591,23 +640,32 @@ fn detect_processes(
 
     let tracked_panes: HashSet<String> = {
         let statuses = job_status.lock().unwrap();
-        statuses.values().filter_map(|s| match s {
-            JobStatus::Running { pane_id: Some(pid), .. } => Some(pid.clone()),
-            _ => None,
-        }).collect()
+        statuses
+            .values()
+            .filter_map(|s| match s {
+                JobStatus::Running {
+                    pane_id: Some(pid), ..
+                } => Some(pid.clone()),
+                _ => None,
+            })
+            .collect()
     };
 
     let match_entries: Vec<(String, String, String)> = {
         let config = jobs_config.lock().unwrap();
-        config.jobs.iter().filter_map(|job| {
-            if let Some(ref fp) = job.folder_path {
-                Some((fp.clone(), job.group.clone(), job.name.clone()))
-            } else if let Some(ref wd) = job.work_dir {
-                Some((wd.clone(), job.group.clone(), job.name.clone()))
-            } else {
-                None
-            }
-        }).collect()
+        config
+            .jobs
+            .iter()
+            .filter_map(|job| {
+                if let Some(ref fp) = job.folder_path {
+                    Some((fp.clone(), job.group.clone(), job.name.clone()))
+                } else if let Some(ref wd) = job.work_dir {
+                    Some((wd.clone(), job.group.clone(), job.name.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect()
     };
 
     let mut seen = HashSet::new();
@@ -615,16 +673,26 @@ fn detect_processes(
 
     for line in stdout.lines() {
         let parts: Vec<&str> = line.splitn(6, '\t').collect();
-        if parts.len() < 6 { continue; }
+        if parts.len() < 6 {
+            continue;
+        }
 
         let (pane_id, command, cwd, session, window, pane_pid) =
             (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
 
-        let provider = crate::claude_session::detect_process_provider(pane_pid, None)
-            .or_else(|| is_semver(command).then_some(crate::claude_session::ProcessProvider::Claude));
-        let Some(provider) = provider else { continue; };
-        if !seen.insert(pane_id.to_string()) { continue; }
-        if tracked_panes.contains(pane_id) { continue; }
+        let provider =
+            crate::claude_session::detect_process_provider(pane_pid, None).or_else(|| {
+                is_semver(command).then_some(crate::claude_session::ProcessProvider::Claude)
+            });
+        let Some(provider) = provider else {
+            continue;
+        };
+        if !seen.insert(pane_id.to_string()) {
+            continue;
+        }
+        if tracked_panes.contains(pane_id) {
+            continue;
+        }
 
         let mut matched_group = None;
         let matched_job = None;
@@ -636,15 +704,16 @@ fn detect_processes(
         }
 
         let log_lines = crate::tmux::capture_pane(session, pane_id, 5)
-            .unwrap_or_default().trim().to_string();
+            .unwrap_or_default()
+            .trim()
+            .to_string();
 
-        let session_info =
-            crate::claude_session::resolve_session_info_for_provider_with_cwd(
-                pane_pid,
-                Some(provider),
-                None,
-                Some(cwd),
-            );
+        let session_info = crate::claude_session::resolve_session_info_for_provider_with_cwd(
+            pane_pid,
+            Some(provider),
+            None,
+            Some(cwd),
+        );
         let (can_fork_session, can_send_skills, can_inject_secrets) = match provider {
             crate::claude_session::ProcessProvider::Claude => (true, true, true),
             crate::claude_session::ProcessProvider::Codex => (false, false, false),
@@ -654,7 +723,11 @@ fn detect_processes(
         results.push(RemoteDetectedProcess {
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
-            version: if is_semver(command) { command.to_string() } else { String::new() },
+            version: if is_semver(command) {
+                command.to_string()
+            } else {
+                String::new()
+            },
             provider: provider.as_str().to_string(),
             can_fork_session,
             can_send_skills,

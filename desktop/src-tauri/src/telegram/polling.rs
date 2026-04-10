@@ -12,10 +12,7 @@ use super::commands::{self, AgentCommand};
 use super::types::{TelegramResponse, Update};
 use super::{ActiveAgent, TelegramConfig};
 
-fn lock_or_log<'a, T>(
-    mutex: &'a Mutex<T>,
-    name: &str,
-) -> Option<std::sync::MutexGuard<'a, T>> {
+fn lock_or_log<'a, T>(mutex: &'a Mutex<T>, name: &str) -> Option<std::sync::MutexGuard<'a, T>> {
     match mutex.lock() {
         Ok(guard) => Some(guard),
         Err(e) => {
@@ -43,8 +40,7 @@ pub async fn start_polling(state: AgentState) {
     // Short initial poll to cancel any lingering long-poll from a previous instance
     // and to prime the offset with any pending updates.
     {
-        let config = lock_or_log(&state.settings, "settings")
-            .and_then(|s| s.telegram.clone());
+        let config = lock_or_log(&state.settings, "settings").and_then(|s| s.telegram.clone());
         if let Some(c) = config {
             if c.agent_enabled && c.is_configured() {
                 match get_updates(&c.bot_token, None, 0).await {
@@ -68,8 +64,7 @@ pub async fn start_polling(state: AgentState) {
     }
 
     loop {
-        let config = lock_or_log(&state.settings, "settings")
-            .and_then(|s| s.telegram.clone());
+        let config = lock_or_log(&state.settings, "settings").and_then(|s| s.telegram.clone());
 
         let config = match config {
             Some(c) if c.agent_enabled && c.is_configured() => c,
@@ -116,12 +111,9 @@ pub async fn start_polling(state: AgentState) {
                                 log::info!("Sending reply: {}", &reply[..reply.len().min(100)]);
                             }
                             if let Some(reply) = response {
-                                if let Err(e) = super::send_message(
-                                    &config.bot_token,
-                                    message.chat.id,
-                                    &reply,
-                                )
-                                .await
+                                if let Err(e) =
+                                    super::send_message(&config.bot_token, message.chat.id, &reply)
+                                        .await
                                 {
                                     log::error!("Failed to send reply: {}", e);
                                 }
@@ -138,21 +130,14 @@ pub async fn start_polling(state: AgentState) {
                             let chat_id = cq.message.as_ref().map(|m| m.chat.id);
                             if let Some(chat_id) = chat_id {
                                 if config.chat_ids.contains(&chat_id) {
-                                    log::info!(
-                                        "Callback query from chat {}: {}",
-                                        chat_id,
-                                        data
-                                    );
+                                    log::info!("Callback query from chat {}: {}", chat_id, data);
                                     // Treat callback data as a regular message to the agent
                                     let response =
                                         handle_message(data, &config, &state, chat_id).await;
                                     if let Some(reply) = response {
-                                        if let Err(e) = super::send_message(
-                                            &config.bot_token,
-                                            chat_id,
-                                            &reply,
-                                        )
-                                        .await
+                                        if let Err(e) =
+                                            super::send_message(&config.bot_token, chat_id, &reply)
+                                                .await
                                         {
                                             log::error!("Failed to send callback reply: {}", e);
                                         }
@@ -195,7 +180,11 @@ async fn cleanup_stale_agents(
             job_name
         );
         let _ = super::send_message(&config.bot_token, chat_id, &msg).await;
-        log::info!("Cleaned up stale session for job '{}' chat {}", job_name, chat_id);
+        log::info!(
+            "Cleaned up stale session for job '{}' chat {}",
+            job_name,
+            chat_id
+        );
     }
 }
 
@@ -230,7 +219,9 @@ async fn get_updates(
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     if !body.ok {
-        let desc = body.description.unwrap_or_else(|| "unknown error".to_string());
+        let desc = body
+            .description
+            .unwrap_or_else(|| "unknown error".to_string());
         return Err(format!("Telegram API error: {}", desc));
     }
 
@@ -266,7 +257,9 @@ async fn handle_message(
                 match job {
                     Some(ref job) if !job.params.is_empty() => {
                         // Validate all required params are provided
-                        let missing: Vec<&str> = job.params.iter()
+                        let missing: Vec<&str> = job
+                            .params
+                            .iter()
                             .filter(|k| !params.contains_key(k.as_str()))
                             .map(|k| k.as_str())
                             .collect();
@@ -275,7 +268,11 @@ async fn handle_message(
                                 "Missing params: {}. Usage: /run {} {}",
                                 missing.join(", "),
                                 name,
-                                job.params.iter().map(|k| format!("{}=value", k)).collect::<Vec<_>>().join(" "),
+                                job.params
+                                    .iter()
+                                    .map(|k| format!("{}=value", k))
+                                    .collect::<Vec<_>>()
+                                    .join(" "),
                             )
                         } else {
                             let job = job.clone();
@@ -287,8 +284,16 @@ async fn handle_message(
                             let relay = Arc::clone(&state.relay);
                             tokio::spawn(async move {
                                 crate::scheduler::executor::execute_job(
-                                    &job, &secrets, &history, &settings, &job_status, "telegram",
-                                    &active_agents, &relay, &params, None,
+                                    &job,
+                                    &secrets,
+                                    &history,
+                                    &settings,
+                                    &job_status,
+                                    "telegram",
+                                    &active_agents,
+                                    &relay,
+                                    &params,
+                                    None,
                                 )
                                 .await;
                             });
@@ -304,8 +309,16 @@ async fn handle_message(
                         let relay = Arc::clone(&state.relay);
                         tokio::spawn(async move {
                             crate::scheduler::executor::execute_job(
-                                &job, &secrets, &history, &settings, &job_status, "telegram",
-                                &active_agents, &relay, &params, None,
+                                &job,
+                                &secrets,
+                                &history,
+                                &settings,
+                                &job_status,
+                                "telegram",
+                                &active_agents,
+                                &relay,
+                                &params,
+                                None,
                             )
                             .await;
                         });
@@ -314,30 +327,26 @@ async fn handle_message(
                     None => format!("Job not found: {}", name),
                 }
             }
-            AgentCommand::Pause(name) => {
-                match lock_or_log(&state.job_status, "job_status") {
-                    Some(mut status) => match status.get(&name) {
-                        Some(JobStatus::Running { .. }) => {
-                            status.insert(name.clone(), JobStatus::Paused);
-                            format!("Paused job <code>{}</code>", name)
-                        }
-                        _ => format!("Job <code>{}</code> is not running", name),
-                    },
-                    None => "Internal error".to_string(),
-                }
-            }
-            AgentCommand::Resume(name) => {
-                match lock_or_log(&state.job_status, "job_status") {
-                    Some(mut status) => match status.get(&name) {
-                        Some(JobStatus::Paused) => {
-                            status.insert(name.clone(), JobStatus::Idle);
-                            format!("Resumed job <code>{}</code>", name)
-                        }
-                        _ => format!("Job <code>{}</code> is not paused", name),
-                    },
-                    None => "Internal error".to_string(),
-                }
-            }
+            AgentCommand::Pause(name) => match lock_or_log(&state.job_status, "job_status") {
+                Some(mut status) => match status.get(&name) {
+                    Some(JobStatus::Running { .. }) => {
+                        status.insert(name.clone(), JobStatus::Paused);
+                        format!("Paused job <code>{}</code>", name)
+                    }
+                    _ => format!("Job <code>{}</code> is not running", name),
+                },
+                None => "Internal error".to_string(),
+            },
+            AgentCommand::Resume(name) => match lock_or_log(&state.job_status, "job_status") {
+                Some(mut status) => match status.get(&name) {
+                    Some(JobStatus::Paused) => {
+                        status.insert(name.clone(), JobStatus::Idle);
+                        format!("Resumed job <code>{}</code>", name)
+                    }
+                    _ => format!("Job <code>{}</code> is not paused", name),
+                },
+                None => "Internal error".to_string(),
+            },
             AgentCommand::Agent(prompt) => {
                 handle_agent_command(&prompt, config, state, chat_id).await
             }
@@ -376,8 +385,14 @@ async fn handle_agent_command(
         _ => return "Internal error: failed to read config".to_string(),
     };
 
-    let job = match crate::commands::jobs::build_agent_job(prompt, Some(chat_id), &settings, &jobs, None, None)
-    {
+    let job = match crate::commands::jobs::build_agent_job(
+        prompt,
+        Some(chat_id),
+        &settings,
+        &jobs,
+        None,
+        None,
+    ) {
         Ok(j) => j,
         Err(e) => return format!("Failed to build agent job: {}", e),
     };
@@ -393,8 +408,16 @@ async fn handle_agent_command(
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
-            &job, &secrets, &history, &settings_arc, &job_status, "telegram",
-            &active_agents_for_exec, &relay, &std::collections::HashMap::new(), None,
+            &job,
+            &secrets,
+            &history,
+            &settings_arc,
+            &job_status,
+            "telegram",
+            &active_agents_for_exec,
+            &relay,
+            &std::collections::HashMap::new(),
+            None,
         )
         .await;
     });
@@ -426,7 +449,8 @@ async fn handle_agent_command(
                 "Follow-up messages in group chats will NOT be delivered to the agent.\n\n",
                 "To fix: open @BotFather, send /mybots, select your bot, ",
                 "go to Bot Settings > Group Privacy > Turn Off."
-            ).to_string();
+            )
+            .to_string();
         }
     }
 
@@ -442,7 +466,11 @@ async fn handle_exit_command(state: &AgentState, chat_id: i64) -> String {
         Some(agent) => {
             // Send /exit to Claude Code for graceful shutdown
             if let Err(e) = tmux::send_keys_to_tui_pane(&agent.pane_id, "/exit") {
-                log::warn!("Failed to send /exit to agent pane {}: {}", agent.pane_id, e);
+                log::warn!(
+                    "Failed to send /exit to agent pane {}: {}",
+                    agent.pane_id,
+                    e
+                );
             }
             // Brief wait for Claude Code to process the exit
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -459,11 +487,7 @@ async fn handle_exit_command(state: &AgentState, chat_id: i64) -> String {
 /// Relay a non-command message to the active agent's tmux pane.
 /// Returns None if the relay succeeds (the monitor will relay Claude's response).
 /// Returns Some(error_message) if the pane is gone or there's no active session.
-async fn relay_to_agent(
-    text: &str,
-    state: &AgentState,
-    chat_id: i64,
-) -> Option<String> {
+async fn relay_to_agent(text: &str, state: &AgentState, chat_id: i64) -> Option<String> {
     let agent = lock_or_log(&state.active_agents, "active_agents")?
         .get(&chat_id)
         .map(|a| (a.pane_id.clone(), a.tmux_session.clone()));

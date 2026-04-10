@@ -664,6 +664,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
     return null;
   }, [core.jobs, core.processes, currentContent, pendingProcess, shellPanes]);
+  const getPaneIdForContent = useCallback((content: PaneContent | null): string | null => {
+    if (!content) return null;
+    if (content.kind === "process" || content.kind === "terminal") return content.paneId;
+    if (content.kind !== "job") return null;
+
+    const status = core.statuses[content.slug];
+    return status?.state === "running" ? (status as { pane_id?: string }).pane_id ?? null : null;
+  }, [core.statuses]);
   const getProcessDisplayName = useCallback((process: DetectedProcess | null | undefined) => {
     if (!process) return null;
     const draft = processRenameDrafts[process.pane_id];
@@ -735,12 +743,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     const runSplitPaneShortcut = (direction: "right" | "down") => {
       const tree = split.tree;
-      if (!tree) return;
+      if (!tree) {
+        const paneId = getPaneIdForContent(currentContent);
+        if (paneId) handleSplitPane(paneId, direction);
+        return;
+      }
       const leaves = collectLeaves(tree);
       const focused = leaves.find(l => l.id === split.focusedLeafId) ?? leaves[0];
       if (!focused) return;
-      const c = focused.content;
-      const paneId = (c.kind === "process" || c.kind === "terminal") ? c.paneId : null;
+      const paneId = getPaneIdForContent(focused.content);
       if (paneId) handleSplitPane(paneId, direction);
     };
 
@@ -876,7 +887,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane]);
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane]);
 
   useEffect(() => {
     const unlistenPromise = listen<string>("shortcut-action", (event) => {

@@ -1,15 +1,12 @@
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::{Arc, Mutex};
-use notify::{RecommendedWatcher, RecursiveMode, Watcher, Event, EventKind};
 use tauri::Emitter;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, Instant};
 
 use crate::config::jobs::JobsConfig;
 
-pub async fn watch_jobs_dir(
-    jobs_config: Arc<Mutex<JobsConfig>>,
-    app_handle: tauri::AppHandle,
-) {
+pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, app_handle: tauri::AppHandle) {
     let jobs_dir = match JobsConfig::jobs_dir_public() {
         Some(d) => d,
         None => {
