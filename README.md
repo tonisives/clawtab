@@ -40,6 +40,8 @@ You can launch normal shells beside agents and use them for any purpose
   <img src="docs/readme-pics/agent-and-shell-side-by-side.png" alt="ClawTab" width="800" />
 </p>
 
+Think of it like tmux on steroids. Every Agent related inconvenience that cannot be handled in shell is fixed in the supporting GUI.
+
 ## Remote Control
 
 - **Auto-detect questions** - Detects when Claude Code agents are waiting for input across your panes.
