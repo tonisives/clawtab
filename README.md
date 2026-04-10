@@ -3,7 +3,7 @@
 <p align="center">
   Desktop app for creating and managing groups of agents from any provider and monitoring them on the web or mobile.
 <p align="center">
-  <img src="docs/readme-pics/3-providers-in-separate-split-panes.png" alt="ClawTab" width="800" />
+  <img src="docs/readme-pics/3-providers-in-separate-split-panes.png" alt="ClawTab" width="1000" />
 </p>
 
 </p>
@@ -41,7 +41,7 @@ ClawTab uses [xterm](https://github.com/xtermjs/xterm.js) to display full interf
 You can launch normal shells beside agents and use them for any purpose
 
 <p align="center">
-  <img src="docs/readme-pics/agent-and-shell-side-by-side.png" alt="ClawTab" width="800" />
+  <img src="docs/readme-pics/agent-and-shell-side-by-side.png" alt="ClawTab" width="1000" />
 </p>
 
 Think of it like [tmux](https://github.com/tmux/tmux) on steroids. Every Agent related inconvenience that cannot be handled in shell is fixed in the supporting GUI.
@@ -56,7 +56,7 @@ Shells are running in a background tmux process, and they stay alive through app
 - **Multi-instance support** - Works across multiple terminal windows, agents providers and tabs simultaneously.
 
 <p align="center">
-  <img src="docs/readme-pics/remote-demo.gif" alt="Remote agent control demo" width="600" />
+  <img src="docs/readme-pics/mobile-answer-agent-simulator-to-split-tmux.gif" alt="Remote agent control demo" width="600" />
 </p>
 
 **Architecture:** A relay server (Rust/Axum) sits between your local machine and remote clients. The desktop app (Tauri) monitors your tmux panes, parses CLI output to detect when an agent is waiting for input, and pushes the state to the relay.
