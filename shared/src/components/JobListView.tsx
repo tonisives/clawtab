@@ -143,7 +143,7 @@ export interface JobListViewProps {
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string }) => React.ReactNode;
-  renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => React.ReactNode;
+  renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
   wrapProcessGroup?: (group: string, processPaneIds: string[], children: React.ReactNode) => React.ReactNode;
@@ -155,6 +155,12 @@ export interface JobListViewProps {
   onSelectableItemsChange?: (items: SidebarSelectableItem[]) => void;
   // Ref to focus the sidebar container (desktop only)
   sidebarFocusRef?: React.MutableRefObject<{ focus: () => void } | null>;
+  focusAgentWorkDir?: string | null;
+  focusAgentSignal?: number;
+  renameProcessPaneId?: string | null;
+  renameProcessSignal?: number;
+  onProcessRenameDraftChange?: (paneId: string, value: string | null) => void;
+  onProcessRenameStateChange?: (paneId: string, editing: boolean) => void;
 }
 
 type ListItem =
@@ -232,6 +238,12 @@ export function JobListView({
   stoppingSlugs: stoppingSlugsExternal,
   onSelectableItemsChange,
   sidebarFocusRef,
+  focusAgentWorkDir,
+  focusAgentSignal,
+  renameProcessPaneId,
+  renameProcessSignal,
+  onProcessRenameDraftChange,
+  onProcessRenameStateChange,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -666,11 +678,11 @@ export function JobListView({
     const sortGroup = item.process.matched_group ?? `cwd:${item.process.cwd}`;
     return customRenderProcessCard ? (
       <View key={key}>
-        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, onSaveName: procOnSaveName, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id })}
+        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, onSaveName: procOnSaveName, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id, startRenameSignal: renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined, onRenameDraftChange: (value: string | null) => onProcessRenameDraftChange?.(item.process.pane_id, value), onRenameStateChange: (editing: boolean) => onProcessRenameStateChange?.(item.process.pane_id, editing) })}
       </View>
     ) : (
       <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={marginTop != null ? { marginTop } : undefined}>
-        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} onSaveName={procOnSaveName} autoYesActive={procAutoYesActive} />
+        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} onSaveName={procOnSaveName} autoYesActive={procAutoYesActive} startRenameSignal={renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined} onRenameDraftChange={(value) => onProcessRenameDraftChange?.(item.process.pane_id, value)} onRenameStateChange={(editing) => onProcessRenameStateChange?.(item.process.pane_id, editing)} />
       </View>
     );
   };
@@ -813,6 +825,7 @@ export function JobListView({
                       providers={resolvedAgentProviders}
                       onProviderChange={(provider) => handleSetGroupAgentProvider(item.workDir, provider)}
                       onRunAgent={(prompt, provider) => onRunAgent!(prompt, item.workDir, provider)}
+                      focusSignal={focusAgentWorkDir === item.workDir ? focusAgentSignal : undefined}
                     />
                   </View>
                 );

@@ -132,6 +132,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: DetectedProcess; stoppedAt: number }[]>([]);
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
   const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
+  const [focusAgentSignal, setFocusAgentSignal] = useState(0);
+  const [renameProcessSignal, setRenameProcessSignal] = useState(0);
+  const [renameProcessPaneId, setRenameProcessPaneId] = useState<string | null>(null);
+  const [processRenameDrafts, setProcessRenameDrafts] = useState<Record<string, string | null>>({});
   const previousProcessesRef = useRef<Map<string, DetectedProcess>>(new Map());
   const [editProcessField, setEditProcessField] = useState<{
     paneId: string;
@@ -636,6 +640,62 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [recentSinglePaneContents, setRecentSinglePaneContents] = useState<PaneContent[]>([]);
   const [pendingShortcutStroke, setPendingShortcutStroke] = useState<string | null>(null);
   const sidebarFocusRef = useRef<{ focus: () => void } | null>(null);
+  const activeProcessForRename = useMemo(() => {
+    if (currentContent?.kind === "process") {
+      return core.processes.find((process) => process.pane_id === currentContent.paneId)
+        ?? (pendingProcess?.pane_id === currentContent.paneId ? pendingProcess : null);
+    }
+    if (currentContent?.kind === "agent") {
+      return core.processes.find((process) => process.cwd.endsWith("/clawtab/agent")) ?? null;
+    }
+    return null;
+  }, [core.processes, currentContent, pendingProcess]);
+  const activeAgentWorkDir = useMemo(() => {
+    if (currentContent?.kind === "job") {
+      const job = (core.jobs as Job[]).find((entry) => entry.slug === currentContent.slug);
+      return job?.folder_path ?? job?.work_dir ?? null;
+    }
+    if (currentContent?.kind === "process") {
+      return core.processes.find((process) => process.pane_id === currentContent.paneId)?.cwd
+        ?? (pendingProcess?.pane_id === currentContent.paneId ? pendingProcess.cwd : null);
+    }
+    if (currentContent?.kind === "terminal") {
+      return shellPanes.find((pane) => pane.pane_id === currentContent.paneId)?.cwd ?? null;
+    }
+    return null;
+  }, [core.jobs, core.processes, currentContent, pendingProcess, shellPanes]);
+  const getProcessDisplayName = useCallback((process: DetectedProcess | null | undefined) => {
+    if (!process) return null;
+    const draft = processRenameDrafts[process.pane_id];
+    if (typeof draft === "string") {
+      const trimmed = draft.trim();
+      return trimmed || shortenPath(process.cwd);
+    }
+    return process.display_name ?? shortenPath(process.cwd);
+  }, [processRenameDrafts]);
+
+  const triggerRenameActivePane = useCallback(() => {
+    if (!activeProcessForRename || activeProcessForRename._transient_state) return;
+    if (sidebarCollapsed) setSidebarCollapsed(false);
+    requestAnimationFrame(() => sidebarFocusRef.current?.focus());
+    setRenameProcessPaneId(activeProcessForRename.pane_id);
+    setRenameProcessSignal((value) => value + 1);
+  }, [activeProcessForRename, sidebarCollapsed]);
+
+  const triggerFocusAgentInput = useCallback(() => {
+    if (!activeAgentWorkDir) return;
+    if (sidebarCollapsed) setSidebarCollapsed(false);
+    requestAnimationFrame(() => sidebarFocusRef.current?.focus());
+    setFocusAgentSignal((value) => value + 1);
+  }, [activeAgentWorkDir, sidebarCollapsed]);
+
+  const triggerZoomActivePane = useCallback(() => {
+    if (!split.tree) return;
+    const leaves = collectLeaves(split.tree);
+    const focusedLeaf = leaves.find((leaf) => leaf.id === split.focusedLeafId) ?? leaves[0];
+    if (!focusedLeaf) return;
+    split.zoomToLeaf(focusedLeaf.id);
+  }, [split.tree, split.focusedLeafId, split.zoomToLeaf]);
 
   const navigateSidebarItems = useCallback((direction: 1 | -1) => {
     if (sidebarSelectableItems.length === 0) return;
@@ -735,6 +795,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     };
 
     const actions: { binding: string; run: () => void }[] = [
+      { binding: shortcutSettings.rename_active_pane, run: triggerRenameActivePane },
+      { binding: shortcutSettings.focus_agent_input, run: triggerFocusAgentInput },
+      { binding: shortcutSettings.zoom_active_pane, run: triggerZoomActivePane },
       { binding: shortcutSettings.next_sidebar_item, run: () => navigateSidebarItems(1) },
       { binding: shortcutSettings.previous_sidebar_item, run: () => navigateSidebarItems(-1) },
       {
@@ -813,7 +876,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings]);
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane]);
+
+  useEffect(() => {
+    const unlistenPromise = listen<string>("shortcut-action", (event) => {
+      if (event.payload === "rename_active_pane") triggerRenameActivePane();
+      if (event.payload === "focus_agent_input") triggerFocusAgentInput();
+      if (event.payload === "zoom_active_pane") triggerZoomActivePane();
+    });
+
+    return () => {
+      unlistenPromise.then((fn) => fn());
+    };
+  }, [triggerFocusAgentInput, triggerRenameActivePane, triggerZoomActivePane]);
 
   useEffect(() => {
     if (split.tree || !currentContent) return;
@@ -929,6 +1004,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     const normalizedValue = name.trim() || null;
     const paneId = process.pane_id;
     try {
+      setProcessRenameDrafts((prev) => {
+        if (!(paneId in prev)) return prev;
+        const next = { ...prev };
+        delete next[paneId];
+        return next;
+      });
+      if (renameProcessPaneId === paneId) setRenameProcessPaneId(null);
       core.setProcesses((prev) => prev.map((proc) => (
         proc.pane_id === paneId ? { ...proc, display_name: normalizedValue } : proc
       )));
@@ -946,7 +1028,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     } catch (e) {
       console.error("Failed to save process name:", e);
     }
-  }, [core]);
+  }, [core, renameProcessPaneId]);
 
   const handleSaveProcessField = useCallback(async (value: string) => {
     if (!editProcessField) return;
@@ -1355,7 +1437,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
       return paneId ? () => setSkillSearchPaneId(paneId) : undefined;
     })(),
-  }), [core.statuses, autoYes, handleFork, handleSplitPane]);
+    onZoomPane: split.tree ? () => {
+      const leaves = collectLeaves(split.tree!);
+      const currentLeaf = leaves.find((leaf) => leaf.content.kind === "job" && leaf.content.slug === job.slug);
+      if (currentLeaf) split.zoomToLeaf(currentLeaf.id);
+    } : undefined,
+  }), [core.statuses, autoYes, handleFork, handleSplitPane, split.tree, split.zoomToLeaf]);
 
   const buildJobTitlePath = useCallback((job: Job, _jobQuestion: ClaudeQuestion | undefined) => {
     const sourcePath = job.work_dir || job.folder_path || job.path;
@@ -1372,13 +1459,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const agentJob = useMemo<RemoteJob>(() => ({
-    name: agentProcess?.display_name ?? agentProcess?.first_query ?? "agent",
+    name: getProcessDisplayName(agentProcess) ?? agentProcess?.first_query ?? "agent",
     job_type: "claude",
     enabled: true,
     cron: "",
     group: "",
     slug: "agent",
-  }), [agentProcess]);
+  }), [agentProcess, getProcessDisplayName]);
 
   // Render a leaf pane in the split tree
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
@@ -1393,6 +1480,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               onBack={() => split.handleClosePane(leafId)}
               onOpen={() => handleOpen("agent")}
               onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
+              onZoomPane={() => split.zoomToLeaf(leafId)}
               showBackButton={!isWide}
               hidePath
               contentStyle={trafficLightInsetStyle}
@@ -1422,6 +1510,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                 split.handleClosePane(leafId);
               }}
               onSplitPane={(nextDirection: "right" | "down") => handleSplitPane(shell.pane_id, nextDirection)}
+              onZoomPane={() => split.zoomToLeaf(leafId)}
               contentStyle={trafficLightInsetStyle}
               titlePath={shortenPath(shell.cwd)}
               dragHandleProps={dragHandleProps}
@@ -1469,10 +1558,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               }}
               onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
               onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
+              onZoomPane={() => split.zoomToLeaf(leafId)}
               onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
               onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
               contentStyle={trafficLightInsetStyle}
               titlePath={buildProcessTitlePath(proc)}
+              displayNameOverride={processRenameDrafts[proc.pane_id] ?? null}
               dragHandleProps={dragHandleProps}
             />
           )}
@@ -1515,7 +1606,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         )}
       </DraggableSplitPane>
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.zoomToLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts]);
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
@@ -1529,7 +1620,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string }) => (
+    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void }) => (
       <DraggableProcessCard
         {...props}
         reorderEnabled
@@ -1688,6 +1779,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             onSearchSkills={() => setSkillSearchPaneId(singleProcess.pane_id)}
             contentStyle={trafficLightInsetStyle}
             titlePath={buildProcessTitlePath(singleProcess)}
+            displayNameOverride={processRenameDrafts[singleProcess.pane_id] ?? null}
           />
       );
     }
@@ -1762,7 +1854,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Select a job to view details</span>
       </div>
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts]);
 
   const detailPane = currentContent ? (
     <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
@@ -1965,6 +2057,27 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       }}
       onRenameProcess={openRenameProcessDialog}
       onSaveProcessName={handleSaveProcessNameInline}
+      focusAgentWorkDir={activeAgentWorkDir}
+      focusAgentSignal={focusAgentSignal}
+      renameProcessPaneId={renameProcessPaneId}
+      renameProcessSignal={renameProcessSignal}
+      onProcessRenameDraftChange={(paneId, value) => {
+        setProcessRenameDrafts((prev) => {
+          if (value === null) {
+            if (!(paneId in prev)) return prev;
+            const next = { ...prev };
+            delete next[paneId];
+            return next;
+          }
+          if (prev[paneId] === value) return prev;
+          return { ...prev, [paneId]: value };
+        });
+      }}
+      onProcessRenameStateChange={(paneId, editing) => {
+        if (!editing && renameProcessPaneId === paneId) {
+          setRenameProcessPaneId(null);
+        }
+      }}
       onStopShell={(paneId) => {
         setShellPanes((prev) => prev.filter((p) => p.pane_id !== paneId));
         if (viewingShell?.pane_id === paneId) selectAdjacentItem(paneId);

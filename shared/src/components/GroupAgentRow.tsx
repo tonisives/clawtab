@@ -18,11 +18,13 @@ export function GroupAgentRow({
   provider,
   providers = [provider],
   onProviderChange,
+  focusSignal,
 }: {
   onRunAgent: (prompt: string, provider?: ProcessProvider) => void | Promise<void>;
   provider: ProcessProvider;
   providers?: ProcessProvider[];
   onProviderChange?: (provider: ProcessProvider) => void;
+  focusSignal?: number;
 }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
@@ -146,6 +148,15 @@ export function GroupAgentRow({
     return () => el.removeEventListener("keydown", handler, true);
   });
 
+  const lastFocusSignalRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (focusSignal === lastFocusSignalRef.current) return;
+    lastFocusSignalRef.current = focusSignal;
+    if (typeof focusSignal === "number" && focusSignal > 0) {
+      inputRef.current?.focus();
+    }
+  }, [focusSignal]);
+
   const commonProps = {
     value: prompt,
     onChangeText: setPrompt,
@@ -219,6 +230,7 @@ export function GroupAgentRow({
             </svg>
           </div>
         )}
+        <Text style={styles.shortcutHint}>Cmd+N</Text>
       </View>
       <View style={styles.actionsCol}>
         <TouchableOpacity
@@ -286,6 +298,14 @@ const styles = StyleSheet.create({
   inputWrap: {
     flex: 1,
     position: "relative",
+  },
+  shortcutHint: {
+    position: "absolute",
+    right: 8,
+    top: 10,
+    color: colors.textMuted,
+    fontSize: 10,
+    pointerEvents: "none" as any,
   },
   input: {
     borderRadius: radius.sm,

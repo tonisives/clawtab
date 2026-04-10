@@ -25,14 +25,14 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager,
 };
 
 use clawtab_protocol::ClaudeQuestion;
 
 use config::jobs::{JobStatus, JobsConfig};
-use config::settings::AppSettings;
+use config::settings::{AppSettings, ShortcutSettings};
 use history::HistoryStore;
 use ipc::{IpcCommand, IpcResponse};
 use scheduler::SchedulerHandle;
@@ -54,6 +54,144 @@ pub struct AppState {
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
     pub pty_manager: pty::SharedPtyManager,
+}
+
+const MENU_SHORTCUT_RENAME_ACTIVE_PANE: &str = "shortcut_rename_active_pane";
+const MENU_SHORTCUT_FOCUS_AGENT_INPUT: &str = "shortcut_focus_agent_input";
+const MENU_SHORTCUT_ZOOM_ACTIVE_PANE: &str = "shortcut_zoom_active_pane";
+
+fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
+    let trimmed = binding.trim();
+    if trimmed.is_empty() || trimmed.to_ascii_lowercase().contains("prefix") || trimmed.contains(' ') {
+        return None;
+    }
+
+    let mut parts = trimmed.split('+').map(str::trim).filter(|part| !part.is_empty()).peekable();
+    let mut normalized: Vec<String> = Vec::new();
+    let mut key: Option<String> = None;
+
+    while let Some(part) = parts.next() {
+        let lower = part.to_ascii_lowercase();
+        match lower.as_str() {
+            "meta" | "cmd" | "command" => normalized.push("CmdOrCtrl".to_string()),
+            "ctrl" | "control" => normalized.push("Ctrl".to_string()),
+            "alt" | "option" => normalized.push("Alt".to_string()),
+            "shift" => normalized.push("Shift".to_string()),
+            "up" => key = Some("ArrowUp".to_string()),
+            "down" => key = Some("ArrowDown".to_string()),
+            "left" => key = Some("ArrowLeft".to_string()),
+            "right" => key = Some("ArrowRight".to_string()),
+            "space" => key = Some("Space".to_string()),
+            "tab" => key = Some("Tab".to_string()),
+            "enter" | "return" => key = Some("Enter".to_string()),
+            "esc" | "escape" => key = Some("Escape".to_string()),
+            _ if part.len() == 1 => {
+                let ch = part.chars().next()?;
+                if ch.is_ascii_alphabetic() {
+                    key = Some(format!("Key{}", ch.to_ascii_uppercase()));
+                } else if ch.is_ascii_digit() {
+                    key = Some(format!("Digit{}", ch));
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+    }
+
+    key.map(|key_part| {
+        normalized.push(key_part);
+        normalized.join("+")
+    })
+}
+
+fn find_submenu(menu: &Menu<tauri::Wry>, title: &str) -> Option<Submenu<tauri::Wry>> {
+    menu.items()
+        .ok()?
+        .into_iter()
+        .find_map(|item| item.as_submenu().filter(|submenu| submenu.text().ok().as_deref() == Some(title)).cloned())
+}
+
+fn find_menu_item(submenu: &Submenu<tauri::Wry>, label: &str) -> Option<MenuItem<tauri::Wry>> {
+    submenu
+        .items()
+        .ok()?
+        .into_iter()
+        .find_map(|item| item.as_menuitem().filter(|entry| entry.text().ok().as_deref() == Some(label)).cloned())
+}
+
+fn ensure_shortcut_menu_item(
+    app: &tauri::AppHandle,
+    submenu: &Submenu<tauri::Wry>,
+    id: &str,
+    label: &str,
+    accelerator: Option<&str>,
+) -> tauri::Result<MenuItem<tauri::Wry>> {
+    if let Some(existing) = find_menu_item(submenu, label) {
+        existing.set_accelerator(accelerator)?;
+        return Ok(existing);
+    }
+    let item = MenuItem::with_id(app, id, label, true, accelerator)?;
+    submenu.append(&item)?;
+    Ok(item)
+}
+
+pub fn refresh_shortcut_menu(app: &tauri::AppHandle, shortcuts: &ShortcutSettings) -> tauri::Result<()> {
+    let Some(menu) = app.menu() else {
+        return Ok(());
+    };
+
+    if let Some(file_menu) = find_submenu(&menu, "File") {
+        if let Some(new_window) = find_menu_item(&file_menu, "New Window") {
+            let _ = new_window.set_accelerator::<&str>(None);
+        }
+    }
+    if let Some(edit_menu) = find_submenu(&menu, "Edit") {
+        if let Some(undo_item) = find_menu_item(&edit_menu, "Undo") {
+            let _ = undo_item.set_accelerator::<&str>(None);
+        }
+    }
+    if let Some(view_menu) = find_submenu(&menu, "View") {
+        if let Some(reload_item) = find_menu_item(&view_menu, "Reload") {
+            let _ = reload_item.set_accelerator::<&str>(None);
+        }
+    }
+
+    let pane_menu = if let Some(existing) = find_submenu(&menu, "Pane") {
+        existing
+    } else {
+        let submenu = Submenu::with_id(app, "pane_menu", "Pane", true)?;
+        menu.append(&submenu)?;
+        submenu
+    };
+
+    let rename_accel = shortcut_binding_to_accelerator(&shortcuts.rename_active_pane);
+    let focus_accel = shortcut_binding_to_accelerator(&shortcuts.focus_agent_input);
+    let zoom_accel = shortcut_binding_to_accelerator(&shortcuts.zoom_active_pane);
+
+    let _ = ensure_shortcut_menu_item(
+        app,
+        &pane_menu,
+        MENU_SHORTCUT_RENAME_ACTIVE_PANE,
+        "Rename Active Pane",
+        rename_accel.as_deref(),
+    )?;
+    let _ = ensure_shortcut_menu_item(
+        app,
+        &pane_menu,
+        MENU_SHORTCUT_FOCUS_AGENT_INPUT,
+        "Focus Agent Input",
+        focus_accel.as_deref(),
+    )?;
+    let _ = ensure_shortcut_menu_item(
+        app,
+        &pane_menu,
+        MENU_SHORTCUT_ZOOM_ACTIVE_PANE,
+        "Zoom Active Pane",
+        zoom_accel.as_deref(),
+    )?;
+
+    Ok(())
 }
 
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
@@ -576,6 +714,8 @@ pub fn run() {
                 false,
                 None::<&str>,
             )?;
+            let zai_item =
+                MenuItem::with_id(app, "usage_zai", "z.ai: loading...", false, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let tray_menu = Menu::with_items(
@@ -586,6 +726,7 @@ pub fn run() {
                     &claude_item,
                     &codex_item,
                     &opencode_item,
+                    &zai_item,
                     &sep2,
                     &quit_item,
                 ],
@@ -594,6 +735,8 @@ pub fn run() {
             let claude_handle = claude_item.clone();
             let codex_handle = codex_item.clone();
             let opencode_handle = opencode_item.clone();
+            let zai_handle = zai_item.clone();
+            let secrets_for_usage = app.state::<AppState>().secrets.clone();
 
             if let Some(tray) = app.tray_by_id("main") {
                 tray.set_menu(Some(tray_menu))?;
@@ -629,21 +772,41 @@ pub fn run() {
                 }
             }
             app.set_menu(app_menu)?;
+            {
+                let state = app.state::<AppState>();
+                let shortcuts = state.settings.lock().unwrap().shortcuts.clone();
+                let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
+            }
             app.on_menu_event(|app, event| {
                 if event.id.as_ref() == "import_cwt" {
                     if let Some(window) = app.get_webview_window("settings") {
                         let _ = window.emit("import-cwt", ());
                     }
+                } else if event.id.as_ref() == MENU_SHORTCUT_RENAME_ACTIVE_PANE {
+                    let _ = app.emit("shortcut-action", "rename_active_pane");
+                } else if event.id.as_ref() == MENU_SHORTCUT_FOCUS_AGENT_INPUT {
+                    let _ = app.emit("shortcut-action", "focus_agent_input");
+                } else if event.id.as_ref() == MENU_SHORTCUT_ZOOM_ACTIVE_PANE {
+                    let _ = app.emit("shortcut-action", "zoom_active_pane");
                 }
             });
 
             // Background task: refresh provider usage stats every 5 minutes
             tauri::async_runtime::spawn(async move {
                 loop {
-                    let usage = usage::fetch_usage_snapshot().await;
+                    let zai_token = {
+                        let secrets = secrets_for_usage.lock().unwrap();
+                        let explicit = secrets
+                            .get("Z_AI_API_KEY")
+                            .cloned()
+                            .or_else(|| std::env::var("Z_AI_API_KEY").ok());
+                        usage::resolve_zai_token_from_sources(explicit)
+                    };
+                    let usage = usage::fetch_usage_snapshot(zai_token).await;
                     let _ = claude_handle.set_text(format!("Claude: {}", usage.claude.summary));
                     let _ = codex_handle.set_text(format!("Codex: {}", usage.codex.summary));
                     let _ = opencode_handle.set_text(format!("OpenCode: {}", usage.opencode.summary));
+                    let _ = zai_handle.set_text(format!("z.ai: {}", usage.zai.summary));
                     tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
                 }
             });

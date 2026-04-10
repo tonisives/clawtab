@@ -393,28 +393,31 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     newContent: PaneContent,
     direction: "horizontal" | "vertical",
   ) => {
+    const currentTree = splitTreeRef.current;
+    let nextTree: SplitNode | null = null;
     let insertedLeafId: string | null = null;
-    setSplitTree(prev => {
-      if (!prev) {
-        const cc = currentContentRef.current;
-        if (!cc) return prev;
-        const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: cc };
-        const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
-        insertedLeafId = newLeaf.id;
-        return {
-          type: "split",
-          id: genPaneId(),
-          direction,
-          ratio: 0.5,
-          first: rootLeaf,
-          second: newLeaf,
-        };
-      }
-      const next = splitLeaf(prev, targetLeafId, newContent, direction, "after");
-      const inserted = collectLeaves(next).find(leaf => contentEquals(leaf.content, newContent));
+
+    if (!currentTree) {
+      const cc = currentContentRef.current;
+      if (!cc) return;
+      const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: cc };
+      const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
+      insertedLeafId = newLeaf.id;
+      nextTree = {
+        type: "split",
+        id: genPaneId(),
+        direction,
+        ratio: 0.5,
+        first: rootLeaf,
+        second: newLeaf,
+      };
+    } else {
+      nextTree = splitLeaf(currentTree, targetLeafId, newContent, direction, "after");
+      const inserted = collectLeaves(nextTree).find((leaf) => contentEquals(leaf.content, newContent));
       insertedLeafId = inserted?.id ?? null;
-      return next;
-    });
+    }
+
+    setSplitTree(nextTree);
     if (insertedLeafId) setFocusedLeafId(insertedLeafId);
   }, []);
 
@@ -483,6 +486,17 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     return true;
   }, []);
 
+  const zoomToLeaf = useCallback((leafId: string) => {
+    const currentTree = splitTreeRef.current;
+    if (!currentTree) return false;
+    const leaf = collectLeaves(currentTree).find((entry) => entry.id === leafId);
+    if (!leaf) return false;
+    setSplitTree(null);
+    setFocusedLeafId(null);
+    onCollapseRef.current(leaf.content);
+    return true;
+  }, []);
+
   // Compute selectedItems map for sidebar highlighting
   const selectedItems = useMemo((): Map<string, string> | null => {
     if (splitTree) {
@@ -543,6 +557,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     addSplitLeaf,
     openContent,
     replaceContent,
+    zoomToLeaf,
     // Sidebar data
     selectedItems,
     focusedItemKey,

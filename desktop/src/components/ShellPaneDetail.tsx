@@ -56,6 +56,7 @@ export function ShellPaneDetail({
   hidePath = false,
   onStopped,
   onSplitPane,
+  onZoomPane,
   contentStyle,
   titlePath,
   dragHandleProps,
@@ -66,6 +67,7 @@ export function ShellPaneDetail({
   hidePath?: boolean;
   onStopped?: () => void;
   onSplitPane?: (direction: "right" | "down") => void;
+  onZoomPane?: () => void;
   contentStyle?: unknown;
   titlePath?: string;
   dragHandleProps?: {
@@ -110,10 +112,9 @@ export function ShellPaneDetail({
         paneId={shell.pane_id}
         tmuxSession={shell.tmux_session}
         group="default"
-        onExit={onStopped}
       />
     ),
-    [shell.pane_id, shell.tmux_session, onStopped],
+    [shell.pane_id, shell.tmux_session],
   );
 
   const wrappedTransport = useMemo((): Transport => ({
@@ -147,6 +148,7 @@ export function ShellPaneDetail({
       renderTerminal={renderTerminal}
       hideMessageInput
       onSplitPane={onSplitPane}
+      onZoomPane={onZoomPane}
       dragHandleProps={dragHandleProps}
     />
   );

@@ -35,6 +35,7 @@ pub fn set_settings(
     // Regenerate all cwt.md context files with updated settings
     let settings_clone = settings.clone();
     drop(settings);
+    let _ = crate::refresh_shortcut_menu(&app, &settings_clone.shortcuts);
     let jobs = state.jobs_config.lock().unwrap().jobs.clone();
     super::jobs::ensure_agent_dir(&settings_clone, &jobs);
     super::jobs::regenerate_all_cwt_contexts(&settings_clone, &jobs);

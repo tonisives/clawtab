@@ -276,6 +276,7 @@ function GeneralSettingsContent() {
                 <UsageCard title="Claude" usage={usage.claude} />
                 <UsageCard title="Codex" usage={usage.codex} />
                 <UsageCard title="OpenCode" usage={usage.opencode} />
+                <UsageCard title="z.ai" usage={usage.zai} />
               </>
             ) : (
               <div className="usage-card">

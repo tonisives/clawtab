@@ -89,6 +89,9 @@ export interface ShortcutSettings {
   next_sidebar_item: string;
   previous_sidebar_item: string;
   toggle_sidebar: string;
+  rename_active_pane: string;
+  focus_agent_input: string;
+  zoom_active_pane: string;
   split_pane_vertical: string;
   split_pane_horizontal: string;
   kill_pane: string;
@@ -150,6 +153,7 @@ export interface UsageSnapshot {
   claude: ProviderUsageSnapshot;
   codex: ProviderUsageSnapshot;
   opencode: ProviderUsageSnapshot;
+  zai: ProviderUsageSnapshot;
 }
 
 export interface DetectedProcess {

@@ -89,6 +89,7 @@ export interface JobDetailViewProps {
   // Pane actions (desktop only, for running jobs/processes with a tmux pane)
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
+  onZoomPane?: () => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   // Release the captured tmux pane (desktop only, when viewing a live pane)
@@ -144,6 +145,7 @@ export function JobDetailView({
   onEditTitle,
   onFork,
   onSplitPane,
+  onZoomPane,
   onInjectSecrets,
   onSearchSkills,
   onRelease,
@@ -464,7 +466,7 @@ export function JobDetailView({
             </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
-          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onInjectSecrets || onSearchSkills) && (
+          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}
@@ -493,15 +495,16 @@ export function JobDetailView({
                     ...(onEdit ? [{ type: "item" as const, label: "Edit", onPress: () => onEdit() }] : []),
                     ...(onDuplicate ? [{ type: "item" as const, label: "Duplicate", onPress: () => setShowDuplicateMenu(true) }] : []),
                     ...(onToggleEnabled && !isManual ? [{ type: "item" as const, label: job.enabled ? "Disable" : "Enable", onPress: () => onToggleEnabled() }] : []),
-                    ...((onFork || onSplitPane || onInjectSecrets || onSearchSkills || onRelease) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
+                    ...((onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRelease) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
                     ...(onFork ? [{ type: "submenu" as const, label: "Fork Session", items: [
                       { type: "item" as const, label: "Right", onPress: () => onFork("right") },
                       { type: "item" as const, label: "Down", onPress: () => onFork("down") },
                     ] }] : []),
                     ...(onSplitPane ? [{ type: "submenu" as const, label: "Split Pane", items: [
-                      { type: "item" as const, label: "Right", onPress: () => onSplitPane("right") },
-                      { type: "item" as const, label: "Down", onPress: () => onSplitPane("down") },
+                      { type: "item" as const, label: "Right", hint: "Prefix V", onPress: () => onSplitPane("right") },
+                      { type: "item" as const, label: "Down", hint: "Prefix S", onPress: () => onSplitPane("down") },
                     ] }] : []),
+                    ...(onZoomPane ? [{ type: "item" as const, label: "Zoom Pane", hint: "Cmd+Z", onPress: () => onZoomPane() }] : []),
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),

@@ -3,6 +3,9 @@ export interface ShortcutSettings {
   next_sidebar_item: string;
   previous_sidebar_item: string;
   toggle_sidebar: string;
+  rename_active_pane: string;
+  focus_agent_input: string;
+  zoom_active_pane: string;
   split_pane_vertical: string;
   split_pane_horizontal: string;
   kill_pane: string;
@@ -24,6 +27,9 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   next_sidebar_item: "Alt+Tab",
   previous_sidebar_item: "Alt+Shift+Tab",
   toggle_sidebar: "Meta+e",
+  rename_active_pane: "Meta+r",
+  focus_agent_input: "Meta+n",
+  zoom_active_pane: "Meta+z",
   split_pane_vertical: "Prefix v",
   split_pane_horizontal: "Prefix s",
   kill_pane: "Prefix q",
@@ -38,6 +44,9 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   { id: "next_sidebar_item", label: "Next sidebar item" },
   { id: "previous_sidebar_item", label: "Previous sidebar item" },
   { id: "toggle_sidebar", label: "Toggle sidebar" },
+  { id: "rename_active_pane", label: "Rename active pane" },
+  { id: "focus_agent_input", label: "Focus agent input" },
+  { id: "zoom_active_pane", label: "Zoom active pane" },
   { id: "split_pane_vertical", label: "Split pane vertically" },
   { id: "split_pane_horizontal", label: "Split pane horizontally" },
   { id: "kill_pane", label: "Kill focused pane" },
@@ -109,6 +118,31 @@ function normalizeShortcutStroke(parts: string[]): string {
   const modifiers = MODIFIER_ORDER.filter((modifier) => parts.includes(modifier));
   const key = parts.find((part) => !MODIFIER_SET.has(part));
   return [...modifiers, key].filter(Boolean).join("+");
+}
+
+function parseShortcutStroke(stroke: string): { key: string; modifiers: Set<string> } {
+  const parts = stroke.split("+").map((part) => normalizeKeyPart(part)).filter(Boolean);
+  return {
+    key: parts.find((part) => !MODIFIER_SET.has(part)) ?? "",
+    modifiers: new Set(parts.filter((part): part is typeof MODIFIER_ORDER[number] => MODIFIER_SET.has(part))),
+  };
+}
+
+function strokesMatchWithCarry(expectedStroke: string, actualStroke: string, carriedModifiers?: Set<string>): boolean {
+  const expected = parseShortcutStroke(expectedStroke);
+  const actual = parseShortcutStroke(actualStroke);
+  if (!expected.key || expected.key !== actual.key) return false;
+
+  for (const modifier of expected.modifiers) {
+    if (!actual.modifiers.has(modifier)) return false;
+  }
+
+  for (const modifier of actual.modifiers) {
+    if (expected.modifiers.has(modifier)) continue;
+    if (!carriedModifiers?.has(modifier)) return false;
+  }
+
+  return true;
 }
 
 function resolvePrefixReferences(binding: string, prefixKey: string): string {
@@ -184,7 +218,13 @@ export function shortcutStartsWith(binding: string, firstStroke: string, prefixK
 export function shortcutCompletesSequence(binding: string, strokes: string[], prefixKey = DEFAULT_SHORTCUTS.prefix_key): boolean {
   const sequence = shortcutBindingToSequence(binding, prefixKey);
   return sequence.length === strokes.length
-    && sequence.every((stroke, index) => stroke === normalizeShortcutBinding(strokes[index] ?? "", prefixKey));
+    && sequence.every((stroke, index) => {
+      const actualStroke = normalizeShortcutBinding(strokes[index] ?? "", prefixKey);
+      if (index === 0) return stroke === actualStroke;
+      const previousStroke = normalizeShortcutBinding(strokes[index - 1] ?? "", prefixKey);
+      const carriedModifiers = parseShortcutStroke(previousStroke).modifiers;
+      return strokesMatchWithCarry(stroke, actualStroke, carriedModifiers);
+    });
 }
 
 function formatShortcutPart(part: string): string {

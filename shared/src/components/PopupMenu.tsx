@@ -25,7 +25,7 @@ function PortalWeb({ children }: { children: ReactNode }) {
 }
 
 export type PopupMenuItem =
-  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean; icon?: ReactNode }
+  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean; icon?: ReactNode; hint?: string }
   | { type: "separator" }
   | { type: "submenu"; label: string; items: PopupMenuItem[] };
 
@@ -57,6 +57,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
   const isSubmenu = item.type === "submenu";
   const color = item.type === "item" ? item.color : undefined;
   const active = item.type === "item" ? item.active : false;
+  const hint = item.type === "item" ? item.hint : undefined;
 
   return (
     <TouchableOpacity
@@ -83,6 +84,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
             {item.label}
           </Text>
         </View>
+        {hint ? <Text style={styles.itemHint}>{hint}</Text> : null}
         {isSubmenu && (
           <Text style={styles.submenuArrow}>{"\u203a"}</Text>
         )}
@@ -300,11 +302,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    gap: spacing.md,
   },
   itemLabelWrap: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
+    minWidth: 0,
+    flexShrink: 1,
   },
   itemIconWrap: {
     width: 16,
@@ -315,6 +320,11 @@ const styles = StyleSheet.create({
   itemText: {
     color: colors.text,
     fontSize: 13,
+  },
+  itemHint: {
+    color: colors.textMuted,
+    fontSize: 11,
+    flexShrink: 0,
   },
   itemTextActive: {
     color: colors.accent,

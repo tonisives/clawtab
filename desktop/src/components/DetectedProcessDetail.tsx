@@ -52,10 +52,12 @@ export function DetectedProcessDetail({
   onStopped,
   onFork,
   onSplitPane,
+  onZoomPane,
   onInjectSecrets,
   onSearchSkills,
   contentStyle,
   titlePath,
+  displayNameOverride,
   dragHandleProps,
 }: {
   process: DetectedProcess;
@@ -69,10 +71,12 @@ export function DetectedProcessDetail({
   onStopped?: () => void;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
+  onZoomPane?: () => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   contentStyle?: unknown;
   titlePath?: string;
+  displayNameOverride?: string | null;
   dragHandleProps?: {
     ref?: (node: HTMLElement | null) => void;
     attributes?: Record<string, unknown>;
@@ -85,7 +89,7 @@ export function DetectedProcessDetail({
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
 
-  const displayName = process.display_name ?? shortenPath(process.cwd);
+  const displayName = displayNameOverride?.trim() || (process.display_name ?? shortenPath(process.cwd));
 
   const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
 
@@ -172,6 +176,7 @@ export function DetectedProcessDetail({
       lastQuery={process.last_query ?? undefined}
       onFork={process.can_fork_session ? onFork : undefined}
       onSplitPane={onSplitPane}
+      onZoomPane={onZoomPane}
       onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}
       onSearchSkills={process.can_send_skills ? onSearchSkills : undefined}
       dragHandleProps={dragHandleProps}

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { DetectedProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
@@ -19,6 +19,9 @@ export function ProcessCard({
   onRename,
   onSaveName,
   autoYesActive,
+  startRenameSignal,
+  onRenameDraftChange,
+  onRenameStateChange,
 }: {
   process: DetectedProcess;
   onPress?: () => void;
@@ -28,6 +31,9 @@ export function ProcessCard({
   onRename?: () => void;
   onSaveName?: (name: string) => void;
   autoYesActive?: boolean;
+  startRenameSignal?: number;
+  onRenameDraftChange?: (value: string | null) => void;
+  onRenameStateChange?: (editing: boolean) => void;
 }) {
   const displayName = inGroup
     ? (process.display_name ?? process.first_query ?? shortenPath(process.cwd))
@@ -54,25 +60,41 @@ export function ProcessCard({
 
   const startEditing = useCallback(() => {
     if (!canRename) return;
-    setEditValue(process.display_name ?? "");
+    const initialValue = process.display_name ?? "";
+    setEditValue(initialValue);
     setEditing(true);
     setMenuOpen(false);
+    onRenameStateChange?.(true);
+    onRenameDraftChange?.(initialValue);
     setTimeout(() => { editInputRef.current?.focus(); }, 0);
-  }, [canRename, process.display_name]);
+  }, [canRename, onRenameDraftChange, onRenameStateChange, process.display_name]);
 
   const commitEdit = useCallback(() => {
     setEditing(false);
+    onRenameStateChange?.(false);
     const trimmed = editValue.trim();
     if (onSaveName) {
       onSaveName(trimmed || (process.display_name ?? ""));
     } else if (onRename) {
       onRename();
     }
-  }, [editValue, onSaveName, onRename, process.display_name]);
+    onRenameDraftChange?.(null);
+  }, [editValue, onRename, onRenameDraftChange, onRenameStateChange, onSaveName, process.display_name]);
 
   const cancelEdit = useCallback(() => {
     setEditing(false);
-  }, []);
+    onRenameStateChange?.(false);
+    onRenameDraftChange?.(null);
+  }, [onRenameDraftChange, onRenameStateChange]);
+
+  const lastStartRenameSignalRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (startRenameSignal === lastStartRenameSignalRef.current) return;
+    lastStartRenameSignalRef.current = startRenameSignal;
+    if (typeof startRenameSignal === "number" && startRenameSignal > 0) {
+      startEditing();
+    }
+  }, [startEditing, startRenameSignal]);
 
   const statusDot = transient ? (
     <View style={[
@@ -101,7 +123,10 @@ export function ProcessCard({
             <TextInput
               ref={editInputRef}
               value={editValue}
-              onChangeText={setEditValue}
+              onChangeText={(value) => {
+                setEditValue(value);
+                onRenameDraftChange?.(value);
+              }}
               onSubmitEditing={commitEdit}
               onBlur={commitEdit}
               onKeyPress={(e: any) => {
@@ -161,7 +186,7 @@ export function ProcessCard({
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
-            ...(canRename ? [{ type: "item" as const, label: "Rename", onPress: () => { startEditing(); } }] : []),
+            ...(canRename ? [{ type: "item" as const, label: "Rename", hint: "Cmd+R", onPress: () => { startEditing(); } }] : []),
             ...(canRename && onStop ? [{ type: "separator" as const }] : []),
             ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}

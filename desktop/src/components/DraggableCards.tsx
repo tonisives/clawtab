@@ -119,6 +119,9 @@ export function DraggableProcessCard({
   onRename,
   onSaveName,
   autoYesActive,
+  startRenameSignal,
+  onRenameDraftChange,
+  onRenameStateChange,
   reorderEnabled,
   marginTop,
   dataProcessId,
@@ -132,6 +135,9 @@ export function DraggableProcessCard({
   onRename?: () => void;
   onSaveName?: (name: string) => void;
   autoYesActive?: boolean;
+  startRenameSignal?: number;
+  onRenameDraftChange?: (value: string | null) => void;
+  onRenameStateChange?: (editing: boolean) => void;
   reorderEnabled?: boolean;
   marginTop?: number;
   dataProcessId?: string;
@@ -194,6 +200,9 @@ export function DraggableProcessCard({
         onRename={onRename}
         onSaveName={onSaveName}
         autoYesActive={autoYesActive}
+        startRenameSignal={startRenameSignal}
+        onRenameDraftChange={onRenameDraftChange}
+        onRenameStateChange={onRenameStateChange}
       />
     </div>
   );

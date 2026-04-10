@@ -383,6 +383,7 @@ export function DesktopJobDetail({
   hidePath = false,
   onFork,
   onSplitPane,
+  onZoomPane,
   onInjectSecrets,
   onSearchSkills,
   onStopping,
@@ -411,6 +412,7 @@ export function DesktopJobDetail({
   lastQuery?: string;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
+  onZoomPane?: () => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   onStopping?: () => void;
@@ -501,6 +503,7 @@ export function DesktopJobDetail({
         hideMessageInput={!!(paneId && tmuxSession)}
         onFork={onFork}
         onSplitPane={onSplitPane}
+        onZoomPane={onZoomPane}
         onInjectSecrets={onInjectSecrets}
         onSearchSkills={onSearchSkills}
         onRelease={paneId ? handleRelease : undefined}
@@ -531,6 +534,7 @@ export function AgentDetail({
   hidePath = false,
   contentStyle,
   titlePath,
+  onZoomPane,
   dragHandleProps,
 }: {
   transport: Transport;
@@ -543,6 +547,7 @@ export function AgentDetail({
   hidePath?: boolean;
   contentStyle?: unknown;
   titlePath?: string;
+  onZoomPane?: () => void;
   dragHandleProps?: {
     ref?: (node: HTMLElement | null) => void;
     attributes?: Record<string, unknown>;
@@ -571,6 +576,7 @@ export function AgentDetail({
       onReloadRuns={reloadRuns}
       onOpen={onOpen}
       onEditTitle={onEditTitle}
+      onZoomPane={onZoomPane}
       extraContent={extraContent}
       sectionStyle={cardSectionStyle}
       containerStyle={desktopContainerStyle}
