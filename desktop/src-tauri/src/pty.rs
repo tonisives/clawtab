@@ -167,6 +167,87 @@ fn next_view_session_name() -> String {
     }
 }
 
+fn is_view_session(name: &str) -> bool {
+    name.starts_with("clawtab-") && name.contains("-view-")
+}
+
+/// Sweep orphaned ephemeral view sessions left behind by a previous run.
+///
+/// View sessions are created via `tmux new-session -t base`, which puts them
+/// in a session group sharing windows with the base. `kill-session` only kills
+/// the named session — the base and its windows survive as long as another
+/// group member exists. To guard the edge case where a real session ends up
+/// with its group name set to a view (e.g. base was created *from* the view),
+/// we skip any view session that is the *only* remaining member of its group.
+fn cleanup_orphaned_view_sessions(keep: &[&str]) {
+    let raw = match tmux(&["list-sessions", "-F", "#{session_name}\t#{session_group}"]) {
+        Ok(v) => v,
+        Err(e) => {
+            log::debug!("cleanup_orphaned_view_sessions: list-sessions failed: {}", e);
+            return;
+        }
+    };
+
+    // group -> list of member session names. Sessions with no group list
+    // themselves under their own name so the "last member" check still works.
+    let mut members: HashMap<String, Vec<String>> = HashMap::new();
+    let mut view_sessions: Vec<(String, String)> = Vec::new();
+    for line in raw.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let name = parts.next().unwrap_or("").to_string();
+        let group = parts.next().unwrap_or("").to_string();
+        if name.is_empty() {
+            continue;
+        }
+        let group_key = if group.is_empty() { name.clone() } else { group };
+        members
+            .entry(group_key.clone())
+            .or_default()
+            .push(name.clone());
+        if is_view_session(&name) {
+            view_sessions.push((name, group_key));
+        }
+    }
+
+    let keep: std::collections::HashSet<&str> = keep.iter().copied().collect();
+    let mut killed = 0usize;
+    let mut skipped_last = 0usize;
+    for (name, group_key) in view_sessions {
+        if keep.contains(name.as_str()) {
+            continue;
+        }
+        let group_members = members.get(&group_key);
+        let has_non_view_member = group_members
+            .map(|m| m.iter().any(|n| !is_view_session(n)))
+            .unwrap_or(false);
+        if !has_non_view_member {
+            log::warn!(
+                "cleanup_orphaned_view_sessions: skipping {} — last member of group {}",
+                name,
+                group_key
+            );
+            skipped_last += 1;
+            continue;
+        }
+        match tmux(&["kill-session", "-t", &name]) {
+            Ok(_) => killed += 1,
+            Err(e) => log::debug!(
+                "cleanup_orphaned_view_sessions: kill {} failed: {}",
+                name,
+                e
+            ),
+        }
+    }
+
+    if killed > 0 || skipped_last > 0 {
+        log::info!(
+            "cleanup_orphaned_view_sessions: killed {}, skipped {} (last member of group)",
+            killed,
+            skipped_last
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Capture helpers
 // ---------------------------------------------------------------------------
@@ -377,6 +458,9 @@ fn release_captured_pane(pane_id: &str) -> Result<(), String> {
 
 impl PtyManager {
     pub fn new() -> Self {
+        // On startup, self.sessions is empty — any existing clawtab-*-view-*
+        // session is an orphan from a previous run.
+        cleanup_orphaned_view_sessions(&[]);
         Self {
             sessions: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),
