@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -248,6 +248,98 @@ fn cleanup_orphaned_view_sessions(keep: &[&str]) {
     }
 }
 
+fn is_idle_shell_command(cmd: &str) -> bool {
+    matches!(cmd, "zsh" | "bash" | "sh" | "fish" | "dash" | "ksh" | "tcsh")
+}
+
+/// Sweep `ct-*` windows whose only process is an idle shell. Leaves windows
+/// running real processes (codex, opencode, agents, editors, ...) alone so
+/// they can be released manually via the app UI.
+///
+/// These orphans accumulate when the app crashes or force-quits while a pane
+/// viewer is open: the view session dies (or gets swept), but the captured
+/// `ct-*` window parks in its base session with no tab pointing at it.
+fn cleanup_orphaned_ct_windows() {
+    let raw = match tmux(&[
+        "list-panes",
+        "-a",
+        "-F",
+        "#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_command}",
+    ]) {
+        Ok(v) => v,
+        Err(e) => {
+            log::debug!("cleanup_orphaned_ct_windows: list-panes failed: {}", e);
+            return;
+        }
+    };
+
+    let mut killed = 0usize;
+    let mut kept = 0usize;
+    let mut seen_windows: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for line in raw.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 4 {
+            continue;
+        }
+        let session = parts[0];
+        let window_id = parts[1];
+        let window_name = parts[2];
+        let cmd = parts[3];
+
+        if !window_name.starts_with("ct-") {
+            continue;
+        }
+        // list-panes -a reports the same window under every session group
+        // member; only act once per window_id.
+        if !seen_windows.insert(window_id.to_string()) {
+            continue;
+        }
+        // Skip session-group duplicates: only touch the window from its
+        // "real" session (a view session will also list it, we'd just be
+        // killing it through a soon-to-be-dead session name).
+        if is_view_session(session) {
+            continue;
+        }
+
+        if is_idle_shell_command(cmd) {
+            match tmux(&["kill-window", "-t", window_id]) {
+                Ok(_) => {
+                    log::info!(
+                        "cleanup_orphaned_ct_windows: killed {} ({}:{}) idle {}",
+                        window_name,
+                        session,
+                        window_id,
+                        cmd
+                    );
+                    killed += 1;
+                }
+                Err(e) => log::debug!(
+                    "cleanup_orphaned_ct_windows: kill {} failed: {}",
+                    window_id,
+                    e
+                ),
+            }
+        } else {
+            log::info!(
+                "cleanup_orphaned_ct_windows: keeping {} ({}:{}) running {}",
+                window_name,
+                session,
+                window_id,
+                cmd
+            );
+            kept += 1;
+        }
+    }
+
+    if killed > 0 || kept > 0 {
+        log::info!(
+            "cleanup_orphaned_ct_windows: killed {} idle, kept {} live",
+            killed,
+            kept
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Capture helpers
 // ---------------------------------------------------------------------------
@@ -297,55 +389,73 @@ fn next_ct_window_name(session: &str, base: &str) -> String {
 /// original tmux session. Records origin as a window option so release can put
 /// it back. Returns (session, window_id). Idempotent: if already captured,
 /// returns the existing session/window.
-fn capture_pane(pane_id: &str, _group: &str) -> Result<(String, String), String> {
+///
+/// `tmux_session` MUST be the real owning session of the pane, supplied by the
+/// caller. Do NOT trust `#{session_name}` from `display-message -t %pane_id`:
+/// when a pane's window is shared across a session group, tmux resolves the
+/// pane target to whichever group member it feels like (often the most recent
+/// ephemeral `clawtab-view-N`), recording a dead view session as the origin.
+fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), String> {
     if let Some((sess, win_id)) = find_captured_window(pane_id) {
         return Ok((sess, win_id));
     }
 
-    // Record origin BEFORE break-pane
+    // Query window metadata via session-qualified target so tmux doesn't
+    // resolve the pane through a grouped view session.
+    let target = format!("{}:{}", tmux_session, pane_id);
     let origin = tmux(&[
         "display-message",
         "-t",
-        pane_id,
+        &target,
         "-p",
-        "#{session_name}\t#{window_id}\t#{pane_index}\t#{window_name}",
+        "#{window_id}\t#{pane_index}\t#{window_name}",
     ])?;
 
     let parts: Vec<&str> = origin.split('\t').collect();
-    if parts.len() < 4 {
+    if parts.len() < 3 {
         return Err(format!("malformed origin: {}", origin));
     }
-    let orig_session = parts[0];
-    let orig_window_name = parts[3];
+    let orig_window_id = parts[0];
+    let orig_pane_index = parts[1];
+    let orig_window_name = parts[2];
 
-    let new_name = next_ct_window_name(orig_session, orig_window_name);
+    let new_name = next_ct_window_name(tmux_session, orig_window_name);
 
-    // break-pane moves the pane into a new window in the SAME original session
     tmux(&[
         "break-pane",
         "-d",
         "-s",
-        pane_id,
+        &target,
         "-t",
-        &format!("{}:", orig_session),
+        &format!("{}:", tmux_session),
         "-n",
         &new_name,
     ])?;
 
-    // After break-pane, the pane_id is stable. Look up its new window.
-    let new_win = tmux(&["display-message", "-t", pane_id, "-p", "#{window_id}"])?;
+    let new_win = tmux(&[
+        "display-message",
+        "-t",
+        &format!("{}:{}", tmux_session, pane_id),
+        "-p",
+        "#{window_id}",
+    ])?;
 
-    // Store origin on the new window as a user option
+    // Origin metadata: session\twindow_id\tpane_index\twindow_name (matches the
+    // format release_captured_pane expects).
+    let origin_meta = format!(
+        "{}\t{}\t{}\t{}",
+        tmux_session, orig_window_id, orig_pane_index, orig_window_name
+    );
     let _ = tmux(&[
         "set-option",
         "-w",
         "-t",
         &new_win,
         "@clawtab-origin",
-        &origin,
+        &origin_meta,
     ]);
 
-    Ok((orig_session.to_string(), new_win))
+    Ok((tmux_session.to_string(), new_win))
 }
 
 /// Release a captured pane back to its original session:window.
@@ -459,8 +569,10 @@ fn release_captured_pane(pane_id: &str) -> Result<(), String> {
 impl PtyManager {
     pub fn new() -> Self {
         // On startup, self.sessions is empty — any existing clawtab-*-view-*
-        // session is an orphan from a previous run.
+        // session is an orphan from a previous run. View sweep first so the
+        // ct-* sweep doesn't see panes under view sessions.
         cleanup_orphaned_view_sessions(&[]);
+        cleanup_orphaned_ct_windows();
         Self {
             sessions: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),
@@ -474,10 +586,10 @@ impl PtyManager {
     pub fn spawn(
         &mut self,
         pane_id: &str,
-        _tmux_session: &str,
+        tmux_session: &str,
         cols: u16,
         rows: u16,
-        group: &str,
+        _group: &str,
         sink: OutputSink,
     ) -> Result<SpawnResult, String> {
         if let Some(viewer) = self.sessions.get_mut(pane_id) {
@@ -489,7 +601,7 @@ impl PtyManager {
             let native_info = tmux(&[
                 "display-message",
                 "-t",
-                pane_id,
+                &format!("{}:{}", tmux_session, pane_id),
                 "-p",
                 "#{pane_width} #{pane_height}",
             ])?;
@@ -515,7 +627,7 @@ impl PtyManager {
         let native_info = tmux(&[
             "display-message",
             "-t",
-            pane_id,
+            &format!("{}:{}", tmux_session, pane_id),
             "-p",
             "#{pane_width} #{pane_height}",
         ])?;
@@ -531,7 +643,7 @@ impl PtyManager {
 
         // Capture the pane into a ct-<orig>-<N> window in its original session
         // (idempotent). base_session here is the original tmux session.
-        let (base_session, window_id) = capture_pane(pane_id, group)?;
+        let (base_session, window_id) = capture_pane(pane_id, tmux_session)?;
 
         // Ephemeral grouped view session so this viewer has its own current-window
         // without disturbing other clients attached to the original session.
@@ -607,11 +719,32 @@ impl PtyManager {
         refresh_attached_pane(&sink, &self.recent, pane_id);
 
         thread::spawn(move || {
-            let mut buf = [0u8; 8192];
+            let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
+            let reader_stop = Arc::clone(&stop_clone);
+
+            thread::spawn(move || {
+                let mut buf = [0u8; 8192];
+
+                loop {
+                    if reader_stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    match reader.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            if output_tx.send(buf[..n].to_vec()).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+
             let mut pending = Vec::new();
-            let mut last_emit = Instant::now()
-                .checked_sub(Duration::from_millis(PTY_EMIT_BATCH_MS))
-                .unwrap_or_else(Instant::now);
+            let batch_window = Duration::from_millis(PTY_EMIT_BATCH_MS);
+            let idle_poll = Duration::from_millis(250);
+            let mut flush_deadline: Option<Instant> = None;
 
             let flush_pending = |pending: &mut Vec<u8>| {
                 if pending.is_empty() {
@@ -636,26 +769,30 @@ impl PtyManager {
                 if stop_clone.load(Ordering::Relaxed) {
                     break;
                 }
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        pending.extend_from_slice(&buf[..n]);
-                        let now = Instant::now();
-                        if pending.len() >= PTY_EMIT_MAX_BYTES
-                            || now.duration_since(last_emit)
-                                >= Duration::from_millis(PTY_EMIT_BATCH_MS)
-                        {
+                let timeout = flush_deadline
+                    .map(|deadline| deadline.saturating_duration_since(Instant::now()))
+                    .unwrap_or(idle_poll);
+                match output_rx.recv_timeout(timeout) {
+                    Ok(bytes) => {
+                        if pending.is_empty() {
+                            flush_deadline = Some(Instant::now() + batch_window);
+                        }
+                        pending.extend_from_slice(&bytes);
+                        if pending.len() >= PTY_EMIT_MAX_BYTES {
                             flush_pending(&mut pending);
-                            last_emit = Instant::now();
-                        } else if let Some(remaining) = Duration::from_millis(PTY_EMIT_BATCH_MS)
-                            .checked_sub(now.duration_since(last_emit))
-                        {
-                            thread::sleep(remaining);
-                            flush_pending(&mut pending);
-                            last_emit = Instant::now();
+                            flush_deadline = None;
                         }
                     }
-                    Err(_) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        flush_pending(&mut pending);
+                        flush_deadline = None;
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        if !pending.is_empty() {
+                            flush_pending(&mut pending);
+                        }
+                        break;
+                    }
                 }
             }
             flush_pending(&mut pending);

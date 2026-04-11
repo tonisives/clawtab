@@ -148,6 +148,10 @@ pub fn list_free_panes() -> Result<Vec<FreePaneInfo>, String> {
         if session.starts_with("clawtab-") {
             continue;
         }
+        // Captured panes (ct-*) live in user sessions but belong to clawtab.
+        if p[3].starts_with("ct-") {
+            continue;
+        }
         if !seen.insert(p[0].to_string()) {
             continue;
         }
@@ -175,17 +179,20 @@ pub fn list_captured_panes() -> Result<Vec<CapturedPaneInfo>, String> {
             continue;
         }
         let session = p[1];
-        if !session.starts_with("clawtab-") {
+        let window_name = p[3];
+        // Captured panes are identified by their window name (ct-*), not their
+        // session — they live wherever the original pane came from.
+        if !window_name.starts_with("ct-") {
             continue;
         }
-        // Skip ephemeral grouped view sessions (they duplicate windows from the base session).
-        if session.contains("-view-") {
+        // Skip ephemeral grouped view sessions (list-panes -a reports each
+        // shared window once per group member; we want the real one).
+        if session.starts_with("clawtab-") && session.contains("-view-") {
             continue;
         }
         if !seen.insert(p[0].to_string()) {
             continue;
         }
-        let window_name = p[3];
         if window_name == "__placeholder" {
             continue;
         }

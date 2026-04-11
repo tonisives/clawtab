@@ -11,6 +11,7 @@ import { EDITOR_LABELS } from "../constants";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
+const DEFAULT_SHELL_TEMPLATE = "# Shell Command\n\nsh run.sh\n";
 
 const STEP_TIPS: Record<string, string> = {
   identity: "Choose the working directory, name the job, and write its directions.",
@@ -186,7 +187,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     // Only import md file contents, not folder or name
     setInlineContent(jobMd);
     setInlineLoaded(true);
-    setCwtEdited(!!jobMd && jobMd.trim() !== DEFAULT_TEMPLATE.trim());
+    setCwtEdited(!!jobMd && jobMd.trim() !== defaultDirectionsTemplate.trim());
     setSharedContent(cwtMd);
     setSharedLoaded(true);
     setShowImportPicker(false);
@@ -217,6 +218,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [telegramExpanded, setTelegramExpanded] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  const [agentExpanded, setAgentExpanded] = useState(true);
 
   // Inline editor state
   const [inlineContent, setInlineContent] = useState("");
@@ -243,6 +245,15 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   // job.md edited tracking
   const [cwtEdited, setCwtEdited] = useState(!isNew);
+
+  const isShellJob = form.job_type === "job" && form.agent_provider === "shell";
+  const defaultDirectionsTemplate = isShellJob ? DEFAULT_SHELL_TEMPLATE : DEFAULT_TEMPLATE;
+
+  useEffect(() => {
+    if (isShellJob && previewFile === "context.md") {
+      setPreviewFile("job.md");
+    }
+  }, [isShellJob, previewFile]);
 
   // Template grid data
   const templatesByCategory = TEMPLATE_CATEGORIES.map((cat) => ({
@@ -302,7 +313,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       const jn = form.job_name ?? "default";
       invoke<string>("read_cwt_entry", { folderPath: form.folder_path, jobName: jn })
         .then((content) => {
-          setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
+          setCwtEdited(!!content && content.trim() !== defaultDirectionsTemplate.trim());
           if (!inlineLoaded) {
             setInlineContent(content);
             setInlineLoaded(true);
@@ -326,20 +337,41 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   // For new wizard jobs, set default inline content
   useEffect(() => {
     if (isNew && !inlineLoaded) {
-      setInlineContent(DEFAULT_TEMPLATE);
+      setInlineContent(defaultDirectionsTemplate);
     }
   }, []);
 
   // Update inline content - only write to disk in edit mode
   const handleInlineChange = (content: string) => {
     setInlineContent(content);
-    setCwtEdited(!!content && content.trim() !== DEFAULT_TEMPLATE.trim());
+    setCwtEdited(!!content && content.trim() !== defaultDirectionsTemplate.trim());
     if (!isNew && form.folder_path) {
       invoke("write_cwt_entry", {
         folderPath: form.folder_path,
         jobName: form.job_name ?? "default",
         content,
       }).catch(() => {});
+    }
+  };
+
+  const handleProviderChange = (provider: ProcessProvider | null) => {
+    const previousTemplate = defaultDirectionsTemplate.trim();
+    const nextTemplate = provider === "shell" ? DEFAULT_SHELL_TEMPLATE : DEFAULT_TEMPLATE;
+    const nextForm = { ...form, agent_provider: provider };
+    setForm(nextForm);
+    if (provider === "shell") {
+      setPreviewFile("job.md");
+    }
+    if (!cwtEdited || inlineContent.trim() === previousTemplate) {
+      setInlineContent(nextTemplate);
+      setCwtEdited(false);
+      if (!isNew && form.folder_path) {
+        invoke("write_cwt_entry", {
+          folderPath: form.folder_path,
+          jobName: form.job_name ?? "default",
+          content: nextTemplate,
+        }).catch(() => {});
+      }
     }
   };
 
@@ -619,12 +651,14 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             >
               job.md
             </button>
-            <button
-              className={`directions-tab ${previewFile === "context.md" ? "active" : ""}`}
-              onClick={() => setPreviewFile("context.md")}
-            >
-              context.md
-            </button>
+            {!isShellJob && (
+              <button
+                className={`directions-tab ${previewFile === "context.md" ? "active" : ""}`}
+                onClick={() => setPreviewFile("context.md")}
+              >
+                context.md
+              </button>
+            )}
             {isNew && importableJobs.length > 0 && (
               <div style={{ position: "relative", marginLeft: "auto" }}>
                 <button
@@ -676,14 +710,21 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             )}
           </div>
           {previewFile === "job.md" ? (
-            <HighlightedTextarea
-              textareaRef={editorRef}
-              wrapClassName={dragOver ? "drag-over" : ""}
-              value={inlineContent}
-              onChange={(e) => handleInlineChange(e.target.value)}
-              spellCheck={false}
-              placeholder=""
-            />
+            <>
+              {isShellJob && (
+                <span className="hint" style={{ display: "block", marginBottom: 8 }}>
+                  Shell jobs run job.md as a shell command from the working directory, for example `sh run.sh`.
+                </span>
+              )}
+              <HighlightedTextarea
+                textareaRef={editorRef}
+                wrapClassName={dragOver ? "drag-over" : ""}
+                value={inlineContent}
+                onChange={(e) => handleInlineChange(e.target.value)}
+                spellCheck={false}
+                placeholder=""
+              />
+            </>
           ) : (
             <HighlightedTextarea
               value={jobCwtContent || "(no context.md)"}
@@ -1056,7 +1097,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     <>
       {(form.job_type === "claude" || form.job_type === "job") && (
         <>
-          {renderProviderField()}
           <div className="form-group">
             <label>Tmux Session</label>
             <input
@@ -1077,7 +1117,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const renderConfigFields = () => (
     <>
-      {form.job_type === "job" && (
+      {form.job_type === "job" && !isShellJob && (
         <>
           <div className="form-group">
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -1156,6 +1196,12 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           />
         </div>
       )}
+    </>
+  );
+
+  const renderAgentFields = () => (
+    <>
+      {renderProviderField()}
     </>
   );
 
@@ -1271,7 +1317,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const renderAdvancedFields = () => (
     <>
-      {form.job_type === "job" && (
+      {form.job_type === "job" && !isShellJob && (
         <>
           <div className="form-group">
             <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -1310,8 +1356,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           </div>
         </>
       )}
-
-      {(form.job_type === "claude" || form.job_type === "job") && renderProviderField()}
 
       <div className="form-group">
         <label>Tmux Session</label>
@@ -1354,15 +1398,10 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
     return (
       <div className="form-group">
-        <label>Provider</label>
+        <label>Agent</label>
         <select
           value={currentProvider ?? ""}
-          onChange={(e) =>
-            setForm({
-              ...form,
-              agent_provider: (e.target.value || null) as ProcessProvider | null,
-            })
-          }
+          onChange={(e) => handleProviderChange((e.target.value || null) as ProcessProvider | null)}
         >
           <option value="">Claude Code (default)</option>
           {providers.map((provider) => (
@@ -1372,7 +1411,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           ))}
         </select>
         <span className="hint">
-          Leave unset to run this job with Claude Code. Pick another provider here to override it for this job.
+          Pick which agent runs this job. Shell runs job.md as a command, so parameters still work as command placeholders.
         </span>
       </div>
     );
@@ -1449,13 +1488,19 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                 {renderScheduleFields()}
               </CollapsibleFieldGroup>
 
+              <CollapsibleFieldGroup title="Agent" expanded={agentExpanded} onToggle={() => setAgentExpanded(!agentExpanded)}>
+                {renderAgentFields()}
+              </CollapsibleFieldGroup>
+
               <CollapsibleFieldGroup title="Secrets" expanded={secretsExpanded} onToggle={() => setSecretsExpanded(!secretsExpanded)}>
                 {renderSecretsFields()}
               </CollapsibleFieldGroup>
 
-              <CollapsibleFieldGroup title="Skills" expanded={skillsExpanded} onToggle={() => setSkillsExpanded(!skillsExpanded)}>
-                {renderSkillsFields()}
-              </CollapsibleFieldGroup>
+              {!isShellJob && (
+                <CollapsibleFieldGroup title="Skills" expanded={skillsExpanded} onToggle={() => setSkillsExpanded(!skillsExpanded)}>
+                  {renderSkillsFields()}
+                </CollapsibleFieldGroup>
+              )}
 
               <CollapsibleFieldGroup title="Notifications" expanded={telegramExpanded} onToggle={() => setTelegramExpanded(!telegramExpanded)}>
                 {renderNotificationFields()}
@@ -1616,13 +1661,21 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         {renderScheduleFields()}
       </FieldGroup>
 
+      {(form.job_type === "claude" || form.job_type === "job") && (
+        <FieldGroup title="Agent">
+          {renderAgentFields()}
+        </FieldGroup>
+      )}
+
       <FieldGroup title="Secrets">
         {renderSecretsFields()}
       </FieldGroup>
 
-      <FieldGroup title="Skills">
-        {renderSkillsFields()}
-      </FieldGroup>
+      {!isShellJob && (
+        <FieldGroup title="Skills">
+          {renderSkillsFields()}
+        </FieldGroup>
+      )}
 
       <FieldGroup title="Config">
         {renderConfigFields()}

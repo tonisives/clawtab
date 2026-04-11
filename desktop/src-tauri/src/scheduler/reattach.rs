@@ -265,3 +265,62 @@ pub fn reattach_running_jobs(
         let _ = app_handle.emit("jobs-changed", ());
     }
 }
+
+/// Kill leftover plain-shell windows from previous sessions.
+///
+/// Windows named `clawtab-shell-*` (created by `split_pane_plain`) and
+/// `ct-clawtab-shell-*` (created by process demotion) are tracked only in
+/// React state — after an app restart the app has no record of them, so any
+/// that survive in tmux are orphans by definition.
+pub fn cleanup_orphaned_shell_windows() {
+    if !tmux::is_available() {
+        return;
+    }
+
+    let sessions = match tmux::list_sessions() {
+        Ok(s) => s,
+        Err(e) => {
+            log::debug!("cleanup_orphaned_shell_windows: list_sessions failed: {}", e);
+            return;
+        }
+    };
+
+    let mut killed = 0usize;
+    for session in &sessions {
+        let windows = match tmux::list_windows(session) {
+            Ok(w) => w,
+            Err(e) => {
+                log::debug!(
+                    "cleanup_orphaned_shell_windows: list_windows({}) failed: {}",
+                    session,
+                    e
+                );
+                continue;
+            }
+        };
+        for w in windows {
+            if w.name.starts_with("clawtab-shell-") || w.name.starts_with("ct-clawtab-shell-") {
+                match tmux::kill_window(session, &w.name) {
+                    Ok(_) => {
+                        killed += 1;
+                        log::info!(
+                            "cleanup_orphaned_shell_windows: killed {}:{}",
+                            session,
+                            w.name
+                        );
+                    }
+                    Err(e) => log::debug!(
+                        "cleanup_orphaned_shell_windows: kill {}:{} failed: {}",
+                        session,
+                        w.name,
+                        e
+                    ),
+                }
+            }
+        }
+    }
+
+    if killed > 0 {
+        log::info!("cleanup_orphaned_shell_windows: killed {} orphan(s)", killed);
+    }
+}

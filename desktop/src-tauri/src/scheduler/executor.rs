@@ -574,7 +574,11 @@ async fn execute_claude_job(
             )
         }
         crate::agent_session::ProcessProvider::Shell => {
-            format!("cd {} && {}", work_dir, escaped_prompt)
+            if escaped_prompt.is_empty() {
+                format!("cd {}", work_dir)
+            } else {
+                format!("cd {} && {}", work_dir, escaped_prompt)
+            }
         }
     };
 
@@ -654,40 +658,6 @@ async fn execute_folder_job(
     // Replace {key} placeholders with param values
     let raw_prompt = apply_params(raw_prompt, params);
 
-    // Build prompt: shared context, then per-job context, then skills, then per-job instructions
-    // All context is inlined from central config, not referenced via @.cwt/ paths
-    let shared_context = crate::config::jobs::central_project_context_path(&job.slug)
-        .and_then(|p| std::fs::read_to_string(&p).ok())
-        .unwrap_or_default();
-    let job_context = crate::config::jobs::central_job_context_path(&job.slug)
-        .and_then(|p| std::fs::read_to_string(&p).ok())
-        .unwrap_or_default();
-
-    let skill_refs = job
-        .skill_paths
-        .iter()
-        .map(|p| format!("@{}", p))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let skill_part = if skill_refs.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", skill_refs)
-    };
-
-    let mut prompt_parts = Vec::new();
-    if !shared_context.is_empty() {
-        prompt_parts.push(shared_context);
-    }
-    if !job_context.is_empty() {
-        prompt_parts.push(job_context);
-    }
-    if !skill_part.is_empty() {
-        prompt_parts.push(skill_part.trim().to_string());
-    }
-    prompt_parts.push(raw_prompt);
-    let prompt_content = prompt_parts.join("\n\n");
-
     let (provider, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
         let provider = job
@@ -704,6 +674,43 @@ async fn execute_folder_job(
             crate::agent_session::ProcessProvider::Shell => String::new(),
         };
         (provider, session, folder_path.clone(), command)
+    };
+
+    let prompt_content = if provider == crate::agent_session::ProcessProvider::Shell {
+        raw_prompt
+    } else {
+        // Build prompt: shared context, then per-job context, then skills, then per-job instructions.
+        let shared_context = crate::config::jobs::central_project_context_path(&job.slug)
+            .and_then(|p| std::fs::read_to_string(&p).ok())
+            .unwrap_or_default();
+        let job_context = crate::config::jobs::central_job_context_path(&job.slug)
+            .and_then(|p| std::fs::read_to_string(&p).ok())
+            .unwrap_or_default();
+
+        let skill_refs = job
+            .skill_paths
+            .iter()
+            .map(|p| format!("@{}", p))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let skill_part = if skill_refs.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", skill_refs)
+        };
+
+        let mut prompt_parts = Vec::new();
+        if !shared_context.is_empty() {
+            prompt_parts.push(shared_context);
+        }
+        if !job_context.is_empty() {
+            prompt_parts.push(job_context);
+        }
+        if !skill_part.is_empty() {
+            prompt_parts.push(skill_part.trim().to_string());
+        }
+        prompt_parts.push(raw_prompt);
+        prompt_parts.join("\n\n")
     };
 
     let env_vars = collect_env_vars(job, secrets, settings);
@@ -736,7 +743,11 @@ async fn execute_folder_job(
             )
         }
         crate::agent_session::ProcessProvider::Shell => {
-            format!("cd {} && {}", work_dir, escaped_prompt)
+            if escaped_prompt.is_empty() {
+                format!("cd {}", work_dir)
+            } else {
+                format!("cd {} && {}", work_dir, escaped_prompt)
+            }
         }
     };
 

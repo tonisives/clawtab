@@ -68,6 +68,7 @@ export type { XtermLogHandle } from "./components/XtermLog";
 export { ReadOnlyXterm } from "./components/ReadOnlyXterm";
 export { ShareSection } from "./components/ShareSection";
 export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
+export { PopupMenu } from "./components/PopupMenu";
 export { SplitDetailArea } from "./components/SplitDetailArea";
 export type { SplitDetailAreaProps } from "./components/SplitDetailArea";
 export { DropZoneOverlay, computeDropZone } from "./components/DropZoneOverlay";

@@ -65,7 +65,8 @@ export function GroupAgentRow({
   );
 
   const runWithProvider = async (overrideProvider?: ProcessProvider) => {
-    if (!prompt.trim()) return;
+    const resolvedProvider = overrideProvider ?? provider;
+    if (resolvedProvider !== "shell" && !prompt.trim()) return;
     if (sendingRef.current) return;
     sendingRef.current = true;
     const nextPrompt = prompt.trim();
@@ -189,7 +190,11 @@ export function GroupAgentRow({
               paddingVertical: 6,
               paddingBottom: useWebTextarea ? 18 : 6,
               lineHeight: LINE_HEIGHT,
-              ...(manualExpandedHeight ? { height: Math.max(manualExpandedHeight, ACTIONS_COL_HEIGHT) } : {}),
+              ...(manualExpandedHeight
+                ? { height: Math.max(manualExpandedHeight, ACTIONS_COL_HEIGHT) }
+                : useWebTextarea
+                  ? { height: expandedHeight }
+                  : {}),
               ...(useWebTextarea
                 ? ({ outlineStyle: "none" } as any)
                 : {}),
@@ -233,9 +238,9 @@ export function GroupAgentRow({
           )}
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.btn, (!prompt.trim() || sending) && styles.btnDisabled]}
+          style={[styles.btn, ((provider !== "shell" && !prompt.trim()) || sending) && styles.btnDisabled]}
           onPress={() => { void runWithProvider(); }}
-          disabled={!prompt.trim() || sending}
+          disabled={(provider !== "shell" && !prompt.trim()) || sending}
           activeOpacity={0.7}
         >
           <View style={styles.btnIcon}>

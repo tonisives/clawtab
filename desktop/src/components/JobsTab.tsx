@@ -29,15 +29,15 @@ import type { AppSettings, Job } from "../types";
 import { JobEditor } from "./JobEditor";
 import { SamplePicker } from "./SamplePicker";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { DetectedProcessDetail } from "./DetectedProcessDetail";
 import { DesktopJobDetail, AgentDetail } from "./JobDetailSections";
 import { ParamsOverlay } from "./ParamsOverlay";
 import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, DraggableShellCard, DraggableSplitPane, type DragData } from "./DraggableCards";
 import { SkillSearchDialog } from "./SkillSearchDialog";
 import { InjectSecretsDialog } from "./InjectSecretsDialog";
-import { ShellPaneDetail } from "./ShellPaneDetail";
 import { EditTextDialog } from "./EditTextDialog";
+import { EmptyDetailAgent } from "./EmptyDetailAgent";
 import { requestXtermPaneFocus } from "./XtermPane";
+import { TmuxPaneDetail } from "./TmuxPaneDetail";
 import { useQuestionPolling } from "../hooks/useQuestionPolling";
 import { useAutoYes } from "../hooks/useAutoYes";
 import { useImportJob } from "../hooks/useImportJob";
@@ -473,9 +473,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   useEffect(() => {
     if (!viewingShell) return;
     const fresh = shellPanes.find((p) => p.pane_id === viewingShell.pane_id);
-    if (!fresh) setViewingShell(null);
+    if (!fresh) {
+      if (core.processes.some((p) => p.pane_id === viewingShell.pane_id)) return;
+      setViewingShell(null);
+    }
     else if (fresh !== viewingShell) setViewingShell(fresh);
-  }, [shellPanes, viewingShell]);
+  }, [core.processes, shellPanes, viewingShell]);
 
   useEffect(() => {
     const previous = previousProcessesRef.current;
@@ -1551,20 +1554,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       demotedShellPaneIdsRef.current.delete(paneId);
     }
     setShellPanes((prev) => prev.filter((s) => !promotedIds.has(s.pane_id)));
-    for (const shell of promoted) {
-      split.replaceContent(
-        { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
-        { kind: "process", paneId: shell.pane_id },
-      );
-    }
-    if (viewingShell && promotedIds.has(viewingShell.pane_id)) {
-      const proc = core.processes.find((p) => p.pane_id === viewingShell.pane_id);
-      if (proc) {
-        setViewingShell(null);
-        setViewingProcess(proc);
-      }
-    }
-  }, [core.processes, currentContent, shellPanes, split.focusedLeafId, split.replaceContent, split.tree, viewingShell]);
+  }, [core.processes, currentContent, shellPanes, split.focusedLeafId, split.tree]);
 
   // Helper: build DesktopJobDetail pane action props
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
@@ -1663,15 +1653,55 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
 
     if (content.kind === "terminal") {
+      const proc = core.processes.find((p) => p.pane_id === content.paneId);
       const shell = shellPanes.find((p) => p.pane_id === content.paneId);
-      if (!shell) {
-        return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Shell pane not found</span></div>;
+      if (!shell && !proc) {
+        return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Tmux pane not found</span></div>;
       }
+      if (proc) {
+        return (
+          <DraggableSplitPane leafId={leafId} content={content}>
+            {(dragHandleProps) => (
+              <TmuxPaneDetail
+                target={{ kind: "process", process: proc }}
+                questions={questions}
+                onBack={() => split.handleClosePane(leafId)}
+                onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
+                autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
+                onToggleAutoYes={() => {
+                  const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
+                  if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
+                  else autoYes.handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
+                }}
+                showBackButton={!isWide} hidePath
+                onStopped={() => {
+                  setStoppingProcesses((prev) => {
+                    if (prev.some((sp) => sp.process.pane_id === proc.pane_id)) return prev;
+                    return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
+                  });
+                  core.requestFastPoll(`pane:${proc.pane_id}`);
+                  split.handleClosePane(leafId);
+                }}
+                onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
+                onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
+                onZoomPane={() => split.toggleZoomLeaf(leafId)}
+                onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
+                onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
+                contentStyle={trafficLightInsetStyle}
+                titlePath={buildProcessTitlePath(proc)}
+                displayNameOverride={processRenameDrafts[proc.pane_id] ?? null}
+                dragHandleProps={dragHandleProps}
+              />
+            )}
+          </DraggableSplitPane>
+        );
+      }
+      if (!shell) return null;
       return (
         <DraggableSplitPane leafId={leafId} content={content}>
           {(dragHandleProps) => (
-            <ShellPaneDetail
-              shell={shell}
+            <TmuxPaneDetail
+              target={{ kind: "shell", shell }}
               onBack={() => split.handleClosePane(leafId)}
               showBackButton={!isWide}
               hidePath
@@ -1708,8 +1738,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       return (
         <DraggableSplitPane leafId={leafId} content={content}>
           {(dragHandleProps) => (
-            <DetectedProcessDetail
-              process={proc} questions={questions}
+            <TmuxPaneDetail
+              target={{ kind: "process", process: proc }}
+              questions={questions}
               onBack={() => split.handleClosePane(leafId)}
               onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
               autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
@@ -1926,8 +1957,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         );
       }
       return (
-          <DetectedProcessDetail
-            process={singleProcess} questions={questions}
+          <TmuxPaneDetail
+            target={{ kind: "process", process: singleProcess }}
+            questions={questions}
             onBack={() => setViewingProcess(null)}
             onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
             autoYesActive={autoYes.autoYesPaneIds.has(singleProcess.pane_id)}
@@ -1958,17 +1990,52 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
 
     if (content.kind === "terminal") {
+      const singleProcess = core.processes.find((p) => p.pane_id === content.paneId);
       const singleShell = shellPanes.find((p) => p.pane_id === content.paneId);
-      if (!singleShell) {
+      if (!singleShell && !singleProcess) {
         return (
           <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Shell pane not found</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Tmux pane not found</span>
           </div>
         );
       }
+      if (singleProcess) {
+        return (
+          <TmuxPaneDetail
+            target={{ kind: "process", process: singleProcess }}
+            questions={questions}
+            onBack={() => setViewingProcess(null)}
+            onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
+            autoYesActive={autoYes.autoYesPaneIds.has(singleProcess.pane_id)}
+            onToggleAutoYes={() => {
+              const paneQuestion = questions.find((q) => q.pane_id === singleProcess.pane_id);
+              if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
+              else autoYes.handleToggleAutoYesByPaneId(singleProcess.pane_id, singleProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
+            }}
+            showBackButton={!isWide} hidePath
+            onStopped={() => {
+              setStoppingProcesses((prev) => {
+                if (prev.some((sp) => sp.process.pane_id === singleProcess.pane_id)) return prev;
+                return [...prev, { process: { ...singleProcess, _transient_state: "stopping" }, stoppedAt: Date.now() }];
+              });
+              core.requestFastPoll(`pane:${singleProcess.pane_id}`);
+              selectAdjacentItem(singleProcess.pane_id);
+            }}
+            onFork={(direction: "right" | "down") => handleFork(singleProcess.pane_id, direction)}
+            onSplitPane={(direction: "right" | "down") => handleSplitPane(singleProcess.pane_id, direction)}
+            onZoomPane={() => split.toggleZoomLeaf("")}
+            onInjectSecrets={() => setInjectSecretsPaneId(singleProcess.pane_id)}
+            onSearchSkills={() => setSkillSearchPaneId(singleProcess.pane_id)}
+            contentStyle={trafficLightInsetStyle}
+            titlePath={buildProcessTitlePath(singleProcess)}
+            displayNameOverride={processRenameDrafts[singleProcess.pane_id] ?? null}
+          />
+        );
+      }
+      if (!singleShell) return null;
       return (
-        <ShellPaneDetail
-          shell={singleShell}
+        <TmuxPaneDetail
+          target={{ kind: "shell", shell: singleShell }}
           onBack={() => setViewingShell(null)}
           showBackButton={!isWide}
           hidePath
@@ -2025,11 +2092,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
 
     return (
-      <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Select a job to view details</span>
-      </div>
+      <EmptyDetailAgent
+        onRunAgent={handleRunAgent}
+        getAgentProviders={handleGetAgentProviders}
+        defaultProvider={defaultProvider}
+      />
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider]);
 
   const detailPane = currentContent ? (
     <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
@@ -2082,9 +2151,11 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       )}
     </div>
   ) : (
-    <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Select a job to view details</span>
-    </div>
+    <EmptyDetailAgent
+      onRunAgent={handleRunAgent}
+      getAgentProviders={handleGetAgentProviders}
+      defaultProvider={defaultProvider}
+    />
   );
 
   const dialogs = (

@@ -1082,16 +1082,22 @@ pub fn regenerate_all_cwt_contexts(settings: &AppSettings, jobs: &[Job]) {
         match job.job_type {
             crate::config::jobs::JobType::Job => {
                 if let Some(ref folder_path) = job.folder_path {
-                    let content = generate_cwt_context(job, settings);
                     // Write context.md to central: ~/.config/clawtab/jobs/{slug}/context.md
                     if let Some(context_path) =
                         crate::config::jobs::central_job_context_path(&job.slug)
                     {
-                        if let Some(parent) = context_path.parent() {
-                            let _ = std::fs::create_dir_all(parent);
-                        }
-                        if let Err(e) = std::fs::write(&context_path, content) {
-                            log::warn!("Failed to write context.md for '{}': {}", job.name, e);
+                        if job.agent_provider == Some(ProcessProvider::Shell) {
+                            if context_path.exists() {
+                                let _ = std::fs::remove_file(&context_path);
+                            }
+                        } else {
+                            let content = generate_cwt_context(job, settings);
+                            if let Some(parent) = context_path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            if let Err(e) = std::fs::write(&context_path, content) {
+                                log::warn!("Failed to write context.md for '{}': {}", job.name, e);
+                            }
                         }
                     }
 
@@ -1218,18 +1224,6 @@ fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
     if job.kill_on_end {
         out.push_str("- When your task is fully complete and you need no further input, terminate your own process by running: `kill $PPID`\n");
     }
-
-    out.push_str("\n## Job Management CLI\n\n");
-    out.push_str("`cwtctl` is available for managing ClawTab jobs:\n\n");
-    out.push_str("```\n");
-    out.push_str("cwtctl ping           # Check if ClawTab daemon is running\n");
-    out.push_str("cwtctl list           # List all configured jobs\n");
-    out.push_str("cwtctl status         # Show status of all jobs\n");
-    out.push_str("cwtctl run <name>     # Run a job immediately\n");
-    out.push_str("cwtctl pause <name>   # Pause a running job\n");
-    out.push_str("cwtctl resume <name>  # Resume a paused job\n");
-    out.push_str("cwtctl restart <name> # Restart a job\n");
-    out.push_str("```\n");
 
     // Env vars section: only if any secrets configured
     if !job.secret_keys.is_empty() {

@@ -385,6 +385,19 @@ pub fn kill_pane(pane_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Kill a tmux window by session and window name.
+pub fn kill_window(session: &str, window: &str) -> Result<(), String> {
+    let target = format!("{}:{}", session, window);
+    let output = run(&["kill-window", "-t", &target], "tmux::kill_window")
+        .map_err(|e| format!("Failed to kill window: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
     let output = run(&["select-window", "-t", &target], "tmux::focus_window")

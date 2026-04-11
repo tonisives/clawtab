@@ -665,8 +665,9 @@ export function JobListView({
 
   const renderProcessItem = (item: Extract<ListItem, { kind: "process" }>, key: string, index: number) => {
     const pressHandler = onSelectProcess ? () => onSelectProcess(item.process) : undefined;
-    const rawColor = selectedItems?.get(item.process.pane_id);
-    const isFocused = !focusedItemKey || focusedItemKey === item.process.pane_id;
+    const terminalKey = `_term_${item.process.pane_id}`;
+    const rawColor = selectedItems?.get(item.process.pane_id) ?? selectedItems?.get(terminalKey);
+    const isFocused = !focusedItemKey || focusedItemKey === item.process.pane_id || focusedItemKey === terminalKey;
     const isSelected: boolean | string = rawColor
       ? (isFocused ? rawColor : rawColor + "66")
       : (selectedSlug === item.process.pane_id);

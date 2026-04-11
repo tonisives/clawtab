@@ -946,6 +946,7 @@ pub fn run() {
                     &relay_for_reattach,
                     &auto_yes_for_reattach,
                 );
+                scheduler::reattach::cleanup_orphaned_shell_windows();
             });
 
             // Start relay connection if configured
