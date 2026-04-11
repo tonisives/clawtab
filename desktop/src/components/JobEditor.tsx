@@ -218,7 +218,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [telegramExpanded, setTelegramExpanded] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
-  const [agentExpanded, setAgentExpanded] = useState(true);
 
   // Inline editor state
   const [inlineContent, setInlineContent] = useState("");
@@ -1470,6 +1469,11 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                   <FieldGroup title="Identity">
                     {renderIdentityFields()}
                   </FieldGroup>
+                  {(form.job_type === "claude" || form.job_type === "job") && (
+                    <FieldGroup title="Agent">
+                      {renderAgentFields()}
+                    </FieldGroup>
+                  )}
                 </div>
                 {form.folder_path && (
                   <div className="wizard-directions-col">
@@ -1486,10 +1490,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
             <div className="wizard-center">
               <CollapsibleFieldGroup title="Schedule" expanded={scheduleExpanded} onToggle={() => setScheduleExpanded(!scheduleExpanded)}>
                 {renderScheduleFields()}
-              </CollapsibleFieldGroup>
-
-              <CollapsibleFieldGroup title="Agent" expanded={agentExpanded} onToggle={() => setAgentExpanded(!agentExpanded)}>
-                {renderAgentFields()}
               </CollapsibleFieldGroup>
 
               <CollapsibleFieldGroup title="Secrets" expanded={secretsExpanded} onToggle={() => setSecretsExpanded(!secretsExpanded)}>
@@ -1650,6 +1650,12 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         {renderIdentityFields()}
       </FieldGroup>
 
+      {(form.job_type === "claude" || form.job_type === "job") && (
+        <FieldGroup title="Agent">
+          {renderAgentFields()}
+        </FieldGroup>
+      )}
+
       {form.job_type === "job" && form.folder_path && (
         <FieldGroup title="Directions">
           {renderDirectionsFields()}
@@ -1660,12 +1666,6 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       <FieldGroup title="Schedule">
         {renderScheduleFields()}
       </FieldGroup>
-
-      {(form.job_type === "claude" || form.job_type === "job") && (
-        <FieldGroup title="Agent">
-          {renderAgentFields()}
-        </FieldGroup>
-      )}
 
       <FieldGroup title="Secrets">
         {renderSecretsFields()}

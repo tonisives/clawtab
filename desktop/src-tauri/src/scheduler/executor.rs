@@ -554,12 +554,9 @@ async fn execute_claude_job(
         tmux::create_session(&tmux_session)?;
     }
 
-    // Create window if it doesn't exist; track whether we just created it
-    let created_window_pane_id = if !tmux::window_exists(&tmux_session, &window_name) {
-        Some(tmux::create_window(&tmux_session, &window_name, &env_vars)?)
-    } else {
-        None
-    };
+    // Every spawn gets its own window — clawtab needs independent geometry
+    // per tab, which tmux splits can't give us.
+    let pane_id = tmux::create_window(&tmux_session, &window_name, &env_vars)?;
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
@@ -582,16 +579,7 @@ async fn execute_claude_job(
         }
     };
 
-    // If the window already existed, always split a new pane (other jobs may occupy it).
-    // If we just created it, use the initial pane.
-    let pane_id = if let Some(pane_id) = created_window_pane_id {
-        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
-        pane_id
-    } else {
-        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
-        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
-        pane_id
-    };
+    tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
 
     // Tag pane with job slug so reattach can identify it
     if let Err(e) = tmux::set_pane_title(&pane_id, &job.slug) {
@@ -724,11 +712,8 @@ async fn execute_folder_job(
         tmux::create_session(&tmux_session)?;
     }
 
-    let created_window_pane_id = if !tmux::window_exists(&tmux_session, &window_name) {
-        Some(tmux::create_window(&tmux_session, &window_name, &env_vars)?)
-    } else {
-        None
-    };
+    // Every spawn gets its own window (see execute_claude_job).
+    let pane_id = tmux::create_window(&tmux_session, &window_name, &env_vars)?;
 
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
@@ -751,16 +736,7 @@ async fn execute_folder_job(
         }
     };
 
-    // If the window already existed, always split a new pane (other jobs may occupy it).
-    // If we just created it, use the initial pane.
-    let pane_id = if let Some(pane_id) = created_window_pane_id {
-        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
-        pane_id
-    } else {
-        let pane_id = tmux::split_pane(&tmux_session, &window_name, &env_vars)?;
-        tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
-        pane_id
-    };
+    tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
 
     // Tag pane with job slug so reattach can identify it
     if let Err(e) = tmux::set_pane_title(&pane_id, &job.slug) {
@@ -840,15 +816,21 @@ fn collect_env_vars(
     vars
 }
 
-/// Extract the project prefix from a job's slug to use as the tmux window name.
-/// For slug "myapp/deploy", returns "cwt-myapp".
-/// Falls back to "cwt-{job.name}" if the slug has no '/'.
+/// Generate a unique tmux window name for a single agent spawn.
+///
+/// Each spawn gets its own window so clawtab can resize it independently —
+/// splits in a shared window force all panes to the same geometry, which
+/// breaks per-tab sizing in the viewer.
 fn project_window_name(job: &Job) -> String {
     let project = match job.slug.split_once('/') {
         Some((prefix, _)) if !prefix.is_empty() => prefix,
         _ => &job.name,
     };
-    format!("cwt-{}", project)
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!("cwt-{}-{}", project, suffix)
 }
 
 /// Send telegram notification, routing to per-job chat_id if set.

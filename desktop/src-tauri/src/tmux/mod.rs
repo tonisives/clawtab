@@ -166,38 +166,6 @@ pub fn set_pane_title(pane_id: &str, title: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Split a window to create a new pane, returning the new pane ID (e.g. "%42").
-pub fn split_pane(
-    session: &str,
-    window: &str,
-    env_vars: &[(String, String)],
-) -> Result<String, String> {
-    let target = format!("{}:{}", session, window);
-    let mut args = vec![
-        "split-window".to_string(),
-        "-t".to_string(),
-        target,
-        "-P".to_string(),
-        "-F".to_string(),
-        "#{pane_id}".to_string(),
-    ];
-    for (k, v) in env_vars {
-        args.push("-e".to_string());
-        args.push(format!("{}={}", k, v));
-    }
-
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let output =
-        run(&arg_refs, "tmux::split_pane").map_err(|e| format!("Failed to split pane: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("tmux error: {}", stderr.trim()));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
 /// Send keys to a specific pane by its ID (e.g. "%42").
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<(), String> {

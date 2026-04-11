@@ -289,15 +289,13 @@ fn cleanup_orphaned_ct_windows() {
         if !window_name.starts_with("ct-") {
             continue;
         }
-        // list-panes -a reports the same window under every session group
-        // member; only act once per window_id.
-        if !seen_windows.insert(window_id.to_string()) {
+        // Skip group-member duplicates: list-panes -a reports the same window
+        // under every session group member, and we want to act on it under
+        // its real (non-view) session.
+        if is_view_session(session) {
             continue;
         }
-        // Skip session-group duplicates: only touch the window from its
-        // "real" session (a view session will also list it, we'd just be
-        // killing it through a soon-to-be-dead session name).
-        if is_view_session(session) {
+        if !seen_windows.insert(window_id.to_string()) {
             continue;
         }
 
