@@ -42,15 +42,12 @@ export function GroupAgentRow({
 }) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [manualExpandedHeight, setManualExpandedHeight] = useState<number | null>(null);
   const inputRef = useRef<TextInput>(null);
-  const hadFocusRef = useRef(false);
   const providerButtonRef = useRef<any>(null);
-  // Expand only once the user inserts a newline (Enter key).
-  const expanded = prompt.includes("\n");
-  const useWebTextarea = Platform.OS === "web";
   const providerOptions = useMemo(() => {
     const seen = new Set<ProcessProvider>();
     return providers.filter((entry) => {
@@ -60,51 +57,29 @@ export function GroupAgentRow({
     });
   }, [providers]);
 
-  // When the input mode swaps (single-line <-> multiline), focus is lost on web
-  // because the underlying DOM element changes. Refocus if this editor was active.
-  useEffect(() => {
-    if (Platform.OS !== "web") return;
-    if (!hadFocusRef.current) return;
-    const node = inputRef.current as unknown as HTMLInputElement | HTMLTextAreaElement | null;
-    if (!node) return;
-    if (document.activeElement === node) return;
-    node.focus();
-    const len = prompt.length;
-    try { node.setSelectionRange(len, len); } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
-  // Grow purely from the line count so there is no remeasure race.
+  const useWebTextarea = Platform.OS === "web";
   const lineCount = prompt.split("\n").length;
   const expandedHeight = Math.min(
     Math.max(lineCount, 1) * LINE_HEIGHT + VERTICAL_PADDING,
     EXPANDED_MAX_HEIGHT,
   );
 
-  useEffect(() => {
-    if (!expanded) setManualExpandedHeight(null);
-  }, [expanded]);
-
   const runWithProvider = async (overrideProvider?: ProcessProvider) => {
-    if (!prompt.trim() || sending) return;
+    if (!prompt.trim()) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     const nextPrompt = prompt.trim();
     setSending(true);
     try {
       await onRunAgent(nextPrompt, overrideProvider ?? provider);
       setPrompt("");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
 
-  const cycleProvider = (direction: 1 | -1) => {
-    if (providerOptions.length <= 1) return;
-    const currentIndex = Math.max(providerOptions.indexOf(provider), 0);
-    const nextIndex = (currentIndex + direction + providerOptions.length) % providerOptions.length;
-    onProviderChange?.(providerOptions[nextIndex]);
-    setProviderMenuOpen(false);
-  };
-
-  const setInputRef = (node: TextInput | null) => {
+  const setInputRef = useCallback((node: TextInput | null) => {
     inputRef.current = node;
     if (Platform.OS !== "web" || !node) return;
     const el = node as unknown as HTMLElement;
@@ -112,7 +87,7 @@ export function GroupAgentRow({
       (el as HTMLTextAreaElement).style.resize = "none";
       (el as HTMLTextAreaElement).style.overflow = "auto";
     }
-  };
+  }, []);
 
   const handleResizeGripMouseDown = useCallback((e: ReactMouseEvent<HTMLElement>) => {
     e.preventDefault();
@@ -132,6 +107,15 @@ export function GroupAgentRow({
     document.addEventListener("mouseup", onUp);
   }, [expandedHeight]);
 
+  const runWithProviderRef = useRef(runWithProvider);
+  const providerRef = useRef(provider);
+  const providerOptionsRef = useRef(providerOptions);
+  const onProviderChangeRef = useRef(onProviderChange);
+  useEffect(() => { runWithProviderRef.current = runWithProvider; });
+  useEffect(() => { providerRef.current = provider; }, [provider]);
+  useEffect(() => { providerOptionsRef.current = providerOptions; }, [providerOptions]);
+  useEffect(() => { onProviderChangeRef.current = onProviderChange; }, [onProviderChange]);
+
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const el = inputRef.current as unknown as HTMLElement | null;
@@ -140,7 +124,7 @@ export function GroupAgentRow({
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();
-        void runWithProvider();
+        void runWithProviderRef.current();
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
@@ -152,12 +136,20 @@ export function GroupAgentRow({
       if (e.key === "Tab") {
         e.preventDefault();
         e.stopPropagation();
-        cycleProvider(e.shiftKey ? -1 : 1);
+        const opts = providerOptionsRef.current;
+        if (opts.length <= 1) return;
+        const currentIndex = Math.max(opts.indexOf(providerRef.current), 0);
+        const step = e.shiftKey ? -1 : 1;
+        const nextIndex = (currentIndex + step + opts.length) % opts.length;
+        onProviderChangeRef.current?.(opts[nextIndex]);
+        setProviderMenuOpen(false);
       }
     };
     el.addEventListener("keydown", handler, true);
     return () => el.removeEventListener("keydown", handler, true);
-  });
+    // Refs carry live values; listener must attach exactly once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const lastFocusSignalRef = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -174,12 +166,6 @@ export function GroupAgentRow({
     placeholder: "Run agent in this folder...",
     placeholderTextColor: colors.textMuted,
     inputAccessoryViewID: Platform.OS === "ios" ? "keyboard-dismiss" : undefined,
-    onFocus: () => {
-      hadFocusRef.current = true;
-    },
-    onBlur: () => {
-      hadFocusRef.current = false;
-    },
     editable: !sending,
   };
 

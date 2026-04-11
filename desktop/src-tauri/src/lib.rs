@@ -123,6 +123,15 @@ fn open_debug_window(app: &tauri::AppHandle) {
     }
 }
 
+fn open_pty_debug_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("pty_debug") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    } else {
+        log::warn!("pty_debug window not registered in tauri.conf.json");
+    }
+}
+
 fn find_submenu(menu: &Menu<tauri::Wry>, title: &str) -> Option<Submenu<tauri::Wry>> {
     menu.items().ok()?.into_iter().find_map(|item| {
         item.as_submenu()
@@ -705,6 +714,8 @@ pub fn run() {
             commands::pty::pty_destroy,
             commands::pty::pty_get_cached_output,
             commands::pty::pty_release,
+            commands::pty::list_free_panes,
+            commands::pty::list_captured_panes,
             commands::debug::debug_spawn_list,
             commands::debug::debug_spawn_summary,
             commands::debug::debug_spawn_clear,
@@ -814,12 +825,15 @@ pub fn run() {
                 }
             }
 
-            // Append a Debug entry to the existing View submenu.
+            // Append Debug + PTY Debug entries to the existing View submenu.
             let debug_item =
                 MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
+            let pty_debug_item =
+                MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
             if let Some(view_menu) = find_submenu(&app_menu, "View") {
                 view_menu.append(&PredefinedMenuItem::separator(app)?)?;
                 view_menu.append(&debug_item)?;
+                view_menu.append(&pty_debug_item)?;
             }
 
             app.set_menu(app_menu)?;
@@ -835,6 +849,8 @@ pub fn run() {
                     }
                 } else if event.id.as_ref() == "view_debug" {
                     open_debug_window(app);
+                } else if event.id.as_ref() == "view_pty_debug" {
+                    open_pty_debug_window(app);
                 } else if event.id.as_ref() == MENU_SHORTCUT_RENAME_ACTIVE_PANE {
                     let _ = app.emit("shortcut-action", "rename_active_pane");
                 } else if event.id.as_ref() == MENU_SHORTCUT_FOCUS_AGENT_INPUT {

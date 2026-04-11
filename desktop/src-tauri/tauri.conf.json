@@ -35,6 +35,15 @@
         "visible": false,
         "center": true,
         "title": "ClawTab Debug"
+      },
+      {
+        "label": "pty_debug",
+        "url": "/pty_debug.html",
+        "width": 1200,
+        "height": 800,
+        "visible": false,
+        "center": true,
+        "title": "ClawTab PTY Debug"
       }
     ],
     "security": {
