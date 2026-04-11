@@ -870,10 +870,10 @@ pub fn run() {
                 loop {
                     let zai_token = {
                         let secrets = secrets_for_usage.lock().unwrap();
-                        let explicit = secrets
-                            .get("Z_AI_API_KEY")
-                            .cloned()
-                            .or_else(|| std::env::var("Z_AI_API_KEY").ok());
+                        let explicit = usage::ZAI_TOKEN_KEYS
+                            .iter()
+                            .map(|key| secrets.get(key).cloned())
+                            .collect();
                         usage::resolve_zai_token_from_sources(explicit)
                     };
                     let usage = usage::fetch_usage_snapshot(zai_token).await;

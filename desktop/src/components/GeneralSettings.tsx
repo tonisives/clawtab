@@ -1,20 +1,20 @@
-import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { AppSettings, ProviderUsageSnapshot, UsageSnapshot } from "../types";
-import { ToolsPanel } from "./ToolsPanel";
-import { TelegramPanel } from "./TelegramPanel";
-import { RelayPanel } from "./RelayPanel";
-import { ShortcutsPanel } from "./ShortcutsPanel";
+import { useEffect, useRef, useState } from "react"
+import { invoke } from "@tauri-apps/api/core"
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
+import type { AppSettings, ProviderUsageSnapshot, SecretEntry, UsageSnapshot } from "../types"
+import { ToolsPanel } from "./ToolsPanel"
+import { TelegramPanel } from "./TelegramPanel"
+import { RelayPanel } from "./RelayPanel"
+import { ShortcutsPanel } from "./ShortcutsPanel"
 
-export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts";
+export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts"
 
 interface Props {
-  activeSubTab: SettingsSubTab;
-  onSubTabChange: (tab: SettingsSubTab) => void;
-  externalAccessToken: string | null;
-  externalRefreshToken: string | null;
-  onExternalTokenConsumed: () => void;
+  activeSubTab: SettingsSubTab
+  onSubTabChange: (tab: SettingsSubTab) => void
+  externalAccessToken: string | null
+  externalRefreshToken: string | null
+  onExternalTokenConsumed: () => void
 }
 
 const subTabs: { id: SettingsSubTab; label: string }[] = [
@@ -22,7 +22,7 @@ const subTabs: { id: SettingsSubTab; label: string }[] = [
   { id: "remote", label: "Remote" },
   { id: "telegram", label: "Telegram" },
   { id: "shortcuts", label: "Shortcuts" },
-];
+]
 
 export function GeneralSettings({
   activeSubTab,
@@ -57,105 +57,160 @@ export function GeneralSettings({
         {activeSubTab === "shortcuts" && <ShortcutsPanel />}
       </div>
     </div>
-  );
+  )
 }
 
 function GeneralSettingsContent() {
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [showToolsModal, setShowToolsModal] = useState(false);
-  const toolsOverlayRef = useRef<HTMLDivElement>(null);
-  const [version, setVersion] = useState<string>("");
+  const [settings, setSettings] = useState<AppSettings | null>(null)
+  const [showToolsModal, setShowToolsModal] = useState(false)
+  const toolsOverlayRef = useRef<HTMLDivElement>(null)
+  const [version, setVersion] = useState<string>("")
   const [updateStatus, setUpdateStatus] = useState<
     "idle" | "checking" | "up-to-date" | "installed" | "error"
-  >("idle");
-  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
-  const [lastChecked, setLastChecked] = useState<Date | null>(null);
-  const [usage, setUsage] = useState<UsageSnapshot | null>(null);
-  const [usageLoading, setUsageLoading] = useState(false);
-  const [usageError, setUsageError] = useState<string | null>(null);
+  >("idle")
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null)
+  const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null)
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [usageError, setUsageError] = useState<string | null>(null)
+  const [secretKeys, setSecretKeys] = useState<string[]>([])
+  const [zaiApiKey, setZaiApiKey] = useState("")
+  const [zaiKeySaving, setZaiKeySaving] = useState(false)
+  const [zaiKeyMessage, setZaiKeyMessage] = useState<string | null>(null)
+
+  const hasStoredZaiKey = secretKeys.includes("Z_AI_API_KEY")
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
       .then(setSettings)
-      .catch((e) => console.error("Failed to load settings:", e));
-    invoke<string>("get_version").then(setVersion);
-    void refreshUsage();
-  }, []);
+      .catch((e) => console.error("Failed to load settings:", e))
+    invoke<string>("get_version").then(setVersion)
+    void loadSecretKeys()
+    void refreshUsage()
+  }, [])
+
+  const loadSecretKeys = async () => {
+    try {
+      const secrets = await invoke<SecretEntry[]>("list_secrets")
+      setSecretKeys(secrets.map((secret) => secret.key))
+    } catch (e) {
+      console.error("Failed to load secrets:", e)
+    }
+  }
 
   const refreshUsage = async () => {
-    setUsageLoading(true);
-    setUsageError(null);
+    setUsageLoading(true)
+    setUsageError(null)
     try {
-      const nextUsage = await invoke<UsageSnapshot>("get_usage_snapshot");
-      setUsage(nextUsage);
+      const nextUsage = await invoke<UsageSnapshot>("get_usage_snapshot")
+      setUsage(nextUsage)
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      setUsageError(message);
+      const message = e instanceof Error ? e.message : String(e)
+      setUsageError(message)
     } finally {
-      setUsageLoading(false);
+      setUsageLoading(false)
     }
-  };
+  }
+
+  const saveZaiApiKey = async () => {
+    const value = zaiApiKey.trim()
+    if (!value) {
+      setZaiKeyMessage("Paste a z.ai API key before saving.")
+      return
+    }
+
+    setZaiKeySaving(true)
+    setZaiKeyMessage(null)
+    try {
+      await invoke("set_secret", { key: "Z_AI_API_KEY", value })
+      setZaiApiKey("")
+      await loadSecretKeys()
+      await refreshUsage()
+      setZaiKeyMessage("z.ai API key saved.")
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setZaiKeyMessage(`Failed to save z.ai API key: ${message}`)
+    } finally {
+      setZaiKeySaving(false)
+    }
+  }
+
+  const removeZaiApiKey = async () => {
+    setZaiKeySaving(true)
+    setZaiKeyMessage(null)
+    try {
+      await invoke("delete_secret", { key: "Z_AI_API_KEY" })
+      await loadSecretKeys()
+      await refreshUsage()
+      setZaiKeyMessage("Stored z.ai API key removed.")
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setZaiKeyMessage(`Failed to remove z.ai API key: ${message}`)
+    } finally {
+      setZaiKeySaving(false)
+    }
+  }
 
   const update = async (updates: Partial<AppSettings>) => {
-    if (!settings) return;
-    const newSettings = { ...settings, ...updates };
-    setSettings(newSettings);
+    if (!settings) return
+    const newSettings = { ...settings, ...updates }
+    setSettings(newSettings)
     try {
-      await invoke("set_settings", { newSettings });
+      await invoke("set_settings", { newSettings })
     } catch (e) {
-      console.error("Failed to save settings:", e);
+      console.error("Failed to save settings:", e)
     }
-  };
+  }
 
   const toggleDock = async (visible: boolean) => {
-    await update({ show_in_dock: visible });
+    await update({ show_in_dock: visible })
     try {
-      await invoke("set_dock_visibility", { visible });
+      await invoke("set_dock_visibility", { visible })
     } catch (e) {
-      console.error("Failed to set dock visibility:", e);
+      console.error("Failed to set dock visibility:", e)
     }
-  };
+  }
 
   const toggleTitlebar = async (hidden: boolean) => {
-    await update({ hide_titlebar: hidden });
+    await update({ hide_titlebar: hidden })
     try {
-      await invoke("set_titlebar_visibility", { hidden });
+      await invoke("set_titlebar_visibility", { hidden })
     } catch (e) {
-      console.error("Failed to set titlebar visibility:", e);
+      console.error("Failed to set titlebar visibility:", e)
     }
-  };
+  }
 
   const checkForUpdate = async () => {
-    setUpdateStatus("checking");
+    setUpdateStatus("checking")
     try {
-      const result = await invoke<string | null>("check_for_update");
-      setLastChecked(new Date());
+      const result = await invoke<string | null>("check_for_update")
+      setLastChecked(new Date())
       if (result) {
-        setUpdateVersion(result);
-        setUpdateStatus("installed");
+        setUpdateVersion(result)
+        setUpdateStatus("installed")
       } else {
-        setUpdateStatus("up-to-date");
+        setUpdateStatus("up-to-date")
       }
     } catch (e) {
-      console.error("Update check failed:", e);
-      setUpdateStatus("error");
+      console.error("Update check failed:", e)
+      setUpdateStatus("error")
     }
-  };
+  }
 
   const formatLastChecked = (date: Date): string => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    if (diffSec < 5) return "just now";
-    if (diffSec < 60) return `${diffSec}s ago`;
-    const diffMin = Math.floor(diffSec / 60);
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.floor(diffMin / 60);
-    return `${diffHr}h ago`;
-  };
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffSec = Math.floor(diffMs / 1000)
+    if (diffSec < 5) return "just now"
+    if (diffSec < 60) return `${diffSec}s ago`
+    const diffMin = Math.floor(diffSec / 60)
+    if (diffMin < 60) return `${diffMin}m ago`
+    const diffHr = Math.floor(diffMin / 60)
+    return `${diffHr}h ago`
+  }
 
   if (!settings) {
-    return <div className="loading">Loading settings...</div>;
+    return <div className="loading">Loading settings...</div>
   }
 
   return (
@@ -192,24 +247,16 @@ function GeneralSettingsContent() {
         <span className="field-group-title">About</span>
         <div className="form-group">
           <label>Version</label>
-          <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
-            {version || "..."}
-          </span>
+          <span style={{ fontSize: 13, color: "var(--text-primary)" }}>{version || "..."}</span>
         </div>
         <div className="form-group">
           <label>Updates</label>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              className="btn"
-              disabled={updateStatus === "checking"}
-              onClick={checkForUpdate}
-            >
+            <button className="btn" disabled={updateStatus === "checking"} onClick={checkForUpdate}>
               {updateStatus === "checking" ? "Checking..." : "Check for updates"}
             </button>
             {updateStatus === "up-to-date" && (
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                Up to date
-              </span>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Up to date</span>
             )}
             {updateStatus === "installed" && (
               <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
@@ -224,15 +271,11 @@ function GeneralSettingsContent() {
               </span>
             )}
             {updateStatus === "error" && (
-              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                Check failed
-              </span>
+              <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Check failed</span>
             )}
           </div>
           {lastChecked && (
-            <span className="hint">
-              Last checked: {formatLastChecked(lastChecked)}
-            </span>
+            <span className="hint">Last checked: {formatLastChecked(lastChecked)}</span>
           )}
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
@@ -240,9 +283,7 @@ function GeneralSettingsContent() {
             <input
               type="checkbox"
               checked={settings.auto_update_enabled}
-              onChange={(e) =>
-                update({ auto_update_enabled: e.target.checked })
-              }
+              onChange={(e) => update({ auto_update_enabled: e.target.checked })}
             />
             Automatically check for updates
           </label>
@@ -253,12 +294,12 @@ function GeneralSettingsContent() {
         <span className="field-group-title">Usage</span>
         <div className="form-group">
           <label>Provider Usage</label>
+          <p className="section-description usage-description">
+            Claude and Codex use their local CLIs. OpenCode uses local usage data. z.ai uses a
+            stored API key, an environment token, or OpenCode auth when available.
+          </p>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <button
-              className="btn"
-              disabled={usageLoading}
-              onClick={() => void refreshUsage()}
-            >
+            <button className="btn" disabled={usageLoading} onClick={() => void refreshUsage()}>
               {usageLoading ? "Refreshing..." : "Refresh usage"}
             </button>
             {usage?.refreshed_at && (
@@ -267,16 +308,53 @@ function GeneralSettingsContent() {
               </span>
             )}
           </div>
-          {usageError && (
-            <span className="hint">Failed to load usage: {usageError}</span>
-          )}
+          {usageError && <span className="hint">Failed to load usage: {usageError}</span>}
           <div className="usage-grid">
             {usage ? (
               <>
                 <UsageCard title="Claude" usage={usage.claude} />
                 <UsageCard title="Codex" usage={usage.codex} />
                 <UsageCard title="OpenCode" usage={usage.opencode} />
-                <UsageCard title="z.ai" usage={usage.zai} />
+                <div>
+                  <UsageCard title="z.ai" usage={usage.zai} />
+                  <div className="form-group usage-credential-group">
+                    <label>z.ai API Key</label>
+                    <div className="usage-credential-row">
+                      <input
+                        type="password"
+                        value={zaiApiKey}
+                        onChange={(e) => {
+                          setZaiApiKey(e.target.value)
+                          setZaiKeyMessage(null)
+                        }}
+                        placeholder={hasStoredZaiKey ? "Stored in Keychain" : "z.ai API key"}
+                        autoComplete="off"
+                      />
+                      <button
+                        className="btn btn-primary"
+                        disabled={zaiKeySaving || !zaiApiKey.trim()}
+                        onClick={() => void saveZaiApiKey()}
+                      >
+                        {hasStoredZaiKey ? "Update Key" : "Save Key"}
+                      </button>
+                      {hasStoredZaiKey && (
+                        <button
+                          className="btn"
+                          disabled={zaiKeySaving}
+                          onClick={() => void removeZaiApiKey()}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <span className="hint">
+                      Saved as <code>Z_AI_API_KEY</code> in Keychain. ClawTab also checks{" "}
+                      <code>ZAI_API_KEY</code>, <code>Z_AI_TOKEN</code>, <code>ZAI_TOKEN</code>, and
+                      OpenCode auth.
+                    </span>
+                    {zaiKeyMessage && <span className="hint">{zaiKeyMessage}</span>}
+                  </div>
+                </div>
               </>
             ) : (
               <div className="usage-card">
@@ -337,14 +415,14 @@ function GeneralSettingsContent() {
           <button
             className="btn"
             onClick={() => {
-              const base = window.location.origin;
+              const base = window.location.origin
               new WebviewWindow("setup-wizard", {
                 url: `${base}/settings.html?setup`,
                 title: "ClawTab Setup",
                 width: 640,
                 height: 520,
                 center: true,
-              });
+              })
             }}
           >
             Run Setup Wizard
@@ -353,10 +431,7 @@ function GeneralSettingsContent() {
         <div className="form-group">
           <label>Tools</label>
           <div>
-            <button
-              className="btn"
-              onClick={() => setShowToolsModal(true)}
-            >
+            <button className="btn" onClick={() => setShowToolsModal(true)}>
               Manage Tools
             </button>
             <span className="hint">Detect and configure CLI tools</span>
@@ -365,10 +440,7 @@ function GeneralSettingsContent() {
         <div className="form-group">
           <label>Logs</label>
           <div>
-            <button
-              className="btn"
-              onClick={() => invoke("open_logs_folder")}
-            >
+            <button className="btn" onClick={() => invoke("open_logs_folder")}>
               Open Logs Folder
             </button>
             <span className="hint">/tmp/clawtab/</span>
@@ -381,16 +453,13 @@ function GeneralSettingsContent() {
           ref={toolsOverlayRef}
           className="tools-modal-overlay"
           onClick={(e) => {
-            if (e.target === toolsOverlayRef.current) setShowToolsModal(false);
+            if (e.target === toolsOverlayRef.current) setShowToolsModal(false)
           }}
         >
           <div className="tools-modal">
             <div className="tools-modal-header">
               <h3>Tools</h3>
-              <button
-                className="btn btn-sm"
-                onClick={() => setShowToolsModal(false)}
-              >
+              <button className="btn btn-sm" onClick={() => setShowToolsModal(false)}>
                 Close
               </button>
             </div>
@@ -399,7 +468,7 @@ function GeneralSettingsContent() {
         </div>
       )}
     </div>
-  );
+  )
 }
 
 function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapshot }) {
@@ -422,5 +491,5 @@ function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapsh
       )}
       {usage.note && <div className="usage-note">{usage.note}</div>}
     </div>
-  );
+  )
 }

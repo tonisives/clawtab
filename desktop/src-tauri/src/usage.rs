@@ -379,7 +379,10 @@ async fn fetch_zai_snapshot(token: Option<String>) -> ProviderUsageSnapshot {
             provider: "zai".to_string(),
             status: "unavailable".to_string(),
             summary: "No z.ai token configured".to_string(),
-            note: Some("Add `Z_AI_API_KEY` in ClawTab Secrets or your environment.".to_string()),
+            note: Some(
+                "Add `Z_AI_API_KEY` in Usage settings, ClawTab Secrets, your environment, or sign in through OpenCode."
+                    .to_string(),
+            ),
             entries: Vec::new(),
         };
     };
@@ -907,10 +910,30 @@ struct OpenCodeApiAuth {
     key: String,
 }
 
-pub fn resolve_zai_token_from_sources(explicit_token: Option<String>) -> Option<String> {
-    explicit_token
+pub const ZAI_TOKEN_KEYS: &[&str] = &[
+    "Z_AI_API_KEY",
+    "ZAI_API_KEY",
+    "Z_AI_TOKEN",
+    "ZAI_TOKEN",
+];
+
+pub fn resolve_zai_token_from_sources(explicit_tokens: Vec<Option<String>>) -> Option<String> {
+    explicit_tokens
+        .into_iter()
+        .flatten()
+        .map(|token| token.trim().to_string())
+        .find(|token| !token.is_empty())
         .or_else(read_zai_token_from_opencode)
-        .or_else(|| std::env::var("Z_AI_API_KEY").ok())
+        .or_else(read_zai_token_from_env)
+}
+
+fn read_zai_token_from_env() -> Option<String> {
+    ZAI_TOKEN_KEYS.iter().find_map(|key| {
+        std::env::var(key)
+            .ok()
+            .map(|token| token.trim().to_string())
+            .filter(|token| !token.is_empty())
+    })
 }
 
 fn read_zai_token_from_opencode() -> Option<String> {
