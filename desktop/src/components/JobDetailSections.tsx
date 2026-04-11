@@ -160,7 +160,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
   const reloadDirections = useCallback(() => {
     if (job.job_type !== "job" || !job.folder_path) return;
     const jn = job.job_name ?? "default";
-    invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
+    invoke<string>("read_cwt_entry_at", { folderPath: job.folder_path, jobName: jn, slug: job.slug })
       .then((content) => {
         setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
         setSavedContent(content);
@@ -171,13 +171,13 @@ export function DesktopDetailSections({ job }: { job: Job }) {
   useEffect(() => {
     if (job.job_type === "job" && job.folder_path) {
       const jn = job.job_name ?? "default";
-      invoke<string>("read_cwt_entry", { folderPath: job.folder_path, jobName: jn })
+      invoke<string>("read_cwt_entry_at", { folderPath: job.folder_path, jobName: jn, slug: job.slug })
         .then((content) => {
           setInlineContent(content);
           setSavedContent(content);
         })
         .catch(() => {});
-      invoke<string>("read_cwt_context", { folderPath: job.folder_path, jobName: jn })
+      invoke<string>("read_cwt_context_at", { folderPath: job.folder_path, jobName: jn, slug: job.slug })
         .then(setCwtContextPreview)
         .catch(() => setCwtContextPreview(null));
     }
@@ -197,19 +197,18 @@ export function DesktopDetailSections({ job }: { job: Job }) {
 
   const handleSaveDirections = () => {
     if (job.folder_path) {
-      invoke("write_cwt_entry", {
+      invoke("write_cwt_entry_at", {
         folderPath: job.folder_path,
         jobName: job.job_name ?? "default",
         content: inlineContent,
+        slug: job.slug,
       }).then(() => {
         setSavedContent(inlineContent);
       }).catch(() => {});
     }
   };
 
-  const displayJobType = job.job_type === "job"
-    ? (job.cron ? "cronjob" : "job")
-    : job.job_type;
+  const displayJobType = job.job_type;
 
   return (
     <>
@@ -266,6 +265,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
                       editor: preferredEditor,
                       jobName: job.job_name ?? "default",
                       fileName: previewFile,
+                      slug: job.slug,
                     });
                   }}
                 >

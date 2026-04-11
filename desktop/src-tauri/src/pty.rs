@@ -393,18 +393,21 @@ fn next_ct_window_name(session: &str, base: &str) -> String {
 /// when a pane's window is shared across a session group, tmux resolves the
 /// pane target to whichever group member it feels like (often the most recent
 /// ephemeral `clawtab-view-N`), recording a dead view session as the origin.
+///
+/// IMPORTANT: targets use the raw `%pane_id` form, NOT `session:%pane_id`.
+/// In tmux, `session:target` interprets `target` as a window reference — when
+/// target starts with `%`, tmux treats it as the active pane of the session,
+/// NOT the pane with that ID. Pane IDs are globally unique, so the session
+/// prefix adds nothing here and actively breaks pane lookup.
 fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), String> {
     if let Some((sess, win_id)) = find_captured_window(pane_id) {
         return Ok((sess, win_id));
     }
 
-    // Query window metadata via session-qualified target so tmux doesn't
-    // resolve the pane through a grouped view session.
-    let target = format!("{}:{}", tmux_session, pane_id);
     let origin = tmux(&[
         "display-message",
         "-t",
-        &target,
+        pane_id,
         "-p",
         "#{window_id}\t#{pane_index}\t#{window_name}",
     ])?;
@@ -423,7 +426,7 @@ fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), S
         "break-pane",
         "-d",
         "-s",
-        &target,
+        pane_id,
         "-t",
         &format!("{}:", tmux_session),
         "-n",
@@ -433,7 +436,7 @@ fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), S
     let new_win = tmux(&[
         "display-message",
         "-t",
-        &format!("{}:{}", tmux_session, pane_id),
+        pane_id,
         "-p",
         "#{window_id}",
     ])?;
@@ -599,7 +602,7 @@ impl PtyManager {
             let native_info = tmux(&[
                 "display-message",
                 "-t",
-                &format!("{}:{}", tmux_session, pane_id),
+                pane_id,
                 "-p",
                 "#{pane_width} #{pane_height}",
             ])?;
@@ -625,7 +628,7 @@ impl PtyManager {
         let native_info = tmux(&[
             "display-message",
             "-t",
-            &format!("{}:{}", tmux_session, pane_id),
+            pane_id,
             "-p",
             "#{pane_width} #{pane_height}",
         ])?;

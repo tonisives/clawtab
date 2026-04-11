@@ -88,13 +88,7 @@ pub fn format_jobs(jobs: &[Job]) -> String {
         let jt = match job.job_type {
             crate::config::jobs::JobType::Binary => "bin",
             crate::config::jobs::JobType::Claude => "claude",
-            crate::config::jobs::JobType::Job => {
-                if job.cron.is_empty() {
-                    "job"
-                } else {
-                    "cronjob"
-                }
-            }
+            crate::config::jobs::JobType::Job => "job",
         };
         lines.push(format!(
             "  <code>{}</code> [{}] ({}) {}",

@@ -224,6 +224,9 @@ impl JobsConfig {
                     if job.job_name.is_none() {
                         job.job_name = Some(job_name);
                     }
+                    if job.group != project_name {
+                        job.group = project_name.clone();
+                    }
                     jobs.push(job);
                 }
             }

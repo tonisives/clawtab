@@ -599,6 +599,7 @@ pub fn open_job_editor(
     editor: Option<String>,
     file_name: Option<String>,
     job_name: Option<String>,
+    slug: Option<String>,
 ) -> Result<(), String> {
     let preferred_editor = editor.unwrap_or_else(|| {
         let s = state.settings.lock().unwrap();
@@ -609,7 +610,8 @@ pub fn open_job_editor(
     let target_file = file_name.as_deref().unwrap_or("job.md");
 
     // Read/write from central location
-    let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
+    let slug =
+        slug.unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]));
     let file_path = if target_file == "job.md" {
         crate::config::jobs::central_job_md_path(&slug)
             .ok_or("Could not determine config directory")?
@@ -739,9 +741,19 @@ pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<
 
 #[tauri::command]
 pub fn read_cwt_entry(folder_path: String, job_name: Option<String>) -> Result<String, String> {
+    read_cwt_entry_at(folder_path, job_name, None)
+}
+
+#[tauri::command]
+pub fn read_cwt_entry_at(
+    folder_path: String,
+    job_name: Option<String>,
+    slug: Option<String>,
+) -> Result<String, String> {
     // Read job.md from central location using slug derived from folder_path + job_name
     let jn = job_name.as_deref().unwrap_or("default");
-    let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
+    let slug =
+        slug.unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]));
     let job_md = crate::config::jobs::central_job_md_path(&slug)
         .ok_or("Could not determine config directory")?;
     if !job_md.exists() {
@@ -757,9 +769,20 @@ pub fn write_cwt_entry(
     job_name: Option<String>,
     content: String,
 ) -> Result<(), String> {
+    write_cwt_entry_at(folder_path, job_name, content, None)
+}
+
+#[tauri::command]
+pub fn write_cwt_entry_at(
+    folder_path: String,
+    job_name: Option<String>,
+    content: String,
+    slug: Option<String>,
+) -> Result<(), String> {
     // Write job.md to central location
     let jn = job_name.as_deref().unwrap_or("default");
-    let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
+    let slug =
+        slug.unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]));
     let job_md = crate::config::jobs::central_job_md_path(&slug)
         .ok_or("Could not determine config directory")?;
     if let Some(parent) = job_md.parent() {
@@ -771,9 +794,19 @@ pub fn write_cwt_entry(
 
 #[tauri::command]
 pub fn read_cwt_context(folder_path: String, job_name: Option<String>) -> Result<String, String> {
+    read_cwt_context_at(folder_path, job_name, None)
+}
+
+#[tauri::command]
+pub fn read_cwt_context_at(
+    folder_path: String,
+    job_name: Option<String>,
+    slug: Option<String>,
+) -> Result<String, String> {
     // Read auto-generated context from central: ~/.config/clawtab/jobs/{slug}/context.md
     let jn = job_name.as_deref().unwrap_or("default");
-    let slug = crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]);
+    let slug =
+        slug.unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]));
     let context_md = crate::config::jobs::central_job_context_path(&slug)
         .ok_or("Could not determine config directory")?;
     if !context_md.exists() {
@@ -785,8 +818,14 @@ pub fn read_cwt_context(folder_path: String, job_name: Option<String>) -> Result
 
 #[tauri::command]
 pub fn read_cwt_shared(folder_path: String) -> Result<String, String> {
+    read_cwt_shared_at(folder_path, None)
+}
+
+#[tauri::command]
+pub fn read_cwt_shared_at(folder_path: String, slug: Option<String>) -> Result<String, String> {
     // Read shared project context from central: ~/.config/clawtab/jobs/{project-slug}/context.md
-    let slug = crate::config::jobs::derive_slug(&folder_path, Some("default"), &[]);
+    let slug = slug
+        .unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some("default"), &[]));
     let context_md = crate::config::jobs::central_project_context_path(&slug)
         .ok_or("Could not determine config directory")?;
     if !context_md.exists() {
@@ -798,8 +837,18 @@ pub fn read_cwt_shared(folder_path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn write_cwt_shared(folder_path: String, content: String) -> Result<(), String> {
+    write_cwt_shared_at(folder_path, content, None)
+}
+
+#[tauri::command]
+pub fn write_cwt_shared_at(
+    folder_path: String,
+    content: String,
+    slug: Option<String>,
+) -> Result<(), String> {
     // Write shared project context to central: ~/.config/clawtab/jobs/{project-slug}/context.md
-    let slug = crate::config::jobs::derive_slug(&folder_path, Some("default"), &[]);
+    let slug = slug
+        .unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some("default"), &[]));
     let context_md = crate::config::jobs::central_project_context_path(&slug)
         .ok_or("Could not determine config directory")?;
     if let Some(parent) = context_md.parent() {
@@ -910,13 +959,7 @@ fn generate_agent_cwt_context(
             let jt = match job.job_type {
                 crate::config::jobs::JobType::Binary => "bin",
                 crate::config::jobs::JobType::Claude => "claude",
-                crate::config::jobs::JobType::Job => {
-                    if job.cron.is_empty() {
-                        "job"
-                    } else {
-                        "cronjob"
-                    }
-                }
+                crate::config::jobs::JobType::Job => "job",
             };
             let dir = job
                 .folder_path

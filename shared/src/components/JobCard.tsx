@@ -7,7 +7,21 @@ import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
-import { JobKindIcon, kindForJob } from "./JobKindIcon";
+import { JobKindIcon, kindForJob, type JobKind } from "./JobKindIcon";
+
+function providerKindForJob(job: RemoteJob): JobKind | null {
+  if (
+    job.agent_provider === "claude" ||
+    job.agent_provider === "codex" ||
+    job.agent_provider === "opencode" ||
+    job.agent_provider === "shell"
+  ) {
+    return job.agent_provider;
+  }
+  if (job.job_type === "claude") return "claude";
+  if (job.job_type === "shell") return "shell";
+  return null;
+}
 
 export const JobCard = memo(function JobCard({
   job,
@@ -29,7 +43,8 @@ export const JobCard = memo(function JobCard({
           ? timeAgo(status.started_at)
           : null;
 
-  const kind = kindForJob(job);
+  const kind = job.cron ? "cron" : kindForJob(job);
+  const providerKind = job.cron ? providerKindForJob(job) : null;
 
   return (
     <TouchableOpacity
@@ -38,7 +53,14 @@ export const JobCard = memo(function JobCard({
       activeOpacity={0.7}
     >
       <View style={styles.row}>
-        <JobKindIcon kind={kind} />
+        <View style={styles.iconWrap}>
+          <JobKindIcon kind={kind} />
+          {providerKind ? (
+            <View style={styles.providerBadge}>
+              <JobKindIcon kind={providerKind} size={14} compact bare />
+            </View>
+          ) : null}
+        </View>
         <View style={styles.info}>
           <Text style={styles.name} numberOfLines={1}>
             {job.name}
@@ -77,6 +99,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.md,
     minWidth: 0,
+  },
+  iconWrap: {
+    position: "relative",
+    width: 32,
+    height: 32,
+    flexShrink: 0,
+  },
+  providerBadge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   info: {
     flex: 1,

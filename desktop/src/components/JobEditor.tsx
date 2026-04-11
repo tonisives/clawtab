@@ -181,8 +181,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     // Load the source job's content
     const jn = source.job_name ?? "default";
     const [jobMd, cwtMd] = await Promise.all([
-      invoke<string>("read_cwt_entry", { folderPath: source.folder_path, jobName: jn }).catch(() => ""),
-      invoke<string>("read_cwt_shared", { folderPath: source.folder_path! }).catch(() => ""),
+      invoke<string>("read_cwt_entry_at", { folderPath: source.folder_path, jobName: jn, slug: source.slug }).catch(() => ""),
+      invoke<string>("read_cwt_shared_at", { folderPath: source.folder_path!, slug: source.slug }).catch(() => ""),
     ]);
     // Only import md file contents, not folder or name
     setInlineContent(jobMd);
@@ -310,7 +310,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   useEffect(() => {
     if (!isNew && form.job_type === "job" && form.folder_path) {
       const jn = form.job_name ?? "default";
-      invoke<string>("read_cwt_entry", { folderPath: form.folder_path, jobName: jn })
+      invoke<string>("read_cwt_entry_at", { folderPath: form.folder_path, jobName: jn, slug: form.slug || null })
         .then((content) => {
           setCwtEdited(!!content && content.trim() !== defaultDirectionsTemplate.trim());
           if (!inlineLoaded) {
@@ -320,14 +320,14 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
         })
         .catch(() => {});
       if (!sharedLoaded) {
-        invoke<string>("read_cwt_shared", { folderPath: form.folder_path })
+        invoke<string>("read_cwt_shared_at", { folderPath: form.folder_path, slug: form.slug || null })
           .then((content) => {
             setSharedContent(content);
             setSharedLoaded(true);
           })
           .catch(() => {});
       }
-      invoke<string>("read_cwt_context", { folderPath: form.folder_path, jobName: jn })
+      invoke<string>("read_cwt_context_at", { folderPath: form.folder_path, jobName: jn, slug: form.slug || null })
         .then(setJobCwtContent)
         .catch(() => setJobCwtContent(null));
     }
@@ -345,10 +345,11 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     setInlineContent(content);
     setCwtEdited(!!content && content.trim() !== defaultDirectionsTemplate.trim());
     if (!isNew && form.folder_path) {
-      invoke("write_cwt_entry", {
+      invoke("write_cwt_entry_at", {
         folderPath: form.folder_path,
         jobName: form.job_name ?? "default",
         content,
+        slug: form.slug || null,
       }).catch(() => {});
     }
   };
@@ -365,10 +366,11 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       setInlineContent(nextTemplate);
       setCwtEdited(false);
       if (!isNew && form.folder_path) {
-        invoke("write_cwt_entry", {
+        invoke("write_cwt_entry_at", {
           folderPath: form.folder_path,
           jobName: form.job_name ?? "default",
           content: nextTemplate,
+          slug: form.slug || null,
         }).catch(() => {});
       }
     }
@@ -404,15 +406,17 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     if (isNew && form.job_type === "job" && form.folder_path) {
       const jn = form.job_name ?? "default";
       await invoke("init_cwt_folder", { folderPath: form.folder_path, jobName: jn });
-      await invoke("write_cwt_entry", {
+      await invoke("write_cwt_entry_at", {
         folderPath: form.folder_path,
         jobName: jn,
         content: inlineContent,
+        slug: form.slug || null,
       });
       if (sharedContent) {
-        await invoke("write_cwt_shared", {
+        await invoke("write_cwt_shared_at", {
           folderPath: form.folder_path,
           content: sharedContent,
+          slug: form.slug || null,
         });
       }
     }
@@ -742,6 +746,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
                 editor: preferredEditor,
                 jobName: form.job_name ?? "default",
                 fileName: "job.md",
+                slug: form.slug || null,
               });
             }}
           >
@@ -967,9 +972,14 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   );
 
   const handleAddSecretInline = async () => {
-    if (!addSecretKey.trim() || !addSecretValue.trim()) return;
+    const key = addSecretKey.trim();
+    if (!key || !addSecretValue.trim()) return;
     try {
-      await invoke("set_secret", { key: addSecretKey.trim(), value: addSecretValue.trim() });
+      await invoke("set_secret", { key, value: addSecretValue.trim() });
+      setForm((prev) => ({
+        ...prev,
+        secret_keys: prev.secret_keys.includes(key) ? prev.secret_keys : [...prev.secret_keys, key],
+      }));
       setAddSecretKey("");
       setAddSecretValue("");
       setAddSecretVisible(false);
