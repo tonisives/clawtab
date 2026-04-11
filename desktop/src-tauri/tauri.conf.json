@@ -26,6 +26,15 @@
         "center": true,
         "title": "",
         "titleBarStyle": "Overlay"
+      },
+      {
+        "label": "debug",
+        "url": "/debug.html",
+        "width": 1000,
+        "height": 700,
+        "visible": false,
+        "center": true,
+        "title": "ClawTab Debug"
       }
     ],
     "security": {

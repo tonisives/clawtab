@@ -1,6 +1,5 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -8,6 +7,8 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::{AppHandle, Emitter};
+
+use crate::debug_spawn;
 
 /// Pane viewer: captured pane moved into a new `ct-<orig>-<N>` window in its
 /// original tmux session, streamed via a local PTY running `tmux attach-session`
@@ -102,9 +103,11 @@ static VIEW_COUNTER: AtomicU64 = AtomicU64::new(0);
 static ATTACH_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 fn tmux(args: &[&str]) -> Result<String, String> {
-    let out = Command::new("tmux")
-        .args(args)
-        .output()
+    tmux_at(args, "pty::tmux")
+}
+
+fn tmux_at(args: &[&str], callsite: &'static str) -> Result<String, String> {
+    let out = debug_spawn::run_logged("tmux", args, callsite)
         .map_err(|e| format!("tmux {}: {}", args[0], e))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -149,9 +152,7 @@ fn refresh_attached_pane(sink: &OutputSink, recent: &Arc<Mutex<RecentPaneCache>>
 }
 
 fn tmux_session_exists(session: &str) -> bool {
-    Command::new("tmux")
-        .args(["has-session", "-t", session])
-        .output()
+    debug_spawn::run_logged("tmux", &["has-session", "-t", session], "pty::tmux_session_exists")
         .map(|out| out.status.success())
         .unwrap_or(false)
 }
@@ -298,11 +299,13 @@ fn release_captured_pane(pane_id: &str) -> Result<(), String> {
     let orig_window_name = parts.get(3).copied().unwrap_or("");
 
     // Does the original session still exist?
-    let session_exists = Command::new("tmux")
-        .args(["has-session", "-t", orig_session])
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false);
+    let session_exists = debug_spawn::run_logged(
+        "tmux",
+        &["has-session", "-t", orig_session],
+        "pty::release_captured_pane::has-session",
+    )
+    .map(|o| o.status.success())
+    .unwrap_or(false);
     if !session_exists {
         tmux(&[
             "new-session",
@@ -559,7 +562,13 @@ impl PtyManager {
                                 >= Duration::from_millis(PTY_EMIT_BATCH_MS)
                         {
                             flush_pending(&mut pending);
-                            last_emit = now;
+                            last_emit = Instant::now();
+                        } else if let Some(remaining) = Duration::from_millis(PTY_EMIT_BATCH_MS)
+                            .checked_sub(now.duration_since(last_emit))
+                        {
+                            thread::sleep(remaining);
+                            flush_pending(&mut pending);
+                            last_emit = Instant::now();
                         }
                     }
                     Err(_) => break,

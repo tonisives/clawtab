@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::process::Command;
 
 use clawtab_protocol::DesktopMessage;
 
@@ -8,6 +7,7 @@ use tauri::{Emitter, State};
 
 use crate::agent_session::{detect_process_provider, detect_version_from_command, ProcessProvider};
 use crate::config::jobs::JobStatus;
+use crate::debug_spawn;
 use crate::AppState;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -134,14 +134,16 @@ fn detect_processes_blocking(
 ) -> Result<DetectionSnapshot, String> {
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
 
-    let output = Command::new("tmux")
-        .args([
+    let output = debug_spawn::run_logged(
+        "tmux",
+        &[
             "list-panes",
             "-a",
             "-F",
             "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
-        ])
-        .output();
+        ],
+        "processes::detect_processes::list-panes",
+    );
 
     let output = match output {
         Ok(o) if o.status.success() => o,
@@ -406,16 +408,18 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
         return Ok(None);
     }
 
-    let output = Command::new("tmux")
-        .args([
+    let output = debug_spawn::run_logged(
+        "tmux",
+        &[
             "display-message",
             "-t",
             &pane_id,
             "-p",
             "#{pane_id}\t#{pane_current_path}\t#{session_name}\t#{window_name}",
-        ])
-        .output()
-        .map_err(|e| format!("Failed to inspect tmux pane: {}", e))?;
+        ],
+        "processes::get_existing_pane_info::display-message",
+    )
+    .map_err(|e| format!("Failed to inspect tmux pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

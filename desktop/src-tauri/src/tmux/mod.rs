@@ -1,5 +1,6 @@
+use crate::debug_spawn;
 use serde::Serialize;
-use std::process::Command;
+use std::process::{Command, Output};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TmuxWindow {
@@ -8,19 +9,23 @@ pub struct TmuxWindow {
     pub active: bool,
 }
 
+/// Run `tmux <args>` with telemetry. Mirrors `Command::new("tmux").args(args).output()`.
+fn run(args: &[&str], callsite: &'static str) -> std::io::Result<Output> {
+    debug_spawn::run_logged("tmux", args, callsite)
+}
+
 pub fn is_available() -> bool {
-    Command::new("tmux")
-        .arg("-V")
-        .output()
+    run(&["-V"], "tmux::is_available")
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 pub fn list_sessions() -> Result<Vec<String>, String> {
-    let output = Command::new("tmux")
-        .args(["list-sessions", "-F", "#{session_name}"])
-        .output()
-        .map_err(|e| format!("Failed to run tmux: {}", e))?;
+    let output = run(
+        &["list-sessions", "-F", "#{session_name}"],
+        "tmux::list_sessions",
+    )
+    .map_err(|e| format!("Failed to run tmux: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -39,16 +44,17 @@ pub fn list_sessions() -> Result<Vec<String>, String> {
 }
 
 pub fn list_windows(session: &str) -> Result<Vec<TmuxWindow>, String> {
-    let output = Command::new("tmux")
-        .args([
+    let output = run(
+        &[
             "list-windows",
             "-t",
             session,
             "-F",
             "#{window_index}:#{window_name}:#{window_active}",
-        ])
-        .output()
-        .map_err(|e| format!("Failed to list tmux windows: {}", e))?;
+        ],
+        "tmux::list_windows",
+    )
+    .map_err(|e| format!("Failed to list tmux windows: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -73,18 +79,17 @@ pub fn list_windows(session: &str) -> Result<Vec<TmuxWindow>, String> {
 }
 
 pub fn session_exists(session: &str) -> bool {
-    Command::new("tmux")
-        .args(["has-session", "-t", session])
-        .output()
+    run(&["has-session", "-t", session], "tmux::session_exists")
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 pub fn create_session(session: &str) -> Result<(), String> {
-    let output = Command::new("tmux")
-        .args(["new-session", "-d", "-s", session])
-        .output()
-        .map_err(|e| format!("Failed to create tmux session: {}", e))?;
+    let output = run(
+        &["new-session", "-d", "-s", session],
+        "tmux::create_session",
+    )
+    .map_err(|e| format!("Failed to create tmux session: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -136,9 +141,7 @@ pub fn create_window_with_cwd(
         args.push(pair);
     }
 
-    let output = Command::new("tmux")
-        .args(&args)
-        .output()
+    let output = run(&args, "tmux::create_window_with_cwd")
         .map_err(|e| format!("Failed to create tmux window: {}", e))?;
 
     if !output.status.success() {
@@ -150,10 +153,11 @@ pub fn create_window_with_cwd(
 
 /// Set the title of a tmux pane (used to tag panes with job slugs).
 pub fn set_pane_title(pane_id: &str, title: &str) -> Result<(), String> {
-    let output = Command::new("tmux")
-        .args(["select-pane", "-t", pane_id, "-T", title])
-        .output()
-        .map_err(|e| format!("Failed to set pane title: {}", e))?;
+    let output = run(
+        &["select-pane", "-t", pane_id, "-T", title],
+        "tmux::set_pane_title",
+    )
+    .map_err(|e| format!("Failed to set pane title: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -182,10 +186,9 @@ pub fn split_pane(
         args.push(format!("{}={}", k, v));
     }
 
-    let output = Command::new("tmux")
-        .args(&args)
-        .output()
-        .map_err(|e| format!("Failed to split pane: {}", e))?;
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output =
+        run(&arg_refs, "tmux::split_pane").map_err(|e| format!("Failed to split pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -198,10 +201,11 @@ pub fn split_pane(
 /// Send keys to a specific pane by its ID (e.g. "%42").
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<(), String> {
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", pane_id, keys, "Enter"])
-        .output()
-        .map_err(|e| format!("Failed to send keys to pane: {}", e))?;
+    let output = run(
+        &["send-keys", "-t", pane_id, keys, "Enter"],
+        "tmux::send_keys_to_pane",
+    )
+    .map_err(|e| format!("Failed to send keys to pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -214,10 +218,11 @@ pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<()
 /// Types the text literally, then presses Enter to submit.
 pub fn send_keys_to_tui_pane(pane_id: &str, text: &str) -> Result<(), String> {
     // Send text literally (prevents tmux from interpreting special keys)
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", pane_id, "-l", text])
-        .output()
-        .map_err(|e| format!("Failed to send text to pane: {}", e))?;
+    let output = run(
+        &["send-keys", "-t", pane_id, "-l", text],
+        "tmux::send_keys_to_tui_pane::text",
+    )
+    .map_err(|e| format!("Failed to send text to pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -225,10 +230,11 @@ pub fn send_keys_to_tui_pane(pane_id: &str, text: &str) -> Result<(), String> {
     }
 
     // Press Enter to submit
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", pane_id, "Enter"])
-        .output()
-        .map_err(|e| format!("Failed to send Enter to pane: {}", e))?;
+    let output = run(
+        &["send-keys", "-t", pane_id, "Enter"],
+        "tmux::send_keys_to_tui_pane::enter",
+    )
+    .map_err(|e| format!("Failed to send Enter to pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -245,30 +251,33 @@ pub fn send_keys_to_tui_pane_freetext(
     freetext: &str,
 ) -> Result<(), String> {
     // Send the option number as a keystroke (navigates to the option)
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", pane_id, keystroke])
-        .output()
-        .map_err(|e| format!("Failed to send keystroke to pane: {}", e))?;
+    let output = run(
+        &["send-keys", "-t", pane_id, keystroke],
+        "tmux::send_keys_to_tui_pane_freetext::keystroke",
+    )
+    .map_err(|e| format!("Failed to send keystroke to pane: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("tmux error: {}", stderr.trim()));
     }
 
     // Type the freetext literally
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", pane_id, "-l", freetext])
-        .output()
-        .map_err(|e| format!("Failed to send freetext to pane: {}", e))?;
+    let output = run(
+        &["send-keys", "-t", pane_id, "-l", freetext],
+        "tmux::send_keys_to_tui_pane_freetext::text",
+    )
+    .map_err(|e| format!("Failed to send freetext to pane: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("tmux error: {}", stderr.trim()));
     }
 
     // Press Enter to submit
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", pane_id, "Enter"])
-        .output()
-        .map_err(|e| format!("Failed to send Enter to pane: {}", e))?;
+    let output = run(
+        &["send-keys", "-t", pane_id, "Enter"],
+        "tmux::send_keys_to_tui_pane_freetext::enter",
+    )
+    .map_err(|e| format!("Failed to send Enter to pane: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("tmux error: {}", stderr.trim()));
@@ -281,10 +290,11 @@ pub fn send_keys_to_tui_pane_freetext(
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String, String> {
     let start = format!("-{}", lines);
-    let output = Command::new("tmux")
-        .args(["capture-pane", "-t", pane_id, "-p", "-e", "-S", &start])
-        .output()
-        .map_err(|e| format!("Failed to capture pane: {}", e))?;
+    let output = run(
+        &["capture-pane", "-t", pane_id, "-p", "-e", "-S", &start],
+        "tmux::capture_pane",
+    )
+    .map_err(|e| format!("Failed to capture pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -296,9 +306,7 @@ pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String,
 
 /// Check if a tmux pane exists (hasn't been killed/closed).
 pub fn pane_exists(pane_id: &str) -> bool {
-    Command::new("tmux")
-        .args(["has-session", "-t", pane_id])
-        .output()
+    run(&["has-session", "-t", pane_id], "tmux::pane_exists")
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
@@ -306,15 +314,16 @@ pub fn pane_exists(pane_id: &str) -> bool {
 /// Check if a specific pane has an active (non-shell) process running.
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {
-    let output = Command::new("tmux")
-        .args([
+    let output = run(
+        &[
             "list-panes",
             "-t",
             pane_id,
             "-F",
             "#{pane_id}:#{pane_current_command}",
-        ])
-        .output();
+        ],
+        "tmux::is_pane_busy",
+    );
 
     match output {
         Ok(o) if o.status.success() => {
@@ -335,10 +344,11 @@ pub fn is_pane_busy(_session: &str, pane_id: &str) -> bool {
 
 /// Capture the entire scrollback from a pane.
 pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
-    let output = Command::new("tmux")
-        .args(["capture-pane", "-t", pane_id, "-p", "-e", "-S", "-"])
-        .output()
-        .map_err(|e| format!("Failed to capture pane: {}", e))?;
+    let output = run(
+        &["capture-pane", "-t", pane_id, "-p", "-e", "-S", "-"],
+        "tmux::capture_pane_full",
+    )
+    .map_err(|e| format!("Failed to capture pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -350,10 +360,11 @@ pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
 
 /// Send C-c (SIGINT) to a specific pane by its ID.
 pub fn send_sigint_to_pane(pane_id: &str) -> Result<(), String> {
-    let output = Command::new("tmux")
-        .args(["send-keys", "-t", pane_id, "C-c"])
-        .output()
-        .map_err(|e| format!("Failed to send C-c to pane: {}", e))?;
+    let output = run(
+        &["send-keys", "-t", pane_id, "C-c"],
+        "tmux::send_sigint_to_pane",
+    )
+    .map_err(|e| format!("Failed to send C-c to pane: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -364,9 +375,7 @@ pub fn send_sigint_to_pane(pane_id: &str) -> Result<(), String> {
 
 /// Kill a specific pane by its ID (e.g. "%42").
 pub fn kill_pane(pane_id: &str) -> Result<(), String> {
-    let output = Command::new("tmux")
-        .args(["kill-pane", "-t", pane_id])
-        .output()
+    let output = run(&["kill-pane", "-t", pane_id], "tmux::kill_pane")
         .map_err(|e| format!("Failed to kill pane: {}", e))?;
 
     if !output.status.success() {
@@ -378,9 +387,7 @@ pub fn kill_pane(pane_id: &str) -> Result<(), String> {
 
 pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
-    let output = Command::new("tmux")
-        .args(["select-window", "-t", &target])
-        .output()
+    let output = run(&["select-window", "-t", &target], "tmux::focus_window")
         .map_err(|e| format!("Failed to focus window: {}", e))?;
 
     if !output.status.success() {
@@ -395,16 +402,17 @@ pub fn focus_window(session: &str, window: &str) -> Result<(), String> {
 
 /// Get the working directory of a pane.
 pub fn get_pane_path(pane_id: &str) -> Result<String, String> {
-    let output = Command::new("tmux")
-        .args([
+    let output = run(
+        &[
             "display-message",
             "-t",
             pane_id,
             "-p",
             "#{pane_current_path}",
-        ])
-        .output()
-        .map_err(|e| format!("Failed to get pane path: {}", e))?;
+        ],
+        "tmux::get_pane_path",
+    )
+    .map_err(|e| format!("Failed to get pane path: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -443,9 +451,8 @@ pub fn split_pane_by_id(
         args.push(format!("{}={}", k, v));
     }
 
-    let output = Command::new("tmux")
-        .args(&args)
-        .output()
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = run(&arg_refs, "tmux::split_pane_by_id")
         .map_err(|e| format!("Failed to split pane: {}", e))?;
 
     if !output.status.success() {
@@ -459,10 +466,11 @@ pub fn split_pane_by_id(
 /// Find which terminal app has the tmux client for a session and bring it to front.
 fn activate_terminal_for_session(session: &str) -> Result<(), String> {
     // Get the TTY of the client attached to this session
-    let output = Command::new("tmux")
-        .args(["list-clients", "-t", session, "-F", "#{client_tty}"])
-        .output()
-        .map_err(|e| format!("Failed to list clients: {}", e))?;
+    let output = run(
+        &["list-clients", "-t", session, "-F", "#{client_tty}"],
+        "tmux::activate_terminal_for_session",
+    )
+    .map_err(|e| format!("Failed to list clients: {}", e))?;
 
     let tty = String::from_utf8_lossy(&output.stdout)
         .lines()

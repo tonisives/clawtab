@@ -615,7 +615,6 @@ fn detect_processes(
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) -> Vec<RemoteDetectedProcess> {
     use std::collections::HashSet;
-    use std::process::Command;
 
     fn is_semver(s: &str) -> bool {
         let parts: Vec<&str> = s.split('.').collect();
@@ -625,13 +624,14 @@ fn detect_processes(
                 .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
     }
 
-    let output = match Command::new("tmux")
-        .args([
+    let output = match crate::debug_spawn::run_logged(
+        "tmux",
+        &[
             "list-panes", "-a", "-F",
             "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
-        ])
-        .output()
-    {
+        ],
+        "relay::list_panes_snapshot",
+    ) {
         Ok(o) if o.status.success() => o,
         _ => return vec![],
     };
