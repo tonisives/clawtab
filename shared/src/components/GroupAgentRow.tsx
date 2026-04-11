@@ -6,11 +6,10 @@ import type { ProcessProvider } from "../types/process";
 import { JobKindIcon } from "./JobKindIcon";
 import { PopupMenu } from "./PopupMenu";
 
-const COLLAPSED_HEIGHT = 32;
+const ACTIONS_COL_HEIGHT = 20 + spacing.xs + 32;
 const LINE_HEIGHT = 17;
 const MAX_ROWS = 20;
 const VERTICAL_PADDING = 12;
-const MIN_ROWS = 2;
 const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 
 function labelForProvider(provider: ProcessProvider): string {
@@ -52,7 +51,6 @@ export function GroupAgentRow({
   // Expand only once the user inserts a newline (Enter key).
   const expanded = prompt.includes("\n");
   const useWebTextarea = Platform.OS === "web";
-  const useMultilineInput = useWebTextarea || expanded;
   const providerOptions = useMemo(() => {
     const seen = new Set<ProcessProvider>();
     return providers.filter((entry) => {
@@ -78,15 +76,13 @@ export function GroupAgentRow({
   // Grow purely from the line count so there is no remeasure race.
   const lineCount = prompt.split("\n").length;
   const expandedHeight = Math.min(
-    Math.max(lineCount, MIN_ROWS) * LINE_HEIGHT + VERTICAL_PADDING,
+    Math.max(lineCount, 1) * LINE_HEIGHT + VERTICAL_PADDING,
     EXPANDED_MAX_HEIGHT,
   );
-  const effectiveExpandedHeight = Math.max(expandedHeight, manualExpandedHeight ?? 0);
 
   useEffect(() => {
-    if (expanded || useWebTextarea) return;
-    setManualExpandedHeight(null);
-  }, [expanded, useWebTextarea]);
+    if (!expanded) setManualExpandedHeight(null);
+  }, [expanded]);
 
   const runWithProvider = async (overrideProvider?: ProcessProvider) => {
     if (!prompt.trim() || sending) return;
@@ -185,59 +181,35 @@ export function GroupAgentRow({
       hadFocusRef.current = false;
     },
     editable: !sending,
-    ...(Platform.OS !== "web"
-      ? {
-          onKeyPress: (e: any) => {
-            const ne = e.nativeEvent ?? e;
-            if (ne.key !== "Enter") return;
-            if (!expanded) {
-              e.preventDefault?.();
-              setPrompt((p) => p + "\n");
-            }
-          },
-        }
-      : {}),
   };
-
-  const inputHeight = useWebTextarea
-    ? Math.max(MIN_ROWS * LINE_HEIGHT + VERTICAL_PADDING, effectiveExpandedHeight)
-    : effectiveExpandedHeight;
 
   return (
     <View
-      style={[styles.row, useMultilineInput ? styles.rowExpanded : styles.rowCollapsed]}
+      style={[styles.row, styles.rowExpanded]}
       {...(Platform.OS === "web" && workDir ? { dataSet: { agentWorkdir: workDir } } : {})}
     >
       <View style={styles.inputWrap}>
-        {useMultilineInput ? (
-          <TextInput
-            {...commonProps}
-            ref={setInputRef}
-            multiline
-            {...(Platform.OS === "web" && workDir ? { dataSet: { agentInput: workDir } } : {})}
-            style={[
-              styles.input,
-              {
-                height: inputHeight,
-                maxHeight: EXPANDED_MAX_HEIGHT,
-                textAlignVertical: "top",
-                paddingVertical: 6,
-                paddingBottom: useWebTextarea ? 18 : 6,
-                lineHeight: LINE_HEIGHT,
-                ...(useWebTextarea
-                  ? ({ outlineStyle: "none" } as any)
-                  : {}),
-              },
-            ]}
-          />
-        ) : (
-          <TextInput
-            {...commonProps}
-            ref={setInputRef}
-            {...(Platform.OS === "web" && workDir ? { dataSet: { agentInput: workDir } } : {})}
-            style={[styles.input, styles.inputCollapsed]}
-          />
-        )}
+        <TextInput
+          {...commonProps}
+          ref={setInputRef}
+          multiline
+          {...(Platform.OS === "web" && workDir ? { dataSet: { agentInput: workDir } } : {})}
+          style={[
+            styles.input,
+            {
+              minHeight: ACTIONS_COL_HEIGHT,
+              maxHeight: EXPANDED_MAX_HEIGHT,
+              textAlignVertical: "top",
+              paddingVertical: 6,
+              paddingBottom: useWebTextarea ? 18 : 6,
+              lineHeight: LINE_HEIGHT,
+              ...(manualExpandedHeight ? { height: Math.max(manualExpandedHeight, ACTIONS_COL_HEIGHT) } : {}),
+              ...(useWebTextarea
+                ? ({ outlineStyle: "none" } as any)
+                : {}),
+            },
+          ]}
+        />
         {useWebTextarea && (
           <div onMouseDown={handleResizeGripMouseDown} style={styles.resizeKnob as any}>
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={styles.resizeKnobIcon as any}>
@@ -313,7 +285,6 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingHorizontal: spacing.xs,
   },
-  rowCollapsed: { alignItems: "center" },
   rowExpanded: { alignItems: "flex-end" },
   inputWrap: {
     flex: 1,
@@ -335,10 +306,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     color: colors.text,
     fontSize: 12,
-  },
-  inputCollapsed: {
-    height: COLLAPSED_HEIGHT,
-    paddingVertical: 0,
   },
   actionsCol: {
     gap: spacing.xs,
