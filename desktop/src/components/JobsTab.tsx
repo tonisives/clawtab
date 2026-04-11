@@ -37,6 +37,7 @@ import { SkillSearchDialog } from "./SkillSearchDialog";
 import { InjectSecretsDialog } from "./InjectSecretsDialog";
 import { ShellPaneDetail } from "./ShellPaneDetail";
 import { EditTextDialog } from "./EditTextDialog";
+import { requestXtermPaneFocus } from "./XtermPane";
 import { useQuestionPolling } from "../hooks/useQuestionPolling";
 import { useAutoYes } from "../hooks/useAutoYes";
 import { useImportJob } from "../hooks/useImportJob";
@@ -133,6 +134,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
   const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
   const [demotingPaneIds, setDemotingPaneIds] = useState<Set<string>>(new Set());
+  const demotedShellPaneIdsRef = useRef<Set<string>>(new Set());
   const [focusAgentSignal, setFocusAgentSignal] = useState(0);
   const renameProcessSignal = 0;
   const [renameProcessPaneId, setRenameProcessPaneId] = useState<string | null>(null);
@@ -517,6 +519,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       const demoted = results.filter(isShellPane);
       const demotedIds = new Set(demoted.map((shell) => shell.pane_id));
       const vanishedIds = new Set(Array.from(removedIds).filter((paneId) => !demotedIds.has(paneId)));
+      for (const paneId of demotedIds) {
+        demotedShellPaneIdsRef.current.add(paneId);
+      }
       setDemotingPaneIds((prev) => {
         const next = new Set(prev);
         for (const paneId of removedIds) next.delete(paneId);
@@ -544,6 +549,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         ? demoted.find((entry) => entry.pane_id === activeContent.paneId)
         : null;
       if (activeDemotedShell) {
+        requestXtermPaneFocus(activeDemotedShell.pane_id);
         setViewingJob(null);
         setViewingAgent(false);
         setViewingProcess(null);
@@ -900,6 +906,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         core.requestFastPoll(`pane:${content.paneId}`);
         invoke("stop_detected_process", { paneId: content.paneId });
       } else if (content.kind === "terminal") {
+        demotedShellPaneIdsRef.current.delete(content.paneId);
         setShellPanes((prev) => prev.filter((pane) => pane.pane_id !== content.paneId));
         invoke("stop_detected_process", { paneId: content.paneId });
       } else if (content.kind === "job") {
@@ -1510,15 +1517,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       if (content.kind === "process") {
         if (pendingProcess?.pane_id === content.paneId) return false;
         if (demotingPaneIds.has(content.paneId)) return false;
+        if (demotionCandidateIds.has(content.paneId)) return false;
         if (shellPanes.find((p) => p.pane_id === content.paneId)) return false;
         return !core.processes.find(p => p.pane_id === content.paneId);
       }
       if (content.kind === "terminal") {
+        if (demotingPaneIds.has(content.paneId)) return false;
+        if (demotionCandidateIds.has(content.paneId)) return false;
+        if (demotedShellPaneIdsRef.current.has(content.paneId)) return false;
         return !shellPanes.find((p) => p.pane_id === content.paneId);
       }
       return false;
     });
-  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes, demotingPaneIds]);
+  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes, demotingPaneIds, demotionCandidateIds]);
 
   // Promote shell panes to detected processes when claude/codex is launched inside them
   useEffect(() => {
@@ -1527,6 +1538,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     const promoted = shellPanes.filter((s) => processPaneIds.has(s.pane_id));
     if (promoted.length === 0) return;
     const promotedIds = new Set(promoted.map((s) => s.pane_id));
+    const activeContent = split.tree
+      ? (collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId)?.content ?? currentContent)
+      : currentContent;
+    const activePromotedShell = activeContent?.kind === "terminal"
+      ? promoted.find((shell) => shell.pane_id === activeContent.paneId)
+      : null;
+    if (activePromotedShell) {
+      requestXtermPaneFocus(activePromotedShell.pane_id);
+    }
+    for (const paneId of promotedIds) {
+      demotedShellPaneIdsRef.current.delete(paneId);
+    }
     setShellPanes((prev) => prev.filter((s) => !promotedIds.has(s.pane_id)));
     for (const shell of promoted) {
       split.replaceContent(
@@ -1541,7 +1564,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         setViewingProcess(proc);
       }
     }
-  }, [core.processes, shellPanes, split.replaceContent, viewingShell]);
+  }, [core.processes, currentContent, shellPanes, split.focusedLeafId, split.replaceContent, split.tree, viewingShell]);
 
   // Helper: build DesktopJobDetail pane action props
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
@@ -1653,6 +1676,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
               showBackButton={!isWide}
               hidePath
               onStopped={() => {
+                demotedShellPaneIdsRef.current.delete(shell.pane_id);
                 setShellPanes((prev) => prev.filter((p) => p.pane_id !== shell.pane_id));
                 split.handleClosePane(leafId);
               }}
@@ -1949,6 +1973,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           showBackButton={!isWide}
           hidePath
           onStopped={() => {
+            demotedShellPaneIdsRef.current.delete(singleShell.pane_id);
             setShellPanes((prev) => prev.filter((p) => p.pane_id !== singleShell.pane_id));
             selectAdjacentItem(singleShell.pane_id);
           }}
@@ -2229,6 +2254,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         }
       }}
       onStopShell={(paneId) => {
+        demotedShellPaneIdsRef.current.delete(paneId);
         setShellPanes((prev) => prev.filter((p) => p.pane_id !== paneId));
         if (viewingShell?.pane_id === paneId) selectAdjacentItem(paneId);
         invoke("stop_detected_process", { paneId });

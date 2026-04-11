@@ -19,6 +19,17 @@ const pendingDestroyTimers = new Map<string, number>();
 // remount (e.g. shell promoted to detected process swaps the detail component)
 // can re-focus the new terminal and preserve the user's typing position.
 const pendingFocusPaneIds = new Set<string>();
+let focusedPaneId: string | null = null;
+const activeTerminals = new Map<string, Terminal>();
+
+export function requestXtermPaneFocus(paneId: string) {
+  pendingFocusPaneIds.add(paneId);
+  window.setTimeout(() => pendingFocusPaneIds.delete(paneId), 2000);
+  const terminal = activeTerminals.get(paneId);
+  if (!terminal) return;
+  terminal.focus();
+  window.requestAnimationFrame(() => terminal.focus());
+}
 
 // Tauri event names can't contain %, so sanitize pane IDs
 function eventKey(paneId: string): string {
@@ -134,6 +145,8 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
     let dataDisposable: { dispose(): void } | null = null;
     let observer: ResizeObserver | null = null;
     let term: Terminal | null = null;
+    let focusInHandler: (() => void) | null = null;
+    let focusOutHandler: (() => void) | null = null;
     const key = eventKey(paneId);
 
     async function setup() {
@@ -233,6 +246,19 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
 
       fit.fit();
       term = t;
+      activeTerminals.set(paneId, t);
+      focusInHandler = () => {
+        focusedPaneId = paneId;
+      };
+      focusOutHandler = () => {
+        window.requestAnimationFrame(() => {
+          if (!el.contains(document.activeElement) && focusedPaneId === paneId) {
+            focusedPaneId = null;
+          }
+        });
+      };
+      el.addEventListener("focusin", focusInHandler);
+      el.addEventListener("focusout", focusOutHandler);
 
       if (cancelled) { t.dispose(); return; }
 
@@ -240,8 +266,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       // was just promoted to a detected process and the detail component
       // swapped), restore input focus to the new xterm instance.
       if (pendingFocusPaneIds.has(paneId)) {
-        pendingFocusPaneIds.delete(paneId);
-        t.focus();
+        requestXtermPaneFocus(paneId);
       }
 
       const cachedBytes = await invoke<number[]>("pty_get_cached_output", { paneId }).catch(() => []);
@@ -365,12 +390,17 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       // If the terminal currently has DOM focus, mark this pane so the next
       // mount (same paneId) can restore focus. Covers shell->process promotion
       // and any other parent-component swap that keeps the same underlying pane.
-      // Clears itself after 1s if no remount happens, so a stale flag can't
+      // Clears itself after 2s if no remount happens, so a stale flag can't
       // surprise-focus a later re-open of the same pane id.
       const termEl = el.querySelector("textarea");
-      if (termEl && document.activeElement === termEl) {
+      if ((termEl && document.activeElement === termEl) || focusedPaneId === paneId) {
         pendingFocusPaneIds.add(paneId);
-        window.setTimeout(() => pendingFocusPaneIds.delete(paneId), 1000);
+        window.setTimeout(() => pendingFocusPaneIds.delete(paneId), 2000);
+      }
+      if (focusInHandler) el.removeEventListener("focusin", focusInHandler);
+      if (focusOutHandler) el.removeEventListener("focusout", focusOutHandler);
+      if (activeTerminals.get(paneId) === term) {
+        activeTerminals.delete(paneId);
       }
       observer?.disconnect();
       dataDisposable?.dispose();
