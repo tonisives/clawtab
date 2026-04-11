@@ -401,10 +401,10 @@ export function JobDetailView({
             <ActionButton label="Restart" color={colors.accent} filled onPress={() => handleAction("restart")} compact />
           )}
           {!runPending && state === "success" && (
-            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact icon={jobTypeIcon} />
+            <ActionButton label="Run Again" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
           )}
           {!runPending && state === "idle" && (
-            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact icon={jobTypeIcon} />
+            <ActionButton label="Run" color={colors.accent} filled onPress={() => handleAction("run")} compact icon="run" />
           )}
           <Text style={styles.headerTitleText} numberOfLines={1}>
             {job.name}
