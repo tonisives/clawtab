@@ -16,15 +16,16 @@
 ---
 
 ## Features
-
-- Claude Code, Codex and OpenCode support
-- Split Agents into side-by-side panes
-- Display info about agent, task and queries
+- Unified interface for all agent tools like Claude Code, Codex and OpenCode
+- Split agents into side-by-side panes
+- Fork agents into different tools or models
+- Display info about model, task and queries
 - Auto-yes - accept all questions as `Yes`
 - Scheduled jobs - create cronjobs and read their past logs
 - Remote Control - view logs and answer questions on the web or ClawTab mobile app
 - Notifications - job failures or agent questions sent to mobile or Telegram
 - Secrets Management - Secrets from macOS Keychain and gopass, injected as environment variables. Per-job secret assignment.
+
 
 ### Small bundle
 
