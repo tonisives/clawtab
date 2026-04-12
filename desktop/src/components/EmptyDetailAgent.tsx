@@ -74,6 +74,7 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
     return {
       group: match?.group ?? workDir.split("/").filter(Boolean).pop() ?? "Folder",
       folderPath: workDir,
+      label: match?.group ?? workDir,
     };
   }, [folderOptions, workDir]);
 
@@ -213,7 +214,7 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
               setFolderMenuPos({ top: rect.bottom + 6, left: rect.right });
               setFolderMenuOpen((open) => !open);
             }}
-            title={selectedFolder ? `${selectedFolder.group} - ${selectedFolder.folderPath}` : "Pick folder"}
+            title={selectedFolder ? selectedFolder.folderPath : "Pick folder"}
             style={{
               height: 28,
               minWidth: 36,
@@ -232,17 +233,26 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              maxWidth: 260,
             }}
           >
-            {workDir ? (
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                {selectedFolder?.group} - {selectedFolder?.folderPath}
-              </span>
-            ) : (
-              "..."
-            )}
+            ...
           </button>
+          {selectedFolder && (
+            <span
+              style={{
+                color: workDir ? "var(--accent, #7986cb)" : "var(--text-muted)",
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+                maxWidth: 220,
+              }}
+              title={selectedFolder.folderPath}
+            >
+              {selectedFolder.label}
+            </span>
+          )}
           <div style={{ flex: 1 }} />
           <button
             onClick={() => { void handleRun(); }}
@@ -273,20 +283,6 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
             />
           </button>
         </div>
-        {selectedFolder && (
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-            title={`${selectedFolder.group} - ${selectedFolder.folderPath}`}
-          >
-            {selectedFolder.group} - {selectedFolder.folderPath}
-          </div>
-        )}
       </div>
       {providerMenuOpen && resolvedProviders.length > 1 && (
         <PopupMenu

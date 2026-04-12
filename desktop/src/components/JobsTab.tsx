@@ -1574,8 +1574,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     for (const paneId of promotedIds) {
       demotedShellPaneIdsRef.current.delete(paneId);
     }
+    for (const shell of promoted) {
+      split.replaceContent(
+        { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
+        { kind: "process", paneId: shell.pane_id },
+      );
+    }
     setShellPanes((prev) => prev.filter((s) => !promotedIds.has(s.pane_id)));
-  }, [core.processes, currentContent, shellPanes, split.focusedLeafId, split.tree]);
+  }, [core.processes, currentContent, shellPanes, split.focusedLeafId, split.replaceContent, split.tree]);
 
   // Helper: build DesktopJobDetail pane action props
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
@@ -1674,7 +1680,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
 
     if (content.kind === "terminal") {
-      const proc = core.processes.find((p) => p.pane_id === content.paneId);
+      const proc = core.processes.find((p) => p.pane_id === content.paneId)
+        ?? stoppingProcesses.find((sp) => sp.process.pane_id === content.paneId)?.process;
       const shell = shellPanes.find((p) => p.pane_id === content.paneId);
       if (!shell && !proc) {
         return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Tmux pane not found</span></div>;
@@ -1701,7 +1708,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                     return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
                   });
                   core.requestFastPoll(`pane:${proc.pane_id}`);
-                  split.handleClosePane(leafId);
                 }}
                 onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
                 onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
@@ -1744,6 +1750,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
     if (content.kind === "process") {
       const proc = core.processes.find((p) => p.pane_id === content.paneId)
+        ?? stoppingProcesses.find((sp) => sp.process.pane_id === content.paneId)?.process
         ?? (pendingProcess?.pane_id === content.paneId ? pendingProcess : null);
       if (!proc) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span></div>;
       if (proc.pane_id.startsWith("_pending_")) {
@@ -1777,7 +1784,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                   return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
                 });
                 core.requestFastPoll(`pane:${proc.pane_id}`);
-                split.handleClosePane(leafId);
               }}
               onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
               onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
@@ -2110,6 +2116,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           }}
           contentStyle={trafficLightInsetStyle}
           titlePath={buildJobTitlePath(singleJob, jobQuestion)}
+          defaultAgentProvider={defaultProvider}
         />
       );
     }
