@@ -1812,13 +1812,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string }) => (
+    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => (
       <DraggableJobCard
         {...props}
         reorderEnabled={sortMode === "name"}
+        defaultAgentProvider={defaultProvider}
       />
     ),
-    [sortMode],
+    [sortMode, defaultProvider],
   );
 
   const renderDraggableProcessCard = useCallback(

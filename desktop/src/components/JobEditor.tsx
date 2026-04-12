@@ -108,6 +108,19 @@ function CollapsibleFieldGroup({ title, expanded, onToggle, children }: { title:
   );
 }
 
+function labelForProvider(provider: ProcessProvider): string {
+  switch (provider) {
+    case "claude":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "opencode":
+      return "OpenCode";
+    case "shell":
+      return "Shell";
+  }
+}
+
 /** Parse a single cron expression into days + time, or null. */
 function parseSingleCronToWeekly(cron: string): { days: string[]; time: string } | null {
   const parts = cron.trim().split(/\s+/);
@@ -196,6 +209,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   // Lazy-loaded data
   const [availableSkills, setAvailableSkills] = useState<{ name: string }[] | null>(null);
   const [availableProviders, setAvailableProviders] = useState<ProcessProvider[]>([]);
+  const [defaultProvider, setDefaultProvider] = useState<ProcessProvider>("claude");
   const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[] | null>(null);
   const [previewFile, setPreviewFile] = useState<"job.md" | "context.md">("job.md");
   const [sharedContent, setSharedContent] = useState("");
@@ -246,6 +260,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   const [cwtEdited, setCwtEdited] = useState(!isNew);
 
   const isShellJob = form.job_type === "job" && form.agent_provider === "shell";
+  const startedAsShellJob = !isNew && job?.job_type === "job" && job.agent_provider === "shell";
   const defaultDirectionsTemplate = isShellJob ? DEFAULT_SHELL_TEMPLATE : DEFAULT_TEMPLATE;
 
   useEffect(() => {
@@ -268,6 +283,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
+      setDefaultProvider(s.default_provider);
       // Auto-set folder_path for new wizard jobs to default_work_dir
       if (isWizard && !form.folder_path) {
         const workDir = (s.default_work_dir || "~").replace(/\/+$/, "");
@@ -1401,21 +1417,25 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       ? availableProviders
       : ([] as ProcessProvider[]);
     const currentProvider = form.agent_provider ?? null;
-    const providers = currentProvider && !knownProviders.includes(currentProvider)
+    const selectedProvider = currentProvider === defaultProvider ? null : currentProvider;
+    const baseProviders = currentProvider && !knownProviders.includes(currentProvider)
       ? [currentProvider, ...knownProviders]
       : knownProviders;
+    const providers = baseProviders
+      .filter((provider) => provider !== defaultProvider)
+      .filter((provider) => isNew || startedAsShellJob || provider !== "shell");
 
     return (
       <div className="form-group">
         <label>Agent</label>
         <select
-          value={currentProvider ?? ""}
+          value={selectedProvider ?? ""}
           onChange={(e) => handleProviderChange((e.target.value || null) as ProcessProvider | null)}
         >
-          <option value="">Claude Code (default)</option>
+          <option value="">{labelForProvider(defaultProvider)} (default)</option>
           {providers.map((provider) => (
             <option key={provider} value={provider}>
-              {provider === "claude" ? "Claude" : provider === "codex" ? "Codex" : provider === "opencode" ? "OpenCode" : "Shell"}
+              {labelForProvider(provider)}
             </option>
           ))}
         </select>

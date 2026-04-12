@@ -761,13 +761,6 @@ pub fn run() {
             )?;
             let codex_item =
                 MenuItem::with_id(app, "usage_codex", "Codex: loading...", false, None::<&str>)?;
-            let opencode_item = MenuItem::with_id(
-                app,
-                "usage_opencode",
-                "OpenCode: loading...",
-                false,
-                None::<&str>,
-            )?;
             let zai_item =
                 MenuItem::with_id(app, "usage_zai", "z.ai: loading...", false, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
@@ -779,7 +772,6 @@ pub fn run() {
                     &sep1,
                     &claude_item,
                     &codex_item,
-                    &opencode_item,
                     &zai_item,
                     &sep2,
                     &quit_item,
@@ -788,7 +780,6 @@ pub fn run() {
 
             let claude_handle = claude_item.clone();
             let codex_handle = codex_item.clone();
-            let opencode_handle = opencode_item.clone();
             let zai_handle = zai_item.clone();
             let secrets_for_usage = app.state::<AppState>().secrets.clone();
 
@@ -879,8 +870,6 @@ pub fn run() {
                     let usage = usage::fetch_usage_snapshot(zai_token).await;
                     let _ = claude_handle.set_text(format!("Claude: {}", usage.claude.summary));
                     let _ = codex_handle.set_text(format!("Codex: {}", usage.codex.summary));
-                    let _ =
-                        opencode_handle.set_text(format!("OpenCode: {}", usage.opencode.summary));
                     let _ = zai_handle.set_text(format!("z.ai: {}", usage.zai.summary));
                     tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
                 }

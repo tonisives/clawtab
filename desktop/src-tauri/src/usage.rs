@@ -1,11 +1,14 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, TimeZone, Utc};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use reqwest::header::{ACCEPT, AUTHORIZATION};
-use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::claude_usage;
@@ -29,15 +32,13 @@ pub struct UsageSnapshot {
     pub refreshed_at: String,
     pub claude: ProviderUsageSnapshot,
     pub codex: ProviderUsageSnapshot,
-    pub opencode: ProviderUsageSnapshot,
     pub zai: ProviderUsageSnapshot,
 }
 
 pub async fn fetch_usage_snapshot(zai_token: Option<String>) -> UsageSnapshot {
-    let (claude, codex, opencode, zai) = tokio::join!(
+    let (claude, codex, zai) = tokio::join!(
         fetch_claude_snapshot(),
         fetch_codex_snapshot(),
-        fetch_opencode_snapshot(),
         fetch_zai_snapshot(zai_token),
     );
 
@@ -45,7 +46,6 @@ pub async fn fetch_usage_snapshot(zai_token: Option<String>) -> UsageSnapshot {
         refreshed_at: Utc::now().to_rfc3339(),
         claude,
         codex,
-        opencode,
         zai,
     }
 }
@@ -100,42 +100,23 @@ async fn fetch_codex_snapshot() -> ProviderUsageSnapshot {
 }
 
 fn fallback_codex_snapshot(rpc_err: String) -> ProviderUsageSnapshot {
-    match read_codex_totals() {
-        Ok(Some((threads, tokens))) => ProviderUsageSnapshot {
-            provider: "codex".to_string(),
-            status: "partial".to_string(),
-            summary: format!(
-                "{} tracked across {}",
-                format_token_count(tokens),
-                pluralize("thread", threads)
-            ),
-            note: Some(format!(
-                "Codex app-server quota probe failed ({}). Falling back to local tracked thread tokens.",
+    match read_codex_status_cli_snapshot() {
+        Ok(mut snapshot) => {
+            snapshot.status = "partial".to_string();
+            snapshot.note = Some(format!(
+                "Codex app-server quota probe failed ({}). Falling back to `codex /status`.",
                 rpc_err
+            ));
+            snapshot
+        }
+        Err(cli_err) => ProviderUsageSnapshot {
+            provider: "codex".to_string(),
+            status: "unavailable".to_string(),
+            summary: "Usage unavailable".to_string(),
+            note: Some(format!(
+                "Codex app-server quota probe failed ({}). `codex /status` fallback also failed ({}).",
+                rpc_err, cli_err
             )),
-            entries: vec![
-                UsageEntry {
-                    label: "Threads".to_string(),
-                    value: threads.to_string(),
-                },
-                UsageEntry {
-                    label: "Local Tracked Tokens".to_string(),
-                    value: format_token_count(tokens),
-                },
-            ],
-        },
-        Ok(None) => ProviderUsageSnapshot {
-            provider: "codex".to_string(),
-            status: "unavailable".to_string(),
-            summary: "Usage unavailable".to_string(),
-            note: Some(format!("{} No Codex state database was found.", rpc_err)),
-            entries: Vec::new(),
-        },
-        Err(db_err) => ProviderUsageSnapshot {
-            provider: "codex".to_string(),
-            status: "unavailable".to_string(),
-            summary: "Usage unavailable".to_string(),
-            note: Some(format!("{} {}", rpc_err, db_err)),
             entries: Vec::new(),
         },
     }
@@ -241,27 +222,23 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
         .cloned()
         .unwrap_or(limits.rate_limits);
 
-    let primary_text = codex_window_text(snapshot.primary.as_ref());
-    let secondary_text = codex_window_text(snapshot.secondary.as_ref());
+    let (primary, secondary) = normalize_codex_windows(snapshot.primary, snapshot.secondary);
+    let primary_text = codex_window_text(primary.as_ref());
+    let secondary_text = codex_window_text(secondary.as_ref());
     let plan_text = account
         .account
         .as_ref()
         .and_then(|acct| acct.plan_type())
         .or(snapshot.plan_type.clone())
         .unwrap_or_else(|| "unknown".to_string());
-    let credits_text = snapshot
-        .credits
-        .as_ref()
-        .map(format_codex_credits)
-        .unwrap_or_else(|| "n/a".to_string());
 
     Ok(ProviderUsageSnapshot {
         provider: "codex".to_string(),
         status: "available".to_string(),
         summary: format!(
             "Session {}, Week {}",
-            codex_window_percent(snapshot.primary.as_ref()),
-            codex_window_percent(snapshot.secondary.as_ref())
+            codex_window_percent(primary.as_ref()),
+            codex_window_percent(secondary.as_ref())
         ),
         note: account.account.and_then(|acct| acct.email()),
         entries: vec![
@@ -277,10 +254,6 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
                 label: "Week".to_string(),
                 value: secondary_text,
             },
-            UsageEntry {
-                label: "Credits".to_string(),
-                value: credits_text,
-            },
         ],
     })
 }
@@ -295,84 +268,6 @@ fn write_jsonrpc(stdin: &mut dyn Write, value: serde_json::Value) -> Result<(), 
         .map_err(|err| format!("failed writing codex RPC payload: {}", err))
 }
 
-async fn fetch_opencode_snapshot() -> ProviderUsageSnapshot {
-    match tokio::task::spawn_blocking(|| read_opencode_totals(7)).await {
-        Ok(Ok(Some(stats))) => {
-            let total_tokens = stats.input_tokens
-                + stats.output_tokens
-                + stats.cache_read_tokens
-                + stats.cache_write_tokens;
-            ProviderUsageSnapshot {
-                provider: "opencode".to_string(),
-                status: "available".to_string(),
-                summary: format!(
-                    "7d {} across {}",
-                    format_token_count(total_tokens),
-                    pluralize("session", stats.sessions)
-                ),
-                note: Some(
-                    "OpenCode exposes aggregate usage stats, not quota/reset windows.".to_string(),
-                ),
-                entries: vec![
-                    UsageEntry {
-                        label: "Window".to_string(),
-                        value: "Last 7 days".to_string(),
-                    },
-                    UsageEntry {
-                        label: "Sessions".to_string(),
-                        value: stats.sessions.to_string(),
-                    },
-                    UsageEntry {
-                        label: "Messages".to_string(),
-                        value: stats.messages.to_string(),
-                    },
-                    UsageEntry {
-                        label: "Total Tokens".to_string(),
-                        value: format_token_count(total_tokens),
-                    },
-                    UsageEntry {
-                        label: "Input".to_string(),
-                        value: format_token_count(stats.input_tokens),
-                    },
-                    UsageEntry {
-                        label: "Output".to_string(),
-                        value: format_token_count(stats.output_tokens),
-                    },
-                    UsageEntry {
-                        label: "Cache Read".to_string(),
-                        value: format_token_count(stats.cache_read_tokens),
-                    },
-                    UsageEntry {
-                        label: "Cost".to_string(),
-                        value: format_cost(stats.total_cost),
-                    },
-                ],
-            }
-        }
-        Ok(Ok(None)) => ProviderUsageSnapshot {
-            provider: "opencode".to_string(),
-            status: "unavailable".to_string(),
-            summary: "No local OpenCode usage data".to_string(),
-            note: Some("No OpenCode database was found.".to_string()),
-            entries: Vec::new(),
-        },
-        Ok(Err(err)) => ProviderUsageSnapshot {
-            provider: "opencode".to_string(),
-            status: "unavailable".to_string(),
-            summary: "Usage unavailable".to_string(),
-            note: Some(err),
-            entries: Vec::new(),
-        },
-        Err(err) => ProviderUsageSnapshot {
-            provider: "opencode".to_string(),
-            status: "unavailable".to_string(),
-            summary: "Usage unavailable".to_string(),
-            note: Some(format!("OpenCode stats task failed: {}", err)),
-            entries: Vec::new(),
-        },
-    }
-}
-
 async fn fetch_zai_snapshot(token: Option<String>) -> ProviderUsageSnapshot {
     let Some(token) = token else {
         return ProviderUsageSnapshot {
@@ -380,7 +275,7 @@ async fn fetch_zai_snapshot(token: Option<String>) -> ProviderUsageSnapshot {
             status: "unavailable".to_string(),
             summary: "No z.ai token configured".to_string(),
             note: Some(
-                "Add `Z_AI_API_KEY` in Usage settings, ClawTab Secrets, your environment, or sign in through OpenCode."
+                "Add `Z_AI_API_KEY` in Usage settings, ClawTab Secrets, or your environment."
                     .to_string(),
             ),
             entries: Vec::new(),
@@ -425,17 +320,8 @@ async fn read_zai_quota(token: &str) -> Result<ProviderUsageSnapshot, String> {
         .ok_or_else(|| "z.ai usage response did not include data".to_string())?;
 
     let limits = data.limits.unwrap_or_default();
-    let primary = limits
-        .iter()
-        .find(|limit| limit.limit_type.as_deref() == Some("TOKENS_LIMIT"))
-        .or_else(|| limits.first());
-    let secondary = limits
-        .iter()
-        .find(|limit| limit.limit_type.as_deref() == Some("TIME_LIMIT"));
-
-    let summary = primary
-        .map(|limit| zai_limit_summary(limit))
-        .unwrap_or_else(|| "Quota data available".to_string());
+    let (session_token, token_limit, time_limit) = categorize_zai_limits(&limits);
+    let summary = zai_summary(session_token, token_limit, time_limit);
 
     let mut entries = Vec::new();
     if let Some(plan) = data
@@ -449,15 +335,21 @@ async fn read_zai_quota(token: &str) -> Result<ProviderUsageSnapshot, String> {
             value: plan,
         });
     }
-    if let Some(limit) = primary {
+    if let Some(limit) = session_token {
         entries.push(UsageEntry {
-            label: "Primary".to_string(),
+            label: zai_limit_label(limit, "Session").to_string(),
             value: zai_limit_text(limit),
         });
     }
-    if let Some(limit) = secondary {
+    if let Some(limit) = token_limit {
         entries.push(UsageEntry {
-            label: "Secondary".to_string(),
+            label: zai_limit_label(limit, "Tokens").to_string(),
+            value: zai_limit_text(limit),
+        });
+    }
+    if let Some(limit) = time_limit {
+        entries.push(UsageEntry {
+            label: "MCP".to_string(),
             value: zai_limit_text(limit),
         });
     }
@@ -513,17 +405,238 @@ fn codex_window_text(window: Option<&CodexRateLimitWindow>) -> String {
     }
 }
 
-fn format_codex_credits(credits: &CodexCreditsSnapshot) -> String {
-    if credits.unlimited {
-        "Unlimited".to_string()
-    } else if credits.has_credits {
-        credits
-            .balance
-            .clone()
-            .unwrap_or_else(|| "Available".to_string())
-    } else {
-        credits.balance.clone().unwrap_or_else(|| "0".to_string())
+fn normalize_codex_windows(
+    primary: Option<CodexRateLimitWindow>,
+    secondary: Option<CodexRateLimitWindow>,
+) -> (Option<CodexRateLimitWindow>, Option<CodexRateLimitWindow>) {
+    match (primary, secondary) {
+        (Some(primary), Some(secondary)) => {
+            match (primary.window_role(), secondary.window_role()) {
+                (CodexWindowRole::Session, CodexWindowRole::Week)
+                | (CodexWindowRole::Session, CodexWindowRole::Unknown)
+                | (CodexWindowRole::Unknown, CodexWindowRole::Week) => {
+                    (Some(primary), Some(secondary))
+                }
+                (CodexWindowRole::Week, CodexWindowRole::Session)
+                | (CodexWindowRole::Week, CodexWindowRole::Unknown) => {
+                    (Some(secondary), Some(primary))
+                }
+                _ => (Some(primary), Some(secondary)),
+            }
+        }
+        (Some(window), None) => match window.window_role() {
+            CodexWindowRole::Week => (None, Some(window)),
+            CodexWindowRole::Session | CodexWindowRole::Unknown => (Some(window), None),
+        },
+        (None, Some(window)) => match window.window_role() {
+            CodexWindowRole::Session | CodexWindowRole::Unknown => (Some(window), None),
+            CodexWindowRole::Week => (None, Some(window)),
+        },
+        (None, None) => (None, None),
     }
+}
+
+fn read_codex_status_cli_snapshot() -> Result<ProviderUsageSnapshot, String> {
+    let output = run_codex_status_pty(Duration::from_secs(8))?;
+    parse_codex_status_snapshot(&output)
+}
+
+fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 70,
+            cols: 220,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|err| format!("openpty: {}", err))?;
+
+    let mut cmd = CommandBuilder::new("codex");
+    cmd.args(["-s", "read-only", "-a", "untrusted"]);
+    cmd.env("TERM", "xterm-256color");
+
+    let mut child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|err| format!("failed to start codex: {}", err))?;
+    drop(pair.slave);
+
+    let mut reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|err| format!("clone reader: {}", err))?;
+    let mut writer = pair
+        .master
+        .take_writer()
+        .map_err(|err| format!("take writer: {}", err))?;
+    writer
+        .write_all(b"/status\n")
+        .and_then(|_| writer.flush())
+        .map_err(|err| format!("send /status: {}", err))?;
+
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    thread::spawn(move || {
+        let mut buf = [0_u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let deadline = Instant::now() + timeout;
+    let mut output = Vec::new();
+    while Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(150)) {
+            Ok(bytes) => {
+                output.extend(bytes);
+                let text = String::from_utf8_lossy(&output);
+                if text.contains("Weekly limit") || text.contains("data not available yet") {
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let text = strip_ansi_codes(&String::from_utf8_lossy(&output));
+    if text.trim().is_empty() {
+        Err("Codex status probe returned no output".to_string())
+    } else {
+        Ok(text)
+    }
+}
+
+fn parse_codex_status_snapshot(text: &str) -> Result<ProviderUsageSnapshot, String> {
+    if text.to_ascii_lowercase().contains("data not available yet") {
+        return Err("Codex usage data is not available yet".to_string());
+    }
+
+    let session_line = first_matching_line(text, "5h limit");
+    let week_line = first_matching_line(text, "weekly limit");
+    let session = session_line.and_then(parse_codex_status_line);
+    let week = week_line.and_then(parse_codex_status_line);
+    let plan = first_matching_line(text, "plan:")
+        .and_then(|line| {
+            line.split_once(':')
+                .map(|(_, value)| value.trim().to_string())
+        })
+        .filter(|value| !value.is_empty());
+
+    if session.is_none() && week.is_none() {
+        return Err("Could not parse Codex session or weekly limits".to_string());
+    }
+
+    let mut entries = Vec::new();
+    if let Some(plan) = plan {
+        entries.push(UsageEntry {
+            label: "Plan".to_string(),
+            value: title_case_words(&plan),
+        });
+    }
+    entries.push(UsageEntry {
+        label: "Session".to_string(),
+        value: session
+            .as_ref()
+            .map(CodexCliLimit::display_text)
+            .unwrap_or_else(|| "n/a".to_string()),
+    });
+    entries.push(UsageEntry {
+        label: "Week".to_string(),
+        value: week
+            .as_ref()
+            .map(CodexCliLimit::display_text)
+            .unwrap_or_else(|| "n/a".to_string()),
+    });
+
+    Ok(ProviderUsageSnapshot {
+        provider: "codex".to_string(),
+        status: "available".to_string(),
+        summary: format!(
+            "Session {}, Week {}",
+            session
+                .as_ref()
+                .map(CodexCliLimit::summary_text)
+                .unwrap_or_else(|| "n/a".to_string()),
+            week.as_ref()
+                .map(CodexCliLimit::summary_text)
+                .unwrap_or_else(|| "n/a".to_string())
+        ),
+        note: None,
+        entries,
+    })
+}
+
+fn first_matching_line<'a>(text: &'a str, needle: &str) -> Option<&'a str> {
+    let needle = needle.to_ascii_lowercase();
+    text.lines()
+        .find(|line| line.to_ascii_lowercase().contains(&needle))
+}
+
+fn parse_codex_status_line(line: &str) -> Option<CodexCliLimit> {
+    let percent_left = first_percent_in(line)?;
+    let reset = reset_text_from_line(line);
+    Some(CodexCliLimit {
+        percent_left,
+        reset,
+    })
+}
+
+fn first_percent_in(line: &str) -> Option<i64> {
+    let percent_index = line.find('%')?;
+    let before = &line[..percent_index];
+    let start = before
+        .char_indices()
+        .rev()
+        .find(|(_, ch)| !(ch.is_ascii_digit() || *ch == '.'))
+        .map(|(index, ch)| index + ch.len_utf8())
+        .unwrap_or(0);
+    before[start..]
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .map(|value| value.round() as i64)
+}
+
+fn reset_text_from_line(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase();
+    let start = lower.find("resets")?;
+    let text = line[start + "resets".len()..]
+        .trim()
+        .trim_matches(|ch| ch == '(' || ch == ')' || ch == ':' || ch == '-')
+        .trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+fn strip_ansi_codes(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' {
+            if chars.peek() == Some(&'[') {
+                let _ = chars.next();
+                for next in chars.by_ref() {
+                    if next.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else if !ch.is_control() || ch == '\n' || ch == '\t' {
+            output.push(ch);
+        }
+    }
+    output
 }
 
 fn epoch_seconds_to_human(epoch_secs: i64) -> String {
@@ -561,159 +674,107 @@ fn relative_time_from(target: DateTime<Utc>) -> String {
     }
 }
 
-fn codex_dir() -> PathBuf {
-    dirs::home_dir().unwrap_or_default().join(".codex")
-}
-
-fn latest_codex_sqlite(prefix: &str) -> Option<PathBuf> {
-    let dir = codex_dir();
-    let entries = std::fs::read_dir(dir).ok()?;
-
-    entries
-        .filter_map(|entry| {
-            let path = entry.ok()?.path();
-            let name = path.file_name()?.to_str()?;
-            if name.starts_with(prefix) && name.ends_with(".sqlite") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .max_by_key(|path| {
-            std::fs::metadata(path)
-                .and_then(|meta| meta.modified())
-                .ok()
-        })
-}
-
-fn read_codex_totals() -> Result<Option<(i64, i64)>, String> {
-    let Some(db_path) = latest_codex_sqlite("state_") else {
-        return Ok(None);
-    };
-
-    let conn = open_read_only_sqlite(&db_path)?;
-    let result = conn
-        .query_row(
-            "SELECT COUNT(*), COALESCE(SUM(tokens_used), 0) FROM threads",
-            [],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
-        )
-        .optional()
-        .map_err(|err| format!("failed to read Codex usage totals: {}", err))?;
-
-    Ok(result)
-}
-
-#[derive(Debug)]
-struct OpenCodeStats {
-    sessions: i64,
-    messages: i64,
-    input_tokens: i64,
-    output_tokens: i64,
-    cache_read_tokens: i64,
-    cache_write_tokens: i64,
-    total_cost: f64,
-}
-
-fn opencode_db_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join(".local/share/opencode/opencode.db")
-}
-
 fn opencode_auth_path() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_default()
         .join(".local/share/opencode/auth.json")
 }
 
-fn read_opencode_totals(days: i64) -> Result<Option<OpenCodeStats>, String> {
-    let db_path = opencode_db_path();
-    if !db_path.exists() {
-        return Ok(None);
+fn categorize_zai_limits(
+    limits: &[ZaiLimit],
+) -> (Option<&ZaiLimit>, Option<&ZaiLimit>, Option<&ZaiLimit>) {
+    let mut token_limits = limits
+        .iter()
+        .filter(|limit| limit.is_token_limit())
+        .collect::<Vec<_>>();
+    token_limits.sort_by_key(|limit| limit.window_minutes().unwrap_or(i64::MAX));
+    let time_limit = limits.iter().find(|limit| limit.is_time_limit());
+
+    match token_limits.as_slice() {
+        [] => (None, None, time_limit),
+        [single] => (None, Some(*single), time_limit),
+        many => (many.first().copied(), many.last().copied(), time_limit),
     }
-
-    let conn = open_read_only_sqlite(&db_path)?;
-    let cutoff_ms = Utc::now().timestamp_millis() - days * 24 * 60 * 60 * 1000;
-
-    let sessions = conn
-        .query_row(
-            "SELECT COUNT(*) FROM session WHERE time_created >= ?1",
-            [cutoff_ms],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|err| format!("failed to read OpenCode session totals: {}", err))?;
-
-    let messages = conn
-        .query_row(
-            "SELECT COUNT(*) FROM message WHERE time_created >= ?1",
-            [cutoff_ms],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|err| format!("failed to read OpenCode message totals: {}", err))?;
-
-    let stats = conn
-        .query_row(
-            "SELECT
-                COALESCE(SUM(CAST(json_extract(data, '$.tokens.input') AS INTEGER)), 0),
-                COALESCE(SUM(CAST(json_extract(data, '$.tokens.output') AS INTEGER)), 0),
-                COALESCE(SUM(CAST(json_extract(data, '$.tokens.cache.read') AS INTEGER)), 0),
-                COALESCE(SUM(CAST(json_extract(data, '$.tokens.cache.write') AS INTEGER)), 0),
-                COALESCE(SUM(CAST(json_extract(data, '$.cost') AS REAL)), 0.0)
-             FROM message
-             WHERE json_extract(data, '$.role') = 'assistant'
-               AND time_created >= ?1",
-            [cutoff_ms],
-            |row| {
-                Ok(OpenCodeStats {
-                    sessions,
-                    messages,
-                    input_tokens: row.get::<_, i64>(0)?,
-                    output_tokens: row.get::<_, i64>(1)?,
-                    cache_read_tokens: row.get::<_, i64>(2)?,
-                    cache_write_tokens: row.get::<_, i64>(3)?,
-                    total_cost: row.get::<_, f64>(4)?,
-                })
-            },
-        )
-        .map_err(|err| format!("failed to read OpenCode token totals: {}", err))?;
-
-    Ok(Some(stats))
 }
 
-fn open_read_only_sqlite(path: &PathBuf) -> Result<Connection, String> {
-    Connection::open_with_flags(
-        path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX
-            | OpenFlags::SQLITE_OPEN_URI,
-    )
-    .map_err(|err| format!("failed to open {}: {}", path.display(), err))
+fn zai_summary(
+    session_token: Option<&ZaiLimit>,
+    token_limit: Option<&ZaiLimit>,
+    time_limit: Option<&ZaiLimit>,
+) -> String {
+    match (session_token, token_limit, time_limit) {
+        (Some(session), Some(token), _) => format!(
+            "Session {}, Week {}",
+            zai_limit_percent(session),
+            zai_limit_percent(token)
+        ),
+        (None, Some(token), Some(mcp)) => {
+            format!(
+                "Tokens {}, MCP {}",
+                zai_limit_percent(token),
+                zai_limit_percent(mcp)
+            )
+        }
+        (None, Some(token), None) => format!("Tokens {}", zai_limit_percent(token)),
+        (None, None, Some(mcp)) => format!("MCP {}", zai_limit_percent(mcp)),
+        (None, None, None) => "Quota data available".to_string(),
+        (Some(session), None, Some(mcp)) => {
+            format!(
+                "Session {}, MCP {}",
+                zai_limit_percent(session),
+                zai_limit_percent(mcp)
+            )
+        }
+        (Some(session), None, None) => format!("Session {}", zai_limit_percent(session)),
+    }
 }
 
-fn zai_limit_summary(limit: &ZaiLimit) -> String {
-    let pct = limit
+fn zai_limit_percent(limit: &ZaiLimit) -> String {
+    limit
         .used_ratio_percent()
-        .map(|value| format!("{}%", value));
-    let reset = limit.next_reset_time.and_then(epoch_millis_to_human);
-    match (pct, reset) {
-        (Some(pct), Some(reset)) => format!("{} used, resets {}", pct, reset),
-        (Some(pct), None) => format!("{} used", pct),
-        (None, Some(reset)) => format!("Resets {}", reset),
-        (None, None) => "Quota data available".to_string(),
+        .map(|value| format!("{}%", value))
+        .unwrap_or_else(|| "n/a".to_string())
+}
+
+fn zai_limit_label<'a>(limit: &ZaiLimit, fallback: &'a str) -> String {
+    match limit.window_minutes() {
+        Some(300) => "Session".to_string(),
+        Some(10080) => "Week".to_string(),
+        _ => limit
+            .window_description()
+            .unwrap_or_else(|| fallback.to_string()),
     }
 }
 
 fn zai_limit_text(limit: &ZaiLimit) -> String {
-    let used = limit
-        .used
-        .map(format_numberish)
-        .unwrap_or_else(|| "?".to_string());
-    let total = limit
-        .limit
-        .map(format_numberish)
-        .unwrap_or_else(|| "?".to_string());
-    let base = format!("{}/{}", used, total);
+    let percent = limit
+        .used_ratio_percent()
+        .map(|value| format!("{}% used", value));
+    let usage = match (limit.used_value(), limit.total_value()) {
+        (Some(used), Some(total)) => Some(format!(
+            "{}/{}",
+            format_numberish(used),
+            format_numberish(total)
+        )),
+        (Some(used), None) => Some(format_numberish(used)),
+        (None, Some(total)) => Some(format!("limit {}", format_numberish(total))),
+        (None, None) => None,
+    };
+    let mut parts = Vec::new();
+    if let Some(percent) = percent {
+        parts.push(percent);
+    }
+    if let Some(usage) = usage {
+        parts.push(usage);
+    }
+    if let Some(window) = limit.window_description() {
+        parts.push(window);
+    }
+    let base = if parts.is_empty() {
+        "Quota data available".to_string()
+    } else {
+        parts.join(", ")
+    };
     match limit.next_reset_time.and_then(epoch_millis_to_human) {
         Some(reset) => format!("{} (resets {})", base, reset),
         None => base,
@@ -721,17 +782,14 @@ fn zai_limit_text(limit: &ZaiLimit) -> String {
 }
 
 fn epoch_millis_to_human(epoch_millis: i64) -> Option<String> {
-    Utc.timestamp_millis_opt(epoch_millis)
+    let millis = if epoch_millis < 100_000_000_000 {
+        epoch_millis * 1000
+    } else {
+        epoch_millis
+    };
+    Utc.timestamp_millis_opt(millis)
         .single()
         .map(relative_time_from)
-}
-
-fn format_token_count(value: i64) -> String {
-    format_compact_number(value as f64)
-}
-
-fn format_cost(value: f64) -> String {
-    format!("${:.2}", value)
 }
 
 fn format_numberish(value: f64) -> String {
@@ -757,14 +815,6 @@ fn format_compact_number(value: f64) -> String {
     }
 }
 
-fn pluralize(noun: &str, count: i64) -> String {
-    if count == 1 {
-        format!("1 {}", noun)
-    } else {
-        format!("{} {}s", count, noun)
-    }
-}
-
 fn title_case_words(input: &str) -> String {
     input
         .split('_')
@@ -777,6 +827,25 @@ fn title_case_words(input: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[derive(Debug)]
+struct CodexCliLimit {
+    percent_left: i64,
+    reset: Option<String>,
+}
+
+impl CodexCliLimit {
+    fn summary_text(&self) -> String {
+        format!("{}% left", self.percent_left)
+    }
+
+    fn display_text(&self) -> String {
+        match &self.reset {
+            Some(reset) => format!("{}% left (resets {})", self.percent_left, reset),
+            None => format!("{}% left", self.percent_left),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -822,7 +891,6 @@ struct CodexRateLimitReadResult {
 struct CodexRateLimitSnapshot {
     primary: Option<CodexRateLimitWindow>,
     secondary: Option<CodexRateLimitWindow>,
-    credits: Option<CodexCreditsSnapshot>,
     plan_type: Option<String>,
 }
 
@@ -831,14 +899,23 @@ struct CodexRateLimitSnapshot {
 struct CodexRateLimitWindow {
     used_percent: i64,
     resets_at: Option<i64>,
+    limit_window_seconds: Option<i64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CodexCreditsSnapshot {
-    balance: Option<String>,
-    has_credits: bool,
-    unlimited: bool,
+enum CodexWindowRole {
+    Session,
+    Week,
+    Unknown,
+}
+
+impl CodexRateLimitWindow {
+    fn window_role(&self) -> CodexWindowRole {
+        match self.limit_window_seconds.map(|seconds| seconds / 60) {
+            Some(300) => CodexWindowRole::Session,
+            Some(10080) => CodexWindowRole::Week,
+            _ => CodexWindowRole::Unknown,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -860,7 +937,14 @@ struct ZaiQuotaData {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ZaiLimit {
+    #[serde(alias = "type", alias = "limit_type")]
     limit_type: Option<String>,
+    unit: Option<i64>,
+    number: Option<i64>,
+    usage: Option<f64>,
+    current_value: Option<f64>,
+    remaining: Option<f64>,
+    percentage: Option<f64>,
     used: Option<f64>,
     limit: Option<f64>,
     next_reset_time: Option<i64>,
@@ -868,12 +952,70 @@ struct ZaiLimit {
 
 impl ZaiLimit {
     fn used_ratio_percent(&self) -> Option<i64> {
-        match (self.used, self.limit) {
+        if let Some(percentage) = self.percentage {
+            return Some(percentage.round() as i64);
+        }
+
+        match (self.used_value(), self.total_value()) {
             (Some(used), Some(limit)) if limit > 0.0 => {
                 Some(((used / limit) * 100.0).round() as i64)
             }
             _ => None,
         }
+    }
+
+    fn total_value(&self) -> Option<f64> {
+        self.limit.or(self.usage)
+    }
+
+    fn used_value(&self) -> Option<f64> {
+        self.used.or(self.current_value).or_else(|| {
+            let total = self.total_value()?;
+            let remaining = self.remaining?;
+            Some((total - remaining).max(0.0))
+        })
+    }
+
+    fn window_minutes(&self) -> Option<i64> {
+        let number = self.number?;
+        if number <= 0 {
+            return None;
+        }
+        match self.unit {
+            Some(5) => Some(number),
+            Some(3) => Some(number * 60),
+            Some(1) => Some(number * 24 * 60),
+            Some(6) => Some(number * 7 * 24 * 60),
+            _ => None,
+        }
+    }
+
+    fn window_description(&self) -> Option<String> {
+        let number = self.number?;
+        if number <= 0 {
+            return None;
+        }
+        let unit = match self.unit {
+            Some(5) => "minute",
+            Some(3) => "hour",
+            Some(1) => "day",
+            Some(6) => "week",
+            _ => return None,
+        };
+        let suffix = if number == 1 {
+            unit.to_string()
+        } else {
+            format!("{}s", unit)
+        };
+        Some(format!("{} {}", number, suffix))
+    }
+
+    fn is_token_limit(&self) -> bool {
+        self.limit_type.as_deref() == Some("TOKENS_LIMIT")
+    }
+
+    fn is_time_limit(&self) -> bool {
+        self.limit_type.as_deref() == Some("TIME_LIMIT")
     }
 }
 
@@ -910,12 +1052,7 @@ struct OpenCodeApiAuth {
     key: String,
 }
 
-pub const ZAI_TOKEN_KEYS: &[&str] = &[
-    "Z_AI_API_KEY",
-    "ZAI_API_KEY",
-    "Z_AI_TOKEN",
-    "ZAI_TOKEN",
-];
+pub const ZAI_TOKEN_KEYS: &[&str] = &["Z_AI_API_KEY", "ZAI_API_KEY", "Z_AI_TOKEN", "ZAI_TOKEN"];
 
 pub fn resolve_zai_token_from_sources(explicit_tokens: Vec<Option<String>>) -> Option<String> {
     explicit_tokens

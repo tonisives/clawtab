@@ -25,6 +25,7 @@ export function DraggableJobCard({
   marginTop,
   dimmed,
   dataJobSlug,
+  defaultAgentProvider,
 }: {
   job: RemoteJob;
   group: string;
@@ -38,6 +39,7 @@ export function DraggableJobCard({
   marginTop?: number;
   dimmed?: boolean;
   dataJobSlug?: string;
+  defaultAgentProvider?: DetectedProcess["provider"];
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: job.slug,
@@ -103,6 +105,7 @@ export function DraggableJobCard({
           status={status}
           onPress={onPress}
           selected={selected}
+          defaultAgentProvider={defaultAgentProvider}
         />
       )}
     </div>

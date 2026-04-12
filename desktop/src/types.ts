@@ -152,7 +152,6 @@ export interface UsageSnapshot {
   refreshed_at: string;
   claude: ProviderUsageSnapshot;
   codex: ProviderUsageSnapshot;
-  opencode: ProviderUsageSnapshot;
   zai: ProviderUsageSnapshot;
 }
 

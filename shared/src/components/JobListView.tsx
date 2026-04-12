@@ -142,7 +142,7 @@ export interface JobListViewProps {
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
-  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string }) => React.ReactNode;
+  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => React.ReactNode;
   renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
@@ -629,7 +629,7 @@ export function JobListView({
     return (
       customRenderJobCard ? (
         <View key={key}>
-          {customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping, marginTop, dimmed, dataJobSlug: item.job.slug })}
+          {customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping, marginTop, dimmed, dataJobSlug: item.job.slug, defaultAgentProvider })}
         </View>
       ) : (
         <View
@@ -656,6 +656,7 @@ export function JobListView({
               status={status}
               onPress={pressHandler}
               selected={isSelected}
+              defaultAgentProvider={defaultAgentProvider}
             />
           )}
         </View>

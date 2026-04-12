@@ -15,7 +15,7 @@ const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 function labelForProvider(provider: ProcessProvider): string {
   switch (provider) {
     case "claude":
-      return "Claude";
+      return "Claude Code";
     case "codex":
       return "Codex";
     case "opencode":

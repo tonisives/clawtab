@@ -28,11 +28,13 @@ export const JobCard = memo(function JobCard({
   status,
   onPress,
   selected,
+  defaultAgentProvider,
 }: {
   job: RemoteJob;
   status: JobStatus;
   onPress?: () => void;
   selected?: boolean | string;
+  defaultAgentProvider?: JobKind;
 }) {
   const lastRun =
     status.state === "success"
@@ -44,7 +46,7 @@ export const JobCard = memo(function JobCard({
           : null;
 
   const kind = job.cron ? "cron" : kindForJob(job);
-  const providerKind = job.cron ? providerKindForJob(job) : null;
+  const providerKind = job.cron ? (providerKindForJob(job) ?? defaultAgentProvider ?? null) : null;
 
   return (
     <TouchableOpacity

@@ -295,8 +295,8 @@ function GeneralSettingsContent() {
         <div className="form-group">
           <label>Provider Usage</label>
           <p className="section-description usage-description">
-            Claude and Codex use their local CLIs. OpenCode uses local usage data. z.ai uses a
-            stored API key, an environment token, or OpenCode auth when available.
+            Claude and Codex use local CLI quota windows. z.ai uses a stored API key or environment
+            token.
           </p>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <button className="btn" disabled={usageLoading} onClick={() => void refreshUsage()}>
@@ -314,7 +314,6 @@ function GeneralSettingsContent() {
               <>
                 <UsageCard title="Claude" usage={usage.claude} />
                 <UsageCard title="Codex" usage={usage.codex} />
-                <UsageCard title="OpenCode" usage={usage.opencode} />
                 <div>
                   <UsageCard title="z.ai" usage={usage.zai} />
                   <div className="form-group usage-credential-group">
@@ -349,8 +348,7 @@ function GeneralSettingsContent() {
                     </div>
                     <span className="hint">
                       Saved as <code>Z_AI_API_KEY</code> in Keychain. ClawTab also checks{" "}
-                      <code>ZAI_API_KEY</code>, <code>Z_AI_TOKEN</code>, <code>ZAI_TOKEN</code>, and
-                      OpenCode auth.
+                      <code>ZAI_API_KEY</code>, <code>Z_AI_TOKEN</code>, and <code>ZAI_TOKEN</code>.
                     </span>
                     {zaiKeyMessage && <span className="hint">{zaiKeyMessage}</span>}
                   </div>

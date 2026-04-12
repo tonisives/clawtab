@@ -6,7 +6,7 @@ import type { ProcessProvider } from "@clawtab/shared";
 function labelForProvider(provider: ProcessProvider): string {
   switch (provider) {
     case "claude":
-      return "Claude";
+      return "Claude Code";
     case "codex":
       return "Codex";
     case "opencode":
