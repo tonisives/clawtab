@@ -182,7 +182,7 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
 
   return (
     <div ref={rootRef} tabIndex={-1} style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, width: 620, maxWidth: "90%" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "90%" }}>
         <div style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", marginBottom: 4 }}>
           Run an agent in a folder
         </div>
