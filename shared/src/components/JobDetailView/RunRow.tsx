@@ -94,25 +94,6 @@ export const RunRow = memo(function RunRow({
     }
   }, [expanded, detail]);
 
-  const canExpand = !!livePane || (!!paneId && paneLookupPending);
-
-  useEffect(() => {
-    if (!canExpand && expanded) setExpanded(false);
-  }, [canExpand, expanded]);
-
-  const handleToggle = () => {
-    if (!canExpand) return;
-    const next = !expanded;
-    setExpanded(next);
-    if (next && !detail && !loading) {
-      setLoading(true);
-      transport.getRunDetail(run.id).then((d) => {
-        setDetail(d);
-        setLoading(false);
-      });
-    }
-  };
-
   const logContentRaw = detail
     ? [detail.stdout, detail.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
     : run.stdout || run.stderr
@@ -125,6 +106,31 @@ export const RunRow = memo(function RunRow({
       : null,
     [logContentRaw],
   );
+
+  const hasStoredLogs = !!logContentRaw;
+  const isFinishedRun = !!run.finished_at || run.exit_code != null;
+  const canLoadStoredLogs = isFinishedRun || hasStoredLogs;
+  const canExpand = !!livePane || (!!paneId && paneLookupPending) || canLoadStoredLogs;
+
+  useEffect(() => {
+    if (!canExpand && expanded) setExpanded(false);
+  }, [canExpand, expanded]);
+
+  const handleToggle = () => {
+    if (!canExpand) return;
+    const next = !expanded;
+    setExpanded(next);
+    if (next && !detail && !loading && canLoadStoredLogs) {
+      setLoading(true);
+      transport.getRunDetail(run.id).then((d) => {
+        setDetail(d);
+        setLoading(false);
+      }).catch((e) => {
+        console.error("Failed to load run detail:", e);
+        setLoading(false);
+      });
+    }
+  };
 
   const handleStop = useCallback(async () => {
     try {
@@ -171,13 +177,11 @@ export const RunRow = memo(function RunRow({
                     e.stopPropagation();
                     onOpenLiveRunZoom?.(run, livePane);
                   }}
-                  style={styles.runExpandBtn}
+                  style={styles.runPaneLink}
                   activeOpacity={0.6}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text style={styles.runExpandIcon}>
-                    {"\u2922"}
-                  </Text>
+                  <Text style={styles.runPaneLinkText}>Open pane</Text>
                 </TouchableOpacity>
               ) : expanded && logContent && onZoom ? (
                 <TouchableOpacity

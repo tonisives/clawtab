@@ -7,10 +7,52 @@ import type { ExistingPaneInfo } from "../types";
 import { isShellPane } from "../utils";
 import type { useViewingState } from "./useViewingState";
 
+const SHELL_PANES_STORAGE_KEY = "desktop_shell_panes";
+
 interface UseProcessLifecycleParams {
   core: ReturnType<typeof useJobsCore>;
   split: ReturnType<typeof useSplitTree>;
   viewing: ReturnType<typeof useViewingState>;
+}
+
+function isStoredShellPane(value: unknown): value is ShellPane {
+  if (!value || typeof value !== "object") return false;
+  const pane = value as Partial<Record<keyof ShellPane, unknown>>;
+  return typeof pane.pane_id === "string"
+    && typeof pane.cwd === "string"
+    && typeof pane.tmux_session === "string"
+    && typeof pane.window_name === "string";
+}
+
+function loadStoredShellPanes(): ShellPane[] {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(SHELL_PANES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isStoredShellPane);
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredShellPanes(shellPanes: ShellPane[]) {
+  if (typeof localStorage === "undefined") return;
+  if (shellPanes.length === 0) {
+    localStorage.removeItem(SHELL_PANES_STORAGE_KEY);
+    return;
+  }
+  localStorage.setItem(SHELL_PANES_STORAGE_KEY, JSON.stringify(shellPanes));
+}
+
+function terminalLeafContents(
+  tree: ReturnType<typeof useSplitTree>["tree"],
+): Extract<PaneContent, { kind: "terminal" }>[] {
+  if (!tree) return [];
+  return collectLeaves(tree)
+    .map((leaf) => leaf.content)
+    .filter((content): content is Extract<PaneContent, { kind: "terminal" }> => content.kind === "terminal");
 }
 
 export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycleParams) {
@@ -26,10 +68,74 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
   const [pendingProcess, setPendingProcess] = useState<DetectedProcess | null>(null);
   const [stoppingProcesses, setStoppingProcesses] = useState<{ process: DetectedProcess; stoppedAt: number }[]>([]);
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
-  const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
+  const [shellPanes, setShellPanes] = useState<ShellPane[]>(loadStoredShellPanes);
   const [demotingPaneIds, setDemotingPaneIds] = useState<Set<string>>(new Set());
   const demotedShellPaneIdsRef = useRef<Set<string>>(new Set());
   const previousProcessesRef = useRef<Map<string, DetectedProcess>>(new Map());
+  const restoredPaneIdsRef = useRef<Set<string>>(new Set());
+  const validatingRestoredPaneIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    saveStoredShellPanes(shellPanes);
+  }, [shellPanes]);
+
+  useEffect(() => {
+    if (!split.tree && shellPanes.length === 0) return;
+
+    const paneIds = new Set<string>([
+      ...shellPanes.map((pane) => pane.pane_id),
+      ...terminalLeafContents(split.tree).map((content) => content.paneId),
+    ]);
+    const unverifiedPaneIds = Array.from(paneIds).filter((paneId) => !restoredPaneIdsRef.current.has(paneId));
+    if (unverifiedPaneIds.length === 0) return;
+
+    for (const paneId of unverifiedPaneIds) {
+      restoredPaneIdsRef.current.add(paneId);
+      validatingRestoredPaneIdsRef.current.add(paneId);
+    }
+
+    let cancelled = false;
+    Promise.all(
+      unverifiedPaneIds.map(async (paneId): Promise<ShellPane | null> => {
+        const existing = shellPanes.find((pane) => pane.pane_id === paneId);
+        const info = await invoke<ExistingPaneInfo | null>("get_existing_pane_info", { paneId }).catch(() => null);
+        if (!info) return null;
+        return {
+          pane_id: info.pane_id,
+          cwd: info.cwd,
+          tmux_session: info.tmux_session,
+          window_name: info.window_name,
+          matched_group: existing?.matched_group ?? null,
+          display_name: existing?.display_name ?? null,
+        };
+      }),
+    ).then((results) => {
+      for (const paneId of unverifiedPaneIds) validatingRestoredPaneIdsRef.current.delete(paneId);
+      if (cancelled) return;
+      const restored = results.filter(isShellPane);
+      const restoredIds = new Set(restored.map((pane) => pane.pane_id));
+      const missingIds = new Set(unverifiedPaneIds.filter((paneId) => !restoredIds.has(paneId)));
+
+      if (restored.length > 0) {
+        for (const paneId of restoredIds) demotedShellPaneIdsRef.current.add(paneId);
+        setShellPanes((prev) => {
+          const next = [...prev];
+          for (const pane of restored) {
+            const index = next.findIndex((existing) => existing.pane_id === pane.pane_id);
+            if (index >= 0) next[index] = { ...next[index], ...pane };
+            else next.push(pane);
+          }
+          return next;
+        });
+      }
+
+      if (missingIds.size > 0) {
+        setShellPanes((prev) => prev.filter((pane) => !missingIds.has(pane.pane_id)));
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [shellPanes, split.tree]);
 
   // Clear stopping job slugs when job is no longer running
   useEffect(() => {
@@ -257,6 +363,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
         if (demotingPaneIds.has(content.paneId)) return false;
         if (demotionCandidateIds.has(content.paneId)) return false;
         if (demotedShellPaneIdsRef.current.has(content.paneId)) return false;
+        if (validatingRestoredPaneIdsRef.current.has(content.paneId)) return false;
         return !shellPanes.find((p) => p.pane_id === content.paneId);
       }
       return false;

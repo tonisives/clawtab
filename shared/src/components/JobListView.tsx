@@ -264,6 +264,7 @@ export function JobListView({
   }, [sidebarFocusRef]);
   const [sortOpen, setSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [collapsedJobPanes, setCollapsedJobPanes] = useState<Set<string>>(() => new Set());
   const [agentProviders, setAgentProviders] = useState<ProcessProvider[]>([]);
   const [groupAgentProviders, setGroupAgentProviders] = useState<Record<string, ProcessProvider>>(() => {
     if (!isWeb || typeof localStorage === "undefined") return {};
@@ -387,7 +388,15 @@ export function JobListView({
 
   const matchedProcessesByGroup = useMemo(() => {
     const map = new Map<string, DetectedProcess[]>();
+    const paneToRunningJobSlug = new Map<string, string>();
+    for (const job of jobs) {
+      const status = statuses[job.slug];
+      if (status?.state === "running" && status.pane_id) {
+        paneToRunningJobSlug.set(status.pane_id, job.slug);
+      }
+    }
     for (const proc of detectedProcesses) {
+      if (paneToRunningJobSlug.has(proc.pane_id)) continue;
       if (proc.matched_group) {
         const list = map.get(proc.matched_group) ?? [];
         list.push(proc);
@@ -407,7 +416,39 @@ export function JobListView({
       });
     }
     return map;
-  }, [detectedProcesses, processOrder]);
+  }, [detectedProcesses, jobs, processOrder, statuses]);
+
+  const matchedProcessesByJob = useMemo(() => {
+    const map = new Map<string, DetectedProcess[]>();
+    const paneToRunningJobSlug = new Map<string, string>();
+    for (const job of jobs) {
+      const status = statuses[job.slug];
+      if (status?.state === "running" && status.pane_id) {
+        paneToRunningJobSlug.set(status.pane_id, job.slug);
+      }
+    }
+    for (const proc of detectedProcesses) {
+      const matchedJobSlug = paneToRunningJobSlug.get(proc.pane_id);
+      if (!matchedJobSlug) continue;
+      const list = map.get(matchedJobSlug) ?? [];
+      list.push(proc);
+      map.set(matchedJobSlug, list);
+    }
+    for (const [slug, list] of map) {
+      const job = jobs.find((item) => item.slug === slug);
+      const manualOrder = job ? processOrder[job.group || "default"] ?? [] : [];
+      const manualIndex = new Map(manualOrder.map((paneId, index) => [paneId, index]));
+      list.sort((a, b) => {
+        const aIndex = manualIndex.get(a.pane_id);
+        const bIndex = manualIndex.get(b.pane_id);
+        if (aIndex != null && bIndex != null) return aIndex - bIndex;
+        if (aIndex != null) return -1;
+        if (bIndex != null) return 1;
+        return (a.display_name ?? a.first_query ?? a.cwd).localeCompare(b.display_name ?? b.first_query ?? b.cwd);
+      });
+    }
+    return map;
+  }, [detectedProcesses, jobs, processOrder, statuses]);
 
   const matchedShellsByGroup = useMemo(() => {
     const map = new Map<string, ShellPane[]>();
@@ -422,12 +463,17 @@ export function JobListView({
 
   const unmatchedProcesses = useMemo(
     () => detectedProcesses.filter((p) => {
+      const matchedRunningJob = jobs.some((job) => {
+        const status = statuses[job.slug];
+        return status?.state === "running" && status.pane_id === p.pane_id;
+      });
+      if (matchedRunningJob) return false;
       if (p.matched_group) return false;
       if (!query) return true;
       const folderName = p.cwd.split("/").filter(Boolean).pop() ?? "";
       return folderName.toLowerCase().includes(query) || p.cwd.toLowerCase().includes(query);
     }),
-    [detectedProcesses, query],
+    [detectedProcesses, jobs, query, statuses],
   );
 
   const items = useMemo(() => {
@@ -593,12 +639,19 @@ export function JobListView({
 
   const selectableItems = useMemo((): SidebarSelectableItem[] => (
     items.flatMap((item): SidebarSelectableItem[] => {
-      if (item.kind === "job") return [{ kind: "job", key: item.job.slug, job: item.job }];
+      if (item.kind === "job") {
+        return [
+          { kind: "job", key: item.job.slug, job: item.job },
+          ...(matchedProcessesByJob.get(item.job.slug) ?? []).map((process) => (
+            { kind: "process" as const, key: process.pane_id, process }
+          )),
+        ];
+      }
       if (item.kind === "process") return [{ kind: "process", key: item.process.pane_id, process: item.process }];
       if (item.kind === "shell") return [{ kind: "shell", key: `_term_${item.shell.pane_id}`, shell: item.shell }];
       return [];
     })
-  ), [items]);
+  ), [items, matchedProcessesByJob]);
 
   const lastSelectableItemsRef = useRef<SidebarSelectableItem[]>([]);
   useEffect(() => {
@@ -612,6 +665,18 @@ export function JobListView({
   const handleRefresh = useCallback(() => {
     onRefresh?.();
   }, [onRefresh]);
+
+  const toggleJobPanes = useCallback((slug: string) => {
+    setCollapsedJobPanes((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) {
+        next.delete(slug);
+      } else {
+        next.add(slug);
+      }
+      return next;
+    });
+  }, []);
 
   const renderJobItem = (item: Extract<ListItem, { kind: "job" }>, key: string, index: number) => {
     const status = statuses[item.job.slug] ?? IDLE_STATUS;
@@ -628,42 +693,113 @@ export function JobListView({
     const jobOnStop = isRunning && !isStopping && onStopJob ? () => onStopJob(item.job.slug) : undefined;
     const marginTop = index > 0 ? spacing.sm : undefined;
     const dimmed = item.idx % 2 === 1;
+    const childProcesses = matchedProcessesByJob.get(item.job.slug) ?? [];
+    const hasChildProcesses = childProcesses.length > 0;
+    const childProcessesExpanded = hasChildProcesses && !collapsedJobPanes.has(item.job.slug);
+    const renderChildProcess = (process: DetectedProcess, offset: number) => {
+      const terminalKey = `_term_${process.pane_id}`;
+      const rawColor = selectedItems?.get(process.pane_id) ?? selectedItems?.get(terminalKey);
+      const isFocused = !focusedItemKey || focusedItemKey === process.pane_id || focusedItemKey === terminalKey;
+      const isProcessSelected: boolean | string = rawColor
+        ? (isFocused ? rawColor : rawColor + "66")
+        : (selectedSlug === process.pane_id);
+      const processOnStop = onStopProcess ? () => onStopProcess(process.pane_id) : undefined;
+      const processOnRename = onRenameProcess ? () => onRenameProcess(process) : undefined;
+      const processOnSaveName = onSaveProcessName ? (name: string) => onSaveProcessName(process, name) : undefined;
+      return (
+        <View key={`job_${item.job.slug}_pane_${process.pane_id}`} style={[styles.jobChildProcess, offset > 0 ? { marginTop: spacing.xs } : undefined]}>
+          {customRenderProcessCard
+            ? customRenderProcessCard({
+              process,
+              sortGroup: `job:${item.job.slug}`,
+              onPress: onSelectProcess ? () => onSelectProcess(process) : undefined,
+              inGroup: true,
+              selected: isProcessSelected,
+              onStop: processOnStop,
+              onRename: processOnRename,
+              onSaveName: processOnSaveName,
+              autoYesActive: autoYesPaneIds?.has(process.pane_id) ?? false,
+              dataProcessId: process.pane_id,
+              startRenameSignal: renameProcessPaneId === process.pane_id ? renameProcessSignal : undefined,
+              onRenameDraftChange: (value: string | null) => onProcessRenameDraftChange?.(process.pane_id, value),
+              onRenameStateChange: (editing: boolean) => onProcessRenameStateChange?.(process.pane_id, editing),
+            })
+            : (
+              <ProcessCard
+                process={process}
+                onPress={onSelectProcess ? () => onSelectProcess(process) : undefined}
+                inGroup
+                selected={isProcessSelected}
+                onStop={processOnStop}
+                onRename={processOnRename}
+                onSaveName={processOnSaveName}
+                autoYesActive={autoYesPaneIds?.has(process.pane_id) ?? false}
+                startRenameSignal={renameProcessPaneId === process.pane_id ? renameProcessSignal : undefined}
+                onRenameDraftChange={(value) => onProcessRenameDraftChange?.(process.pane_id, value)}
+                onRenameStateChange={(editing) => onProcessRenameStateChange?.(process.pane_id, editing)}
+              />
+            )}
+        </View>
+      );
+    };
+    const expandToggle = hasChildProcesses ? (
+      <TouchableOpacity
+        onPress={(e: any) => {
+          e.stopPropagation?.();
+          toggleJobPanes(item.job.slug);
+        }}
+        style={styles.jobPaneToggle}
+        activeOpacity={0.6}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Text style={styles.jobPaneToggleText}>
+          {childProcessesExpanded ? "\u25BE" : "\u25B8"}
+        </Text>
+      </TouchableOpacity>
+    ) : null;
     return (
-      customRenderJobCard ? (
-        <View key={key}>
-          {customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping, marginTop, dimmed, dataJobSlug: item.job.slug, defaultAgentProvider })}
-        </View>
-      ) : (
-        <View
-          key={key}
-          {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
-          style={[
-            dimmed ? { opacity: 0.85 } : undefined,
-            marginTop != null ? { marginTop } : undefined,
-          ]}
-        >
-          {status.state === "running" ? (
-            <RunningJobCard
-              job={item.job}
-              status={status}
-              onPress={pressHandler}
-              selected={isSelected}
-              onStop={jobOnStop}
-              autoYesActive={jobAutoYesActive}
-              stopping={isStopping}
-              defaultAgentProvider={defaultAgentProvider}
-            />
+      <View key={key}>
+        <View style={styles.jobWithPaneToggle}>
+          {customRenderJobCard ? (
+            customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping, marginTop, dimmed, dataJobSlug: item.job.slug, defaultAgentProvider })
           ) : (
-            <JobCard
-              job={item.job}
-              status={status}
-              onPress={pressHandler}
-              selected={isSelected}
-              defaultAgentProvider={defaultAgentProvider}
-            />
+            <View
+              {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
+              style={[
+                dimmed ? { opacity: 0.85 } : undefined,
+                marginTop != null ? { marginTop } : undefined,
+              ]}
+            >
+              {status.state === "running" ? (
+                <RunningJobCard
+                  job={item.job}
+                  status={status}
+                  onPress={pressHandler}
+                  selected={isSelected}
+                  onStop={jobOnStop}
+                  autoYesActive={jobAutoYesActive}
+                  stopping={isStopping}
+                  defaultAgentProvider={defaultAgentProvider}
+                />
+              ) : (
+                <JobCard
+                  job={item.job}
+                  status={status}
+                  onPress={pressHandler}
+                  selected={isSelected}
+                  defaultAgentProvider={defaultAgentProvider}
+                />
+              )}
+            </View>
           )}
+          {expandToggle}
         </View>
-      )
+        {childProcessesExpanded ? (
+          <View style={styles.jobChildProcesses}>
+            {childProcesses.map((process, offset) => renderChildProcess(process, offset))}
+          </View>
+        ) : null}
+      </View>
     );
   };
 
@@ -1059,6 +1195,38 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: spacing.lg,
+  },
+  jobWithPaneToggle: {
+    position: "relative",
+  },
+  jobPaneToggle: {
+    position: "absolute",
+    top: spacing.xs,
+    left: spacing.xs,
+    zIndex: 5,
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  jobPaneToggleText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontFamily: "monospace",
+  },
+  jobChildProcesses: {
+    marginTop: spacing.xs,
+    marginLeft: spacing.lg,
+    paddingLeft: spacing.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
+  },
+  jobChildProcess: {
+    opacity: 0.96,
   },
   empty: {
     flex: 1,

@@ -376,6 +376,21 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontFamily: "monospace",
   },
+  runPaneLink: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  runPaneLinkText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+  },
   runDuration: {
     fontSize: 11,
     color: colors.textMuted,

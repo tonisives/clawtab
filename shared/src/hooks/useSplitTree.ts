@@ -47,20 +47,6 @@ export interface UseSplitTreeOptions {
   currentContent: PaneContent | null;
 }
 
-/** Strip terminal leaves from a persisted tree - they can't survive app restart */
-function stripTerminals(node: SplitNode): SplitNode | null {
-  if (node.type === "leaf") {
-    return node.content.kind === "terminal" ? null : node;
-  }
-  const first = stripTerminals(node.first);
-  const second = stripTerminals(node.second);
-  if (!first && !second) return null;
-  if (!first) return second;
-  if (!second) return first;
-  if (first === node.first && second === node.second) return node;
-  return { ...node, first, second };
-}
-
 function loadTree(storageKey: string): SplitNode | null {
   if (typeof localStorage === "undefined") return null;
   const saved = localStorage.getItem(storageKey);
@@ -68,7 +54,7 @@ function loadTree(storageKey: string): SplitNode | null {
     try {
       const tree = JSON.parse(saved) as SplitNode;
       restoreIdCounter(tree);
-      return stripTerminals(tree);
+      return tree;
     } catch { /* ignore corrupt data */ }
   }
   return null;
