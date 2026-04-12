@@ -55,8 +55,7 @@ pub fn init() -> Result<(), String> {
         .ok_or_else(|| "config dir unavailable".to_string())?
         .join("spawn_debug.db");
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("create spawn debug dir: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("create spawn debug dir: {}", e))?;
     }
     let conn = Connection::open(&path).map_err(|e| format!("open spawn_debug.db: {}", e))?;
     conn.execute_batch(
@@ -143,11 +142,7 @@ fn record(
 
 /// Synchronous wrapper. Spawns `program` with `args`, captures duration/exit/stderr,
 /// and records a row. Returns the process `Output` on success.
-pub fn run_logged(
-    program: &str,
-    args: &[&str],
-    callsite: &'static str,
-) -> std::io::Result<Output> {
+pub fn run_logged(program: &str, args: &[&str], callsite: &'static str) -> std::io::Result<Output> {
     let start = Instant::now();
     let ts = now_ms();
     let out = Command::new(program).args(args).output();
@@ -187,7 +182,9 @@ pub fn list_since(since_ms: Option<i64>, limit: i64) -> Result<Vec<SpawnEventRow
     let Some(store) = STORE.get() else {
         return Ok(Vec::new());
     };
-    let conn = store.lock().map_err(|_| "spawn store poisoned".to_string())?;
+    let conn = store
+        .lock()
+        .map_err(|_| "spawn store poisoned".to_string())?;
     let cutoff = since_ms.unwrap_or(now_ms() - RETENTION_SECS * 1000);
     let mut stmt = conn
         .prepare(
@@ -224,7 +221,9 @@ pub fn summary() -> Result<SpawnSummary, String> {
     let Some(store) = STORE.get() else {
         return Ok(SpawnSummary::default());
     };
-    let conn = store.lock().map_err(|_| "spawn store poisoned".to_string())?;
+    let conn = store
+        .lock()
+        .map_err(|_| "spawn store poisoned".to_string())?;
     let now = now_ms();
     let window_start = now - RETENTION_SECS * 1000;
 
@@ -311,7 +310,9 @@ pub fn clear() -> Result<(), String> {
     let Some(store) = STORE.get() else {
         return Ok(());
     };
-    let conn = store.lock().map_err(|_| "spawn store poisoned".to_string())?;
+    let conn = store
+        .lock()
+        .map_err(|_| "spawn store poisoned".to_string())?;
     conn.execute("DELETE FROM spawn_events", [])
         .map_err(|e| format!("clear: {}", e))?;
     Ok(())

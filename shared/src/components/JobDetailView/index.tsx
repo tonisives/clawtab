@@ -12,7 +12,7 @@ import { PopupMenu } from "../PopupMenu";
 const isWeb = Platform.OS === "web";
 import type { Transport } from "../../transport";
 import type { RemoteJob, JobStatus, RunRecord } from "../../types/job";
-import type { ShellPane } from "../../types/process";
+import type { ProcessProvider, ShellPane } from "../../types/process";
 import { StatusBadge } from "../StatusBadge";
 import { ReadOnlyXterm } from "../ReadOnlyXterm";
 import { MessageInput } from "../MessageInput";
@@ -21,7 +21,7 @@ import { formatTime, compactCron, shortenPath } from "../../util/format";
 import { nextCronDate, formatNextRun, cronTooltip } from "../../util/cron";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
-import { JobKindIcon, kindForJob } from "../JobKindIcon";
+import { JobKindIcon, kindForJob, providerKindForJob } from "../JobKindIcon";
 import { ActionButton } from "./ActionButton";
 import { OptionButtons } from "./Options";
 import { RunRow } from "./RunRow";
@@ -102,6 +102,7 @@ export interface JobDetailViewProps {
     isDragging?: boolean;
   };
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
+  defaultAgentProvider?: ProcessProvider;
 }
 
 export function JobDetailView({
@@ -150,6 +151,7 @@ export function JobDetailView({
   onStopping,
   dragHandleProps,
   renderRunTerminal,
+  defaultAgentProvider = "claude",
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";
@@ -295,7 +297,10 @@ export function JobDetailView({
   const pathDisplay = jobDir.replace(/^\/Users\/[^/]+/, "~");
   const shortTitlePath = titlePath ? shortenPath(titlePath) : null;
   const compactLeadingPills = headerWidth > 0 && headerWidth < 940;
-  const jobTypeIcon = kindForJob(job);
+  const leadingIconSize = compactLeadingPills ? 22 : 28;
+  const providerBadgeSize = compactLeadingPills ? 12 : 14;
+  const jobTypeIcon = job.cron ? "cron" : kindForJob(job);
+  const providerIcon = job.cron ? (providerKindForJob(job) ?? defaultAgentProvider) : null;
   const showModePill = !(isManual && expandOutput);
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
@@ -328,8 +333,16 @@ export function JobDetailView({
         onLayout={(e) => setHeaderWidth(e.nativeEvent.layout.width)}
       >
         <View style={styles.infoPills}>
-          <View style={styles.infoLeadingIcon} {...(isWeb ? { title: job.job_type } as any : {})}>
-            <JobKindIcon kind={jobTypeIcon} size={compactLeadingPills ? 22 : 28} compact bare />
+          <View
+            style={[styles.infoLeadingIcon, { width: leadingIconSize, height: leadingIconSize }]}
+            {...(isWeb ? { title: job.cron ? `${job.job_type}: ${providerIcon}` : job.job_type } as any : {})}
+          >
+            <JobKindIcon kind={jobTypeIcon} size={leadingIconSize} compact bare />
+            {providerIcon ? (
+              <View style={[styles.infoProviderBadge, { width: providerBadgeSize + 2, height: providerBadgeSize + 2 }]}>
+                <JobKindIcon kind={providerIcon} size={providerBadgeSize} compact bare />
+              </View>
+            ) : null}
           </View>
           {isWeb && dragHandleProps ? (
             <div

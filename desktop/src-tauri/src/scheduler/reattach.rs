@@ -280,7 +280,10 @@ pub fn cleanup_orphaned_shell_windows() {
     let sessions = match tmux::list_sessions() {
         Ok(s) => s,
         Err(e) => {
-            log::debug!("cleanup_orphaned_shell_windows: list_sessions failed: {}", e);
+            log::debug!(
+                "cleanup_orphaned_shell_windows: list_sessions failed: {}",
+                e
+            );
             return;
         }
     };
@@ -321,6 +324,9 @@ pub fn cleanup_orphaned_shell_windows() {
     }
 
     if killed > 0 {
-        log::info!("cleanup_orphaned_shell_windows: killed {} orphan(s)", killed);
+        log::info!(
+            "cleanup_orphaned_shell_windows: killed {} orphan(s)",
+            killed
+        );
     }
 }

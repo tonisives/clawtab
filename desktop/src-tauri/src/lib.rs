@@ -148,6 +148,58 @@ fn find_menu_item(submenu: &Submenu<tauri::Wry>, label: &str) -> Option<MenuItem
     })
 }
 
+pub(crate) fn refresh_tray_usage_menu(
+    app: &tauri::AppHandle,
+    snapshot: Option<&usage::UsageSnapshot>,
+) -> tauri::Result<()> {
+    let Some(tray) = app.tray_by_id("main") else {
+        return Ok(());
+    };
+
+    let show_tray_icon = app
+        .try_state::<AppState>()
+        .map(|state| state.settings.lock().unwrap().show_tray_icon)
+        .unwrap_or(true);
+    tray.set_visible(show_tray_icon)?;
+
+    let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let (claude, codex, zai) = tray_usage_labels(snapshot);
+    let claude_item = MenuItem::with_id(app, "usage_claude", claude, false, None::<&str>)?;
+    let codex_item = MenuItem::with_id(app, "usage_codex", codex, false, None::<&str>)?;
+    let zai_item = MenuItem::with_id(app, "usage_zai", zai, false, None::<&str>)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let tray_menu = Menu::with_items(
+        app,
+        &[
+            &settings_item,
+            &sep1,
+            &claude_item,
+            &codex_item,
+            &zai_item,
+            &sep2,
+            &quit_item,
+        ],
+    )?;
+    tray.set_menu(Some(tray_menu))
+}
+
+fn tray_usage_labels(snapshot: Option<&usage::UsageSnapshot>) -> (String, String, String) {
+    match snapshot {
+        Some(snapshot) => (
+            format!("Claude: {}", snapshot.claude.summary),
+            format!("Codex: {}", snapshot.codex.summary),
+            format!("z.ai: {}", snapshot.zai.summary),
+        ),
+        None => (
+            "Claude: loading...".to_string(),
+            "Codex: loading...".to_string(),
+            "z.ai: loading...".to_string(),
+        ),
+    }
+}
+
 fn ensure_shortcut_menu_item(
     app: &tauri::AppHandle,
     submenu: &Submenu<tauri::Wry>,
@@ -681,6 +733,7 @@ pub fn run() {
             commands::browser::check_playwright_installed,
             commands::settings::set_dock_visibility,
             commands::settings::set_titlebar_visibility,
+            commands::settings::set_tray_icon_visibility,
             commands::updater::get_version,
             commands::updater::check_for_update,
             commands::updater::restart_app,
@@ -749,42 +802,11 @@ pub fn run() {
             *ipc_app_handle.lock().unwrap() = Some(app.handle().clone());
 
             // Tray menu
-            let settings_item =
-                MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-            let sep1 = PredefinedMenuItem::separator(app)?;
-            let claude_item = MenuItem::with_id(
-                app,
-                "usage_claude",
-                "Claude: loading...",
-                false,
-                None::<&str>,
-            )?;
-            let codex_item =
-                MenuItem::with_id(app, "usage_codex", "Codex: loading...", false, None::<&str>)?;
-            let zai_item =
-                MenuItem::with_id(app, "usage_zai", "z.ai: loading...", false, None::<&str>)?;
-            let sep2 = PredefinedMenuItem::separator(app)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(
-                app,
-                &[
-                    &settings_item,
-                    &sep1,
-                    &claude_item,
-                    &codex_item,
-                    &zai_item,
-                    &sep2,
-                    &quit_item,
-                ],
-            )?;
-
-            let claude_handle = claude_item.clone();
-            let codex_handle = codex_item.clone();
-            let zai_handle = zai_item.clone();
             let secrets_for_usage = app.state::<AppState>().secrets.clone();
+            let app_for_usage = app.handle().clone();
 
             if let Some(tray) = app.tray_by_id("main") {
-                tray.set_menu(Some(tray_menu))?;
+                refresh_tray_usage_menu(app.handle(), None)?;
                 tray.on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
                         if let Some(window) = app.get_webview_window("settings") {
@@ -822,8 +844,7 @@ pub fn run() {
             }
 
             // Append Debug + PTY Debug entries to the existing View submenu.
-            let debug_item =
-                MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
+            let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
             let pty_debug_item =
                 MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
             if let Some(view_menu) = find_submenu(&app_menu, "View") {
@@ -868,9 +889,7 @@ pub fn run() {
                         usage::resolve_zai_token_from_sources(explicit)
                     };
                     let usage = usage::fetch_usage_snapshot(zai_token).await;
-                    let _ = claude_handle.set_text(format!("Claude: {}", usage.claude.summary));
-                    let _ = codex_handle.set_text(format!("Codex: {}", usage.codex.summary));
-                    let _ = zai_handle.set_text(format!("z.ai: {}", usage.zai.summary));
+                    let _ = refresh_tray_usage_menu(&app_for_usage, Some(&usage));
                     tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
                 }
             });

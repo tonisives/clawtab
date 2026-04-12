@@ -148,9 +148,7 @@ fn find_opencode_session(
     // 2 second slack absorbs fork-to-insert latency and small clock drift.
     let proc_start = process_start_epoch?;
     let cutoff_ms = (proc_start - 2) * 1000;
-    candidates
-        .into_iter()
-        .find(|c| c.time_created >= cutoff_ms)
+    candidates.into_iter().find(|c| c.time_created >= cutoff_ms)
 }
 
 fn read_opencode_user_messages(session_id: &str) -> (Option<String>, Option<String>) {

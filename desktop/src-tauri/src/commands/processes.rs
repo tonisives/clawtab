@@ -119,8 +119,11 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))??;
 
-    let detected_pane_ids: HashSet<String> =
-        snapshot.processes.iter().map(|p| p.pane_id.clone()).collect();
+    let detected_pane_ids: HashSet<String> = snapshot
+        .processes
+        .iter()
+        .map(|p| p.pane_id.clone())
+        .collect();
     prune_stale_process_overrides(&state, &detected_pane_ids)?;
 
     Ok(snapshot.processes)

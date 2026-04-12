@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { RemoteJob, JobStatus } from "@clawtab/shared";
+import type { RemoteJob, JobStatus, ProcessProvider } from "@clawtab/shared";
 import { JobDetailView, useJobDetail, useLogBuffer } from "@clawtab/shared";
 import type { AppSettings, Job } from "../types";
 import { EDITOR_LABELS } from "../constants";
@@ -390,6 +390,7 @@ export function DesktopJobDetail({
   contentStyle,
   titlePath,
   dragHandleProps,
+  defaultAgentProvider,
 }: {
   transport: Transport;
   job: Job;
@@ -418,6 +419,7 @@ export function DesktopJobDetail({
   onStopping?: () => void;
   contentStyle?: unknown;
   titlePath?: string;
+  defaultAgentProvider?: ProcessProvider;
   dragHandleProps?: {
     ref?: (node: HTMLElement | null) => void;
     attributes?: Record<string, unknown>;
@@ -510,6 +512,7 @@ export function DesktopJobDetail({
         onStopping={onStopping}
         dragHandleProps={dragHandleProps}
         renderRunTerminal={renderRunTerminal}
+        defaultAgentProvider={defaultAgentProvider}
       />
       {showConfirm && (
         <ConfirmDialog

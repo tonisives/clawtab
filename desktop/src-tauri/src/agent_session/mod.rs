@@ -106,7 +106,10 @@ impl ProcessSnapshot {
 fn parse_lstart(s: &str) -> Option<i64> {
     use chrono::{NaiveDateTime, TimeZone};
     let naive = NaiveDateTime::parse_from_str(s, "%a %b %e %H:%M:%S %Y").ok()?;
-    chrono::Local.from_local_datetime(&naive).single().map(|dt| dt.timestamp())
+    chrono::Local
+        .from_local_datetime(&naive)
+        .single()
+        .map(|dt| dt.timestamp())
 }
 
 /// Resolve session info for an agent pane.

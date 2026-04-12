@@ -94,12 +94,19 @@ pub struct AppSettings {
     pub relay: Option<RelaySettings>,
     /// Whether to show the app icon in the macOS Dock
     pub show_in_dock: bool,
+    /// Whether to show the app icon in the system tray/menu bar
+    #[serde(default = "default_true")]
+    pub show_tray_icon: bool,
     /// Whether to hide the native title bar (uses overlay style)
     pub hide_titlebar: bool,
     /// Per-pane detected process metadata overrides.
     pub process_overrides: HashMap<String, DetectedProcessOverride>,
     /// User-configurable desktop keyboard shortcuts.
     pub shortcuts: ShortcutSettings,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppSettings {
@@ -125,6 +132,7 @@ impl Default for AppSettings {
             hidden_groups: Vec::new(),
             relay: None,
             show_in_dock: true,
+            show_tray_icon: true,
             hide_titlebar: true,
             process_overrides: HashMap::new(),
             shortcuts: ShortcutSettings::default(),

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -102,11 +102,8 @@ async fn fetch_codex_snapshot() -> ProviderUsageSnapshot {
 fn fallback_codex_snapshot(rpc_err: String) -> ProviderUsageSnapshot {
     match read_codex_status_cli_snapshot() {
         Ok(mut snapshot) => {
-            snapshot.status = "partial".to_string();
-            snapshot.note = Some(format!(
-                "Codex app-server quota probe failed ({}). Falling back to `codex /status`.",
-                rpc_err
-            ));
+            snapshot.status = "available".to_string();
+            snapshot.note = None;
             snapshot
         }
         Err(cli_err) => ProviderUsageSnapshot {
@@ -123,13 +120,20 @@ fn fallback_codex_snapshot(rpc_err: String) -> ProviderUsageSnapshot {
 }
 
 fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
-    let mut child = Command::new("codex")
+    let codex_binary = resolve_codex_binary();
+    let mut child = Command::new(&codex_binary)
         .args(["-s", "read-only", "-a", "untrusted", "app-server"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|err| format!("failed to start codex app-server: {}", err))?;
+        .map_err(|err| {
+            format!(
+                "failed to start codex app-server at {}: {}",
+                codex_binary.display(),
+                err
+            )
+        })?;
 
     let mut stdin = child
         .stdin
@@ -441,7 +445,50 @@ fn read_codex_status_cli_snapshot() -> Result<ProviderUsageSnapshot, String> {
     parse_codex_status_snapshot(&output)
 }
 
+fn resolve_codex_binary() -> PathBuf {
+    for var_name in ["CLAWTAB_CODEX_PATH", "CODEX_PATH", "CODEX_BINARY"] {
+        if let Ok(value) = std::env::var(var_name) {
+            let candidate = PathBuf::from(value);
+            if is_executable_file(&candidate) {
+                return candidate;
+            }
+        }
+    }
+
+    for candidate in [
+        "/opt/homebrew/bin/codex",
+        "/usr/local/bin/codex",
+        "/usr/bin/codex",
+    ] {
+        let candidate = PathBuf::from(candidate);
+        if is_executable_file(&candidate) {
+            return candidate;
+        }
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        for suffix in [
+            ".local/bin/codex",
+            ".npm-global/bin/codex",
+            ".bun/bin/codex",
+            ".yarn/bin/codex",
+        ] {
+            let candidate = home.join(suffix);
+            if is_executable_file(&candidate) {
+                return candidate;
+            }
+        }
+    }
+
+    PathBuf::from("codex")
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
 fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
+    let codex_binary = resolve_codex_binary();
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -452,14 +499,17 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
         })
         .map_err(|err| format!("openpty: {}", err))?;
 
-    let mut cmd = CommandBuilder::new("codex");
+    let mut cmd = CommandBuilder::new(codex_binary.to_string_lossy().to_string());
     cmd.args(["-s", "read-only", "-a", "untrusted"]);
     cmd.env("TERM", "xterm-256color");
 
-    let mut child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|err| format!("failed to start codex: {}", err))?;
+    let mut child = pair.slave.spawn_command(cmd).map_err(|err| {
+        format!(
+            "failed to start codex at {}: {}",
+            codex_binary.display(),
+            err
+        )
+    })?;
     drop(pair.slave);
 
     let mut reader = pair
@@ -470,10 +520,6 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
         .master
         .take_writer()
         .map_err(|err| format!("take writer: {}", err))?;
-    writer
-        .write_all(b"/status\n")
-        .and_then(|_| writer.flush())
-        .map_err(|err| format!("send /status: {}", err))?;
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
     thread::spawn(move || {
@@ -492,17 +538,38 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
     });
 
     let deadline = Instant::now() + timeout;
+    let command_deadline = Instant::now() + Duration::from_millis(1200);
     let mut output = Vec::new();
+    let mut command_sent = false;
+    let mut status_seen_at: Option<Instant> = None;
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(150)) {
             Ok(bytes) => {
                 output.extend(bytes);
                 let text = String::from_utf8_lossy(&output);
-                if text.contains("Weekly limit") || text.contains("data not available yet") {
+                if !command_sent && (Instant::now() >= command_deadline || codex_tui_ready(&text)) {
+                    send_codex_status(&mut writer)?;
+                    command_sent = true;
+                }
+                if text.contains("data not available yet") {
+                    break;
+                }
+                if text.contains("Weekly limit") && status_seen_at.is_none() {
+                    status_seen_at = Some(Instant::now());
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if !command_sent && Instant::now() >= command_deadline {
+                    send_codex_status(&mut writer)?;
+                    command_sent = true;
+                }
+                if status_seen_at
+                    .map(|seen| seen.elapsed() >= Duration::from_millis(600))
+                    .unwrap_or(false)
+                {
                     break;
                 }
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
@@ -518,15 +585,26 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
     }
 }
 
+fn codex_tui_ready(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    text.contains('›') || text.contains('▌') || lower.contains("what would you like")
+}
+
+fn send_codex_status(writer: &mut dyn Write) -> Result<(), String> {
+    writer
+        .write_all(b"/status\r")
+        .and_then(|_| writer.flush())
+        .map_err(|err| format!("send /status: {}", err))
+}
+
 fn parse_codex_status_snapshot(text: &str) -> Result<ProviderUsageSnapshot, String> {
     if text.to_ascii_lowercase().contains("data not available yet") {
         return Err("Codex usage data is not available yet".to_string());
     }
 
-    let session_line = first_matching_line(text, "5h limit");
-    let week_line = first_matching_line(text, "weekly limit");
-    let session = session_line.and_then(parse_codex_status_line);
-    let week = week_line.and_then(parse_codex_status_line);
+    let lines = text.lines().collect::<Vec<_>>();
+    let session = parse_codex_status_entry(&lines, "5h limit");
+    let week = parse_codex_status_entry(&lines, "weekly limit");
     let plan = first_matching_line(text, "plan:")
         .and_then(|line| {
             line.split_once(':')
@@ -584,6 +662,44 @@ fn first_matching_line<'a>(text: &'a str, needle: &str) -> Option<&'a str> {
         .find(|line| line.to_ascii_lowercase().contains(&needle))
 }
 
+fn parse_codex_status_entry(lines: &[&str], needle: &str) -> Option<CodexCliLimit> {
+    let needle = needle.to_ascii_lowercase();
+    let (index, line) = lines
+        .iter()
+        .enumerate()
+        .find(|(_, line)| line.to_ascii_lowercase().contains(&needle))?;
+    let mut combined = line.trim().to_string();
+    for next in lines.iter().skip(index + 1).take(4) {
+        let next = next.trim();
+        if next.is_empty() {
+            continue;
+        }
+
+        let next_lower = next.to_ascii_lowercase();
+        if next_lower.contains("limit") {
+            break;
+        }
+
+        let needs_percent = !combined.contains('%');
+        let needs_reset = !combined.to_ascii_lowercase().contains("resets");
+        if needs_percent
+            || (needs_reset
+                && (next_lower.contains("reset")
+                    || next_lower.contains("left")
+                    || next_lower.contains('%')))
+        {
+            combined.push(' ');
+            combined.push_str(next);
+        }
+
+        if combined.contains('%') && combined.to_ascii_lowercase().contains("resets") {
+            break;
+        }
+    }
+
+    parse_codex_status_line(&combined)
+}
+
 fn parse_codex_status_line(line: &str) -> Option<CodexCliLimit> {
     let percent_left = first_percent_in(line)?;
     let reset = reset_text_from_line(line);
@@ -612,10 +728,20 @@ fn first_percent_in(line: &str) -> Option<i64> {
 fn reset_text_from_line(line: &str) -> Option<String> {
     let lower = line.to_ascii_lowercase();
     let start = lower.find("resets")?;
-    let text = line[start + "resets".len()..]
-        .trim()
-        .trim_matches(|ch| ch == '(' || ch == ')' || ch == ':' || ch == '-')
-        .trim();
+    let mut text = line[start + "resets".len()..].trim().to_string();
+    loop {
+        let cleaned = text
+            .trim()
+            .trim_matches(|ch: char| {
+                ch == '(' || ch == ')' || ch == ':' || ch == '-' || ch == '|' || ch == '│'
+            })
+            .trim()
+            .to_string();
+        if cleaned == text {
+            break;
+        }
+        text = cleaned;
+    }
     (!text.is_empty()).then(|| text.to_string())
 }
 
@@ -1080,4 +1206,31 @@ fn read_zai_token_from_opencode() -> Option<String> {
     auth.zai_coding_plan
         .map(|entry| entry.key)
         .or_else(|| auth.zai.map(|entry| entry.key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_codex_week_limit_when_status_wraps() {
+        let snapshot = parse_codex_status_snapshot(
+            r#"
+Account: user@example.com (Plus)
+5h limit: 38% left (resets 11:38)
+Weekly limit:
+  49% left
+  (resets 06:14 on 17 Apr) │)
+"#,
+        )
+        .expect("status should parse");
+
+        let week = snapshot
+            .entries
+            .iter()
+            .find(|entry| entry.label == "Week")
+            .expect("week entry");
+        assert_eq!(week.value, "49% left (resets 06:14 on 17 Apr)");
+        assert_eq!(snapshot.summary, "Session 38% left, Week 49% left");
+    }
 }

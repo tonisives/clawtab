@@ -7,21 +7,7 @@ import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
-import { JobKindIcon, kindForJob, type JobKind } from "./JobKindIcon";
-
-function providerKindForJob(job: RemoteJob): JobKind | null {
-  if (
-    job.agent_provider === "claude" ||
-    job.agent_provider === "codex" ||
-    job.agent_provider === "opencode" ||
-    job.agent_provider === "shell"
-  ) {
-    return job.agent_provider;
-  }
-  if (job.job_type === "claude") return "claude";
-  if (job.job_type === "shell") return "shell";
-  return null;
-}
+import { JobKindIcon, kindForJob, providerKindForJob, type JobKind } from "./JobKindIcon";
 
 export const JobCard = memo(function JobCard({
   job,

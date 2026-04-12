@@ -152,9 +152,13 @@ fn refresh_attached_pane(sink: &OutputSink, recent: &Arc<Mutex<RecentPaneCache>>
 }
 
 fn tmux_session_exists(session: &str) -> bool {
-    debug_spawn::run_logged("tmux", &["has-session", "-t", session], "pty::tmux_session_exists")
-        .map(|out| out.status.success())
-        .unwrap_or(false)
+    debug_spawn::run_logged(
+        "tmux",
+        &["has-session", "-t", session],
+        "pty::tmux_session_exists",
+    )
+    .map(|out| out.status.success())
+    .unwrap_or(false)
 }
 
 fn next_view_session_name() -> String {
@@ -183,7 +187,10 @@ fn cleanup_orphaned_view_sessions(keep: &[&str]) {
     let raw = match tmux(&["list-sessions", "-F", "#{session_name}\t#{session_group}"]) {
         Ok(v) => v,
         Err(e) => {
-            log::debug!("cleanup_orphaned_view_sessions: list-sessions failed: {}", e);
+            log::debug!(
+                "cleanup_orphaned_view_sessions: list-sessions failed: {}",
+                e
+            );
             return;
         }
     };
@@ -199,7 +206,11 @@ fn cleanup_orphaned_view_sessions(keep: &[&str]) {
         if name.is_empty() {
             continue;
         }
-        let group_key = if group.is_empty() { name.clone() } else { group };
+        let group_key = if group.is_empty() {
+            name.clone()
+        } else {
+            group
+        };
         members
             .entry(group_key.clone())
             .or_default()
@@ -249,7 +260,10 @@ fn cleanup_orphaned_view_sessions(keep: &[&str]) {
 }
 
 fn is_idle_shell_command(cmd: &str) -> bool {
-    matches!(cmd, "zsh" | "bash" | "sh" | "fish" | "dash" | "ksh" | "tcsh")
+    matches!(
+        cmd,
+        "zsh" | "bash" | "sh" | "fish" | "dash" | "ksh" | "tcsh"
+    )
 }
 
 /// Sweep `ct-*` windows whose only process is an idle shell. Leaves windows
@@ -400,8 +414,70 @@ fn next_ct_window_name(session: &str, base: &str) -> String {
 /// NOT the pane with that ID. Pane IDs are globally unique, so the session
 /// prefix adds nothing here and actively breaks pane lookup.
 fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), String> {
-    if let Some((sess, win_id)) = find_captured_window(pane_id) {
-        return Ok((sess, win_id));
+    if let Some((existing_sess, existing_win)) = find_captured_window(pane_id) {
+        // If the existing ct-* window holds only this pane, we're done.
+        // Otherwise the pane is sharing a window with siblings (either because
+        // the user split it from an outside terminal, or from a pre-fix fork),
+        // and the viewer would render whichever pane tmux considers active. We
+        // break it out into its own fresh ct-* window so every clawtab-managed
+        // pane lives alone.
+        let pane_count_raw = tmux(&[
+            "display-message",
+            "-t",
+            &existing_win,
+            "-p",
+            "#{window_panes}",
+        ])?;
+        let pane_count: u32 = pane_count_raw.trim().parse().unwrap_or(1);
+        if pane_count <= 1 {
+            return Ok((existing_sess, existing_win));
+        }
+
+        // Origin session from @clawtab-origin is authoritative. See the big
+        // comment below about why #{session_name} is unreliable here.
+        let origin_meta_raw = tmux(&[
+            "show-options",
+            "-w",
+            "-v",
+            "-t",
+            &existing_win,
+            "@clawtab-origin",
+        ])
+        .unwrap_or_default();
+        let origin_parts: Vec<&str> = origin_meta_raw.split('\t').collect();
+        let origin_session = origin_parts.first().copied().unwrap_or(tmux_session);
+        let origin_window_id = origin_parts.get(1).copied().unwrap_or("");
+        let origin_pane_index = origin_parts.get(2).copied().unwrap_or("0");
+        let origin_window_name = origin_parts.get(3).copied().unwrap_or("pane");
+
+        let new_name = next_ct_window_name(origin_session, origin_window_name);
+        tmux(&[
+            "break-pane",
+            "-d",
+            "-s",
+            pane_id,
+            "-t",
+            &format!("{}:", origin_session),
+            "-n",
+            &new_name,
+        ])?;
+
+        let new_win = tmux(&["display-message", "-t", pane_id, "-p", "#{window_id}"])?;
+
+        let origin_meta = format!(
+            "{}\t{}\t{}\t{}",
+            origin_session, origin_window_id, origin_pane_index, origin_window_name
+        );
+        let _ = tmux(&[
+            "set-option",
+            "-w",
+            "-t",
+            &new_win,
+            "@clawtab-origin",
+            &origin_meta,
+        ]);
+
+        return Ok((origin_session.to_string(), new_win));
     }
 
     let origin = tmux(&[
@@ -433,13 +509,7 @@ fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), S
         &new_name,
     ])?;
 
-    let new_win = tmux(&[
-        "display-message",
-        "-t",
-        pane_id,
-        "-p",
-        "#{window_id}",
-    ])?;
+    let new_win = tmux(&["display-message", "-t", pane_id, "-p", "#{window_id}"])?;
 
     // Origin metadata: session\twindow_id\tpane_index\twindow_name (matches the
     // format release_captured_pane expects).

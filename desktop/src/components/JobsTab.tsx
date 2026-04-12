@@ -126,6 +126,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [viewingShell, setViewingShell] = useState<ShellPane | null>(null);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
   const [viewingAgent, setViewingAgent] = useState(false);
+  const [showFolderRunner, setShowFolderRunner] = useState(false);
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
   const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
   const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
@@ -135,7 +136,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
   const [demotingPaneIds, setDemotingPaneIds] = useState<Set<string>>(new Set());
   const demotedShellPaneIdsRef = useRef<Set<string>>(new Set());
-  const [focusAgentSignal, setFocusAgentSignal] = useState(0);
+  const focusAgentSignal = 0;
+  const [focusEmptyAgentSignal, setFocusEmptyAgentSignal] = useState(0);
   const renameProcessSignal = 0;
   const [renameProcessPaneId, setRenameProcessPaneId] = useState<string | null>(null);
   const [processRenameDrafts, setProcessRenameDrafts] = useState<Record<string, string | null>>({});
@@ -188,6 +190,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, []);
 
   const handleSelectJobDirect = useCallback((job: RemoteJob) => {
+    setShowFolderRunner(false);
     setViewingProcess(null);
     setViewingShell(null);
     setViewingAgent(false);
@@ -197,6 +200,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [blurSelectionFocus, onJobSelected]);
 
   const handleSelectProcessDirect = useCallback((process: DetectedProcess) => {
+    setShowFolderRunner(false);
     setViewingJob(null);
     setViewingShell(null);
     if (process.cwd.endsWith("/clawtab/agent")) {
@@ -213,6 +217,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [blurSelectionFocus, onJobSelected]);
 
   const handleSelectShellDirect = useCallback((shell: ShellPane) => {
+    setShowFolderRunner(false);
     setViewingJob(null);
     setViewingProcess(null);
     setViewingAgent(false);
@@ -287,6 +292,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // Wrap select handlers to check tree first
   const handleSelectJob = useCallback((job: RemoteJob) => {
+    setShowFolderRunner(false);
     const content: PaneContent = { kind: "job", slug: job.slug };
     if (split.tree && split.handleSelectInTree(content)) {
       onJobSelected?.();
@@ -297,6 +303,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [split.tree, split.handleSelectInTree, handleSelectJobDirect, onJobSelected, blurSelectionFocus]);
 
   const handleSelectProcess = useCallback((process: DetectedProcess) => {
+    setShowFolderRunner(false);
     if (process.cwd.endsWith("/clawtab/agent")) {
       const content: PaneContent = { kind: "agent" };
       if (split.tree && split.handleSelectInTree(content)) {
@@ -317,6 +324,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [split.tree, split.handleSelectInTree, handleSelectProcessDirect, onJobSelected, blurSelectionFocus]);
 
   const handleSelectShell = useCallback((shell: ShellPane) => {
+    setShowFolderRunner(false);
     const content: PaneContent = { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session };
     if (split.tree && split.handleSelectInTree(content)) {
       onJobSelected?.();
@@ -776,18 +784,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     return process.display_name ?? shortenPath(process.cwd);
   }, [processRenameDrafts]);
 
-  const focusSidebarAgentInput = useCallback((workDir: string) => {
-    if (typeof document === "undefined") return false;
-    const escaped = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(workDir) : workDir.replace(/"/g, '\\"');
-    const selector = `[data-agent-input="${escaped}"]`;
-    const input = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (!input) return false;
-    input.focus();
-    const len = input.value.length;
-    try { input.setSelectionRange(len, len); } catch {}
-    return true;
-  }, []);
-
   const openRenameProcessDialog = useCallback((process: DetectedProcess) => {
     setEditProcessField({
       paneId: process.pane_id,
@@ -805,18 +801,19 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [activeProcessForRename, openRenameProcessDialog]);
 
   const triggerFocusAgentInput = useCallback(() => {
-    if (!activeSidebarAgentTarget?.workDir) return;
-    if (activeSidebarAgentTarget.groupKey && core.collapsedGroups.has(activeSidebarAgentTarget.groupKey)) {
-      core.toggleGroup(activeSidebarAgentTarget.groupKey);
-    }
-    if (sidebarCollapsed) setSidebarCollapsed(false);
-    requestAnimationFrame(() => sidebarFocusRef.current?.focus());
-    setFocusAgentSignal((value) => value + 1);
-    requestAnimationFrame(() => {
-      if (focusSidebarAgentInput(activeSidebarAgentTarget.workDir)) return;
-      setTimeout(() => { focusSidebarAgentInput(activeSidebarAgentTarget.workDir); }, 40);
-    });
-  }, [activeSidebarAgentTarget, core.collapsedGroups, core.toggleGroup, focusSidebarAgentInput, sidebarCollapsed]);
+    setEditingJob(null);
+    setIsCreating(false);
+    setShowPicker(false);
+    setPickerTemplateId(null);
+    setCreateForGroup(null);
+    setSaveError(null);
+    setViewingJob(null);
+    setViewingProcess(null);
+    setViewingShell(null);
+    setViewingAgent(false);
+    setShowFolderRunner(true);
+    setFocusEmptyAgentSignal((value) => value + 1);
+  }, []);
 
   const triggerZoomActivePane = useCallback(() => {
     const leaves = split.tree ? collectLeaves(split.tree) : [];
@@ -964,6 +961,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         tagName === "TEXTAREA" ||
         tagName === "SELECT"
       );
+      if (isEditable && !inXterm && shortcutMatches(e, shortcutSettings.focus_agent_input, shortcutSettings.prefix_key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setPendingShortcutStroke(null);
+        triggerFocusAgentInput();
+        return;
+      }
       if (isEditable && !inXterm) return;
 
       if (pendingShortcutStroke && e.key === "Escape") {
@@ -1513,6 +1517,23 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [missedCronJobs, core.jobs, actions]);
 
+  const folderRunGroups = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { group: string; folderPath: string }[] = [];
+    for (const job of core.jobs as Job[]) {
+      const folderPath = (job.folder_path ?? job.work_dir)?.replace(/\/+$/, "");
+      if (!folderPath || seen.has(folderPath)) continue;
+      seen.add(folderPath);
+      out.push({
+        group: job.group && job.group !== "default"
+          ? job.group
+          : folderPath.split("/").filter(Boolean).pop() ?? "General",
+        folderPath,
+      });
+    }
+    return out;
+  }, [core.jobs]);
+
   // Clean stale process leaves from tree
   useEffect(() => {
     if (!core.loaded) return;
@@ -1804,6 +1825,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
             contentStyle={trafficLightInsetStyle}
             titlePath={buildJobTitlePath(job, jobQuestion)}
             dragHandleProps={dragHandleProps}
+            defaultAgentProvider={defaultProvider}
           />
         )}
       </DraggableSplitPane>
@@ -2097,11 +2119,23 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         onRunAgent={handleRunAgent}
         getAgentProviders={handleGetAgentProviders}
         defaultProvider={defaultProvider}
+        focusSignal={focusEmptyAgentSignal}
+        folderGroups={folderRunGroups}
       />
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, focusEmptyAgentSignal, folderRunGroups]);
 
-  const detailPane = currentContent ? (
+  const folderRunnerPane = (
+    <EmptyDetailAgent
+      onRunAgent={handleRunAgent}
+      getAgentProviders={handleGetAgentProviders}
+      defaultProvider={defaultProvider}
+      focusSignal={focusEmptyAgentSignal}
+      folderGroups={folderRunGroups}
+    />
+  );
+
+  const detailPane = !showFolderRunner && currentContent ? (
     <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
       {shouldCacheSinglePaneContent(currentContent) ? (
         recentSinglePaneContents.map((content) => {
@@ -2152,11 +2186,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       )}
     </div>
   ) : (
-    <EmptyDetailAgent
-      onRunAgent={handleRunAgent}
-      getAgentProviders={handleGetAgentProviders}
-      defaultProvider={defaultProvider}
-    />
+    folderRunnerPane
   );
 
   const dialogs = (
@@ -2453,7 +2483,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       {/* Main view */}
       <div style={{ display: isMainVisible ? undefined : "none", height: "100%" }}>
         {!isWide ? (
-          (viewingAgent || pendingAgentWorkDir || viewingProcess || viewingShell || viewingJob) ? (
+          (showFolderRunner || viewingAgent || pendingAgentWorkDir || viewingProcess || viewingShell || viewingJob) ? (
             <div style={{ height: "100%", overflow: "hidden", display: "flex", flexDirection: "column" }}>
               {navBar}
               {detailPane}
@@ -2527,6 +2557,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
                       }}
                     />
                   </div>
+                ) : showFolderRunner ? (
+                  detailPane
                 ) : (
                   <SplitDetailArea
                     tree={split.tree}

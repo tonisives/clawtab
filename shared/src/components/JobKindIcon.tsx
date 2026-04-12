@@ -1,6 +1,6 @@
 import { Platform, StyleSheet, View, Image } from "react-native";
 import type { RemoteJob } from "../types/job";
-import type { DetectedProcess } from "../types/process";
+import type { DetectedProcess, ProcessProvider } from "../types/process";
 import { colors } from "../theme/colors";
 import { radius } from "../theme/spacing";
 import claudeIcon from "../assets/claude-icon.png";
@@ -20,6 +20,20 @@ export function kindForJob(job: RemoteJob): JobKind {
   if (job.job_type === "shell") return "shell";
   if (job.agent_provider === "claude") return "claude";
   return job.cron ? "cron" : "manual";
+}
+
+export function providerKindForJob(job: RemoteJob): ProcessProvider | null {
+  if (
+    job.agent_provider === "claude" ||
+    job.agent_provider === "codex" ||
+    job.agent_provider === "opencode" ||
+    job.agent_provider === "shell"
+  ) {
+    return job.agent_provider;
+  }
+  if (job.job_type === "claude") return "claude";
+  if (job.job_type === "shell") return "shell";
+  return null;
 }
 
 export function kindForProcess(process: DetectedProcess): JobKind {

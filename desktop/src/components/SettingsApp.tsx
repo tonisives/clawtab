@@ -7,6 +7,7 @@ import { JobsTab } from "./JobsTab";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
+import { UsagePanel } from "./UsagePanel";
 import type { SettingsSubTab } from "./GeneralSettings";
 import { SetupWizard } from "./SetupWizard";
 import type { AppSettings } from "../types";
@@ -14,7 +15,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "secrets" | "skills" | "settings";
+type TabId = "jobs" | "secrets" | "skills" | "usage" | "settings";
 
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
@@ -39,6 +40,14 @@ const tabIcons: Record<TabId, React.ReactNode> = {
   skills: (
     <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+    </svg>
+  ),
+  // gauge (SF: gauge)
+  usage: (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 14a8 8 0 1 1 16 0" />
+      <path d="M12 14l4-4" />
+      <path d="M7 19h10" />
     </svg>
   ),
   // gearshape (SF: gearshape)
@@ -179,6 +188,7 @@ export function SettingsApp() {
   const tabs: { id: TabId; label: string }[] = [
     { id: "secrets", label: "Secrets" },
     { id: "skills", label: "Skills" },
+    { id: "usage", label: "Usage" },
     { id: "settings", label: "Settings" },
   ];
 
@@ -247,6 +257,7 @@ export function SettingsApp() {
     <>
       {renderPanel("secrets", "Secrets", <SecretsPanel />)}
       {renderPanel("skills", "Skills", <SkillsPanel />)}
+      {renderPanel("usage", "Usage", <UsagePanel />)}
       {renderPanel("settings", "Settings",
         <GeneralSettings
           activeSubTab={settingsSubTab}

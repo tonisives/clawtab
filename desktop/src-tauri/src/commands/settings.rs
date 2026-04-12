@@ -117,6 +117,14 @@ pub fn set_titlebar_visibility(app: tauri::AppHandle, hidden: bool) -> Result<()
 }
 
 #[tauri::command]
+pub fn set_tray_icon_visibility(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(tray) = app.tray_by_id("main") {
+        tray.set_visible(visible).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn open_logs_folder() -> Result<(), String> {
     let dir = Path::new(LOG_DIR);
     let _ = fs::create_dir_all(dir);
