@@ -1,4 +1,4 @@
-import type { Job, NotifyTarget } from "../../types";
+import type { Job } from "../../types";
 
 export const DEFAULT_TEMPLATE = "# Job Directions\n\nDescribe what the bot should do here.\n";
 export const DEFAULT_SHELL_TEMPLATE = "# Shell Command\n\nsh run.sh\n";

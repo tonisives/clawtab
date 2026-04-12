@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Job } from "../types";
@@ -8,9 +8,10 @@ type ImportState =
   | { step: "pick-dest"; source: string; jobId: string }
   | { step: "confirm-duplicate"; source: string; destCwt: string; jobId: string };
 
-export function useImportJob(jobs: Job[], reload: () => Promise<void>) {
+export function useImportJob(jobs: Job[], reload: () => Promise<void>, importCwtKey?: number) {
   const [importState, setImportState] = useState<ImportState>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const lastHandledImportCwtKeyRef = useRef<number | undefined>(undefined);
 
   const doImport = useCallback(async (source: string, destCwt: string, jobId: string) => {
     try {
@@ -66,6 +67,13 @@ export function useImportJob(jobs: Job[], reload: () => Promise<void>) {
     if (!importState || importState.step !== "confirm-duplicate") return;
     await pickDestAndImport(importState.source, importState.jobId);
   }, [importState, pickDestAndImport]);
+
+  useEffect(() => {
+    if (!importCwtKey || importCwtKey <= 0) return;
+    if (lastHandledImportCwtKeyRef.current === importCwtKey) return;
+    lastHandledImportCwtKeyRef.current = importCwtKey;
+    handleImportCwt();
+  }, [importCwtKey, handleImportCwt]);
 
   return {
     importState,

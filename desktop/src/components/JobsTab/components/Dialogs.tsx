@@ -4,71 +4,50 @@ import { ParamsOverlay } from "../../ParamsOverlay";
 import { SkillSearchDialog } from "../../SkillSearchDialog";
 import { InjectSecretsDialog } from "../../InjectSecretsDialog";
 import { EditTextDialog } from "../../EditTextDialog";
-import type { DetectedProcess } from "@clawtab/shared";
-import type { Job } from "../../../types";
+import type { useAutoYes } from "../../../hooks/useAutoYes";
+import type { useImportJob } from "../../../hooks/useImportJob";
+import type { useProcessEditing } from "../hooks/useProcessEditing";
+import type { useViewingState } from "../hooks/useViewingState";
 
 interface DialogsProps {
-  paramsDialog: { job: Job; values: Record<string, string> } | null;
-  setParamsDialog: (v: { job: Job; values: Record<string, string> } | null) => void;
+  viewing: ReturnType<typeof useViewingState>;
+  autoYes: ReturnType<typeof useAutoYes>;
+  importJob: ReturnType<typeof useImportJob>;
+  missedCronJobs: {
+    names: string[];
+    runAll: () => void;
+    clear: () => void;
+  };
+  paneDialogs: {
+    skillSearchPaneId: string | null;
+    setSkillSearchPaneId: (value: string | null) => void;
+    injectSecretsPaneId: string | null;
+    setInjectSecretsPaneId: (value: string | null) => void;
+    onForkWithSecrets: (paneId: string, keys: string[]) => void;
+    processEditing: ReturnType<typeof useProcessEditing>;
+  };
   handleRunWithParams: () => void;
-  viewingJob: Job | null;
-  viewingProcess: DetectedProcess | null;
-  autoYesPending: { title: string } | null;
-  onConfirmAutoYes: () => void;
-  onCancelAutoYes: () => void;
-  importState: { step: string; jobId: string } | null;
-  onImportPickDest: () => void;
-  onImportDuplicate: () => void;
-  onCancelImport: () => void;
-  importError: string | null;
-  onClearImportError: () => void;
-  missedCronJobs: string[];
-  onRunMissedJobs: () => void;
-  onClearMissedJobs: () => void;
-  skillSearchPaneId: string | null;
-  setSkillSearchPaneId: (v: string | null) => void;
-  injectSecretsPaneId: string | null;
-  setInjectSecretsPaneId: (v: string | null) => void;
-  onForkWithSecrets: (paneId: string, keys: string[]) => void;
-  editProcessField: {
-    paneId: string;
-    title: string;
-    label: string;
-    field: "display_name";
-    initialValue: string;
-    placeholder?: string;
-  } | null;
-  setEditProcessField: (v: null) => void;
-  onSaveProcessField: (value: string) => void;
 }
 
 export function Dialogs({
-  paramsDialog,
-  setParamsDialog,
-  handleRunWithParams,
-  viewingJob,
-  viewingProcess,
-  autoYesPending,
-  onConfirmAutoYes,
-  onCancelAutoYes,
-  importState,
-  onImportPickDest,
-  onImportDuplicate,
-  onCancelImport,
-  importError,
-  onClearImportError,
+  viewing,
+  autoYes,
+  importJob,
   missedCronJobs,
-  onRunMissedJobs,
-  onClearMissedJobs,
-  skillSearchPaneId,
-  setSkillSearchPaneId,
-  injectSecretsPaneId,
-  setInjectSecretsPaneId,
-  onForkWithSecrets,
-  editProcessField,
-  setEditProcessField,
-  onSaveProcessField,
+  paneDialogs,
+  handleRunWithParams,
 }: DialogsProps) {
+  const { paramsDialog, setParamsDialog, viewingJob, viewingProcess } = viewing;
+  const {
+    skillSearchPaneId,
+    setSkillSearchPaneId,
+    injectSecretsPaneId,
+    setInjectSecretsPaneId,
+    onForkWithSecrets,
+    processEditing,
+  } = paneDialogs;
+  const { editProcessField, setEditProcessField, handleSaveProcessField } = processEditing;
+
   return (
     <>
       {paramsDialog && !viewingJob && (
@@ -79,42 +58,42 @@ export function Dialogs({
         />
       )}
 
-      {autoYesPending && !viewingJob && !viewingProcess && (
+      {autoYes.pendingAutoYes && !viewingJob && !viewingProcess && (
         <ConfirmDialog
-          message={`Enable auto-yes for "${autoYesPending.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
-          onConfirm={onConfirmAutoYes} onCancel={onCancelAutoYes}
+          message={`Enable auto-yes for "${autoYes.pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
+          onConfirm={autoYes.confirmAutoYes} onCancel={() => autoYes.setPendingAutoYes(null)}
           confirmLabel="Enable" confirmClassName="btn btn-sm"
         />
       )}
 
-      {importState?.step === "pick-dest" && (
+      {importJob.importState?.step === "pick-dest" && (
         <ConfirmDialog
-          message={`"${importState.jobId}" was not auto-detected. Select a project folder to import into.`}
-          onConfirm={onImportPickDest} onCancel={onCancelImport}
+          message={`"${importJob.importState.jobId}" was not auto-detected. Select a project folder to import into.`}
+          onConfirm={importJob.handleImportPickDest} onCancel={() => importJob.setImportState(null)}
           confirmLabel="Select folder" confirmClassName="btn btn-primary btn-sm"
         />
       )}
 
-      {importState?.step === "confirm-duplicate" && (
+      {importJob.importState?.step === "confirm-duplicate" && (
         <ConfirmDialog
-          message={`"${importState.jobId}" already exists in this project. Duplicate to a different project?`}
-          onConfirm={onImportDuplicate} onCancel={onCancelImport}
+          message={`"${importJob.importState.jobId}" already exists in this project. Duplicate to a different project?`}
+          onConfirm={importJob.handleImportDuplicate} onCancel={() => importJob.setImportState(null)}
           confirmLabel="Select folder" confirmClassName="btn btn-primary btn-sm"
         />
       )}
 
-      {importError && (
+      {importJob.importError && (
         <ConfirmDialog
-          message={importError}
-          onConfirm={onClearImportError} onCancel={onClearImportError}
+          message={importJob.importError}
+          onConfirm={() => importJob.setImportError(null)} onCancel={() => importJob.setImportError(null)}
           confirmLabel="OK" confirmClassName="btn btn-sm"
         />
       )}
 
-      {missedCronJobs.length > 0 && (
+      {missedCronJobs.names.length > 0 && (
         <ConfirmDialog
-          message={`${missedCronJobs.length} missed cron job${missedCronJobs.length > 1 ? "s" : ""} detected:\n\n${missedCronJobs.map((n) => "  - " + n).join("\n")}\n\nRun them now?`}
-          onConfirm={onRunMissedJobs} onCancel={onClearMissedJobs}
+          message={`${missedCronJobs.names.length} missed cron job${missedCronJobs.names.length > 1 ? "s" : ""} detected:\n\n${missedCronJobs.names.map((name) => "  - " + name).join("\n")}\n\nRun them now?`}
+          onConfirm={missedCronJobs.runAll} onCancel={missedCronJobs.clear}
           confirmLabel="Run All" confirmClassName="btn btn-primary btn-sm"
         />
       )}
@@ -145,7 +124,7 @@ export function Dialogs({
           label={editProcessField.label}
           initialValue={editProcessField.initialValue}
           placeholder={editProcessField.placeholder}
-          onSave={onSaveProcessField}
+          onSave={handleSaveProcessField}
           onCancel={() => setEditProcessField(null)}
         />
       )}
