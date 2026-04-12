@@ -83,7 +83,7 @@ export function ShellPaneDetail({
   const transport = useMemo(() => createShellTransport(shell), [shell]);
 
   const syntheticJob: RemoteJob = {
-    name: shortenPath(shell.cwd),
+    name: shell.display_name ?? shortenPath(shell.cwd),
     job_type: "shell",
     enabled: true,
     cron: "",

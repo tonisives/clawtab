@@ -249,11 +249,13 @@ export function DraggableShellCard({
   onPress,
   selected,
   onStop,
+  onRename,
 }: {
   shell: ShellPane;
   onPress?: () => void;
   selected?: boolean | string;
   onStop?: () => void;
+  onRename?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `shell-${shell.pane_id}`,
@@ -274,7 +276,13 @@ export function DraggableShellCard({
       {...attributes}
       tabIndex={-1}
     >
-      <ShellCard shell={shell} onPress={onPress} selected={selected} onStop={onStop} />
+      <ShellCard
+        shell={shell}
+        onPress={onPress}
+        selected={selected}
+        onStop={onStop}
+        onRename={onRename}
+      />
     </div>
   );
 }

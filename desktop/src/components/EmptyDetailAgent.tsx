@@ -3,6 +3,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { JobKindIcon, PopupMenu } from "@clawtab/shared";
 import type { ProcessProvider } from "@clawtab/shared";
 
+const LAST_RUN_AGENT_FOLDER_KEY = "clawtab_last_run_agent_folder";
+
 function labelForProvider(provider: ProcessProvider): string {
   switch (provider) {
     case "claude":
@@ -24,13 +26,20 @@ interface EmptyDetailAgentProps {
   folderGroups?: { group: string; folderPath: string }[];
 }
 
+const LINE_HEIGHT = 18;
+const VERTICAL_PADDING = 16;
+const EXPANDED_MAX_HEIGHT = 400;
+
 export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, focusSignal, folderGroups = [] }: EmptyDetailAgentProps) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [provider, setProvider] = useState<ProcessProvider>(defaultProvider);
   const [providers, setProviders] = useState<ProcessProvider[]>([defaultProvider]);
-  const [workDir, setWorkDir] = useState<string | null>(null);
+  const [workDir, setWorkDirState] = useState<string | null>(() => {
+    if (typeof localStorage === "undefined") return null;
+    return localStorage.getItem(LAST_RUN_AGENT_FOLDER_KEY);
+  });
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
@@ -38,6 +47,7 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
   const providerButtonRef = useRef<HTMLButtonElement>(null);
   const folderButtonRef = useRef<HTMLButtonElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const lastFocusSignalRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -67,6 +77,19 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
       return true;
     });
   }, [folderGroups]);
+
+  const setWorkDir = useCallback((next: string | null) => {
+    setWorkDirState(next);
+    if (typeof localStorage === "undefined") return;
+    if (next) localStorage.setItem(LAST_RUN_AGENT_FOLDER_KEY, next);
+    else localStorage.removeItem(LAST_RUN_AGENT_FOLDER_KEY);
+  }, []);
+
+  useEffect(() => {
+    if (workDir) return;
+    const firstFolder = folderOptions[0]?.folderPath;
+    if (firstFolder) setWorkDir(firstFolder);
+  }, [folderOptions, setWorkDir, workDir]);
 
   const selectedFolder = useMemo(() => {
     if (!workDir) return null;
@@ -117,34 +140,49 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
     }
   }, [focusSignal, focusTextarea]);
 
+  const handleRunRef = useRef(handleRun);
+  useEffect(() => { handleRunRef.current = handleRun; }, [handleRun]);
+  const providerRef = useRef(provider);
+  useEffect(() => { providerRef.current = provider; }, [provider]);
+  const resolvedProvidersRef = useRef(resolvedProviders);
+  useEffect(() => { resolvedProvidersRef.current = resolvedProviders; }, [resolvedProviders]);
+
   useEffect(() => {
-    const el = textareaRef.current;
+    const el = rootRef.current;
     if (!el) return;
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();
-        void handleRun();
+        void handleRunRef.current();
         return;
       }
       if (e.altKey && e.key === "Tab") {
         e.preventDefault();
         e.stopPropagation();
-        if (resolvedProviders.length <= 1) return;
-        const currentIndex = Math.max(resolvedProviders.indexOf(provider), 0);
+        const rp = resolvedProvidersRef.current;
+        if (rp.length <= 1) return;
+        const currentIndex = Math.max(rp.indexOf(providerRef.current), 0);
         const step = e.shiftKey ? -1 : 1;
-        const nextIndex = (currentIndex + step + resolvedProviders.length) % resolvedProviders.length;
-        setProvider(resolvedProviders[nextIndex]);
+        const nextIndex = (currentIndex + step + rp.length) % rp.length;
+        setProvider(rp[nextIndex]);
         setProviderMenuOpen(false);
       }
     };
-    el.addEventListener("keydown", handler);
-    return () => el.removeEventListener("keydown", handler);
-  }, [handleRun, provider, resolvedProviders]);
+    el.addEventListener("keydown", handler, true);
+    return () => el.removeEventListener("keydown", handler, true);
+  }, []);
+
+  const MIN_LINES = 5;
+  const lineCount = Math.max(prompt.split("\n").length, MIN_LINES);
+  const textareaHeight = Math.min(
+    lineCount * LINE_HEIGHT + VERTICAL_PADDING,
+    EXPANDED_MAX_HEIGHT,
+  );
 
   return (
-    <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, width: 420, maxWidth: "90%" }}>
+    <div ref={rootRef} tabIndex={-1} style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, width: 620, maxWidth: "90%" }}>
         <div style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", marginBottom: 4 }}>
           Run an agent in a folder
         </div>
@@ -157,8 +195,9 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
             disabled={sending}
             style={{
               width: "100%",
-              minHeight: 68,
-              maxHeight: 240,
+              height: textareaHeight,
+              minHeight: LINE_HEIGHT + VERTICAL_PADDING,
+              maxHeight: EXPANDED_MAX_HEIGHT,
               padding: "8px 12px",
               paddingRight: 68,
               borderRadius: 6,
@@ -166,8 +205,9 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
               background: "var(--bg-primary, #0a0a0a)",
               color: "var(--text)",
               fontSize: 13,
-              lineHeight: 1.4,
-              resize: "vertical",
+              lineHeight: `${LINE_HEIGHT}px`,
+              resize: "none",
+              overflow: "auto",
               outline: "none",
               fontFamily: "inherit",
               boxSizing: "border-box",

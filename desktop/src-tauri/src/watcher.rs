@@ -1,8 +1,9 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tokio::sync::mpsc;
-use tokio::time::{Duration, Instant};
+use tokio::time::{sleep, Duration};
 
 use crate::config::jobs::JobsConfig;
 
@@ -17,7 +18,7 @@ pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, app_handle: tau
 
     let (tx, mut rx) = mpsc::channel::<Event>(64);
 
-    let mut watcher = match RecommendedWatcher::new(
+    let watcher = match RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
             if let Ok(ev) = res {
                 let _ = tx.blocking_send(ev);
@@ -32,6 +33,8 @@ pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, app_handle: tau
         }
     };
 
+    // Hold the watcher for the lifetime of this task.
+    let mut watcher = watcher;
     if let Err(e) = watcher.watch(&jobs_dir, RecursiveMode::Recursive) {
         log::error!("Failed to watch jobs dir: {}", e);
         return;
@@ -39,24 +42,33 @@ pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, app_handle: tau
 
     log::info!("Watching jobs dir: {}", jobs_dir.display());
 
-    let debounce = Duration::from_millis(500);
-    let mut last_reload = Instant::now() - debounce;
+    let debounce = Duration::from_millis(300);
 
-    while let Some(ev) = rx.recv().await {
-        let dominated_by_filter = !matches!(
-            ev.kind,
-            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
-        );
-
-        if dominated_by_filter {
+    loop {
+        // Block until first relevant event.
+        let first = match rx.recv().await {
+            Some(ev) => ev,
+            None => break,
+        };
+        if !is_relevant(&first) {
             continue;
         }
 
-        if last_reload.elapsed() < debounce {
-            continue;
+        // Trailing-edge debounce: drain further events until the channel is
+        // idle for `debounce`, then reload once.
+        loop {
+            tokio::select! {
+                biased;
+                maybe_ev = rx.recv() => {
+                    match maybe_ev {
+                        Some(ev) if is_relevant(&ev) => continue,
+                        Some(_) => continue,
+                        None => return,
+                    }
+                }
+                _ = sleep(debounce) => { break; }
+            }
         }
-
-        last_reload = Instant::now();
 
         let config = JobsConfig::load();
         *jobs_config.lock().unwrap() = config;
@@ -64,8 +76,33 @@ pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, app_handle: tau
         log::info!("Reloaded jobs config (fs change)");
     }
 
-    // Keep watcher alive - dropping it stops watching.
-    // This line is unreachable but prevents the compiler from
-    // optimizing away the watcher.
     drop(watcher);
+}
+
+fn is_relevant(ev: &Event) -> bool {
+    let kind_ok = matches!(
+        ev.kind,
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+    );
+    if !kind_ok {
+        return false;
+    }
+
+    // Ignore churn from logs/ and other noise; only react to the files that
+    // actually define a job.
+    ev.paths.iter().any(|p| is_job_file(p))
+}
+
+fn is_job_file(path: &Path) -> bool {
+    // Skip anything under a logs/ directory.
+    if path
+        .components()
+        .any(|c| c.as_os_str() == std::ffi::OsStr::new("logs"))
+    {
+        return false;
+    }
+    match path.file_name().and_then(|n| n.to_str()) {
+        Some("job.yaml") | Some("job.md") | Some("context.md") => true,
+        _ => false,
+    }
 }

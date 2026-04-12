@@ -139,12 +139,13 @@ export interface JobListViewProps {
   onRenameProcess?: (process: DetectedProcess) => void;
   onSaveProcessName?: (process: DetectedProcess, name: string) => void;
   onStopShell?: (paneId: string) => void;
+  onRenameShell?: (shell: ShellPane) => void;
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => React.ReactNode;
   renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void }) => React.ReactNode;
-  renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void }) => React.ReactNode;
+  renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void; onRename?: () => void }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
   wrapProcessGroup?: (group: string, processPaneIds: string[], children: React.ReactNode) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
@@ -228,6 +229,7 @@ export function JobListView({
   onRenameProcess,
   onSaveProcessName,
   onStopShell,
+  onRenameShell,
   autoYesPaneIds,
   renderJobCard: customRenderJobCard,
   renderProcessCard: customRenderProcessCard,
@@ -809,11 +811,12 @@ export function JobListView({
                   ? (isFocused ? rawColor : rawColor + "66")
                   : (selectedSlug === keyId);
                 const shellOnStop = onStopShell ? () => onStopShell(item.shell.pane_id) : undefined;
+                const shellOnRename = onRenameShell ? () => onRenameShell(item.shell) : undefined;
                 return (
                   <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
                     {customRenderShellCard
-                      ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop })
-                      : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} />
+                      ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop, onRename: shellOnRename })
+                      : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} onRename={shellOnRename} />
                     }
                   </View>
                 );

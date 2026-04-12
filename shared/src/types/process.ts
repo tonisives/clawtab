@@ -28,6 +28,7 @@ export interface ShellPane {
   tmux_session: string;
   window_name: string;
   matched_group?: string | null;
+  display_name?: string | null;
 }
 
 export interface QuestionOption {
