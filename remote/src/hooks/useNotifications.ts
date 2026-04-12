@@ -80,7 +80,7 @@ async function handleNotificationResponse(
     pane_id?: string;
     matched_job?: string;
     options?: { number: string; label: string }[];
-    job_name?: string;
+    job_id?: string;
     run_id?: string;
   } } | undefined)?.clawtab;
 
@@ -92,11 +92,11 @@ async function handleNotificationResponse(
   console.log("[notif] clawtab q=" + clawtab.question_id + " pane=" + clawtab.pane_id + " job=" + clawtab.matched_job);
 
   // Job notification (no question_id means it's a job status push)
-  if (clawtab.job_name && !clawtab.question_id) {
+  if (clawtab.job_id && !clawtab.question_id) {
     if (navigate && !alreadyNavigated) {
       navigatedResponses.add(key);
       const params = clawtab.run_id ? `?run_id=${clawtab.run_id}` : "";
-      navigate(`/job/${clawtab.job_name}${params}`);
+      navigate(`/job/${clawtab.job_id}${params}`);
     }
     return;
   }
@@ -159,14 +159,14 @@ export function handleColdStartAnswer() {
       const trigger = response.notification.request.trigger as { payload?: Record<string, unknown> } | null;
       const contentData = response.notification.request.content.data;
       const source = contentData?.clawtab ? contentData : trigger?.payload;
-      const ct = (source as { clawtab?: { question_id?: string; pane_id?: string; matched_job?: string; job_name?: string; run_id?: string } } | undefined)?.clawtab;
+      const ct = (source as { clawtab?: { question_id?: string; pane_id?: string; matched_job?: string; job_id?: string; run_id?: string } } | undefined)?.clawtab;
       if (ct) {
         // Only set pending navigation for body taps, not action button taps
         const isBodyTap = response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER;
         if (isBodyTap) {
-          if (ct.job_name && !ct.question_id) {
+          if (ct.job_id && !ct.question_id) {
             const params = ct.run_id ? `?run_id=${ct.run_id}` : "";
-            pendingNavigation = `/job/${ct.job_name}${params}`;
+            pendingNavigation = `/job/${ct.job_id}${params}`;
           } else if (ct.matched_job) {
             pendingNavigation = `/job/${ct.matched_job}`;
           } else if (ct.pane_id) {

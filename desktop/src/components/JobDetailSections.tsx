@@ -159,8 +159,8 @@ export function DesktopDetailSections({ job }: { job: Job }) {
 
   const reloadDirections = useCallback(() => {
     if (job.job_type !== "job" || !job.folder_path) return;
-    const jn = job.job_name ?? "default";
-    invoke<string>("read_cwt_entry_at", { folderPath: job.folder_path, jobName: jn, slug: job.slug })
+    const jn = job.job_id ?? "default";
+    invoke<string>("read_cwt_entry_at", { folderPath: job.folder_path, jobId: jn, slug: job.slug })
       .then((content) => {
         setInlineContent((prev) => prev === savedContentRef.current ? content : prev);
         setSavedContent(content);
@@ -170,14 +170,14 @@ export function DesktopDetailSections({ job }: { job: Job }) {
 
   useEffect(() => {
     if (job.job_type === "job" && job.folder_path) {
-      const jn = job.job_name ?? "default";
-      invoke<string>("read_cwt_entry_at", { folderPath: job.folder_path, jobName: jn, slug: job.slug })
+      const jn = job.job_id ?? "default";
+      invoke<string>("read_cwt_entry_at", { folderPath: job.folder_path, jobId: jn, slug: job.slug })
         .then((content) => {
           setInlineContent(content);
           setSavedContent(content);
         })
         .catch(() => {});
-      invoke<string>("read_cwt_context_at", { folderPath: job.folder_path, jobName: jn, slug: job.slug })
+      invoke<string>("read_cwt_context_at", { folderPath: job.folder_path, jobId: jn, slug: job.slug })
         .then(setCwtContextPreview)
         .catch(() => setCwtContextPreview(null));
     }
@@ -199,7 +199,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
     if (job.folder_path) {
       invoke("write_cwt_entry_at", {
         folderPath: job.folder_path,
-        jobName: job.job_name ?? "default",
+        jobId: job.job_id ?? "default",
         content: inlineContent,
         slug: job.slug,
       }).then(() => {
@@ -263,7 +263,7 @@ export function DesktopDetailSections({ job }: { job: Job }) {
                     invoke("open_job_editor", {
                       folderPath: job.folder_path,
                       editor: preferredEditor,
-                      jobName: job.job_name ?? "default",
+                      jobId: job.job_id ?? "default",
                       fileName: previewFile,
                       slug: job.slug,
                     });

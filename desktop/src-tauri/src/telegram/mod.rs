@@ -13,7 +13,7 @@ pub struct ActiveAgent {
     pub pane_id: String,
     pub tmux_session: String,
     pub run_id: String,
-    pub job_name: String,
+    pub job_id: String,
 }
 
 const MAX_MESSAGE_LEN: usize = 4096;
@@ -109,7 +109,7 @@ pub async fn notify(config: &TelegramConfig, text: &str) {
 /// Send a job completion notification
 pub async fn notify_job_result(
     config: &TelegramConfig,
-    job_name: &str,
+    job_id: &str,
     exit_code: Option<i32>,
     success: bool,
 ) {
@@ -131,7 +131,7 @@ pub async fn notify_job_result(
 
     let text = format!(
         "<b>ClawTab</b>: Job <code>{}</code> {}{}",
-        job_name, status, code_str
+        job_id, status, code_str
     );
 
     notify(config, &text).await;

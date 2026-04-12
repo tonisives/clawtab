@@ -105,12 +105,12 @@ export default function JobsScreen() {
     const id = nextId()
     send({ type: "run_agent", id, prompt, work_dir: workDir })
     if (workDir) {
-      registerRequest<{ job_name?: string }>(id).then((ack) => {
-        if (ack.job_name) {
+      registerRequest<{ job_id?: string }>(id).then((ack) => {
+        if (ack.job_id) {
           if (isWide) {
-            setSelectedJob(ack.job_name)
+            setSelectedJob(ack.job_id)
           } else {
-            router.push(`/job/${ack.job_name}`)
+            router.push(`/job/${ack.job_id}`)
           }
         }
       })

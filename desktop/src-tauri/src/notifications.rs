@@ -146,8 +146,8 @@ pub fn notify_question(app: &tauri::AppHandle, question: &ClaudeQuestion) {
 }
 
 /// Send a local notification for a job event.
-pub fn notify_job(app: &tauri::AppHandle, job_name: &str, event: &str) {
-    let body = format!("Job {} {}", job_name, event);
+pub fn notify_job(app: &tauri::AppHandle, job_id: &str, event: &str) {
+    let body = format!("Job {} {}", job_id, event);
 
     match app
         .notification()
@@ -160,7 +160,7 @@ pub fn notify_job(app: &tauri::AppHandle, job_name: &str, event: &str) {
         Ok(()) => {
             log::info!(
                 "[notifications] job notification sent: {} {}",
-                job_name,
+                job_id,
                 event
             );
         }

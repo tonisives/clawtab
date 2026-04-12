@@ -58,7 +58,7 @@ export type DesktopMessage =
   | { type: "stop_job_ack"; id: string; success: boolean; error?: string }
   | { type: "send_input_ack"; id: string; success: boolean }
   | { type: "subscribe_logs_ack"; id: string; success: boolean }
-  | { type: "run_agent_ack"; id: string; success: boolean; job_name?: string }
+  | { type: "run_agent_ack"; id: string; success: boolean; job_id?: string }
   | { type: "create_job_ack"; id: string; success: boolean; error?: string }
   | { type: "detected_processes"; id: string; processes: DetectedProcess[] }
   | { type: "run_detail_response"; id: string; detail?: RunDetail }

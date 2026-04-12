@@ -107,7 +107,8 @@ pub struct Job {
     pub tmux_session: Option<String>,
     pub aerospace_workspace: Option<String>,
     pub folder_path: Option<String>,
-    pub job_name: Option<String>,
+    #[serde(alias = "job_name")]
+    pub job_id: Option<String>,
     pub telegram_chat_id: Option<i64>,
     #[serde(default)]
     pub telegram_log_mode: TelegramLogMode,
@@ -214,15 +215,15 @@ impl JobsConfig {
                 if !job_yaml.exists() {
                     continue;
                 }
-                let job_name = sub_path
+                let job_id = sub_path
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let slug = format!("{}/{}", project_name, job_name);
+                let slug = format!("{}/{}", project_name, job_id);
                 if let Some(mut job) = Self::load_job_yaml(&job_yaml, &slug) {
-                    if job.job_name.is_none() {
-                        job.job_name = Some(job_name);
+                    if job.job_id.is_none() {
+                        job.job_id = Some(job_id);
                     }
                     if job.group != project_name {
                         job.group = project_name.clone();
@@ -270,7 +271,7 @@ impl JobsConfig {
         let slug = if job.slug.is_empty() {
             derive_slug(
                 &job.folder_path.as_deref().unwrap_or(&job.name),
-                job.job_name.as_deref(),
+                job.job_id.as_deref(),
                 &self.jobs,
             )
         } else {
@@ -361,7 +362,7 @@ impl JobsConfig {
         for mut job in legacy.jobs {
             let slug = derive_slug(
                 &job.folder_path.as_deref().unwrap_or(&job.name),
-                job.job_name.as_deref(),
+                job.job_id.as_deref(),
                 &temp_jobs,
             );
             job.slug = slug.clone();
@@ -400,7 +401,7 @@ impl JobsConfig {
 
     /// Migrate flat slug dirs (jobs/{flat-slug}/job.yaml) to nested (jobs/{project}/{job-name}/job.yaml).
     /// Old format: jobs/myapp-deploy/job.yaml
-    /// New format: jobs/myapp/deploy/job.yaml (with job_name set)
+    /// New format: jobs/myapp/deploy/job.yaml (with job_id set)
     fn migrate_flat_slugs() {
         let jobs_dir = match Self::jobs_dir() {
             Some(d) => d,
@@ -438,9 +439,9 @@ impl JobsConfig {
                 Err(_) => continue,
             };
 
-            // Already has a job_name -- skip (or it's already nested)
-            if job.job_name.is_some() {
-                // If it has a job_name but is still flat, move it
+            // Already has a job_id -- skip (or it's already nested)
+            if job.job_id.is_some() {
+                // If it has a job_id but is still flat, move it
                 // Actually, check if slug contains '/' -- if so, it's already nested
                 let dir_name = path
                     .file_name()
@@ -469,11 +470,11 @@ impl JobsConfig {
                 slugify(&job.name, 20)
             };
 
-            let job_name = job
-                .job_name
+            let job_id = job
+                .job_id
                 .clone()
                 .unwrap_or_else(|| "default".to_string());
-            let new_dir = jobs_dir.join(&project_slug).join(&job_name);
+            let new_dir = jobs_dir.join(&project_slug).join(&job_id);
 
             if new_dir.exists() {
                 continue;
@@ -483,7 +484,7 @@ impl JobsConfig {
                 "Migrating flat slug '{}' to '{}/{}'",
                 path.display(),
                 project_slug,
-                job_name
+                job_id
             );
 
             if let Err(e) = std::fs::create_dir_all(&new_dir) {
@@ -491,12 +492,12 @@ impl JobsConfig {
                 continue;
             }
 
-            // Write updated job.yaml with job_name
+            // Write updated job.yaml with job_id
             let mut migrated_job = job;
-            if migrated_job.job_name.is_none() {
-                migrated_job.job_name = Some("default".to_string());
+            if migrated_job.job_id.is_none() {
+                migrated_job.job_id = Some("default".to_string());
             }
-            migrated_job.slug = format!("{}/{}", project_slug, job_name);
+            migrated_job.slug = format!("{}/{}", project_slug, job_id);
 
             match serde_yml::to_string(&migrated_job) {
                 Ok(yaml) => {
@@ -531,7 +532,7 @@ impl JobsConfig {
     }
 }
 
-/// Migrate job.md files from `.cwt/{job_name}/job.md` to the central config location
+/// Migrate job.md files from `.cwt/{job_id}/job.md` to the central config location
 /// `~/.config/clawtab/jobs/{slug}/job.md`, and update `folder_path` from `.cwt` dir
 /// to project root.
 pub fn migrate_job_md_to_central(jobs: &mut [Job]) {
@@ -550,14 +551,14 @@ pub fn migrate_job_md_to_central(jobs: &mut [Job]) {
         };
 
         let fp_path = std::path::Path::new(&folder_path);
-        let job_name = job.job_name.as_deref().unwrap_or("default");
+        let job_id = job.job_id.as_deref().unwrap_or("default");
 
         // Check if folder_path still ends in .cwt (old format)
         let is_old_format = fp_path.file_name().map(|n| n == ".cwt").unwrap_or(false);
 
         if is_old_format {
-            // Old path: {folder_path}/{job_name}/job.md (where folder_path was .cwt dir)
-            let old_job_md = fp_path.join(job_name).join("job.md");
+            // Old path: {folder_path}/{job_id}/job.md (where folder_path was .cwt dir)
+            let old_job_md = fp_path.join(job_id).join("job.md");
             let central_dir = jobs_dir.join(&job.slug);
             let central_job_md = central_dir.join("job.md");
 
@@ -586,7 +587,7 @@ pub fn migrate_job_md_to_central(jobs: &mut [Job]) {
             // folder_path is already project root - just check if job.md needs migration
             // from .cwt subdir to central
             let cwt_dir = fp_path.join(".cwt");
-            let old_job_md = cwt_dir.join(job_name).join("job.md");
+            let old_job_md = cwt_dir.join(job_id).join("job.md");
             let central_dir = jobs_dir.join(&job.slug);
             let central_job_md = central_dir.join("job.md");
 
@@ -643,13 +644,13 @@ pub fn migrate_cwt_to_central(jobs: &[Job]) {
             continue;
         }
 
-        let job_name = job.job_name.as_deref().unwrap_or("default");
+        let job_id = job.job_id.as_deref().unwrap_or("default");
         let project_slug = job.slug.split('/').next().unwrap_or(&job.slug);
         let central_project_dir = jobs_dir.join(project_slug);
         let central_job_dir = jobs_dir.join(&job.slug);
 
-        // Migrate per-job files from .cwt/{job_name}/
-        let cwt_job_dir = cwt_dir.join(job_name);
+        // Migrate per-job files from .cwt/{job_id}/
+        let cwt_job_dir = cwt_dir.join(job_id);
         if cwt_job_dir.is_dir() {
             let _ = std::fs::create_dir_all(&central_job_dir);
             if let Ok(entries) = std::fs::read_dir(&cwt_job_dir) {
@@ -725,10 +726,10 @@ pub fn migrate_cwt_to_central(jobs: &[Job]) {
     }
 }
 
-/// Derive a slug from a folder path or name + optional job_name.
-/// Returns "project-slug/job-name" for multi-job, or "project-slug/default" when no job_name.
+/// Derive a slug from a folder path or name + optional job_id.
+/// Returns "project-slug/job-id" for multi-job, or "project-slug/default" when no job_id.
 /// Appends -2, -3, etc. if duplicate.
-pub fn derive_slug(input: &str, job_name: Option<&str>, existing_jobs: &[Job]) -> String {
+pub fn derive_slug(input: &str, job_id: Option<&str>, existing_jobs: &[Job]) -> String {
     let cleaned = input.replace('\\', "/");
     let parts: Vec<&str> = cleaned
         .trim_end_matches('/')
@@ -744,7 +745,7 @@ pub fn derive_slug(input: &str, job_name: Option<&str>, existing_jobs: &[Job]) -
     };
 
     let project_slug = slugify(&project_part, 20);
-    let job_part = job_name.unwrap_or("default");
+    let job_part = job_id.unwrap_or("default");
     let job_slug = slugify(job_part, 20);
 
     let slug_base = format!("{}/{}", project_slug, job_slug);

@@ -16,9 +16,9 @@ pub fn get_run_detail(state: State<AppState>, id: String) -> Result<Option<RunRe
 }
 
 #[tauri::command]
-pub fn get_job_runs(state: State<AppState>, job_name: String) -> Result<Vec<RunRecord>, String> {
+pub fn get_job_runs(state: State<AppState>, job_id: String) -> Result<Vec<RunRecord>, String> {
     let history = state.history.lock().unwrap();
-    history.get_by_job_name(&job_name, 10)
+    history.get_by_job_id(&job_id, 10)
 }
 
 #[tauri::command]
@@ -32,7 +32,7 @@ pub fn open_run_log(state: State<AppState>, run_id: String) -> Result<(), String
 
     let mut content = format!(
         "Job: {}\nStarted: {}\nFinished: {}\nExit code: {}\nTrigger: {}\n",
-        record.job_name,
+        record.job_id,
         record.started_at,
         record.finished_at.as_deref().unwrap_or("(running)"),
         record

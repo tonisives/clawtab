@@ -129,25 +129,25 @@ export const RunRow = memo(function RunRow({
   const handleStop = useCallback(async () => {
     try {
       setStopPending(true);
-      await transport.stopJob(run.job_name);
+      await transport.stopJob(run.job_id);
     } catch (e) {
       console.error("Failed to stop running pane:", e);
     } finally {
       setTimeout(() => setStopPending(false), 1200);
     }
-  }, [run.job_name, transport]);
+  }, [run.job_id, transport]);
 
   const handleSigint = useCallback(async () => {
     if (!transport.sigintJob) return;
     try {
       setSigintPending(true);
-      await transport.sigintJob(run.job_name);
+      await transport.sigintJob(run.job_id);
     } catch (e) {
       console.error("Failed to send C-c to running pane:", e);
     } finally {
       setTimeout(() => setSigintPending(false), 1200);
     }
-  }, [run.job_name, transport]);
+  }, [run.job_id, transport]);
 
   return (
     <View>

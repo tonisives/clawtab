@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native
 import type { JobStatus, RemoteJob } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
+import { JobKindIcon, providerKindForJob, type JobKind } from "./JobKindIcon";
 import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -17,6 +18,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   onStop,
   autoYesActive,
   stopping,
+  defaultAgentProvider,
 }: {
   job: RemoteJob;
   status: JobStatus;
@@ -25,6 +27,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   onStop?: () => void;
   autoYesActive?: boolean;
   stopping?: boolean;
+  defaultAgentProvider?: JobKind;
 }) {
   const startedAt = status.state === "running" ? status.started_at : null;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -39,9 +42,16 @@ export const RunningJobCard = memo(function RunningJobCard({
       activeOpacity={0.7}
     >
       <View style={styles.row}>
-        <View style={styles.runningIconWrap}>
-          <View style={styles.runningTriangle} />
-        </View>
+        {job.cron ? (
+          <View style={styles.iconWrap}>
+            <JobKindIcon kind="cron" />
+            {(() => { const pk = providerKindForJob(job) ?? defaultAgentProvider ?? null; return pk ? <View style={styles.providerBadge}><JobKindIcon kind={pk} size={14} compact bare /></View> : null; })()}
+          </View>
+        ) : (
+          <View style={styles.runningIconWrap}>
+            <View style={styles.runningTriangle} />
+          </View>
+        )}
         <View style={styles.info}>
           <Text style={[styles.name, stopping && { opacity: 0.5 }]} numberOfLines={1}>{job.name}</Text>
           {stopping ? (
@@ -108,6 +118,25 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 0 },
+  iconWrap: {
+    position: "relative",
+    width: 32,
+    height: 32,
+    flexShrink: 0,
+  },
+  providerBadge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   runningIconWrap: {
     width: 32,
     height: 32,

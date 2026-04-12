@@ -25,28 +25,24 @@ import type { Job } from "../../types";
 import { JobEditor } from "../JobEditor";
 import { SamplePicker } from "../SamplePicker";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { DesktopJobDetail, AgentDetail } from "../JobDetailSections";
 import { ParamsOverlay } from "../ParamsOverlay";
-import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, DraggableShellCard, DraggableSplitPane, type DragData } from "../DraggableCards";
+import { DraggableJobCard, DraggableNotificationCard, DraggableProcessCard, DraggableShellCard, type DragData } from "../DraggableCards";
 import { EmptyDetailAgent } from "../EmptyDetailAgent";
 import { requestXtermPaneFocus } from "../XtermPane";
-import { TmuxPaneDetail } from "../TmuxPaneDetail";
 import { useQuestionPolling } from "../../hooks/useQuestionPolling";
 import { useAutoYes } from "../../hooks/useAutoYes";
 import { useImportJob } from "../../hooks/useImportJob";
-import {
-  eventToShortcutBinding,
-  shortcutCompletesSequence,
-  shortcutMatches,
-  shortcutStartsWith,
-} from "../../shortcuts";
-import type { JobsTabProps, ExistingPaneInfo, ListItemRef } from "./types";
-import { isShellPane, SINGLE_PANE_CACHE_LIMIT, paneContentCacheKey, shouldCacheSinglePaneContent, providerCapabilities } from "./utils";
+import type { JobsTabProps, ListItemRef } from "./types";
+import { SINGLE_PANE_CACHE_LIMIT, paneContentCacheKey, shouldCacheSinglePaneContent, providerCapabilities } from "./utils";
 import { useWindowSize } from "./hooks/useWindowSize";
 import { useResizablePane } from "./hooks/useResizablePane";
 import { useJobsTabSettings } from "./hooks/useJobsTabSettings";
 import { Dialogs } from "./components/Dialogs";
 import { DragOverlayContent } from "./components/DragOverlayContent";
+import { useViewingState } from "./hooks/useViewingState";
+import { useProcessLifecycle } from "./hooks/useProcessLifecycle";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
+import { usePaneRenderers } from "./hooks/usePaneRenderers";
 
 const transport = createTauriTransport();
 
@@ -54,35 +50,32 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const settings = useJobsTabSettings();
-  const { shortcutSettings, defaultProvider, groupOrder, jobOrder, processOrder, sortMode, hiddenGroups } = settings;
+  const { defaultProvider, groupOrder, jobOrder, processOrder, sortMode, hiddenGroups } = settings;
 
-  // Navigation state
-  const [editingJob, setEditingJob] = useState<Job | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerTemplateId, setPickerTemplateId] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [viewingJob, setViewingJob] = useState<Job | null>(null);
-  const [viewingProcess, setViewingProcess] = useState<DetectedProcess | null>(null);
-  const [viewingShell, setViewingShell] = useState<ShellPane | null>(null);
-  const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
-  const [viewingAgent, setViewingAgent] = useState(false);
-  const [showFolderRunner, setShowFolderRunner] = useState(false);
-  const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
-  const [pendingAgentWorkDir, setPendingAgentWorkDir] = useState<{ dir: string; startedAt: number } | null>(null);
-  const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
-  const [pendingProcess, setPendingProcess] = useState<DetectedProcess | null>(null);
-  const [stoppingProcesses, setStoppingProcesses] = useState<{ process: DetectedProcess; stoppedAt: number }[]>([]);
-  const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(new Set());
-  const [shellPanes, setShellPanes] = useState<ShellPane[]>([]);
-  const [demotingPaneIds, setDemotingPaneIds] = useState<Set<string>>(new Set());
-  const demotedShellPaneIdsRef = useRef<Set<string>>(new Set());
+  // Viewing / navigation state (extracted hook)
+  const viewing = useViewingState({ core, onJobSelected });
+  const {
+    viewingJob, setViewingJob, viewingProcess, setViewingProcess,
+    viewingShell, setViewingShell, viewingAgent, setViewingAgent,
+    editingJob, setEditingJob, isCreating, setIsCreating,
+    showPicker, setShowPicker, pickerTemplateId, setPickerTemplateId,
+    saveError, setSaveError, createForGroup, setCreateForGroup,
+    showFolderRunner, setShowFolderRunner,
+    paramsDialog, setParamsDialog,
+    scrollToSlug, setScrollToSlug,
+    focusEmptyAgentSignal,
+    currentContent,
+    handleSelectJobDirect, handleSelectProcessDirect, handleSelectShellDirect,
+  } = viewing;
+  const currentContentRef = useRef<PaneContent | null>(null);
+  currentContentRef.current = currentContent;
+
+  // Ref for shellPanes used by split tree callbacks (lifecycle hook populates it after split)
+  const shellPanesRef = useRef<ShellPane[]>([]);
   const focusAgentSignal = 0;
-  const [focusEmptyAgentSignal, setFocusEmptyAgentSignal] = useState(0);
   const renameProcessSignal = 0;
   const [renameProcessPaneId, setRenameProcessPaneId] = useState<string | null>(null);
   const [processRenameDrafts, setProcessRenameDrafts] = useState<Record<string, string | null>>({});
-  const previousProcessesRef = useRef<Map<string, DetectedProcess>>(new Map());
   const [editProcessField, setEditProcessField] = useState<{
     paneId: string;
     title: string;
@@ -91,16 +84,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     initialValue: string;
     placeholder?: string;
   } | null>(null);
-
-  // Clear stopping job slugs when job is no longer running
-  useEffect(() => {
-    if (stoppingJobSlugs.size === 0) return;
-    const next = new Set<string>();
-    for (const slug of stoppingJobSlugs) {
-      if (core.statuses[slug]?.state === "running") next.add(slug);
-    }
-    if (next.size !== stoppingJobSlugs.size) setStoppingJobSlugs(next);
-  }, [core.statuses, stoppingJobSlugs]);
 
   // Split tree (shared hook)
 
@@ -123,53 +106,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     startFastQuestionPoll,
   );
 
-  const handleSelectJobDirect = useCallback((job: RemoteJob) => {
-    setShowFolderRunner(false);
-    setViewingProcess(null);
-    setViewingShell(null);
-    setViewingAgent(false);
-    setViewingJob(job as Job);
-    const status = core.statuses[job.slug];
-    const paneId = status?.state === "running" ? status.pane_id : undefined;
-    if (paneId) requestAnimationFrame(() => requestXtermPaneFocus(paneId));
-    onJobSelected?.();
-  }, [core.statuses, onJobSelected]);
-
-  const handleSelectProcessDirect = useCallback((process: DetectedProcess) => {
-    setShowFolderRunner(false);
-    setViewingJob(null);
-    setViewingShell(null);
-    if (process.cwd.endsWith("/clawtab/agent")) {
-      setViewingProcess(null);
-      setViewingAgent(true);
-      onJobSelected?.();
-      return;
-    }
-    setViewingAgent(false);
-    setViewingProcess(process);
-    requestAnimationFrame(() => requestXtermPaneFocus(process.pane_id));
-    onJobSelected?.();
-  }, [onJobSelected]);
-
-  const handleSelectShellDirect = useCallback((shell: ShellPane) => {
-    setShowFolderRunner(false);
-    setViewingJob(null);
-    setViewingProcess(null);
-    setViewingAgent(false);
-    setViewingShell(shell);
-    requestAnimationFrame(() => requestXtermPaneFocus(shell.pane_id));
-    onJobSelected?.();
-  }, [onJobSelected]);
-
-  // Compute current single-pane content for the split tree hook
-  const currentContent: PaneContent | null = useMemo(() => {
-    if (viewingAgent) return { kind: "agent" };
-    if (viewingShell) return { kind: "terminal", paneId: viewingShell.pane_id, tmuxSession: viewingShell.tmux_session };
-    if (viewingProcess) return { kind: "process", paneId: viewingProcess.pane_id };
-    if (viewingJob) return { kind: "job", slug: viewingJob.slug };
-    return null;
-  }, [viewingAgent, viewingShell, viewingProcess, viewingJob]);
-
   const split = useSplitTree({
     storageKey: "desktop_split_tree",
     minPaneSize: 200,
@@ -181,12 +117,12 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         const proc = core.processes.find(p => p.pane_id === content.paneId);
         if (proc) { setViewingProcess(proc); setViewingJob(null); setViewingShell(null); setViewingAgent(false); }
       } else if (content.kind === "terminal") {
-        const shell = shellPanes.find((p) => p.pane_id === content.paneId);
+        const shell = shellPanesRef.current.find((p) => p.pane_id === content.paneId);
         if (shell) { setViewingShell(shell); setViewingJob(null); setViewingProcess(null); setViewingAgent(false); }
       } else if (content.kind === "agent") {
         setViewingAgent(true); setViewingJob(null); setViewingProcess(null); setViewingShell(null);
       }
-    }, [core.jobs, core.processes, shellPanes]),
+    }, [core.jobs, core.processes]),
     onReplaceSingle: useCallback((data: SplitDragData) => {
       if (data.kind === "job") {
         const job = (core.jobs as Job[]).find(j => j.slug === data.slug);
@@ -195,7 +131,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         const proc = core.processes.find(p => p.pane_id === data.paneId);
         if (proc) handleSelectProcessDirect(proc);
       } else if (data.kind === "terminal") {
-        const shell = shellPanes.find((p) => p.pane_id === data.paneId);
+        const shell = shellPanesRef.current.find((p) => p.pane_id === data.paneId);
         if (shell) handleSelectShellDirect(shell);
       } else if (data.kind === "agent") {
         setViewingAgent(true);
@@ -203,9 +139,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         setViewingProcess(null);
         setViewingShell(null);
       }
-    }, [core.jobs, core.processes, handleSelectJobDirect, handleSelectProcessDirect, handleSelectShellDirect, shellPanes]),
+    }, [core.jobs, core.processes, handleSelectJobDirect, handleSelectProcessDirect, handleSelectShellDirect]),
     currentContent,
   });
+
+  // Process lifecycle (demotion, promotion, stopping)
+  const lifecycle = useProcessLifecycle({ core, split, viewing });
+  const {
+    pendingProcess, setPendingProcess,
+    stoppingProcesses, setStoppingProcesses,
+    stoppingJobSlugs, setStoppingJobSlugs,
+    shellPanes, setShellPanes,
+    demotedShellPaneIdsRef,
+    pendingAgentWorkDir, setPendingAgentWorkDir,
+  } = lifecycle;
+  shellPanesRef.current = shellPanes;
 
   // Wrap select handlers to check tree first
   const handleSelectJob = useCallback((job: RemoteJob) => {
@@ -351,206 +299,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [core.jobs, viewingJob]);
 
-  // Pane ids that disappeared from core.processes this tick and are candidates for
-  // demotion to shell. Computed synchronously so the clearing effect below can see
-  // them before the demotion effect has had a chance to populate demotingPaneIds.
-  const demotionCandidateIds = useMemo(() => {
-    const previous = previousProcessesRef.current;
-    const currentIds = new Set(core.processes.map((p) => p.pane_id));
-    const shellIds = new Set(shellPanes.map((p) => p.pane_id));
-    const stoppingIds = new Set(stoppingProcesses.map((e) => e.process.pane_id));
-    const out = new Set<string>();
-    for (const process of previous.values()) {
-      if (currentIds.has(process.pane_id)) continue;
-      if (shellIds.has(process.pane_id)) continue;
-      if (stoppingIds.has(process.pane_id)) continue;
-      if (process.pane_id === pendingProcess?.pane_id) continue;
-      out.add(process.pane_id);
-    }
-    return out;
-  }, [core.processes, shellPanes, stoppingProcesses, pendingProcess]);
-
-  // Never clear viewingProcess while its pane_id still exists anywhere in the UI
-  // (demoting, candidate for demotion, or already a shell pane). The demotion effect
-  // owns the final transfer to viewingShell or explicit null when a pane truly vanished.
-  useEffect(() => {
-    if (!viewingProcess) return;
-    if (viewingProcess.pane_id.startsWith("_pending_")) return;
-    const fresh = core.processes.find((p) => p.pane_id === viewingProcess.pane_id);
-    if (fresh) {
-      if (fresh !== viewingProcess) setViewingProcess(fresh);
-      return;
-    }
-    if (demotingPaneIds.has(viewingProcess.pane_id)) return;
-    if (demotionCandidateIds.has(viewingProcess.pane_id)) return;
-    if (shellPanes.some((s) => s.pane_id === viewingProcess.pane_id)) return;
-    const awaitingDetection =
-      !!pendingAgentWorkDir && pendingProcess?.pane_id === viewingProcess.pane_id;
-    if (awaitingDetection) return;
-    setViewingProcess(null);
-  }, [
-    core.processes, viewingProcess, pendingAgentWorkDir, pendingProcess,
-    demotingPaneIds, demotionCandidateIds, shellPanes,
-  ]);
-
-  useEffect(() => {
-    if (!viewingShell) return;
-    const fresh = shellPanes.find((p) => p.pane_id === viewingShell.pane_id);
-    if (!fresh) {
-      if (core.processes.some((p) => p.pane_id === viewingShell.pane_id)) return;
-      setViewingShell(null);
-    }
-    else if (fresh !== viewingShell) setViewingShell(fresh);
-  }, [core.processes, shellPanes, viewingShell]);
-
-  useEffect(() => {
-    const previous = previousProcessesRef.current;
-    const currentMap = new Map(core.processes.map((process) => [process.pane_id, process]));
-    const stoppingIds = new Set(stoppingProcesses.map((entry) => entry.process.pane_id));
-    const shellPaneIds = new Set(shellPanes.map((pane) => pane.pane_id));
-    const removed = Array.from(previous.values()).filter((process) =>
-      !currentMap.has(process.pane_id)
-      && !stoppingIds.has(process.pane_id)
-      && process.pane_id !== pendingProcess?.pane_id
-      && !shellPaneIds.has(process.pane_id),
-    );
-
-    previousProcessesRef.current = currentMap;
-
-    if (removed.length === 0) return;
-
-    let cancelled = false;
-    const removedIds = new Set(removed.map((process) => process.pane_id));
-    setDemotingPaneIds((prev) => {
-      const next = new Set(prev);
-      for (const paneId of removedIds) next.add(paneId);
-      return next;
-    });
-
-    Promise.all(
-      removed.map(async (process): Promise<ShellPane | null> => {
-        const info = await invoke<ExistingPaneInfo | null>("get_existing_pane_info", { paneId: process.pane_id }).catch(() => null);
-        if (!info) return null;
-        const shell: ShellPane = {
-          pane_id: info.pane_id,
-          cwd: info.cwd,
-          tmux_session: info.tmux_session,
-          window_name: info.window_name,
-          matched_group: process.matched_group ?? null,
-          display_name: process.display_name ?? null,
-        };
-        return shell;
-      }),
-    ).then((results) => {
-      if (cancelled) return;
-      const demoted = results.filter(isShellPane);
-      const demotedIds = new Set(demoted.map((shell) => shell.pane_id));
-      const vanishedIds = new Set(Array.from(removedIds).filter((paneId) => !demotedIds.has(paneId)));
-      for (const paneId of demotedIds) {
-        demotedShellPaneIdsRef.current.add(paneId);
-      }
-      setDemotingPaneIds((prev) => {
-        const next = new Set(prev);
-        for (const paneId of removedIds) next.delete(paneId);
-        return next;
-      });
-      if (demoted.length === 0) return;
-
-      setShellPanes((prev) => {
-        const existing = new Set(prev.map((pane) => pane.pane_id));
-        const additions = demoted.filter((shell) => !existing.has(shell.pane_id));
-        return additions.length > 0 ? [...prev, ...additions] : prev;
-      });
-
-      for (const shell of demoted) {
-        split.replaceContent(
-          { kind: "process", paneId: shell.pane_id },
-          { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
-        );
-      }
-
-      const activeContent = split.tree
-        ? (collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId)?.content ?? currentContent)
-        : currentContent;
-      const activeDemotedShell = activeContent?.kind === "process"
-        ? demoted.find((entry) => entry.pane_id === activeContent.paneId)
-        : null;
-      if (activeDemotedShell) {
-        requestXtermPaneFocus(activeDemotedShell.pane_id);
-        setViewingJob(null);
-        setViewingAgent(false);
-        setViewingProcess(null);
-        setViewingShell(activeDemotedShell);
-        setScrollToSlug(activeDemotedShell.pane_id);
-      } else if (viewingProcess && demotedIds.has(viewingProcess.pane_id)) {
-        const shell = demoted.find((entry) => entry.pane_id === viewingProcess.pane_id);
-        if (shell) {
-          setViewingProcess(null);
-          setViewingShell(shell);
-          setScrollToSlug(shell.pane_id);
-        }
-      } else if (viewingProcess && vanishedIds.has(viewingProcess.pane_id)) {
-        setViewingProcess(null);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-      setDemotingPaneIds((prev) => {
-        const next = new Set(prev);
-        for (const paneId of removedIds) next.delete(paneId);
-        return next;
-      });
-    };
-  }, [core.processes, currentContent, pendingProcess, shellPanes, split.focusedLeafId, split.replaceContent, split.tree, stoppingProcesses, viewingProcess]);
-
-  useEffect(() => {
-    if (!pendingAgentWorkDir) return;
-    const { dir, startedAt } = pendingAgentWorkDir;
-    // If we already have a real pane_id, match by it directly
-    const pendingPaneId = pendingProcess && !pendingProcess.pane_id.startsWith("_pending_") ? pendingProcess.pane_id : null;
-    const match = core.processes.find((p) =>
-      pendingPaneId
-        ? p.pane_id === pendingPaneId
-        : (p.cwd === dir && !p.pane_id.startsWith("_pending_") &&
-           p.session_started_at && new Date(p.session_started_at).getTime() >= startedAt - 5000),
-    );
-    if (match) {
-      setPendingAgentWorkDir(null);
-      setPendingProcess(null);
-      if (split.tree) {
-        const matchContent: PaneContent = { kind: "process", paneId: match.pane_id };
-        const pendingContent = pendingProcess ? { kind: "process" as const, paneId: pendingProcess.pane_id } : null;
-        if (!pendingContent || !split.replaceContent(pendingContent, matchContent)) {
-          split.openContent(matchContent);
-        }
-      } else {
-        setViewingProcess(match);
-      }
-      setScrollToSlug(match.pane_id);
-      return;
-    }
-    if (Date.now() - startedAt > 15000) {
-      setPendingAgentWorkDir(null);
-      setPendingProcess(null);
-    }
-  }, [core.processes, pendingAgentWorkDir, pendingProcess, split.tree, split.openContent, split.replaceContent]);
-
-  useEffect(() => {
-    if (stoppingProcesses.length === 0) return;
-    const MIN_STOPPING_VISIBLE_MS = 1500;
-    const MAX_STOPPING_VISIBLE_MS = 10000;
-    setStoppingProcesses((prev) =>
-      prev.filter((sp) => {
-        const stillPresent = core.processes.some((p) => p.pane_id === sp.process.pane_id);
-        const elapsed = Date.now() - sp.stoppedAt;
-        if (elapsed >= MAX_STOPPING_VISIBLE_MS) return false;
-        if (stillPresent) return true;
-        return elapsed < MIN_STOPPING_VISIBLE_MS;
-      }),
-    );
-  }, [core.processes, stoppingProcesses.length]);
-
   useEffect(() => {
     if (!pendingPaneId) return;
     console.log("[open-pane] looking for pane:", pendingPaneId,
@@ -596,10 +344,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // Responsive
   const { isWide } = useWindowSize();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarSelectableItems, setSidebarSelectableItems] = useState<SidebarSelectableItem[]>([]);
   const [recentSinglePaneContents, setRecentSinglePaneContents] = useState<PaneContent[]>([]);
-  const [pendingShortcutStroke, setPendingShortcutStroke] = useState<string | null>(null);
   const sidebarFocusRef = useRef<{ focus: () => void } | null>(null);
   const activePaneContent = useMemo(() => {
     if (!split.tree) return currentContent;
@@ -679,252 +425,16 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     });
   }, []);
 
-  const triggerRenameActivePane = useCallback(() => {
-    if (activePaneContent?.kind === "terminal") {
-      const shell = shellPanes.find((entry) => entry.pane_id === activePaneContent.paneId);
-      if (!shell) return;
-      setEditProcessField({
-        paneId: shell.pane_id,
-        title: "Edit pane title",
-        label: "Title",
-        field: "display_name",
-        initialValue: shell.display_name ?? "",
-        placeholder: shortenPath(shell.cwd),
-      });
-      return;
-    }
-    if (!activeProcessForRename || activeProcessForRename._transient_state) return;
-    openRenameProcessDialog(activeProcessForRename);
-  }, [activePaneContent, activeProcessForRename, openRenameProcessDialog, shellPanes]);
-
-  const triggerFocusAgentInput = useCallback(() => {
-    setEditingJob(null);
-    setIsCreating(false);
-    setShowPicker(false);
-    setPickerTemplateId(null);
-    setCreateForGroup(null);
-    setSaveError(null);
-    setViewingJob(null);
-    setViewingProcess(null);
-    setViewingShell(null);
-    setViewingAgent(false);
-    setShowFolderRunner(true);
-    setFocusEmptyAgentSignal((value) => value + 1);
-  }, []);
-
-  const triggerZoomActivePane = useCallback(() => {
-    const leaves = split.tree ? collectLeaves(split.tree) : [];
-    const focusedLeaf = leaves.find((leaf) => leaf.id === split.focusedLeafId) ?? leaves[0];
-    if (focusedLeaf) {
-      split.toggleZoomLeaf(focusedLeaf.id);
-      return;
-    }
-    split.toggleZoomLeaf("");
-  }, [split.tree, split.focusedLeafId, split.toggleZoomLeaf]);
-
-  const navigateSidebarItems = useCallback((direction: 1 | -1) => {
-    if (sidebarSelectableItems.length === 0) return;
-    sidebarFocusRef.current?.focus();
-
-    const currentKey = split.focusedItemKey
-      ?? (viewingShell
-        ? `_term_${viewingShell.pane_id}`
-        : viewingProcess
-          ? viewingProcess.pane_id
-          : viewingJob?.slug ?? null);
-    const currentIndex = currentKey
-      ? sidebarSelectableItems.findIndex((item) => item.key === currentKey)
-      : -1;
-    const baseIndex = currentIndex === -1
-      ? (direction > 0 ? -1 : 0)
-      : currentIndex;
-    const nextIndex = (baseIndex + direction + sidebarSelectableItems.length) % sidebarSelectableItems.length;
-    const nextItem = sidebarSelectableItems[nextIndex];
-    if (!nextItem) return;
-
-    if (nextItem.kind === "job") {
-      handleSelectJob(nextItem.job);
-      setScrollToSlug(nextItem.job.slug);
-      return;
-    }
-    if (nextItem.kind === "process") {
-      handleSelectProcess(nextItem.process);
-      setScrollToSlug(nextItem.process.pane_id);
-      return;
-    }
-    handleSelectShell(nextItem.shell);
-    setScrollToSlug(nextItem.shell.pane_id);
-  }, [sidebarSelectableItems, split.focusedItemKey, viewingShell, viewingProcess, viewingJob, handleSelectJob, handleSelectProcess, handleSelectShell]);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const runSplitPaneShortcut = (direction: "right" | "down") => {
-      const tree = split.tree;
-      if (!tree) {
-        const paneId = getPaneIdForContent(currentContent);
-        if (paneId) handleSplitPane(paneId, direction);
-        return;
-      }
-      const leaves = collectLeaves(tree);
-      const focused = leaves.find(l => l.id === split.focusedLeafId) ?? leaves[0];
-      if (!focused) return;
-      const paneId = getPaneIdForContent(focused.content);
-      if (paneId) handleSplitPane(paneId, direction);
-    };
-
-    const runMovePaneShortcut = (direction: "backward" | "forward") => {
-      const tree = split.tree;
-      if (!tree) return;
-      const leaves = collectLeaves(tree);
-      if (leaves.length < 2) return;
-      const currentIdx = leaves.findIndex(l => l.id === split.focusedLeafId);
-      const idx = currentIdx === -1 ? 0 : currentIdx;
-      const next = direction === "backward"
-        ? (idx - 1 + leaves.length) % leaves.length
-        : (idx + 1) % leaves.length;
-      split.setFocusedLeafId(leaves[next].id);
-    };
-
-    const runKillPaneShortcut = () => {
-      const focusedLeaf = split.tree
-        ? collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId) ?? collectLeaves(split.tree)[0]
-        : null;
-      const content = focusedLeaf?.content ?? currentContent;
-      if (!content) return;
-
-      if (content.kind === "process") {
-        const proc = core.processes.find((p) => p.pane_id === content.paneId) ?? pendingProcess;
-        if (proc && proc.pane_id === content.paneId) {
-          setStoppingProcesses((prev) => {
-            if (prev.some((sp) => sp.process.pane_id === content.paneId)) return prev;
-            return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
-          });
-        }
-        core.requestFastPoll(`pane:${content.paneId}`);
-        invoke("stop_detected_process", { paneId: content.paneId });
-      } else if (content.kind === "terminal") {
-        demotedShellPaneIdsRef.current.delete(content.paneId);
-        setShellPanes((prev) => prev.filter((pane) => pane.pane_id !== content.paneId));
-        invoke("stop_detected_process", { paneId: content.paneId });
-      } else if (content.kind === "job") {
-        setStoppingJobSlugs((prev) => new Set(prev).add(content.slug));
-        core.requestFastPoll(`job:${content.slug}`);
-        transport.stopJob(content.slug);
-      }
-
-      if (focusedLeaf) {
-        split.handleClosePane(focusedLeaf.id);
-        return;
-      }
-
-      if (content.kind === "job") setViewingJob(null);
-      if (content.kind === "process") setViewingProcess(null);
-      if (content.kind === "terminal") setViewingShell(null);
-      if (content.kind === "agent") setViewingAgent(false);
-    };
-
-    const actions: { binding: string; run: () => void }[] = [
-      { binding: shortcutSettings.rename_active_pane, run: triggerRenameActivePane },
-      { binding: shortcutSettings.focus_agent_input, run: triggerFocusAgentInput },
-      { binding: shortcutSettings.zoom_active_pane, run: triggerZoomActivePane },
-      { binding: shortcutSettings.next_sidebar_item, run: () => navigateSidebarItems(1) },
-      { binding: shortcutSettings.previous_sidebar_item, run: () => navigateSidebarItems(-1) },
-      {
-        binding: shortcutSettings.toggle_sidebar,
-        run: () => {
-          setSidebarCollapsed(prev => {
-            const next = !prev;
-            if (!next) requestAnimationFrame(() => sidebarFocusRef.current?.focus());
-            return next;
-          });
-        },
-      },
-      { binding: shortcutSettings.split_pane_vertical, run: () => runSplitPaneShortcut("right") },
-      { binding: shortcutSettings.split_pane_horizontal, run: () => runSplitPaneShortcut("down") },
-      { binding: shortcutSettings.kill_pane, run: runKillPaneShortcut },
-      { binding: shortcutSettings.move_pane_left, run: () => runMovePaneShortcut("backward") },
-      { binding: shortcutSettings.move_pane_up, run: () => runMovePaneShortcut("backward") },
-      { binding: shortcutSettings.move_pane_down, run: () => runMovePaneShortcut("forward") },
-      { binding: shortcutSettings.move_pane_right, run: () => runMovePaneShortcut("forward") },
-    ];
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const tagName = target?.tagName;
-      const inXterm = !!target?.closest(".xterm");
-      const isEditable = !!target && (
-        target.isContentEditable ||
-        tagName === "INPUT" ||
-        tagName === "TEXTAREA" ||
-        tagName === "SELECT"
-      );
-      if (isEditable && !inXterm && shortcutMatches(e, shortcutSettings.focus_agent_input, shortcutSettings.prefix_key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        setPendingShortcutStroke(null);
-        triggerFocusAgentInput();
-        return;
-      }
-      if (isEditable && !inXterm) return;
-
-      if (pendingShortcutStroke && e.key === "Escape") {
-        e.preventDefault();
-        setPendingShortcutStroke(null);
-        return;
-      }
-
-      const stroke = eventToShortcutBinding(e);
-      if (pendingShortcutStroke) {
-        if (!stroke) {
-          e.preventDefault();
-          return;
-        }
-
-        e.preventDefault();
-        const sequenceMatch = actions.find(({ binding }) => shortcutCompletesSequence(binding, [pendingShortcutStroke, stroke], shortcutSettings.prefix_key));
-        if (sequenceMatch) {
-          setPendingShortcutStroke(null);
-          sequenceMatch.run();
-          return;
-        }
-
-        const nextSequence = actions.find(({ binding }) => shortcutStartsWith(binding, stroke, shortcutSettings.prefix_key));
-        setPendingShortcutStroke(nextSequence ? stroke : null);
-        return;
-      }
-
-      if (!stroke) return;
-
-      const sequenceStart = actions.find(({ binding }) => shortcutStartsWith(binding, stroke, shortcutSettings.prefix_key));
-      if (sequenceStart) {
-        e.preventDefault();
-        setPendingShortcutStroke(stroke);
-        return;
-      }
-
-      const singleStrokeMatch = actions.find(({ binding }) => shortcutMatches(e, binding, shortcutSettings.prefix_key));
-      if (singleStrokeMatch) {
-        e.preventDefault();
-        singleStrokeMatch.run();
-        return;
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane]);
-
-  useEffect(() => {
-    const unlistenPromise = listen<string>("shortcut-action", (event) => {
-      if (event.payload === "rename_active_pane") triggerRenameActivePane();
-      if (event.payload === "focus_agent_input") triggerFocusAgentInput();
-      if (event.payload === "zoom_active_pane") triggerZoomActivePane();
-    });
-
-    return () => {
-      unlistenPromise.then((fn) => fn());
-    };
-  }, [triggerFocusAgentInput, triggerRenameActivePane, triggerZoomActivePane]);
+  const keyboard = useKeyboardShortcuts({
+    core, split, viewing, lifecycle, settings,
+    transport,
+    activePaneContent, activeProcessForRename,
+    setEditProcessField, openRenameProcessDialog,
+    handleSplitPane, getPaneIdForContent,
+    handleSelectJob, handleSelectProcess, handleSelectShell,
+    sidebarSelectableItems, sidebarFocusRef,
+  });
+  const { sidebarCollapsed } = keyboard;
 
   useEffect(() => {
     if (split.tree || !currentContent) return;
@@ -1149,23 +659,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   }, [core.jobs, core.processes, sortMode, jobOrder, pendingProcess, stoppingProcesses, shellPanes]);
 
   const selectAdjacentItem = useCallback((currentId: string) => {
-    const idx = orderedItems.findIndex((it) =>
-      it.kind === "job" ? it.slug === currentId : it.paneId === currentId,
-    );
-    const prevIdx = idx > 0 ? idx - 1 : (orderedItems.length > 1 ? 1 : -1);
-    if (prevIdx >= 0 && prevIdx < orderedItems.length) {
-      const next = orderedItems[prevIdx];
-      if (next.kind === "job") {
-        setViewingProcess(null); setViewingShell(null); setViewingAgent(false); setViewingJob(next.job); setScrollToSlug(next.slug);
-      } else if (next.kind === "terminal") {
-        setViewingJob(null); setViewingProcess(null); setViewingAgent(false); setViewingShell(next.shell); setScrollToSlug(next.paneId);
-      } else {
-        setViewingJob(null); setViewingShell(null); setViewingAgent(false); setViewingProcess(next.process); setScrollToSlug(next.paneId);
-      }
-    } else {
-      setViewingJob(null); setViewingProcess(null); setViewingShell(null);
-    }
-  }, [orderedItems]);
+    viewing.selectAdjacentItem(currentId, orderedItems);
+  }, [viewing, orderedItems]);
 
   const handleJobReorder = useCallback((sourceSlug: string, targetSlug: string) => {
     const jobs = core.jobs as Job[];
@@ -1333,11 +828,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           setPendingProcess(realProcess);
           if (split.tree) {
             const realContent: PaneContent = { kind: "process", paneId: realProcess.pane_id };
-            if (!split.replaceContent({ kind: "process", paneId: placeholder.pane_id }, realContent)) {
+            if (!split.replaceContent({ kind: "process", paneId: placeholder.pane_id }, realContent, { focus: false })) {
               split.openContent(realContent);
             }
           } else {
-            setViewingProcess(realProcess);
+            const activeContent = currentContentRef.current;
+            const stillViewingPlaceholder = activeContent?.kind === "process"
+              && activeContent.paneId === placeholder.pane_id;
+            if (stillViewingPlaceholder) setViewingProcess(realProcess);
           }
           setScrollToSlug(result.pane_id);
           // Clear pending state after next process poll picks it up
@@ -1407,55 +905,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
     return out;
   }, [core.jobs]);
-
-  // Clean stale process leaves from tree
-  useEffect(() => {
-    if (!core.loaded) return;
-    split.cleanStaleLeaves((content) => {
-      if (content.kind === "process") {
-        if (pendingProcess?.pane_id === content.paneId) return false;
-        if (demotingPaneIds.has(content.paneId)) return false;
-        if (demotionCandidateIds.has(content.paneId)) return false;
-        if (shellPanes.find((p) => p.pane_id === content.paneId)) return false;
-        return !core.processes.find(p => p.pane_id === content.paneId);
-      }
-      if (content.kind === "terminal") {
-        if (demotingPaneIds.has(content.paneId)) return false;
-        if (demotionCandidateIds.has(content.paneId)) return false;
-        if (demotedShellPaneIdsRef.current.has(content.paneId)) return false;
-        return !shellPanes.find((p) => p.pane_id === content.paneId);
-      }
-      return false;
-    });
-  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes, demotingPaneIds, demotionCandidateIds]);
-
-  // Promote shell panes to detected processes when claude/codex is launched inside them
-  useEffect(() => {
-    if (core.processes.length === 0 || shellPanes.length === 0) return;
-    const processPaneIds = new Set(core.processes.map((p) => p.pane_id));
-    const promoted = shellPanes.filter((s) => processPaneIds.has(s.pane_id));
-    if (promoted.length === 0) return;
-    const promotedIds = new Set(promoted.map((s) => s.pane_id));
-    const activeContent = split.tree
-      ? (collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId)?.content ?? currentContent)
-      : currentContent;
-    const activePromotedShell = activeContent?.kind === "terminal"
-      ? promoted.find((shell) => shell.pane_id === activeContent.paneId)
-      : null;
-    if (activePromotedShell) {
-      requestXtermPaneFocus(activePromotedShell.pane_id);
-    }
-    for (const paneId of promotedIds) {
-      demotedShellPaneIdsRef.current.delete(paneId);
-    }
-    for (const shell of promoted) {
-      split.replaceContent(
-        { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
-        { kind: "process", paneId: shell.pane_id },
-      );
-    }
-    setShellPanes((prev) => prev.filter((s) => !promotedIds.has(s.pane_id)));
-  }, [core.processes, currentContent, shellPanes, split.focusedLeafId, split.replaceContent, split.tree]);
 
   // Helper: build DesktopJobDetail pane action props
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
@@ -1528,189 +977,21 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     slug: "agent",
   }), [agentProcess, getProcessDisplayName]);
 
-  // Render a leaf pane in the split tree
-  const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
-    if (content.kind === "agent") {
-      return (
-        <DraggableSplitPane leafId={leafId} content={content}>
-          {(dragHandleProps) => (
-            <AgentDetail
-              transport={transport}
-              job={agentJob}
-              status={core.statuses["agent"] ?? { state: "idle" as const }}
-              onBack={() => split.handleClosePane(leafId)}
-              onOpen={() => handleOpen("agent")}
-              onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
-              onZoomPane={() => split.toggleZoomLeaf(leafId)}
-              showBackButton={!isWide}
-              hidePath
-              contentStyle={trafficLightInsetStyle}
-              titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
-              dragHandleProps={dragHandleProps}
-            />
-          )}
-        </DraggableSplitPane>
-      );
-    }
-
-    if (content.kind === "terminal") {
-      const proc = core.processes.find((p) => p.pane_id === content.paneId)
-        ?? stoppingProcesses.find((sp) => sp.process.pane_id === content.paneId)?.process;
-      const shell = shellPanes.find((p) => p.pane_id === content.paneId);
-      if (!shell && !proc) {
-        return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Tmux pane not found</span></div>;
-      }
-      if (proc) {
-        return (
-          <DraggableSplitPane leafId={leafId} content={content}>
-            {(dragHandleProps) => (
-              <TmuxPaneDetail
-                target={{ kind: "process", process: proc }}
-                questions={questions}
-                onBack={() => split.handleClosePane(leafId)}
-                onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-                autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
-                onToggleAutoYes={() => {
-                  const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
-                  if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
-                  else autoYes.handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
-                }}
-                showBackButton={!isWide} hidePath
-                onStopped={() => {
-                  setStoppingProcesses((prev) => {
-                    if (prev.some((sp) => sp.process.pane_id === proc.pane_id)) return prev;
-                    return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
-                  });
-                  core.requestFastPoll(`pane:${proc.pane_id}`);
-                }}
-                onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
-                onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
-                onZoomPane={() => split.toggleZoomLeaf(leafId)}
-                onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
-                onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
-                contentStyle={trafficLightInsetStyle}
-                titlePath={buildProcessTitlePath(proc)}
-                displayNameOverride={processRenameDrafts[proc.pane_id] ?? null}
-                dragHandleProps={dragHandleProps}
-              />
-            )}
-          </DraggableSplitPane>
-        );
-      }
-      if (!shell) return null;
-      return (
-        <DraggableSplitPane leafId={leafId} content={content}>
-          {(dragHandleProps) => (
-            <TmuxPaneDetail
-              target={{ kind: "shell", shell }}
-              onBack={() => split.handleClosePane(leafId)}
-              showBackButton={!isWide}
-              hidePath
-              onStopped={() => {
-                demotedShellPaneIdsRef.current.delete(shell.pane_id);
-                setShellPanes((prev) => prev.filter((p) => p.pane_id !== shell.pane_id));
-                split.handleClosePane(leafId);
-              }}
-              onSplitPane={(nextDirection: "right" | "down") => handleSplitPane(shell.pane_id, nextDirection)}
-              onZoomPane={() => split.toggleZoomLeaf(leafId)}
-              contentStyle={trafficLightInsetStyle}
-              titlePath={shortenPath(shell.cwd)}
-              dragHandleProps={dragHandleProps}
-            />
-          )}
-        </DraggableSplitPane>
-      );
-    }
-
-    if (content.kind === "process") {
-      const proc = core.processes.find((p) => p.pane_id === content.paneId)
-        ?? stoppingProcesses.find((sp) => sp.process.pane_id === content.paneId)?.process
-        ?? (pendingProcess?.pane_id === content.paneId ? pendingProcess : null);
-      if (!proc) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span></div>;
-      if (proc.pane_id.startsWith("_pending_")) {
-        return (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button className="btn btn-sm" onClick={() => { setPendingAgentWorkDir(null); setPendingProcess(null); split.handleClosePane(leafId); }}>Back</button>
-              <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>Waiting for agent to start...</span>
-            </div>
-          </div>
-        );
-      }
-      return (
-        <DraggableSplitPane leafId={leafId} content={content}>
-          {(dragHandleProps) => (
-            <TmuxPaneDetail
-              target={{ kind: "process", process: proc }}
-              questions={questions}
-              onBack={() => split.handleClosePane(leafId)}
-              onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-              autoYesActive={autoYes.autoYesPaneIds.has(proc.pane_id)}
-              onToggleAutoYes={() => {
-                const paneQuestion = questions.find((q) => q.pane_id === proc.pane_id);
-                if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
-                else autoYes.handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
-              }}
-              showBackButton={!isWide} hidePath
-              onStopped={() => {
-                setStoppingProcesses((prev) => {
-                  if (prev.some((sp) => sp.process.pane_id === proc.pane_id)) return prev;
-                  return [...prev, { process: { ...proc, _transient_state: "stopping" }, stoppedAt: Date.now() }];
-                });
-                core.requestFastPoll(`pane:${proc.pane_id}`);
-              }}
-              onFork={(direction: "right" | "down") => handleFork(proc.pane_id, direction)}
-              onSplitPane={(direction: "right" | "down") => handleSplitPane(proc.pane_id, direction)}
-              onZoomPane={() => split.toggleZoomLeaf(leafId)}
-              onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
-              onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
-              contentStyle={trafficLightInsetStyle}
-              titlePath={buildProcessTitlePath(proc)}
-              displayNameOverride={processRenameDrafts[proc.pane_id] ?? null}
-              dragHandleProps={dragHandleProps}
-            />
-          )}
-        </DraggableSplitPane>
-      );
-    }
-
-    const job = (core.jobs as Job[]).find((j) => j.slug === content.slug);
-    if (!job) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Job not found</span></div>;
-    const jobQuestion = questions.find((q) => q.matched_job === job.slug);
-    const matchedProcess = core.processes.find((p) => p.matched_job === job.slug);
-    return (
-      <DraggableSplitPane leafId={leafId} content={content}>
-        {(dragHandleProps) => (
-          <DesktopJobDetail
-            transport={transport} job={job}
-            status={core.statuses[job.slug] ?? { state: "idle" as const }}
-            firstQuery={matchedProcess?.first_query ?? undefined}
-            lastQuery={matchedProcess?.last_query ?? undefined}
-            onBack={() => split.handleClosePane(leafId)}
-            onEdit={() => { setEditingJob(job); split.handleClosePane(leafId); }}
-            onOpen={() => handleOpen(job.slug)}
-            onToggle={() => { actions.toggleJob(job.slug); core.reload(); }}
-            onDuplicate={(group: string) => handleDuplicate(job, group)}
-            onDuplicateToFolder={() => handleDuplicateToFolder(job)}
-            onDelete={() => { split.handleClosePane(leafId); actions.deleteJob(job.slug); core.reload(); }}
-            groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
-            showBackButton={!isWide} hidePath
-            options={jobQuestion?.options}
-            questionContext={jobQuestion?.context_lines}
-            {...buildJobPaneActions(job, jobQuestion)}
-            onStopping={() => {
-              setStoppingJobSlugs((prev) => new Set(prev).add(job.slug));
-              core.requestFastPoll(`job:${job.slug}`);
-            }}
-            contentStyle={trafficLightInsetStyle}
-            titlePath={buildJobTitlePath(job, jobQuestion)}
-            dragHandleProps={dragHandleProps}
-            defaultAgentProvider={defaultProvider}
-          />
-        )}
-      </DraggableSplitPane>
-    );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts]);
+  const { renderLeaf, renderSinglePaneContent } = usePaneRenderers({
+    core, split, viewing, lifecycle, actions,
+    questions, questionPolling, autoYes, transport,
+    agentJob, agentProcess,
+    isWide, trafficLightInsetStyle, defaultProvider,
+    callbacks: {
+      handleOpen, handleDuplicate, handleDuplicateToFolder,
+      handleFork, handleSplitPane,
+      handleRunAgent, handleGetAgentProviders,
+      selectAdjacentItem, openRenameProcessDialog,
+      buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath,
+      setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId,
+      processRenameDrafts, folderRunGroups,
+    },
+  });
 
   // Custom card renderers for drag-and-drop
   const renderDraggableJobCard = useCallback(
@@ -1818,193 +1099,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     paddingBottom: 20,
     paddingLeft: isWide && sidebarCollapsed ? 104 : 20,
   };
-
-  const renderSinglePaneContent = useCallback((content: PaneContent) => {
-    if (content.kind === "agent") {
-      return (
-        <AgentDetail
-          transport={transport}
-          job={agentJob}
-          status={core.statuses["agent"] ?? { state: "idle" as const }}
-          onBack={() => setViewingAgent(false)}
-          onOpen={() => handleOpen("agent")}
-          onEditTitle={agentProcess ? () => openRenameProcessDialog(agentProcess) : undefined}
-          onZoomPane={() => split.toggleZoomLeaf("")}
-          showBackButton={!isWide}
-          hidePath
-          contentStyle={trafficLightInsetStyle}
-          titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
-        />
-      );
-    }
-
-    if (content.kind === "process") {
-      const singleProcess = core.processes.find((p) => p.pane_id === content.paneId)
-        ?? (pendingProcess?.pane_id === content.paneId ? pendingProcess : null);
-      if (singleProcess && pendingProcess && singleProcess.pane_id === pendingProcess.pane_id
-          && singleProcess.pane_id.startsWith("_pending_")) {
-        return (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button className="btn btn-sm" onClick={() => { setPendingAgentWorkDir(null); setPendingProcess(null); setViewingProcess(null); }}>Back</button>
-              <span style={{ color: "var(--text-secondary)", fontSize: 14 }}>Waiting for agent to start...</span>
-            </div>
-          </div>
-        );
-      }
-      if (!singleProcess) {
-        return (
-          <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span>
-          </div>
-        );
-      }
-      return (
-          <TmuxPaneDetail
-            target={{ kind: "process", process: singleProcess }}
-            questions={questions}
-            onBack={() => setViewingProcess(null)}
-            onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-            autoYesActive={autoYes.autoYesPaneIds.has(singleProcess.pane_id)}
-            onToggleAutoYes={() => {
-              const paneQuestion = questions.find((q) => q.pane_id === singleProcess.pane_id);
-              if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
-              else autoYes.handleToggleAutoYesByPaneId(singleProcess.pane_id, singleProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
-            }}
-            showBackButton={!isWide} hidePath
-            onStopped={() => {
-              setStoppingProcesses((prev) => {
-                if (prev.some((sp) => sp.process.pane_id === singleProcess.pane_id)) return prev;
-                return [...prev, { process: { ...singleProcess, _transient_state: "stopping" }, stoppedAt: Date.now() }];
-              });
-              core.requestFastPoll(`pane:${singleProcess.pane_id}`);
-              selectAdjacentItem(singleProcess.pane_id);
-            }}
-            onFork={(direction: "right" | "down") => handleFork(singleProcess.pane_id, direction)}
-            onSplitPane={(direction: "right" | "down") => handleSplitPane(singleProcess.pane_id, direction)}
-            onZoomPane={() => split.toggleZoomLeaf("")}
-            onInjectSecrets={() => setInjectSecretsPaneId(singleProcess.pane_id)}
-            onSearchSkills={() => setSkillSearchPaneId(singleProcess.pane_id)}
-            contentStyle={trafficLightInsetStyle}
-            titlePath={buildProcessTitlePath(singleProcess)}
-            displayNameOverride={processRenameDrafts[singleProcess.pane_id] ?? null}
-          />
-      );
-    }
-
-    if (content.kind === "terminal") {
-      const singleProcess = core.processes.find((p) => p.pane_id === content.paneId);
-      const singleShell = shellPanes.find((p) => p.pane_id === content.paneId);
-      if (!singleShell && !singleProcess) {
-        return (
-          <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Tmux pane not found</span>
-          </div>
-        );
-      }
-      if (singleProcess) {
-        return (
-          <TmuxPaneDetail
-            target={{ kind: "process", process: singleProcess }}
-            questions={questions}
-            onBack={() => setViewingProcess(null)}
-            onDismissQuestion={(qId) => questionPolling.dismissQuestion(qId)}
-            autoYesActive={autoYes.autoYesPaneIds.has(singleProcess.pane_id)}
-            onToggleAutoYes={() => {
-              const paneQuestion = questions.find((q) => q.pane_id === singleProcess.pane_id);
-              if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
-              else autoYes.handleToggleAutoYesByPaneId(singleProcess.pane_id, singleProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
-            }}
-            showBackButton={!isWide} hidePath
-            onStopped={() => {
-              setStoppingProcesses((prev) => {
-                if (prev.some((sp) => sp.process.pane_id === singleProcess.pane_id)) return prev;
-                return [...prev, { process: { ...singleProcess, _transient_state: "stopping" }, stoppedAt: Date.now() }];
-              });
-              core.requestFastPoll(`pane:${singleProcess.pane_id}`);
-              selectAdjacentItem(singleProcess.pane_id);
-            }}
-            onFork={(direction: "right" | "down") => handleFork(singleProcess.pane_id, direction)}
-            onSplitPane={(direction: "right" | "down") => handleSplitPane(singleProcess.pane_id, direction)}
-            onZoomPane={() => split.toggleZoomLeaf("")}
-            onInjectSecrets={() => setInjectSecretsPaneId(singleProcess.pane_id)}
-            onSearchSkills={() => setSkillSearchPaneId(singleProcess.pane_id)}
-            contentStyle={trafficLightInsetStyle}
-            titlePath={buildProcessTitlePath(singleProcess)}
-            displayNameOverride={processRenameDrafts[singleProcess.pane_id] ?? null}
-          />
-        );
-      }
-      if (!singleShell) return null;
-      return (
-        <TmuxPaneDetail
-          target={{ kind: "shell", shell: singleShell }}
-          onBack={() => setViewingShell(null)}
-          showBackButton={!isWide}
-          hidePath
-          onStopped={() => {
-            demotedShellPaneIdsRef.current.delete(singleShell.pane_id);
-            setShellPanes((prev) => prev.filter((p) => p.pane_id !== singleShell.pane_id));
-            selectAdjacentItem(singleShell.pane_id);
-          }}
-          onSplitPane={(direction: "right" | "down") => handleSplitPane(singleShell.pane_id, direction)}
-          onZoomPane={() => split.toggleZoomLeaf("")}
-          contentStyle={trafficLightInsetStyle}
-          titlePath={shortenPath(singleShell.cwd)}
-        />
-      );
-    }
-
-    if (content.kind === "job") {
-      const singleJob = (core.jobs as Job[]).find((j) => j.slug === content.slug);
-      if (!singleJob) {
-        return (
-          <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Job not found</span>
-          </div>
-        );
-      }
-      const jobQuestion = questions.find((q) => q.matched_job === singleJob.slug);
-      const matchedProcess = core.processes.find((p) => p.matched_job === singleJob.slug);
-      return (
-        <DesktopJobDetail
-          transport={transport} job={singleJob}
-          status={core.statuses[singleJob.slug] ?? { state: "idle" as const }}
-          firstQuery={matchedProcess?.first_query ?? undefined}
-          lastQuery={matchedProcess?.last_query ?? undefined}
-          onBack={() => setViewingJob(null)}
-          onEdit={() => { setEditingJob(singleJob); setViewingJob(null); }}
-          onOpen={() => handleOpen(singleJob.slug)}
-          onToggle={() => { actions.toggleJob(singleJob.slug); core.reload(); }}
-          onDuplicate={(group: string) => handleDuplicate(singleJob, group)}
-          onDuplicateToFolder={() => handleDuplicateToFolder(singleJob)}
-          onDelete={() => { const slug = singleJob.slug; selectAdjacentItem(slug); actions.deleteJob(slug); core.reload(); }}
-          groups={[...new Set(core.jobs.map((j) => j.group || "default"))]}
-          showBackButton={!isWide} hidePath
-          options={jobQuestion?.options}
-          questionContext={jobQuestion?.context_lines}
-          {...buildJobPaneActions(singleJob, jobQuestion)}
-          onStopping={() => {
-            setStoppingJobSlugs((prev) => new Set(prev).add(singleJob.slug));
-            core.requestFastPoll(`job:${singleJob.slug}`);
-          }}
-          contentStyle={trafficLightInsetStyle}
-          titlePath={buildJobTitlePath(singleJob, jobQuestion)}
-          defaultAgentProvider={defaultProvider}
-        />
-      );
-    }
-
-    return (
-      <EmptyDetailAgent
-        onRunAgent={handleRunAgent}
-        getAgentProviders={handleGetAgentProviders}
-        defaultProvider={defaultProvider}
-        focusSignal={focusEmptyAgentSignal}
-        folderGroups={folderRunGroups}
-      />
-    );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, focusEmptyAgentSignal, folderRunGroups]);
 
   const folderRunnerPane = (
     <EmptyDetailAgent

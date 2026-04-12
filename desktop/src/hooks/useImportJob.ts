@@ -5,16 +5,16 @@ import type { Job } from "../types";
 
 type ImportState =
   | null
-  | { step: "pick-dest"; source: string; jobName: string }
-  | { step: "confirm-duplicate"; source: string; destCwt: string; jobName: string };
+  | { step: "pick-dest"; source: string; jobId: string }
+  | { step: "confirm-duplicate"; source: string; destCwt: string; jobId: string };
 
 export function useImportJob(jobs: Job[], reload: () => Promise<void>) {
   const [importState, setImportState] = useState<ImportState>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
-  const doImport = useCallback(async (source: string, destCwt: string, jobName: string) => {
+  const doImport = useCallback(async (source: string, destCwt: string, jobId: string) => {
     try {
-      await invoke("import_job_folder", { source, destCwt, jobName });
+      await invoke("import_job_folder", { source, destCwt, jobId });
       await reload();
       setImportState(null);
       setImportError(null);
@@ -23,17 +23,17 @@ export function useImportJob(jobs: Job[], reload: () => Promise<void>) {
     }
   }, [reload]);
 
-  const pickDestAndImport = useCallback(async (source: string, jobName: string) => {
+  const pickDestAndImport = useCallback(async (source: string, jobId: string) => {
     const selected = await open({ directory: true, title: "Select project folder" });
     if (!selected) return;
     const picked = (selected as string).replace(/\/+$/, "");
     const existing = jobs.find(
-      (j) => j.folder_path === picked && j.job_name === jobName,
+      (j) => j.folder_path === picked && j.job_id === jobId,
     );
     if (existing) {
-      setImportState({ step: "confirm-duplicate", source, destCwt: picked, jobName });
+      setImportState({ step: "confirm-duplicate", source, destCwt: picked, jobId });
     } else {
-      await doImport(source, picked, jobName);
+      await doImport(source, picked, jobId);
     }
   }, [jobs, doImport]);
 
@@ -44,27 +44,27 @@ export function useImportJob(jobs: Job[], reload: () => Promise<void>) {
 
     const source = selected as string;
     const parts = source.replace(/\/$/, "").split("/");
-    const jobName = parts[parts.length - 1];
+    const jobId = parts[parts.length - 1];
 
     const dest = source.replace(/\/$/, "");
     const existing = jobs.find(
-      (j) => j.folder_path === dest && j.job_name === jobName,
+      (j) => j.folder_path === dest && j.job_id === jobId,
     );
     if (existing) {
-      setImportState({ step: "confirm-duplicate", source, destCwt: dest, jobName });
+      setImportState({ step: "confirm-duplicate", source, destCwt: dest, jobId });
     } else {
-      await doImport(source, dest, jobName);
+      await doImport(source, dest, jobId);
     }
   }, [jobs, doImport]);
 
   const handleImportPickDest = useCallback(async () => {
     if (!importState || importState.step !== "pick-dest") return;
-    await pickDestAndImport(importState.source, importState.jobName);
+    await pickDestAndImport(importState.source, importState.jobId);
   }, [importState, pickDestAndImport]);
 
   const handleImportDuplicate = useCallback(async () => {
     if (!importState || importState.step !== "confirm-duplicate") return;
-    await pickDestAndImport(importState.source, importState.jobName);
+    await pickDestAndImport(importState.source, importState.jobId);
   }, [importState, pickDestAndImport]);
 
   return {

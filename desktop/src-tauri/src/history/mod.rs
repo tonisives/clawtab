@@ -5,7 +5,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
     pub id: String,
-    pub job_name: String,
+    #[serde(alias = "job_name")]
+    pub job_id: String,
     pub started_at: String,
     pub finished_at: Option<String>,
     pub exit_code: Option<i32>,
@@ -80,7 +81,7 @@ impl HistoryStore {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     record.id,
-                    record.job_name,
+                    record.job_id,
                     record.started_at,
                     record.finished_at,
                     record.exit_code,
@@ -134,7 +135,7 @@ impl HistoryStore {
             .query_map(params![limit as i64], |row| {
                 Ok(RunRecord {
                     id: row.get(0)?,
-                    job_name: row.get(1)?,
+                    job_id: row.get(1)?,
                     started_at: row.get(2)?,
                     finished_at: row.get(3)?,
                     exit_code: row.get(4)?,
@@ -166,7 +167,7 @@ impl HistoryStore {
             .query_map(params![id], |row| {
                 Ok(RunRecord {
                     id: row.get(0)?,
-                    job_name: row.get(1)?,
+                    job_id: row.get(1)?,
                     started_at: row.get(2)?,
                     finished_at: row.get(3)?,
                     exit_code: row.get(4)?,
@@ -185,7 +186,7 @@ impl HistoryStore {
         }
     }
 
-    pub fn get_by_job_name(&self, job_name: &str, limit: usize) -> Result<Vec<RunRecord>, String> {
+    pub fn get_by_job_id(&self, job_id: &str, limit: usize) -> Result<Vec<RunRecord>, String> {
         let mut stmt = self
             .conn
             .prepare(
@@ -195,10 +196,10 @@ impl HistoryStore {
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
         let rows = stmt
-            .query_map(params![job_name, limit as i64], |row| {
+            .query_map(params![job_id, limit as i64], |row| {
                 Ok(RunRecord {
                     id: row.get(0)?,
-                    job_name: row.get(1)?,
+                    job_id: row.get(1)?,
                     started_at: row.get(2)?,
                     finished_at: row.get(3)?,
                     exit_code: row.get(4)?,
@@ -217,7 +218,7 @@ impl HistoryStore {
         Ok(records)
     }
 
-    pub fn get_unfinished_by_job(&self, job_name: &str) -> Result<Option<RunRecord>, String> {
+    pub fn get_unfinished_by_job(&self, job_id: &str) -> Result<Option<RunRecord>, String> {
         let mut stmt = self
             .conn
             .prepare(
@@ -227,10 +228,10 @@ impl HistoryStore {
             .map_err(|e| format!("Failed to prepare query: {}", e))?;
 
         let mut rows = stmt
-            .query_map(params![job_name], |row| {
+            .query_map(params![job_id], |row| {
                 Ok(RunRecord {
                     id: row.get(0)?,
-                    job_name: row.get(1)?,
+                    job_id: row.get(1)?,
                     started_at: row.get(2)?,
                     finished_at: row.get(3)?,
                     exit_code: row.get(4)?,
@@ -262,7 +263,7 @@ impl HistoryStore {
             .query_map([], |row| {
                 Ok(RunRecord {
                     id: row.get(0)?,
-                    job_name: row.get(1)?,
+                    job_id: row.get(1)?,
                     started_at: row.get(2)?,
                     finished_at: row.get(3)?,
                     exit_code: row.get(4)?,

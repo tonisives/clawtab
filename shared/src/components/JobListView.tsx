@@ -651,6 +651,7 @@ export function JobListView({
               onStop={jobOnStop}
               autoYesActive={jobAutoYesActive}
               stopping={isStopping}
+              defaultAgentProvider={defaultAgentProvider}
             />
           ) : (
             <JobCard

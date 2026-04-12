@@ -21,7 +21,7 @@ pub struct MonitorParams {
     pub tmux_session: String,
     pub pane_id: String,
     pub run_id: String,
-    pub job_name: String,
+    pub job_id: String,
     pub slug: String,
     pub kill_on_end: bool,
     pub telegram: Option<TelegramStream>,
@@ -55,7 +55,7 @@ pub async fn monitor_pane(params: MonitorParams) {
             if let Some(ref tg) = params.telegram {
                 let text = format!(
                     "<b>ClawTab</b>: Job <code>{}</code> started",
-                    params.job_name
+                    params.job_id
                 );
                 if let Err(e) =
                     crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
@@ -76,7 +76,7 @@ pub async fn monitor_pane(params: MonitorParams) {
                 &params.run_id,
             );
             if let Some(ref handle) = params.app_handle {
-                crate::notifications::notify_job(handle, &params.job_name, "started");
+                crate::notifications::notify_job(handle, &params.job_id, "started");
             }
         }
     }
@@ -396,7 +396,7 @@ pub async fn monitor_pane(params: MonitorParams) {
                 if params.notify_on_success {
                     let text = format!(
                         "<b>ClawTab</b>: Job <code>{}</code> completed",
-                        params.job_name
+                        params.job_id
                     );
                     if let Err(e) =
                         crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
@@ -418,7 +418,7 @@ pub async fn monitor_pane(params: MonitorParams) {
                 &params.run_id,
             );
             if let Some(ref handle) = params.app_handle {
-                crate::notifications::notify_job(handle, &params.job_name, "completed");
+                crate::notifications::notify_job(handle, &params.job_id, "completed");
             }
         }
     }
@@ -426,7 +426,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     log::info!(
         "[{}] Monitor finished for job '{}'",
         params.run_id,
-        params.job_name
+        params.job_id
     );
 }
 

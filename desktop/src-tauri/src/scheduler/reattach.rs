@@ -66,7 +66,7 @@ pub fn reattach_running_jobs(
     let mut reattached = 0;
 
     for run in &unfinished {
-        let job = match slug_to_job.get(run.job_name.as_str()) {
+        let job = match slug_to_job.get(run.job_id.as_str()) {
             Some(j) if j.enabled => *j,
             _ => continue,
         };
@@ -119,7 +119,7 @@ pub fn reattach_running_jobs(
         // Clean up any previous incomplete reattach records for this job
         {
             let h = history.lock().unwrap();
-            if let Ok(old_runs) = h.get_by_job_name(&job.slug, 20) {
+            if let Ok(old_runs) = h.get_by_job_id(&job.slug, 20) {
                 let stale_ids: Vec<String> = old_runs
                     .into_iter()
                     .filter(|r| {
@@ -176,7 +176,7 @@ pub fn reattach_running_jobs(
             let h = history.lock().unwrap();
             let record = crate::history::RunRecord {
                 id: run_id.clone(),
-                job_name: job.slug.clone(),
+                job_id: job.slug.clone(),
                 started_at: started_at.clone(),
                 finished_at: None,
                 exit_code: None,
@@ -205,7 +205,7 @@ pub fn reattach_running_jobs(
                             pane_id: pane_id.clone(),
                             tmux_session: session.clone(),
                             run_id: run_id.clone(),
-                            job_name: job.name.clone(),
+                            job_id: job.name.clone(),
                         },
                     );
                 }
@@ -239,7 +239,7 @@ pub fn reattach_running_jobs(
             tmux_session: session.clone(),
             pane_id: pane_id.clone(),
             run_id,
-            job_name: job.name.clone(),
+            job_id: job.name.clone(),
             slug: job.slug.clone(),
             kill_on_end: job.kill_on_end,
             telegram,

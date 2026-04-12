@@ -94,7 +94,7 @@ async fn run_loop(
             // Determine the earliest point to look back from: last run or 24h ago
             let since = {
                 let h = history.lock().unwrap();
-                h.get_by_job_name(&job.slug, 1)
+                h.get_by_job_id(&job.slug, 1)
                     .ok()
                     .and_then(|runs| runs.into_iter().next())
                     .and_then(|r| chrono::DateTime::parse_from_rfc3339(&r.started_at).ok())

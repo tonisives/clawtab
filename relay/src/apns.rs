@@ -31,7 +31,7 @@ struct PayloadOption {
 
 #[derive(Serialize)]
 struct JobPayload {
-    job_name: String,
+    job_id: String,
     run_id: String,
 }
 
@@ -127,15 +127,15 @@ impl ApnsClient {
     pub async fn send_job_notification(
         &self,
         device_token: &str,
-        job_name: &str,
+        job_id: &str,
         event: &str,
         run_id: &str,
     ) -> Result<(), String> {
         let title = "ClawTab";
-        let body = format!("Job {} {}", job_name, event);
+        let body = format!("Job {} {}", job_id, event);
 
         let custom_data = JobPayload {
-            job_name: job_name.to_string(),
+            job_id: job_id.to_string(),
             run_id: run_id.to_string(),
         };
         let custom_json =

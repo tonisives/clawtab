@@ -685,7 +685,7 @@ async fn handle_claude_questions_push(
 async fn handle_job_notification_push(
     state: &AppState,
     user_id: Uuid,
-    job_name: &str,
+    job_id: &str,
     event: &str,
     run_id: &str,
 ) {
@@ -696,7 +696,7 @@ async fn handle_job_notification_push(
     // Per-job dedup via Redis (short TTL to avoid spamming)
     if let Some(ref redis) = state.redis {
         let mut conn = redis.clone();
-        let key = format!("job_push:{}:{}:{}", user_id, job_name, event);
+        let key = format!("job_push:{}:{}:{}", user_id, job_id, event);
         let result: Result<Option<String>, _> = redis::cmd("SET")
             .arg(&key)
             .arg("1")
@@ -707,7 +707,7 @@ async fn handle_job_notification_push(
             .await;
         // NX returns Some("OK") if key was newly set, None if it already existed
         if !matches!(result, Ok(Some(_))) {
-            tracing::debug!("job push dedup: already sent for {job_name}:{event}");
+            tracing::debug!("job push dedup: already sent for {job_id}:{event}");
             return;
         }
     }
@@ -728,11 +728,11 @@ async fn handle_job_notification_push(
 
     for (token_id, device_token) in &tokens {
         match apns
-            .send_job_notification(device_token, job_name, event, run_id)
+            .send_job_notification(device_token, job_id, event, run_id)
             .await
         {
             Ok(()) => {
-                tracing::info!("job push sent to {device_token}: {job_name} {event}");
+                tracing::info!("job push sent to {device_token}: {job_id} {event}");
             }
             Err(e) if e.starts_with("invalid_token:") => {
                 tracing::warn!("removing invalid push token: {device_token}");

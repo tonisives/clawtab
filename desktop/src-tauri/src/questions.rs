@@ -612,8 +612,8 @@ fn detect_question_processes(
 
         // Check if this is a tracked running job
         let (matched_group, matched_job) =
-            if let Some((job_name, group)) = running_panes.get(pane_id) {
-                (Some(group.clone()), Some(job_name.clone()))
+            if let Some((job_id, group)) = running_panes.get(pane_id) {
+                (Some(group.clone()), Some(job_id.clone()))
             } else {
                 // Try to match against configured job folders
                 let mut mg = None;

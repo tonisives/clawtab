@@ -74,13 +74,13 @@ pub fn push_full_state_if_connected(
 /// Notify relay of a single job status change.
 pub fn push_status_update(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
-    job_name: &str,
+    job_id: &str,
     status: &JobStatus,
 ) {
     if let Ok(guard) = relay.lock() {
         if let Some(handle) = guard.as_ref() {
             handle.send_message(&DesktopMessage::StatusUpdate {
-                name: job_name.to_string(),
+                name: job_id.to_string(),
                 status: status_to_remote(status),
             });
         }
@@ -90,14 +90,14 @@ pub fn push_status_update(
 /// Push a job notification to relay for APNs push delivery.
 pub fn push_job_notification(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
-    job_name: &str,
+    job_id: &str,
     event: &str,
     run_id: &str,
 ) {
     if let Ok(guard) = relay.lock() {
         if let Some(handle) = guard.as_ref() {
             handle.send_message(&DesktopMessage::JobNotification {
-                name: job_name.to_string(),
+                name: job_id.to_string(),
                 event: event.to_string(),
                 run_id: run_id.to_string(),
             });
@@ -106,14 +106,14 @@ pub fn push_job_notification(
 }
 
 /// Push a log chunk to relay for a specific job.
-pub fn push_log_chunk(relay: &Arc<Mutex<Option<RelayHandle>>>, job_name: &str, content: &str) {
+pub fn push_log_chunk(relay: &Arc<Mutex<Option<RelayHandle>>>, job_id: &str, content: &str) {
     if content.is_empty() {
         return;
     }
     if let Ok(guard) = relay.lock() {
         if let Some(handle) = guard.as_ref() {
             handle.send_message(&DesktopMessage::LogChunk {
-                name: job_name.to_string(),
+                name: job_id.to_string(),
                 content: content.to_string(),
                 timestamp: chrono::Utc::now().to_rfc3339(),
             });

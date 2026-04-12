@@ -197,7 +197,7 @@ export const DEMO_LOGS: Record<string, string> = {
 export const DEMO_RUNS: Record<string, RunRecord[]> = {
   "deploy-api": [{
     id: "demo-run-deploy-1",
-    job_name: "deploy-api",
+    job_id: "deploy-api",
     started_at: ago(12),
     finished_at: ago(10),
     exit_code: 0,
@@ -207,7 +207,7 @@ export const DEMO_RUNS: Record<string, RunRecord[]> = {
   }],
   "backup-db": [{
     id: "demo-run-backup-1",
-    job_name: "backup-db",
+    job_id: "backup-db",
     started_at: ago(120),
     finished_at: ago(118),
     exit_code: 0,
@@ -217,7 +217,7 @@ export const DEMO_RUNS: Record<string, RunRecord[]> = {
   }],
   "claude-refactor": [{
     id: "demo-run-refactor-1",
-    job_name: "claude-refactor",
+    job_id: "claude-refactor",
     started_at: ago(60),
     finished_at: ago(55),
     exit_code: 0,
@@ -227,7 +227,7 @@ export const DEMO_RUNS: Record<string, RunRecord[]> = {
   }],
   "lint-check": [{
     id: "demo-run-lint-1",
-    job_name: "lint-check",
+    job_id: "lint-check",
     started_at: ago(45),
     finished_at: ago(44),
     exit_code: 1,
@@ -237,7 +237,7 @@ export const DEMO_RUNS: Record<string, RunRecord[]> = {
   }],
   "sync-assets": [{
     id: "demo-run-sync-1",
-    job_name: "sync-assets",
+    job_id: "sync-assets",
     started_at: ago(1440),
     finished_at: ago(1438),
     exit_code: 0,

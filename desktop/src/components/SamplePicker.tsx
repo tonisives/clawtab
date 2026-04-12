@@ -104,7 +104,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
     try {
       const settings = await invoke<AppSettings>("get_settings");
       const workDir = settings.default_work_dir || "~";
-      const jobName = slugifyName(template.name);
+      const jobId = slugifyName(template.name);
 
       let templateContent = template.template;
       for (const [key, value] of Object.entries(vars)) {
@@ -114,8 +114,8 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
 
       if (template.job_type === "job") {
         const folderPath = workDir.replace(/\/+$/, "");
-        await invoke("init_cwt_folder", { folderPath, jobName });
-        await invoke("write_cwt_entry", { folderPath, jobName, content: templateContent });
+        await invoke("init_cwt_folder", { folderPath, jobId });
+        await invoke("write_cwt_entry", { folderPath, jobId, content: templateContent });
 
         const job: Job = {
           name: template.name,
@@ -130,7 +130,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
           tmux_session: null,
           aerospace_workspace: null,
           folder_path: folderPath,
-          job_name: jobName,
+          job_id: jobId,
           telegram_chat_id: null,
           telegram_log_mode: "on_prompt",
           telegram_notify: { start: true, working: true, logs: true, finish: true },
@@ -157,7 +157,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
           tmux_session: null,
           aerospace_workspace: null,
           folder_path: null,
-          job_name: null,
+          job_id: null,
           telegram_chat_id: null,
           telegram_log_mode: "on_prompt",
           telegram_notify: { start: true, working: true, logs: true, finish: true },
@@ -187,10 +187,10 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
     setQuickCreating(true);
     setError(null);
     try {
-      const jobName = slugifyName(quickJobName);
-      await invoke("init_cwt_folder", { folderPath: quickFolderPath, jobName });
+      const jobId = slugifyName(quickJobName);
+      await invoke("init_cwt_folder", { folderPath: quickFolderPath, jobId });
       if (quickJobMd.trim()) {
-        await invoke("write_cwt_entry", { folderPath: quickFolderPath, jobName, content: quickJobMd });
+        await invoke("write_cwt_entry", { folderPath: quickFolderPath, jobId, content: quickJobMd });
       }
 
       const job: Job = {
@@ -206,7 +206,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
         tmux_session: null,
         aerospace_workspace: null,
         folder_path: quickFolderPath,
-        job_name: jobName,
+        job_id: jobId,
         telegram_chat_id: null,
         telegram_log_mode: "on_prompt",
         telegram_notify: { start: true, working: true, logs: true, finish: true },

@@ -1,22 +1,22 @@
 use std::path::PathBuf;
 
 /// Get the browser session directory for a job.
-/// Sessions are stored at `~/.config/clawtab/browser-sessions/<job_name>/`.
-pub fn session_dir(job_name: &str) -> PathBuf {
+/// Sessions are stored at `~/.config/clawtab/browser-sessions/<job_id>/`.
+pub fn session_dir(job_id: &str) -> PathBuf {
     crate::config::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("browser-sessions")
-        .join(job_name)
+        .join(job_id)
 }
 
 /// Check if a saved auth session exists for the job.
-pub fn has_session(job_name: &str) -> bool {
-    session_dir(job_name).join("auth.json").exists()
+pub fn has_session(job_id: &str) -> bool {
+    session_dir(job_id).join("auth.json").exists()
 }
 
 /// Clear the saved auth session for a job.
-pub fn clear_session(job_name: &str) -> Result<(), String> {
-    let auth_path = session_dir(job_name).join("auth.json");
+pub fn clear_session(job_id: &str) -> Result<(), String> {
+    let auth_path = session_dir(job_id).join("auth.json");
     if auth_path.exists() {
         std::fs::remove_file(&auth_path)
             .map_err(|e| format!("Failed to remove auth.json: {}", e))?;
@@ -195,10 +195,10 @@ fn build_auth_script(browser: &str, user_data_dir: &str, url: &str, auth_path: &
 /// Launch an interactive browser session so the user can log in.
 /// Uses Playwright's persistent context with `headless: false`.
 /// Auth state (cookies, localStorage) is saved to `auth.json` in the session dir.
-pub fn launch_auth_session(url: &str, job_name: &str, browser: &str) -> Result<(), String> {
+pub fn launch_auth_session(url: &str, job_id: &str, browser: &str) -> Result<(), String> {
     ensure_playwright_installed(browser)?;
 
-    let sess_dir = session_dir(job_name);
+    let sess_dir = session_dir(job_id);
     std::fs::create_dir_all(&sess_dir)
         .map_err(|e| format!("Failed to create session dir: {}", e))?;
 

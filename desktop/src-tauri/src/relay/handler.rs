@@ -174,7 +174,7 @@ pub async fn handle_incoming(
             Some(DesktopMessage::RunAgentAck {
                 id,
                 success: result.is_ok(),
-                job_name: result.ok(),
+                job_id: result.ok(),
             })
         }
 
@@ -512,12 +512,12 @@ fn get_run_history(
     history: &Arc<Mutex<HistoryStore>>,
 ) -> Vec<clawtab_protocol::RunRecord> {
     let h = history.lock().unwrap();
-    match h.get_by_job_name(name, limit as usize) {
+    match h.get_by_job_id(name, limit as usize) {
         Ok(runs) => runs
             .into_iter()
             .map(|r| clawtab_protocol::RunRecord {
                 id: r.id,
-                job_name: r.job_name,
+                job_id: r.job_id,
                 started_at: r.started_at,
                 finished_at: r.finished_at,
                 exit_code: r.exit_code,
@@ -548,7 +548,7 @@ fn run_agent(
         (s, j)
     };
     let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs, work_dir, None)?;
-    let job_name = job.name.clone();
+    let job_id = job.name.clone();
 
     let secrets = Arc::clone(secrets);
     let history = Arc::clone(history);
@@ -573,7 +573,7 @@ fn run_agent(
         .await;
     });
 
-    Ok(job_name)
+    Ok(job_id)
 }
 
 fn create_job(
@@ -598,7 +598,7 @@ fn get_run_detail_full(
     match h.get_by_id(run_id) {
         Ok(Some(r)) => Some(clawtab_protocol::RunDetail {
             id: r.id,
-            job_name: r.job_name,
+            job_id: r.job_id,
             started_at: r.started_at,
             finished_at: r.finished_at,
             exit_code: r.exit_code,

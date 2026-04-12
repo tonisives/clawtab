@@ -8,7 +8,7 @@ pub struct CwtFolder {
     /// The project root directory
     pub path: PathBuf,
     /// The job subfolder name (e.g., "deploy", "lint", "default")
-    pub job_name: String,
+    pub job_id: String,
     pub scripts: Vec<String>,
 }
 
@@ -16,21 +16,21 @@ impl CwtFolder {
     /// Create from a project root path + job name.
     /// Looks for scripts in the central config directory:
     /// `~/.config/clawtab/jobs/{project-slug}/` and `~/.config/clawtab/jobs/{slug}/`.
-    pub fn from_path_with_job(project_root: &Path, job_name: &str) -> Result<Self, String> {
+    pub fn from_path_with_job(project_root: &Path, job_id: &str) -> Result<Self, String> {
         if !project_root.is_dir() {
             return Err(format!("Not a directory: {}", project_root.display()));
         }
 
         Ok(Self {
             path: project_root.to_path_buf(),
-            job_name: job_name.to_string(),
+            job_id: job_id.to_string(),
             scripts: Vec::new(),
         })
     }
 
     /// Create from a slug, scanning central config for scripts.
     #[allow(dead_code)]
-    pub fn from_slug(project_root: &Path, job_name: &str, slug: &str) -> Result<Self, String> {
+    pub fn from_slug(project_root: &Path, job_id: &str, slug: &str) -> Result<Self, String> {
         if !project_root.is_dir() {
             return Err(format!("Not a directory: {}", project_root.display()));
         }
@@ -40,7 +40,7 @@ impl CwtFolder {
             None => {
                 return Ok(Self {
                     path: project_root.to_path_buf(),
-                    job_name: job_name.to_string(),
+                    job_id: job_id.to_string(),
                     scripts: Vec::new(),
                 })
             }
@@ -66,7 +66,7 @@ impl CwtFolder {
 
         Ok(Self {
             path: project_root.to_path_buf(),
-            job_name: job_name.to_string(),
+            job_id: job_id.to_string(),
             scripts,
         })
     }

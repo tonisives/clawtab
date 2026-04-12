@@ -49,7 +49,7 @@ export function createTauriTransport(): Transport {
     },
 
     async getRunHistory(name: string) {
-      return invoke<RunRecord[]>("get_job_runs", { jobName: name });
+      return invoke<RunRecord[]>("get_job_runs", { jobId: name });
     },
 
     async getRunDetail(runId: string) {

@@ -16,7 +16,7 @@ interface DialogsProps {
   autoYesPending: { title: string } | null;
   onConfirmAutoYes: () => void;
   onCancelAutoYes: () => void;
-  importState: { step: string; jobName: string } | null;
+  importState: { step: string; jobId: string } | null;
   onImportPickDest: () => void;
   onImportDuplicate: () => void;
   onCancelImport: () => void;
@@ -89,7 +89,7 @@ export function Dialogs({
 
       {importState?.step === "pick-dest" && (
         <ConfirmDialog
-          message={`"${importState.jobName}" was not auto-detected. Select a project folder to import into.`}
+          message={`"${importState.jobId}" was not auto-detected. Select a project folder to import into.`}
           onConfirm={onImportPickDest} onCancel={onCancelImport}
           confirmLabel="Select folder" confirmClassName="btn btn-primary btn-sm"
         />
@@ -97,7 +97,7 @@ export function Dialogs({
 
       {importState?.step === "confirm-duplicate" && (
         <ConfirmDialog
-          message={`"${importState.jobName}" already exists in this project. Duplicate to a different project?`}
+          message={`"${importState.jobId}" already exists in this project. Duplicate to a different project?`}
           onConfirm={onImportDuplicate} onCancel={onCancelImport}
           confirmLabel="Select folder" confirmClassName="btn btn-primary btn-sm"
         />

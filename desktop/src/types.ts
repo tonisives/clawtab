@@ -24,7 +24,7 @@ export interface Job {
   tmux_session: string | null;
   aerospace_workspace: string | null;
   folder_path: string | null;
-  job_name: string | null;
+  job_id: string | null;
   telegram_chat_id: number | null;
   telegram_log_mode: TelegramLogMode;
   telegram_notify: TelegramNotify;
@@ -45,7 +45,7 @@ export interface AerospaceWorkspace {
 
 export interface RunRecord {
   id: string;
-  job_name: string;
+  job_id: string;
   started_at: string;
   finished_at: string | null;
   exit_code: number | null;

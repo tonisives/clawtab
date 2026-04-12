@@ -214,7 +214,7 @@ pub enum DesktopMessage {
         id: String,
         success: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
-        job_name: Option<String>,
+        job_id: Option<String>,
     },
     /// Ack for create_job
     CreateJobAck {

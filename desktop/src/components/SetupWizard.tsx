@@ -131,7 +131,7 @@ export function SetupWizard({ onComplete }: Props) {
         tmux_session: null,
         aerospace_workspace: null,
         folder_path: null,
-        job_name: "default",
+        job_id: "default",
         telegram_chat_id: jobChatId,
         telegram_log_mode: "on_prompt",
         telegram_notify: { start: true, working: true, logs: true, finish: true },
@@ -159,9 +159,9 @@ export function SetupWizard({ onComplete }: Props) {
     try {
       const workDir = settings.default_work_dir || "~";
       const folderPath = workDir.replace(/\/+$/, "");
-      const jobName = "hacker-news";
+      const jobId = "hacker-news";
 
-      await invoke("init_cwt_folder", { folderPath, jobName });
+      await invoke("init_cwt_folder", { folderPath, jobId });
 
       const sendLine = notifyChoice === "telegram"
         ? "4. Send the results to Telegram."
@@ -176,7 +176,7 @@ export function SetupWizard({ onComplete }: Props) {
         sendLine,
       ].join("\n");
 
-      await invoke("write_cwt_entry", { folderPath, jobName, content: jobMd });
+      await invoke("write_cwt_entry", { folderPath, jobId, content: jobMd });
 
       const job: Job = {
         name: "Hacker News",
@@ -191,7 +191,7 @@ export function SetupWizard({ onComplete }: Props) {
         tmux_session: null,
         aerospace_workspace: null,
         folder_path: folderPath,
-        job_name: jobName,
+        job_id: jobId,
         telegram_chat_id: jobChatId,
         telegram_log_mode: "on_prompt",
         telegram_notify: { start: true, working: true, logs: true, finish: true },

@@ -172,7 +172,7 @@ async fn execute_job_inner(
 
     let record = RunRecord {
         id: run_id.clone(),
-        job_name: job.slug.clone(),
+        job_id: job.slug.clone(),
         started_at: started_at.clone(),
         finished_at: None,
         exit_code: None,
@@ -264,7 +264,7 @@ async fn execute_job_inner(
                                     pane_id: handle.pane_id.clone(),
                                     tmux_session: handle.tmux_session.clone(),
                                     run_id: run_id.clone(),
-                                    job_name: job.name.clone(),
+                                    job_id: job.name.clone(),
                                 },
                             );
                         }
@@ -286,7 +286,7 @@ async fn execute_job_inner(
                     tmux_session: handle.tmux_session,
                     pane_id: handle.pane_id,
                     run_id: run_id.clone(),
-                    job_name: job.name.clone(),
+                    job_id: job.name.clone(),
                     slug: job.slug.clone(),
                     kill_on_end: job.kill_on_end,
                     telegram,
@@ -502,7 +502,7 @@ async fn execute_claude_job(
         let s = settings.lock().unwrap();
         let provider = job
             .agent_provider
-            .unwrap_or(crate::agent_session::ProcessProvider::Claude);
+            .unwrap_or(s.default_provider);
         let session = job
             .tmux_session
             .clone()
@@ -623,10 +623,10 @@ async fn execute_folder_job(
         .as_ref()
         .ok_or("Folder job requires folder_path")?;
 
-    let job_name = job.job_name.as_deref().unwrap_or("default");
+    let job_id = job.job_id.as_deref().unwrap_or("default");
     let project_root = std::path::Path::new(folder_path);
 
-    let _folder = CwtFolder::from_path_with_job(project_root, job_name)?;
+    let _folder = CwtFolder::from_path_with_job(project_root, job_id)?;
 
     // Read job.md from central location (~/.config/clawtab/jobs/{slug}/job.md)
     let central_job_md = crate::config::jobs::central_job_md_path(&job.slug)
@@ -650,7 +650,7 @@ async fn execute_folder_job(
         let s = settings.lock().unwrap();
         let provider = job
             .agent_provider
-            .unwrap_or(crate::agent_session::ProcessProvider::Claude);
+            .unwrap_or(s.default_provider);
         let session = job
             .tmux_session
             .clone()
@@ -837,7 +837,7 @@ fn project_window_name(job: &Job) -> String {
 async fn send_job_notification(
     config: &crate::telegram::TelegramConfig,
     job_chat_id: Option<i64>,
-    job_name: &str,
+    job_id: &str,
     exit_code: Option<i32>,
     success: bool,
     stdout: &str,
@@ -861,7 +861,7 @@ async fn send_job_notification(
 
     let mut text = format!(
         "<b>ClawTab</b>: Job <code>{}</code> {}{}",
-        job_name, status, code_str
+        job_id, status, code_str
     );
 
     // Include stdout/stderr output for binary jobs (truncated to stay within Telegram limits)

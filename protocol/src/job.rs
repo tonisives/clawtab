@@ -84,7 +84,8 @@ pub struct DetectedProcess {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
     pub id: String,
-    pub job_name: String,
+    #[serde(alias = "job_name")]
+    pub job_id: String,
     pub started_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,
@@ -96,7 +97,8 @@ pub struct RunRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunDetail {
     pub id: String,
-    pub job_name: String,
+    #[serde(alias = "job_name")]
+    pub job_id: String,
     pub started_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at: Option<String>,

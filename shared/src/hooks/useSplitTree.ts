@@ -460,21 +460,25 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       return true;
     }
 
-    const largestLeaf = leafRects
+    const bottomLeaf = leafRects
       .slice()
-      .sort((a, b) => (b.w * b.h) - (a.w * a.h))[0];
-    if (!largestLeaf) return false;
+      .sort((a, b) => (b.y + b.h) - (a.y + a.h))[0];
+    if (!bottomLeaf) return false;
 
+    let insertedLeafId: string | null = null;
     setSplitTree((prev) => {
       if (!prev) return prev;
-      return replaceNode(prev, largestLeaf.id, { type: "leaf", id: largestLeaf.id, content });
+      const next = splitLeaf(prev, bottomLeaf.id, content, "vertical", "after");
+      const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, content));
+      insertedLeafId = inserted?.id ?? null;
+      return next;
     });
-    setFocusedLeafId(largestLeaf.id);
+    if (insertedLeafId) setFocusedLeafId(insertedLeafId);
     return true;
   }, [detailSize.h, detailSize.w, focusedLeafId, minPaneSize]);
 
-  /** Replace an existing leaf's content and keep that pane focused. */
-  const replaceContent = useCallback((from: PaneContent, to: PaneContent) => {
+  /** Replace an existing leaf's content, optionally focusing that pane. */
+  const replaceContent = useCallback((from: PaneContent, to: PaneContent, options?: { focus?: boolean }) => {
     const currentTree = splitTreeRef.current;
     if (!currentTree) return false;
     const existingLeaf = collectLeaves(currentTree).find((leaf) => contentEquals(leaf.content, from));
@@ -483,7 +487,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       if (!prev) return prev;
       return replaceNode(prev, existingLeaf.id, { type: "leaf", id: existingLeaf.id, content: to });
     });
-    setFocusedLeafId(existingLeaf.id);
+    if (options?.focus !== false) setFocusedLeafId(existingLeaf.id);
     return true;
   }, []);
 

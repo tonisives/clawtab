@@ -35,7 +35,7 @@ export interface DesktopJob extends RemoteJob {
   tmux_session: string | null;
   aerospace_workspace: string | null;
   folder_path: string | undefined;
-  job_name: string | null;
+  job_id: string | null;
   telegram_chat_id: number | null;
   telegram_log_mode: TelegramLogMode;
   telegram_notify: TelegramNotify;
@@ -52,7 +52,7 @@ export type JobStatus =
 
 export interface RunRecord {
   id: string;
-  job_name: string;
+  job_id: string;
   started_at: string;
   finished_at?: string | null;
   exit_code?: number | null;
@@ -64,7 +64,7 @@ export interface RunRecord {
 
 export interface RunDetail {
   id: string;
-  job_name: string;
+  job_id: string;
   started_at: string;
   finished_at?: string | null;
   exit_code?: number | null;

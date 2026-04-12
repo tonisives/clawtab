@@ -48,7 +48,7 @@ const emptyJob: Job = {
   work_dir: null,
   tmux_session: "tgs",
   folder_path: null,
-  job_name: null,
+  job_id: null,
   telegram_chat_id: null,
   telegram_log_mode: "on_prompt",
   telegram_notify: { start: false, working: false, logs: false, finish: false },
@@ -192,9 +192,9 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
 
   const handleImportJob = async (source: Job) => {
     // Load the source job's content
-    const jn = source.job_name ?? "default";
+    const jn = source.job_id ?? "default";
     const [jobMd, cwtMd] = await Promise.all([
-      invoke<string>("read_cwt_entry_at", { folderPath: source.folder_path, jobName: jn, slug: source.slug }).catch(() => ""),
+      invoke<string>("read_cwt_entry_at", { folderPath: source.folder_path, jobId: jn, slug: source.slug }).catch(() => ""),
       invoke<string>("read_cwt_shared_at", { folderPath: source.folder_path!, slug: source.slug }).catch(() => ""),
     ]);
     // Only import md file contents, not folder or name
@@ -325,8 +325,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
   // Load existing content for edit mode (not new wizard)
   useEffect(() => {
     if (!isNew && form.job_type === "job" && form.folder_path) {
-      const jn = form.job_name ?? "default";
-      invoke<string>("read_cwt_entry_at", { folderPath: form.folder_path, jobName: jn, slug: form.slug || null })
+      const jn = form.job_id ?? "default";
+      invoke<string>("read_cwt_entry_at", { folderPath: form.folder_path, jobId: jn, slug: form.slug || null })
         .then((content) => {
           setCwtEdited(!!content && content.trim() !== defaultDirectionsTemplate.trim());
           if (!inlineLoaded) {
@@ -343,7 +343,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
           })
           .catch(() => {});
       }
-      invoke<string>("read_cwt_context_at", { folderPath: form.folder_path, jobName: jn, slug: form.slug || null })
+      invoke<string>("read_cwt_context_at", { folderPath: form.folder_path, jobId: jn, slug: form.slug || null })
         .then(setJobCwtContent)
         .catch(() => setJobCwtContent(null));
     }
@@ -363,7 +363,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     if (!isNew && form.folder_path) {
       invoke("write_cwt_entry_at", {
         folderPath: form.folder_path,
-        jobName: form.job_name ?? "default",
+        jobId: form.job_id ?? "default",
         content,
         slug: form.slug || null,
       }).catch(() => {});
@@ -384,7 +384,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
       if (!isNew && form.folder_path) {
         invoke("write_cwt_entry_at", {
           folderPath: form.folder_path,
-          jobName: form.job_name ?? "default",
+          jobId: form.job_id ?? "default",
           content: nextTemplate,
           slug: form.slug || null,
         }).catch(() => {});
@@ -420,11 +420,11 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
     }
     // For new folder jobs, create the job directory and write files now
     if (isNew && form.job_type === "job" && form.folder_path) {
-      const jn = form.job_name ?? "default";
-      await invoke("init_cwt_folder", { folderPath: form.folder_path, jobName: jn });
+      const jn = form.job_id ?? "default";
+      await invoke("init_cwt_folder", { folderPath: form.folder_path, jobId: jn });
       await invoke("write_cwt_entry_at", {
         folderPath: form.folder_path,
-        jobName: jn,
+        jobId: jn,
         content: inlineContent,
         slug: form.slug || null,
       });
@@ -568,8 +568,8 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               maxLength={JOB_NAME_MAX_LENGTH}
               onChange={(e) => {
                 const name = e.target.value;
-                const jobName = slugifyName(name) || null;
-                setForm({ ...form, name, job_name: jobName });
+                const jobId = slugifyName(name) || null;
+                setForm({ ...form, name, job_id: jobId });
               }}
               placeholder=""
             />
@@ -760,7 +760,7 @@ export function JobEditor({ job, onSave, onCancel, onPickTemplate, defaultGroup,
               invoke("open_job_editor", {
                 folderPath: form.folder_path,
                 editor: preferredEditor,
-                jobName: form.job_name ?? "default",
+                jobId: form.job_id ?? "default",
                 fileName: "job.md",
                 slug: form.slug || null,
               });

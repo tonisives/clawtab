@@ -70,7 +70,7 @@ pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Resu
         } else {
             job.slug = crate::config::jobs::derive_slug(
                 &job.folder_path.as_deref().unwrap_or(&job.name),
-                job.job_name.as_deref(),
+                job.job_id.as_deref(),
                 &config.jobs,
             );
         }
@@ -112,9 +112,9 @@ pub fn rename_job(
         .cloned()
         .ok_or_else(|| format!("Job not found: {}", old_name))?;
 
-    // Rename in central location if the job_name changed
-    let old_jn = old_job.job_name.as_deref().unwrap_or("default");
-    let new_jn = job.job_name.as_deref().unwrap_or("default");
+    // Rename in central location if the job_id changed
+    let old_jn = old_job.job_id.as_deref().unwrap_or("default");
+    let new_jn = job.job_id.as_deref().unwrap_or("default");
     if old_jn != new_jn {
         if let Some(ref fp) = old_job.folder_path {
             if let Some(jobs_dir) = crate::config::config_dir().map(|p| p.join("jobs")) {
@@ -139,7 +139,7 @@ pub fn rename_job(
     // Derive new slug
     new_job.slug = crate::config::jobs::derive_slug(
         &new_job.folder_path.as_deref().unwrap_or(&new_job.name),
-        new_job.job_name.as_deref(),
+        new_job.job_id.as_deref(),
         &config.jobs,
     );
     config.save_job(&new_job)?;
@@ -164,14 +164,14 @@ pub fn rename_job(
 /// Import a job folder (containing job.md) into central config.
 /// `source` is the folder with job.md.
 /// `dest_cwt` is the project root directory.
-/// `job_name` is the job identifier.
+/// `job_id` is the job identifier.
 #[tauri::command]
 pub fn import_job_folder(
     app: tauri::AppHandle,
     state: State<AppState>,
     source: String,
     dest_cwt: String,
-    job_name: String,
+    job_id: String,
 ) -> Result<(), String> {
     let src = std::path::Path::new(&source);
     if !src.join("job.md").exists() {
@@ -190,7 +190,7 @@ pub fn import_job_folder(
     let mut config = state.jobs_config.lock().unwrap();
 
     let job = Job {
-        name: job_name.clone(),
+        name: job_id.clone(),
         job_type: crate::config::jobs::JobType::Job,
         enabled: true,
         path: String::new(),
@@ -202,7 +202,7 @@ pub fn import_job_folder(
         tmux_session: None,
         aerospace_workspace: None,
         folder_path: Some(project_root_str.clone()),
-        job_name: Some(job_name.clone()),
+        job_id: Some(job_id.clone()),
         telegram_chat_id: None,
         telegram_log_mode: crate::config::jobs::TelegramLogMode::OnPrompt,
         telegram_notify: crate::config::jobs::TelegramNotify::default(),
@@ -218,7 +218,7 @@ pub fn import_job_folder(
     };
 
     // Copy job.md to central location
-    let slug = crate::config::jobs::derive_slug(&project_root_str, Some(&job_name), &config.jobs);
+    let slug = crate::config::jobs::derive_slug(&project_root_str, Some(&job_id), &config.jobs);
     if let Some(jobs_dir) = crate::config::config_dir().map(|p| p.join("jobs")) {
         let central_dir = jobs_dir.join(&slug);
         let _ = std::fs::create_dir_all(&central_dir);
@@ -291,8 +291,8 @@ pub fn duplicate_job(
         }
     };
 
-    let job_name = source
-        .job_name
+    let job_id = source
+        .job_id
         .clone()
         .unwrap_or_else(|| "default".to_string());
 
@@ -310,7 +310,7 @@ pub fn duplicate_job(
         tmux_session: source.tmux_session.clone(),
         aerospace_workspace: source.aerospace_workspace.clone(),
         folder_path: Some(target_project_path.clone()),
-        job_name: Some(job_name.clone()),
+        job_id: Some(job_id.clone()),
         telegram_chat_id: source.telegram_chat_id,
         telegram_log_mode: source.telegram_log_mode.clone(),
         telegram_notify: source.telegram_notify.clone(),
@@ -327,7 +327,7 @@ pub fn duplicate_job(
 
     // Derive slug and save
     new_job.slug =
-        crate::config::jobs::derive_slug(&target_project_path, Some(&job_name), &config.jobs);
+        crate::config::jobs::derive_slug(&target_project_path, Some(&job_id), &config.jobs);
     config.save_job(&new_job)?;
 
     // Save job.md to central location
@@ -598,7 +598,7 @@ pub fn open_job_editor(
     folder_path: String,
     editor: Option<String>,
     file_name: Option<String>,
-    job_name: Option<String>,
+    job_id: Option<String>,
     slug: Option<String>,
 ) -> Result<(), String> {
     let preferred_editor = editor.unwrap_or_else(|| {
@@ -606,7 +606,7 @@ pub fn open_job_editor(
         s.preferred_editor.clone()
     });
 
-    let jn = job_name.as_deref().unwrap_or("default");
+    let jn = job_id.as_deref().unwrap_or("default");
     let target_file = file_name.as_deref().unwrap_or("job.md");
 
     // Read/write from central location
@@ -729,29 +729,29 @@ pub fn open_job_in_editor(state: State<AppState>, name: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn init_cwt_folder(folder_path: String, job_name: Option<String>) -> Result<CwtFolder, String> {
+pub fn init_cwt_folder(folder_path: String, job_id: Option<String>) -> Result<CwtFolder, String> {
     // folder_path is the project root
     let project_root = std::path::Path::new(&folder_path);
-    let job_name = job_name.as_deref().unwrap_or("default");
+    let job_id = job_id.as_deref().unwrap_or("default");
 
     // Central job directory is created when the job is saved (via save_job)
     // Just ensure the CwtFolder structure is valid
-    CwtFolder::from_path_with_job(project_root, job_name)
+    CwtFolder::from_path_with_job(project_root, job_id)
 }
 
 #[tauri::command]
-pub fn read_cwt_entry(folder_path: String, job_name: Option<String>) -> Result<String, String> {
-    read_cwt_entry_at(folder_path, job_name, None)
+pub fn read_cwt_entry(folder_path: String, job_id: Option<String>) -> Result<String, String> {
+    read_cwt_entry_at(folder_path, job_id, None)
 }
 
 #[tauri::command]
 pub fn read_cwt_entry_at(
     folder_path: String,
-    job_name: Option<String>,
+    job_id: Option<String>,
     slug: Option<String>,
 ) -> Result<String, String> {
-    // Read job.md from central location using slug derived from folder_path + job_name
-    let jn = job_name.as_deref().unwrap_or("default");
+    // Read job.md from central location using slug derived from folder_path + job_id
+    let jn = job_id.as_deref().unwrap_or("default");
     let slug =
         slug.unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]));
     let job_md = crate::config::jobs::central_job_md_path(&slug)
@@ -766,21 +766,21 @@ pub fn read_cwt_entry_at(
 #[tauri::command]
 pub fn write_cwt_entry(
     folder_path: String,
-    job_name: Option<String>,
+    job_id: Option<String>,
     content: String,
 ) -> Result<(), String> {
-    write_cwt_entry_at(folder_path, job_name, content, None)
+    write_cwt_entry_at(folder_path, job_id, content, None)
 }
 
 #[tauri::command]
 pub fn write_cwt_entry_at(
     folder_path: String,
-    job_name: Option<String>,
+    job_id: Option<String>,
     content: String,
     slug: Option<String>,
 ) -> Result<(), String> {
     // Write job.md to central location
-    let jn = job_name.as_deref().unwrap_or("default");
+    let jn = job_id.as_deref().unwrap_or("default");
     let slug =
         slug.unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]));
     let job_md = crate::config::jobs::central_job_md_path(&slug)
@@ -793,18 +793,18 @@ pub fn write_cwt_entry_at(
 }
 
 #[tauri::command]
-pub fn read_cwt_context(folder_path: String, job_name: Option<String>) -> Result<String, String> {
-    read_cwt_context_at(folder_path, job_name, None)
+pub fn read_cwt_context(folder_path: String, job_id: Option<String>) -> Result<String, String> {
+    read_cwt_context_at(folder_path, job_id, None)
 }
 
 #[tauri::command]
 pub fn read_cwt_context_at(
     folder_path: String,
-    job_name: Option<String>,
+    job_id: Option<String>,
     slug: Option<String>,
 ) -> Result<String, String> {
     // Read auto-generated context from central: ~/.config/clawtab/jobs/{slug}/context.md
-    let jn = job_name.as_deref().unwrap_or("default");
+    let jn = job_id.as_deref().unwrap_or("default");
     let slug =
         slug.unwrap_or_else(|| crate::config::jobs::derive_slug(&folder_path, Some(jn), &[]));
     let context_md = crate::config::jobs::central_job_context_path(&slug)
@@ -862,10 +862,10 @@ pub fn write_cwt_shared_at(
 pub fn derive_job_slug(
     state: State<AppState>,
     folder_path: String,
-    job_name: Option<String>,
+    job_id: Option<String>,
 ) -> String {
     let config = state.jobs_config.lock().unwrap();
-    crate::config::jobs::derive_slug(&folder_path, job_name.as_deref(), &config.jobs)
+    crate::config::jobs::derive_slug(&folder_path, job_id.as_deref(), &config.jobs)
 }
 
 /// Generate the auto-generated context for the agent directory.
@@ -1312,7 +1312,7 @@ pub fn build_agent_job(
     };
 
     // Derive name/slug and work_dir from target_dir
-    let (job_name, job_slug, work_dir) = if let Some(dir) = target_dir {
+    let (job_id, job_slug, work_dir) = if let Some(dir) = target_dir {
         let project_dir = std::path::Path::new(dir);
         let folder = project_dir
             .file_name()
@@ -1339,7 +1339,7 @@ pub fn build_agent_job(
         .map_err(|e| format!("Failed to write agent prompt: {}", e))?;
 
     Ok(Job {
-        name: job_name,
+        name: job_id,
         job_type: crate::config::jobs::JobType::Claude,
         enabled: true,
         path: prompt_path.display().to_string(),
@@ -1351,7 +1351,7 @@ pub fn build_agent_job(
         tmux_session: None,
         aerospace_workspace: None,
         folder_path: None,
-        job_name: Some("default".to_string()),
+        job_id: Some("default".to_string()),
         telegram_chat_id: chat_id,
         telegram_log_mode: crate::config::jobs::TelegramLogMode::OnPrompt,
         telegram_notify: crate::config::jobs::TelegramNotify::default(),
