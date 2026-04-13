@@ -77,6 +77,7 @@ export function useWebSocket() {
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
       ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
+      ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
 
       // Flush any answers queued while offline
       flushPendingAnswers((msg) => {
@@ -126,6 +127,9 @@ export function useWebSocket() {
           break;
         case "detected_processes":
           useJobsStore.getState().setDetectedProcesses(msg.processes);
+          break;
+        case "settings_response":
+          useJobsStore.getState().setDesktopSettings(msg.enabled_models, msg.default_provider, msg.default_model);
           break;
         case "claude_questions":
           useNotificationStore.getState().setQuestions(msg.questions);

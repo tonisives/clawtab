@@ -61,6 +61,7 @@ pub struct AppState {
 const MENU_SHORTCUT_RENAME_ACTIVE_PANE: &str = "shortcut_rename_active_pane";
 const MENU_SHORTCUT_FOCUS_AGENT_INPUT: &str = "shortcut_focus_agent_input";
 const MENU_SHORTCUT_ZOOM_ACTIVE_PANE: &str = "shortcut_zoom_active_pane";
+const MENU_SHORTCUT_TOGGLE_AUTO_YES: &str = "shortcut_toggle_auto_yes";
 
 fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
     let trimmed = binding.trim();
@@ -251,6 +252,7 @@ pub fn refresh_shortcut_menu(
     let rename_accel = shortcut_binding_to_accelerator(&shortcuts.rename_active_pane);
     let focus_accel = shortcut_binding_to_accelerator(&shortcuts.focus_agent_input);
     let zoom_accel = shortcut_binding_to_accelerator(&shortcuts.zoom_active_pane);
+    let toggle_auto_yes_accel = shortcut_binding_to_accelerator(&shortcuts.toggle_auto_yes);
 
     let _ = ensure_shortcut_menu_item(
         app,
@@ -272,6 +274,13 @@ pub fn refresh_shortcut_menu(
         MENU_SHORTCUT_ZOOM_ACTIVE_PANE,
         "Zoom Active Pane",
         zoom_accel.as_deref(),
+    )?;
+    let _ = ensure_shortcut_menu_item(
+        app,
+        &pane_menu,
+        MENU_SHORTCUT_TOGGLE_AUTO_YES,
+        "Toggle Auto-yes",
+        toggle_auto_yes_accel.as_deref(),
     )?;
 
     Ok(())
@@ -876,6 +885,8 @@ pub fn run() {
                     let _ = app.emit("shortcut-action", "focus_agent_input");
                 } else if event.id.as_ref() == MENU_SHORTCUT_ZOOM_ACTIVE_PANE {
                     let _ = app.emit("shortcut-action", "zoom_active_pane");
+                } else if event.id.as_ref() == MENU_SHORTCUT_TOGGLE_AUTO_YES {
+                    let _ = app.emit("shortcut-action", "toggle_auto_yes");
                 }
             });
 

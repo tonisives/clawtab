@@ -10,11 +10,15 @@ interface JobsState {
   loaded: boolean;
   cachedLoad: boolean;
   processesLoaded: boolean;
+  enabledModels: Record<string, string[]> | null;
+  defaultProvider: string | null;
+  defaultModel: string | null;
 
   setJobs: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   updateStatus: (name: string, status: JobStatus) => void;
   setDetectedProcesses: (processes: DetectedProcess[]) => void;
   hydrateFromCache: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
+  setDesktopSettings: (enabledModels: Record<string, string[]>, defaultProvider: string, defaultModel?: string) => void;
 }
 
 export const useJobsStore = create<JobsState>((set) => ({
@@ -24,6 +28,9 @@ export const useJobsStore = create<JobsState>((set) => ({
   loaded: false,
   cachedLoad: false,
   processesLoaded: false,
+  enabledModels: null,
+  defaultProvider: null,
+  defaultModel: null,
 
   setJobs: (jobs, statuses) => set({ jobs, statuses, loaded: true, cachedLoad: false }),
 
@@ -39,6 +46,9 @@ export const useJobsStore = create<JobsState>((set) => ({
       if (state.loaded) return state;
       return { jobs, statuses, cachedLoad: true };
     }),
+
+  setDesktopSettings: (enabledModels, defaultProvider, defaultModel) =>
+    set({ enabledModels, defaultProvider, defaultModel: defaultModel ?? null }),
 }));
 
 export function useJob(nameOrSlug: string): RemoteJob | undefined {

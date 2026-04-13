@@ -12,6 +12,7 @@ import {
 import { useRouter } from "expo-router";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { useWsStore } from "../../src/store/ws";
+import { useJobsStore } from "../../src/store/jobs";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { openUrl } from "../../src/lib/platform";
@@ -49,6 +50,7 @@ export default function AgentScreen() {
   const router = useRouter();
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const connected = useWsStore((s) => s.connected);
+  const enabledModels = useJobsStore((s) => s.enabledModels);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,12 +60,13 @@ export default function AgentScreen() {
   const providerBtnRef = useRef<any>(null);
   const { isWide } = useResponsive();
 
-  // Build model options for the default providers (no server-side enabled list needed for basic case)
-  const modelOptions = buildModelOptions(DEFAULT_PROVIDERS, {
+  const DEFAULT_ENABLED = {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
     codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
-    opencode: [],
-  });
+    opencode: [] as string[],
+  };
+  const resolvedModels = (!enabledModels || Object.keys(enabledModels).length === 0) ? DEFAULT_ENABLED : enabledModels;
+  const modelOptions = buildModelOptions(DEFAULT_PROVIDERS, resolvedModels);
 
   const handleSelectModel = (opt: AgentModelOption) => {
     setSelectedModel(opt);

@@ -23,6 +23,7 @@ export type ClientMessage =
       group?: string;
     }
   | { type: "detect_processes"; id: string }
+  | { type: "get_settings"; id: string }
   | { type: "get_run_detail"; id: string; run_id: string }
   | { type: "get_detected_process_logs"; id: string; tmux_session: string; pane_id: string }
   | { type: "send_detected_process_input"; id: string; pane_id: string; text: string }
@@ -61,6 +62,7 @@ export type DesktopMessage =
   | { type: "run_agent_ack"; id: string; success: boolean; job_id?: string }
   | { type: "create_job_ack"; id: string; success: boolean; error?: string }
   | { type: "detected_processes"; id: string; processes: DetectedProcess[] }
+  | { type: "settings_response"; id: string; enabled_models: Record<string, string[]>; default_provider: string; default_model?: string }
   | { type: "run_detail_response"; id: string; detail?: RunDetail }
   | { type: "detected_process_logs"; id: string; logs: string }
   | { type: "send_detected_process_input_ack"; id: string; success: boolean }

@@ -441,42 +441,81 @@ export function JobDetailView({
             <Text style={styles.runtimeDim}>{status.pane_id}</Text>
           ) : null}
           {isRunning && onToggleAutoYes ? (
-            <TouchableOpacity
-              onPress={onToggleAutoYes}
-              activeOpacity={0.6}
-              {...(isWeb ? { title: `Auto-yes (Cmd+Y)` } as any : {})}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 4,
-                paddingHorizontal: 5,
-                paddingVertical: 2,
-                borderRadius: 4,
-                borderWidth: 1,
-                borderColor: autoYesActive ? colors.warning : colors.border,
-                backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
-              }}
-            >
-              <Text style={{ fontSize: 10, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
-                Auto-yes
-              </Text>
-              <View style={{
-                width: 20,
-                height: 12,
-                borderRadius: 6,
-                backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
-                justifyContent: "center",
-                paddingHorizontal: 1,
-              }}>
-                <View style={{
-                  width: 8,
-                  height: 8,
+            isWeb ? (
+              <div title="Auto-yes (Cmd+Y)" style={{ display: "flex" }}>
+                <TouchableOpacity
+                  onPress={onToggleAutoYes}
+                  activeOpacity={0.6}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    paddingHorizontal: 5,
+                    paddingVertical: 2,
+                    borderRadius: 4,
+                    borderWidth: 1,
+                    borderColor: autoYesActive ? colors.warning : colors.border,
+                    backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
+                  }}
+                >
+                  <Text style={{ fontSize: 10, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
+                    Auto-yes
+                  </Text>
+                  <View style={{
+                    width: 20,
+                    height: 12,
+                    borderRadius: 6,
+                    backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
+                    justifyContent: "center",
+                    paddingHorizontal: 1,
+                  }}>
+                    <View style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: "#fff",
+                      alignSelf: autoYesActive ? "flex-end" : "flex-start",
+                    }} />
+                  </View>
+                </TouchableOpacity>
+              </div>
+            ) : (
+              <TouchableOpacity
+                onPress={onToggleAutoYes}
+                activeOpacity={0.6}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  paddingHorizontal: 5,
+                  paddingVertical: 2,
                   borderRadius: 4,
-                  backgroundColor: "#fff",
-                  alignSelf: autoYesActive ? "flex-end" : "flex-start",
-                }} />
-              </View>
-            </TouchableOpacity>
+                  borderWidth: 1,
+                  borderColor: autoYesActive ? colors.warning : colors.border,
+                  backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
+                }}
+              >
+                <Text style={{ fontSize: 10, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
+                  Auto-yes
+                </Text>
+                <View style={{
+                  width: 20,
+                  height: 12,
+                  borderRadius: 6,
+                  backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
+                  justifyContent: "center",
+                  paddingHorizontal: 1,
+                }}>
+                  <View style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: "#fff",
+                    alignSelf: autoYesActive ? "flex-end" : "flex-start",
+                  }} />
+                </View>
+              </TouchableOpacity>
+            )
           ) : null}
           {/* Settings "..." menu */}
           {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (

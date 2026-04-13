@@ -816,6 +816,7 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::RunAgent { id, .. }
         | ClientMessage::CreateJob { id, .. }
         | ClientMessage::DetectProcesses { id, .. }
+        | ClientMessage::GetSettings { id, .. }
         | ClientMessage::GetRunDetail { id, .. }
         | ClientMessage::GetDetectedProcessLogs { id, .. }
         | ClientMessage::SendDetectedProcessInput { id, .. }

@@ -71,6 +71,9 @@ pub enum ClientMessage {
     DetectProcesses {
         id: String,
     },
+    GetSettings {
+        id: String,
+    },
     GetRunDetail {
         id: String,
         run_id: String,
@@ -227,6 +230,13 @@ pub enum DesktopMessage {
     DetectedProcesses {
         id: String,
         processes: Vec<DetectedProcess>,
+    },
+    /// Response to get_settings
+    SettingsResponse {
+        id: String,
+        enabled_models: HashMap<String, Vec<String>>,
+        default_provider: String,
+        default_model: Option<String>,
     },
     /// Response to get_run_detail
     RunDetailResponse {

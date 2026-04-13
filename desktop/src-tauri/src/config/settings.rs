@@ -23,6 +23,8 @@ pub struct ShortcutSettings {
     pub move_pane_down: String,
     pub move_pane_up: String,
     pub move_pane_right: String,
+    pub reveal_in_sidebar: String,
+    pub toggle_auto_yes: String,
 }
 
 impl Default for ShortcutSettings {
@@ -42,6 +44,8 @@ impl Default for ShortcutSettings {
             move_pane_down: "Ctrl+j".to_string(),
             move_pane_up: "Ctrl+k".to_string(),
             move_pane_right: "Ctrl+l".to_string(),
+            reveal_in_sidebar: "Meta+Shift+e".to_string(),
+            toggle_auto_yes: "Meta+y".to_string(),
         }
     }
 }

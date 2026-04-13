@@ -316,7 +316,7 @@ export function JobListView({
 
   const resolveGroupAgentProvider = useCallback((workDir: string) => {
     const stored = groupAgentProviders[workDir];
-    if (stored && resolvedAgentProviders.includes(stored)) return stored;
+    if (stored && (stored === "shell" || resolvedAgentProviders.includes(stored))) return stored;
     return defaultAgentProvider;
   }, [defaultAgentProvider, groupAgentProviders, resolvedAgentProviders]);
 
@@ -1102,18 +1102,87 @@ export function JobListView({
     if (!scrollToSlug || Platform.OS !== "web") return;
     if (scrollToSlug === prevScrollSlug.current) return;
     prevScrollSlug.current = scrollToSlug;
+
+    // Inject highlight keyframe style once
+    const STYLE_ID = "clawtab-reveal-highlight-style";
+    if (!document.getElementById(STYLE_ID)) {
+      const style = document.createElement("style");
+      style.id = STYLE_ID;
+      style.textContent = `
+        @keyframes clawtab-reveal-highlight {
+          0%   { box-shadow: 0 0 0 2px var(--accent, #58a6ff); background: color-mix(in srgb, var(--accent, #58a6ff) 18%, transparent); }
+          70%  { box-shadow: 0 0 0 2px var(--accent, #58a6ff); background: color-mix(in srgb, var(--accent, #58a6ff) 8%, transparent); }
+          100% { box-shadow: none; background: transparent; }
+        }
+        .clawtab-reveal-highlight {
+          animation: clawtab-reveal-highlight 0.9s ease-out forwards;
+          border-radius: 8px;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // Expand collapsed group if needed (job groups)
+    const job = jobs.find((j) => j.slug === scrollToSlug);
+    if (job && collapsedGroups && onToggleGroup) {
+      const groupKey = job.group || "default";
+      const fp = jobs.filter((j) => (j.group || "default") === groupKey)[0]?.folder_path;
+      const displayGroup = groupKey === "default"
+        ? (fp ? fp.split("/").filter(Boolean).pop() ?? "General" : "General")
+        : groupKey;
+      if (collapsedGroups.has(displayGroup)) {
+        onToggleGroup(displayGroup);
+      }
+    }
+
+    // Expand collapsed detected-process group if needed
+    const proc = detectedProcesses?.find((p) => p.pane_id === scrollToSlug);
+    if (proc && collapsedGroups && onToggleGroup) {
+      const folder = proc.cwd;
+      const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
+      const detKey = `_det_${folder}`;
+      if (collapsedGroups.has(detKey) || collapsedGroups.has(folderName)) {
+        onToggleGroup(collapsedGroups.has(detKey) ? detKey : folderName);
+      }
+    }
+
+    // Expand collapsed shells group if needed
+    const shell = shellPanes?.find((s) => s.pane_id === scrollToSlug);
+    if (shell && collapsedGroups && onToggleGroup && collapsedGroups.has("Shells")) {
+      onToggleGroup("Shells");
+    }
+
     const escaped = CSS.escape(scrollToSlug);
-    const el = (
+    const findEl = () => (
       document.querySelector(`[data-job-slug="${escaped}"]`) ??
       document.querySelector(`[data-process-id="${escaped}"]`) ??
       document.querySelector(`[data-shell-id="${escaped}"]`)
     ) as HTMLElement | null;
-    if (el) {
-      requestAnimationFrame(() => {
-        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      });
-    }
-  }, [scrollToSlug]);
+
+    const doScrollAndHighlight = (el: HTMLElement) => {
+      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      el.classList.remove("clawtab-reveal-highlight");
+      // Force reflow to restart animation if applied again
+      void el.offsetWidth;
+      el.classList.add("clawtab-reveal-highlight");
+      const cleanup = () => el.classList.remove("clawtab-reveal-highlight");
+      el.addEventListener("animationend", cleanup, { once: true });
+    };
+
+    // After group expansion, the DOM needs a frame to re-render
+    requestAnimationFrame(() => {
+      const el = findEl();
+      if (el) {
+        doScrollAndHighlight(el);
+      } else {
+        // Give React one more frame to render newly expanded group items
+        requestAnimationFrame(() => {
+          const el2 = findEl();
+          if (el2) doScrollAndHighlight(el2);
+        });
+      }
+    });
+  }, [scrollToSlug, jobs, collapsedGroups, onToggleGroup, detectedProcesses, shellPanes]);
 
   // Restore scroll position on mount
   useEffect(() => {

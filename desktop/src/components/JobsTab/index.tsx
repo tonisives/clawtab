@@ -120,8 +120,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const toggleActiveAutoYes = useCallback(() => {
     const paneId = getPaneIdForContent(activePaneContent);
     if (!paneId) return;
-    autoYes.handleToggleAutoYesByPaneId(paneId, paneId);
-  }, [activePaneContent, autoYes, getPaneIdForContent]);
+    const question = questions.find((q) => q.pane_id === paneId);
+    if (question) {
+      autoYes.handleToggleAutoYes(question);
+    } else {
+      const proc = core.processes.find((p) => p.pane_id === paneId);
+      const title = proc?.display_name ?? proc?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? paneId;
+      autoYes.handleToggleAutoYesByPaneId(paneId, title);
+    }
+  }, [activePaneContent, autoYes, core.processes, getPaneIdForContent, questions]);
 
   const keyboard = useKeyboardShortcuts({
     core, split, viewing, lifecycle, settings,

@@ -216,6 +216,19 @@ pub async fn handle_incoming(
             Some(DesktopMessage::DetectedProcesses { id, processes })
         }
 
+        ClientMessage::GetSettings { id } => {
+            let s = settings.lock().unwrap();
+            let enabled_models: HashMap<String, Vec<String>> = s.enabled_models.clone();
+            let default_provider = s.default_provider.as_str().to_string();
+            let default_model = s.default_model.clone();
+            Some(DesktopMessage::SettingsResponse {
+                id,
+                enabled_models,
+                default_provider,
+                default_model,
+            })
+        }
+
         ClientMessage::GetRunDetail { id, run_id } => {
             let detail = get_run_detail_full(&run_id, history);
             Some(DesktopMessage::RunDetailResponse { id, detail })

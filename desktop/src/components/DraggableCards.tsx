@@ -271,6 +271,7 @@ export function DraggableShellCard({
   return (
     <div
       ref={setNodeRef}
+      data-shell-id={shell.pane_id}
       style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none" }}
       {...listeners}
       {...attributes}

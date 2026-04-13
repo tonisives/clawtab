@@ -69,6 +69,7 @@ export default function JobsScreen() {
   const realStatuses = useJobsStore((s) => s.statuses)
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses)
   const loaded = useJobsStore((s) => s.loaded)
+  const enabledModels = useJobsStore((s) => s.enabledModels)
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -82,11 +83,13 @@ export default function JobsScreen() {
   const jobs = isDemo ? DEMO_JOBS : realJobs
   const statuses = isDemo ? DEMO_STATUSES : realStatuses
 
-  const agentModelOptions: AgentModelOption[] = buildModelOptions(["claude", "codex", "opencode"], {
+  const DEFAULT_ENABLED = {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
     codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
-    opencode: [],
-  })
+    opencode: [] as string[],
+  }
+  const resolvedModels = (!enabledModels || Object.keys(enabledModels).length === 0) ? DEFAULT_ENABLED : enabledModels
+  const agentModelOptions: AgentModelOption[] = buildModelOptions(["claude", "codex", "opencode"], resolvedModels)
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {

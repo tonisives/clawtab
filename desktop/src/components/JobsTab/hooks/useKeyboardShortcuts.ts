@@ -476,12 +476,13 @@ export function useKeyboardShortcuts({
       if (event.payload === "rename_active_pane") triggerRenameActivePane();
       if (event.payload === "focus_agent_input") triggerFocusAgentInput();
       if (event.payload === "zoom_active_pane") triggerZoomActivePane();
+      if (event.payload === "toggle_auto_yes") toggleActiveAutoYes?.();
     });
 
     return () => {
       unlistenPromise.then((fn) => fn());
     };
-  }, [triggerFocusAgentInput, triggerRenameActivePane, triggerZoomActivePane]);
+  }, [triggerFocusAgentInput, triggerRenameActivePane, triggerZoomActivePane, toggleActiveAutoYes]);
 
   return {
     pendingShortcutStroke,

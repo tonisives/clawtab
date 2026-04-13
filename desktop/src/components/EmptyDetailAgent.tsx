@@ -168,11 +168,9 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
         e.stopPropagation();
         const opts = modelOptionsRef.current;
         if (opts.length <= 1) return;
-        const currentIndex = Math.max(
-          opts.findIndex((o) => o.provider === providerRef.current && o.modelId === modelRef.current),
-          0,
-        );
+        const foundIndex = opts.findIndex((o) => o.provider === providerRef.current && o.modelId === modelRef.current);
         const step = e.shiftKey ? -1 : 1;
+        const currentIndex = foundIndex !== -1 ? foundIndex : (step === 1 ? -1 : opts.length);
         const nextIndex = (currentIndex + step + opts.length) % opts.length;
         const next = opts[nextIndex];
         setProvider(next.provider);
