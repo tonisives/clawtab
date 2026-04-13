@@ -365,6 +365,20 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       let prevHeight = 0;
       let prevCols = cols;
       let prevRows = rows;
+
+      // After spawn, the container may have settled to its final layout dimensions
+      // (especially when transitioning from a placeholder view). Do a deferred fit
+      // to catch any size change that occurred during the async spawn round-trip.
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        fit.fit();
+        if (t.cols !== prevCols || t.rows !== prevRows) {
+          prevCols = t.cols;
+          prevRows = t.rows;
+          invoke("pty_resize", { paneId, cols: t.cols, rows: t.rows }).catch(() => {});
+        }
+      });
+
       observer = new ResizeObserver((entries) => {
         const entry = entries[0];
         if (!entry) return;

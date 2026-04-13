@@ -6,6 +6,7 @@ import { Image, Pressable, Linking } from "react-native";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { registerNotificationCategories } from "../../src/lib/notifications";
+import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -47,6 +48,7 @@ function HeaderRight() {
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginRight: 12 }}>
+      <NotificationsMenuButton />
       <Pressable
         onPress={() => router.push("/(tabs)/settings")}
         style={{
@@ -72,7 +74,12 @@ function TabsContent({ isWide }: { isWide: boolean }) {
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: "600" },
         headerLeft: isWide ? () => <HeaderBrand /> : undefined,
-        headerRight: isWide ? () => <HeaderRight /> : () => <HeaderBrand />,
+        headerRight: isWide ? () => <HeaderRight /> : () => (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginRight: 12 }}>
+            <NotificationsMenuButton />
+            <HeaderBrand />
+          </View>
+        ),
         tabBarStyle: isWide
           ? { display: "none" }
           : {

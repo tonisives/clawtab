@@ -6,6 +6,33 @@ import type { AgentModelOption, ProcessProvider } from "../types/process";
 import { JobKindIcon } from "./JobKindIcon";
 import { PopupMenu } from "./PopupMenu";
 
+function ModelToast({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: 24,
+        left: "50%",
+        transform: "translateX(-50%)",
+        background: "rgba(30, 30, 35, 0.96)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        borderRadius: 8,
+        padding: "6px 14px",
+        color: "var(--text, #e8e8e8)",
+        fontSize: 12,
+        fontFamily: "inherit",
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        zIndex: 9999,
+        boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+        animation: "clawtab-toast-fade 1.4s ease forwards",
+      } as any}
+    >
+      {label}
+    </div>
+  );
+}
+
 const ACTIONS_COL_HEIGHT = 20 + spacing.xs + 32;
 const LINE_HEIGHT = 17;
 const MAX_ROWS = 20;
@@ -39,6 +66,9 @@ export function GroupAgentRow({
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [manualExpandedHeight, setManualExpandedHeight] = useState<number | null>(null);
+  const [toastLabel, setToastLabel] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [providerButtonFocused, setProviderButtonFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const providerButtonRef = useRef<any>(null);
   const providerOptions = useMemo(() => {
@@ -148,6 +178,11 @@ export function GroupAgentRow({
         onModelChangeRef.current?.(next.provider, next.modelId);
         onProviderChangeRef.current?.(next.provider);
         setProviderMenuOpen(false);
+        if (Platform.OS === "web") {
+          setToastLabel(next.label);
+          if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+          toastTimerRef.current = setTimeout(() => setToastLabel(null), 1400);
+        }
       }
     };
     el.addEventListener("keydown", handler, true);
@@ -222,7 +257,7 @@ export function GroupAgentRow({
       <View style={styles.actionsCol}>
         <TouchableOpacity
           ref={providerButtonRef}
-          style={styles.providerButton}
+          style={[styles.providerButton, providerButtonFocused && styles.providerButtonFocused]}
           onPress={(e: any) => {
             if (Platform.OS === "web") {
               const node = e?.currentTarget ?? e?.target;
@@ -233,12 +268,20 @@ export function GroupAgentRow({
             }
             setProviderMenuOpen((open) => !open);
           }}
+          onFocus={() => setProviderButtonFocused(true)}
+          onBlur={() => setProviderButtonFocused(false)}
           activeOpacity={0.7}
           disabled={modelOptions.length <= 1}
         >
           <JobKindIcon kind={provider} size={16} compact bare />
-          {modelOptions.length > 1 && (
-            <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
+          {providerButtonFocused && modelOptions.length > 0 ? (
+            <Text style={styles.providerButtonLabel} numberOfLines={1}>
+              {modelOptions.find((o) => o.provider === provider && o.modelId === model)?.label ?? modelOptions[0]?.label ?? ""}
+            </Text>
+          ) : (
+            modelOptions.length > 1 && (
+              <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
+            )
           )}
         </TouchableOpacity>
         <TouchableOpacity
@@ -271,8 +314,19 @@ export function GroupAgentRow({
           autoFocus
         />
       )}
+      {Platform.OS === "web" && toastLabel && <ModelToast label={toastLabel} />}
     </View>
   );
+}
+
+if (Platform.OS === "web" && typeof document !== "undefined") {
+  const STYLE_ID = "clawtab-toast-style";
+  if (!document.getElementById(STYLE_ID)) {
+    const s = document.createElement("style");
+    s.id = STYLE_ID;
+    s.textContent = `@keyframes clawtab-toast-fade { 0% { opacity: 0; transform: translateX(-50%) translateY(4px); } 12% { opacity: 1; transform: translateX(-50%) translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; } }`;
+    document.head.appendChild(s);
+  }
 }
 
 const styles = StyleSheet.create({
@@ -326,6 +380,15 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 9,
     marginTop: -1,
+  },
+  providerButtonFocused: {
+    borderColor: "rgba(255,255,255,0.22)",
+    backgroundColor: "rgba(30, 30, 38, 0.85)",
+  },
+  providerButtonLabel: {
+    color: colors.text,
+    fontSize: 11,
+    maxWidth: 160,
   },
   resizeKnob: {
     position: "absolute",

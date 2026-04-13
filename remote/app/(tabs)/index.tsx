@@ -11,8 +11,6 @@ import { useRouter } from "expo-router"
 import { DndContext, DragOverlay } from "@dnd-kit/core"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
-import { NotificationStack } from "../../src/components/NotificationStack"
-import { DemoNotificationStack } from "../../src/components/DemoNotificationStack"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
 import {
@@ -271,7 +269,6 @@ export default function JobsScreen() {
           </View>
         )
       )}
-      {isDemo ? <DemoNotificationStack /> : <NotificationStack />}
     </>
   )
 

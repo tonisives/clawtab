@@ -5,20 +5,25 @@ import { DEMO_QUESTIONS } from "../demo/data";
 import { colors, spacing } from "@clawtab/shared";
 import type { ClaudeQuestion } from "@clawtab/shared";
 
-export function DemoNotificationStack() {
-  const [visible, setVisible] = useState(false);
+interface DemoNotificationStackProps {
+  embedded?: boolean;
+}
+
+export function DemoNotificationStack({ embedded = false }: DemoNotificationStackProps) {
+  const [visible, setVisible] = useState(embedded);
 
   useEffect(() => {
+    if (embedded) return;
     const timer = setTimeout(() => setVisible(true), 1000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [embedded]);
 
   if (!visible || DEMO_QUESTIONS.length === 0) return null;
 
   const resolveJob = (q: ClaudeQuestion) => q.matched_job ?? null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, embedded && styles.embeddedContainer]}>
       <NotificationSection
         questions={DEMO_QUESTIONS}
         resolveJob={resolveJob}
@@ -42,5 +47,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     marginBottom: spacing.md,
     opacity: 0.6,
+  },
+  embeddedContainer: {
+    paddingBottom: 0,
+    borderBottomWidth: 0,
+    marginBottom: 0,
   },
 });

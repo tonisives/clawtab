@@ -17,7 +17,11 @@ function syncAutoYesToRelay(paneIds: Set<string>) {
   send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...paneIds] });
 }
 
-export function NotificationStack() {
+interface NotificationStackProps {
+  embedded?: boolean;
+}
+
+export function NotificationStack({ embedded = false }: NotificationStackProps) {
   const router = useRouter();
   const questions = useNotificationStore((s) => s.questions);
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses);
@@ -220,7 +224,7 @@ export function NotificationStack() {
   if (!visible) return null;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, embedded && styles.embeddedContainer]}>
       <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} onPress={handleAutoYesPress} />
       {activeQuestions.length > 0 && (
         <NotificationSection
@@ -245,5 +249,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     marginBottom: spacing.md,
+  },
+  embeddedContainer: {
+    paddingBottom: 0,
+    borderBottomWidth: 0,
+    marginBottom: 0,
   },
 });

@@ -118,6 +118,7 @@ export function useAgentRunner({
             if (stillViewingPlaceholder) setViewingProcess(realProcess);
           }
           setScrollToSlug(result.pane_id);
+          requestXtermPaneFocus(result.pane_id);
           setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
         }
       } else if (!launchingShell) {

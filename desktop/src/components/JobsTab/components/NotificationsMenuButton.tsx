@@ -12,12 +12,24 @@ export function NotificationsMenuButton({
   hasAutoYesEntries,
 }: NotificationsMenuButtonProps) {
   const [open, setOpen] = useState(false);
+  const [popupPosition, setPopupPosition] = useState<{ top: number; left: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const hasContent = !!children || hasAutoYesEntries || activeQuestionCount > 0;
 
+  const updatePopupPosition = () => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const popupWidth = Math.min(380, window.innerWidth - 20);
+    setPopupPosition({
+      top: rect.bottom + 6,
+      left: Math.min(Math.max(10, rect.right + 6), window.innerWidth - popupWidth - 10),
+    });
+  };
+
   useEffect(() => {
     if (!open) return;
+    updatePopupPosition();
 
     const handleMouseDown = (event: MouseEvent) => {
       const root = rootRef.current;
@@ -31,9 +43,13 @@ export function NotificationsMenuButton({
 
     document.addEventListener("mousedown", handleMouseDown);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", updatePopupPosition);
+    window.addEventListener("scroll", updatePopupPosition, true);
     return () => {
       document.removeEventListener("mousedown", handleMouseDown);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", updatePopupPosition);
+      window.removeEventListener("scroll", updatePopupPosition, true);
     };
   }, [open]);
 
@@ -56,7 +72,11 @@ export function NotificationsMenuButton({
       </button>
 
       {open && (
-        <div className="notifications-menu-popup" role="menu">
+        <div
+          className="notifications-menu-popup"
+          role="menu"
+          style={popupPosition ? { top: popupPosition.top, left: popupPosition.left } : undefined}
+        >
           <div className="notifications-menu-title">Notifications</div>
           {hasContent ? (
             <div className="notifications-menu-content">{children}</div>
