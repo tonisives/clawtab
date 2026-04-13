@@ -782,6 +782,7 @@ pub fn run() {
             commands::pty::pty_resize,
             commands::pty::pty_destroy,
             commands::pty::pty_get_cached_output,
+            commands::pty::pty_refresh_snapshot,
             commands::pty::pty_release,
             commands::pty::list_free_panes,
             commands::pty::list_captured_panes,

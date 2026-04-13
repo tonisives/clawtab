@@ -993,6 +993,17 @@ impl PtyManager {
         self.recent.lock().unwrap().get(pane_id)
     }
 
+    /// Re-emit a fresh snapshot for a pane that already has an active viewer.
+    /// Used as a fallback when the frontend's initial snapshot delivery was lost.
+    pub fn refresh_snapshot(&self, pane_id: &str, sink: &OutputSink) -> Result<(), String> {
+        if !self.sessions.contains_key(pane_id) {
+            return Err(format!("No viewer for pane {}", pane_id));
+        }
+        log::debug!("[pty {}] refresh_snapshot requested", pane_id);
+        emit_initial_snapshot(sink, &self.recent, pane_id);
+        Ok(())
+    }
+
     pub fn write(&mut self, pane_id: &str, data: &[u8]) -> Result<(), String> {
         let viewer = self
             .sessions

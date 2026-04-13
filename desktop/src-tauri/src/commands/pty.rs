@@ -88,6 +88,20 @@ pub fn pty_get_cached_output(state: State<AppState>, pane_id: String) -> Result<
         .get_cached_output(&pane_id))
 }
 
+#[tauri::command]
+pub fn pty_refresh_snapshot(
+    state: State<AppState>,
+    app: tauri::AppHandle,
+    pane_id: String,
+) -> Result<(), String> {
+    let sink = crate::pty::OutputSink::Tauri(app);
+    state
+        .pty_manager
+        .lock()
+        .unwrap()
+        .refresh_snapshot(&pane_id, &sink)
+}
+
 #[derive(Serialize)]
 pub struct FreePaneInfo {
     pub pane_id: String,

@@ -160,6 +160,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
     let term: Terminal | null = null;
     let focusInHandler: (() => void) | null = null;
     let focusOutHandler: (() => void) | null = null;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const key = eventKey(paneId);
 
     async function setup() {
@@ -349,6 +350,16 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         return;
       }
 
+      // Watchdog: if no meaningful content arrives within 500ms, request a
+      // fresh snapshot.  Covers the race where the initial snapshot emitted
+      // during pty_spawn was lost (e.g. Tauri event delivery ordering or a
+      // React re-render tearing down the listener momentarily).
+      refreshTimer = setTimeout(() => {
+        if (cancelled || firstContentOutputSeen) return;
+        debugXtermPane(paneId, "watchdog: no content yet, requesting refresh snapshot", { elapsedMs: elapsed() });
+        invoke("pty_refresh_snapshot", { paneId }).catch(() => {});
+      }, 500);
+
       // Backend reflows the captured window directly on resize. If viewport
       // differs from native size, ResizeObserver will trigger pty_resize.
       if (result.native_cols !== cols || result.native_rows !== rows) {
@@ -456,6 +467,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       if (activeTerminals.get(paneId) === term) {
         activeTerminals.delete(paneId);
       }
+      if (refreshTimer) clearTimeout(refreshTimer);
       observer?.disconnect();
       dataDisposable?.dispose();
       outputUnlisten?.();
