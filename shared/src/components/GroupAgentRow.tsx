@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
-import type { ProcessProvider } from "../types/process";
+import type { AgentModelOption, ProcessProvider } from "../types/process";
 import { JobKindIcon } from "./JobKindIcon";
 import { PopupMenu } from "./PopupMenu";
 
@@ -12,31 +12,24 @@ const MAX_ROWS = 20;
 const VERTICAL_PADDING = 12;
 const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 
-function labelForProvider(provider: ProcessProvider): string {
-  switch (provider) {
-    case "claude":
-      return "Claude Code";
-    case "codex":
-      return "Codex";
-    case "opencode":
-      return "OpenCode";
-    case "shell":
-      return "Shell";
-  }
-}
-
 export function GroupAgentRow({
   onRunAgent,
   provider,
   providers = [provider],
   onProviderChange,
+  model,
+  modelOptions = [],
+  onModelChange,
   focusSignal,
   workDir,
 }: {
-  onRunAgent: (prompt: string, provider?: ProcessProvider) => void | Promise<void>;
+  onRunAgent: (prompt: string, provider?: ProcessProvider, model?: string | null) => void | Promise<void>;
   provider: ProcessProvider;
   providers?: ProcessProvider[];
   onProviderChange?: (provider: ProcessProvider) => void;
+  model?: string | null;
+  modelOptions?: AgentModelOption[];
+  onModelChange?: (provider: ProcessProvider, model: string | null) => void;
   focusSignal?: number;
   workDir?: string;
 }) {
@@ -64,7 +57,7 @@ export function GroupAgentRow({
     EXPANDED_MAX_HEIGHT,
   );
 
-  const runWithProvider = async (overrideProvider?: ProcessProvider) => {
+  const runWithProvider = async (overrideProvider?: ProcessProvider, overrideModel?: string | null) => {
     const resolvedProvider = overrideProvider ?? provider;
     if (resolvedProvider !== "shell" && !prompt.trim()) return;
     if (sendingRef.current) return;
@@ -72,7 +65,7 @@ export function GroupAgentRow({
     const nextPrompt = prompt.trim();
     setSending(true);
     try {
-      await onRunAgent(nextPrompt, overrideProvider ?? provider);
+      await onRunAgent(nextPrompt, overrideProvider ?? provider, overrideModel !== undefined ? overrideModel : (model ?? null));
       setPrompt("");
     } finally {
       sendingRef.current = false;
@@ -112,10 +105,16 @@ export function GroupAgentRow({
   const providerRef = useRef(provider);
   const providerOptionsRef = useRef(providerOptions);
   const onProviderChangeRef = useRef(onProviderChange);
+  const modelRef = useRef(model);
+  const modelOptionsRef = useRef(modelOptions);
+  const onModelChangeRef = useRef(onModelChange);
   useEffect(() => { runWithProviderRef.current = runWithProvider; });
   useEffect(() => { providerRef.current = provider; }, [provider]);
   useEffect(() => { providerOptionsRef.current = providerOptions; }, [providerOptions]);
   useEffect(() => { onProviderChangeRef.current = onProviderChange; }, [onProviderChange]);
+  useEffect(() => { modelRef.current = model; }, [model]);
+  useEffect(() => { modelOptionsRef.current = modelOptions; }, [modelOptions]);
+  useEffect(() => { onModelChangeRef.current = onModelChange; }, [onModelChange]);
 
   useEffect(() => {
     if (Platform.OS !== "web") return;
@@ -134,15 +133,20 @@ export function GroupAgentRow({
         setPrompt((p) => p + "\n");
         return;
       }
-      if (e.key === "Tab") {
+      if (e.altKey && e.key === "Tab") {
         e.preventDefault();
         e.stopPropagation();
-        const opts = providerOptionsRef.current;
+        const opts = modelOptionsRef.current;
         if (opts.length <= 1) return;
-        const currentIndex = Math.max(opts.indexOf(providerRef.current), 0);
+        const currentIndex = Math.max(
+          opts.findIndex((o) => o.provider === providerRef.current && o.modelId === modelRef.current),
+          0,
+        );
         const step = e.shiftKey ? -1 : 1;
         const nextIndex = (currentIndex + step + opts.length) % opts.length;
-        onProviderChangeRef.current?.(opts[nextIndex]);
+        const next = opts[nextIndex];
+        onModelChangeRef.current?.(next.provider, next.modelId);
+        onProviderChangeRef.current?.(next.provider);
         setProviderMenuOpen(false);
       }
     };
@@ -230,10 +234,10 @@ export function GroupAgentRow({
             setProviderMenuOpen((open) => !open);
           }}
           activeOpacity={0.7}
-          disabled={providerOptions.length <= 1}
+          disabled={modelOptions.length <= 1}
         >
           <JobKindIcon kind={provider} size={16} compact bare />
-          {providerOptions.length > 1 && (
+          {modelOptions.length > 1 && (
             <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
           )}
         </TouchableOpacity>
@@ -248,15 +252,16 @@ export function GroupAgentRow({
           </View>
         </TouchableOpacity>
       </View>
-      {providerMenuOpen && providerOptions.length > 1 && (
+      {providerMenuOpen && modelOptions.length > 1 && (
         <PopupMenu
-          items={providerOptions.map((option) => ({
+          items={modelOptions.map((opt) => ({
             type: "item" as const,
-            label: labelForProvider(option),
-            active: option === provider,
-            icon: <JobKindIcon kind={option} size={16} compact bare />,
+            label: opt.label,
+            active: opt.provider === provider && opt.modelId === model,
+            icon: <JobKindIcon kind={opt.provider} size={16} compact bare />,
             onPress: () => {
-              onProviderChange?.(option);
+              onModelChange?.(opt.provider, opt.modelId);
+              onProviderChange?.(opt.provider);
               setProviderMenuOpen(false);
             },
           }))}

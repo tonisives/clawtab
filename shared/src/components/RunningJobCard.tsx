@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native
 import type { JobStatus, RemoteJob } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
-import { JobKindIcon, providerKindForJob, type JobKind } from "./JobKindIcon";
+import { JobKindIcon, kindForJob, providerKindForJob, type JobKind } from "./JobKindIcon";
 import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -48,8 +48,8 @@ export const RunningJobCard = memo(function RunningJobCard({
             {(() => { const pk = providerKindForJob(job) ?? defaultAgentProvider ?? null; return pk ? <View style={styles.providerBadge}><JobKindIcon kind={pk} size={14} compact bare /></View> : null; })()}
           </View>
         ) : (
-          <View style={styles.runningIconWrap}>
-            <View style={styles.runningTriangle} />
+          <View style={styles.iconWrap}>
+            <JobKindIcon kind={kindForJob(job)} />
           </View>
         )}
         <View style={styles.info}>
@@ -137,26 +137,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  runningIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentBg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  runningTriangle: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 10,
-    borderTopWidth: 7,
-    borderBottomWidth: 7,
-    borderLeftColor: colors.accent,
-    borderTopColor: "transparent",
-    borderBottomColor: "transparent",
-    marginLeft: 2,
-  },
-  info: { flex: 1, gap: 2, minWidth: 0 },
+info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 15, fontWeight: "500" },
   metaText: { color: colors.textSecondary, fontSize: 12 },
   rightCol: {

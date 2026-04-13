@@ -11,7 +11,7 @@ export type ClientMessage =
   | { type: "subscribe_logs"; id: string; name: string }
   | { type: "unsubscribe_logs"; name: string }
   | { type: "get_run_history"; id: string; name: string; limit: number }
-  | { type: "run_agent"; id: string; prompt: string; work_dir?: string }
+  | { type: "run_agent"; id: string; prompt: string; work_dir?: string; provider?: string; model?: string }
   | {
       type: "create_job";
       id: string;

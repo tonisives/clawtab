@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import type { DetectedProcess, PaneContent, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { collectLeaves } from "@clawtab/shared";
 import type { Job } from "../../../types";
-import type { useProcessLifecycle } from "./useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
 
 interface UseActivePaneContextParams {

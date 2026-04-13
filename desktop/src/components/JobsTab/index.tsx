@@ -12,8 +12,6 @@ import { createTauriTransport } from "../../transport/tauriTransport";
 import type { Job } from "../../types";
 import type { DragData } from "../DraggableCards";
 import { EmptyDetailAgent } from "../EmptyDetailAgent";
-import { useQuestionPolling } from "../../hooks/useQuestionPolling";
-import { useAutoYes } from "../../hooks/useAutoYes";
 import { useImportJob } from "../../hooks/useImportJob";
 import type { JobsTabProps } from "./types";
 import { useWindowSize } from "./hooks/useWindowSize";
@@ -25,9 +23,10 @@ import { DragOverlayContent } from "./components/DragOverlayContent";
 import { JobsSidebar } from "./components/JobsSidebar";
 import { JobEditorPane } from "./components/JobEditorPane";
 import { JobsTabLayout } from "./components/JobsTabLayout";
+import { NotificationsMenuButton } from "./components/NotificationsMenuButton";
 import { SamplePickerPane } from "./components/SamplePickerPane";
 import { useViewingState } from "./hooks/useViewingState";
-import { useProcessLifecycle } from "./hooks/useProcessLifecycle";
+import { useProcessLifecycle } from "../../hooks/useProcessLifecycle";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePaneRenderers } from "./hooks/usePaneRenderers";
 import { useProcessEditing } from "./hooks/useProcessEditing";
@@ -48,7 +47,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const settings = useJobsTabSettings();
-  const { defaultProvider } = settings;
+  const { defaultProvider, defaultModel, enabledModels } = settings;
 
   // Viewing / navigation state (extracted hook)
   const viewing = useViewingState({ core, onJobSelected });
@@ -81,25 +80,18 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // --- Extracted hooks ---
 
-  const questionPolling = useQuestionPolling();
-  const { questions, startFastQuestionPoll } = questionPolling;
-
-  const autoYes = useAutoYes(
-    questions,
-    core.processes,
-    core.jobs as Job[],
-    startFastQuestionPoll,
-  );
-
   const split = useJobsSplitTree({ core, viewing, shellPanesRef });
 
-  // Process lifecycle (demotion, promotion, stopping)
+  // Process lifecycle (demotion, promotion, stopping, question polling, auto-yes)
   const lifecycle = useProcessLifecycle({ core, split, viewing });
   const {
     pendingAgentWorkDir,
     shellPanes,
+    questionPolling,
+    autoYes,
   } = lifecycle;
   shellPanesRef.current = shellPanes;
+  const { questions } = questionPolling;
 
   const processEditing = useProcessEditing({ core, viewing, lifecycle });
   const {
@@ -223,7 +215,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     core, split, viewing, lifecycle, actions,
     questions, questionPolling, autoYes, transport,
     agentJob, agentProcess,
-    isWide, trafficLightInsetStyle, defaultProvider,
+    isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
     callbacks: {
       handleOpen, handleDuplicate, handleDuplicateToFolder,
       handleFork, handleSplitPane,
@@ -235,7 +227,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     },
   });
 
-  const notificationSection = useJobsNotifications({
+  const notificationMenuContent = useJobsNotifications({
     autoYes,
     core,
     handleAutoYesPress,
@@ -244,6 +236,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     questionPolling,
     questions,
   });
+  const notificationButton = (
+    <NotificationsMenuButton
+      activeQuestionCount={questions.length}
+      hasAutoYesEntries={autoYes.autoYesEntries.length > 0}
+    >
+      {notificationMenuContent}
+    </NotificationsMenuButton>
+  );
+  const resolvedNavBar = typeof navBar === "function" ? navBar(notificationButton) : navBar;
 
   // --- Render ---
 
@@ -264,6 +265,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       onRunAgent={handleRunAgent}
       getAgentProviders={handleGetAgentProviders}
       defaultProvider={defaultProvider}
+      defaultModel={defaultModel}
+      enabledModels={enabledModels}
       focusSignal={focusEmptyAgentSignal}
       folderGroups={folderRunGroups}
     />
@@ -311,7 +314,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       autoYes={autoYes}
       core={core}
       focusAgentSignal={focusAgentSignal}
-      headerContent={notificationSection}
       isWide={isWide}
       lifecycle={lifecycle}
       onAddJob={handleAddJob}
@@ -412,7 +414,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       jobListView={jobListView}
       listWidth={listWidth}
       mobileShowsDetail={!!(showFolderRunner || viewingAgent || pendingAgentWorkDir || viewingProcess || viewingShell || viewingJob)}
-      navBar={navBar}
+      navBar={resolvedNavBar}
       onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
       onDragMove={handleDragMove}

@@ -1,5 +1,11 @@
 export type ProcessProvider = "claude" | "codex" | "opencode" | "shell";
 
+export interface AgentModelOption {
+  provider: ProcessProvider;
+  modelId: string | null;
+  label: string;
+}
+
 export interface DetectedProcess {
   pane_id: string;
   cwd: string;
@@ -34,6 +40,8 @@ export interface ShellPane {
 export interface QuestionOption {
   number: string;
   label: string;
+  selected?: boolean;
+  col?: number;
 }
 
 export interface ClaudeQuestion {
@@ -44,6 +52,8 @@ export interface ClaudeQuestion {
   question_id: string;
   context_lines: string;
   options: QuestionOption[];
+  input_mode?: "numbered" | "select";
+  button_row?: number;
   matched_group?: string | null;
   matched_job?: string | null;
 }

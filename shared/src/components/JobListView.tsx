@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, RefreshControl, St
 
 const isWeb = Platform.OS === "web";
 import type { RemoteJob, JobStatus, JobSortMode } from "../types/job";
-import type { DetectedProcess, ProcessProvider, ShellPane } from "../types/process";
+import type { AgentModelOption, DetectedProcess, ProcessProvider, ShellPane } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
 import { JobCard } from "./JobCard";
 import { RunningJobCard } from "./RunningJobCard";
@@ -109,9 +109,11 @@ export interface JobListViewProps {
   // Single selection (backward compat with desktop) - uses accent color
   selectedSlug?: string | null;
   // Agent
-  onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider) => void;
+  onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => void;
   getAgentProviders?: () => Promise<ProcessProvider[]>;
   defaultAgentProvider?: ProcessProvider;
+  agentModelOptions?: AgentModelOption[];
+  defaultAgentModel?: string | null;
   // Desktop-only slots
   onAddJob?: (group: string, folderPath?: string) => void;
   onEditJob?: (job: RemoteJob) => void;
@@ -213,6 +215,8 @@ export function JobListView({
   onRunAgent,
   getAgentProviders,
   defaultAgentProvider = "claude",
+  agentModelOptions = [],
+  defaultAgentModel,
   onAddJob,
   hiddenGroups,
   onHideGroup,
@@ -276,6 +280,7 @@ export function JobListView({
       return {};
     }
   });
+  const [groupAgentModels, setGroupAgentModels] = useState<Record<string, string | null>>({});
   const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string } | null>(null);
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const groupMenuDropdownRef = useRef<View>(null);
@@ -319,6 +324,17 @@ export function JobListView({
     setGroupAgentProviders((prev) => {
       if (prev[workDir] === provider) return prev;
       return { ...prev, [workDir]: provider };
+    });
+  }, []);
+
+  const handleSetGroupAgentModel = useCallback((workDir: string, provider: ProcessProvider, modelId: string | null) => {
+    setGroupAgentProviders((prev) => {
+      if (prev[workDir] === provider) return prev;
+      return { ...prev, [workDir]: provider };
+    });
+    setGroupAgentModels((prev) => {
+      if (prev[workDir] === modelId) return prev;
+      return { ...prev, [workDir]: modelId };
     });
   }, []);
 
@@ -966,7 +982,10 @@ export function JobListView({
                       provider={resolveGroupAgentProvider(item.workDir)}
                       providers={resolvedAgentProviders}
                       onProviderChange={(provider) => handleSetGroupAgentProvider(item.workDir, provider)}
-                      onRunAgent={(prompt, provider) => onRunAgent!(prompt, item.workDir, provider)}
+                      model={groupAgentModels[item.workDir] ?? defaultAgentModel ?? null}
+                      modelOptions={agentModelOptions}
+                      onModelChange={(provider, modelId) => handleSetGroupAgentModel(item.workDir, provider, modelId)}
+                      onRunAgent={(prompt, provider, model) => onRunAgent!(prompt, item.workDir, provider, model)}
                       focusSignal={focusAgentWorkDir === item.workDir ? focusAgentSignal : undefined}
                       workDir={item.workDir}
                     />

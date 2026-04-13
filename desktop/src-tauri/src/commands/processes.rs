@@ -49,6 +49,36 @@ struct DetectionSnapshot {
     processes: Vec<DetectedProcess>,
 }
 
+fn is_view_session(name: &str) -> bool {
+    name.starts_with("clawtab-") && name.contains("-view-")
+}
+
+fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> String {
+    let output = debug_spawn::run_logged(
+        "tmux",
+        &["list-windows", "-a", "-F", "#{session_name}\t#{window_id}"],
+        "processes::resolve_non_view_session_for_window",
+    );
+    let Ok(output) = output else {
+        return fallback.to_string();
+    };
+    if !output.status.success() {
+        return fallback.to_string();
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let session = parts.next().unwrap_or("");
+        let current_window_id = parts.next().unwrap_or("");
+        if current_window_id == window_id && !is_view_session(session) {
+            return session.to_string();
+        }
+    }
+
+    fallback.to_string()
+}
+
 fn is_semver(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 3 {
@@ -143,7 +173,7 @@ fn detect_processes_blocking(
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
+            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}\t#{window_id}",
         ],
         "processes::detect_processes::list-panes",
     );
@@ -168,8 +198,8 @@ fn detect_processes_blocking(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(6, '\t').collect();
-        if parts.len() < 6 {
+        let parts: Vec<&str> = line.splitn(7, '\t').collect();
+        if parts.len() < 7 {
             continue;
         }
 
@@ -179,6 +209,11 @@ fn detect_processes_blocking(
         let session = parts[3];
         let window = parts[4];
         let pane_pid = parts[5];
+        let window_id = parts[6];
+
+        if is_view_session(session) {
+            continue;
+        }
 
         let provider = detect_process_provider(pane_pid, Some(&process_snapshot))
             .or_else(|| is_semver(command).then_some(ProcessProvider::Claude));
@@ -239,7 +274,7 @@ fn detect_processes_blocking(
             can_fork_session,
             can_send_skills,
             can_inject_secrets,
-            tmux_session: session.to_string(),
+            tmux_session: resolve_non_view_session_for_window(window_id, session),
             window_name: window.to_string(),
             matched_group,
             matched_job,
@@ -342,8 +377,17 @@ pub fn get_detected_process_logs(tmux_session: String, pane_id: String) -> Resul
 }
 
 #[tauri::command]
-pub fn send_detected_process_input(pane_id: String, text: String) -> Result<(), String> {
-    crate::tmux::send_keys_to_tui_pane(&pane_id, &text)
+pub fn send_detected_process_input(
+    pane_id: String,
+    text: String,
+    col: Option<u16>,
+    row: Option<u16>,
+) -> Result<(), String> {
+    if let (Some(c), Some(r)) = (col, row) {
+        crate::tmux::send_mouse_click_to_pane(&pane_id, c, r)
+    } else {
+        crate::tmux::send_keys_to_tui_pane(&pane_id, &text)
+    }
 }
 
 #[tauri::command]
@@ -418,7 +462,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
             "-t",
             &pane_id,
             "-p",
-            "#{pane_id}\t#{pane_current_path}\t#{session_name}\t#{window_name}",
+            "#{pane_id}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{window_id}",
         ],
         "processes::get_existing_pane_info::display-message",
     )
@@ -433,7 +477,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut parts = stdout.trim_end().splitn(4, '\t');
+    let mut parts = stdout.trim_end().splitn(5, '\t');
     let Some(found_pane_id) = parts.next() else {
         return Ok(None);
     };
@@ -446,11 +490,14 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
     let Some(window_name) = parts.next() else {
         return Ok(None);
     };
+    let Some(window_id) = parts.next() else {
+        return Ok(None);
+    };
 
     Ok(Some(ExistingPaneInfo {
         pane_id: found_pane_id.to_string(),
         cwd: cwd.to_string(),
-        tmux_session: tmux_session.to_string(),
+        tmux_session: resolve_non_view_session_for_window(window_id, tmux_session),
         window_name: window_name.to_string(),
     }))
 }

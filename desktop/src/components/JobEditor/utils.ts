@@ -25,6 +25,92 @@ export function labelForProvider(provider: ProcessProvider): string {
   }
 }
 
+export interface ModelOption {
+  provider: ProcessProvider;
+  modelId: string | null;
+  label: string;
+}
+
+export const BUILTIN_MODELS: ModelOption[] = [
+  { provider: "claude", modelId: "claude-opus-4-6", label: "Claude Code (Opus 4.6)" },
+  { provider: "claude", modelId: "claude-sonnet-4-6", label: "Claude Code (Sonnet 4.6)" },
+  { provider: "claude", modelId: "claude-haiku-4-5", label: "Claude Code (Haiku 4.5)" },
+  { provider: "codex", modelId: "gpt-5.4", label: "Codex (GPT-5.4)" },
+  { provider: "codex", modelId: "gpt-5.4-mini", label: "Codex (GPT-5.4 Mini)" },
+  { provider: "codex", modelId: "gpt-5.3-codex", label: "Codex (GPT-5.3 Codex)" },
+  { provider: "codex", modelId: "o3", label: "Codex (o3)" },
+  { provider: "codex", modelId: "o4-mini", label: "Codex (o4-mini)" },
+  { provider: "opencode", modelId: null, label: "OpenCode" },
+  { provider: "shell", modelId: null, label: "Shell" },
+];
+
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  "claude-opus-4-6": "Opus 4.6",
+  "claude-sonnet-4-6": "Sonnet 4.6",
+  "claude-haiku-4-5": "Haiku 4.5",
+  "gpt-5.4": "GPT-5.4",
+  "gpt-5.4-mini": "GPT-5.4 Mini",
+  "gpt-5.3-codex": "GPT-5.3 Codex",
+  "o3": "o3",
+  "o4-mini": "o4-mini",
+};
+
+export function labelForProviderModel(provider: ProcessProvider, model: string | null | undefined): string {
+  if (!model) return labelForProvider(provider);
+  const displayName = MODEL_DISPLAY_NAMES[model] ?? model;
+  return `${labelForProvider(provider)} (${displayName})`;
+}
+
+/** Encode provider + model as a compound select value */
+export function encodeProviderModel(provider: ProcessProvider, model: string | null): string {
+  return model ? `${provider}:${model}` : `${provider}:`;
+}
+
+/** Decode a compound select value back to provider + model */
+export function decodeProviderModel(value: string): { provider: ProcessProvider; model: string | null } {
+  const idx = value.indexOf(":");
+  if (idx === -1) return { provider: value as ProcessProvider, model: null };
+  const provider = value.slice(0, idx) as ProcessProvider;
+  const model = value.slice(idx + 1) || null;
+  return { provider, model };
+}
+
+/** Seed enabled_models with builtin defaults when empty (first launch / upgrade) */
+export function seedEnabledModels(): Record<string, string[]> {
+  const seeded: Record<string, string[]> = {};
+  for (const opt of BUILTIN_MODELS) {
+    if (!opt.modelId) continue;
+    const list = seeded[opt.provider] ?? [];
+    list.push(opt.modelId);
+    seeded[opt.provider] = list;
+  }
+  return seeded;
+}
+
+/** Build the list of model options for a dropdown, given available providers and user-enabled models.
+ *  Only models present in enabledModels are shown. Providers without any enabled models
+ *  get a bare fallback entry (no specific model). */
+export function buildModelOptions(
+  availableProviders: ProcessProvider[],
+  enabledModels: Record<string, string[]>,
+): ModelOption[] {
+  const options: ModelOption[] = [];
+  for (const provider of availableProviders) {
+    const enabled = enabledModels[provider] ?? [];
+    if (enabled.length === 0) {
+      // Bare provider fallback (no specific model)
+      const builtin = BUILTIN_MODELS.find((b) => b.provider === provider && b.modelId === null);
+      options.push(builtin ?? { provider, modelId: null, label: labelForProvider(provider) });
+      continue;
+    }
+    for (const modelId of enabled) {
+      const builtin = BUILTIN_MODELS.find((b) => b.provider === provider && b.modelId === modelId);
+      options.push(builtin ?? { provider, modelId, label: labelForProviderModel(provider, modelId) });
+    }
+  }
+  return options;
+}
+
 function parseSingleCronToWeekly(cron: string): { days: string[]; time: string } | null {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) return null;

@@ -131,6 +131,8 @@ pub struct Job {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_provider: Option<ProcessProvider>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<String>,
 }
 

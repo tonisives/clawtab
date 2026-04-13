@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DetectedProcess, ShellPane, PaneContent, RemoteJob } from "@clawtab/shared";
+import type { DetectedProcess, ShellPane, PaneContent, RemoteJob, SplitNode } from "@clawtab/shared";
 import {
   collectLeaves,
   shortenPath,
@@ -10,18 +10,23 @@ import {
   type useSplitTree,
 } from "@clawtab/shared";
 import {
+  APP_SHORTCUT_EVENT,
   eventToShortcutBinding,
+  normalizeShortcutBinding,
   shortcutCompletesSequence,
   shortcutMatches,
   shortcutStartsWith,
 } from "../../../shortcuts";
 import type { useViewingState } from "./useViewingState";
-import type { useProcessLifecycle } from "./useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useJobsTabSettings } from "./useJobsTabSettings";
 
 interface Transport {
   stopJob: (slug: string) => void;
 }
+
+type PaneMoveDirection = "left" | "right" | "up" | "down";
+type LeafRect = { id: string; x: number; y: number; w: number; h: number };
 
 interface EditProcessField {
   paneId: string;
@@ -50,6 +55,113 @@ interface UseKeyboardShortcutsParams {
   handleSelectShell: (shell: ShellPane) => void;
   sidebarSelectableItems: SidebarSelectableItem[];
   sidebarFocusRef: React.RefObject<{ focus: () => void } | null>;
+}
+
+function collectLeafRects(
+  node: SplitNode,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): LeafRect[] {
+  if (node.type === "leaf") return [{ id: node.id, x, y, w, h }];
+  if (node.direction === "horizontal") {
+    const firstW = w * node.ratio;
+    return [
+      ...collectLeafRects(node.first, x, y, firstW, h),
+      ...collectLeafRects(node.second, x + firstW, y, w - firstW, h),
+    ];
+  }
+  const firstH = h * node.ratio;
+  return [
+    ...collectLeafRects(node.first, x, y, w, firstH),
+    ...collectLeafRects(node.second, x, y + firstH, w, h - firstH),
+  ];
+}
+
+function overlap(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart));
+}
+
+function findLeafInDirection(leaves: LeafRect[], focusedLeafId: string | null, direction: PaneMoveDirection): string | null {
+  const current = leaves.find((leaf) => leaf.id === focusedLeafId) ?? leaves[0];
+  if (!current) return null;
+
+  const currentCenterX = current.x + current.w / 2;
+  const currentCenterY = current.y + current.h / 2;
+  const isHorizontal = direction === "left" || direction === "right";
+
+  const candidates = leaves
+    .filter((leaf) => leaf.id !== current.id)
+    .map((leaf) => {
+      const centerX = leaf.x + leaf.w / 2;
+      const centerY = leaf.y + leaf.h / 2;
+      const primaryDelta =
+        direction === "left"
+          ? current.x - (leaf.x + leaf.w)
+          : direction === "right"
+            ? leaf.x - (current.x + current.w)
+            : direction === "up"
+              ? current.y - (leaf.y + leaf.h)
+              : leaf.y - (current.y + current.h);
+      if (primaryDelta < -0.5) return null;
+
+      const perpendicularOverlap = isHorizontal
+        ? overlap(current.y, current.y + current.h, leaf.y, leaf.y + leaf.h)
+        : overlap(current.x, current.x + current.w, leaf.x, leaf.x + leaf.w);
+      if (perpendicularOverlap <= 0) return null;
+
+      const crossDelta = Math.abs(isHorizontal ? centerY - currentCenterY : centerX - currentCenterX);
+      const containsProjectedCenter = isHorizontal
+        ? leaf.y <= currentCenterY && currentCenterY <= leaf.y + leaf.h
+        : leaf.x <= currentCenterX && currentCenterX <= leaf.x + leaf.w;
+
+      return { id: leaf.id, primaryDelta, perpendicularOverlap, crossDelta, containsProjectedCenter };
+    })
+    .filter((candidate): candidate is { id: string; primaryDelta: number; perpendicularOverlap: number; crossDelta: number; containsProjectedCenter: boolean } => !!candidate)
+    .sort((a, b) => {
+      if (a.containsProjectedCenter !== b.containsProjectedCenter) return a.containsProjectedCenter ? -1 : 1;
+      if (a.primaryDelta !== b.primaryDelta) return a.primaryDelta - b.primaryDelta;
+      if (a.perpendicularOverlap !== b.perpendicularOverlap) return b.perpendicularOverlap - a.perpendicularOverlap;
+      return a.crossDelta - b.crossDelta;
+    });
+
+  return candidates[0]?.id ?? null;
+}
+
+function collectDomLeafRects(container: HTMLElement): LeafRect[] {
+  const containerRect = container.getBoundingClientRect();
+  return Array.from(container.querySelectorAll<HTMLElement>("[data-leaf-id]")).map((leaf) => {
+    const rect = leaf.getBoundingClientRect();
+    return {
+      id: leaf.dataset.leafId ?? "",
+      x: rect.left - containerRect.left,
+      y: rect.top - containerRect.top,
+      w: rect.width,
+      h: rect.height,
+    };
+  }).filter((leaf) => !!leaf.id && leaf.w > 0 && leaf.h > 0);
+}
+
+function getTargetLeafId(target: EventTarget | null): string | null {
+  if (target instanceof HTMLElement) {
+    const leafElement = target.closest<HTMLElement>("[data-leaf-id]");
+    if (leafElement?.dataset.leafId) return leafElement.dataset.leafId;
+  }
+  return null;
+}
+
+function getActiveLeafId(container: HTMLElement, fallbackLeafId: string | null): string | null {
+  const activeElement = document.activeElement;
+  if (activeElement instanceof HTMLElement && container.contains(activeElement)) {
+    const leafElement = activeElement.closest<HTMLElement>("[data-leaf-id]");
+    if (leafElement?.dataset.leafId) return leafElement.dataset.leafId;
+  }
+  return fallbackLeafId;
+}
+
+function paneContentMatchesPaneId(content: PaneContent, paneId: string): boolean {
+  return (content.kind === "process" || content.kind === "terminal") && content.paneId === paneId;
 }
 
 export function useKeyboardShortcuts({
@@ -154,17 +266,24 @@ export function useKeyboardShortcuts({
       if (paneId) handleSplitPane(paneId, direction);
     };
 
-    const runMovePaneShortcut = (direction: "backward" | "forward") => {
+    const runMovePaneShortcut = (direction: PaneMoveDirection, options?: { sourcePaneId?: string; sourceLeafId?: string | null }) => {
       const tree = split.tree;
       if (!tree) return;
-      const leaves = collectLeaves(tree);
-      if (leaves.length < 2) return;
-      const currentIdx = leaves.findIndex(l => l.id === split.focusedLeafId);
-      const idx = currentIdx === -1 ? 0 : currentIdx;
-      const next = direction === "backward"
-        ? (idx - 1 + leaves.length) % leaves.length
-        : (idx + 1) % leaves.length;
-      split.setFocusedLeafId(leaves[next].id);
+      const container = split.detailPaneRef.current;
+      const width = container?.clientWidth ?? split.detailSize.w;
+      const height = container?.clientHeight ?? split.detailSize.h;
+      if (width <= 0 || height <= 0) return;
+
+      const sourceLeafId = options?.sourceLeafId ?? (options?.sourcePaneId
+        ? collectLeaves(tree).find((leaf) => paneContentMatchesPaneId(leaf.content, options.sourcePaneId!))?.id
+        : null);
+      const currentLeafId = sourceLeafId ?? (container ? getActiveLeafId(container, split.focusedLeafId) : split.focusedLeafId);
+      const nextLeafId = findLeafInDirection(
+        container ? collectDomLeafRects(container) : collectLeafRects(tree, 0, 0, width, height),
+        currentLeafId,
+        direction,
+      );
+      if (nextLeafId) split.setFocusedLeafId(nextLeafId);
     };
 
     const runKillPaneShortcut = () => {
@@ -224,11 +343,32 @@ export function useKeyboardShortcuts({
       { binding: shortcutSettings.split_pane_vertical, run: () => runSplitPaneShortcut("right") },
       { binding: shortcutSettings.split_pane_horizontal, run: () => runSplitPaneShortcut("down") },
       { binding: shortcutSettings.kill_pane, run: runKillPaneShortcut },
-      { binding: shortcutSettings.move_pane_left, run: () => runMovePaneShortcut("backward") },
-      { binding: shortcutSettings.move_pane_up, run: () => runMovePaneShortcut("backward") },
-      { binding: shortcutSettings.move_pane_down, run: () => runMovePaneShortcut("forward") },
-      { binding: shortcutSettings.move_pane_right, run: () => runMovePaneShortcut("forward") },
+      { binding: shortcutSettings.move_pane_left, run: () => runMovePaneShortcut("left") },
+      { binding: shortcutSettings.move_pane_up, run: () => runMovePaneShortcut("up") },
+      { binding: shortcutSettings.move_pane_down, run: () => runMovePaneShortcut("down") },
+      { binding: shortcutSettings.move_pane_right, run: () => runMovePaneShortcut("right") },
     ];
+
+    const runAppShortcutBinding = (binding: string, sourcePaneId?: string) => {
+      const normalizedBinding = normalizeShortcutBinding(binding, shortcutSettings.prefix_key);
+      const movementBindings: Array<{ binding: string; direction: PaneMoveDirection }> = [
+        { binding: shortcutSettings.move_pane_left, direction: "left" },
+        { binding: shortcutSettings.move_pane_up, direction: "up" },
+        { binding: shortcutSettings.move_pane_down, direction: "down" },
+        { binding: shortcutSettings.move_pane_right, direction: "right" },
+      ];
+      const movement = movementBindings.find((candidate) => normalizeShortcutBinding(candidate.binding, shortcutSettings.prefix_key) === normalizedBinding);
+      if (movement) {
+        setPendingShortcutStroke(null);
+        runMovePaneShortcut(movement.direction, { sourcePaneId });
+        return true;
+      }
+      const action = actions.find((candidate) => normalizeShortcutBinding(candidate.binding, shortcutSettings.prefix_key) === normalizedBinding);
+      if (!action) return false;
+      setPendingShortcutStroke(null);
+      action.run();
+      return true;
+    };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -286,15 +426,36 @@ export function useKeyboardShortcuts({
 
       const singleStrokeMatch = actions.find(({ binding }) => shortcutMatches(e, binding, shortcutSettings.prefix_key));
       if (singleStrokeMatch) {
+        const movementBindings: Array<{ binding: string; direction: PaneMoveDirection }> = [
+          { binding: shortcutSettings.move_pane_left, direction: "left" },
+          { binding: shortcutSettings.move_pane_up, direction: "up" },
+          { binding: shortcutSettings.move_pane_down, direction: "down" },
+          { binding: shortcutSettings.move_pane_right, direction: "right" },
+        ];
+        const movement = movementBindings.find((candidate) => normalizeShortcutBinding(candidate.binding, shortcutSettings.prefix_key) === normalizeShortcutBinding(singleStrokeMatch.binding, shortcutSettings.prefix_key));
+        (e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled = true;
         e.preventDefault();
+        if (movement) {
+          runMovePaneShortcut(movement.direction, { sourceLeafId: getTargetLeafId(e.target) });
+          return;
+        }
         singleStrokeMatch.run();
         return;
       }
     };
 
+    const handleAppShortcut = (event: Event) => {
+      const detail = (event as CustomEvent<{ binding?: string; paneId?: string }>).detail;
+      if (detail?.binding) runAppShortcutBinding(detail.binding, detail.paneId);
+    };
+
     window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef]);
+    window.addEventListener(APP_SHORTCUT_EVENT, handleAppShortcut);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener(APP_SHORTCUT_EVENT, handleAppShortcut);
+    };
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef]);
 
   useEffect(() => {
     const unlistenPromise = listen<string>("shortcut-action", (event) => {

@@ -92,6 +92,8 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
                         current_group.push(QuestionOption {
                             number: number_str.to_string(),
                             label,
+                            selected: false,
+                            col: 0,
                         });
                         continue;
                     }
@@ -161,6 +163,193 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
     joined.contains("would you like to run the following command")
         || joined.contains("would you like to run this command")
         || joined.contains("yes, proceed (y)")
+}
+
+/// Check whether stripped terminal output looks like an opencode select-box prompt.
+/// Opencode shows buttons like "Allow once  Allow always  Reject" with a hint line
+/// containing keyboard shortcut hints like "⇆ select  enter confirm".
+/// We require "enter confirm" as the specific pattern to avoid false positives from
+/// prose text that incidentally contains "select" and "confirm".
+fn has_opencode_prompt_indicator(text: &str) -> bool {
+    let tail: Vec<String> = text
+        .lines()
+        .rev()
+        .filter(|l| !l.trim().is_empty())
+        .take(12)
+        .map(|line| line.to_lowercase())
+        .collect();
+
+    for lower in &tail {
+        // "enter confirm" is the specific opencode keyboard hint pattern
+        if lower.contains("enter confirm") {
+            return true;
+        }
+    }
+    false
+}
+
+/// Parse opencode-style select-box buttons from raw ANSI terminal output.
+///
+/// Opencode renders permission prompts as horizontally-arranged buttons on a single
+/// line, with the selected button highlighted (orange bg: 48;2;245;167;66).
+/// The same line also contains keyboard hints like "ctrl+f fullscreen  ⇆ select  enter confirm".
+///
+/// Returns a tuple of (options, button_row_index) where button_row_index is the
+/// 0-indexed line number in the captured text.
+pub fn parse_opencode_buttons(ansi_text: &str) -> (Vec<QuestionOption>, u16) {
+    let stripped = strip_ansi(ansi_text);
+    if !has_opencode_prompt_indicator(&stripped) {
+        return (Vec::new(), 0);
+    }
+
+    // Find the line that contains the buttons + hint text
+    let lines: Vec<&str> = ansi_text.lines().collect();
+    let stripped_lines: Vec<String> = lines.iter().map(|l| strip_ansi(l)).collect();
+
+    let mut button_line_idx = None;
+    for (i, sl) in stripped_lines.iter().enumerate().rev() {
+        let lower = sl.to_lowercase();
+        if lower.contains("select") && lower.contains("confirm") {
+            button_line_idx = Some(i);
+            break;
+        }
+    }
+
+    let Some(line_idx) = button_line_idx else {
+        return (Vec::new(), 0);
+    };
+
+    let ansi_line = lines[line_idx];
+    let clean_line = &stripped_lines[line_idx];
+
+    // The button area ends before the first keyboard hint.
+    // Find "ctrl+" which marks the start of keyboard hints.
+    let button_area_end = clean_line
+        .to_lowercase()
+        .find("ctrl+")
+        .unwrap_or(clean_line.len());
+    let button_area = &clean_line[..button_area_end];
+
+    // Extract button labels: non-empty trimmed words separated by 2+ spaces.
+    // Skip the leading border character (┃ or similar).
+    let content = button_area
+        .trim_start_matches(|c: char| c.is_whitespace() || "┃│|".contains(c));
+    let mut labels: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut space_run = 0;
+    for ch in content.chars() {
+        if ch == ' ' {
+            space_run += 1;
+            if space_run >= 2 && !current.is_empty() {
+                labels.push(current.trim().to_string());
+                current.clear();
+            }
+        } else {
+            if space_run >= 1 && !current.is_empty() {
+                current.push(' ');
+            }
+            space_run = 0;
+            current.push(ch);
+        }
+    }
+    if !current.trim().is_empty() {
+        labels.push(current.trim().to_string());
+    }
+
+    // Filter out empty labels
+    labels.retain(|l| !l.is_empty());
+
+    if labels.is_empty() {
+        return (Vec::new(), 0);
+    }
+
+    // Now determine column positions and selected state from the ANSI line.
+    // Walk through the ANSI text, tracking display column and current background color.
+    let selected_bg = "48;2;245;167;66"; // orange
+    let mut options: Vec<QuestionOption> = Vec::new();
+
+    for (idx, label) in labels.iter().enumerate() {
+        // Find the column position of this label in the stripped line
+        let col = find_label_column(clean_line, label, if idx > 0 {
+            options.last().map(|o| (o.col as usize) + options.last().map(|o| o.label.len()).unwrap_or(0)).unwrap_or(0)
+        } else {
+            0
+        });
+
+        // Check if this label's position in the ANSI line has the selected background
+        let is_selected = is_label_highlighted(ansi_line, label, selected_bg);
+
+        options.push(QuestionOption {
+            number: idx.to_string(),
+            label: label.clone(),
+            selected: is_selected,
+            col: col as u16,
+        });
+    }
+
+    (options, line_idx as u16)
+}
+
+/// Find the display column of a label in a stripped line, starting search from `start_col`.
+fn find_label_column(line: &str, label: &str, start_col: usize) -> usize {
+    // Find the label text in the line after start_col
+    if let Some(pos) = line[start_col..].find(label) {
+        start_col + pos
+    } else if let Some(pos) = line.find(label) {
+        pos
+    } else {
+        0
+    }
+}
+
+/// Check whether a label appears with a highlighted background in the ANSI line.
+/// Walks the ANSI text looking for the label text and checking if the active
+/// background color at that point matches the highlight color.
+fn is_label_highlighted(ansi_line: &str, label: &str, highlight_bg: &str) -> bool {
+    let mut current_bg = String::new();
+    let mut visible_text = String::new();
+    let mut chars = ansi_line.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                let mut seq = String::new();
+                while let Some(&next) = chars.peek() {
+                    chars.next();
+                    if next.is_ascii_alphabetic() {
+                        if next == 'm' {
+                            // CSI m sequence - color codes
+                            // Check for background color setting
+                            if seq.contains(highlight_bg) {
+                                current_bg = highlight_bg.to_string();
+                            } else if seq.starts_with("48;") || seq == "0" || seq.is_empty() {
+                                // Reset or different bg
+                                if seq.contains("48;") && !seq.contains(highlight_bg) {
+                                    current_bg.clear();
+                                }
+                                if seq == "0" || seq.is_empty() {
+                                    current_bg.clear();
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    seq.push(next);
+                }
+            } else {
+                // Other ESC sequence
+                chars.next();
+            }
+        } else {
+            visible_text.push(c);
+            // Check if visible_text ends with label and bg was highlighted
+            if visible_text.ends_with(label) && current_bg == highlight_bg {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Build a stable question_id from pane_id and sorted option labels.
@@ -293,20 +482,75 @@ pub async fn question_detection_loop(
         for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in
             &processes
         {
+            // Try numbered options first (Claude Code, Codex)
             let options = parse_numbered_options(log_lines);
-            if options.is_empty() {
+            if !options.is_empty() {
+                log::debug!(
+                    "[questions] pane {} ({}): {} numbered options",
+                    pane_id,
+                    cwd,
+                    options.len()
+                );
+
+                detected_panes.insert(pane_id.clone());
+                let question_id = make_question_id(pane_id, &options);
+
+                let q = ClaudeQuestion {
+                    pane_id: pane_id.clone(),
+                    cwd: cwd.clone(),
+                    tmux_session: tmux_session.clone(),
+                    window_name: window_name.clone(),
+                    question_id,
+                    context_lines: last_context_lines(log_lines),
+                    options,
+                    input_mode: String::new(),
+                    button_row: 0,
+                    matched_group: matched_group.clone(),
+                    matched_job: matched_job.clone(),
+                };
+
+                question_cache.insert(
+                    pane_id.clone(),
+                    CachedQuestion {
+                        question: q,
+                        miss_count: 0,
+                    },
+                );
                 continue;
             }
+
+            // Try opencode-style select boxes: the 16-line capture already has ANSI
+            // escapes (capture_pane uses -e), so check the hint indicator first.
+            let stripped_log = strip_ansi(log_lines);
+            if !has_opencode_prompt_indicator(&stripped_log) {
+                continue;
+            }
+
+            // Full-pane capture to get absolute row positions for mouse click targeting.
+            let (full_text, _pane_height) =
+                match crate::tmux::capture_pane_visible(pane_id) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        log::warn!("[questions] failed to capture full pane {}: {}", pane_id, e);
+                        continue;
+                    }
+                };
+
+            let (buttons, button_line_idx) = parse_opencode_buttons(&full_text);
+            if buttons.is_empty() {
+                continue;
+            }
+
             log::debug!(
-                "[questions] pane {} ({}): {} options",
+                "[questions] pane {} ({}): {} opencode buttons at row {}",
                 pane_id,
                 cwd,
-                options.len()
+                buttons.len(),
+                button_line_idx
             );
 
             detected_panes.insert(pane_id.clone());
-
-            let question_id = make_question_id(pane_id, &options);
+            let question_id = make_question_id(pane_id, &buttons);
 
             let q = ClaudeQuestion {
                 pane_id: pane_id.clone(),
@@ -315,7 +559,9 @@ pub async fn question_detection_loop(
                 window_name: window_name.clone(),
                 question_id,
                 context_lines: last_context_lines(log_lines),
-                options,
+                options: buttons,
+                input_mode: "select".to_string(),
+                button_row: button_line_idx,
                 matched_group: matched_group.clone(),
                 matched_job: matched_job.clone(),
             };
@@ -393,7 +639,21 @@ pub async fn question_detection_loop(
                             q.question_id,
                             opt
                         );
-                        match crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt) {
+                        let send_result = if q.input_mode == "select" {
+                            // For opencode select-box prompts, use mouse click
+                            if let Some(target_opt) = q.options.iter().find(|o| o.number == opt) {
+                                crate::tmux::send_mouse_click_to_pane(
+                                    &q.pane_id,
+                                    target_opt.col,
+                                    q.button_row,
+                                )
+                            } else {
+                                Err("option not found".to_string())
+                            }
+                        } else {
+                            crate::tmux::send_keys_to_tui_pane(&q.pane_id, &opt)
+                        };
+                        match send_result {
                             Ok(()) => {
                                 auto_answered_ids.insert(q.question_id.clone(), 0);
                             }
@@ -501,6 +761,10 @@ fn last_context_lines(text: &str) -> String {
         {
             continue;
         }
+        // Skip opencode button/hint lines
+        if lower.contains("enter confirm") {
+            continue;
+        }
         context.push(*line);
     }
     // Trim leading/trailing empty lines
@@ -535,6 +799,10 @@ fn detect_question_processes(
     use std::collections::HashSet;
     use std::process::Command;
     let process_snapshot = ProcessSnapshot::capture();
+
+    fn is_view_session(name: &str) -> bool {
+        name.starts_with("clawtab-") && name.contains("-view-")
+    }
 
     let output = match Command::new("tmux")
         .args([
@@ -601,6 +869,9 @@ fn detect_question_processes(
             (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
 
         all_pane_ids.insert(pane_id.to_string());
+        if is_view_session(session) {
+            continue;
+        }
 
         if detect_process_provider(pane_pid, Some(&process_snapshot)).is_none() {
             continue;
@@ -611,20 +882,20 @@ fn detect_question_processes(
         }
 
         // Check if this is a tracked running job
-        let (matched_group, matched_job) =
-            if let Some((job_id, group)) = running_panes.get(pane_id) {
-                (Some(group.clone()), Some(job_id.clone()))
-            } else {
-                // Try to match against configured job folders
-                let mut mg = None;
-                for (root, group, _name) in &match_entries {
-                    if cwd == root || cwd.starts_with(&format!("{}/", root)) {
-                        mg = Some(group.clone());
-                        break;
-                    }
+        let (matched_group, matched_job) = if let Some((job_id, group)) = running_panes.get(pane_id)
+        {
+            (Some(group.clone()), Some(job_id.clone()))
+        } else {
+            // Try to match against configured job folders
+            let mut mg = None;
+            for (root, group, _name) in &match_entries {
+                if cwd == root || cwd.starts_with(&format!("{}/", root)) {
+                    mg = Some(group.clone());
+                    break;
                 }
-                (mg, None)
-            };
+            }
+            (mg, None)
+        };
 
         let log_lines = crate::tmux::capture_pane(session, pane_id, 16)
             .unwrap_or_default()
@@ -650,7 +921,7 @@ fn detect_question_processes(
 
 #[cfg(test)]
 mod tests {
-    use super::{find_yes_option, parse_numbered_options};
+    use super::{find_yes_option, parse_numbered_options, parse_opencode_buttons};
     use clawtab_protocol::QuestionOption;
 
     #[test]
@@ -710,14 +981,20 @@ Plan:
             QuestionOption {
                 number: "1".to_string(),
                 label: "Yes".to_string(),
+                selected: false,
+                col: 0,
             },
             QuestionOption {
                 number: "2".to_string(),
                 label: "Yes, during this session".to_string(),
+                selected: false,
+                col: 0,
             },
             QuestionOption {
                 number: "3".to_string(),
                 label: "No".to_string(),
+                selected: false,
+                col: 0,
             },
         ];
 
@@ -730,17 +1007,81 @@ Plan:
             QuestionOption {
                 number: "1".to_string(),
                 label: "Approve once".to_string(),
+                selected: false,
+                col: 0,
             },
             QuestionOption {
                 number: "2".to_string(),
                 label: "Always allow commands that start with 'npm test'".to_string(),
+                selected: false,
+                col: 0,
             },
             QuestionOption {
                 number: "3".to_string(),
                 label: "Tell Codex what to do differently".to_string(),
+                selected: false,
+                col: 0,
             },
         ];
 
         assert_eq!(find_yes_option(&options), Some("1".to_string()));
+    }
+
+    #[test]
+    fn parses_opencode_select_buttons() {
+        // Simulated opencode ANSI output with "Allow once", "Allow always" (selected), "Reject"
+        let ansi_text = concat!(
+            "  \x1b[38;2;245;167;66m\x1b[48;2;20;20;20m\u{2503}\x1b[38;2;255;255;255m\x1b[48;2;30;30;30m",
+            "   \x1b[38;2;128;128;128mAllow once\x1b[38;2;255;255;255m  ",
+            "\x1b[48;2;245;167;66m \x1b[38;2;10;10;10mAllow always\x1b[38;2;255;255;255m ",
+            "\x1b[48;2;30;30;30m  \x1b[38;2;128;128;128mReject\x1b[38;2;255;255;255m",
+            "   ctrl+f fullscreen  \u{21C6} select  enter confirm\n",
+        );
+
+        let (options, _row) = parse_opencode_buttons(ansi_text);
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].label, "Allow once");
+        assert_eq!(options[1].label, "Allow always");
+        assert_eq!(options[2].label, "Reject");
+        // "Allow always" should be selected (has orange bg)
+        assert!(options[1].selected, "Allow always should be highlighted");
+        assert!(!options[0].selected, "Allow once should not be highlighted");
+        assert!(!options[2].selected, "Reject should not be highlighted");
+    }
+
+    #[test]
+    fn opencode_find_yes_prefers_allow_once() {
+        let options = vec![
+            QuestionOption {
+                number: "0".to_string(),
+                label: "Allow once".to_string(),
+                selected: false,
+                col: 0,
+            },
+            QuestionOption {
+                number: "1".to_string(),
+                label: "Allow always".to_string(),
+                selected: false,
+                col: 0,
+            },
+            QuestionOption {
+                number: "2".to_string(),
+                label: "Reject".to_string(),
+                selected: false,
+                col: 0,
+            },
+        ];
+
+        // "Allow once" should win: "allow" gets 60, "once" gets 40 = 100
+        // "Allow always" gets: "allow" 60, "always" -70 = -10 (filtered out)
+        assert_eq!(find_yes_option(&options), Some("0".to_string()));
+    }
+
+    #[test]
+    fn ignores_non_opencode_text_with_select_and_confirm() {
+        // Plain text that happens to mention "select" and "confirm" shouldn't trigger detection
+        let text = "Please select an item and confirm your choice.\n";
+        let (options, _) = parse_opencode_buttons(text);
+        assert!(options.is_empty());
     }
 }

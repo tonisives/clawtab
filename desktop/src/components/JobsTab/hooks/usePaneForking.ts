@@ -4,7 +4,7 @@ import type { PaneContent, ShellPane, useJobsCore, useSplitTree } from "@clawtab
 import { collectLeaves } from "@clawtab/shared";
 import type { Job } from "../../../types";
 import { requestXtermPaneFocus } from "../../XtermPane";
-import type { useProcessLifecycle } from "./useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
 
 interface UsePaneForkingParams {

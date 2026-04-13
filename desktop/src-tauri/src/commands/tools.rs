@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use tauri::State;
 
 use crate::agent_session::ProcessProvider;
@@ -35,6 +36,67 @@ pub async fn detect_agent_providers() -> Result<Vec<ProcessProvider>, String> {
     })
     .await
     .map_err(|e| format!("Detection failed: {}", e))?
+}
+
+/// Returns per-provider model options: builtin models merged with user-configured custom models.
+/// Each value is a list of (model_id, display_name) pairs.
+#[tauri::command]
+pub fn get_model_options(
+    state: State<'_, AppState>,
+) -> HashMap<String, Vec<(String, String)>> {
+    let enabled_models = {
+        let s = state.settings.lock().unwrap();
+        s.enabled_models.clone()
+    };
+    let providers = [
+        ProcessProvider::Claude,
+        ProcessProvider::Codex,
+        ProcessProvider::Opencode,
+        ProcessProvider::Shell,
+    ];
+    let mut result = HashMap::new();
+    for provider in providers {
+        let key = provider.as_str().to_string();
+        let mut models: Vec<(String, String)> = provider
+            .builtin_models()
+            .iter()
+            .map(|(id, name)| (id.to_string(), name.to_string()))
+            .collect();
+        // Append user-configured custom models
+        if let Some(custom) = enabled_models.get(&key) {
+            for model_id in custom {
+                if !models.iter().any(|(id, _)| id == model_id) {
+                    models.push((model_id.clone(), model_id.clone()));
+                }
+            }
+        }
+        result.insert(key, models);
+    }
+    result
+}
+
+/// Runs `opencode models` and returns the list of available model IDs (e.g. "opencode/big-pickle").
+#[tauri::command]
+pub async fn detect_opencode_models() -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(|| {
+        let output = std::process::Command::new("opencode")
+            .arg("models")
+            .output()
+            .map_err(|e| format!("Failed to run opencode models: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("opencode models failed: {}", stderr));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let models: Vec<String> = stdout
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect();
+        Ok(models)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 #[tauri::command]

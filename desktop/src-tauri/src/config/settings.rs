@@ -74,6 +74,12 @@ pub struct AppSettings {
     pub default_tmux_session: String,
     pub default_work_dir: String,
     pub default_provider: ProcessProvider,
+    /// Default model to use when a job doesn't specify one (e.g. "claude-opus-4-6")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// Per-provider list of enabled model IDs for the quick-select dropdown
+    #[serde(default)]
+    pub enabled_models: HashMap<String, Vec<String>>,
     pub claude_path: String,
     pub preferred_editor: String,
     pub preferred_terminal: String,
@@ -118,6 +124,8 @@ impl Default for AppSettings {
             default_tmux_session: "cwt".to_string(),
             default_work_dir: format!("{}/workspace/tgs/automation", home),
             default_provider: ProcessProvider::Claude,
+            default_model: None,
+            enabled_models: HashMap::new(),
             claude_path: "claude".to_string(),
             preferred_editor: "nvim".to_string(),
             preferred_terminal: "auto".to_string(),

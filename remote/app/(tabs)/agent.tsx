@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   View,
   Text,
   TextInput,
   Pressable,
+  TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +17,33 @@ import { useResponsive } from "../../src/hooks/useResponsive";
 import { openUrl } from "../../src/lib/platform";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
+import { JobKindIcon, PopupMenu } from "@clawtab/shared";
+import type { ProcessProvider, AgentModelOption } from "@clawtab/shared";
+import { BUILTIN_MODELS, buildModelOptions, labelForProviderModel } from "../../src/lib/agentModels";
+
+const STORAGE_KEY = "clawtab_agent_model_v2";
+
+const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode"];
+// Default to claude+sonnet selection
+const DEFAULT_MODEL: AgentModelOption = BUILTIN_MODELS.find(
+  (m) => m.provider === "claude" && m.modelId === "claude-sonnet-4-6"
+) ?? BUILTIN_MODELS[0];
+
+function getStoredModel(): AgentModelOption {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return DEFAULT_MODEL;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_MODEL;
+    const parsed = JSON.parse(raw) as AgentModelOption;
+    if (parsed.provider && "modelId" in parsed) return parsed;
+  } catch { /* ignore */ }
+  return DEFAULT_MODEL;
+}
+
+function storeModel(opt: AgentModelOption) {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(opt));
+}
 
 export default function AgentScreen() {
   const router = useRouter();
@@ -24,7 +52,24 @@ export default function AgentScreen() {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<AgentModelOption>(getStoredModel);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const providerBtnRef = useRef<any>(null);
   const { isWide } = useResponsive();
+
+  // Build model options for the default providers (no server-side enabled list needed for basic case)
+  const modelOptions = buildModelOptions(DEFAULT_PROVIDERS, {
+    claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+    codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
+    opencode: [],
+  });
+
+  const handleSelectModel = (opt: AgentModelOption) => {
+    setSelectedModel(opt);
+    storeModel(opt);
+    setMenuOpen(false);
+  };
 
   const handleRun = () => {
     if (!prompt.trim()) return;
@@ -37,11 +82,25 @@ export default function AgentScreen() {
     setSending(true);
     setError(null);
 
-    send({ type: "run_agent", id: nextId(), prompt: prompt.trim() });
+    const msgId = nextId();
+    send({
+      type: "run_agent",
+      id: msgId,
+      prompt: prompt.trim(),
+      provider: selectedModel.provider,
+      model: selectedModel.modelId ?? undefined,
+    });
+    // Immediately request process detection so the new agent appears in the sidebar
+    setTimeout(() => {
+      const s = getWsSend();
+      if (s) s({ type: "detect_processes", id: nextId() });
+    }, 1500);
     setPrompt("");
     setSending(false);
     router.push("/(tabs)");
   };
+
+  const modelLabel = labelForProviderModel(selectedModel.provider, selectedModel.modelId);
 
   return (
     <KeyboardAvoidingView
@@ -64,7 +123,7 @@ export default function AgentScreen() {
           <View>
             <Text style={styles.heading}>Run Agent</Text>
             <Text style={styles.description}>
-              Send a prompt to run a Claude agent on your desktop.
+              Send a prompt to run an agent on your desktop.
             </Text>
 
             <TextInput
@@ -80,18 +139,56 @@ export default function AgentScreen() {
 
             {error && <Text style={styles.error}>{error}</Text>}
 
-            <Pressable
-              style={[styles.btn, (!prompt.trim() || sending || !desktopOnline) && styles.btnDisabled, isWide && styles.btnWide]}
-              onPress={handleRun}
-              disabled={!prompt.trim() || sending || !desktopOnline}
-            >
-              <Text style={styles.btnText}>
-                {sending ? "Sending..." : "Run Agent"}
-              </Text>
-            </Pressable>
+            <View style={[styles.bottomRow, isWide && styles.bottomRowWide]}>
+              <TouchableOpacity
+                ref={providerBtnRef}
+                style={styles.modelBtn}
+                onPress={(e: any) => {
+                  if (Platform.OS === "web") {
+                    const node = e?.currentTarget ?? e?.target;
+                    if (node?.getBoundingClientRect) {
+                      const rect = node.getBoundingClientRect();
+                      setMenuPos({ top: rect.bottom + 6, left: rect.left });
+                    }
+                  }
+                  setMenuOpen((v) => !v);
+                }}
+                activeOpacity={0.7}
+              >
+                <JobKindIcon kind={selectedModel.provider} size={16} compact bare />
+                <Text style={styles.modelBtnText} numberOfLines={1}>{modelLabel}</Text>
+                <Text style={styles.modelBtnCaret}>{"\u25BE"}</Text>
+              </TouchableOpacity>
+
+              <Pressable
+                style={[styles.btn, (!prompt.trim() || sending || !desktopOnline) && styles.btnDisabled]}
+                onPress={handleRun}
+                disabled={!prompt.trim() || sending || !desktopOnline}
+              >
+                <Text style={styles.btnText}>
+                  {sending ? "Sending..." : "Run Agent"}
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </ContentContainer>
+
+      {menuOpen && (
+        <PopupMenu
+          triggerRef={providerBtnRef}
+          position={menuPos}
+          onClose={() => setMenuOpen(false)}
+          autoFocus
+          items={modelOptions.map((opt) => ({
+            type: "item" as const,
+            label: opt.label,
+            active: opt.provider === selectedModel.provider && opt.modelId === selectedModel.modelId,
+            icon: <JobKindIcon kind={opt.provider} size={16} compact bare />,
+            onPress: () => handleSelectModel(opt),
+          }))}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -113,13 +210,14 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "700",
     color: colors.text,
+    marginBottom: 4,
   },
   description: {
     fontSize: 14,
     color: colors.textSecondary,
+    marginBottom: spacing.md,
   },
   input: {
-    flex: 1,
     minHeight: 120,
     maxHeight: 300,
     borderRadius: radius.md,
@@ -130,6 +228,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     lineHeight: 22,
+    marginBottom: spacing.md,
   },
   inputWide: {
     minHeight: 200,
@@ -138,24 +237,53 @@ const styles = StyleSheet.create({
   error: {
     color: colors.danger,
     fontSize: 13,
+    marginBottom: spacing.sm,
+  },
+  bottomRow: {
+    flexDirection: "column",
+    gap: spacing.sm,
+  },
+  bottomRowWide: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  modelBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignSelf: "flex-start",
+  },
+  modelBtnText: {
+    fontSize: 13,
+    color: colors.text,
+    flexShrink: 1,
+  },
+  modelBtnCaret: {
+    color: colors.textMuted,
+    fontSize: 10,
   },
   btn: {
-    height: 48,
+    height: 44,
     borderRadius: radius.sm,
     backgroundColor: colors.accent,
     justifyContent: "center",
     alignItems: "center",
-  },
-  btnWide: {
+    paddingHorizontal: spacing.xl,
     alignSelf: "flex-start",
-    paddingHorizontal: 48,
   },
   btnDisabled: {
     opacity: 0.4,
   },
   btnText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "600",
   },
   offlineBanner: {

@@ -498,11 +498,12 @@ async fn execute_claude_job(
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::tmux;
 
-    let (provider, tmux_session, work_dir, agent_command) = {
+    let (provider, model, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
         let provider = job
             .agent_provider
             .unwrap_or(s.default_provider);
+        let model = job.agent_model.clone().or_else(|| s.default_model.clone());
         let session = job
             .tmux_session
             .clone()
@@ -517,7 +518,7 @@ async fn execute_claude_job(
             | crate::agent_session::ProcessProvider::Opencode => provider.binary_name().to_string(),
             crate::agent_session::ProcessProvider::Shell => String::new(),
         };
-        (provider, session, wd, command)
+        (provider, model, session, wd, command)
     };
 
     let env_vars = collect_env_vars(job, secrets, settings);
@@ -558,16 +559,21 @@ async fn execute_claude_job(
     // per tab, which tmux splits can't give us.
     let pane_id = tmux::create_window(&tmux_session, &window_name, &env_vars)?;
 
+    let model_flag = model
+        .filter(|_| provider.supports_model_flag())
+        .map(|m| provider.model_flag_format(&m))
+        .unwrap_or_default();
+
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
         crate::agent_session::ProcessProvider::Claude
         | crate::agent_session::ProcessProvider::Codex => {
-            format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
+            format!("cd {} && {}{} $'{}'", work_dir, agent_command, model_flag, escaped_prompt)
         }
         crate::agent_session::ProcessProvider::Opencode => {
             format!(
-                "cd {} && {} --prompt $'{}'",
-                work_dir, agent_command, escaped_prompt
+                "cd {} && {}{} --prompt $'{}'",
+                work_dir, agent_command, model_flag, escaped_prompt
             )
         }
         crate::agent_session::ProcessProvider::Shell => {
@@ -646,11 +652,12 @@ async fn execute_folder_job(
     // Replace {key} placeholders with param values
     let raw_prompt = apply_params(raw_prompt, params);
 
-    let (provider, tmux_session, work_dir, agent_command) = {
+    let (provider, model, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
         let provider = job
             .agent_provider
             .unwrap_or(s.default_provider);
+        let model = job.agent_model.clone().or_else(|| s.default_model.clone());
         let session = job
             .tmux_session
             .clone()
@@ -661,7 +668,7 @@ async fn execute_folder_job(
             | crate::agent_session::ProcessProvider::Opencode => provider.binary_name().to_string(),
             crate::agent_session::ProcessProvider::Shell => String::new(),
         };
-        (provider, session, folder_path.clone(), command)
+        (provider, model, session, folder_path.clone(), command)
     };
 
     let prompt_content = if provider == crate::agent_session::ProcessProvider::Shell {
@@ -715,16 +722,21 @@ async fn execute_folder_job(
     // Every spawn gets its own window (see execute_claude_job).
     let pane_id = tmux::create_window(&tmux_session, &window_name, &env_vars)?;
 
+    let model_flag = model
+        .filter(|_| provider.supports_model_flag())
+        .map(|m| provider.model_flag_format(&m))
+        .unwrap_or_default();
+
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
     let send_cmd = match provider {
         crate::agent_session::ProcessProvider::Claude
         | crate::agent_session::ProcessProvider::Codex => {
-            format!("cd {} && {} $'{}'", work_dir, agent_command, escaped_prompt)
+            format!("cd {} && {}{} $'{}'", work_dir, agent_command, model_flag, escaped_prompt)
         }
         crate::agent_session::ProcessProvider::Opencode => {
             format!(
-                "cd {} && {} --prompt $'{}'",
-                work_dir, agent_command, escaped_prompt
+                "cd {} && {}{} --prompt $'{}'",
+                work_dir, agent_command, model_flag, escaped_prompt
             )
         }
         crate::agent_session::ProcessProvider::Shell => {

@@ -85,6 +85,8 @@ fn opt(number: &str, label: &str) -> QuestionOption {
     QuestionOption {
         number: number.to_string(),
         label: label.to_string(),
+        selected: false,
+        col: 0,
     }
 }
 

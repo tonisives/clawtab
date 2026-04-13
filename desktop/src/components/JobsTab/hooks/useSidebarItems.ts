@@ -3,7 +3,7 @@ import type { DetectedProcess, useJobsCore } from "@clawtab/shared";
 import type { Job } from "../../../types";
 import type { ListItemRef } from "../types";
 import type { useJobsTabSettings } from "./useJobsTabSettings";
-import type { useProcessLifecycle } from "./useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
 
 interface UseSidebarItemsParams {

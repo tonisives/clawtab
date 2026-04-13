@@ -31,7 +31,7 @@ import { DEMO_JOBS, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
 import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared"
-import type { DetectedProcess } from "@clawtab/shared"
+import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 
 // Capture URL params before expo-router rewrites them on init
 const _initParams = Platform.OS === "web"
@@ -99,11 +99,18 @@ export default function JobsScreen() {
     }
   }, [])
 
-  const handleRunAgent = useCallback((prompt: string, workDir?: string) => {
+  const handleRunAgent = useCallback((prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => {
     const send = getWsSend()
     if (!send) return
     const id = nextId()
-    send({ type: "run_agent", id, prompt, work_dir: workDir })
+    send({
+      type: "run_agent",
+      id,
+      prompt,
+      work_dir: workDir,
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+    })
     if (workDir) {
       registerRequest<{ job_id?: string }>(id).then((ack) => {
         if (ack.job_id) {
@@ -115,6 +122,11 @@ export default function JobsScreen() {
         }
       })
     }
+    // Trigger a fresh process detection so the new agent appears quickly
+    setTimeout(() => {
+      const s = getWsSend()
+      if (s) s({ type: "detect_processes", id: nextId() })
+    }, 1500)
   }, [router, isWide])
 
   const handleSelectJob = useCallback((job: RemoteJob) => {

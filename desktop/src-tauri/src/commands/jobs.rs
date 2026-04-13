@@ -214,6 +214,7 @@ pub fn import_job_folder(
         kill_on_end: true,
         auto_yes: false,
         agent_provider: None,
+        agent_model: None,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
     };
 
@@ -322,6 +323,7 @@ pub fn duplicate_job(
         kill_on_end: source.kill_on_end,
         auto_yes: source.auto_yes,
         agent_provider: source.agent_provider,
+        agent_model: source.agent_model.clone(),
         added_at: Some(chrono::Utc::now().to_rfc3339()),
     };
 
@@ -1294,6 +1296,7 @@ pub fn build_agent_job(
     jobs: &[Job],
     target_dir: Option<&str>,
     provider: Option<ProcessProvider>,
+    model: Option<String>,
 ) -> Result<Job, String> {
     let agent_dir = agent_dir_path();
     std::fs::create_dir_all(&agent_dir)
@@ -1367,6 +1370,7 @@ pub fn build_agent_job(
         kill_on_end: false,
         auto_yes: false,
         agent_provider: provider,
+        agent_model: model,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
     })
 }
@@ -1383,6 +1387,7 @@ pub async fn run_agent(
     prompt: String,
     work_dir: Option<String>,
     provider: Option<ProcessProvider>,
+    model: Option<String>,
 ) -> Result<Option<RunAgentResult>, String> {
     let (settings, jobs) = {
         let s = state.settings.lock().unwrap().clone();
@@ -1396,6 +1401,7 @@ pub async fn run_agent(
         &jobs,
         work_dir.as_deref(),
         provider,
+        model,
     )?;
 
     let secrets = Arc::clone(&state.secrets);

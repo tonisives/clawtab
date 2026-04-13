@@ -3,7 +3,7 @@ import type { DetectedProcess, PaneContent, ProcessProvider, ShellPane, Transpor
 import type { Job } from "../../../types";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import { providerCapabilities } from "../utils";
-import type { useProcessLifecycle } from "./useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
 
 interface UseAgentRunnerParams {
@@ -45,7 +45,7 @@ export function useAgentRunner({
     return await transport.listAgentProviders?.() ?? [];
   }, [transport]);
 
-  const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider?: ProcessProvider) => {
+  const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) => {
     const resolvedProvider = provider ?? defaultProvider;
     const capabilities = providerCapabilities(resolvedProvider);
     if (workDir) {
@@ -73,7 +73,7 @@ export function useAgentRunner({
         setScrollToSlug(placeholder.pane_id);
       }
 
-      const result = await actions.runAgent(prompt, workDir, provider);
+      const result = await actions.runAgent(prompt, workDir, provider, model);
       if (result) {
         if (launchingShell) {
           const shellInfo = transport.getExistingPaneInfo
@@ -124,7 +124,7 @@ export function useAgentRunner({
         setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
       }
     } else {
-      await actions.runAgent(prompt, workDir, provider);
+      await actions.runAgent(prompt, workDir, provider, model);
     }
   }, [
     actions,

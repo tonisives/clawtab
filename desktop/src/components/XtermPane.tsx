@@ -7,6 +7,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import "@xterm/xterm/css/xterm.css";
 import type { AppSettings } from "../types";
 import {
+  APP_SHORTCUT_EVENT,
   DEFAULT_SHORTCUTS,
   eventToShortcutBinding,
   resolveShortcutSettings,
@@ -22,6 +23,10 @@ const pendingFocusPaneIds = new Set<string>();
 let focusedPaneId: string | null = null;
 const activeTerminals = new Map<string, Terminal>();
 
+function dispatchAppShortcut(binding: string, paneId: string) {
+  window.dispatchEvent(new CustomEvent(APP_SHORTCUT_EVENT, { detail: { binding, paneId } }));
+}
+
 export function requestXtermPaneFocus(paneId: string) {
   pendingFocusPaneIds.add(paneId);
   window.setTimeout(() => pendingFocusPaneIds.delete(paneId), 2000);
@@ -34,6 +39,14 @@ export function requestXtermPaneFocus(paneId: string) {
 // Tauri event names can't contain %, so sanitize pane IDs
 function eventKey(paneId: string): string {
   return paneId.replace(/%/g, "p");
+}
+
+function debugXtermPane(paneId: string, message: string, details?: Record<string, unknown>) {
+  if (details) {
+    console.debug(`[XtermPane ${paneId}] ${message}`, details);
+  } else {
+    console.debug(`[XtermPane ${paneId}] ${message}`);
+  }
 }
 
 interface XtermPaneProps {
@@ -150,6 +163,12 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
     const key = eventKey(paneId);
 
     async function setup() {
+      const setupStartedAt = performance.now();
+      let firstOutputSeen = false;
+      let firstContentOutputSeen = false;
+      const elapsed = () => Math.round(performance.now() - setupStartedAt);
+      debugXtermPane(paneId, "setup start", { tmuxSession, group: resolvedGroup });
+
       const t = new Terminal({
         fontSize: 12,
         fontFamily: "monospace",
@@ -184,6 +203,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       const fit = new FitAddon();
       t.loadAddon(fit);
       t.open(el);
+      debugXtermPane(paneId, "terminal opened", { elapsedMs: elapsed() });
 
       // Let our app shortcuts pass through instead of being consumed by the terminal
       t.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -235,9 +255,11 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
           return false;
         }
 
-        if (
-          appBindings.some((binding) => shortcutMatches(e, binding, shortcuts.prefix_key))
-        ) {
+        const singleStrokeBinding = appBindings.find((binding) => shortcutMatches(e, binding, shortcuts.prefix_key));
+        if (singleStrokeBinding) {
+          if (!(e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled) {
+            dispatchAppShortcut(singleStrokeBinding, paneId);
+          }
           suppressedKeyRef.current = e.key;
           return false;
         }
@@ -274,8 +296,10 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         t.dispose();
         return;
       }
+      debugXtermPane(paneId, "cache read", { elapsedMs: elapsed(), bytes: cachedBytes.length });
       if (cachedBytes.length > 0) {
         t.write(new Uint8Array(cachedBytes));
+        debugXtermPane(paneId, "cache written", { elapsedMs: elapsed(), bytes: cachedBytes.length });
       }
 
       const viewport = await waitForViewportReady(el, t, fit, () => cancelled);
@@ -284,11 +308,21 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         return;
       }
       const { cols, rows } = viewport;
+      debugXtermPane(paneId, "viewport ready", { elapsedMs: elapsed(), cols, rows });
 
       // Listen for output before spawning so we don't miss the initial capture
       outputUnlisten = await listen<number[]>(`pty-output-${key}`, (event) => {
+        if (!firstOutputSeen) {
+          firstOutputSeen = true;
+          debugXtermPane(paneId, "first pty output", { elapsedMs: elapsed(), bytes: event.payload.length });
+        }
+        if (!firstContentOutputSeen && event.payload.length > 3) {
+          firstContentOutputSeen = true;
+          debugXtermPane(paneId, "first content pty output", { elapsedMs: elapsed(), bytes: event.payload.length });
+        }
         t.write(new Uint8Array(event.payload));
       });
+      debugXtermPane(paneId, "output listener ready", { elapsedMs: elapsed(), event: `pty-output-${key}` });
 
       exitUnlisten = await listen(`pty-exit-${key}`, () => {
         onExitRef.current?.();
@@ -303,6 +337,12 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         paneId, tmuxSession, cols, rows, group: resolvedGroup,
       });
       attachGenerationRef.current = result.attach_generation;
+      debugXtermPane(paneId, "pty_spawn returned", {
+        elapsedMs: elapsed(),
+        attachGeneration: result.attach_generation,
+        nativeCols: result.native_cols,
+        nativeRows: result.native_rows,
+      });
 
       if (cancelled) {
         invoke("pty_destroy", { paneId, attachGeneration: result.attach_generation }).catch(() => {});
@@ -413,6 +453,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       if (attachGeneration != null) {
         const timer = window.setTimeout(() => {
           pendingDestroyTimers.delete(paneId);
+          debugXtermPane(paneId, "destroy timer fired", { attachGeneration });
           invoke("pty_destroy", { paneId, attachGeneration }).catch(() => {});
         }, 300);
         pendingDestroyTimers.set(paneId, timer);

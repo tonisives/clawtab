@@ -192,7 +192,7 @@ export function SettingsApp() {
     { id: "settings", label: "Settings" },
   ];
 
-  const navBar = (
+  const navBar = (notificationsButton: React.ReactNode) => (
     <div className="nav-bar" data-tauri-drag-region>
       <button
         className="add-job-btn"
@@ -219,6 +219,7 @@ export function SettingsApp() {
           <span className="tab-icon">{tabIcons[tab.id]}</span>
         </button>
       ))}
+      {notificationsButton}
       <button
         className="claw-icon-btn"
         onClick={() => openUrl("https://clawtab.cc")}

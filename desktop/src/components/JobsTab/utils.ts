@@ -1,8 +1,4 @@
-import type { ShellPane, PaneContent, ProcessProvider, DetectedProcess } from "@clawtab/shared";
-
-export function isShellPane(value: ShellPane | null): value is ShellPane {
-  return value !== null;
-}
+import type { PaneContent, ProcessProvider, DetectedProcess } from "@clawtab/shared";
 
 export const SINGLE_PANE_CACHE_LIMIT = 10;
 

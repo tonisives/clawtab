@@ -35,6 +35,8 @@ pub fn send_job_input(
     name: String,
     text: String,
     freetext: Option<String>,
+    col: Option<u16>,
+    row: Option<u16>,
 ) -> Result<(), String> {
     let statuses = state.job_status.lock().unwrap();
     let status = statuses.get(&name).ok_or("Job not found")?;
@@ -44,7 +46,9 @@ pub fn send_job_input(
             pane_id: Some(pane_id),
             ..
         } => {
-            if let Some(ref ft) = freetext {
+            if let (Some(c), Some(r)) = (col, row) {
+                crate::tmux::send_mouse_click_to_pane(pane_id, c, r)
+            } else if let Some(ref ft) = freetext {
                 crate::tmux::send_keys_to_tui_pane_freetext(pane_id, &text, ft)
             } else {
                 crate::tmux::send_keys_to_tui_pane(pane_id, &text)

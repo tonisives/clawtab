@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { shortenPath, type DetectedProcess, type ShellPane, type useJobsCore } from "@clawtab/shared";
-import type { useProcessLifecycle } from "./useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
 
 interface EditProcessField {

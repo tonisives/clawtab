@@ -547,7 +547,7 @@ fn run_agent(
         let j = jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs, work_dir, None)?;
+    let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs, work_dir, None, None)?;
     let job_id = job.name.clone();
 
     let secrets = Arc::clone(secrets);
@@ -624,6 +624,10 @@ fn detect_processes(
                 .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
     }
 
+    fn is_view_session(name: &str) -> bool {
+        name.starts_with("clawtab-") && name.contains("-view-")
+    }
+
     let output = match crate::debug_spawn::run_logged(
         "tmux",
         &[
@@ -679,6 +683,9 @@ fn detect_processes(
 
         let (pane_id, command, cwd, session, window, pane_pid) =
             (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+        if is_view_session(session) {
+            continue;
+        }
 
         let provider =
             crate::agent_session::detect_process_provider(pane_pid, None).or_else(|| {

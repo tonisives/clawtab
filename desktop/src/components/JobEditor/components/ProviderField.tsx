@@ -1,6 +1,11 @@
 import type { ProcessProvider } from "@clawtab/shared";
 import type { Job } from "../../../types";
-import { labelForProvider } from "../utils";
+import {
+  buildModelOptions,
+  decodeProviderModel,
+  encodeProviderModel,
+  labelForProviderModel,
+} from "../utils";
 
 interface ProviderFieldProps {
   form: Job;
@@ -8,46 +13,58 @@ interface ProviderFieldProps {
   startedAsShellJob: boolean;
   availableProviders: ProcessProvider[];
   defaultProvider: ProcessProvider;
-  handleProviderChange: (provider: ProcessProvider | null) => void;
+  defaultModel: string | null;
+  enabledModels: Record<string, string[]>;
+  handleProviderChange: (provider: ProcessProvider | null, model?: string | null) => void;
 }
 
 export function ProviderField({
   form, isNew, startedAsShellJob, availableProviders,
-  defaultProvider, handleProviderChange,
+  defaultProvider, defaultModel, enabledModels, handleProviderChange,
 }: ProviderFieldProps) {
   if (form.job_type !== "claude" && form.job_type !== "job") return null;
 
-  const knownProviders = availableProviders.includes("claude")
-    || availableProviders.includes("codex")
-    || availableProviders.includes("opencode")
-    || availableProviders.includes("shell")
-    ? availableProviders
-    : ([] as ProcessProvider[]);
+  const allOptions = buildModelOptions(availableProviders, enabledModels);
   const currentProvider = form.agent_provider ?? null;
-  const selectedProvider = currentProvider === defaultProvider ? null : currentProvider;
-  const baseProviders = currentProvider && !knownProviders.includes(currentProvider)
-    ? [currentProvider, ...knownProviders]
-    : knownProviders;
-  const providers = baseProviders
-    .filter((provider) => provider !== defaultProvider)
-    .filter((provider) => isNew || startedAsShellJob || provider !== "shell");
+  const currentModel = form.agent_model ?? null;
+  const isDefault = currentProvider === null
+    || (currentProvider === defaultProvider && (currentModel ?? null) === (defaultModel ?? null));
+  const selectedValue = isDefault ? "" : encodeProviderModel(currentProvider!, currentModel);
+
+  // Filter: exclude the default combo, and for non-new non-shell jobs exclude shell
+  const options = allOptions.filter((opt) => {
+    if (opt.provider === defaultProvider && (opt.modelId ?? null) === (defaultModel ?? null)) return false;
+    if (!isNew && !startedAsShellJob && opt.provider === "shell") return false;
+    return true;
+  });
 
   return (
     <div className="form-group">
       <label>Agent</label>
       <select
-        value={selectedProvider ?? ""}
-        onChange={(e) => handleProviderChange((e.target.value || null) as ProcessProvider | null)}
+        value={selectedValue}
+        onChange={(e) => {
+          const val = e.target.value;
+          if (!val) {
+            handleProviderChange(null, null);
+          } else {
+            const { provider, model } = decodeProviderModel(val);
+            handleProviderChange(provider, model);
+          }
+        }}
       >
-        <option value="">{labelForProvider(defaultProvider)} (default)</option>
-        {providers.map((provider) => (
-          <option key={provider} value={provider}>
-            {labelForProvider(provider)}
-          </option>
-        ))}
+        <option value="">{labelForProviderModel(defaultProvider, defaultModel)} (default)</option>
+        {options.map((opt) => {
+          const val = encodeProviderModel(opt.provider, opt.modelId);
+          return (
+            <option key={val} value={val}>
+              {opt.label}
+            </option>
+          );
+        })}
       </select>
       <span className="hint">
-        Pick which agent runs this job. Shell runs job.md as a command, so parameters still work as command placeholders.
+        Pick which agent and model runs this job.
       </span>
     </div>
   );

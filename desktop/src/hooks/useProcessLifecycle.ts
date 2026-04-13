@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DetectedProcess, ShellPane, PaneContent } from "@clawtab/shared";
 import { collectLeaves, type useJobsCore, type useSplitTree } from "@clawtab/shared";
-import { requestXtermPaneFocus } from "../../XtermPane";
+import { requestXtermPaneFocus } from "../components/XtermPane";
 import type { ExistingPaneInfo } from "../types";
-import { isShellPane } from "../utils";
-import type { useViewingState } from "./useViewingState";
+import type { useViewingState } from "../components/JobsTab/hooks/useViewingState";
+import type { Job } from "../types";
+import { useQuestionPolling } from "./useQuestionPolling";
+import { useAutoYes } from "./useAutoYes";
 
 const SHELL_PANES_STORAGE_KEY = "desktop_shell_panes";
 
@@ -13,6 +15,10 @@ interface UseProcessLifecycleParams {
   core: ReturnType<typeof useJobsCore>;
   split: ReturnType<typeof useSplitTree>;
   viewing: ReturnType<typeof useViewingState>;
+}
+
+function isShellPane(value: ShellPane | null): value is ShellPane {
+  return value !== null;
 }
 
 function isStoredShellPane(value: unknown): value is ShellPane {
@@ -78,6 +84,27 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
   useEffect(() => {
     saveStoredShellPanes(shellPanes);
   }, [shellPanes]);
+
+  const checkDeadShellPanes = useCallback(() => {
+    if (shellPanes.length === 0) return;
+    Promise.all(
+      shellPanes.map(async (pane) => {
+        const info = await invoke<ExistingPaneInfo | null>("get_existing_pane_info", { paneId: pane.pane_id }).catch(() => null);
+        return { pane_id: pane.pane_id, exists: !!info };
+      }),
+    ).then((results) => {
+      const deadIds = new Set(results.filter((r) => !r.exists).map((r) => r.pane_id));
+      if (deadIds.size > 0) {
+        for (const paneId of deadIds) demotedShellPaneIdsRef.current.delete(paneId);
+        setShellPanes((prev) => prev.filter((p) => !deadIds.has(p.pane_id)));
+      }
+    });
+  }, [shellPanes, demotedShellPaneIdsRef]);
+
+  const questionPolling = useQuestionPolling({ onTick: checkDeadShellPanes });
+  const { questions, startFastQuestionPoll } = questionPolling;
+
+  const autoYes = useAutoYes(questions, core.processes, core.jobs as Job[], startFastQuestionPoll);
 
   useEffect(() => {
     if (!split.tree && shellPanes.length === 0) return;
@@ -409,5 +436,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
     pendingAgentWorkDir, setPendingAgentWorkDir,
     demotionCandidateIds,
     previousProcessesRef,
+    questionPolling,
+    autoYes,
   };
 }

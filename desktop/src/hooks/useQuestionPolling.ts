@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { ClaudeQuestion, DetectedProcess } from "@clawtab/shared";
 import type { Job } from "../types";
 
-export function useQuestionPolling() {
+export function useQuestionPolling(options?: { onTick?: () => void }) {
   const [questions, setQuestions] = useState<ClaudeQuestion[]>([]);
   const questionPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fastPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -22,6 +22,7 @@ export function useQuestionPolling() {
     ]));
 
   const loadQuestions = useCallback(() => {
+    options?.onTick?.();
     invoke<ClaudeQuestion[]>("get_active_questions").then((qs) => {
       console.log("[nfn] loadQuestions got", qs.length, "questions");
       const now = Date.now();
@@ -34,7 +35,8 @@ export function useQuestionPolling() {
       questionsSigRef.current = nextSig;
       setQuestions(filtered);
     }).catch((e) => { console.error("[nfn] loadQuestions error", e); });
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options?.onTick]);
 
   useEffect(() => {
     console.log("[nfn] mounting, calling loadQuestions immediately");
@@ -90,10 +92,17 @@ export function useQuestionPolling() {
   }, []);
 
   const handleQuestionSendOption = useCallback((q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => {
+    // For opencode select-mode, find the option to get its col position and use mouse click
+    const opt = q.input_mode === "select"
+      ? q.options.find((o) => o.number === optionNumber)
+      : undefined;
+    const col = opt?.col;
+    const row = q.input_mode === "select" ? q.button_row : undefined;
+
     if (resolvedJob) {
-      invoke("send_job_input", { name: resolvedJob, text: optionNumber }).catch(() => {});
+      invoke("send_job_input", { name: resolvedJob, text: optionNumber, col, row }).catch(() => {});
     } else {
-      invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber }).catch(() => {});
+      invoke("send_detected_process_input", { paneId: q.pane_id, text: optionNumber, col, row }).catch(() => {});
     }
     dismissedRef.current.set(q.question_id, Date.now());
     startFastQuestionPoll();

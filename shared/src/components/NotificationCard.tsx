@@ -166,7 +166,7 @@ export function NotificationCard({
                 activeOpacity={0.6}
               >
                 <Text style={styles.optionBtnText} numberOfLines={1}>
-                  {opt.number}. {opt.label}
+                  {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
                 </Text>
               </TouchableOpacity>
             ))}

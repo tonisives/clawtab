@@ -245,6 +245,8 @@ mod tests {
         QuestionOption {
             number: number.to_string(),
             label: label.to_string(),
+            selected: false,
+            col: 0,
         }
     }
 

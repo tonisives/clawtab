@@ -2,26 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { JobKindIcon, PopupMenu } from "@clawtab/shared";
 import type { ProcessProvider } from "@clawtab/shared";
+import {
+  buildModelOptions,
+  labelForProviderModel,
+  type ModelOption,
+} from "./JobEditor/utils";
 
 const LAST_RUN_AGENT_FOLDER_KEY = "clawtab_last_run_agent_folder";
 
-function labelForProvider(provider: ProcessProvider): string {
-  switch (provider) {
-    case "claude":
-      return "Claude Code";
-    case "codex":
-      return "Codex";
-    case "opencode":
-      return "OpenCode";
-    case "shell":
-      return "Shell";
-  }
-}
-
 interface EmptyDetailAgentProps {
-  onRunAgent: (prompt: string, workDir?: string, provider?: ProcessProvider) => void | Promise<void>;
+  onRunAgent: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) => void | Promise<void>;
   getAgentProviders: () => Promise<ProcessProvider[]>;
   defaultProvider: ProcessProvider;
+  defaultModel?: string | null;
+  enabledModels?: Record<string, string[]>;
   focusSignal?: number;
   folderGroups?: { group: string; folderPath: string }[];
 }
@@ -30,11 +24,12 @@ const LINE_HEIGHT = 18;
 const VERTICAL_PADDING = 16;
 const EXPANDED_MAX_HEIGHT = 400;
 
-export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, focusSignal, folderGroups = [] }: EmptyDetailAgentProps) {
+export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, defaultModel, enabledModels = {}, focusSignal, folderGroups = [] }: EmptyDetailAgentProps) {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [provider, setProvider] = useState<ProcessProvider>(defaultProvider);
+  const [model, setModel] = useState<string | null>(defaultModel ?? null);
   const [providers, setProviders] = useState<ProcessProvider[]>([defaultProvider]);
   const [workDir, setWorkDirState] = useState<string | null>(() => {
     if (typeof localStorage === "undefined") return null;
@@ -62,12 +57,13 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
 
   useEffect(() => {
     setProvider(defaultProvider);
-  }, [defaultProvider]);
+    setModel(defaultModel ?? null);
+  }, [defaultProvider, defaultModel]);
 
-  const resolvedProviders = useMemo(() => {
-    const list = providers.includes(defaultProvider) ? providers : [defaultProvider, ...providers];
-    return list.filter((p, i) => list.indexOf(p) === i);
-  }, [providers, defaultProvider]);
+  const modelOptions = useMemo(
+    () => buildModelOptions(providers, enabledModels),
+    [providers, enabledModels],
+  );
 
   const folderOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -107,13 +103,13 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
     sendingRef.current = true;
     setSending(true);
     try {
-      await onRunAgent(prompt.trim(), workDir ?? undefined, provider);
+      await onRunAgent(prompt.trim(), workDir ?? undefined, provider, model ?? undefined);
       setPrompt("");
     } finally {
       sendingRef.current = false;
       setSending(false);
     }
-  }, [prompt, workDir, provider, onRunAgent]);
+  }, [prompt, workDir, provider, model, onRunAgent]);
 
   const handleFolderPick = useCallback(async () => {
     setFolderMenuOpen(false);
@@ -144,8 +140,16 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
   useEffect(() => { handleRunRef.current = handleRun; }, [handleRun]);
   const providerRef = useRef(provider);
   useEffect(() => { providerRef.current = provider; }, [provider]);
-  const resolvedProvidersRef = useRef(resolvedProviders);
-  useEffect(() => { resolvedProvidersRef.current = resolvedProviders; }, [resolvedProviders]);
+  const modelRef = useRef(model);
+  useEffect(() => { modelRef.current = model; }, [model]);
+  const modelOptionsRef = useRef(modelOptions);
+  useEffect(() => { modelOptionsRef.current = modelOptions; }, [modelOptions]);
+
+  const selectModelOption = useCallback((opt: ModelOption) => {
+    setProvider(opt.provider);
+    setModel(opt.modelId);
+    setProviderMenuOpen(false);
+  }, []);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -160,12 +164,17 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
       if (e.altKey && e.key === "Tab") {
         e.preventDefault();
         e.stopPropagation();
-        const rp = resolvedProvidersRef.current;
-        if (rp.length <= 1) return;
-        const currentIndex = Math.max(rp.indexOf(providerRef.current), 0);
+        const opts = modelOptionsRef.current;
+        if (opts.length <= 1) return;
+        const currentIndex = Math.max(
+          opts.findIndex((o) => o.provider === providerRef.current && o.modelId === modelRef.current),
+          0,
+        );
         const step = e.shiftKey ? -1 : 1;
-        const nextIndex = (currentIndex + step + rp.length) % rp.length;
-        setProvider(rp[nextIndex]);
+        const nextIndex = (currentIndex + step + opts.length) % opts.length;
+        const next = opts[nextIndex];
+        setProvider(next.provider);
+        setModel(next.modelId);
         setProviderMenuOpen(false);
       }
     };
@@ -218,7 +227,7 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
           <button
             ref={providerButtonRef}
             onClick={(e) => {
-              if (resolvedProviders.length <= 1) return;
+              if (modelOptions.length <= 1) return;
               const rect = e.currentTarget.getBoundingClientRect();
               setProviderMenuPos({ top: rect.bottom + 6, left: rect.right });
               setProviderMenuOpen((o) => !o);
@@ -231,19 +240,19 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
               justifyContent: "center",
               gap: 4,
               paddingLeft: 6,
-              paddingRight: resolvedProviders.length > 1 ? 7 : 8,
+              paddingRight: modelOptions.length > 1 ? 7 : 8,
               borderRadius: 999,
               background: "rgba(10, 10, 10, 0.55)",
               border: "1px solid rgba(255, 255, 255, 0.08)",
-              cursor: resolvedProviders.length > 1 ? "pointer" : "default",
+              cursor: modelOptions.length > 1 ? "pointer" : "default",
               color: "var(--text)",
               fontSize: 12,
               whiteSpace: "nowrap",
             }}
           >
             <JobKindIcon kind={provider} size={16} compact bare />
-            <span>{labelForProvider(provider)}</span>
-            {resolvedProviders.length > 1 && (
+            <span>{labelForProviderModel(provider, model)}</span>
+            {modelOptions.length > 1 && (
               <span style={{ color: "var(--text-muted)", fontSize: 9, marginTop: -1 }}>&#9662;</span>
             )}
           </button>
@@ -324,17 +333,14 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
           </button>
         </div>
       </div>
-      {providerMenuOpen && resolvedProviders.length > 1 && (
+      {providerMenuOpen && modelOptions.length > 1 && (
         <PopupMenu
-          items={resolvedProviders.map((option) => ({
+          items={modelOptions.map((opt) => ({
             type: "item" as const,
-            label: labelForProvider(option),
-            active: option === provider,
-            icon: <JobKindIcon kind={option} size={16} compact bare />,
-            onPress: () => {
-              setProvider(option);
-              setProviderMenuOpen(false);
-            },
+            label: opt.label,
+            active: opt.provider === provider && opt.modelId === model,
+            icon: <JobKindIcon kind={opt.provider} size={16} compact bare />,
+            onPress: () => selectModelOption(opt),
           }))}
           position={providerMenuPos}
           onClose={() => setProviderMenuOpen(false)}

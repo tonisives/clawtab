@@ -103,6 +103,8 @@ export function EditLayout({
             startedAsShellJob={startedAsShellJob}
             availableProviders={settings.availableProviders}
             defaultProvider={settings.defaultProvider}
+            defaultModel={settings.defaultModel}
+            enabledModels={settings.enabledModels}
             handleProviderChange={content.handleProviderChange}
           />
         </FieldGroup>

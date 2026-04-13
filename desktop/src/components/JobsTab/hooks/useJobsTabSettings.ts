@@ -8,10 +8,13 @@ import {
   resolveShortcutSettings,
   type ShortcutSettings,
 } from "../../../shortcuts";
+import { seedEnabledModels } from "../../JobEditor/utils";
 
 export function useJobsTabSettings() {
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
   const [defaultProvider, setDefaultProvider] = useState<ProcessProvider>("claude");
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  const [enabledModels, setEnabledModels] = useState<Record<string, string[]>>({});
   const [groupOrder, setGroupOrder] = useState<string[]>([]);
   const [jobOrder, setJobOrder] = useState<Record<string, string[]>>({});
   const [processOrder, setProcessOrder] = useState<Record<string, string[]>>(() => {
@@ -32,12 +35,25 @@ export function useJobsTabSettings() {
       .then((settings) => {
         setShortcutSettings(resolveShortcutSettings(settings));
         setDefaultProvider(settings.default_provider);
+        setDefaultModel(settings.default_model ?? null);
+        const models = settings.enabled_models ?? {};
+        const hasAny = Object.values(models).some((list) => list.length > 0);
+        if (hasAny) {
+          setEnabledModels(models);
+        } else {
+          // First launch or upgrade: seed with builtin defaults
+          const seeded = seedEnabledModels();
+          setEnabledModels(seeded);
+          invoke("set_settings", { newSettings: { ...settings, enabled_models: seeded } }).catch(() => {});
+        }
       })
       .catch(() => setShortcutSettings(DEFAULT_SHORTCUTS));
 
     const unlistenPromise = listen<AppSettings>("settings-updated", (event) => {
       setShortcutSettings(resolveShortcutSettings(event.payload));
       setDefaultProvider(event.payload.default_provider);
+      setDefaultModel(event.payload.default_model ?? null);
+      setEnabledModels(event.payload.enabled_models ?? {});
     });
 
     return () => {
@@ -97,6 +113,8 @@ export function useJobsTabSettings() {
   return {
     shortcutSettings,
     defaultProvider,
+    defaultModel,
+    enabledModels,
     groupOrder,
     jobOrder,
     processOrder,

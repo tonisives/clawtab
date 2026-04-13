@@ -112,10 +112,10 @@ export function useContentEditor({ form, setForm, isNew, isShellJob, defaultDire
     }
   };
 
-  const handleProviderChange = (provider: ProcessProvider | null) => {
+  const handleProviderChange = (provider: ProcessProvider | null, model?: string | null) => {
     const previousTemplate = defaultDirectionsTemplate.trim();
     const nextTemplate = provider === "shell" ? DEFAULT_SHELL_TEMPLATE : DEFAULT_TEMPLATE;
-    setForm((prev) => ({ ...prev, agent_provider: provider }));
+    setForm((prev) => ({ ...prev, agent_provider: provider, agent_model: model ?? null }));
     if (provider === "shell") {
       setPreviewFile("job.md");
     }

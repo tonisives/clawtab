@@ -121,6 +121,8 @@ export function WizardLayout({
                     startedAsShellJob={startedAsShellJob}
                     availableProviders={settings.availableProviders}
                     defaultProvider={settings.defaultProvider}
+                    defaultModel={settings.defaultModel}
+                    enabledModels={settings.enabledModels}
                     handleProviderChange={content.handleProviderChange}
                   />
                 </FieldGroup>

@@ -1,4 +1,4 @@
-import { Platform, StyleSheet, View, Image } from "react-native";
+import { StyleSheet, View, Image } from "react-native";
 import type { RemoteJob } from "../types/job";
 import type { DetectedProcess, ProcessProvider } from "../types/process";
 import { colors } from "../theme/colors";
@@ -104,7 +104,7 @@ export function JobKindIcon({
     ? size
     : compact ? Math.round(size * 0.62) : Math.round(size * 0.66);
   const asset = sourceForKind(kind);
-  const source = Platform.OS === "web" ? { uri: asset } : (asset as any);
+  const source = asset as any;
 
   return (
     <View

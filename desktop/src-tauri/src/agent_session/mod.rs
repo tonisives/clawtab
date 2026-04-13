@@ -37,6 +37,37 @@ impl ProcessProvider {
     pub fn binary_name(self) -> &'static str {
         self.as_str()
     }
+
+    /// Returns (model_id, display_name) pairs for builtin models.
+    pub fn builtin_models(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            ProcessProvider::Claude => &[
+                ("claude-opus-4-6", "Opus 4.6"),
+                ("claude-sonnet-4-6", "Sonnet 4.6"),
+                ("claude-haiku-4-5", "Haiku 4.5"),
+            ],
+            ProcessProvider::Codex => &[
+                ("gpt-5.4", "GPT-5.4"),
+                ("gpt-5.4-mini", "GPT-5.4 Mini"),
+                ("gpt-5.3-codex", "GPT-5.3 Codex"),
+                ("o3", "o3"),
+                ("o4-mini", "o4-mini"),
+            ],
+            ProcessProvider::Opencode | ProcessProvider::Shell => &[],
+        }
+    }
+
+    pub fn supports_model_flag(self) -> bool {
+        matches!(self, ProcessProvider::Claude | ProcessProvider::Codex | ProcessProvider::Opencode)
+    }
+
+    /// Returns the CLI flag format for passing a model to this provider.
+    pub fn model_flag_format(self, model: &str) -> String {
+        match self {
+            ProcessProvider::Opencode => format!(" -m {}", model),
+            _ => format!(" --model {}", model),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]

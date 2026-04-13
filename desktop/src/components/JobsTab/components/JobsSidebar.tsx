@@ -1,14 +1,15 @@
-import { useCallback, type ReactNode, type RefObject } from "react";
+import { useCallback, useMemo, type ReactNode, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { DetectedProcess, JobStatus, ProcessProvider, RemoteJob, ShellPane, SidebarSelectableItem, Transport, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { JobListView } from "@clawtab/shared";
+import { buildModelOptions } from "../../JobEditor/utils";
 import { DraggableJobCard, DraggableProcessCard, DraggableShellCard } from "../../DraggableCards";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
 import type { useAgentRunner } from "../hooks/useAgentRunner";
 import type { useJobsTabSettings } from "../hooks/useJobsTabSettings";
 import type { useProcessEditing } from "../hooks/useProcessEditing";
-import type { useProcessLifecycle } from "../hooks/useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useSidebarItems } from "../hooks/useSidebarItems";
 import type { useViewingState } from "../hooks/useViewingState";
 
@@ -18,7 +19,6 @@ interface JobsSidebarProps {
   autoYes: ReturnType<typeof useAutoYes>;
   core: ReturnType<typeof useJobsCore>;
   focusAgentSignal: number;
-  headerContent: ReactNode;
   isWide: boolean;
   lifecycle: ReturnType<typeof useProcessLifecycle>;
   onAddJob: (group: string, folderPath?: string) => void;
@@ -42,7 +42,6 @@ export function JobsSidebar({
   autoYes,
   core,
   focusAgentSignal,
-  headerContent,
   isWide,
   lifecycle,
   onAddJob,
@@ -59,7 +58,12 @@ export function JobsSidebar({
   transport,
   viewing,
 }: JobsSidebarProps) {
-  const { defaultProvider, groupOrder, hiddenGroups, jobOrder, processOrder, sortMode } = settings;
+  const { defaultProvider, defaultModel, enabledModels, groupOrder, hiddenGroups, jobOrder, processOrder, sortMode } = settings;
+
+  const agentModelOptions = useMemo(
+    () => buildModelOptions(["claude", "codex", "opencode", "shell"] as ProcessProvider[], enabledModels),
+    [enabledModels],
+  );
   const {
     demotedShellPaneIdsRef,
     setShellPanes,
@@ -125,6 +129,12 @@ export function JobsSidebar({
     </SortableContext>
   ), []);
 
+  const handleRunAgent = useCallback(
+    (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) =>
+      agentRunner.handleRunAgent(prompt, workDir, provider, model ?? undefined),
+    [agentRunner],
+  );
+
   return (
     <JobListView
       jobs={core.jobs}
@@ -143,14 +153,15 @@ export function JobsSidebar({
       onSelectShell={onSelectShell}
       selectedItems={split.selectedItems}
       focusedItemKey={split.focusedItemKey}
-      onRunAgent={agentRunner.handleRunAgent}
+      onRunAgent={handleRunAgent}
       getAgentProviders={agentRunner.handleGetAgentProviders}
       defaultAgentProvider={defaultProvider}
+      agentModelOptions={agentModelOptions}
+      defaultAgentModel={defaultModel}
       onAddJob={onAddJob}
       hiddenGroups={hiddenGroups}
       onHideGroup={settings.handleHideGroup}
       onUnhideGroup={settings.handleUnhideGroup}
-      headerContent={headerContent}
       showEmpty={core.loaded}
       emptyMessage="No jobs configured yet."
       scrollToSlug={viewing.scrollToSlug}

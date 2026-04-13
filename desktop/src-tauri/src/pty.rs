@@ -132,17 +132,38 @@ fn emit_bytes(sink: &OutputSink, pane_id: &str, bytes: Vec<u8>) {
 }
 
 fn emit_initial_snapshot(sink: &OutputSink, recent: &Arc<Mutex<RecentPaneCache>>, pane_id: &str) {
+    let started = Instant::now();
     // Clear the terminal before sending a fresh full-screen snapshot.
     let clear = b"\x1bc".to_vec();
     recent.lock().unwrap().append(pane_id, &clear);
     emit_bytes(sink, pane_id, clear);
+    log::debug!(
+        "[pty {}] initial snapshot clear emitted after {}ms",
+        pane_id,
+        started.elapsed().as_millis()
+    );
 
-    if let Ok(content) = tmux(&["capture-pane", "-e", "-p", "-t", pane_id]) {
-        let bytes = content.into_bytes();
-        if !bytes.is_empty() {
-            recent.lock().unwrap().append(pane_id, &bytes);
-            emit_bytes(sink, pane_id, bytes);
+    match tmux(&["capture-pane", "-e", "-p", "-t", pane_id]) {
+        Ok(content) => {
+            let bytes = content.into_bytes();
+            let byte_len = bytes.len();
+            if !bytes.is_empty() {
+                recent.lock().unwrap().append(pane_id, &bytes);
+                emit_bytes(sink, pane_id, bytes);
+            }
+            log::debug!(
+                "[pty {}] initial snapshot capture emitted {} bytes after {}ms",
+                pane_id,
+                byte_len,
+                started.elapsed().as_millis()
+            );
         }
+        Err(err) => log::debug!(
+            "[pty {}] initial snapshot capture failed after {}ms: {}",
+            pane_id,
+            started.elapsed().as_millis(),
+            err
+        ),
     }
 }
 
@@ -173,6 +194,24 @@ fn next_view_session_name() -> String {
 
 fn is_view_session(name: &str) -> bool {
     name.starts_with("clawtab-") && name.contains("-view-")
+}
+
+fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> String {
+    let raw = match tmux(&["list-windows", "-a", "-F", "#{session_name}\t#{window_id}"]) {
+        Ok(v) => v,
+        Err(_) => return fallback.to_string(),
+    };
+
+    for line in raw.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let session = parts.next().unwrap_or("");
+        let current_window_id = parts.next().unwrap_or("");
+        if current_window_id == window_id && !is_view_session(session) {
+            return session.to_string();
+        }
+    }
+
+    fallback.to_string()
 }
 
 /// Sweep orphaned ephemeral view sessions left behind by a previous run.
@@ -369,7 +408,8 @@ fn find_captured_window(pane_id: &str) -> Option<(String, String)> {
     .ok()?;
     let parts: Vec<&str> = info.split('\t').collect();
     if parts.len() == 3 && parts[2].starts_with("ct-") {
-        Some((parts[0].to_string(), parts[1].to_string()))
+        let session = resolve_non_view_session_for_window(parts[1], parts[0]);
+        Some((session, parts[1].to_string()))
     } else {
         None
     }
@@ -663,10 +703,25 @@ impl PtyManager {
         _group: &str,
         sink: OutputSink,
     ) -> Result<SpawnResult, String> {
+        let spawn_started = Instant::now();
+        log::debug!(
+            "[pty {}] spawn start session={} size={}x{}",
+            pane_id,
+            tmux_session,
+            cols,
+            rows
+        );
+
         if let Some(viewer) = self.sessions.get_mut(pane_id) {
             let attach_generation = ATTACH_COUNTER.fetch_add(1, Ordering::Relaxed);
             viewer.attach_generation = attach_generation;
             self.resize(pane_id, cols, rows)?;
+            log::debug!(
+                "[pty {}] reused existing viewer generation={} resized after {}ms",
+                pane_id,
+                attach_generation,
+                spawn_started.elapsed().as_millis()
+            );
             refresh_attached_pane(&sink, &self.recent, pane_id);
 
             let native_info = tmux(&[
@@ -686,11 +741,19 @@ impl PtyManager {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(24);
 
-            return Ok(SpawnResult {
+            let result = SpawnResult {
                 native_cols,
                 native_rows,
                 attach_generation,
-            });
+            };
+            log::debug!(
+                "[pty {}] reused existing viewer spawn complete after {}ms native={}x{}",
+                pane_id,
+                spawn_started.elapsed().as_millis(),
+                result.native_cols,
+                result.native_rows
+            );
+            return Ok(result);
         }
 
         // Read the pane's native size before capture. After capture + resize we
@@ -711,10 +774,24 @@ impl PtyManager {
             .get(1)
             .and_then(|s| s.parse().ok())
             .unwrap_or(24);
+        log::debug!(
+            "[pty {}] native size {}x{} read after {}ms",
+            pane_id,
+            native_cols,
+            native_rows,
+            spawn_started.elapsed().as_millis()
+        );
 
         // Capture the pane into a ct-<orig>-<N> window in its original session
         // (idempotent). base_session here is the original tmux session.
         let (base_session, window_id) = capture_pane(pane_id, tmux_session)?;
+        log::debug!(
+            "[pty {}] captured base_session={} window_id={} after {}ms",
+            pane_id,
+            base_session,
+            window_id,
+            spawn_started.elapsed().as_millis()
+        );
 
         // Ephemeral grouped view session so this viewer has its own current-window
         // without disturbing other clients attached to the original session.
@@ -733,6 +810,12 @@ impl PtyManager {
             "-t",
             &format!("{}:{}", view_session, window_id),
         ])?;
+        log::debug!(
+            "[pty {}] view session {} ready after {}ms",
+            pane_id,
+            view_session,
+            spawn_started.elapsed().as_millis()
+        );
 
         // Open a local PTY and spawn `tmux attach-session` inside it.
         let pty_system = native_pty_system();
@@ -754,6 +837,11 @@ impl PtyManager {
             .spawn_command(cmd)
             .map_err(|e| format!("tmux attach spawn: {}", e))?;
         drop(pair.slave);
+        log::debug!(
+            "[pty {}] attach-session spawned after {}ms",
+            pane_id,
+            spawn_started.elapsed().as_millis()
+        );
 
         let mut reader = pair
             .master
@@ -788,6 +876,11 @@ impl PtyManager {
 
         // Let attach-session settle, then push a full snapshot and force redraw.
         refresh_attached_pane(&sink, &self.recent, pane_id);
+        log::debug!(
+            "[pty {}] initial refresh done after {}ms",
+            pane_id,
+            spawn_started.elapsed().as_millis()
+        );
 
         thread::spawn(move || {
             let (output_tx, output_rx) = mpsc::channel::<Vec<u8>>();
@@ -882,11 +975,18 @@ impl PtyManager {
             },
         );
 
-        Ok(SpawnResult {
+        let result = SpawnResult {
             native_cols,
             native_rows,
             attach_generation,
-        })
+        };
+        log::debug!(
+            "[pty {}] spawn complete generation={} after {}ms",
+            pane_id,
+            attach_generation,
+            spawn_started.elapsed().as_millis()
+        );
+        Ok(result)
     }
 
     pub fn get_cached_output(&self, pane_id: &str) -> Vec<u8> {

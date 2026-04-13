@@ -86,6 +86,89 @@
   opacity: 0.7;
 }
 
+.notifications-menu {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.notifications-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  -webkit-app-region: no-drag;
+}
+
+.notifications-menu-btn:hover,
+.notifications-menu-btn.active {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.notifications-menu-btn.has-questions {
+  color: var(--warning-color);
+}
+
+.notifications-menu-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 14px;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: var(--warning-color);
+  color: var(--bg-primary);
+  font-size: 9px;
+  line-height: 14px;
+  font-weight: 700;
+}
+
+.notifications-menu-popup {
+  position: fixed;
+  top: 30px;
+  right: 10px;
+  width: min(380px, calc(100vw - 20px));
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  padding: 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+  z-index: 30000;
+  -webkit-app-region: no-drag;
+}
+
+.notifications-menu-title {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.notifications-menu-content {
+  min-width: 0;
+}
+
+.notifications-menu-empty {
+  padding: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+}
+
 .tab-content {
   background: var(--bg-secondary);
   height: 100vh;

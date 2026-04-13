@@ -7,7 +7,7 @@ import { EmptyDetailAgent } from "../../EmptyDetailAgent";
 import { TmuxPaneDetail } from "../../TmuxPaneDetail";
 import type { Job } from "../../../types";
 import type { useViewingState } from "./useViewingState";
-import type { useProcessLifecycle } from "./useProcessLifecycle";
+import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
 import type { useQuestionPolling } from "../../../hooks/useQuestionPolling";
 import type { useJobActions } from "@clawtab/shared";
@@ -47,6 +47,8 @@ interface UsePaneRenderersParams {
   isWide: boolean;
   trafficLightInsetStyle: { paddingLeft: number } | undefined;
   defaultProvider: ProcessProvider;
+  defaultModel?: string | null;
+  enabledModels?: Record<string, string[]>;
   callbacks: PaneCallbacks;
 }
 
@@ -54,7 +56,7 @@ export function usePaneRenderers({
   core, split, viewing, lifecycle, actions,
   questions, questionPolling, autoYes, transport,
   agentJob, agentProcess,
-  isWide, trafficLightInsetStyle, defaultProvider,
+  isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
   callbacks,
 }: UsePaneRenderersParams) {
   const {
@@ -440,6 +442,8 @@ export function usePaneRenderers({
         onRunAgent={handleRunAgent}
         getAgentProviders={handleGetAgentProviders}
         defaultProvider={defaultProvider}
+        defaultModel={defaultModel}
+        enabledModels={enabledModels}
         focusSignal={focusEmptyAgentSignal}
         folderGroups={folderRunGroups}
       />

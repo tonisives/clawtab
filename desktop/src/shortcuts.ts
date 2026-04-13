@@ -17,6 +17,8 @@ export interface ShortcutSettings {
 
 export type ShortcutId = keyof ShortcutSettings;
 
+export const APP_SHORTCUT_EVENT = "clawtab-app-shortcut";
+
 export interface ShortcutDefinition {
   id: ShortcutId;
   label: string;
@@ -83,6 +85,15 @@ const DASH_MODIFIER_ALIASES: Record<string, string> = {
   cmd: "Meta",
   command: "Meta",
 };
+
+function controlLetterFromEventKey(key: string): string {
+  if (key.length !== 1) return "";
+  const code = key.charCodeAt(0);
+  if (code >= 1 && code <= 26) {
+    return String.fromCharCode(code + 96);
+  }
+  return "";
+}
 
 function normalizeKeyPart(raw: string): string {
   const trimmed = raw.trim();
@@ -184,6 +195,10 @@ function keyFromEvent(event: KeyboardEvent): string {
   }
   if ((event.ctrlKey || event.metaKey || event.altKey) && event.code.startsWith("Digit")) {
     return event.code.slice(5);
+  }
+  if (event.ctrlKey) {
+    const controlLetter = controlLetterFromEventKey(event.key);
+    if (controlLetter) return controlLetter;
   }
   if (event.key in SPECIAL_KEY_ALIASES) return SPECIAL_KEY_ALIASES[event.key];
   if (event.key === "Dead") return "";

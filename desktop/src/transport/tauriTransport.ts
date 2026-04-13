@@ -105,8 +105,8 @@ export function createTauriTransport(): Transport {
       };
     },
 
-    async runAgent(prompt: string, workDir?: string, provider?: ProcessProvider) {
-      return await invoke<{ pane_id: string; tmux_session: string } | null>("run_agent", { prompt, workDir, provider });
+    async runAgent(prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) {
+      return await invoke<{ pane_id: string; tmux_session: string } | null>("run_agent", { prompt, workDir, provider, model });
     },
 
     async listAgentProviders() {

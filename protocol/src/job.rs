@@ -4,6 +4,10 @@ use serde::{Deserialize, Serialize};
 pub struct QuestionOption {
     pub number: String,
     pub label: String,
+    #[serde(default)]
+    pub selected: bool,
+    #[serde(default)]
+    pub col: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +19,10 @@ pub struct ClaudeQuestion {
     pub question_id: String,
     pub context_lines: String,
     pub options: Vec<QuestionOption>,
+    #[serde(default)]
+    pub input_mode: String,
+    #[serde(default)]
+    pub button_row: u16,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matched_group: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

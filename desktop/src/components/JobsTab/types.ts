@@ -8,17 +8,12 @@ export interface JobsTabProps {
   importCwtKey?: number;
   pendingPaneId?: string | null;
   onPaneHandled?: () => void;
-  navBar?: React.ReactNode;
+  navBar?: React.ReactNode | ((notificationsButton: React.ReactNode) => React.ReactNode);
   rightPanelOverlay?: React.ReactNode;
   onJobSelected?: () => void;
 }
 
-export interface ExistingPaneInfo {
-  pane_id: string;
-  cwd: string;
-  tmux_session: string;
-  window_name: string;
-}
+export type { ExistingPaneInfo } from "../../types";
 
 export type ListItemRef =
   | { kind: "job"; slug: string; job: Job }

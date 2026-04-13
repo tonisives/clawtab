@@ -36,6 +36,7 @@ export interface Job {
   kill_on_end: boolean;
   auto_yes: boolean;
   agent_provider?: ProcessProvider | null;
+  agent_model?: string | null;
   added_at?: string;
 }
 
@@ -52,6 +53,13 @@ export interface RunRecord {
   trigger: string;
   stdout: string;
   stderr: string;
+}
+
+export interface ExistingPaneInfo {
+  pane_id: string;
+  cwd: string;
+  tmux_session: string;
+  window_name: string;
 }
 
 export type SecretSource = "keychain";
@@ -105,6 +113,8 @@ export interface AppSettings {
   default_tmux_session: string;
   default_work_dir: string;
   default_provider: ProcessProvider;
+  default_model: string | null;
+  enabled_models: Record<string, string[]>;
   claude_path: string;
   preferred_editor: string;
   preferred_terminal: string;

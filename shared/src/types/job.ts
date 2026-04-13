@@ -16,6 +16,7 @@ export interface RemoteJob {
   folder_path?: string;
   params?: string[];
   agent_provider?: ProcessProvider | null;
+  agent_model?: string | null;
   added_at?: string;
 }
 
@@ -41,6 +42,7 @@ export interface DesktopJob extends RemoteJob {
   telegram_notify: TelegramNotify;
   skill_paths: string[];
   agent_provider?: ProcessProvider | null;
+  agent_model?: string | null;
 }
 
 export type JobStatus =

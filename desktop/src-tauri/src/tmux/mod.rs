@@ -254,6 +254,81 @@ pub fn send_keys_to_tui_pane_freetext(
     Ok(())
 }
 
+/// Capture the full visible area of a pane with ANSI escape sequences preserved.
+/// Returns (text, pane_height). Uses `-J` to avoid trailing whitespace trimming
+/// so line count matches pane height exactly.
+pub fn capture_pane_visible(pane_id: &str) -> Result<(String, u16), String> {
+    let dim_output = run(
+        &["display", "-t", pane_id, "-p", "#{pane_height}"],
+        "tmux::capture_pane_visible::height",
+    )
+    .map_err(|e| format!("Failed to get pane height: {}", e))?;
+    if !dim_output.status.success() {
+        let stderr = String::from_utf8_lossy(&dim_output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    let height: u16 = String::from_utf8_lossy(&dim_output.stdout)
+        .trim()
+        .parse()
+        .map_err(|_| "Failed to parse pane height".to_string())?;
+    let end = format!("{}", height.saturating_sub(1));
+    let output = run(
+        &[
+            "capture-pane",
+            "-t",
+            pane_id,
+            "-p",
+            "-e",
+            "-J",
+            "-S",
+            "0",
+            "-E",
+            &end,
+        ],
+        "tmux::capture_pane_visible",
+    )
+    .map_err(|e| format!("Failed to capture pane: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok((String::from_utf8_lossy(&output.stdout).to_string(), height))
+}
+
+/// Send a mouse click (press + release) to a pane at the given column and row.
+/// Coordinates are 0-indexed from the top-left of the pane.
+/// Uses SGR mouse encoding which modern TUI apps (opencode, etc.) understand.
+pub fn send_mouse_click_to_pane(pane_id: &str, col: u16, row: u16) -> Result<(), String> {
+    // SGR mouse uses 1-based coordinates
+    let x = col + 1;
+    let y = row + 1;
+    // Press: ESC [ < 0 ; X ; Y M
+    let press = format!("\x1b[<0;{};{}M", x, y);
+    // Release: ESC [ < 0 ; X ; Y m
+    let release = format!("\x1b[<0;{};{}m", x, y);
+
+    let output = run(
+        &["send-keys", "-t", pane_id, "-l", &press],
+        "tmux::send_mouse_click::press",
+    )
+    .map_err(|e| format!("Failed to send mouse press: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    let output = run(
+        &["send-keys", "-t", pane_id, "-l", &release],
+        "tmux::send_mouse_click::release",
+    )
+    .map_err(|e| format!("Failed to send mouse release: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 /// Capture the last N lines from a specific pane.
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String, String> {

@@ -13,6 +13,8 @@ interface UseEditorSettingsParams {
 export function useEditorSettings({ form, setForm, isNew, isWizard }: UseEditorSettingsParams) {
   const [availableProviders, setAvailableProviders] = useState<ProcessProvider[]>([]);
   const [defaultProvider, setDefaultProvider] = useState<ProcessProvider>("claude");
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  const [enabledModels, setEnabledModels] = useState<Record<string, string[]>>({});
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
 
@@ -20,6 +22,8 @@ export function useEditorSettings({ form, setForm, isNew, isWizard }: UseEditorS
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
       setDefaultProvider(s.default_provider);
+      setDefaultModel(s.default_model ?? null);
+      setEnabledModels(s.enabled_models ?? {});
       if (isWizard && !form.folder_path) {
         const workDir = (s.default_work_dir || "~").replace(/\/+$/, "");
         setForm((prev) => ({ ...prev, folder_path: workDir }));
@@ -54,6 +58,8 @@ export function useEditorSettings({ form, setForm, isNew, isWizard }: UseEditorS
   return {
     availableProviders,
     defaultProvider,
+    defaultModel,
+    enabledModels,
     preferredEditor,
     telegramChats,
     persistTmuxSession,
