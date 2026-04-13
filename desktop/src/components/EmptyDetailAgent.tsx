@@ -98,7 +98,7 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
   }, [folderOptions, workDir]);
 
   const handleRun = useCallback(async () => {
-    if (!prompt.trim()) return;
+    if (provider !== "shell" && !prompt.trim()) return;
     if (sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
@@ -110,6 +110,8 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
       setSending(false);
     }
   }, [prompt, workDir, provider, model, onRunAgent]);
+
+  const canRun = provider === "shell" || !!prompt.trim();
 
   const handleFolderPick = useCallback(async () => {
     setFolderMenuOpen(false);
@@ -256,6 +258,22 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
               <span style={{ color: "var(--text-muted)", fontSize: 9, marginTop: -1 }}>&#9662;</span>
             )}
           </button>
+          {selectedFolder && (
+            <span
+              style={{
+                color: workDir ? "var(--accent, #7986cb)" : "var(--text-muted)",
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                minWidth: 0,
+                maxWidth: 220,
+              }}
+              title={selectedFolder.folderPath}
+            >
+              {selectedFolder.label}
+            </span>
+          )}
           <button
             ref={folderButtonRef}
             onClick={(e) => {
@@ -286,26 +304,10 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
           >
             ...
           </button>
-          {selectedFolder && (
-            <span
-              style={{
-                color: workDir ? "var(--accent, #7986cb)" : "var(--text-muted)",
-                fontSize: 12,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                minWidth: 0,
-                maxWidth: 220,
-              }}
-              title={selectedFolder.folderPath}
-            >
-              {selectedFolder.label}
-            </span>
-          )}
           <div style={{ flex: 1 }} />
           <button
             onClick={() => { void handleRun(); }}
-            disabled={!prompt.trim() || sending}
+            disabled={!canRun || sending}
             style={{
               height: 28,
               width: 28,
@@ -315,8 +317,8 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
               borderRadius: 6,
               background: "var(--accent, #7986cb)",
               border: "none",
-              cursor: prompt.trim() && !sending ? "pointer" : "default",
-              opacity: !prompt.trim() || sending ? 0.5 : 1,
+              cursor: canRun && !sending ? "pointer" : "default",
+              opacity: !canRun || sending ? 0.5 : 1,
               padding: 0,
             }}
           >

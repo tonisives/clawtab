@@ -92,6 +92,8 @@ export interface JobDetailViewProps {
   onSearchSkills?: () => void;
   // Release the captured tmux pane (desktop only, when viewing a live pane)
   onRelease?: () => void;
+  // Reveal the current item in the sidebar and scroll to it
+  onRevealInSidebar?: () => void;
   // Notify parent that a stop was requested (for sidebar "Stopping..." state)
   onStopping?: () => void;
   // Desktop-only drag handle for split panes
@@ -148,6 +150,7 @@ export function JobDetailView({
   onInjectSecrets,
   onSearchSkills,
   onRelease,
+  onRevealInSidebar,
   onStopping,
   dragHandleProps,
   renderRunTerminal,
@@ -441,6 +444,7 @@ export function JobDetailView({
             <TouchableOpacity
               onPress={onToggleAutoYes}
               activeOpacity={0.6}
+              {...(isWeb ? { title: `Auto-yes (Cmd+Y)` } as any : {})}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -475,7 +479,7 @@ export function JobDetailView({
             </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
-          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills) && (
+          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}
@@ -516,6 +520,7 @@ export function JobDetailView({
                     ...(onInjectSecrets ? [{ type: "item" as const, label: "Inject Secrets", onPress: () => onInjectSecrets() }] : []),
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),
+                    ...(onRevealInSidebar ? [{ type: "item" as const, label: "Reveal in Sidebar", onPress: () => onRevealInSidebar() }] : []),
                     ...(isRunning && !sigintPending && transport.sigintJob ? [{ type: "item" as const, label: "Send C-c", onPress: () => handleAction("sigint") }] : []),
                     ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction("stop"), color: colors.danger }] : []),
                     ...(onDelete && !isRunning ? [{ type: "separator" as const }, { type: "item" as const, label: "Delete", onPress: () => onDelete(), color: colors.danger }] : []),

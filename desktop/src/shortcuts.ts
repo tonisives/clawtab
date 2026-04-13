@@ -13,6 +13,8 @@ export interface ShortcutSettings {
   move_pane_down: string;
   move_pane_up: string;
   move_pane_right: string;
+  reveal_in_sidebar: string;
+  toggle_auto_yes: string;
 }
 
 export type ShortcutId = keyof ShortcutSettings;
@@ -39,6 +41,8 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   move_pane_down: "Ctrl+j",
   move_pane_up: "Ctrl+k",
   move_pane_right: "Ctrl+l",
+  reveal_in_sidebar: "Meta+Shift+e",
+  toggle_auto_yes: "Meta+y",
 };
 
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
@@ -56,6 +60,8 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   { id: "move_pane_down", label: "Move to pane below" },
   { id: "move_pane_up", label: "Move to pane above" },
   { id: "move_pane_right", label: "Move to right pane" },
+  { id: "reveal_in_sidebar", label: "Reveal in sidebar" },
+  { id: "toggle_auto_yes", label: "Toggle auto-yes" },
 ];
 
 const MODIFIER_ORDER = ["Ctrl", "Alt", "Shift", "Meta"] as const;

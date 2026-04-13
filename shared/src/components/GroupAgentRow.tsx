@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -6,24 +6,43 @@ import type { AgentModelOption, ProcessProvider } from "../types/process";
 import { JobKindIcon } from "./JobKindIcon";
 import { PopupMenu } from "./PopupMenu";
 
-function ModelToast({ label }: { label: string }) {
+let createPortalFn: ((children: ReactNode, container: Element) => ReactNode) | null = null;
+if (Platform.OS === "web") {
+  import("react-dom").then((mod) => { createPortalFn = mod.createPortal; });
+}
+
+function PortalWeb({ children }: { children: ReactNode }) {
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    if (Platform.OS === "web" && !createPortalFn) {
+      import("react-dom").then((mod) => {
+        createPortalFn = mod.createPortal;
+        forceUpdate((n) => n + 1);
+      });
+    }
+  }, []);
+  if (Platform.OS !== "web" || !createPortalFn) return <>{children}</>;
+  return createPortalFn(children, document.body);
+}
+
+function ModelToast({ label, anchorRect }: { label: string; anchorRect: DOMRect }) {
   return (
     <div
       style={{
         position: "fixed",
-        bottom: 24,
-        left: "50%",
+        top: anchorRect.bottom + 6,
+        left: anchorRect.left + anchorRect.width / 2,
         transform: "translateX(-50%)",
         background: "rgba(30, 30, 35, 0.96)",
         border: "1px solid rgba(255,255,255,0.12)",
         borderRadius: 8,
-        padding: "6px 14px",
+        padding: "5px 12px",
         color: "var(--text, #e8e8e8)",
         fontSize: 12,
         fontFamily: "inherit",
         whiteSpace: "nowrap",
         pointerEvents: "none",
-        zIndex: 9999,
+        zIndex: 40000,
         boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
         animation: "clawtab-toast-fade 1.4s ease forwards",
       } as any}
@@ -66,9 +85,9 @@ export function GroupAgentRow({
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [manualExpandedHeight, setManualExpandedHeight] = useState<number | null>(null);
-  const [toastLabel, setToastLabel] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ label: string; anchorRect: DOMRect; key: number } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [providerButtonFocused, setProviderButtonFocused] = useState(false);
+  const toastKeyRef = useRef(0);
   const inputRef = useRef<TextInput>(null);
   const providerButtonRef = useRef<any>(null);
   const providerOptions = useMemo(() => {
@@ -179,9 +198,13 @@ export function GroupAgentRow({
         onProviderChangeRef.current?.(next.provider);
         setProviderMenuOpen(false);
         if (Platform.OS === "web") {
-          setToastLabel(next.label);
+          const btn = providerButtonRef.current as HTMLElement | null;
+          const anchorRect = btn?.getBoundingClientRect() ?? new DOMRect(0, 0, 0, 0);
           if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-          toastTimerRef.current = setTimeout(() => setToastLabel(null), 1400);
+          toastKeyRef.current += 1;
+          const key = toastKeyRef.current;
+          setToast({ label: next.label, anchorRect, key });
+          toastTimerRef.current = setTimeout(() => setToast((t) => t?.key === key ? null : t), 1400);
         }
       }
     };
@@ -257,7 +280,7 @@ export function GroupAgentRow({
       <View style={styles.actionsCol}>
         <TouchableOpacity
           ref={providerButtonRef}
-          style={[styles.providerButton, providerButtonFocused && styles.providerButtonFocused]}
+          style={styles.providerButton}
           onPress={(e: any) => {
             if (Platform.OS === "web") {
               const node = e?.currentTarget ?? e?.target;
@@ -268,20 +291,12 @@ export function GroupAgentRow({
             }
             setProviderMenuOpen((open) => !open);
           }}
-          onFocus={() => setProviderButtonFocused(true)}
-          onBlur={() => setProviderButtonFocused(false)}
           activeOpacity={0.7}
           disabled={modelOptions.length <= 1}
         >
           <JobKindIcon kind={provider} size={16} compact bare />
-          {providerButtonFocused && modelOptions.length > 0 ? (
-            <Text style={styles.providerButtonLabel} numberOfLines={1}>
-              {modelOptions.find((o) => o.provider === provider && o.modelId === model)?.label ?? modelOptions[0]?.label ?? ""}
-            </Text>
-          ) : (
-            modelOptions.length > 1 && (
-              <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
-            )
+          {modelOptions.length > 1 && (
+            <Text style={styles.providerButtonCaret}>{"\u25BE"}</Text>
           )}
         </TouchableOpacity>
         <TouchableOpacity
@@ -314,7 +329,11 @@ export function GroupAgentRow({
           autoFocus
         />
       )}
-      {Platform.OS === "web" && toastLabel && <ModelToast label={toastLabel} />}
+      {Platform.OS === "web" && toast && (
+        <PortalWeb>
+          <ModelToast key={toast.key} label={toast.label} anchorRect={toast.anchorRect} />
+        </PortalWeb>
+      )}
     </View>
   );
 }
@@ -380,15 +399,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 9,
     marginTop: -1,
-  },
-  providerButtonFocused: {
-    borderColor: "rgba(255,255,255,0.22)",
-    backgroundColor: "rgba(30, 30, 38, 0.85)",
-  },
-  providerButtonLabel: {
-    color: colors.text,
-    fontSize: 11,
-    maxWidth: 160,
   },
   resizeKnob: {
     position: "absolute",

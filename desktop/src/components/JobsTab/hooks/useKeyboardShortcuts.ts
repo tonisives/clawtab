@@ -55,6 +55,7 @@ interface UseKeyboardShortcutsParams {
   handleSelectShell: (shell: ShellPane) => void;
   sidebarSelectableItems: SidebarSelectableItem[];
   sidebarFocusRef: React.RefObject<{ focus: () => void } | null>;
+  toggleActiveAutoYes?: () => void;
 }
 
 function collectLeafRects(
@@ -172,6 +173,7 @@ export function useKeyboardShortcuts({
   handleSplitPane, getPaneIdForContent,
   handleSelectJob, handleSelectProcess, handleSelectShell,
   sidebarSelectableItems, sidebarFocusRef,
+  toggleActiveAutoYes,
 }: UseKeyboardShortcutsParams) {
   const { shortcutSettings } = settings;
   const {
@@ -179,6 +181,16 @@ export function useKeyboardShortcuts({
     setViewingJob, setViewingProcess, setViewingShell, setViewingAgent,
     currentContent, setScrollToSlug, triggerFocusAgentInput,
   } = viewing;
+
+  const triggerRevealInSidebar = useCallback(() => {
+    if (!currentContent) return;
+    let id: string | null = null;
+    if (currentContent.kind === "job") id = currentContent.slug;
+    else if (currentContent.kind === "process" || currentContent.kind === "terminal") id = currentContent.paneId;
+    if (!id) return;
+    setScrollToSlug(id);
+    sidebarFocusRef.current?.focus();
+  }, [currentContent, setScrollToSlug, sidebarFocusRef]);
   const {
     pendingProcess,
     setStoppingProcesses, setStoppingJobSlugs,
@@ -328,8 +340,10 @@ export function useKeyboardShortcuts({
       { binding: shortcutSettings.rename_active_pane, run: triggerRenameActivePane },
       { binding: shortcutSettings.focus_agent_input, run: triggerFocusAgentInput },
       { binding: shortcutSettings.zoom_active_pane, run: triggerZoomActivePane },
+      { binding: shortcutSettings.reveal_in_sidebar, run: triggerRevealInSidebar },
       { binding: shortcutSettings.next_sidebar_item, run: () => navigateSidebarItems(1) },
       { binding: shortcutSettings.previous_sidebar_item, run: () => navigateSidebarItems(-1) },
+      ...(toggleActiveAutoYes ? [{ binding: shortcutSettings.toggle_auto_yes, run: toggleActiveAutoYes }] : []),
       {
         binding: shortcutSettings.toggle_sidebar,
         run: () => {
@@ -455,7 +469,7 @@ export function useKeyboardShortcuts({
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener(APP_SHORTCUT_EVENT, handleAppShortcut);
     };
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef]);
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes]);
 
   useEffect(() => {
     const unlistenPromise = listen<string>("shortcut-action", (event) => {
@@ -474,6 +488,7 @@ export function useKeyboardShortcuts({
     sidebarCollapsed, setSidebarCollapsed,
     triggerRenameActivePane,
     triggerZoomActivePane,
+    triggerRevealInSidebar,
     navigateSidebarItems,
   };
 }

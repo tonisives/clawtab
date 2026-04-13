@@ -28,8 +28,9 @@ import { openUrl } from "../../src/lib/platform"
 import { DEMO_JOBS, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
-import type { RemoteJob, JobSortMode, JobStatus } from "@clawtab/shared"
+import type { RemoteJob, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
 import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
+import { buildModelOptions } from "../../src/lib/agentModels"
 
 // Capture URL params before expo-router rewrites them on init
 const _initParams = Platform.OS === "web"
@@ -80,6 +81,12 @@ export default function JobsScreen() {
   const isDemo = connected && !desktopOnline && realJobs.length === 0
   const jobs = isDemo ? DEMO_JOBS : realJobs
   const statuses = isDemo ? DEMO_STATUSES : realStatuses
+
+  const agentModelOptions: AgentModelOption[] = buildModelOptions(["claude", "codex", "opencode"], {
+    claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+    codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
+    opencode: [],
+  })
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {
@@ -287,6 +294,7 @@ export default function JobsScreen() {
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
         onRunAgent={desktopOnline ? handleRunAgent : undefined}
+        agentModelOptions={agentModelOptions}
         headerContent={bannerContent}
         showEmpty={loaded || isDemo}
         emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
@@ -445,6 +453,7 @@ export default function JobsScreen() {
             selectedItems={split.selectedItems}
             focusedItemKey={split.focusedItemKey}
             onRunAgent={desktopOnline ? handleRunAgent : undefined}
+            agentModelOptions={agentModelOptions}
             headerContent={bannerContent}
             showEmpty={loaded || isDemo}
             emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}

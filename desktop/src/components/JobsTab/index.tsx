@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { RemoteJob } from "@clawtab/shared";
 import type { ShellPane } from "@clawtab/shared";
 import {
@@ -116,6 +116,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const [sidebarSelectableItems, setSidebarSelectableItems] = useState<SidebarSelectableItem[]>([]);
   const sidebarFocusRef = useRef<{ focus: () => void } | null>(null);
   const { activePaneContent, activeProcessForRename, activeAgentWorkDir, getPaneIdForContent } = useActivePaneContext({ core, split, viewing, lifecycle });
+
+  const toggleActiveAutoYes = useCallback(() => {
+    const paneId = getPaneIdForContent(activePaneContent);
+    if (!paneId) return;
+    autoYes.handleToggleAutoYesByPaneId(paneId, paneId);
+  }, [activePaneContent, autoYes, getPaneIdForContent]);
+
   const keyboard = useKeyboardShortcuts({
     core, split, viewing, lifecycle, settings,
     transport,
@@ -124,6 +131,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     handleSplitPane, getPaneIdForContent,
     handleSelectJob, handleSelectProcess, handleSelectShell,
     sidebarSelectableItems, sidebarFocusRef,
+    toggleActiveAutoYes,
   });
   const { sidebarCollapsed } = keyboard;
 
@@ -216,6 +224,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     questions, questionPolling, autoYes, transport,
     agentJob, agentProcess,
     isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
+    sidebarFocusRef,
     callbacks: {
       handleOpen, handleDuplicate, handleDuplicateToFolder,
       handleFork, handleSplitPane,

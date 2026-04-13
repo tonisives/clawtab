@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, type RefObject } from "react";
 import type { RemoteJob, ClaudeQuestion, PaneContent, DetectedProcess, ProcessProvider, Transport } from "@clawtab/shared";
 import { shortenPath, type useJobsCore, type useSplitTree } from "@clawtab/shared";
 import { DesktopJobDetail, AgentDetail } from "../../JobDetailSections";
@@ -50,6 +50,7 @@ interface UsePaneRenderersParams {
   defaultModel?: string | null;
   enabledModels?: Record<string, string[]>;
   callbacks: PaneCallbacks;
+  sidebarFocusRef: RefObject<{ focus: () => void } | null>;
 }
 
 export function usePaneRenderers({
@@ -58,6 +59,7 @@ export function usePaneRenderers({
   agentJob, agentProcess,
   isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
   callbacks,
+  sidebarFocusRef,
 }: UsePaneRenderersParams) {
   const {
     pendingProcess, setPendingProcess, setPendingAgentWorkDir,
@@ -66,7 +68,7 @@ export function usePaneRenderers({
   } = lifecycle;
   const {
     setViewingJob, setViewingProcess, setViewingShell, setViewingAgent,
-    focusEmptyAgentSignal,
+    focusEmptyAgentSignal, setScrollToSlug,
   } = viewing;
   const {
     handleOpen, handleDuplicate, handleDuplicateToFolder,
@@ -251,6 +253,10 @@ export function usePaneRenderers({
               setStoppingJobSlugs((prev) => new Set(prev).add(job.slug));
               core.requestFastPoll(`job:${job.slug}`);
             }}
+            onRevealInSidebar={() => {
+              setScrollToSlug(job.slug);
+              sidebarFocusRef.current?.focus();
+            }}
             contentStyle={trafficLightInsetStyle}
             titlePath={buildJobTitlePath(job, jobQuestion)}
             dragHandleProps={dragHandleProps}
@@ -259,7 +265,7 @@ export function usePaneRenderers({
         )}
       </DraggableSplitPane>
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, defaultProvider, transport]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, defaultProvider, transport, setScrollToSlug, sidebarFocusRef]);
 
   const renderSinglePaneContent = useCallback((content: PaneContent) => {
     if (content.kind === "agent") {
@@ -430,6 +436,10 @@ export function usePaneRenderers({
             setStoppingJobSlugs((prev) => new Set(prev).add(singleJob.slug));
             core.requestFastPoll(`job:${singleJob.slug}`);
           }}
+          onRevealInSidebar={() => {
+            setScrollToSlug(singleJob.slug);
+            sidebarFocusRef.current?.focus();
+          }}
           contentStyle={trafficLightInsetStyle}
           titlePath={buildJobTitlePath(singleJob, jobQuestion)}
           defaultAgentProvider={defaultProvider}
@@ -448,7 +458,7 @@ export function usePaneRenderers({
         folderGroups={folderRunGroups}
       />
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, focusEmptyAgentSignal, folderRunGroups, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, focusEmptyAgentSignal, folderRunGroups, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport, setScrollToSlug, sidebarFocusRef]);
 
   return { renderLeaf, renderSinglePaneContent };
 }
