@@ -37,7 +37,7 @@ export function Dialogs({
   paneDialogs,
   handleRunWithParams,
 }: DialogsProps) {
-  const { paramsDialog, setParamsDialog, viewingJob, viewingProcess } = viewing;
+  const { paramsDialog, setParamsDialog, viewingJob } = viewing;
   const {
     skillSearchPaneId,
     setSkillSearchPaneId,
@@ -58,7 +58,7 @@ export function Dialogs({
         />
       )}
 
-      {autoYes.pendingAutoYes && !viewingJob && !viewingProcess && (
+      {autoYes.pendingAutoYes && (
         <ConfirmDialog
           message={`Enable auto-yes for "${autoYes.pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
           onConfirm={autoYes.confirmAutoYes} onCancel={() => autoYes.setPendingAutoYes(null)}

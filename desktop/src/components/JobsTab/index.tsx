@@ -296,7 +296,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       renderSinglePaneContent={renderSinglePaneContent}
       folderRunnerPane={folderRunnerPane}
       viewing={viewing}
-      autoYes={autoYes}
       handleRunWithParams={handleRunWithParams}
     />
   );

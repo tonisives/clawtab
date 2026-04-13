@@ -54,25 +54,34 @@ export function ConfirmDialog({
   confirmLabel?: string;
   confirmClassName?: string;
 }) {
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
     cancelRef.current?.focus();
 
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      if (dialog?.open) dialog.close();
+    };
   }, [onCancel]);
 
   return createPortal(
-    <div
-      ref={overlayRef}
+    <dialog
+      ref={dialogRef}
       className="confirm-overlay"
+      onCancel={(e) => {
+        e.preventDefault();
+        onCancel();
+      }}
       onClick={(e) => {
-        if (e.target === overlayRef.current) onCancel();
+        if (e.target === dialogRef.current) onCancel();
       }}
     >
       <div className="confirm-dialog">
@@ -88,7 +97,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>,
+    </dialog>,
     document.body,
   );
 }
