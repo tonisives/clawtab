@@ -10,6 +10,13 @@ use crate::config::jobs::JobStatus;
 use crate::debug_spawn;
 use crate::AppState;
 
+#[derive(Debug, Clone)]
+struct PaneJobMatch {
+    group: String,
+    slug: String,
+    root: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DetectedProcessOverride {
     pub display_name: Option<String>,
@@ -122,6 +129,45 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
             .collect()
     };
 
+    let history_panes: HashMap<String, PaneJobMatch> = {
+        let jobs_by_slug: HashMap<String, PaneJobMatch> = {
+            let config = state.jobs_config.lock().unwrap();
+            config
+                .jobs
+                .iter()
+                .map(|job| {
+                    (
+                        job.slug.clone(),
+                        PaneJobMatch {
+                            group: job.group.clone(),
+                            slug: job.slug.clone(),
+                            root: job.folder_path.clone().or_else(|| job.work_dir.clone()),
+                        },
+                    )
+                })
+                .collect()
+        };
+        let recent = state
+            .history
+            .lock()
+            .unwrap()
+            .get_recent(500)
+            .unwrap_or_default();
+        let mut panes = HashMap::new();
+        for run in recent {
+            let Some(pane_id) = run.pane_id else {
+                continue;
+            };
+            if panes.contains_key(&pane_id) {
+                continue;
+            }
+            if let Some(job_match) = jobs_by_slug.get(&run.job_id) {
+                panes.insert(pane_id, job_match.clone());
+            }
+        }
+        panes
+    };
+
     let running_panes: HashMap<String, (String, String)> = {
         let statuses = state.job_status.lock().unwrap();
         let config = state.jobs_config.lock().unwrap();
@@ -144,7 +190,13 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
 
     // Run all subprocess-heavy work off the async runtime
     let snapshot = tokio::task::spawn_blocking(move || {
-        detect_processes_blocking(live_viewer_panes, match_entries, running_panes, overrides)
+        detect_processes_blocking(
+            live_viewer_panes,
+            match_entries,
+            running_panes,
+            history_panes,
+            overrides,
+        )
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {}", e))??;
@@ -163,6 +215,7 @@ fn detect_processes_blocking(
     live_viewer_panes: HashSet<String>,
     match_entries: Vec<(String, String, String)>,
     running_panes: HashMap<String, (String, String)>,
+    history_panes: HashMap<String, PaneJobMatch>,
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<DetectionSnapshot, String> {
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
@@ -227,13 +280,20 @@ fn detect_processes_blocking(
 
         let (matched_group, matched_job) = if let Some((group, slug)) = running_panes.get(pane_id) {
             (Some(group.clone()), Some(slug.clone()))
+        } else if let Some(job_match) = history_panes.get(pane_id).filter(|job_match| {
+            job_match
+                .root
+                .as_ref()
+                .is_none_or(|root| cwd == root || cwd.starts_with(&format!("{}/", root)))
+        }) {
+            (Some(job_match.group.clone()), Some(job_match.slug.clone()))
         } else {
             let best = match_entries
                 .iter()
                 .filter(|(root, _, _)| cwd == root || cwd.starts_with(&format!("{}/", root)))
                 .max_by_key(|(root, _, _)| root.len());
             match best {
-                Some((_, group, slug)) => (Some(group.clone()), Some(slug.clone())),
+                Some((_, group, _)) => (Some(group.clone()), None),
                 None => (None, None),
             }
         };

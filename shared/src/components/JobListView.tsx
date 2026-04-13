@@ -405,6 +405,7 @@ export function JobListView({
   const matchedProcessesByGroup = useMemo(() => {
     const map = new Map<string, DetectedProcess[]>();
     const paneToRunningJobSlug = new Map<string, string>();
+    const jobSlugs = new Set(jobs.map((job) => job.slug));
     for (const job of jobs) {
       const status = statuses[job.slug];
       if (status?.state === "running" && status.pane_id) {
@@ -413,6 +414,7 @@ export function JobListView({
     }
     for (const proc of detectedProcesses) {
       if (paneToRunningJobSlug.has(proc.pane_id)) continue;
+      if (proc.matched_job && jobSlugs.has(proc.matched_job)) continue;
       if (proc.matched_group) {
         const list = map.get(proc.matched_group) ?? [];
         list.push(proc);
@@ -437,6 +439,7 @@ export function JobListView({
   const matchedProcessesByJob = useMemo(() => {
     const map = new Map<string, DetectedProcess[]>();
     const paneToRunningJobSlug = new Map<string, string>();
+    const jobSlugs = new Set(jobs.map((job) => job.slug));
     for (const job of jobs) {
       const status = statuses[job.slug];
       if (status?.state === "running" && status.pane_id) {
@@ -444,7 +447,8 @@ export function JobListView({
       }
     }
     for (const proc of detectedProcesses) {
-      const matchedJobSlug = paneToRunningJobSlug.get(proc.pane_id);
+      const matchedJobSlug = paneToRunningJobSlug.get(proc.pane_id)
+        ?? (proc.matched_job && jobSlugs.has(proc.matched_job) ? proc.matched_job : null);
       if (!matchedJobSlug) continue;
       const list = map.get(matchedJobSlug) ?? [];
       list.push(proc);
@@ -478,17 +482,21 @@ export function JobListView({
   }, [shellPanes]);
 
   const unmatchedProcesses = useMemo(
-    () => detectedProcesses.filter((p) => {
-      const matchedRunningJob = jobs.some((job) => {
-        const status = statuses[job.slug];
-        return status?.state === "running" && status.pane_id === p.pane_id;
+    () => {
+      const jobSlugs = new Set(jobs.map((job) => job.slug));
+      return detectedProcesses.filter((p) => {
+        const matchedRunningJob = jobs.some((job) => {
+          const status = statuses[job.slug];
+          return status?.state === "running" && status.pane_id === p.pane_id;
+        });
+        if (matchedRunningJob) return false;
+        if (p.matched_job && jobSlugs.has(p.matched_job)) return false;
+        if (p.matched_group) return false;
+        if (!query) return true;
+        const folderName = p.cwd.split("/").filter(Boolean).pop() ?? "";
+        return folderName.toLowerCase().includes(query) || p.cwd.toLowerCase().includes(query);
       });
-      if (matchedRunningJob) return false;
-      if (p.matched_group) return false;
-      if (!query) return true;
-      const folderName = p.cwd.split("/").filter(Boolean).pop() ?? "";
-      return folderName.toLowerCase().includes(query) || p.cwd.toLowerCase().includes(query);
-    }),
+    },
     [detectedProcesses, jobs, query, statuses],
   );
 
