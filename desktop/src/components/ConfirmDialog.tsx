@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 // SF Symbol: xmark.circle (outlined)
 const XMarkIcon = ({ size = 13 }: { size?: number }) => (
@@ -66,7 +67,7 @@ export function ConfirmDialog({
     return () => window.removeEventListener("keydown", handleKey);
   }, [onCancel]);
 
-  return (
+  return createPortal(
     <div
       ref={overlayRef}
       className="confirm-overlay"
@@ -87,6 +88,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
