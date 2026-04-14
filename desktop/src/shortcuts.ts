@@ -285,8 +285,9 @@ export function formatShortcutSteps(binding: string): string[][] {
 export function resolveShortcutSettings(
   settings: { shortcuts?: Partial<ShortcutSettings> | null } | null | undefined,
 ): ShortcutSettings {
-  return {
-    ...DEFAULT_SHORTCUTS,
-    ...(settings?.shortcuts ?? {}),
-  };
+  const overrides = settings?.shortcuts ?? {};
+  const filtered = Object.fromEntries(
+    Object.entries(overrides).filter(([, v]) => v !== "" && v != null),
+  ) as Partial<ShortcutSettings>;
+  return { ...DEFAULT_SHORTCUTS, ...filtered };
 }

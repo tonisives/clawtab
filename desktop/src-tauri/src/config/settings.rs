@@ -57,6 +57,12 @@ impl ShortcutSettings {
             self.previous_sidebar_item = "Alt+Shift+Tab".to_string();
         }
     }
+
+    fn migrate_missing_fields(&mut self) {
+        let defaults = ShortcutSettings::default();
+        if self.reveal_in_sidebar.is_empty() { self.reveal_in_sidebar = defaults.reveal_in_sidebar; }
+        if self.toggle_auto_yes.is_empty() { self.toggle_auto_yes = defaults.toggle_auto_yes; }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -162,6 +168,7 @@ impl AppSettings {
             if let Ok(contents) = std::fs::read_to_string(&path) {
                 if let Ok(mut settings) = serde_yml::from_str::<Self>(&contents) {
                     settings.shortcuts.migrate_legacy_tab_navigation();
+                    settings.shortcuts.migrate_missing_fields();
                     return settings;
                 }
             }
