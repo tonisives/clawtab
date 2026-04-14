@@ -14,16 +14,13 @@ interface UseJobsTabHandlersParams {
   actions: ReturnType<typeof useJobActions>;
   autoYes: ReturnType<typeof useAutoYes>;
   core: ReturnType<typeof useJobsCore>;
-  handleFork: (paneId: string, direction: "right" | "down") => void;
   handleJobReorder: (sourceSlug: string, targetSlug: string) => boolean;
   handleProcessReorder: (sourcePaneId: string, targetPaneId: string) => boolean;
   handleSplitPane: (paneId: string, direction: "right" | "down") => void;
   missedCronJobs: string[];
   onTemplateHandled?: () => void;
   questionPolling: ReturnType<typeof useQuestionPolling>;
-  setInjectSecretsPaneId: (paneId: string | null) => void;
   setMissedCronJobs: (names: string[]) => void;
-  setSkillSearchPaneId: (paneId: string | null) => void;
   split: ReturnType<typeof useSplitTree>;
   viewing: ReturnType<typeof useViewingState>;
 }
@@ -32,16 +29,13 @@ export function useJobsTabHandlers({
   actions,
   autoYes,
   core,
-  handleFork,
   handleJobReorder,
   handleProcessReorder,
   handleSplitPane,
   missedCronJobs,
   onTemplateHandled,
   questionPolling,
-  setInjectSecretsPaneId,
   setMissedCronJobs,
-  setSkillSearchPaneId,
   split,
   viewing,
 }: UseJobsTabHandlersParams) {
@@ -205,40 +199,31 @@ export function useJobsTabHandlers({
     }
   }, [actions, core.jobs, missedCronJobs, setMissedCronJobs]);
 
+  const resolveJobPaneId = useCallback((job: Job, jobQuestion?: ClaudeQuestion): string | undefined => {
+    if (jobQuestion?.pane_id) return jobQuestion.pane_id;
+    const status = core.statuses[job.slug];
+    const statusPaneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+    if (statusPaneId) return statusPaneId;
+    return core.processes.find((process) => process.matched_job === job.slug)?.pane_id;
+  }, [core.processes, core.statuses]);
+
   const buildJobPaneActions = useCallback((job: Job, jobQuestion: ClaudeQuestion | undefined) => ({
     autoYesActive: (() => {
-      const paneId = jobQuestion?.pane_id ?? (core.statuses[job.slug]?.state === "running" ? (core.statuses[job.slug] as { pane_id?: string }).pane_id : undefined);
+      const paneId = resolveJobPaneId(job, jobQuestion);
       return paneId ? autoYes.autoYesPaneIds.has(paneId) : false;
     })(),
     onToggleAutoYes: (() => {
       if (jobQuestion) return () => autoYes.handleToggleAutoYes(jobQuestion);
-      const status = core.statuses[job.slug];
-      if (status?.state === "running") {
-        const paneId = (status as { pane_id?: string }).pane_id;
-        if (paneId) return () => autoYes.handleToggleAutoYesByPaneId(paneId, job.name);
-      }
-      return undefined;
+      const paneId = resolveJobPaneId(job);
+      return paneId ? () => autoYes.handleToggleAutoYesByPaneId(paneId, job.name) : undefined;
     })(),
-    onFork: (() => {
-      const status = core.statuses[job.slug];
-      const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
-      return paneId ? (direction: "right" | "down") => handleFork(paneId, direction) : undefined;
-    })(),
+    onFork: undefined,
     onSplitPane: (() => {
-      const status = core.statuses[job.slug];
-      const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+      const paneId = resolveJobPaneId(job, jobQuestion);
       return paneId ? (direction: "right" | "down") => handleSplitPane(paneId, direction) : undefined;
     })(),
-    onInjectSecrets: (() => {
-      const status = core.statuses[job.slug];
-      const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
-      return paneId ? () => setInjectSecretsPaneId(paneId) : undefined;
-    })(),
-    onSearchSkills: (() => {
-      const status = core.statuses[job.slug];
-      const paneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
-      return paneId ? () => setSkillSearchPaneId(paneId) : undefined;
-    })(),
+    onInjectSecrets: undefined,
+    onSearchSkills: undefined,
     onZoomPane: () => {
       if (split.tree) {
         const leaves = collectLeaves(split.tree);
@@ -250,7 +235,7 @@ export function useJobsTabHandlers({
       }
       split.toggleZoomLeaf("");
     },
-  }), [autoYes, core.statuses, handleFork, handleSplitPane, setInjectSecretsPaneId, setSkillSearchPaneId, split]);
+  }), [autoYes, handleSplitPane, resolveJobPaneId, split]);
 
   const buildJobTitlePath = useCallback((job: Job, _jobQuestion: ClaudeQuestion | undefined) => {
     const sourcePath = job.work_dir || job.folder_path || job.path;

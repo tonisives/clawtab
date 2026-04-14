@@ -74,8 +74,11 @@ export function useActivePaneContext({ core, split, viewing, lifecycle }: UseAct
     if (content.kind !== "job") return null;
 
     const status = core.statuses[content.slug];
-    return status?.state === "running" ? (status as { pane_id?: string }).pane_id ?? null : null;
-  }, [core.statuses]);
+    const statusPaneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id ?? null : null;
+    if (statusPaneId) return statusPaneId;
+
+    return core.processes.find((process) => process.matched_job === content.slug)?.pane_id ?? null;
+  }, [core.processes, core.statuses]);
 
   return {
     activePaneContent,

@@ -231,6 +231,8 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
           shortcuts.move_pane_down,
           shortcuts.move_pane_up,
           shortcuts.move_pane_right,
+          shortcuts.reveal_in_sidebar,
+          shortcuts.toggle_auto_yes,
         ];
 
         if (pendingShortcutStrokeRef.current && e.key === "Escape") {
@@ -257,6 +259,7 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         }
 
         const singleStrokeBinding = appBindings.find((binding) => shortcutMatches(e, binding, shortcuts.prefix_key));
+        console.log("[xterm key]", eventToShortcutBinding(e), "matched:", singleStrokeBinding ?? "none");
         if (singleStrokeBinding) {
           if (!(e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled) {
             dispatchAppShortcut(singleStrokeBinding, paneId);

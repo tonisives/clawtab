@@ -120,6 +120,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   const toggleActiveAutoYes = useCallback(() => {
     const paneId = getPaneIdForContent(activePaneContent);
+    console.log("[toggleActiveAutoYes] activePaneContent:", activePaneContent, "paneId:", paneId);
     if (!paneId) return;
     const question = questions.find((q) => q.pane_id === paneId);
     if (question) {
@@ -153,6 +154,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     onPaneHandled,
     pendingPaneId,
     pendingTemplateId,
+    shellPanes,
     setMissedCronJobs,
     split,
     viewing,
@@ -174,16 +176,13 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     actions,
     autoYes,
     core,
-    handleFork,
     handleJobReorder,
     handleProcessReorder,
     handleSplitPane,
     missedCronJobs,
     onTemplateHandled,
     questionPolling,
-    setInjectSecretsPaneId,
     setMissedCronJobs,
-    setSkillSearchPaneId,
     split,
     viewing,
   });

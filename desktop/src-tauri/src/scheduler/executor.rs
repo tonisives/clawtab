@@ -19,6 +19,20 @@ struct TmuxHandle {
     pane_id: String,
 }
 
+fn resolve_agent_model(
+    job: &Job,
+    settings: &AppSettings,
+    provider: crate::agent_session::ProcessProvider,
+) -> Option<String> {
+    if let Some(model) = job.agent_model.clone() {
+        return Some(model);
+    }
+    if job.agent_provider.is_none() || provider == settings.default_provider {
+        return settings.default_model.clone();
+    }
+    None
+}
+
 pub async fn execute_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
@@ -500,10 +514,8 @@ async fn execute_claude_job(
 
     let (provider, model, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
-        let provider = job
-            .agent_provider
-            .unwrap_or(s.default_provider);
-        let model = job.agent_model.clone().or_else(|| s.default_model.clone());
+        let provider = job.agent_provider.unwrap_or(s.default_provider);
+        let model = resolve_agent_model(job, &s, provider);
         let session = job
             .tmux_session
             .clone()
@@ -568,7 +580,10 @@ async fn execute_claude_job(
     let send_cmd = match provider {
         crate::agent_session::ProcessProvider::Claude
         | crate::agent_session::ProcessProvider::Codex => {
-            format!("cd {} && {}{} $'{}'", work_dir, agent_command, model_flag, escaped_prompt)
+            format!(
+                "cd {} && {}{} $'{}'",
+                work_dir, agent_command, model_flag, escaped_prompt
+            )
         }
         crate::agent_session::ProcessProvider::Opencode => {
             format!(
@@ -654,10 +669,8 @@ async fn execute_folder_job(
 
     let (provider, model, tmux_session, work_dir, agent_command) = {
         let s = settings.lock().unwrap();
-        let provider = job
-            .agent_provider
-            .unwrap_or(s.default_provider);
-        let model = job.agent_model.clone().or_else(|| s.default_model.clone());
+        let provider = job.agent_provider.unwrap_or(s.default_provider);
+        let model = resolve_agent_model(job, &s, provider);
         let session = job
             .tmux_session
             .clone()
@@ -731,7 +744,10 @@ async fn execute_folder_job(
     let send_cmd = match provider {
         crate::agent_session::ProcessProvider::Claude
         | crate::agent_session::ProcessProvider::Codex => {
-            format!("cd {} && {}{} $'{}'", work_dir, agent_command, model_flag, escaped_prompt)
+            format!(
+                "cd {} && {}{} $'{}'",
+                work_dir, agent_command, model_flag, escaped_prompt
+            )
         }
         crate::agent_session::ProcessProvider::Opencode => {
             format!(

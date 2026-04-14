@@ -154,14 +154,14 @@ fn emit_initial_snapshot(sink: &OutputSink, recent: &Arc<Mutex<RecentPaneCache>>
                 recent.lock().unwrap().append(pane_id, &bytes);
                 emit_bytes(sink, pane_id, bytes);
             }
-            log::debug!(
+            log::info!(
                 "[pty {}] initial snapshot capture emitted {} bytes after {}ms",
                 pane_id,
                 byte_len,
                 started.elapsed().as_millis()
             );
         }
-        Err(err) => log::debug!(
+        Err(err) => log::warn!(
             "[pty {}] initial snapshot capture failed after {}ms: {}",
             pane_id,
             started.elapsed().as_millis(),
@@ -707,7 +707,7 @@ impl PtyManager {
         sink: OutputSink,
     ) -> Result<SpawnResult, String> {
         let spawn_started = Instant::now();
-        log::debug!(
+        log::info!(
             "[pty {}] spawn start session={} size={}x{}",
             pane_id,
             tmux_session,
@@ -722,7 +722,7 @@ impl PtyManager {
             .get(pane_id)
             .map_or(false, |v| !v.alive.load(Ordering::Relaxed))
         {
-            log::debug!(
+            log::info!(
                 "[pty {}] existing viewer is dead, removing for fresh spawn",
                 pane_id
             );
@@ -736,7 +736,7 @@ impl PtyManager {
             let attach_generation = ATTACH_COUNTER.fetch_add(1, Ordering::Relaxed);
             viewer.attach_generation = attach_generation;
             self.resize(pane_id, cols, rows)?;
-            log::debug!(
+            log::info!(
                 "[pty {}] reused existing viewer generation={} resized after {}ms",
                 pane_id,
                 attach_generation,
@@ -898,7 +898,7 @@ impl PtyManager {
 
         // Let attach-session settle, then push a full snapshot and force redraw.
         refresh_attached_pane(&sink, &self.recent, pane_id);
-        log::debug!(
+        log::info!(
             "[pty {}] initial refresh done after {}ms",
             pane_id,
             spawn_started.elapsed().as_millis()
@@ -989,7 +989,7 @@ impl PtyManager {
                 }
                 OutputSink::Channel(_) => {}
             }
-            log::debug!("[pty {}] reader thread exited", event_key);
+            log::info!("[pty {}] reader thread exited", event_key);
         });
 
         self.sessions.insert(
@@ -1010,7 +1010,7 @@ impl PtyManager {
             native_rows,
             attach_generation,
         };
-        log::debug!(
+        log::info!(
             "[pty {}] spawn complete generation={} after {}ms",
             pane_id,
             attach_generation,
@@ -1029,7 +1029,7 @@ impl PtyManager {
         if !self.sessions.contains_key(pane_id) {
             return Err(format!("No viewer for pane {}", pane_id));
         }
-        log::debug!("[pty {}] refresh_snapshot requested", pane_id);
+        log::info!("[pty {}] refresh_snapshot requested", pane_id);
         emit_initial_snapshot(sink, &self.recent, pane_id);
         Ok(())
     }

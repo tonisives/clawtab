@@ -97,10 +97,8 @@ fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
             "esc" | "escape" => key = Some("Escape".to_string()),
             _ if part.len() == 1 => {
                 let ch = part.chars().next()?;
-                if ch.is_ascii_alphabetic() {
-                    key = Some(format!("Key{}", ch.to_ascii_uppercase()));
-                } else if ch.is_ascii_digit() {
-                    key = Some(format!("Digit{}", ch));
+                if ch.is_ascii_alphanumeric() {
+                    key = Some(ch.to_ascii_uppercase().to_string());
                 } else {
                     return None;
                 }

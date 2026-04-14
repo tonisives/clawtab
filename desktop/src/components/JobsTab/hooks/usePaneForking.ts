@@ -54,7 +54,8 @@ export function usePaneForking({ core, split, lifecycle, viewing }: UsePaneForki
       const sourceShell = shellPanes.find((p) => p.pane_id === paneId);
       const sourceJob = (core.jobs as Job[]).find((job) => {
         const status = core.statuses[job.slug];
-        return status?.state === "running" && (status as { pane_id?: string }).pane_id === paneId;
+        const statusPaneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+        return statusPaneId === paneId || sourceProc?.matched_job === job.slug;
       });
       const shell: ShellPane = {
         ...baseShell,
@@ -72,7 +73,8 @@ export function usePaneForking({ core, split, lifecycle, viewing }: UsePaneForki
         if ((l.content.kind === "process" || l.content.kind === "terminal") && l.content.paneId === paneId) return true;
         if (l.content.kind === "job") {
           const st = core.statuses[l.content.slug];
-          return st?.state === "running" && (st as { pane_id?: string }).pane_id === paneId;
+          const statusPaneId = st?.state === "running" ? (st as { pane_id?: string }).pane_id : undefined;
+          return statusPaneId === paneId || sourceProc?.matched_job === l.content.slug;
         }
         return false;
       });

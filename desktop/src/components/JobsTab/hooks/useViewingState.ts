@@ -1,10 +1,35 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { RemoteJob } from "@clawtab/shared";
 import type { DetectedProcess, ShellPane } from "@clawtab/shared";
 import type { PaneContent } from "@clawtab/shared";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import type { Job } from "../../../types";
 import type { ListItemRef } from "../types";
+
+const SINGLE_PANE_STORAGE_KEY = "desktop_single_pane_content";
+
+function loadSinglePaneContent(): PaneContent | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(SINGLE_PANE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || !parsed.kind) return null;
+    if (parsed.kind === "job" && typeof parsed.slug === "string") return parsed;
+    if (parsed.kind === "agent") return parsed;
+    if (parsed.kind === "terminal" && typeof parsed.paneId === "string" && typeof parsed.tmuxSession === "string") return parsed;
+    if (parsed.kind === "process" && typeof parsed.paneId === "string") return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSinglePaneContent(content: PaneContent | null) {
+  if (typeof localStorage === "undefined") return;
+  if (content) localStorage.setItem(SINGLE_PANE_STORAGE_KEY, JSON.stringify(content));
+  else localStorage.removeItem(SINGLE_PANE_STORAGE_KEY);
+}
 
 type CoreHook = {
   statuses: Record<string, { state: string; pane_id?: string }>;
@@ -24,16 +49,31 @@ export function useViewingState({ core, onJobSelected }: UseViewingStateParams) 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [createForGroup, setCreateForGroup] = useState<{ group: string; folderPath: string | null } | null>(null);
 
-  // Viewing state
-  const [viewingJob, setViewingJob] = useState<Job | null>(null);
+  // Viewing state - restore from localStorage on mount
+  const restoredContent = useRef(loadSinglePaneContent());
+  const [viewingJob, setViewingJob] = useState<Job | null>(() => {
+    const r = restoredContent.current;
+    return r?.kind === "job" ? { slug: r.slug } as Job : null;
+  });
   const [viewingProcess, setViewingProcess] = useState<DetectedProcess | null>(null);
   const [viewingShell, setViewingShell] = useState<ShellPane | null>(null);
-  const [viewingAgent, setViewingAgent] = useState(false);
+  const [viewingAgent, setViewingAgent] = useState(() => restoredContent.current?.kind === "agent");
   const [showFolderRunner, setShowFolderRunner] = useState(false);
+  // Pending restore for terminal/process kinds (resolved by useJobsTabEffects once data is available)
+  const pendingRestore = useRef<PaneContent | null>(
+    restoredContent.current?.kind === "terminal" || restoredContent.current?.kind === "process"
+      ? restoredContent.current
+      : null,
+  );
 
   // Params + misc
   const [paramsDialog, setParamsDialog] = useState<{ job: Job; values: Record<string, string> } | null>(null);
-  const [scrollToSlug, setScrollToSlug] = useState<string | null>(null);
+  const scrollSeqRef = useRef(0);
+  const [scrollToSlug, setScrollToSlugRaw] = useState<{ slug: string; seq: number } | null>(null);
+  const setScrollToSlug = useCallback((slug: string) => {
+    scrollSeqRef.current += 1;
+    setScrollToSlugRaw({ slug, seq: scrollSeqRef.current });
+  }, []);
   const [focusEmptyAgentSignal, setFocusEmptyAgentSignal] = useState(0);
 
   // Compute current single-pane content for the split tree hook
@@ -144,5 +184,6 @@ export function useViewingState({ core, onJobSelected }: UseViewingStateParams) 
     handleSelectShellDirect,
     triggerFocusAgentInput,
     selectAdjacentItem,
+    pendingRestore,
   };
 }
