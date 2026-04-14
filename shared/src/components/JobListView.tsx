@@ -133,8 +133,8 @@ export interface JobListViewProps {
   initialScrollOffset?: number;
   // Report scroll position changes (web only)
   onScrollOffsetChange?: (offset: number) => void;
-  // Scroll a specific slug into view (bumped counter to trigger re-scroll)
-  scrollToSlug?: string | null;
+  // Scroll a specific slug into view (seq increments to re-trigger on same slug)
+  scrollToSlug?: { slug: string; seq: number } | null;
   // Stop job/process from sidebar
   onStopJob?: (slug: string) => void;
   onStopProcess?: (paneId: string) => void;
@@ -320,12 +320,36 @@ export function JobListView({
     return defaultAgentProvider;
   }, [defaultAgentProvider, groupAgentProviders, resolvedAgentProviders]);
 
+  const resolveGroupAgentModel = useCallback((workDir: string) => {
+    const provider = resolveGroupAgentProvider(workDir);
+    const stored = groupAgentModels[workDir];
+    if (agentModelOptions.some((option) => option.provider === provider && option.modelId === stored)) {
+      return stored;
+    }
+    if (
+      provider === defaultAgentProvider
+      && agentModelOptions.some((option) => option.provider === provider && option.modelId === (defaultAgentModel ?? null))
+    ) {
+      return defaultAgentModel ?? null;
+    }
+    return agentModelOptions.find((option) => option.provider === provider)?.modelId ?? null;
+  }, [agentModelOptions, defaultAgentModel, defaultAgentProvider, groupAgentModels, resolveGroupAgentProvider]);
+
   const handleSetGroupAgentProvider = useCallback((workDir: string, provider: ProcessProvider) => {
     setGroupAgentProviders((prev) => {
       if (prev[workDir] === provider) return prev;
       return { ...prev, [workDir]: provider };
     });
-  }, []);
+    setGroupAgentModels((prev) => {
+      const stored = prev[workDir];
+      if (agentModelOptions.some((option) => option.provider === provider && option.modelId === stored)) {
+        return prev;
+      }
+      const nextModel = agentModelOptions.find((option) => option.provider === provider)?.modelId ?? null;
+      if (stored === nextModel) return prev;
+      return { ...prev, [workDir]: nextModel };
+    });
+  }, [agentModelOptions]);
 
   const handleSetGroupAgentModel = useCallback((workDir: string, provider: ProcessProvider, modelId: string | null) => {
     setGroupAgentProviders((prev) => {
@@ -990,7 +1014,7 @@ export function JobListView({
                       provider={resolveGroupAgentProvider(item.workDir)}
                       providers={resolvedAgentProviders}
                       onProviderChange={(provider) => handleSetGroupAgentProvider(item.workDir, provider)}
-                      model={groupAgentModels[item.workDir] ?? defaultAgentModel ?? null}
+                      model={resolveGroupAgentModel(item.workDir)}
                       modelOptions={agentModelOptions}
                       onModelChange={(provider, modelId) => handleSetGroupAgentModel(item.workDir, provider, modelId)}
                       onRunAgent={(prompt, provider, model) => onRunAgent!(prompt, item.workDir, provider, model)}
@@ -1127,23 +1151,23 @@ export function JobListView({
 
   // pendingScrollSlug: set when a new scrollToSlug arrives; cleared after scroll+highlight
   const pendingScrollSlug = useRef<string | null>(null);
-  const prevScrollSlug = useRef<string | null>(null);
 
   // Effect 1: when scrollToSlug changes, expand collapsed group if needed and record pending slug
   useEffect(() => {
     if (!scrollToSlug || Platform.OS !== "web") return;
-    if (scrollToSlug === prevScrollSlug.current) return;
-    prevScrollSlug.current = scrollToSlug;
-    pendingScrollSlug.current = scrollToSlug;
+    const slug = scrollToSlug.slug;
+    pendingScrollSlug.current = slug;
+    console.log("[reveal] Effect1 slug=", slug, "collapsedGroups=", [...(collapsedGroups ?? [])]);
 
     // Expand collapsed job group if needed
-    const job = jobs.find((j) => j.slug === scrollToSlug);
+    const job = jobs.find((j) => j.slug === slug);
     if (job && collapsedGroups && onToggleGroup) {
       const groupKey = job.group || "default";
       const fp = jobs.filter((j) => (j.group || "default") === groupKey)[0]?.folder_path;
       const displayGroup = groupKey === "default"
         ? (fp ? fp.split("/").filter(Boolean).pop() ?? "General" : "General")
         : groupKey;
+      console.log("[reveal] job group=", displayGroup, "collapsed=", collapsedGroups.has(displayGroup));
       if (collapsedGroups.has(displayGroup)) {
         onToggleGroup(displayGroup);
         return; // Effect 2 will scroll once collapsedGroups updates
@@ -1151,7 +1175,7 @@ export function JobListView({
     }
 
     // Expand collapsed detected-process group if needed
-    const proc = detectedProcesses?.find((p) => p.pane_id === scrollToSlug);
+    const proc = detectedProcesses?.find((p) => p.pane_id === slug);
     if (proc && collapsedGroups && onToggleGroup) {
       const folder = proc.cwd;
       const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
@@ -1163,7 +1187,7 @@ export function JobListView({
     }
 
     // Expand collapsed shells group if needed
-    const shell = shellPanes?.find((s) => s.pane_id === scrollToSlug);
+    const shell = shellPanes?.find((s) => s.pane_id === slug);
     if (shell && collapsedGroups && onToggleGroup && collapsedGroups.has("Shells")) {
       onToggleGroup("Shells");
       return; // Effect 2 will scroll once collapsedGroups updates
@@ -1175,6 +1199,7 @@ export function JobListView({
   // Effect 2: scroll+highlight whenever collapsedGroups changes OR scrollToSlug changes
   // (covers both: already-expanded items on scrollToSlug change, and newly-expanded items)
   useEffect(() => {
+    console.log("[reveal] Effect2 pending=", pendingScrollSlug.current, "collapsedGroups=", [...(collapsedGroups ?? [])]);
     if (!pendingScrollSlug.current || Platform.OS !== "web") return;
     const slug = pendingScrollSlug.current;
     const escaped = CSS.escape(slug);
@@ -1193,10 +1218,18 @@ export function JobListView({
       el.addEventListener("animationend", () => el.classList.remove("clawtab-reveal-highlight"), { once: true });
     };
 
+    // Double-rAF: first rAF waits for React to commit DOM, second waits for layout/paint
+    let cancelled = false;
     requestAnimationFrame(() => {
-      const el = findEl();
-      if (el) doScrollAndHighlight(el);
+      if (cancelled) return;
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const el = findEl();
+        console.log("[reveal] Effect2 rAF el=", el);
+        if (el) doScrollAndHighlight(el);
+      });
     });
+    return () => { cancelled = true; };
   }, [scrollToSlug, collapsedGroups]);
 
   // Restore scroll position on mount

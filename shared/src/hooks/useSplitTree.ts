@@ -66,6 +66,18 @@ function saveTree(storageKey: string, tree: SplitNode | null) {
   else localStorage.removeItem(storageKey);
 }
 
+function loadFocusedLeaf(storageKey: string): string | null {
+  if (typeof localStorage === "undefined") return null;
+  return localStorage.getItem(storageKey + "_focused_leaf");
+}
+
+function saveFocusedLeaf(storageKey: string, id: string | null) {
+  if (typeof localStorage === "undefined") return;
+  const key = storageKey + "_focused_leaf";
+  if (id) localStorage.setItem(key, id);
+  else localStorage.removeItem(key);
+}
+
 function dragDataToContent(data: SplitDragData): PaneContent {
   if (data.kind === "job") return { kind: "job", slug: data.slug ?? "" };
   if (data.kind === "agent") return { kind: "agent" };
@@ -157,13 +169,24 @@ export function useSplitTree(options: UseSplitTreeOptions) {
 
   // Split tree state
   const [splitTree, setSplitTree] = useState<SplitNode | null>(() => loadTree(storageKey));
-  const [focusedLeafId, setFocusedLeafId] = useState<string | null>(null);
+  const [focusedLeafId, setFocusedLeafId] = useState<string | null>(() => {
+    const saved = loadFocusedLeaf(storageKey);
+    if (!saved) return null;
+    const tree = loadTree(storageKey);
+    if (!tree) return null;
+    return collectLeaves(tree).some(l => l.id === saved) ? saved : null;
+  });
   const [zoomSnapshot, setZoomSnapshot] = useState<{ tree: SplitNode; focusedLeafId: string | null; content: PaneContent } | null>(null);
 
   // Persist tree on change
   useEffect(() => {
     saveTree(storageKey, splitTree);
   }, [storageKey, splitTree]);
+
+  // Persist focused leaf on change
+  useEffect(() => {
+    saveFocusedLeaf(storageKey, focusedLeafId);
+  }, [storageKey, focusedLeafId]);
 
   // DnD state
   const [isDragging, setIsDragging] = useState(false);
