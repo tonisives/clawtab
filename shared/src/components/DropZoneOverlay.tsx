@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { SplitNode } from "../types/splitTree";
 
 export type DropZoneId =
@@ -121,14 +122,53 @@ export function DropZoneOverlay({
   containerH,
   activeZone,
 }: DropZoneOverlayProps) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [measuredSize, setMeasuredSize] = useState({ w: 0, h: 0 });
+
+  useLayoutEffect(() => {
+    const el = overlayRef.current;
+    if (!el) return;
+
+    const updateSize = () => {
+      const rect = el.getBoundingClientRect();
+      setMeasuredSize((prev) => {
+        if (prev.w === rect.width && prev.h === rect.height) return prev;
+        return { w: rect.width, h: rect.height };
+      });
+    };
+
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const outer = (children?: ReactNode) => (
+    <div
+      ref={overlayRef}
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 100,
+        pointerEvents: "none",
+      }}
+    >
+      {children}
+    </div>
+  );
+
   if (!activeZone || !tree) return null;
 
-  const leafRect = computeLeafRect(tree, activeZone.leafId, { x: 0, y: 0, w: containerW, h: containerH });
-  if (!leafRect) return null;
+  const effectiveW = measuredSize.w > 0 ? measuredSize.w : containerW;
+  const effectiveH = measuredSize.h > 0 ? measuredSize.h : containerH;
+  if (effectiveW <= 0 || effectiveH <= 0) return outer();
+
+  const leafRect = computeLeafRect(tree, activeZone.leafId, { x: 0, y: 0, w: effectiveW, h: effectiveH });
+  if (!leafRect) return outer();
 
   const key = zoneKey(activeZone);
   const style = ZONE_STYLES[key];
-  if (!style) return null;
+  if (!style) return outer();
 
   // Compute the highlighted sub-rect within the leaf
   let highlightRect: Rect;
@@ -155,44 +195,37 @@ export function DropZoneOverlay({
     }
   }
 
-  return (
+  if (highlightRect.w <= 0 || highlightRect.h <= 0) return outer();
+
+  return outer(
     <div
       style={{
         position: "absolute",
-        inset: 0,
-        zIndex: 100,
-        pointerEvents: "none",
+        left: highlightRect.x,
+        top: highlightRect.y,
+        width: highlightRect.w,
+        height: highlightRect.h,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: style.bg,
+        border: `2px dashed ${style.border}`,
+        borderRadius: 8,
+        transition: "all 150ms",
       }}
     >
-      <div
+      <span
         style={{
-          position: "absolute",
-          left: highlightRect.x,
-          top: highlightRect.y,
-          width: highlightRect.w,
-          height: highlightRect.h,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: style.bg,
-          border: `2px dashed ${style.border}`,
-          borderRadius: 8,
-          transition: "all 150ms",
+          color: style.border,
+          fontSize: 13,
+          fontWeight: 600,
+          opacity: 0.9,
+          textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+          userSelect: "none",
         }}
       >
-        <span
-          style={{
-            color: style.border,
-            fontSize: 13,
-            fontWeight: 600,
-            opacity: 0.9,
-            textShadow: "0 1px 2px rgba(0,0,0,0.5)",
-            userSelect: "none",
-          }}
-        >
-          {style.label}
-        </span>
-      </div>
+        {style.label}
+      </span>
     </div>
   );
 }

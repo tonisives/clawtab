@@ -22,6 +22,7 @@ export const RunRow = memo(function RunRow({
   onZoom,
   renderRunTerminal,
   onOpenLiveRunZoom,
+  onSplitRunPane,
 }: {
   run: RunRecord;
   transport: Transport;
@@ -30,6 +31,7 @@ export const RunRow = memo(function RunRow({
   onZoom?: (run: RunRecord, logContent: string) => void;
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
   onOpenLiveRunZoom?: (run: RunRecord, pane: ShellPane) => void;
+  onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
 }) {
   const color = runStatusColor(run, currentState);
   const label = runStatusLabel(run, currentState);
@@ -218,6 +220,22 @@ export const RunRow = memo(function RunRow({
                       disabled={sigintPending || stopPending}
                       compact
                     />
+                  ) : null}
+                  {onSplitRunPane ? (
+                    <>
+                      <ActionButton
+                        label="Split Right"
+                        color={colors.accent}
+                        onPress={() => onSplitRunPane(livePane.pane_id, "right")}
+                        compact
+                      />
+                      <ActionButton
+                        label="Split Down"
+                        color={colors.accent}
+                        onPress={() => onSplitRunPane(livePane.pane_id, "down")}
+                        compact
+                      />
+                    </>
                   ) : null}
                   <ActionButton
                     label={stopPending ? "Stopping..." : "Stop"}

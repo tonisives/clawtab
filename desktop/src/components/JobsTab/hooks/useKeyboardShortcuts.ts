@@ -377,6 +377,16 @@ export function useKeyboardShortcuts({
         runMovePaneShortcut(movement.direction, { sourcePaneId });
         return true;
       }
+      const splitBindings: Array<{ binding: string; direction: "right" | "down" }> = [
+        { binding: shortcutSettings.split_pane_vertical, direction: "right" },
+        { binding: shortcutSettings.split_pane_horizontal, direction: "down" },
+      ];
+      const splitAction = splitBindings.find((candidate) => normalizeShortcutBinding(candidate.binding, shortcutSettings.prefix_key) === normalizedBinding);
+      if (splitAction && sourcePaneId) {
+        setPendingShortcutStroke(null);
+        handleSplitPane(sourcePaneId, splitAction.direction);
+        return true;
+      }
       const action = actions.find((candidate) => normalizeShortcutBinding(candidate.binding, shortcutSettings.prefix_key) === normalizedBinding);
       if (!action) return false;
       setPendingShortcutStroke(null);

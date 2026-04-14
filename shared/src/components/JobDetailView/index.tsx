@@ -62,6 +62,7 @@ export interface JobDetailViewProps {
   // Auto-yes support for option buttons
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  autoYesShortcut?: string;
   // Optional style override for section cards (desktop uses card styling)
   sectionStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
   // Hide run history section (e.g. for detected processes)
@@ -104,6 +105,7 @@ export interface JobDetailViewProps {
     isDragging?: boolean;
   };
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
+  onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
   defaultAgentProvider?: ProcessProvider;
 }
 
@@ -132,6 +134,7 @@ export function JobDetailView({
   questionContext,
   autoYesActive,
   onToggleAutoYes,
+  autoYesShortcut,
   sectionStyle,
   hideRuns,
   expandOutput,
@@ -154,6 +157,7 @@ export function JobDetailView({
   onStopping,
   dragHandleProps,
   renderRunTerminal,
+  onSplitRunPane,
   defaultAgentProvider = "claude",
 }: JobDetailViewProps) {
   const state = status.state;
@@ -441,81 +445,41 @@ export function JobDetailView({
             <Text style={styles.runtimeDim}>{status.pane_id}</Text>
           ) : null}
           {isRunning && onToggleAutoYes ? (
-            isWeb ? (
-              <div title="Auto-yes (Cmd+Y)" style={{ display: "flex" }}>
-                <TouchableOpacity
-                  onPress={onToggleAutoYes}
-                  activeOpacity={0.6}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                    paddingHorizontal: 5,
-                    paddingVertical: 2,
-                    borderRadius: 4,
-                    borderWidth: 1,
-                    borderColor: autoYesActive ? colors.warning : colors.border,
-                    backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
-                  }}
-                >
-                  <Text style={{ fontSize: 10, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
-                    Auto-yes
-                  </Text>
-                  <View style={{
-                    width: 20,
-                    height: 12,
-                    borderRadius: 6,
-                    backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
-                    justifyContent: "center",
-                    paddingHorizontal: 1,
-                  }}>
-                    <View style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: "#fff",
-                      alignSelf: autoYesActive ? "flex-end" : "flex-start",
-                    }} />
-                  </View>
-                </TouchableOpacity>
-              </div>
-            ) : (
-              <TouchableOpacity
-                onPress={onToggleAutoYes}
-                activeOpacity={0.6}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 4,
-                  paddingHorizontal: 5,
-                  paddingVertical: 2,
-                  borderRadius: 4,
-                  borderWidth: 1,
-                  borderColor: autoYesActive ? colors.warning : colors.border,
-                  backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
-                }}
-              >
-                <Text style={{ fontSize: 10, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
-                  Auto-yes
-                </Text>
+            <TouchableOpacity
+              onPress={onToggleAutoYes}
+              activeOpacity={0.6}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+                paddingHorizontal: 5,
+                paddingVertical: 2,
+                borderRadius: 4,
+                borderWidth: 1,
+                borderColor: autoYesActive ? colors.warning : colors.border,
+                backgroundColor: autoYesActive ? `${colors.warning}18` : "transparent",
+              }}
+            >
+              <Text style={{ fontSize: 10, color: autoYesActive ? colors.warning : colors.textSecondary, fontWeight: "600" }}>
+                Auto-yes{autoYesShortcut ? ` (${autoYesShortcut})` : ""}
+              </Text>
+              <View style={{
+                width: 20,
+                height: 12,
+                borderRadius: 6,
+                backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
+                justifyContent: "center",
+                paddingHorizontal: 1,
+              }}>
                 <View style={{
-                  width: 20,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: autoYesActive ? colors.warning : colors.textMuted,
-                  justifyContent: "center",
-                  paddingHorizontal: 1,
-                }}>
-                  <View style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: "#fff",
-                    alignSelf: autoYesActive ? "flex-end" : "flex-start",
-                  }} />
-                </View>
-              </TouchableOpacity>
-            )
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: "#fff",
+                  alignSelf: autoYesActive ? "flex-end" : "flex-start",
+                }} />
+              </View>
+            </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
           {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (
@@ -672,7 +636,7 @@ export function JobDetailView({
               )}
             </>
           )}
-          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} />
         </View>
       )}
 
@@ -701,6 +665,7 @@ export function JobDetailView({
                     defaultExpanded={expandRunId ? run.id === expandRunId : (!isRunning && i === 0)}
                     onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
                     renderRunTerminal={renderRunTerminal}
+                    onSplitRunPane={onSplitRunPane}
                     onOpenLiveRunZoom={(runRecord, pane) => setLiveRunZoom({ run: runRecord, pane })}
                   />
                 ))
@@ -747,7 +712,7 @@ export function JobDetailView({
           )}
         </View>
 
-        <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+        <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} />
         {!hideMessageInput && <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />}
 
         {liveZoom && (
@@ -760,6 +725,7 @@ export function JobDetailView({
             freetextOptionNumber={freetextOptionNumber}
             autoYesActive={autoYesActive}
             onToggleAutoYes={onToggleAutoYes}
+            autoYesShortcut={autoYesShortcut}
             onClose={() => setLiveZoom(false)}
           />
         )}
@@ -824,6 +790,7 @@ export function JobDetailView({
           pane={liveRunZoom.pane}
           currentState={state}
           renderTerminal={renderRunTerminal}
+          onSplitRunPane={onSplitRunPane}
           onClose={() => setLiveRunZoom(null)}
         />
       )}

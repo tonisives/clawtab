@@ -16,12 +16,13 @@ export function QuestionContextBlock({ context }: { context?: string }) {
   );
 }
 
-export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onToggleAutoYes }: {
+export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onToggleAutoYes, autoYesShortcut }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
   onFreetextOption?: (optionNumber: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  autoYesShortcut?: string;
 }) {
   if (options.length === 0) return null;
 
@@ -59,7 +60,7 @@ export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive
             activeOpacity={0.6}
           >
             <Text style={styles.autoYesBtnText} numberOfLines={1}>
-              {autoYesActive ? "! Auto ON" : "! Yes all"}
+              {autoYesActive ? "! Auto ON" : "! Yes all"}{autoYesShortcut ? ` (${autoYesShortcut})` : ""}
             </Text>
           </TouchableOpacity>
         </>

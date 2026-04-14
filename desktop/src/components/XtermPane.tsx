@@ -350,14 +350,27 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         return;
       }
 
-      // Watchdog: if no meaningful content arrives within 500ms, request a
-      // fresh snapshot.  Covers the race where the initial snapshot emitted
-      // during pty_spawn was lost (e.g. Tauri event delivery ordering or a
-      // React re-render tearing down the listener momentarily).
+      // Watchdog: escalating retries if no content arrives after spawn.
+      // 500ms - request a fresh snapshot (covers lost initial event).
+      // 2000ms - destroy + re-spawn (covers dead reader thread / zombie viewer).
       refreshTimer = setTimeout(() => {
         if (cancelled || firstContentOutputSeen) return;
-        debugXtermPane(paneId, "watchdog: no content yet, requesting refresh snapshot", { elapsedMs: elapsed() });
+        debugXtermPane(paneId, "watchdog: no content at 500ms, requesting snapshot", { elapsedMs: elapsed() });
         invoke("pty_refresh_snapshot", { paneId }).catch(() => {});
+
+        refreshTimer = setTimeout(async () => {
+          if (cancelled || firstContentOutputSeen) return;
+          debugXtermPane(paneId, "watchdog: no content at 2s, forcing re-spawn", { elapsedMs: elapsed() });
+          const gen = attachGenerationRef.current;
+          await invoke("pty_destroy", { paneId, attachGeneration: gen }).catch(() => {});
+          if (cancelled || firstContentOutputSeen) return;
+          const retry = await invoke<PtySpawnResult>("pty_spawn", {
+            paneId, tmuxSession, cols: t.cols, rows: t.rows, group: resolvedGroup,
+          }).catch(() => null);
+          if (retry) {
+            attachGenerationRef.current = retry.attach_generation;
+          }
+        }, 1500);
       }, 500);
 
       // Backend reflows the captured window directly on resize. If viewport

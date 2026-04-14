@@ -1,12 +1,14 @@
 import { useEffect } from "react";
-import { Platform, View, Text } from "react-native";
-import { Tabs, useRouter, usePathname } from "expo-router";
+import { View, Text, Modal, Pressable as RNPressable, StyleSheet } from "react-native";
+import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
+import { SettingsModalProvider, useSettingsModal } from "../../src/store/settingsModal";
+import SettingsScreen from "./settings";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 
@@ -42,28 +44,96 @@ function HeaderBrand() {
 }
 
 function HeaderRight() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const isSettings = pathname.includes("settings");
+  const { open, show } = useSettingsModal();
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginRight: 12 }}>
       <NotificationsMenuButton />
       <Pressable
-        onPress={() => router.push("/(tabs)/settings")}
+        onPress={show}
         style={{
           alignItems: "center",
           paddingHorizontal: 8,
           paddingVertical: 6,
           borderRadius: 6,
-          backgroundColor: isSettings ? colors.accentBg : "transparent",
+          backgroundColor: open ? colors.accentBg : "transparent",
         }}
       >
-        <Ionicons name={isSettings ? "settings" : "settings-outline"} size={16} color={isSettings ? colors.accent : colors.textMuted} />
+        <Ionicons name={open ? "settings" : "settings-outline"} size={16} color={open ? colors.accent : colors.textMuted} />
       </Pressable>
     </View>
   );
 }
+
+function SettingsModal() {
+  const { open, hide } = useSettingsModal();
+  const { isWide } = useResponsive();
+
+  if (!isWide) return null;
+
+  return (
+    <Modal
+      visible={open}
+      transparent
+      animationType="fade"
+      onRequestClose={hide}
+    >
+      <RNPressable style={modalStyles.backdrop} onPress={hide}>
+        <RNPressable style={modalStyles.panel} onPress={(e) => e.stopPropagation()}>
+          <View style={modalStyles.header}>
+            <Text style={modalStyles.title}>Settings</Text>
+            <Pressable onPress={hide} style={modalStyles.closeBtn}>
+              <Ionicons name="close" size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
+          <View style={modalStyles.body}>
+            <SettingsScreen inModal />
+          </View>
+        </RNPressable>
+      </RNPressable>
+    </Modal>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+  },
+  panel: {
+    width: 560,
+    maxHeight: "90%",
+    marginTop: 48,
+    marginRight: 12,
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  body: {
+    flex: 1,
+    overflow: "hidden",
+  },
+});
 
 function TabsContent({ isWide }: { isWide: boolean }) {
   return (
@@ -119,12 +189,14 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       />
       <Tabs.Screen
         name="settings"
-        options={{
-          title: isWide ? "" : "Settings",
-          tabBarIcon: ({ focused }) => (
-            <TabIcon label="Settings" focused={focused} />
-          ),
-        }}
+        options={
+          isWide
+            ? { href: null }
+            : {
+                title: "Settings",
+                tabBarIcon: ({ focused }) => <TabIcon label="Settings" focused={focused} />,
+              }
+        }
       />
     </Tabs>
   );
@@ -137,5 +209,10 @@ export default function TabLayout() {
     registerNotificationCategories();
   }, []);
 
-  return <TabsContent isWide={isWide} />;
+  return (
+    <SettingsModalProvider>
+      <TabsContent isWide={isWide} />
+      <SettingsModal />
+    </SettingsModalProvider>
+  );
 }

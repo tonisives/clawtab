@@ -17,6 +17,9 @@ use crate::debug_spawn;
 /// server, while keeping the pane discoverable inside its original session.
 struct PaneViewer {
     stop: Arc<AtomicBool>,
+    /// Set to `false` by the reader thread just before it exits. Lets
+    /// `spawn()` detect zombie viewers whose PTY has closed.
+    alive: Arc<AtomicBool>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     /// Captured window id (@...) in the original session.
@@ -712,6 +715,23 @@ impl PtyManager {
             rows
         );
 
+        // If the existing viewer's reader thread has exited (tmux attach died),
+        // tear it down so we fall through to the fresh-spawn path below.
+        if self
+            .sessions
+            .get(pane_id)
+            .map_or(false, |v| !v.alive.load(Ordering::Relaxed))
+        {
+            log::debug!(
+                "[pty {}] existing viewer is dead, removing for fresh spawn",
+                pane_id
+            );
+            if let Some(dead) = self.sessions.remove(pane_id) {
+                dead.stop.store(true, Ordering::Relaxed);
+                let _ = tmux(&["kill-session", "-t", &dead.view_session]);
+            }
+        }
+
         if let Some(viewer) = self.sessions.get_mut(pane_id) {
             let attach_generation = ATTACH_COUNTER.fetch_add(1, Ordering::Relaxed);
             viewer.attach_generation = attach_generation;
@@ -856,6 +876,8 @@ impl PtyManager {
 
         let stop = Arc::new(AtomicBool::new(false));
         let stop_clone = Arc::clone(&stop);
+        let alive_flag = Arc::new(AtomicBool::new(true));
+        let alive_for_thread = Arc::clone(&alive_flag);
         let attach_generation = ATTACH_COUNTER.fetch_add(1, Ordering::Relaxed);
         let event_key = pane_id.replace('%', "p");
         let pane_id_for_thread = pane_id.to_string();
@@ -960,6 +982,13 @@ impl PtyManager {
                 }
             }
             flush_pending(&mut pending);
+            alive_for_thread.store(false, Ordering::Relaxed);
+            match &sink {
+                OutputSink::Tauri(app_handle) => {
+                    let _ = app_handle.emit(&format!("pty-exit-{}", event_key), ());
+                }
+                OutputSink::Channel(_) => {}
+            }
             log::debug!("[pty {}] reader thread exited", event_key);
         });
 
@@ -967,6 +996,7 @@ impl PtyManager {
             pane_id.to_string(),
             PaneViewer {
                 stop,
+                alive: alive_flag,
                 writer,
                 master,
                 window_id,

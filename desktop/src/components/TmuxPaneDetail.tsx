@@ -46,6 +46,7 @@ export function TmuxPaneDetail({
   onDismissQuestion,
   autoYesActive,
   onToggleAutoYes,
+  autoYesShortcut,
   showBackButton = false,
   hidePath = false,
   onStopped,
@@ -65,6 +66,7 @@ export function TmuxPaneDetail({
   onDismissQuestion?: (questionId: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  autoYesShortcut?: string;
   showBackButton?: boolean;
   hidePath?: boolean;
   onStopped?: () => void;
@@ -178,6 +180,7 @@ export function TmuxPaneDetail({
       questionContext={paneQuestion?.context_lines}
       autoYesActive={autoYesActive}
       onToggleAutoYes={onToggleAutoYes}
+      autoYesShortcut={autoYesShortcut}
       renderTerminal={renderTerminal}
       hideMessageInput
       firstQuery={process?.first_query ?? undefined}

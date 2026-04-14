@@ -8,18 +8,22 @@ import { formatTime, formatDuration, shortenPath } from "../../util/format";
 import { runStatusColor, runStatusLabel } from "../../util/status";
 import { OptionButtons, QuestionContextBlock } from "./Options";
 import { styles } from "./styles";
+import { colors } from "../../theme/colors";
+import { ActionButton } from "./ActionButton";
 
 export function LiveRunZoomOverlay({
   run,
   pane,
   currentState,
   renderTerminal,
+  onSplitRunPane,
   onClose,
 }: {
   run: RunRecord;
   pane: ShellPane;
   currentState: string;
   renderTerminal: (paneId: string, tmuxSession: string) => ReactNode;
+  onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
   onClose: () => void;
 }) {
   const color = runStatusColor(run, currentState);
@@ -39,6 +43,22 @@ export function LiveRunZoomOverlay({
               {shortenPath(pane.cwd)}
             </Text>
           </View>
+          {onSplitRunPane ? (
+            <View style={styles.runTerminalActions}>
+              <ActionButton
+                label="Split Right"
+                color={colors.accent}
+                onPress={() => onSplitRunPane(pane.pane_id, "right")}
+                compact
+              />
+              <ActionButton
+                label="Split Down"
+                color={colors.accent}
+                onPress={() => onSplitRunPane(pane.pane_id, "down")}
+                compact
+              />
+            </View>
+          ) : null}
           <TouchableOpacity onPress={onClose} style={styles.zoomCloseBtn} activeOpacity={0.6}>
             <Text style={styles.zoomCloseText}>{"\u2715"}</Text>
           </TouchableOpacity>
@@ -95,6 +115,7 @@ export function LiveZoomModal({
   freetextOptionNumber,
   autoYesActive,
   onToggleAutoYes,
+  autoYesShortcut,
   onClose,
 }: {
   logs: string;
@@ -105,6 +126,7 @@ export function LiveZoomModal({
   freetextOptionNumber?: string | null;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  autoYesShortcut?: string;
   onClose: () => void;
 }) {
   return (
@@ -120,7 +142,7 @@ export function LiveZoomModal({
         </View>
         <ReadOnlyXterm content={logs} borderless />
         <QuestionContextBlock context={questionContext} />
-        <OptionButtons options={options} onSend={onSend} onFreetextOption={onFreetextOption} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} />
+        <OptionButtons options={options} onSend={onSend} onFreetextOption={onFreetextOption} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} />
         <MessageInput onSend={onSend} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />
       </SafeAreaView>
     </Modal>

@@ -8,6 +8,7 @@ import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { XtermPane } from "./XtermPane";
 import { describeCron } from "./CronInput";
+import { labelForProviderModel } from "./JobEditor/utils";
 import type { Transport } from "@clawtab/shared";
 
 const cardSectionStyle = {
@@ -66,6 +67,29 @@ export function DetailRow({ label, value, mono }: { label: string; value: React.
     <div style={{ display: "flex", gap: 12, padding: "4px 0", fontSize: 13 }}>
       <span style={{ color: "var(--text-secondary)", minWidth: 120, flexShrink: 0 }}>{label}</span>
       {mono ? <code style={{ flex: 1 }}>{value}</code> : <span style={{ flex: 1 }}>{value}</span>}
+    </div>
+  );
+}
+
+function AgentConfigSection({
+  job,
+  defaultAgentProvider = "claude",
+  defaultAgentModel = null,
+}: {
+  job: Job;
+  defaultAgentProvider?: ProcessProvider;
+  defaultAgentModel?: string | null;
+}) {
+  if (job.job_type !== "claude" && job.job_type !== "job") return null;
+
+  const agentProvider = job.agent_provider ?? defaultAgentProvider;
+  const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
+  const agentLabel = `${labelForProviderModel(agentProvider, agentModel)}${job.agent_provider ? "" : " (default)"}`;
+
+  return (
+    <div className="field-group">
+      <span className="field-group-title">Agent</span>
+      <DetailRow label="Agent" value={agentLabel} />
     </div>
   );
 }
@@ -138,7 +162,15 @@ export function AgentDetailSections() {
 }
 
 // Desktop-only detail sections: Directions, Configuration, Runtime, Secrets
-export function DesktopDetailSections({ job }: { job: Job }) {
+export function DesktopDetailSections({
+  job,
+  defaultAgentProvider = "claude",
+  defaultAgentModel = null,
+}: {
+  job: Job;
+  defaultAgentProvider?: ProcessProvider;
+  defaultAgentModel?: string | null;
+}) {
   const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
   const [configCollapsed, setConfigCollapsed] = useState(false);
   const [previewFile, setPreviewFile] = useState<"job.md" | "context.md">("job.md");
@@ -212,6 +244,12 @@ export function DesktopDetailSections({ job }: { job: Job }) {
 
   return (
     <>
+      <AgentConfigSection
+        job={job}
+        defaultAgentProvider={defaultAgentProvider}
+        defaultAgentModel={defaultAgentModel}
+      />
+
       {/* Directions (folder jobs only) */}
       {job.job_type === "job" && job.folder_path && (
         <div className="field-group">
@@ -377,12 +415,14 @@ export function DesktopJobDetail({
   questionContext,
   autoYesActive,
   onToggleAutoYes,
+  autoYesShortcut,
   firstQuery,
   lastQuery,
   showBackButton = false,
   hidePath = false,
   onFork,
   onSplitPane,
+  onSplitRunPane,
   onZoomPane,
   onInjectSecrets,
   onSearchSkills,
@@ -392,6 +432,7 @@ export function DesktopJobDetail({
   titlePath,
   dragHandleProps,
   defaultAgentProvider,
+  defaultAgentModel,
 }: {
   transport: Transport;
   job: Job;
@@ -410,10 +451,12 @@ export function DesktopJobDetail({
   questionContext?: string;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  autoYesShortcut?: string;
   firstQuery?: string;
   lastQuery?: string;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
+  onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
   onZoomPane?: () => void;
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
@@ -422,6 +465,7 @@ export function DesktopJobDetail({
   contentStyle?: unknown;
   titlePath?: string;
   defaultAgentProvider?: ProcessProvider;
+  defaultAgentModel?: string | null;
   dragHandleProps?: {
     ref?: (node: HTMLElement | null) => void;
     attributes?: Record<string, unknown>;
@@ -440,8 +484,14 @@ export function DesktopJobDetail({
   }, [job.slug]);
 
   const extraContent = useMemo(
-    () => ready ? <DesktopDetailSections job={job} /> : null,
-    [job, ready],
+    () => ready ? (
+      <DesktopDetailSections
+        job={job}
+        defaultAgentProvider={defaultAgentProvider}
+        defaultAgentModel={defaultAgentModel}
+      />
+    ) : null,
+    [job, ready, defaultAgentProvider, defaultAgentModel],
   );
 
   // Extract pane info for interactive terminal when job is running
@@ -497,6 +547,7 @@ export function DesktopJobDetail({
         questionContext={questionContext}
         autoYesActive={autoYesActive}
         onToggleAutoYes={onToggleAutoYes}
+        autoYesShortcut={autoYesShortcut}
         sectionStyle={cardSectionStyle}
         containerStyle={desktopContainerStyle}
         contentStyle={contentStyle as any}
@@ -507,6 +558,7 @@ export function DesktopJobDetail({
         hideMessageInput={!!(paneId && tmuxSession)}
         onFork={onFork}
         onSplitPane={onSplitPane}
+        onSplitRunPane={onSplitRunPane}
         onZoomPane={onZoomPane}
         onInjectSecrets={onInjectSecrets}
         onSearchSkills={onSearchSkills}

@@ -14,7 +14,7 @@ import { radius, spacing } from "../../src/theme/spacing";
 
 type SubStatus = api.SubscriptionStatus | null;
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ inModal = false }: { inModal?: boolean }) {
   const userId = useAuthStore((s) => s.userId);
   const email = useAuthStore((s) => s.email);
   const logout = useAuthStore((s) => s.logout);
@@ -176,7 +176,7 @@ export default function SettingsScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.textMuted} />}
     >
       <ContentContainer>
-        <View style={[styles.container, isWide && styles.containerWide]}>
+        <View style={[styles.container, isWide && !inModal && styles.containerWide]}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Account</Text>
             {email && (

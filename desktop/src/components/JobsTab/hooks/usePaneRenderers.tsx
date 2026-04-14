@@ -1,10 +1,12 @@
-import { useCallback, type RefObject } from "react";
+import { useCallback, useState, type RefObject } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { RemoteJob, ClaudeQuestion, PaneContent, DetectedProcess, ProcessProvider, Transport } from "@clawtab/shared";
 import { shortenPath, type useJobsCore, type useSplitTree } from "@clawtab/shared";
 import { DesktopJobDetail, AgentDetail } from "../../JobDetailSections";
 import { DraggableSplitPane } from "../../DraggableCards";
 import { EmptyDetailAgent } from "../../EmptyDetailAgent";
 import { TmuxPaneDetail } from "../../TmuxPaneDetail";
+import { JobEditorPane } from "../components/JobEditorPane";
 import type { Job } from "../../../types";
 import type { useViewingState } from "./useViewingState";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
@@ -49,6 +51,7 @@ interface UsePaneRenderersParams {
   defaultProvider: ProcessProvider;
   defaultModel?: string | null;
   enabledModels?: Record<string, string[]>;
+  autoYesShortcut?: string;
   callbacks: PaneCallbacks;
   sidebarFocusRef: RefObject<{ focus: () => void } | null>;
 }
@@ -58,6 +61,7 @@ export function usePaneRenderers({
   questions, questionPolling, autoYes, transport,
   agentJob, agentProcess,
   isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
+  autoYesShortcut,
   callbacks,
   sidebarFocusRef,
 }: UsePaneRenderersParams) {
@@ -79,6 +83,55 @@ export function usePaneRenderers({
     setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId,
     processRenameDrafts, folderRunGroups,
   } = callbacks;
+  const [editingLeafJobs, setEditingLeafJobs] = useState<Record<string, Job>>({});
+  const [editingLeafErrors, setEditingLeafErrors] = useState<Record<string, string | null>>({});
+
+  const stopEditingLeaf = useCallback((leafId: string) => {
+    setEditingLeafJobs((prev) => {
+      const next = { ...prev };
+      delete next[leafId];
+      return next;
+    });
+    setEditingLeafErrors((prev) => {
+      const next = { ...prev };
+      delete next[leafId];
+      return next;
+    });
+  }, []);
+
+  const handleSaveLeafJob = useCallback(async (leafId: string, originalJob: Job, job: Job) => {
+    setEditingLeafErrors((prev) => ({ ...prev, [leafId]: null }));
+    try {
+      const renamed = job.name !== originalJob.name;
+      if (renamed) {
+        await invoke("rename_job", { oldName: originalJob.slug, job: { ...job, slug: "" } });
+      } else {
+        await invoke("save_job", { job });
+      }
+
+      const savedJobs = await invoke<Job[]>("get_jobs");
+      const savedJob = savedJobs.find((candidate) => {
+        if (candidate.slug === originalJob.slug) return true;
+        return (
+          candidate.name === job.name &&
+          candidate.job_type === job.job_type &&
+          (candidate.group || "default") === (job.group || "default") &&
+          (candidate.folder_path ?? "") === (job.folder_path ?? "") &&
+          (candidate.work_dir ?? "") === (job.work_dir ?? "")
+        );
+      }) ?? savedJobs.find((candidate) => candidate.name === job.name);
+
+      await core.reload();
+      stopEditingLeaf(leafId);
+      if (savedJob && savedJob.slug !== originalJob.slug) {
+        split.replaceContent({ kind: "job", slug: originalJob.slug }, { kind: "job", slug: savedJob.slug });
+      }
+    } catch (e) {
+      const msg = typeof e === "string" ? e : String(e);
+      setEditingLeafErrors((prev) => ({ ...prev, [leafId]: msg }));
+      console.error("Failed to save job:", e);
+    }
+  }, [core, split, stopEditingLeaf]);
 
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
     if (content.kind === "agent") {
@@ -126,6 +179,7 @@ export function usePaneRenderers({
                   if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
                   else autoYes.handleToggleAutoYesByPaneId(proc.pane_id, proc.cwd.replace(/^\/Users\/[^/]+/, "~"));
                 }}
+                autoYesShortcut={autoYesShortcut}
                 showBackButton={!isWide} hidePath
                 onStopped={() => {
                   setStoppingProcesses((prev) => {
@@ -227,6 +281,32 @@ export function usePaneRenderers({
 
     const job = (core.jobs as Job[]).find((j) => j.slug === content.slug);
     if (!job) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Job not found</span></div>;
+    const editingLeafJob = editingLeafJobs[leafId];
+    if (editingLeafJob) {
+      return (
+        <DraggableSplitPane leafId={leafId} content={content}>
+          {() => (
+            <JobEditorPane
+              createForGroup={null}
+              editingJob={editingLeafJob}
+              headerMode="close"
+              onCancel={() => stopEditingLeaf(leafId)}
+              onPickTemplate={() => {}}
+              onSave={(nextJob) => handleSaveLeafJob(leafId, editingLeafJob, nextJob)}
+              panelContentStyle={{
+                flex: 1,
+                overflow: "auto",
+                paddingTop: 28,
+                paddingRight: 20,
+                paddingBottom: 20,
+                paddingLeft: trafficLightInsetStyle?.paddingLeft ?? 20,
+              }}
+              saveError={editingLeafErrors[leafId] ?? null}
+            />
+          )}
+        </DraggableSplitPane>
+      );
+    }
     const jobQuestion = questions.find((q) => q.matched_job === job.slug);
     const matchedProcess = core.processes.find((p) => p.matched_job === job.slug);
     return (
@@ -238,7 +318,7 @@ export function usePaneRenderers({
             firstQuery={matchedProcess?.first_query ?? undefined}
             lastQuery={matchedProcess?.last_query ?? undefined}
             onBack={() => split.handleClosePane(leafId)}
-            onEdit={() => { setEditingJob(job); split.handleClosePane(leafId); }}
+            onEdit={() => { setEditingLeafJobs((prev) => ({ ...prev, [leafId]: job })); }}
             onOpen={() => handleOpen(job.slug)}
             onToggle={() => { actions.toggleJob(job.slug); core.reload(); }}
             onDuplicate={(group: string) => handleDuplicate(job, group)}
@@ -249,6 +329,8 @@ export function usePaneRenderers({
             options={jobQuestion?.options}
             questionContext={jobQuestion?.context_lines}
             {...buildJobPaneActions(job, jobQuestion)}
+            onSplitRunPane={(paneId: string, direction: "right" | "down") => handleSplitPane(paneId, direction)}
+            autoYesShortcut={autoYesShortcut}
             onStopping={() => {
               setStoppingJobSlugs((prev) => new Set(prev).add(job.slug));
               core.requestFastPoll(`job:${job.slug}`);
@@ -261,11 +343,12 @@ export function usePaneRenderers({
             titlePath={buildJobTitlePath(job, jobQuestion)}
             dragHandleProps={dragHandleProps}
             defaultAgentProvider={defaultProvider}
+            defaultAgentModel={defaultModel}
           />
         )}
       </DraggableSplitPane>
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, defaultProvider, transport, setScrollToSlug, sidebarFocusRef]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setSkillSearchPaneId, setInjectSecretsPaneId, defaultProvider, defaultModel, autoYesShortcut, transport, setScrollToSlug, sidebarFocusRef, editingLeafJobs, editingLeafErrors, stopEditingLeaf, handleSaveLeafJob]);
 
   const renderSinglePaneContent = useCallback((content: PaneContent) => {
     if (content.kind === "agent") {
@@ -319,6 +402,7 @@ export function usePaneRenderers({
               if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
               else autoYes.handleToggleAutoYesByPaneId(singleProcess.pane_id, singleProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
             }}
+            autoYesShortcut={autoYesShortcut}
             showBackButton={!isWide} hidePath
             onStopped={() => {
               setStoppingProcesses((prev) => {
@@ -363,6 +447,7 @@ export function usePaneRenderers({
               if (paneQuestion) autoYes.handleToggleAutoYes(paneQuestion);
               else autoYes.handleToggleAutoYesByPaneId(singleProcess.pane_id, singleProcess.cwd.replace(/^\/Users\/[^/]+/, "~"));
             }}
+            autoYesShortcut={autoYesShortcut}
             showBackButton={!isWide} hidePath
             onStopped={() => {
               setStoppingProcesses((prev) => {
@@ -432,6 +517,8 @@ export function usePaneRenderers({
           options={jobQuestion?.options}
           questionContext={jobQuestion?.context_lines}
           {...buildJobPaneActions(singleJob, jobQuestion)}
+          onSplitRunPane={(paneId: string, direction: "right" | "down") => handleSplitPane(paneId, direction)}
+          autoYesShortcut={autoYesShortcut}
           onStopping={() => {
             setStoppingJobSlugs((prev) => new Set(prev).add(singleJob.slug));
             core.requestFastPoll(`job:${singleJob.slug}`);
@@ -443,6 +530,7 @@ export function usePaneRenderers({
           contentStyle={trafficLightInsetStyle}
           titlePath={buildJobTitlePath(singleJob, jobQuestion)}
           defaultAgentProvider={defaultProvider}
+          defaultAgentModel={defaultModel}
         />
       );
     }
@@ -458,7 +546,7 @@ export function usePaneRenderers({
         folderGroups={folderRunGroups}
       />
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, focusEmptyAgentSignal, folderRunGroups, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport, setScrollToSlug, sidebarFocusRef]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, defaultModel, autoYesShortcut, focusEmptyAgentSignal, folderRunGroups, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport, setScrollToSlug, sidebarFocusRef]);
 
   return { renderLeaf, renderSinglePaneContent };
 }

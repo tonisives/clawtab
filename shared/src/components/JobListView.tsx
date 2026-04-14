@@ -1104,33 +1104,39 @@ export function JobListView({
     </View>
   ) : null;
 
-  // Scroll a specific job into view when scrollToSlug changes
+  // Inject highlight keyframe style once
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const STYLE_ID = "clawtab-reveal-highlight-style";
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+      @keyframes clawtab-reveal-highlight {
+        0%   { box-shadow: 0 0 0 2px var(--accent, #58a6ff); background: color-mix(in srgb, var(--accent, #58a6ff) 18%, transparent); }
+        70%  { box-shadow: 0 0 0 2px var(--accent, #58a6ff); background: color-mix(in srgb, var(--accent, #58a6ff) 8%, transparent); }
+        100% { box-shadow: none; background: transparent; }
+      }
+      .clawtab-reveal-highlight {
+        animation: clawtab-reveal-highlight 0.9s ease-out forwards;
+        border-radius: 8px;
+      }
+    `;
+    document.head.appendChild(style);
+  }, []);
+
+  // pendingScrollSlug: set when a new scrollToSlug arrives; cleared after scroll+highlight
+  const pendingScrollSlug = useRef<string | null>(null);
   const prevScrollSlug = useRef<string | null>(null);
+
+  // Effect 1: when scrollToSlug changes, expand collapsed group if needed and record pending slug
   useEffect(() => {
     if (!scrollToSlug || Platform.OS !== "web") return;
     if (scrollToSlug === prevScrollSlug.current) return;
     prevScrollSlug.current = scrollToSlug;
+    pendingScrollSlug.current = scrollToSlug;
 
-    // Inject highlight keyframe style once
-    const STYLE_ID = "clawtab-reveal-highlight-style";
-    if (!document.getElementById(STYLE_ID)) {
-      const style = document.createElement("style");
-      style.id = STYLE_ID;
-      style.textContent = `
-        @keyframes clawtab-reveal-highlight {
-          0%   { box-shadow: 0 0 0 2px var(--accent, #58a6ff); background: color-mix(in srgb, var(--accent, #58a6ff) 18%, transparent); }
-          70%  { box-shadow: 0 0 0 2px var(--accent, #58a6ff); background: color-mix(in srgb, var(--accent, #58a6ff) 8%, transparent); }
-          100% { box-shadow: none; background: transparent; }
-        }
-        .clawtab-reveal-highlight {
-          animation: clawtab-reveal-highlight 0.9s ease-out forwards;
-          border-radius: 8px;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // Expand collapsed group if needed (job groups)
+    // Expand collapsed job group if needed
     const job = jobs.find((j) => j.slug === scrollToSlug);
     if (job && collapsedGroups && onToggleGroup) {
       const groupKey = job.group || "default";
@@ -1140,6 +1146,7 @@ export function JobListView({
         : groupKey;
       if (collapsedGroups.has(displayGroup)) {
         onToggleGroup(displayGroup);
+        return; // Effect 2 will scroll once collapsedGroups updates
       }
     }
 
@@ -1151,6 +1158,7 @@ export function JobListView({
       const detKey = `_det_${folder}`;
       if (collapsedGroups.has(detKey) || collapsedGroups.has(folderName)) {
         onToggleGroup(collapsedGroups.has(detKey) ? detKey : folderName);
+        return; // Effect 2 will scroll once collapsedGroups updates
       }
     }
 
@@ -1158,9 +1166,18 @@ export function JobListView({
     const shell = shellPanes?.find((s) => s.pane_id === scrollToSlug);
     if (shell && collapsedGroups && onToggleGroup && collapsedGroups.has("Shells")) {
       onToggleGroup("Shells");
+      return; // Effect 2 will scroll once collapsedGroups updates
     }
 
-    const escaped = CSS.escape(scrollToSlug);
+    // Group already expanded — scroll immediately (no state change needed)
+  }, [scrollToSlug, jobs, collapsedGroups, onToggleGroup, detectedProcesses, shellPanes]);
+
+  // Effect 2: scroll+highlight whenever collapsedGroups changes OR scrollToSlug changes
+  // (covers both: already-expanded items on scrollToSlug change, and newly-expanded items)
+  useEffect(() => {
+    if (!pendingScrollSlug.current || Platform.OS !== "web") return;
+    const slug = pendingScrollSlug.current;
+    const escaped = CSS.escape(slug);
     const findEl = () => (
       document.querySelector(`[data-job-slug="${escaped}"]`) ??
       document.querySelector(`[data-process-id="${escaped}"]`) ??
@@ -1168,29 +1185,19 @@ export function JobListView({
     ) as HTMLElement | null;
 
     const doScrollAndHighlight = (el: HTMLElement) => {
+      pendingScrollSlug.current = null;
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
       el.classList.remove("clawtab-reveal-highlight");
-      // Force reflow to restart animation if applied again
-      void el.offsetWidth;
+      void el.offsetWidth; // force reflow to restart animation
       el.classList.add("clawtab-reveal-highlight");
-      const cleanup = () => el.classList.remove("clawtab-reveal-highlight");
-      el.addEventListener("animationend", cleanup, { once: true });
+      el.addEventListener("animationend", () => el.classList.remove("clawtab-reveal-highlight"), { once: true });
     };
 
-    // After group expansion, the DOM needs a frame to re-render
     requestAnimationFrame(() => {
       const el = findEl();
-      if (el) {
-        doScrollAndHighlight(el);
-      } else {
-        // Give React one more frame to render newly expanded group items
-        requestAnimationFrame(() => {
-          const el2 = findEl();
-          if (el2) doScrollAndHighlight(el2);
-        });
-      }
+      if (el) doScrollAndHighlight(el);
     });
-  }, [scrollToSlug, jobs, collapsedGroups, onToggleGroup, detectedProcesses, shellPanes]);
+  }, [scrollToSlug, collapsedGroups]);
 
   // Restore scroll position on mount
   useEffect(() => {

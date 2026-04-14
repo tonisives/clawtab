@@ -40,6 +40,7 @@ import { useJobsTabHandlers } from "./hooks/useJobsTabHandlers";
 import { useFolderRunGroups } from "./hooks/useFolderRunGroups";
 import { useJobsNotifications } from "./hooks/useJobsNotifications";
 import { useJobsTabEffects } from "./hooks/useJobsTabEffects";
+import { formatShortcutSteps } from "../../shortcuts";
 
 const transport = createTauriTransport();
 
@@ -226,11 +227,14 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     slug: "agent",
   }), [agentProcess, getProcessDisplayName]);
 
+  const autoYesShortcut = formatShortcutSteps(settings.shortcutSettings.toggle_auto_yes).map((s) => s.join("+")).join(" ");
+
   const { renderLeaf, renderSinglePaneContent } = usePaneRenderers({
     core, split, viewing, lifecycle, actions,
     questions, questionPolling, autoYes, transport,
     agentJob, agentProcess,
     isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
+    autoYesShortcut,
     sidebarFocusRef,
     callbacks: {
       handleOpen, handleDuplicate, handleDuplicateToFolder,
