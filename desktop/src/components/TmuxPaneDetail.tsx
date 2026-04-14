@@ -159,6 +159,37 @@ export function TmuxPaneDetail({
 
   const process = target.kind === "process" ? target.process : null;
 
+  const debugMenuItems = useMemo(() => [
+    {
+      label: "Debug: Refresh Snapshot",
+      onPress: () => {
+        console.log(`[Debug] refresh snapshot for ${paneId}`);
+        invoke("pty_refresh_snapshot", { paneId }).then(
+          () => console.log(`[Debug] refresh snapshot OK`),
+          (e: unknown) => console.warn(`[Debug] refresh snapshot failed:`, e),
+        );
+      },
+    },
+    {
+      label: "Debug: Re-spawn PTY",
+      onPress: async () => {
+        console.log(`[Debug] re-spawn for ${paneId}`);
+        await invoke("pty_destroy", { paneId }).catch((e: unknown) => console.warn(`[Debug] destroy failed:`, e));
+        const result = await invoke("pty_spawn", {
+          paneId, tmuxSession, cols: 120, rows: 40, group: matchedGroup ?? "default",
+        }).catch((e: unknown) => { console.warn(`[Debug] spawn failed:`, e); return null; });
+        console.log(`[Debug] re-spawn result:`, result);
+      },
+    },
+    {
+      label: "Debug: Log PTY State",
+      onPress: async () => {
+        const cached = await invoke<number[]>("pty_get_cached_output", { paneId }).catch(() => []);
+        console.log(`[Debug] paneId=${paneId} cachedBytes=${cached.length}`);
+      },
+    },
+  ], [paneId, tmuxSession, matchedGroup]);
+
   return (
     <JobDetailView
       transport={wrappedTransport}
@@ -191,6 +222,7 @@ export function TmuxPaneDetail({
       onInjectSecrets={process?.can_inject_secrets ? onInjectSecrets : undefined}
       onSearchSkills={process?.can_send_skills ? onSearchSkills : undefined}
       dragHandleProps={dragHandleProps}
+      extraMenuItems={debugMenuItems}
     />
   );
 }

@@ -866,6 +866,21 @@ pub fn run() {
 
             app.set_menu(app_menu)?;
             {
+                // Debug: log all menu items and their accelerators
+                if let Some(menu) = app.menu() {
+                    for top in menu.items().unwrap_or_default() {
+                        if let Some(sub) = top.as_submenu() {
+                            log::info!("menu [{}]:", sub.text().unwrap_or_default());
+                            for item in sub.items().unwrap_or_default() {
+                                if let Some(mi) = item.as_menuitem() {
+                                    log::info!("  item {:?}", mi.text());
+                                } else if let Some(pi) = item.as_predefined_menuitem() {
+                                    log::info!("  predefined {:?}", pi.text());
+                                }
+                            }
+                        }
+                    }
+                }
                 let state = app.state::<AppState>();
                 let shortcuts = state.settings.lock().unwrap().shortcuts.clone();
                 let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
