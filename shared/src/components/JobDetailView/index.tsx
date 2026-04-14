@@ -107,6 +107,7 @@ export interface JobDetailViewProps {
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
   onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
   defaultAgentProvider?: ProcessProvider;
+  extraMenuItems?: { label: string; onPress: () => void }[];
 }
 
 export function JobDetailView({
@@ -159,6 +160,7 @@ export function JobDetailView({
   renderRunTerminal,
   onSplitRunPane,
   defaultAgentProvider = "claude",
+  extraMenuItems,
 }: JobDetailViewProps) {
   const state = status.state;
   const isRunning = state === "running";

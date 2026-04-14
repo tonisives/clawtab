@@ -449,7 +449,6 @@ export function useKeyboardShortcuts({
       }
 
       const singleStrokeMatch = actions.find(({ binding }) => shortcutMatches(e, binding, shortcutSettings.prefix_key));
-      console.log("[handleKeyDown] stroke:", eventToShortcutBinding(e), "match:", singleStrokeMatch?.binding ?? "none");
       if (singleStrokeMatch) {
         const movementBindings: Array<{ binding: string; direction: PaneMoveDirection }> = [
           { binding: shortcutSettings.move_pane_left, direction: "left" },

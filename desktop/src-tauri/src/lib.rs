@@ -251,6 +251,7 @@ pub fn refresh_shortcut_menu(
     let focus_accel = shortcut_binding_to_accelerator(&shortcuts.focus_agent_input);
     let zoom_accel = shortcut_binding_to_accelerator(&shortcuts.zoom_active_pane);
     let toggle_auto_yes_accel = shortcut_binding_to_accelerator(&shortcuts.toggle_auto_yes);
+    log::info!("refresh_shortcut_menu: toggle_auto_yes binding={:?} accel={:?}", shortcuts.toggle_auto_yes, toggle_auto_yes_accel);
 
     let _ = ensure_shortcut_menu_item(
         app,
@@ -870,6 +871,7 @@ pub fn run() {
                 let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
             }
             app.on_menu_event(|app, event| {
+                log::info!("menu_event: id={:?}", event.id.as_ref());
                 if event.id.as_ref() == "import_cwt" {
                     if let Some(window) = app.get_webview_window("settings") {
                         let _ = window.emit("import-cwt", ());

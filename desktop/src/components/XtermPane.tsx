@@ -259,7 +259,6 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         }
 
         const singleStrokeBinding = appBindings.find((binding) => shortcutMatches(e, binding, shortcuts.prefix_key));
-        console.log("[xterm key]", eventToShortcutBinding(e), "matched:", singleStrokeBinding ?? "none");
         if (singleStrokeBinding) {
           if (!(e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled) {
             dispatchAppShortcut(singleStrokeBinding, paneId);
