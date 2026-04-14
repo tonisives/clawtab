@@ -57,7 +57,6 @@ use history::HistoryStore;
 #[cfg(feature = "desktop")]
 use ipc::{IpcCommand, IpcResponse};
 #[cfg(feature = "desktop")]
-use scheduler::SchedulerHandle;
 #[cfg(feature = "desktop")]
 use secrets::SecretsManager;
 
@@ -67,7 +66,7 @@ pub struct AppState {
     pub jobs_config: Arc<Mutex<JobsConfig>>,
     pub secrets: Arc<Mutex<SecretsManager>>,
     pub history: Arc<Mutex<HistoryStore>>,
-    pub scheduler: Arc<Mutex<Option<SchedulerHandle>>>,
+    pub scheduler: Arc<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     pub relay: Arc<Mutex<Option<relay::RelayHandle>>>,
@@ -990,9 +989,9 @@ pub fn run() {
             // Check if the daemon is already running. If so, skip spawning
             // background tasks (scheduler, questions, relay, etc.) since the
             // daemon owns them. The desktop app becomes a pure UI client.
-            let daemon_running = tauri::async_runtime::block_on(async {
-                ipc::send_command(IpcCommand::Ping).await.is_ok()
-            });
+            // Use a synchronous socket probe - the async runtime isn't available
+            // yet inside the Tauri setup hook.
+            let daemon_running = std::os::unix::net::UnixStream::connect("/tmp/clawtab.sock").is_ok();
 
             if daemon_running {
                 log::info!("Daemon detected - desktop app running in UI-only mode");
@@ -1016,7 +1015,7 @@ pub fn run() {
                     Arc::new(notifications::TauriNotifier::new(app.handle().clone()));
 
                 // Start scheduler
-                let handle = scheduler::start(
+                let scheduler_handle = tauri::async_runtime::spawn(scheduler::start(
                     Arc::clone(&event_sink),
                     jobs_for_scheduler,
                     secrets_for_scheduler,
@@ -1026,10 +1025,10 @@ pub fn run() {
                     active_agents_for_scheduler,
                     relay_for_scheduler,
                     auto_yes_for_scheduler,
-                );
+                ));
                 {
                     let state: tauri::State<AppState> = app.state();
-                    *state.scheduler.lock().unwrap() = Some(handle);
+                    *state.scheduler.lock().unwrap() = Some(scheduler_handle);
                 }
 
                 // Reattach jobs still running in tmux from previous session

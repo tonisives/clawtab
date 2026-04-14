@@ -104,7 +104,7 @@ fn main() {
         }
 
         // Scheduler
-        let _scheduler_handle = clawtab_lib::scheduler::start(
+        let _scheduler_handle = tokio::spawn(clawtab_lib::scheduler::start(
             Arc::clone(&event_sink),
             Arc::clone(&jobs_config),
             Arc::clone(&secrets),
@@ -114,7 +114,7 @@ fn main() {
             Arc::clone(&active_agents),
             Arc::clone(&relay_handle),
             Arc::clone(&auto_yes_panes),
-        );
+        ));
 
         // Reattach jobs still running in tmux from previous session
         {

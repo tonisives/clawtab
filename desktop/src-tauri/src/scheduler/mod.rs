@@ -15,39 +15,7 @@ use crate::relay::RelayHandle;
 use crate::secrets::SecretsManager;
 use crate::telegram::ActiveAgent;
 
-pub struct SchedulerHandle {
-    _handle: tokio::task::JoinHandle<()>,
-}
-
-pub fn start(
-    event_sink: Arc<dyn crate::events::EventSink>,
-    jobs_config: Arc<Mutex<JobsConfig>>,
-    secrets: Arc<Mutex<SecretsManager>>,
-    history: Arc<Mutex<HistoryStore>>,
-    settings: Arc<Mutex<AppSettings>>,
-    job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
-    active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: Arc<Mutex<Option<RelayHandle>>>,
-    auto_yes_panes: Arc<Mutex<HashSet<String>>>,
-) -> SchedulerHandle {
-    let handle = tokio::spawn(async move {
-        run_loop(
-            event_sink,
-            jobs_config,
-            secrets,
-            history,
-            settings,
-            job_status,
-            active_agents,
-            relay,
-            auto_yes_panes,
-        )
-        .await;
-    });
-    SchedulerHandle { _handle: handle }
-}
-
-async fn run_loop(
+pub async fn start(
     event_sink: Arc<dyn crate::events::EventSink>,
     jobs_config: Arc<Mutex<JobsConfig>>,
     secrets: Arc<Mutex<SecretsManager>>,
