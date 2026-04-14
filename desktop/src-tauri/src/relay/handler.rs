@@ -7,9 +7,8 @@ use clawtab_protocol::{
     JobStatus as RemoteJobStatus, RemoteJob,
 };
 
-use tauri::Emitter;
-
 use crate::config::jobs::{JobStatus, JobsConfig};
+use crate::events::EventSink;
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
 use crate::secrets::SecretsManager;
@@ -32,7 +31,7 @@ pub async fn handle_incoming(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
     pty_manager: &SharedPtyManager,
-    app_handle: &tauri::AppHandle,
+    event_sink: &dyn EventSink,
 ) -> Option<String> {
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
@@ -73,7 +72,7 @@ pub async fn handle_incoming(
                 active_agents,
                 relay,
             );
-            let _ = app_handle.emit("jobs-changed", ());
+            event_sink.emit_jobs_changed();
             Some(DesktopMessage::RunJobAck {
                 id,
                 success: result.is_ok(),
@@ -83,7 +82,7 @@ pub async fn handle_incoming(
 
         ClientMessage::PauseJob { id, name } => {
             let result = pause_job(&name, job_status);
-            let _ = app_handle.emit("jobs-changed", ());
+            event_sink.emit_jobs_changed();
             Some(DesktopMessage::PauseJobAck {
                 id,
                 success: result.is_ok(),
@@ -93,7 +92,7 @@ pub async fn handle_incoming(
 
         ClientMessage::ResumeJob { id, name } => {
             let result = resume_job(&name, job_status);
-            let _ = app_handle.emit("jobs-changed", ());
+            event_sink.emit_jobs_changed();
             Some(DesktopMessage::ResumeJobAck {
                 id,
                 success: result.is_ok(),
@@ -103,7 +102,7 @@ pub async fn handle_incoming(
 
         ClientMessage::StopJob { id, name } => {
             let result = stop_job(&name, job_status, relay);
-            let _ = app_handle.emit("jobs-changed", ());
+            event_sink.emit_jobs_changed();
             Some(DesktopMessage::StopJobAck {
                 id,
                 success: result.is_ok(),
@@ -198,7 +197,7 @@ pub async fn handle_incoming(
                 settings,
             );
             if result.is_ok() {
-                let _ = app_handle.emit("jobs-changed", ());
+                event_sink.emit_jobs_changed();
             }
             Some(DesktopMessage::CreateJobAck {
                 id,
@@ -282,7 +281,7 @@ pub async fn handle_incoming(
             log::info!("[handler] SetAutoYesPanes received: {:?}", pane_ids);
             let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
             *auto_yes_panes.lock().unwrap() = pane_set;
-            let _ = app_handle.emit("auto-yes-changed", ());
+            event_sink.emit_auto_yes_changed();
             // Broadcast back to relay so it updates its cache and forwards to all mobiles
             let msg = DesktopMessage::AutoYesPanes { pane_ids };
             if let Ok(guard) = relay.lock() {
@@ -560,7 +559,7 @@ fn run_agent(
         let j = jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
-    let job = crate::commands::jobs::build_agent_job(prompt, None, &s, &jobs, work_dir, None, None)?;
+    let job = crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, None, None)?;
     let job_id = job.name.clone();
 
     let secrets = Arc::clone(secrets);

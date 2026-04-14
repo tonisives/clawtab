@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter};
 
 use crate::debug_spawn;
@@ -85,6 +86,7 @@ impl RecentPaneCache {
 /// Where PTY output bytes should be sent.
 pub enum OutputSink {
     /// Emit as Tauri event (local desktop xterm.js)
+    #[cfg(feature = "desktop")]
     Tauri(AppHandle),
     /// Send via channel (relay forwarding to remote clients)
     Channel(std::sync::mpsc::Sender<(String, Vec<u8>)>),
@@ -125,6 +127,7 @@ fn emit_bytes(sink: &OutputSink, pane_id: &str, bytes: Vec<u8>) {
     }
 
     match sink {
+        #[cfg(feature = "desktop")]
         OutputSink::Tauri(app_handle) => {
             let _ = app_handle.emit(&format!("pty-output-{}", pane_id.replace('%', "p")), bytes);
         }
@@ -942,6 +945,7 @@ impl PtyManager {
                     .unwrap()
                     .append(&pane_id_for_thread, &bytes);
                 match &sink {
+                    #[cfg(feature = "desktop")]
                     OutputSink::Tauri(app_handle) => {
                         let _ = app_handle.emit(&format!("pty-output-{}", event_key), bytes);
                     }
@@ -984,6 +988,7 @@ impl PtyManager {
             flush_pending(&mut pending);
             alive_for_thread.store(false, Ordering::Relaxed);
             match &sink {
+                #[cfg(feature = "desktop")]
                 OutputSink::Tauri(app_handle) => {
                     let _ = app_handle.emit(&format!("pty-exit-{}", event_key), ());
                 }

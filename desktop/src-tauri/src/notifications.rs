@@ -2,7 +2,134 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use clawtab_protocol::ClaudeQuestion;
-use tauri_plugin_notification::NotificationExt;
+
+/// Trait for sending notifications. Abstracts over Tauri plugin notifications
+/// so that daemon mode can fall back to osascript.
+pub trait Notifier: Send + Sync {
+    fn notify_question(&self, question: &ClaudeQuestion);
+    fn notify_job(&self, job_id: &str, event: &str);
+}
+
+/// Tauri-backed notifier using tauri-plugin-notification.
+#[cfg(feature = "desktop")]
+pub struct TauriNotifier {
+    app_handle: tauri::AppHandle,
+}
+
+#[cfg(feature = "desktop")]
+impl TauriNotifier {
+    pub fn new(app_handle: tauri::AppHandle) -> Self {
+        Self { app_handle }
+    }
+}
+
+#[cfg(feature = "desktop")]
+impl Notifier for TauriNotifier {
+    fn notify_question(&self, question: &ClaudeQuestion) {
+        use tauri_plugin_notification::NotificationExt;
+        let title = compact_cwd(&question.cwd);
+        let body = format_question_body(question);
+        match self
+            .app_handle
+            .notification()
+            .builder()
+            .title(&title)
+            .body(&body)
+            .sound("default")
+            .show()
+        {
+            Ok(()) => {
+                log::info!(
+                    "[notifications] question notification sent for {}",
+                    question.question_id
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "[notifications] failed to send question notification: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    fn notify_job(&self, job_id: &str, event: &str) {
+        use tauri_plugin_notification::NotificationExt;
+        let body = format!("Job {} {}", job_id, event);
+        match self
+            .app_handle
+            .notification()
+            .builder()
+            .title("ClawTab")
+            .body(&body)
+            .sound("default")
+            .show()
+        {
+            Ok(()) => {
+                log::info!(
+                    "[notifications] job notification sent: {} {}",
+                    job_id,
+                    event
+                );
+            }
+            Err(e) => {
+                log::error!("[notifications] failed to send job notification: {}", e);
+            }
+        }
+    }
+}
+
+/// Fallback notifier using macOS osascript for daemon mode.
+pub struct OsascriptNotifier;
+
+impl Notifier for OsascriptNotifier {
+    fn notify_question(&self, question: &ClaudeQuestion) {
+        let title = compact_cwd(&question.cwd);
+        let body = format_question_body(question);
+        let script = format!(
+            "display notification \"{}\" with title \"{}\"",
+            body.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', " "),
+            title.replace('\\', "\\\\").replace('"', "\\\""),
+        );
+        match std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+        {
+            Ok(_) => log::info!(
+                "[notifications] osascript question notification sent for {}",
+                question.question_id
+            ),
+            Err(e) => log::error!(
+                "[notifications] osascript question notification failed: {}",
+                e
+            ),
+        }
+    }
+
+    fn notify_job(&self, job_id: &str, event: &str) {
+        let body = format!("Job {} {}", job_id, event);
+        let script = format!(
+            "display notification \"{}\" with title \"ClawTab\"",
+            body.replace('\\', "\\\\").replace('"', "\\\""),
+        );
+        match std::process::Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+        {
+            Ok(_) => log::info!(
+                "[notifications] osascript job notification sent: {} {}",
+                job_id,
+                event
+            ),
+            Err(e) => log::error!(
+                "[notifications] osascript job notification failed: {}",
+                e
+            ),
+        }
+    }
+}
 
 /// Deduplication state for question notifications.
 pub struct NotificationState {
@@ -117,62 +244,9 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
     }
 }
 
-/// Send a local notification for a Claude question.
-pub fn notify_question(app: &tauri::AppHandle, question: &ClaudeQuestion) {
-    let title = compact_cwd(&question.cwd);
-    let body = format_question_body(question);
-
-    match app
-        .notification()
-        .builder()
-        .title(&title)
-        .body(&body)
-        .sound("default")
-        .show()
-    {
-        Ok(()) => {
-            log::info!(
-                "[notifications] question notification sent for {}",
-                question.question_id
-            );
-        }
-        Err(e) => {
-            log::error!(
-                "[notifications] failed to send question notification: {}",
-                e
-            );
-        }
-    }
-}
-
-/// Send a local notification for a job event.
-pub fn notify_job(app: &tauri::AppHandle, job_id: &str, event: &str) {
-    let body = format!("Job {} {}", job_id, event);
-
-    match app
-        .notification()
-        .builder()
-        .title("ClawTab")
-        .body(&body)
-        .sound("default")
-        .show()
-    {
-        Ok(()) => {
-            log::info!(
-                "[notifications] job notification sent: {} {}",
-                job_id,
-                event
-            );
-        }
-        Err(e) => {
-            log::error!("[notifications] failed to send job notification: {}", e);
-        }
-    }
-}
-
 /// Fire local notifications for new questions, with deduplication and auto-yes filtering.
 pub fn notify_new_questions(
-    app: &tauri::AppHandle,
+    notifier: &dyn Notifier,
     questions: &[ClaudeQuestion],
     state: &Arc<Mutex<NotificationState>>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
@@ -187,7 +261,7 @@ pub fn notify_new_questions(
         if notified.notified_question_ids.contains(&q.question_id) {
             continue;
         }
-        notify_question(app, q);
+        notifier.notify_question(q);
         notified.notified_question_ids.insert(q.question_id.clone());
     }
 

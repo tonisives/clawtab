@@ -1,13 +1,13 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use tauri::Emitter;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 
 use crate::config::jobs::JobsConfig;
+use crate::events::EventSink;
 
-pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, app_handle: tauri::AppHandle) {
+pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, event_sink: Arc<dyn EventSink>) {
     let jobs_dir = match JobsConfig::jobs_dir_public() {
         Some(d) => d,
         None => {
@@ -72,7 +72,7 @@ pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, app_handle: tau
 
         let config = JobsConfig::load();
         *jobs_config.lock().unwrap() = config;
-        let _ = app_handle.emit("jobs-changed", ());
+        event_sink.emit_jobs_changed();
         log::info!("Reloaded jobs config (fs change)");
     }
 

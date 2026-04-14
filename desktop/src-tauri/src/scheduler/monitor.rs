@@ -31,7 +31,7 @@ pub struct MonitorParams {
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub notify_on_success: bool,
     pub relay: Arc<Mutex<Option<RelayHandle>>>,
-    pub app_handle: Option<tauri::AppHandle>,
+    pub notifier: Option<Arc<dyn crate::notifications::Notifier>>,
     /// When true, skip the "job started" notification (used for reattach).
     pub is_reattach: bool,
 }
@@ -75,8 +75,8 @@ pub async fn monitor_pane(params: MonitorParams) {
                 "started",
                 &params.run_id,
             );
-            if let Some(ref handle) = params.app_handle {
-                crate::notifications::notify_job(handle, &params.job_id, "started");
+            if let Some(ref n) = params.notifier {
+                n.notify_job(&params.job_id, "started");
             }
         }
     }
@@ -417,8 +417,8 @@ pub async fn monitor_pane(params: MonitorParams) {
                 "completed",
                 &params.run_id,
             );
-            if let Some(ref handle) = params.app_handle {
-                crate::notifications::notify_job(handle, &params.job_id, "completed");
+            if let Some(ref n) = params.notifier {
+                n.notify_job(&params.job_id, "completed");
             }
         }
     }

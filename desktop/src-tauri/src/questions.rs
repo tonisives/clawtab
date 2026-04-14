@@ -444,7 +444,7 @@ pub async fn question_detection_loop(
     relay: Arc<Mutex<Option<RelayHandle>>>,
     active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
-    app_handle: tauri::AppHandle,
+    notifier: Arc<dyn crate::notifications::Notifier>,
     notification_state: Arc<Mutex<crate::notifications::NotificationState>>,
 ) {
     // Cache full question data per pane so transient detection misses don't flicker
@@ -686,7 +686,7 @@ pub async fn question_detection_loop(
 
         // Fire local macOS notifications for new questions
         crate::notifications::notify_new_questions(
-            &app_handle,
+            notifier.as_ref(),
             &questions,
             &notification_state,
             &auto_yes_panes,

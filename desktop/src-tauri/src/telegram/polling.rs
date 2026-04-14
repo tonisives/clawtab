@@ -385,7 +385,7 @@ async fn handle_agent_command(
         _ => return "Internal error: failed to read config".to_string(),
     };
 
-    let job = match crate::commands::jobs::build_agent_job(
+    let job = match crate::agent::build_agent_job(
         prompt,
         Some(chat_id),
         &settings,

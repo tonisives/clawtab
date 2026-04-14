@@ -3,8 +3,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::agent_session::ProcessProvider;
-use crate::commands::processes::DetectedProcessOverride;
 use crate::telegram::TelegramConfig;
+
+/// Per-pane process metadata override (display_name, query text, etc.).
+/// Defined here so that AppSettings can deserialize without the desktop-only
+/// `commands` module.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DetectedProcessOverride {
+    pub display_name: Option<String>,
+    pub first_query: Option<String>,
+    pub last_query: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]

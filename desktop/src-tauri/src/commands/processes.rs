@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use clawtab_protocol::DesktopMessage;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{Emitter, State};
 
 use crate::agent_session::{detect_process_provider, detect_version_from_command, ProcessProvider};
@@ -17,12 +17,7 @@ struct PaneJobMatch {
     root: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DetectedProcessOverride {
-    pub display_name: Option<String>,
-    pub first_query: Option<String>,
-    pub last_query: Option<String>,
-}
+pub use crate::config::settings::DetectedProcessOverride;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DetectedProcess {

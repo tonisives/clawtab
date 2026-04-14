@@ -249,7 +249,7 @@ pub fn relay_connect(app: tauri::AppHandle, state: State<AppState>) -> Result<()
             active_agents,
             auto_yes_panes,
             pty_manager,
-            app,
+            std::sync::Arc::new(crate::events::TauriEventSink::new(app)),
         )
         .await;
     });

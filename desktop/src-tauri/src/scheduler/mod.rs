@@ -8,8 +8,6 @@ use std::sync::{Arc, Mutex};
 use chrono::{Duration, Local};
 use cron::Schedule;
 
-use tauri::Emitter;
-
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
@@ -18,11 +16,11 @@ use crate::secrets::SecretsManager;
 use crate::telegram::ActiveAgent;
 
 pub struct SchedulerHandle {
-    _handle: tauri::async_runtime::JoinHandle<()>,
+    _handle: tokio::task::JoinHandle<()>,
 }
 
 pub fn start(
-    app_handle: tauri::AppHandle,
+    event_sink: Arc<dyn crate::events::EventSink>,
     jobs_config: Arc<Mutex<JobsConfig>>,
     secrets: Arc<Mutex<SecretsManager>>,
     history: Arc<Mutex<HistoryStore>>,
@@ -32,9 +30,9 @@ pub fn start(
     relay: Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
 ) -> SchedulerHandle {
-    let handle = tauri::async_runtime::spawn(async move {
+    let handle = tokio::spawn(async move {
         run_loop(
-            app_handle,
+            event_sink,
             jobs_config,
             secrets,
             history,
@@ -50,7 +48,7 @@ pub fn start(
 }
 
 async fn run_loop(
-    app_handle: tauri::AppHandle,
+    event_sink: Arc<dyn crate::events::EventSink>,
     jobs_config: Arc<Mutex<JobsConfig>>,
     secrets: Arc<Mutex<SecretsManager>>,
     history: Arc<Mutex<HistoryStore>>,
@@ -122,7 +120,7 @@ async fn run_loop(
                 "Emitting missed-cron-jobs event with {} jobs",
                 missed_jobs.len()
             );
-            let _ = app_handle.emit("missed-cron-jobs", missed_jobs);
+            event_sink.emit_missed_cron_jobs(missed_jobs);
         }
     }
 
@@ -198,7 +196,7 @@ async fn run_loop(
                 let active_agents = Arc::clone(&active_agents);
                 let relay = Arc::clone(&relay);
                 let auto_yes_panes = Arc::clone(&auto_yes_panes);
-                tauri::async_runtime::spawn(async move {
+                tokio::spawn(async move {
                     executor::execute_job_with_auto_yes(
                         &job,
                         &secrets,
@@ -252,7 +250,7 @@ async fn run_loop(
                     crate::relay::push_status_update(&relay, slug, &next);
                 }
                 drop(statuses);
-                let _ = app_handle.emit("jobs-changed", ());
+                event_sink.emit_jobs_changed();
             }
         }
 

@@ -1,44 +1,67 @@
+// In daemon mode, lib is compiled as a dependency but many items are only
+// used by the daemon binary entry point, not re-exported from lib. Allow
+// dead_code so these don't trigger -D unused. Desktop mode uses everything.
+#![cfg_attr(not(feature = "desktop"), allow(dead_code, unused_imports))]
+
 mod aerospace;
+pub mod agent;
 pub mod agent_session;
+#[cfg(feature = "desktop")]
 mod browser;
 mod claude_usage;
+#[cfg(feature = "desktop")]
 mod commands;
 pub mod config;
 mod cwt;
 mod debug_spawn;
-mod history;
+pub mod history;
 pub mod ipc;
-mod notifications;
-mod pty;
-mod questions;
-mod relay;
-mod scheduler;
-mod secrets;
+pub mod events;
+pub mod notifications;
+pub mod pty;
+pub mod questions;
+pub mod relay;
+pub mod scheduler;
+pub mod secrets;
 pub mod telegram;
 mod terminal;
 mod tmux;
 mod tools;
+#[cfg(feature = "desktop")]
 mod updater;
 mod usage;
-mod watcher;
+pub mod watcher;
 
+// Everything below this point is desktop-only (Tauri GUI app).
+// The daemon binary uses individual modules directly.
+#[cfg(feature = "desktop")]
 use std::collections::{HashMap, HashSet};
+#[cfg(feature = "desktop")]
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "desktop")]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager,
 };
 
+#[cfg(feature = "desktop")]
 use clawtab_protocol::ClaudeQuestion;
 
+#[cfg(feature = "desktop")]
 use config::jobs::{JobStatus, JobsConfig};
+#[cfg(feature = "desktop")]
 use config::settings::{AppSettings, ShortcutSettings};
+#[cfg(feature = "desktop")]
 use history::HistoryStore;
+#[cfg(feature = "desktop")]
 use ipc::{IpcCommand, IpcResponse};
+#[cfg(feature = "desktop")]
 use scheduler::SchedulerHandle;
+#[cfg(feature = "desktop")]
 use secrets::SecretsManager;
 
+#[cfg(feature = "desktop")]
 pub struct AppState {
     pub settings: Arc<Mutex<AppSettings>>,
     pub jobs_config: Arc<Mutex<JobsConfig>>,
@@ -52,17 +75,22 @@ pub struct AppState {
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     pub process_overrides:
-        Arc<Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>>,
+        Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>>,
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
     pub pty_manager: pty::SharedPtyManager,
 }
 
+#[cfg(feature = "desktop")]
 const MENU_SHORTCUT_RENAME_ACTIVE_PANE: &str = "shortcut_rename_active_pane";
+#[cfg(feature = "desktop")]
 const MENU_SHORTCUT_FOCUS_AGENT_INPUT: &str = "shortcut_focus_agent_input";
+#[cfg(feature = "desktop")]
 const MENU_SHORTCUT_ZOOM_ACTIVE_PANE: &str = "shortcut_zoom_active_pane";
+#[cfg(feature = "desktop")]
 const MENU_SHORTCUT_TOGGLE_AUTO_YES: &str = "shortcut_toggle_auto_yes";
 
+#[cfg(feature = "desktop")]
 fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
     let trimmed = binding.trim();
     if trimmed.is_empty()
@@ -113,6 +141,7 @@ fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
     })
 }
 
+#[cfg(feature = "desktop")]
 fn open_debug_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("debug") {
         let _ = window.show();
@@ -122,6 +151,7 @@ fn open_debug_window(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(feature = "desktop")]
 fn open_pty_debug_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("pty_debug") {
         let _ = window.show();
@@ -131,6 +161,7 @@ fn open_pty_debug_window(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(feature = "desktop")]
 fn find_submenu(menu: &Menu<tauri::Wry>, title: &str) -> Option<Submenu<tauri::Wry>> {
     menu.items().ok()?.into_iter().find_map(|item| {
         item.as_submenu()
@@ -139,6 +170,7 @@ fn find_submenu(menu: &Menu<tauri::Wry>, title: &str) -> Option<Submenu<tauri::W
     })
 }
 
+#[cfg(feature = "desktop")]
 fn find_menu_item(submenu: &Submenu<tauri::Wry>, label: &str) -> Option<MenuItem<tauri::Wry>> {
     submenu.items().ok()?.into_iter().find_map(|item| {
         item.as_menuitem()
@@ -147,6 +179,7 @@ fn find_menu_item(submenu: &Submenu<tauri::Wry>, label: &str) -> Option<MenuItem
     })
 }
 
+#[cfg(feature = "desktop")]
 pub(crate) fn refresh_tray_usage_menu(
     app: &tauri::AppHandle,
     snapshot: Option<&usage::UsageSnapshot>,
@@ -184,6 +217,7 @@ pub(crate) fn refresh_tray_usage_menu(
     tray.set_menu(Some(tray_menu))
 }
 
+#[cfg(feature = "desktop")]
 fn tray_usage_labels(snapshot: Option<&usage::UsageSnapshot>) -> (String, String, String) {
     match snapshot {
         Some(snapshot) => (
@@ -199,6 +233,7 @@ fn tray_usage_labels(snapshot: Option<&usage::UsageSnapshot>) -> (String, String
     }
 }
 
+#[cfg(feature = "desktop")]
 fn ensure_shortcut_menu_item(
     app: &tauri::AppHandle,
     submenu: &Submenu<tauri::Wry>,
@@ -215,6 +250,7 @@ fn ensure_shortcut_menu_item(
     Ok(item)
 }
 
+#[cfg(feature = "desktop")]
 pub fn refresh_shortcut_menu(
     app: &tauri::AppHandle,
     shortcuts: &ShortcutSettings,
@@ -285,6 +321,7 @@ pub fn refresh_shortcut_menu(
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
     match cmd {
         IpcCommand::Ping => IpcResponse::Pong,
@@ -480,6 +517,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
     }
 }
 
+#[cfg(feature = "desktop")]
 fn init_file_logger() {
     use std::fs;
 
@@ -505,6 +543,7 @@ fn init_file_logger() {
         .init();
 }
 
+#[cfg(feature = "desktop")]
 pub fn run() {
     init_file_logger();
 
@@ -544,7 +583,7 @@ pub fn run() {
     let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> = Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let process_overrides: Arc<
-        Mutex<HashMap<String, commands::processes::DetectedProcessOverride>>,
+        Mutex<HashMap<String, config::settings::DetectedProcessOverride>>,
     > = {
         let loaded = settings.lock().unwrap().process_overrides.clone();
         Arc::new(Mutex::new(loaded))
@@ -948,126 +987,145 @@ pub fn run() {
                 });
             }
 
-            // Start IPC server
-            tauri::async_runtime::spawn(async move {
-                let handler = move |cmd: IpcCommand| -> IpcResponse {
-                    handle_ipc_command(&state_for_ipc, cmd)
-                };
-                if let Err(e) = ipc::start_ipc_server(handler).await {
-                    log::error!("IPC server error: {}", e);
-                }
+            // Check if the daemon is already running. If so, skip spawning
+            // background tasks (scheduler, questions, relay, etc.) since the
+            // daemon owns them. The desktop app becomes a pure UI client.
+            let daemon_running = tauri::async_runtime::block_on(async {
+                ipc::send_command(IpcCommand::Ping).await.is_ok()
             });
 
-            // Start scheduler
-            let handle = scheduler::start(
-                app.handle().clone(),
-                jobs_for_scheduler,
-                secrets_for_scheduler,
-                history_for_scheduler,
-                settings_for_scheduler,
-                job_status_for_scheduler,
-                active_agents_for_scheduler,
-                relay_for_scheduler,
-                auto_yes_for_scheduler,
-            );
-            {
-                let state: tauri::State<AppState> = app.state();
-                *state.scheduler.lock().unwrap() = Some(handle);
-            }
+            if daemon_running {
+                log::info!("Daemon detected - desktop app running in UI-only mode");
+            } else {
+                log::info!("No daemon detected - desktop app running all background tasks");
 
-            // Reattach jobs still running in tmux from previous session
-            let app_handle_for_reattach = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                scheduler::reattach::reattach_running_jobs(
-                    &app_handle_for_reattach,
-                    &jobs_for_reattach,
-                    &settings_for_reattach,
-                    &job_status_for_reattach,
-                    &history_for_reattach,
-                    &active_agents_for_reattach,
-                    &relay_for_reattach,
-                    &auto_yes_for_reattach,
-                );
-                scheduler::reattach::cleanup_orphaned_shell_windows();
-            });
-
-            // Start relay connection if configured
-            {
-                let relay_settings = settings_for_relay.lock().unwrap().relay.clone();
-                if let Some(rs) = relay_settings {
-                    // Read device_token from yaml, fall back to keychain
-                    let device_token = if rs.device_token.is_empty() {
-                        secrets_for_relay
-                            .lock()
-                            .unwrap()
-                            .get("relay_device_token")
-                            .cloned()
-                            .unwrap_or_default()
-                    } else {
-                        rs.device_token.clone()
+                // Start IPC server (only when daemon is not running)
+                tauri::async_runtime::spawn(async move {
+                    let handler = move |cmd: IpcCommand| -> IpcResponse {
+                        handle_ipc_command(&state_for_ipc, cmd)
                     };
+                    if let Err(e) = ipc::start_ipc_server(handler).await {
+                        log::error!("IPC server error: {}", e);
+                    }
+                });
 
-                    if rs.enabled && !rs.server_url.is_empty() && !device_token.is_empty() {
-                        let ws_url = if rs.server_url.starts_with("http") {
-                            rs.server_url.replacen("http", "ws", 1) + "/ws"
+                // Create shared trait objects for background tasks
+                let event_sink: Arc<dyn events::EventSink> =
+                    Arc::new(events::TauriEventSink::new(app.handle().clone()));
+                let notifier: Arc<dyn notifications::Notifier> =
+                    Arc::new(notifications::TauriNotifier::new(app.handle().clone()));
+
+                // Start scheduler
+                let handle = scheduler::start(
+                    Arc::clone(&event_sink),
+                    jobs_for_scheduler,
+                    secrets_for_scheduler,
+                    history_for_scheduler,
+                    settings_for_scheduler,
+                    job_status_for_scheduler,
+                    active_agents_for_scheduler,
+                    relay_for_scheduler,
+                    auto_yes_for_scheduler,
+                );
+                {
+                    let state: tauri::State<AppState> = app.state();
+                    *state.scheduler.lock().unwrap() = Some(handle);
+                }
+
+                // Reattach jobs still running in tmux from previous session
+                let event_sink_for_reattach: Arc<dyn events::EventSink> = Arc::clone(&event_sink);
+                tauri::async_runtime::spawn(async move {
+                    scheduler::reattach::reattach_running_jobs(
+                        event_sink_for_reattach.as_ref(),
+                        &jobs_for_reattach,
+                        &settings_for_reattach,
+                        &job_status_for_reattach,
+                        &history_for_reattach,
+                        &active_agents_for_reattach,
+                        &relay_for_reattach,
+                        &auto_yes_for_reattach,
+                    );
+                    scheduler::reattach::cleanup_orphaned_shell_windows();
+                });
+
+                // Start relay connection if configured
+                {
+                    let relay_settings = settings_for_relay.lock().unwrap().relay.clone();
+                    if let Some(rs) = relay_settings {
+                        // Read device_token from yaml, fall back to keychain
+                        let device_token = if rs.device_token.is_empty() {
+                            secrets_for_relay
+                                .lock()
+                                .unwrap()
+                                .get("relay_device_token")
+                                .cloned()
+                                .unwrap_or_default()
                         } else {
-                            rs.server_url.clone()
+                            rs.device_token.clone()
                         };
-                        let server_url_for_sub = rs.server_url.clone();
-                        let app_handle_for_relay = app.handle().clone();
-                        tauri::async_runtime::spawn(async move {
-                            relay::connect_loop(
-                                ws_url,
-                                device_token,
-                                server_url_for_sub,
-                                relay_for_setup,
-                                relay_sub_for_setup,
-                                jobs_for_relay,
-                                job_status_for_relay,
-                                secrets_for_relay,
-                                history_for_relay,
-                                settings_for_relay,
-                                active_agents_for_relay,
-                                auto_yes_for_relay,
-                                pty_manager_for_relay,
-                                app_handle_for_relay,
-                            )
-                            .await;
-                        });
+
+                        if rs.enabled && !rs.server_url.is_empty() && !device_token.is_empty() {
+                            let ws_url = if rs.server_url.starts_with("http") {
+                                rs.server_url.replacen("http", "ws", 1) + "/ws"
+                            } else {
+                                rs.server_url.clone()
+                            };
+                            let server_url_for_sub = rs.server_url.clone();
+                            let event_sink_for_relay: Arc<dyn events::EventSink> = Arc::clone(&event_sink);
+                            tauri::async_runtime::spawn(async move {
+                                relay::connect_loop(
+                                    ws_url,
+                                    device_token,
+                                    server_url_for_sub,
+                                    relay_for_setup,
+                                    relay_sub_for_setup,
+                                    jobs_for_relay,
+                                    job_status_for_relay,
+                                    secrets_for_relay,
+                                    history_for_relay,
+                                    settings_for_relay,
+                                    active_agents_for_relay,
+                                    auto_yes_for_relay,
+                                    pty_manager_for_relay,
+                                    event_sink_for_relay,
+                                )
+                                .await;
+                            });
+                        }
                     }
                 }
+
+                // Start question detection loop
+                let notifier_for_questions = Arc::clone(&notifier);
+                tauri::async_runtime::spawn(async move {
+                    questions::question_detection_loop(
+                        jobs_for_questions,
+                        job_status_for_questions,
+                        relay_for_questions,
+                        active_questions_for_loop,
+                        auto_yes_for_questions,
+                        notifier_for_questions,
+                        notification_state_for_questions,
+                    )
+                    .await;
+                });
+
+                // Start telegram agent polling
+                tauri::async_runtime::spawn(async move {
+                    log::info!("Telegram polling task spawned");
+                    telegram::polling::start_polling(telegram_agent_state).await;
+                    log::error!("Telegram polling loop exited unexpectedly");
+                });
+
+                // Watch jobs config dir for external changes
+                let event_sink_for_watcher: Arc<dyn events::EventSink> = Arc::clone(&event_sink);
+                tauri::async_runtime::spawn(async move {
+                    watcher::watch_jobs_dir(jobs_for_watcher, event_sink_for_watcher).await;
+                });
             }
 
-            // Start question detection loop
-            let app_handle_for_questions = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                questions::question_detection_loop(
-                    jobs_for_questions,
-                    job_status_for_questions,
-                    relay_for_questions,
-                    active_questions_for_loop,
-                    auto_yes_for_questions,
-                    app_handle_for_questions,
-                    notification_state_for_questions,
-                )
-                .await;
-            });
-
-            // Start telegram agent polling
-            tauri::async_runtime::spawn(async move {
-                log::info!("Telegram polling task spawned");
-                telegram::polling::start_polling(telegram_agent_state).await;
-                log::error!("Telegram polling loop exited unexpectedly");
-            });
-
-            // Start auto-update checker
+            // Always start auto-update checker (desktop-only concern)
             updater::start_update_checker(app.handle().clone(), settings_for_updater);
-
-            // Watch jobs config dir for external changes
-            let app_handle_for_watcher = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                watcher::watch_jobs_dir(jobs_for_watcher, app_handle_for_watcher).await;
-            });
 
             log::info!("clawtab setup complete");
             Ok(())

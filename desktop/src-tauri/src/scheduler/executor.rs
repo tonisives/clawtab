@@ -43,7 +43,7 @@ pub async fn execute_job(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
-    app_handle: Option<tauri::AppHandle>,
+    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 ) {
     execute_job_inner(
         job,
@@ -56,7 +56,7 @@ pub async fn execute_job(
         relay,
         params,
         None,
-        app_handle,
+        notifier,
         None,
     )
     .await;
@@ -73,7 +73,7 @@ pub async fn execute_job_with_auto_yes(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    app_handle: Option<tauri::AppHandle>,
+    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 ) {
     execute_job_inner(
         job,
@@ -86,7 +86,7 @@ pub async fn execute_job_with_auto_yes(
         relay,
         params,
         auto_yes_panes,
-        app_handle,
+        notifier,
         None,
     )
     .await;
@@ -104,7 +104,7 @@ pub async fn execute_job_with_auto_yes_and_pane_notify(
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
-    app_handle: Option<tauri::AppHandle>,
+    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 ) {
     execute_job_inner(
         job,
@@ -117,7 +117,7 @@ pub async fn execute_job_with_auto_yes_and_pane_notify(
         relay,
         params,
         auto_yes_panes,
-        app_handle,
+        notifier,
         Some(pane_tx),
     )
     .await;
@@ -134,7 +134,7 @@ pub async fn execute_job_with_pane_notify(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
-    app_handle: Option<tauri::AppHandle>,
+    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 ) {
     execute_job_inner(
         job,
@@ -147,7 +147,7 @@ pub async fn execute_job_with_pane_notify(
         relay,
         params,
         None,
-        app_handle,
+        notifier,
         Some(pane_tx),
     )
     .await;
@@ -164,7 +164,7 @@ async fn execute_job_inner(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    app_handle: Option<tauri::AppHandle>,
+    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
     mut pane_tx: Option<tokio::sync::oneshot::Sender<(String, String)>>,
 ) {
     let run_id = uuid::Uuid::new_v4().to_string();
@@ -310,7 +310,7 @@ async fn execute_job_inner(
                     job_status: Arc::clone(job_status),
                     notify_on_success,
                     relay: Arc::clone(relay),
-                    app_handle: app_handle.clone(),
+                    notifier: notifier.clone(),
                     is_reattach: false,
                 };
                 tokio::spawn(super::monitor::monitor_pane(params));
@@ -373,8 +373,8 @@ async fn execute_job_inner(
                 NotifyTarget::App => {
                     let event = if success { "completed" } else { "failed" };
                     crate::relay::push_job_notification(relay, &job.slug, event, &run_id);
-                    if let Some(ref handle) = app_handle {
-                        crate::notifications::notify_job(handle, &job.name, event);
+                    if let Some(ref n) = notifier {
+                        n.notify_job(&job.name, event);
                     }
                 }
                 NotifyTarget::None => {}
@@ -421,8 +421,8 @@ async fn execute_job_inner(
                 }
                 NotifyTarget::App => {
                     crate::relay::push_job_notification(relay, &job.slug, "failed", &run_id);
-                    if let Some(ref handle) = app_handle {
-                        crate::notifications::notify_job(handle, &job.name, "failed");
+                    if let Some(ref n) = notifier {
+                        n.notify_job(&job.name, "failed");
                     }
                 }
                 NotifyTarget::None => {}

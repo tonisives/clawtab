@@ -2,9 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
-use tauri::{AppHandle, Emitter};
-
 use crate::config::jobs::{JobStatus, JobType, JobsConfig, NotifyTarget};
+use crate::events::EventSink;
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
 use crate::relay::RelayHandle;
@@ -17,7 +16,7 @@ use super::monitor::{MonitorParams, TelegramStream};
 /// those panes are still alive in tmux. For each match, set the job status to
 /// Running and spawn a monitor.
 pub fn reattach_running_jobs(
-    app_handle: &AppHandle,
+    event_sink: &dyn EventSink,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     settings: &Arc<Mutex<AppSettings>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
@@ -249,7 +248,7 @@ pub fn reattach_running_jobs(
             job_status: Arc::clone(job_status),
             notify_on_success,
             relay: Arc::clone(relay),
-            app_handle: None,
+            notifier: None,
             is_reattach: true,
         };
         tokio::spawn(super::monitor::monitor_pane(params));
@@ -262,7 +261,7 @@ pub fn reattach_running_jobs(
             "Reattached {} running job(s) from previous session",
             reattached
         );
-        let _ = app_handle.emit("jobs-changed", ());
+        event_sink.emit_jobs_changed();
     }
 }
 
