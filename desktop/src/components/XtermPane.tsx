@@ -336,9 +336,26 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
       // Spawn captures the pane into clawtab-<group>, opens a local PTY
       // running `tmux attach-session` on an ephemeral view session, and
       // streams bytes via pty-output events.
-      const result = await invoke<PtySpawnResult>("pty_spawn", {
-        paneId, tmuxSession, cols, rows, group: resolvedGroup,
-      });
+      // Retry up to 3 times because tmux commands can transiently fail
+      // (e.g. race with pane capture, session not yet ready).
+      let result: PtySpawnResult | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (cancelled) return;
+        try {
+          result = await invoke<PtySpawnResult>("pty_spawn", {
+            paneId, tmuxSession, cols, rows, group: resolvedGroup,
+          });
+          break;
+        } catch (err) {
+          debugXtermPane(paneId, `pty_spawn attempt ${attempt + 1} failed`, { elapsedMs: elapsed(), error: String(err) });
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (!result) return;
       attachGenerationRef.current = result.attach_generation;
       debugXtermPane(paneId, "pty_spawn returned", {
         elapsedMs: elapsed(),

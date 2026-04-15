@@ -549,6 +549,10 @@ fn init_file_logger() {
 
 #[cfg(feature = "desktop")]
 pub fn run() {
+    // Unset TMUX so child tmux commands connect to the default server,
+    // not the overmind/nested server this process may have been launched from.
+    std::env::remove_var("TMUX");
+
     init_file_logger();
 
     log::info!("clawtab starting");

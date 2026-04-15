@@ -11,6 +11,10 @@ use clawtab_lib::secrets::SecretsManager;
 use clawtab_lib::telegram;
 
 fn main() {
+    // Unset TMUX so child tmux commands connect to the default server,
+    // not a nested server this process may have been launched from.
+    std::env::remove_var("TMUX");
+
     // Install rustls crypto provider before any TLS connections (relay, reqwest, etc.)
     rustls::crypto::ring::default_provider()
         .install_default()
