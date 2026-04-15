@@ -13,6 +13,7 @@ mod claude_usage;
 mod commands;
 pub mod config;
 mod cwt;
+pub mod daemon;
 mod debug_spawn;
 pub mod history;
 pub mod ipc;
@@ -78,6 +79,7 @@ pub struct AppState {
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
     pub pty_manager: pty::SharedPtyManager,
+    pub ui_only_mode: Arc<Mutex<bool>>,
 }
 
 #[cfg(feature = "desktop")]
@@ -445,6 +447,20 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
                 .collect();
             IpcResponse::AutoYesPanes(panes)
         }
+        IpcCommand::SetAutoYesPanes { pane_ids } => {
+            let pane_set: std::collections::HashSet<String> =
+                pane_ids.iter().cloned().collect();
+            *state.auto_yes_panes.lock().unwrap() = pane_set;
+
+            if let Ok(guard) = state.relay.lock() {
+                if let Some(handle) = guard.as_ref() {
+                    handle
+                        .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
+                }
+            }
+
+            IpcResponse::Ok
+        }
         IpcCommand::ToggleAutoYes { pane_id } => {
             let mut panes = state.auto_yes_panes.lock().unwrap();
             let was_enabled = panes.contains(&pane_id);
@@ -465,6 +481,10 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             }
 
             IpcResponse::Ok
+        }
+        IpcCommand::GetActiveQuestions => {
+            let qs = state.active_questions.lock().unwrap().clone();
+            IpcResponse::ActiveQuestions(qs)
         }
         IpcCommand::ListSecretKeys => {
             let secrets = state.secrets.lock().unwrap();
@@ -593,6 +613,8 @@ pub fn run() {
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
     let pty_manager: pty::SharedPtyManager = Arc::new(Mutex::new(pty::PtyManager::new()));
 
+    let ui_only_mode: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+
     let app_state = AppState {
         settings: Arc::clone(&settings),
         jobs_config: Arc::clone(&jobs_config),
@@ -609,6 +631,7 @@ pub fn run() {
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
         pty_manager: Arc::clone(&pty_manager),
+        ui_only_mode: Arc::clone(&ui_only_mode),
     };
 
     // Clones for IPC handler
@@ -628,6 +651,7 @@ pub fn run() {
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
         pty_manager: Arc::clone(&pty_manager),
+        ui_only_mode: Arc::clone(&ui_only_mode),
     };
 
     // Clones for scheduler
@@ -826,6 +850,10 @@ pub fn run() {
             commands::debug::debug_spawn_list,
             commands::debug::debug_spawn_summary,
             commands::debug::debug_spawn_clear,
+            commands::daemon::get_daemon_status,
+            commands::daemon::daemon_install,
+            commands::daemon::daemon_uninstall,
+            commands::daemon::get_daemon_logs,
         ])
         .setup(move |app| {
             // Show in Dock by default; if user disabled it, switch to Accessory (tray-only)
@@ -995,6 +1023,7 @@ pub fn run() {
 
             if daemon_running {
                 log::info!("Daemon detected - desktop app running in UI-only mode");
+                *ui_only_mode.lock().unwrap() = true;
             } else {
                 log::info!("No daemon detected - desktop app running all background tasks");
 

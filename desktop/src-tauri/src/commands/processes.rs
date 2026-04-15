@@ -446,31 +446,67 @@ pub fn send_detected_process_input(
 }
 
 #[tauri::command]
-pub fn get_active_questions(state: State<AppState>) -> Vec<clawtab_protocol::ClaudeQuestion> {
+pub async fn get_active_questions(
+    state: State<'_, AppState>,
+) -> Result<Vec<clawtab_protocol::ClaudeQuestion>, String> {
+    if *state.ui_only_mode.lock().unwrap() {
+        match crate::ipc::send_command(crate::ipc::IpcCommand::GetActiveQuestions).await {
+            Ok(crate::ipc::IpcResponse::ActiveQuestions(qs)) => return Ok(qs),
+            Ok(resp) => log::warn!("Unexpected IPC response for GetActiveQuestions: {:?}", resp),
+            Err(e) => log::warn!("IPC GetActiveQuestions failed, using local state: {}", e),
+        }
+    }
     let yes_panes = state.auto_yes_panes.lock().unwrap();
-    state
+    Ok(state
         .active_questions
         .lock()
         .unwrap()
         .iter()
         .filter(|q| !yes_panes.contains(&q.pane_id))
         .cloned()
-        .collect()
+        .collect())
 }
 
 #[tauri::command]
-pub fn get_auto_yes_panes(state: State<AppState>) -> Vec<String> {
-    state
+pub async fn get_auto_yes_panes(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    if *state.ui_only_mode.lock().unwrap() {
+        match crate::ipc::send_command(crate::ipc::IpcCommand::GetAutoYesPanes).await {
+            Ok(crate::ipc::IpcResponse::AutoYesPanes(panes)) => return Ok(panes),
+            Ok(resp) => log::warn!("Unexpected IPC response for GetAutoYesPanes: {:?}", resp),
+            Err(e) => log::warn!("IPC GetAutoYesPanes failed, using local state: {}", e),
+        }
+    }
+    Ok(state
         .auto_yes_panes
         .lock()
         .unwrap()
         .iter()
         .cloned()
-        .collect()
+        .collect())
 }
 
 #[tauri::command]
-pub fn set_auto_yes_panes(state: State<AppState>, pane_ids: Vec<String>) {
+pub async fn set_auto_yes_panes(state: State<'_, AppState>, pane_ids: Vec<String>) -> Result<(), String> {
+    if *state.ui_only_mode.lock().unwrap() {
+        match crate::ipc::send_command(crate::ipc::IpcCommand::SetAutoYesPanes {
+            pane_ids: pane_ids.clone(),
+        })
+        .await
+        {
+            Ok(crate::ipc::IpcResponse::Ok) => {
+                // Also update local state so the UI stays in sync
+                let pane_set: HashSet<String> = pane_ids.into_iter().collect();
+                *state.auto_yes_panes.lock().unwrap() = pane_set;
+                if let Some(handle) = state.app_handle.lock().unwrap().as_ref() {
+                    let _ = handle.emit("auto-yes-changed", ());
+                }
+                return Ok(());
+            }
+            Ok(resp) => log::warn!("Unexpected IPC response for SetAutoYesPanes: {:?}", resp),
+            Err(e) => log::warn!("IPC SetAutoYesPanes failed, using local state: {}", e),
+        }
+    }
+
     let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
     *state.auto_yes_panes.lock().unwrap() = pane_set;
     if let Some(handle) = state.app_handle.lock().unwrap().as_ref() {
@@ -483,6 +519,7 @@ pub fn set_auto_yes_panes(state: State<AppState>, pane_ids: Vec<String>) {
             handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
         }
     }
+    Ok(())
 }
 
 #[tauri::command]

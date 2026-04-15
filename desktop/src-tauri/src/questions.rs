@@ -804,11 +804,13 @@ fn detect_question_processes(
         name.starts_with("clawtab-") && name.contains("-view-")
     }
 
+    const SEP: &str = "|||";
+    let format_str = format!(
+        "#{{pane_id}}{0}#{{pane_current_command}}{0}#{{pane_current_path}}{0}#{{session_name}}{0}#{{window_name}}{0}#{{pane_pid}}",
+        SEP
+    );
     let output = match Command::new("tmux")
-        .args([
-            "list-panes", "-a", "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
-        ])
+        .args(["list-panes", "-a", "-F", &format_str])
         .output()
     {
         Ok(o) if o.status.success() => o,
@@ -860,7 +862,7 @@ fn detect_question_processes(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(6, '\t').collect();
+        let parts: Vec<&str> = line.splitn(6, SEP).collect();
         if parts.len() < 6 {
             continue;
         }
@@ -873,9 +875,11 @@ fn detect_question_processes(
             continue;
         }
 
-        if detect_process_provider(pane_pid, Some(&process_snapshot)).is_none() {
+        let provider = detect_process_provider(pane_pid, Some(&process_snapshot));
+        if provider.is_none() {
             continue;
         }
+        log::debug!("[questions] pane {} pid {} detected as {:?}", pane_id, pane_pid, provider);
 
         if !seen.insert(pane_id.to_string()) {
             continue;

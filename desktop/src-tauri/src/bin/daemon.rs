@@ -11,6 +11,11 @@ use clawtab_lib::secrets::SecretsManager;
 use clawtab_lib::telegram;
 
 fn main() {
+    // Install rustls crypto provider before any TLS connections (relay, reqwest, etc.)
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("failed to install rustls crypto provider");
+
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
@@ -60,6 +65,7 @@ fn main() {
             let active_agents = Arc::clone(&active_agents);
             let relay = Arc::clone(&relay_handle);
             let auto_yes_panes = Arc::clone(&auto_yes_panes);
+            let active_questions = Arc::clone(&active_questions);
             tokio::spawn(async move {
                 let handler = move |cmd: IpcCommand| -> IpcResponse {
                     handle_ipc_command(
@@ -71,6 +77,7 @@ fn main() {
                         &active_agents,
                         &relay,
                         &auto_yes_panes,
+                        &active_questions,
                         cmd,
                     )
                 };
@@ -243,6 +250,7 @@ fn handle_ipc_command(
     active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     relay: &Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
+    active_questions: &Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>>,
     cmd: IpcCommand,
 ) -> IpcResponse {
     match cmd {
@@ -355,6 +363,20 @@ fn handle_ipc_command(
                 .collect();
             IpcResponse::AutoYesPanes(panes)
         }
+        IpcCommand::SetAutoYesPanes { pane_ids } => {
+            let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
+            *auto_yes_panes.lock().unwrap() = pane_set;
+
+            if let Ok(guard) = relay.lock() {
+                if let Some(handle) = guard.as_ref() {
+                    handle.send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes {
+                        pane_ids,
+                    });
+                }
+            }
+
+            IpcResponse::Ok
+        }
         IpcCommand::ToggleAutoYes { pane_id } => {
             let mut panes = auto_yes_panes.lock().unwrap();
             if panes.contains(&pane_id) {
@@ -374,6 +396,10 @@ fn handle_ipc_command(
             }
 
             IpcResponse::Ok
+        }
+        IpcCommand::GetActiveQuestions => {
+            let qs = active_questions.lock().unwrap().clone();
+            IpcResponse::ActiveQuestions(qs)
         }
         IpcCommand::ListSecretKeys => {
             let s = secrets.lock().unwrap();

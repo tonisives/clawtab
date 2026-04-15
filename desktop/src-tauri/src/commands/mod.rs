@@ -1,4 +1,5 @@
 pub mod aerospace;
+pub mod daemon;
 pub mod browser;
 pub mod claude_usage;
 pub mod debug;

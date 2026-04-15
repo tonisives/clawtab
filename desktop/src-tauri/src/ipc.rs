@@ -18,7 +18,9 @@ pub enum IpcCommand {
     OpenSettings,
     OpenPane { pane_id: String },
     GetAutoYesPanes,
+    SetAutoYesPanes { pane_ids: Vec<String> },
     ToggleAutoYes { pane_id: String },
+    GetActiveQuestions,
     ListSecretKeys,
     GetSecretValues { keys: Vec<String> },
     GetPaneInfo { pane_id: String },
@@ -31,6 +33,7 @@ pub enum IpcResponse {
     Jobs(Vec<String>),
     Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
     AutoYesPanes(Vec<String>),
+    ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),
     SecretKeys(Vec<String>),
     SecretValues(Vec<(String, String)>),
     PaneInfo {

@@ -7,8 +7,9 @@ import { TelegramPanel } from "./TelegramPanel"
 import { RelayPanel } from "./RelayPanel"
 import { ShortcutsPanel } from "./ShortcutsPanel"
 import { ModelsPanel } from "./ModelsPanel"
+import { DaemonPanel } from "./DaemonPanel"
 
-export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts" | "models"
+export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts" | "models" | "daemon"
 
 interface Props {
   activeSubTab: SettingsSubTab
@@ -24,6 +25,7 @@ const subTabs: { id: SettingsSubTab; label: string }[] = [
   { id: "telegram", label: "Telegram" },
   { id: "shortcuts", label: "Shortcuts" },
   { id: "models", label: "Models" },
+  { id: "daemon", label: "Daemon" },
 ]
 
 export function GeneralSettings({
@@ -58,6 +60,7 @@ export function GeneralSettings({
         {activeSubTab === "telegram" && <TelegramPanel />}
         {activeSubTab === "shortcuts" && <ShortcutsPanel />}
         {activeSubTab === "models" && <ModelsPanel />}
+        {activeSubTab === "daemon" && <DaemonPanel />}
       </div>
     </div>
   )

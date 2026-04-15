@@ -307,6 +307,15 @@ async fn main() {
                     }
                 }
             }
+            IpcResponse::ActiveQuestions(qs) => {
+                if qs.is_empty() {
+                    println!("No active questions");
+                } else {
+                    for q in qs {
+                        println!("{}: {}", q.pane_id, q.context_lines);
+                    }
+                }
+            }
             IpcResponse::Error(msg) => {
                 eprintln!("Error: {}", msg);
                 std::process::exit(1);
@@ -319,14 +328,7 @@ async fn main() {
     }
 }
 
-const PLIST_LABEL: &str = "com.clawtab.daemon";
-
-fn plist_dest() -> std::path::PathBuf {
-    dirs::home_dir()
-        .unwrap_or_default()
-        .join("Library/LaunchAgents")
-        .join(format!("{}.plist", PLIST_LABEL))
-}
+use clawtab_lib::daemon;
 
 fn handle_daemon_command(args: &[String]) {
     let sub = if args.len() >= 3 { args[2].as_str() } else { "" };
@@ -344,125 +346,35 @@ fn handle_daemon_command(args: &[String]) {
 }
 
 fn daemon_install() {
-    let dest = plist_dest();
-    if let Some(parent) = dest.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    // Ensure log directory exists
-    let _ = std::fs::create_dir_all("/tmp/clawtab");
-
-    // Check that the binary exists
-    if !std::path::Path::new("/usr/local/bin/clawtab-daemon").exists() {
-        eprintln!("Error: /usr/local/bin/clawtab-daemon not found");
-        eprintln!("Run 'make build-daemon' first");
-        std::process::exit(1);
-    }
-
-    // Embedded plist content
-    let plist = r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.clawtab.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/clawtab-daemon</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/clawtab/daemon.stdout.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/clawtab/daemon.stderr.log</string>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-        <key>RUST_LOG</key>
-        <string>info</string>
-    </dict>
-</dict>
-</plist>"#;
-
-    if let Err(e) = std::fs::write(&dest, plist) {
-        eprintln!("Error writing plist: {}", e);
-        std::process::exit(1);
-    }
-
-    let status = std::process::Command::new("launchctl")
-        .args(["load", &dest.display().to_string()])
-        .status();
-
-    match status {
-        Ok(s) if s.success() => println!("Daemon installed and started"),
-        Ok(s) => {
-            eprintln!("launchctl load exited with {}", s);
-            std::process::exit(1);
-        }
+    match daemon::install() {
+        Ok(msg) => println!("{}", msg),
         Err(e) => {
-            eprintln!("Failed to run launchctl: {}", e);
+            eprintln!("Error: {}", e);
             std::process::exit(1);
         }
     }
 }
 
 fn daemon_uninstall() {
-    let dest = plist_dest();
-    if !dest.exists() {
-        eprintln!("Daemon is not installed");
-        std::process::exit(1);
+    match daemon::uninstall() {
+        Ok(msg) => println!("{}", msg),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
     }
-
-    let _ = std::process::Command::new("launchctl")
-        .args(["unload", &dest.display().to_string()])
-        .status();
-
-    if let Err(e) = std::fs::remove_file(&dest) {
-        eprintln!("Error removing plist: {}", e);
-        std::process::exit(1);
-    }
-    println!("Daemon uninstalled");
 }
 
 fn daemon_status() {
-    let output = std::process::Command::new("launchctl")
-        .args(["list"])
-        .output();
+    let installed = daemon::is_installed();
+    let (running, pid) = daemon::is_running();
 
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            let found = stdout
-                .lines()
-                .find(|l| l.contains(PLIST_LABEL));
-            match found {
-                Some(line) => {
-                    // launchctl list format: PID Status Label
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    let pid = parts.first().unwrap_or(&"-");
-                    if *pid == "-" {
-                        println!("Daemon: installed but not running");
-                    } else {
-                        println!("Daemon: running (pid {})", pid);
-                    }
-                }
-                None => {
-                    if plist_dest().exists() {
-                        println!("Daemon: installed but not loaded");
-                    } else {
-                        println!("Daemon: not installed");
-                    }
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to run launchctl: {}", e);
-            std::process::exit(1);
-        }
+    if running {
+        println!("Daemon: running (pid {})", pid.map_or("-".to_string(), |p| p.to_string()));
+    } else if installed {
+        println!("Daemon: installed but not running");
+    } else {
+        println!("Daemon: not installed");
     }
 }
 
@@ -480,7 +392,7 @@ fn daemon_restart() {
         })
         .unwrap_or(501);
 
-    let service = format!("gui/{}/{}", uid, PLIST_LABEL);
+    let service = format!("gui/{}/{}", uid, daemon::PLIST_LABEL);
     let status = std::process::Command::new("launchctl")
         .args(["kickstart", "-k", &service])
         .status();
