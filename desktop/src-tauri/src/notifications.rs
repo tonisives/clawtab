@@ -79,13 +79,32 @@ impl Notifier for TauriNotifier {
     }
 }
 
-/// Fallback notifier using macOS osascript for daemon mode.
+/// Fallback notifier for daemon mode.
+/// Uses terminal-notifier (with ClawTab icon) if available, falls back to osascript.
 pub struct OsascriptNotifier;
 
-impl Notifier for OsascriptNotifier {
-    fn notify_question(&self, question: &ClaudeQuestion) {
-        let title = compact_cwd(&question.cwd);
-        let body = format_question_body(question);
+impl OsascriptNotifier {
+    fn send_notification(title: &str, body: &str) -> Result<(), String> {
+        // Try terminal-notifier first for proper app icon.
+        // Use spawn() not output() - terminal-notifier blocks until dismissed.
+        let tn_result = std::process::Command::new("terminal-notifier")
+            .args([
+                "-title", title,
+                "-message", body,
+                "-sender", "cc.clawtab",
+                "-sound", "default",
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        match tn_result {
+            Ok(_) => return Ok(()),
+            _ => {}
+        }
+
+        // Fall back to osascript
         let script = format!(
             "display notification \"{}\" with title \"{}\"",
             body.replace('\\', "\\\\")
@@ -93,16 +112,25 @@ impl Notifier for OsascriptNotifier {
                 .replace('\n', " "),
             title.replace('\\', "\\\\").replace('"', "\\\""),
         );
-        match std::process::Command::new("osascript")
+        std::process::Command::new("osascript")
             .args(["-e", &script])
             .output()
-        {
-            Ok(_) => log::info!(
-                "[notifications] osascript question notification sent for {}",
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+}
+
+impl Notifier for OsascriptNotifier {
+    fn notify_question(&self, question: &ClaudeQuestion) {
+        let title = compact_cwd(&question.cwd);
+        let body = format_question_body(question);
+        match Self::send_notification(&title, &body) {
+            Ok(()) => log::info!(
+                "[notifications] question notification sent for {}",
                 question.question_id
             ),
             Err(e) => log::error!(
-                "[notifications] osascript question notification failed: {}",
+                "[notifications] question notification failed: {}",
                 e
             ),
         }
@@ -110,21 +138,14 @@ impl Notifier for OsascriptNotifier {
 
     fn notify_job(&self, job_id: &str, event: &str) {
         let body = format!("Job {} {}", job_id, event);
-        let script = format!(
-            "display notification \"{}\" with title \"ClawTab\"",
-            body.replace('\\', "\\\\").replace('"', "\\\""),
-        );
-        match std::process::Command::new("osascript")
-            .args(["-e", &script])
-            .output()
-        {
-            Ok(_) => log::info!(
-                "[notifications] osascript job notification sent: {} {}",
+        match Self::send_notification("ClawTab", &body) {
+            Ok(()) => log::info!(
+                "[notifications] job notification sent: {} {}",
                 job_id,
                 event
             ),
             Err(e) => log::error!(
-                "[notifications] osascript job notification failed: {}",
+                "[notifications] job notification failed: {}",
                 e
             ),
         }
