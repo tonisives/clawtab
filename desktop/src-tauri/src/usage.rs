@@ -52,26 +52,37 @@ pub async fn fetch_usage_snapshot(zai_token: Option<String>) -> UsageSnapshot {
 
 async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
     match claude_usage::fetch_usage().await {
-        Ok(usage) => ProviderUsageSnapshot {
-            provider: "claude".to_string(),
-            status: "available".to_string(),
-            summary: format!(
-                "Session {}, Week {}",
-                usage_bucket_percent(usage.five_hour.as_ref()),
-                usage_bucket_percent(usage.seven_day.as_ref())
-            ),
-            note: None,
-            entries: vec![
-                UsageEntry {
-                    label: "Session".to_string(),
-                    value: usage_bucket_text(usage.five_hour.as_ref()),
-                },
-                UsageEntry {
-                    label: "Week".to_string(),
-                    value: usage_bucket_text(usage.seven_day.as_ref()),
-                },
-            ],
-        },
+        Ok(usage) => {
+            let session_pct = usage_bucket_percent(usage.five_hour.as_ref());
+            let week_pct = usage_bucket_percent(usage.seven_day.as_ref());
+            let session_reset = usage
+                .five_hour
+                .as_ref()
+                .and_then(|b| b.resets_in_human());
+            let summary = match session_reset {
+                Some(reset) => format!(
+                    "Session {} (resets {}), Week {}",
+                    session_pct, reset, week_pct
+                ),
+                None => format!("Session {}, Week {}", session_pct, week_pct),
+            };
+            ProviderUsageSnapshot {
+                provider: "claude".to_string(),
+                status: "available".to_string(),
+                summary,
+                note: None,
+                entries: vec![
+                    UsageEntry {
+                        label: "Session".to_string(),
+                        value: usage_bucket_text(usage.five_hour.as_ref()),
+                    },
+                    UsageEntry {
+                        label: "Week".to_string(),
+                        value: usage_bucket_text(usage.seven_day.as_ref()),
+                    },
+                ],
+            }
+        }
         Err(err) => ProviderUsageSnapshot {
             provider: "claude".to_string(),
             status: "unavailable".to_string(),

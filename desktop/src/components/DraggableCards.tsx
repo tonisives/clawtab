@@ -125,6 +125,7 @@ export function DraggableProcessCard({
   startRenameSignal,
   onRenameDraftChange,
   onRenameStateChange,
+  renameShortcutHint,
   reorderEnabled,
   marginTop,
   dataProcessId,
@@ -141,6 +142,7 @@ export function DraggableProcessCard({
   startRenameSignal?: number;
   onRenameDraftChange?: (value: string | null) => void;
   onRenameStateChange?: (editing: boolean) => void;
+  renameShortcutHint?: string;
   reorderEnabled?: boolean;
   marginTop?: number;
   dataProcessId?: string;
@@ -206,6 +208,7 @@ export function DraggableProcessCard({
         startRenameSignal={startRenameSignal}
         onRenameDraftChange={onRenameDraftChange}
         onRenameStateChange={onRenameStateChange}
+        renameShortcutHint={renameShortcutHint}
       />
     </div>
   );
@@ -250,12 +253,14 @@ export function DraggableShellCard({
   selected,
   onStop,
   onRename,
+  renameShortcutHint,
 }: {
   shell: ShellPane;
   onPress?: () => void;
   selected?: boolean | string;
   onStop?: () => void;
   onRename?: () => void;
+  renameShortcutHint?: string;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `shell-${shell.pane_id}`,
@@ -283,6 +288,7 @@ export function DraggableShellCard({
         selected={selected}
         onStop={onStop}
         onRename={onRename}
+        renameShortcutHint={renameShortcutHint}
       />
     </div>
   );

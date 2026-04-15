@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export function EditTextDialog({
   title,
@@ -17,36 +18,50 @@ export function EditTextDialog({
   onSave: (value: string) => void;
   onCancel: () => void;
 }) {
-  const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const valueRef = useRef(initialValue);
   const [value, setValue] = useState(initialValue);
+  valueRef.current = value;
 
   useEffect(() => {
     setValue(initialValue);
-    const timer = window.setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }, 0);
-    return () => window.clearTimeout(timer);
   }, [initialValue]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    const focusTimer = window.setTimeout(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      input.focus();
+      if (initialValue.trim()) {
+        input.select();
+      }
+    }, 0);
 
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
-      if (e.key === "Enter") onSave(value);
+      if (e.key === "Enter") onSave(valueRef.current);
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onCancel, onSave, value]);
+    return () => {
+      window.clearTimeout(focusTimer);
+      window.removeEventListener("keydown", handleKey);
+      if (dialog?.open) dialog.close();
+    };
+  }, [initialValue, onCancel, onSave]);
 
-  return (
-    <div
-      ref={overlayRef}
+  return createPortal(
+    <dialog
+      ref={dialogRef}
       className="confirm-overlay"
+      onCancel={(e) => {
+        e.preventDefault();
+        onCancel();
+      }}
       onClick={(e) => {
-        if (e.target === overlayRef.current) onCancel();
+        if (e.target === dialogRef.current) onCancel();
       }}
     >
       <div className="confirm-dialog" style={{ width: 420, maxWidth: "calc(100vw - 32px)" }}>
@@ -58,6 +73,11 @@ export function EditTextDialog({
           ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => {
+            if (initialValue.trim() && e.currentTarget.value === initialValue) {
+              e.currentTarget.select();
+            }
+          }}
           placeholder={placeholder}
           style={{
             width: "100%",
@@ -79,6 +99,7 @@ export function EditTextDialog({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>,
+    document.body,
   );
 }

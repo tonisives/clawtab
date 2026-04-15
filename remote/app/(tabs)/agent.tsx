@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import type { NativeSyntheticEvent, TextInputContentSizeChangeEventData } from "react-native";
 import { useRouter } from "expo-router";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { useWsStore } from "../../src/store/ws";
@@ -57,8 +58,21 @@ export default function AgentScreen() {
   const [selectedModel, setSelectedModel] = useState<AgentModelOption>(getStoredModel);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
   const providerBtnRef = useRef<any>(null);
   const { isWide } = useResponsive();
+
+  const onContentSizeChange = useCallback(
+    (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
+      const h = e.nativeEvent.contentSize.height;
+      const min = isWide ? 200 : 120;
+      const max = isWide ? 400 : 300;
+      // Add padding (spacing.md top + bottom)
+      const padded = h + spacing.md * 2;
+      setInputHeight(Math.min(max, Math.max(min, padded)));
+    },
+    [isWide],
+  );
 
   const DEFAULT_ENABLED = {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
@@ -99,6 +113,7 @@ export default function AgentScreen() {
       if (s) s({ type: "detect_processes", id: nextId() });
     }, 1500);
     setPrompt("");
+    setInputHeight(undefined);
     setSending(false);
     router.push("/(tabs)");
   };
@@ -130,9 +145,10 @@ export default function AgentScreen() {
             </Text>
 
             <TextInput
-              style={[styles.input, isWide && styles.inputWide]}
+              style={[styles.input, isWide && styles.inputWide, inputHeight != null && { height: inputHeight }]}
               value={prompt}
               onChangeText={setPrompt}
+              onContentSizeChange={onContentSizeChange}
               placeholder="What would you like the agent to do?"
               placeholderTextColor={colors.textMuted}
               multiline

@@ -146,8 +146,8 @@ export interface JobListViewProps {
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
   renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => React.ReactNode;
-  renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void }) => React.ReactNode;
-  renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void; onRename?: () => void }) => React.ReactNode;
+  renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => React.ReactNode;
+  renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
   wrapProcessGroup?: (group: string, processPaneIds: string[], children: React.ReactNode) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
@@ -164,6 +164,7 @@ export interface JobListViewProps {
   renameProcessSignal?: number;
   onProcessRenameDraftChange?: (paneId: string, value: string | null) => void;
   onProcessRenameStateChange?: (paneId: string, editing: boolean) => void;
+  renameShortcutHint?: string;
 }
 
 type ListItem =
@@ -250,6 +251,7 @@ export function JobListView({
   renameProcessSignal,
   onProcessRenameDraftChange,
   onProcessRenameStateChange,
+  renameShortcutHint = "Cmd+R",
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -771,6 +773,7 @@ export function JobListView({
               startRenameSignal: renameProcessPaneId === process.pane_id ? renameProcessSignal : undefined,
               onRenameDraftChange: (value: string | null) => onProcessRenameDraftChange?.(process.pane_id, value),
               onRenameStateChange: (editing: boolean) => onProcessRenameStateChange?.(process.pane_id, editing),
+              renameShortcutHint,
             })
             : (
               <ProcessCard
@@ -785,6 +788,7 @@ export function JobListView({
                 startRenameSignal={renameProcessPaneId === process.pane_id ? renameProcessSignal : undefined}
                 onRenameDraftChange={(value) => onProcessRenameDraftChange?.(process.pane_id, value)}
                 onRenameStateChange={(editing) => onProcessRenameStateChange?.(process.pane_id, editing)}
+                renameShortcutHint={renameShortcutHint}
               />
             )}
         </View>
@@ -867,11 +871,11 @@ export function JobListView({
     const sortGroup = item.process.matched_group ?? `cwd:${item.process.cwd}`;
     return customRenderProcessCard ? (
       <View key={key}>
-        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, onSaveName: procOnSaveName, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id, startRenameSignal: renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined, onRenameDraftChange: (value: string | null) => onProcessRenameDraftChange?.(item.process.pane_id, value), onRenameStateChange: (editing: boolean) => onProcessRenameStateChange?.(item.process.pane_id, editing) })}
+        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, onSaveName: procOnSaveName, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id, startRenameSignal: renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined, onRenameDraftChange: (value: string | null) => onProcessRenameDraftChange?.(item.process.pane_id, value), onRenameStateChange: (editing: boolean) => onProcessRenameStateChange?.(item.process.pane_id, editing), renameShortcutHint })}
       </View>
     ) : (
       <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={marginTop != null ? { marginTop } : undefined}>
-        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} onSaveName={procOnSaveName} autoYesActive={procAutoYesActive} startRenameSignal={renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined} onRenameDraftChange={(value) => onProcessRenameDraftChange?.(item.process.pane_id, value)} onRenameStateChange={(editing) => onProcessRenameStateChange?.(item.process.pane_id, editing)} />
+        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} onSaveName={procOnSaveName} autoYesActive={procAutoYesActive} startRenameSignal={renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined} onRenameDraftChange={(value) => onProcessRenameDraftChange?.(item.process.pane_id, value)} onRenameStateChange={(editing) => onProcessRenameStateChange?.(item.process.pane_id, editing)} renameShortcutHint={renameShortcutHint} />
       </View>
     );
   };
@@ -1000,8 +1004,8 @@ export function JobListView({
                 return (
                   <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
                     {customRenderShellCard
-                      ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop, onRename: shellOnRename })
-                      : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} onRename={shellOnRename} />
+                      ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop, onRename: shellOnRename, renameShortcutHint })
+                      : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} onRename={shellOnRename} renameShortcutHint={renameShortcutHint} />
                     }
                   </View>
                 );

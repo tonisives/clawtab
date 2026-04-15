@@ -12,6 +12,7 @@ import type { useProcessEditing } from "../hooks/useProcessEditing";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useSidebarItems } from "../hooks/useSidebarItems";
 import type { useViewingState } from "../hooks/useViewingState";
+import { formatShortcutSteps } from "../../../shortcuts";
 
 interface JobsSidebarProps {
   activeAgentWorkDir: string | null;
@@ -59,6 +60,10 @@ export function JobsSidebar({
   viewing,
 }: JobsSidebarProps) {
   const { defaultProvider, defaultModel, enabledModels, groupOrder, hiddenGroups, jobOrder, processOrder, sortMode } = settings;
+  const renameShortcutHint = useMemo(
+    () => formatShortcutSteps(settings.shortcutSettings.rename_active_pane).map((step) => step.join("+")).join(" "),
+    [settings.shortcutSettings.rename_active_pane],
+  );
 
   const agentModelOptions = useMemo(
     () => buildModelOptions(["claude", "codex", "opencode", "shell"] as ProcessProvider[], enabledModels),
@@ -93,7 +98,7 @@ export function JobsSidebar({
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void }) => (
+    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => (
       <DraggableProcessCard
         {...props}
         reorderEnabled
@@ -103,7 +108,7 @@ export function JobsSidebar({
   );
 
   const renderDraggableShellCard = useCallback(
-    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void; onRename?: () => void }) => (
+    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => (
       <DraggableShellCard {...props} />
     ),
     [],
@@ -199,6 +204,7 @@ export function JobsSidebar({
         invoke("stop_detected_process", { paneId });
       }}
       onRenameShell={openRenameShellDialog}
+      renameShortcutHint={renameShortcutHint}
       autoYesPaneIds={autoYes.autoYesPaneIds}
       renderJobCard={isWide ? renderDraggableJobCard : undefined}
       renderProcessCard={isWide ? renderDraggableProcessCard : undefined}

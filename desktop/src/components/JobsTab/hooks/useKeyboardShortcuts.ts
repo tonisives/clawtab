@@ -200,10 +200,9 @@ export function useKeyboardShortcuts({
   const [pendingShortcutStroke, setPendingShortcutStroke] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const triggerRenameActivePane = useCallback(() => {
-    if (activePaneContent?.kind === "terminal") {
-      const shell = lifecycle.shellPanes.find((entry) => entry.pane_id === activePaneContent.paneId);
-      if (!shell) return;
+  const openRenameDialogForPaneId = useCallback((paneId: string): boolean => {
+    const shell = lifecycle.shellPanes.find((entry) => entry.pane_id === paneId);
+    if (shell) {
       setEditProcessField({
         paneId: shell.pane_id,
         title: "Edit pane title",
@@ -212,11 +211,25 @@ export function useKeyboardShortcuts({
         initialValue: shell.display_name ?? "",
         placeholder: shortenPath(shell.cwd),
       });
-      return;
+      return true;
+    }
+
+    const process = core.processes.find((entry) => entry.pane_id === paneId)
+      ?? (pendingProcess?.pane_id === paneId ? pendingProcess : null);
+    if (!process || process._transient_state) return false;
+    openRenameProcessDialog(process);
+    return true;
+  }, [core.processes, lifecycle.shellPanes, openRenameProcessDialog, pendingProcess, setEditProcessField]);
+
+  const triggerRenameActivePane = useCallback((sourcePaneId?: string | null) => {
+    if (sourcePaneId && openRenameDialogForPaneId(sourcePaneId)) return;
+
+    if (activePaneContent?.kind === "terminal" || activePaneContent?.kind === "process") {
+      if (openRenameDialogForPaneId(activePaneContent.paneId)) return;
     }
     if (!activeProcessForRename || activeProcessForRename._transient_state) return;
     openRenameProcessDialog(activeProcessForRename);
-  }, [activePaneContent, activeProcessForRename, setEditProcessField, openRenameProcessDialog, lifecycle.shellPanes]);
+  }, [activePaneContent, activeProcessForRename, openRenameDialogForPaneId, openRenameProcessDialog]);
 
   const triggerZoomActivePane = useCallback(() => {
     const leaves = split.tree ? collectLeaves(split.tree) : [];
@@ -365,6 +378,12 @@ export function useKeyboardShortcuts({
 
     const runAppShortcutBinding = (binding: string, sourcePaneId?: string) => {
       const normalizedBinding = normalizeShortcutBinding(binding, shortcutSettings.prefix_key);
+      const renameBinding = normalizeShortcutBinding(shortcutSettings.rename_active_pane, shortcutSettings.prefix_key);
+      if (normalizedBinding === renameBinding) {
+        setPendingShortcutStroke(null);
+        triggerRenameActivePane(sourcePaneId);
+        return true;
+      }
       const movementBindings: Array<{ binding: string; direction: PaneMoveDirection }> = [
         { binding: shortcutSettings.move_pane_left, direction: "left" },
         { binding: shortcutSettings.move_pane_up, direction: "up" },
@@ -463,13 +482,25 @@ export function useKeyboardShortcuts({
           runMovePaneShortcut(movement.direction, { sourceLeafId: getTargetLeafId(e.target) });
           return;
         }
+        if (normalizeShortcutBinding(singleStrokeMatch.binding, shortcutSettings.prefix_key) === normalizeShortcutBinding(shortcutSettings.rename_active_pane, shortcutSettings.prefix_key)) {
+          const targetLeafId = getTargetLeafId(e.target);
+          const targetContent = targetLeafId && split.tree
+            ? collectLeaves(split.tree).find((leaf) => leaf.id === targetLeafId)?.content ?? null
+            : null;
+          triggerRenameActivePane(getPaneIdForContent(targetContent));
+          return;
+        }
         singleStrokeMatch.run();
         return;
       }
     };
 
     const handleAppShortcut = (event: Event) => {
-      const detail = (event as CustomEvent<{ binding?: string; paneId?: string }>).detail;
+      const detail = (event as CustomEvent<{ action?: string; binding?: string; paneId?: string }>).detail;
+      if (detail?.action === "rename_active_pane") {
+        triggerRenameActivePane(detail.paneId);
+        return;
+      }
       if (detail?.binding) runAppShortcutBinding(detail.binding, detail.paneId);
     };
 

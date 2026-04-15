@@ -762,6 +762,36 @@ input[type="password"]:disabled,
   color: var(--text-primary);
 }
 
+/* Shortcuts search */
+.shortcuts-search-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg-primary);
+  padding: 0 0 12px;
+}
+
+.shortcuts-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  font-size: 13px;
+  color: var(--text-primary);
+  box-sizing: border-box;
+}
+
+.shortcuts-search-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-hover);
+}
+
+.shortcuts-search-input::placeholder {
+  color: var(--text-secondary);
+}
+
 /* Shortcuts table */
 .shortcuts-table {
   width: 100%;

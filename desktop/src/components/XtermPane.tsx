@@ -10,7 +10,9 @@ import {
   APP_SHORTCUT_EVENT,
   DEFAULT_SHORTCUTS,
   eventToShortcutBinding,
+  normalizeShortcutBinding,
   resolveShortcutSettings,
+  shortcutCompletesSequence,
   shortcutMatches,
   shortcutStartsWith,
 } from "../shortcuts";
@@ -23,8 +25,8 @@ const pendingFocusPaneIds = new Set<string>();
 let focusedPaneId: string | null = null;
 const activeTerminals = new Map<string, Terminal>();
 
-function dispatchAppShortcut(binding: string, paneId: string) {
-  window.dispatchEvent(new CustomEvent(APP_SHORTCUT_EVENT, { detail: { binding, paneId } }));
+function dispatchAppShortcut(binding: string, paneId: string, action?: string) {
+  window.dispatchEvent(new CustomEvent(APP_SHORTCUT_EVENT, { detail: { action, binding, paneId } }));
 }
 
 export function requestXtermPaneFocus(paneId: string) {
@@ -244,6 +246,16 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         const stroke = eventToShortcutBinding(e);
         if (pendingShortcutStrokeRef.current) {
           if (stroke) {
+            const sequenceBinding = appBindings.find((binding) => (
+              shortcutCompletesSequence(binding, [pendingShortcutStrokeRef.current ?? "", stroke], shortcuts.prefix_key)
+            ));
+            if (sequenceBinding && !(e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled) {
+              (e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled = true;
+              const action = normalizeShortcutBinding(sequenceBinding, shortcuts.prefix_key) === normalizeShortcutBinding(shortcuts.rename_active_pane, shortcuts.prefix_key)
+                ? "rename_active_pane"
+                : undefined;
+              dispatchAppShortcut(sequenceBinding, paneId, action);
+            }
             pendingShortcutStrokeRef.current = null;
             suppressedKeyRef.current = e.key;
           }
@@ -261,7 +273,10 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
         const singleStrokeBinding = appBindings.find((binding) => shortcutMatches(e, binding, shortcuts.prefix_key));
         if (singleStrokeBinding) {
           if (!(e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled) {
-            dispatchAppShortcut(singleStrokeBinding, paneId);
+            const action = normalizeShortcutBinding(singleStrokeBinding, shortcuts.prefix_key) === normalizeShortcutBinding(shortcuts.rename_active_pane, shortcuts.prefix_key)
+              ? "rename_active_pane"
+              : undefined;
+            dispatchAppShortcut(singleStrokeBinding, paneId, action);
           }
           suppressedKeyRef.current = e.key;
           return false;

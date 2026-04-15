@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettings } from "../types";
 import {
@@ -13,6 +13,8 @@ import {
 export function ShortcutsPanel() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [recording, setRecording] = useState<{ id: ShortcutId; strokes: string[] } | null>(null);
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -117,6 +119,17 @@ export function ShortcutsPanel() {
     return () => document.removeEventListener("keydown", handleKeyDown, true);
   }, [recording, settings]);
 
+  useEffect(() => {
+    const handleFind = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleFind);
+    return () => document.removeEventListener("keydown", handleFind);
+  }, []);
+
   if (!settings) {
     return <div className="loading">Loading shortcuts...</div>;
   }
@@ -152,10 +165,32 @@ export function ShortcutsPanel() {
     return recording.strokes.join(" ");
   };
 
+  const query = search.toLowerCase();
+  const filtered = query
+    ? SHORTCUT_DEFINITIONS.filter((s) => {
+        const binding = shortcuts[s.id];
+        return (
+          s.label.toLowerCase().includes(query) ||
+          s.id.toLowerCase().includes(query) ||
+          binding.toLowerCase().includes(query)
+        );
+      })
+    : SHORTCUT_DEFINITIONS;
+
   return (
     <div className="settings-section">
       <h2>Keyboard Shortcuts</h2>
       <div className="field-group">
+        <div className="shortcuts-search-bar">
+          <input
+            ref={searchRef}
+            type="text"
+            placeholder="Search shortcuts..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="shortcuts-search-input"
+          />
+        </div>
         <div className="shortcuts-header">
           <span className="field-group-title" style={{ marginBottom: 0, paddingBottom: 0, borderBottom: "none" }}>
             General
@@ -175,7 +210,7 @@ export function ShortcutsPanel() {
         </p>
         <table className="shortcuts-table">
           <tbody>
-            {SHORTCUT_DEFINITIONS.map((shortcut) => (
+            {filtered.map((shortcut) => (
               <tr key={shortcut.id}>
                 <td className="shortcut-label">{shortcut.label}</td>
                 <td className="shortcut-keys">

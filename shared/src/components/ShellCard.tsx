@@ -15,12 +15,14 @@ export function ShellCard({
   selected,
   onStop,
   onRename,
+  renameShortcutHint = "Cmd+R",
 }: {
   shell: ShellPane;
   onPress?: () => void;
   selected?: boolean | string;
   onStop?: () => void;
   onRename?: () => void;
+  renameShortcutHint?: string;
 }) {
   const displayName = shell.display_name ?? shortenPath(shell.cwd);
 
@@ -70,7 +72,7 @@ export function ShellCard({
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
-            ...(onRename ? [{ type: "item" as const, label: "Rename", hint: "Cmd+R", onPress: () => { onRename(); setMenuOpen(false); } }] : []),
+            ...(onRename ? [{ type: "item" as const, label: "Rename", hint: renameShortcutHint, onPress: () => { onRename(); setMenuOpen(false); } }] : []),
             ...(onRename && onStop ? [{ type: "separator" as const }] : []),
             ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}

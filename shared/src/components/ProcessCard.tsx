@@ -22,6 +22,7 @@ export function ProcessCard({
   startRenameSignal,
   onRenameDraftChange,
   onRenameStateChange,
+  renameShortcutHint = "Cmd+R",
 }: {
   process: DetectedProcess;
   onPress?: () => void;
@@ -34,6 +35,7 @@ export function ProcessCard({
   startRenameSignal?: number;
   onRenameDraftChange?: (value: string | null) => void;
   onRenameStateChange?: (editing: boolean) => void;
+  renameShortcutHint?: string;
 }) {
   const displayName = inGroup
     ? (process.display_name ?? process.first_query ?? shortenPath(process.cwd))
@@ -207,7 +209,7 @@ export function ProcessCard({
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
-            ...(canRename ? [{ type: "item" as const, label: "Rename", hint: "Cmd+R", onPress: () => { startEditing(); } }] : []),
+            ...(canRename ? [{ type: "item" as const, label: "Rename", hint: renameShortcutHint, onPress: () => { startEditing(); } }] : []),
             ...(canRename && onStop ? [{ type: "separator" as const }] : []),
             ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}
