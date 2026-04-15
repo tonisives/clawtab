@@ -28,6 +28,22 @@ import { RunRow } from "./RunRow";
 import { LiveRunZoomOverlay, LogZoomModal, LiveZoomModal } from "./Modals";
 import { styles } from "./styles";
 
+function formatTokenCount(value?: number | null): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  if (value >= 1000000) {
+    const millions = value / 1000000;
+    return `${millions >= 10 ? Math.round(millions) : Math.round(millions * 10) / 10}M`;
+  }
+  return `${Math.round(value / 1000)}k`;
+}
+
+function tokenCountColor(value?: number | null): string {
+  if (typeof value !== "number") return colors.textMuted;
+  if (value >= 120000) return "#ff9f0a";
+  if (value >= 60000) return "#ffd60a";
+  return colors.textMuted;
+}
+
 export interface JobDetailViewProps {
   transport: Transport;
   job: RemoteJob;
@@ -84,6 +100,7 @@ export interface JobDetailViewProps {
   // Runtime query info (from detected processes)
   firstQuery?: string;
   lastQuery?: string;
+  tokenCount?: number | null;
   onEditTitle?: () => void;
   // Pane actions (desktop only, for running jobs/processes with a tmux pane)
   onFork?: (direction: "right" | "down") => void;
@@ -147,6 +164,7 @@ export function JobDetailView({
   hideMessageInput,
   firstQuery,
   lastQuery,
+  tokenCount,
   onEditTitle,
   onFork,
   onSplitPane,
@@ -178,6 +196,9 @@ export function JobDetailView({
   const settingsMenuRef = useRef<View>(null);
   const settingsDropdownRef = useRef<View>(null);
   const settingsBtnRef = useRef<any>(null);
+
+  const tokenLabel = formatTokenCount(tokenCount);
+  const tokenColor = tokenCountColor(tokenCount);
   const [zoomRun, setZoomRun] = useState<{ run: RunRecord; logContent: string } | null>(null);
   const [liveRunZoom, setLiveRunZoom] = useState<{ run: RunRecord; pane: ShellPane } | null>(null);
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
@@ -570,10 +591,15 @@ export function JobDetailView({
       </View>
 
       {/* Query info for running jobs */}
-      {isRunning && firstQuery ? (
+      {isRunning && (firstQuery || tokenLabel) ? (
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Query</Text>
-          <Text style={styles.queryLine} numberOfLines={1}>{firstQuery}</Text>
+          <Text style={styles.queryLine} numberOfLines={1}>{firstQuery ?? ""}</Text>
+          {tokenLabel ? (
+            <Text style={[styles.tokenCount, { color: tokenColor }]} numberOfLines={1}>
+              {tokenLabel}
+            </Text>
+          ) : null}
         </View>
       ) : null}
       {isRunning && lastQuery && lastQuery !== firstQuery ? (

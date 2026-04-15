@@ -1,7 +1,7 @@
 pub mod aerospace;
-pub mod daemon;
 pub mod browser;
 pub mod claude_usage;
+pub mod daemon;
 pub mod debug;
 pub mod history;
 pub mod jobs;

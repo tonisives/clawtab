@@ -41,9 +41,7 @@ pub async fn detect_agent_providers() -> Result<Vec<ProcessProvider>, String> {
 /// Returns per-provider model options: builtin models merged with user-configured custom models.
 /// Each value is a list of (model_id, display_name) pairs.
 #[tauri::command]
-pub fn get_model_options(
-    state: State<'_, AppState>,
-) -> HashMap<String, Vec<(String, String)>> {
+pub fn get_model_options(state: State<'_, AppState>) -> HashMap<String, Vec<(String, String)>> {
     let enabled_models = {
         let s = state.settings.lock().unwrap();
         s.enabled_models.clone()

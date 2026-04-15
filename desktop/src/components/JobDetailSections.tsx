@@ -418,6 +418,7 @@ export function DesktopJobDetail({
   autoYesShortcut,
   firstQuery,
   lastQuery,
+  tokenCount,
   showBackButton = false,
   hidePath = false,
   onFork,
@@ -454,6 +455,7 @@ export function DesktopJobDetail({
   autoYesShortcut?: string;
   firstQuery?: string;
   lastQuery?: string;
+  tokenCount?: number | null;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
   onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
@@ -554,6 +556,7 @@ export function DesktopJobDetail({
         titlePath={titlePath}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
+        tokenCount={tokenCount}
         renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
         hideMessageInput={!!(paneId && tmuxSession)}
         onFork={onFork}

@@ -175,10 +175,7 @@ async fn cleanup_stale_agents(
         if let Some(mut agents) = lock_or_log(active_agents, "active_agents") {
             agents.remove(&chat_id);
         }
-        let msg = format!(
-            "<b>ClawTab</b>: Job <code>{}</code> session ended.",
-            job_id
-        );
+        let msg = format!("<b>ClawTab</b>: Job <code>{}</code> session ended.", job_id);
         let _ = super::send_message(&config.bot_token, chat_id, &msg).await;
         log::info!(
             "Cleaned up stale session for job '{}' chat {}",

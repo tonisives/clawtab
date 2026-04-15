@@ -49,8 +49,9 @@ fn main() {
     let active_questions: Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>> =
         Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-    let notification_state: Arc<Mutex<clawtab_lib::notifications::NotificationState>> =
-        Arc::new(Mutex::new(clawtab_lib::notifications::NotificationState::new()));
+    let notification_state: Arc<Mutex<clawtab_lib::notifications::NotificationState>> = Arc::new(
+        Mutex::new(clawtab_lib::notifications::NotificationState::new()),
+    );
     let pty_manager: clawtab_lib::pty::SharedPtyManager =
         Arc::new(Mutex::new(clawtab_lib::pty::PtyManager::new()));
 
@@ -352,19 +353,10 @@ fn handle_ipc_command(
             let status = job_status.lock().unwrap().clone();
             IpcResponse::Status(status)
         }
-        IpcCommand::OpenSettings => {
-            IpcResponse::Error("requires desktop app".to_string())
-        }
-        IpcCommand::OpenPane { .. } => {
-            IpcResponse::Error("requires desktop app".to_string())
-        }
+        IpcCommand::OpenSettings => IpcResponse::Error("requires desktop app".to_string()),
+        IpcCommand::OpenPane { .. } => IpcResponse::Error("requires desktop app".to_string()),
         IpcCommand::GetAutoYesPanes => {
-            let panes: Vec<String> = auto_yes_panes
-                .lock()
-                .unwrap()
-                .iter()
-                .cloned()
-                .collect();
+            let panes: Vec<String> = auto_yes_panes.lock().unwrap().iter().cloned().collect();
             IpcResponse::AutoYesPanes(panes)
         }
         IpcCommand::SetAutoYesPanes { pane_ids } => {
@@ -373,9 +365,8 @@ fn handle_ipc_command(
 
             if let Ok(guard) = relay.lock() {
                 if let Some(handle) = guard.as_ref() {
-                    handle.send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes {
-                        pane_ids,
-                    });
+                    handle
+                        .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
                 }
             }
 
@@ -393,9 +384,8 @@ fn handle_ipc_command(
 
             if let Ok(guard) = relay.lock() {
                 if let Some(handle) = guard.as_ref() {
-                    handle.send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes {
-                        pane_ids,
-                    });
+                    handle
+                        .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
                 }
             }
 

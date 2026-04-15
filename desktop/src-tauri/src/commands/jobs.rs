@@ -437,7 +437,8 @@ pub async fn run_job_now(
         crate::config::jobs::JobType::Claude | crate::config::jobs::JobType::Job
     ) {
         let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
-        let notifier: Arc<dyn crate::notifications::Notifier> = Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
+        let notifier: Arc<dyn crate::notifications::Notifier> =
+            Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
         tauri::async_runtime::spawn(async move {
             scheduler::executor::execute_job_with_auto_yes_and_pane_notify(
                 &job,
@@ -464,7 +465,8 @@ pub async fn run_job_now(
             _ => Ok(None),
         }
     } else {
-        let notifier: Arc<dyn crate::notifications::Notifier> = Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
+        let notifier: Arc<dyn crate::notifications::Notifier> =
+            Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
         tauri::async_runtime::spawn(async move {
             scheduler::executor::execute_job_with_auto_yes(
                 &job,
@@ -573,7 +575,8 @@ pub async fn restart_job(
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
     let params = params.unwrap_or_default();
 
-    let notifier: Arc<dyn crate::notifications::Notifier> = Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
+    let notifier: Arc<dyn crate::notifications::Notifier> =
+        Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
     tauri::async_runtime::spawn(async move {
         scheduler::executor::execute_job_with_auto_yes(
             &job,

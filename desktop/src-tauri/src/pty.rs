@@ -807,11 +807,15 @@ impl PtyManager {
 
         // Capture the pane into a ct-<orig>-<N> window in its original session
         // (idempotent). base_session here is the original tmux session.
-        let (base_session, window_id) = capture_pane(pane_id, tmux_session)
-            .map_err(|e| {
-                log::warn!("[pty {}] capture_pane failed after {}ms: {}", pane_id, spawn_started.elapsed().as_millis(), e);
+        let (base_session, window_id) = capture_pane(pane_id, tmux_session).map_err(|e| {
+            log::warn!(
+                "[pty {}] capture_pane failed after {}ms: {}",
+                pane_id,
+                spawn_started.elapsed().as_millis(),
                 e
-            })?;
+            );
+            e
+        })?;
         log::info!(
             "[pty {}] captured base_session={} window_id={} after {}ms",
             pane_id,
@@ -830,8 +834,14 @@ impl PtyManager {
             &view_session,
             "-t",
             &base_session,
-        ]).map_err(|e| {
-            log::warn!("[pty {}] new-session failed after {}ms: {}", pane_id, spawn_started.elapsed().as_millis(), e);
+        ])
+        .map_err(|e| {
+            log::warn!(
+                "[pty {}] new-session failed after {}ms: {}",
+                pane_id,
+                spawn_started.elapsed().as_millis(),
+                e
+            );
             e
         })?;
         let _ = tmux(&["set-option", "-t", &view_session, "status", "off"]);
@@ -839,8 +849,14 @@ impl PtyManager {
             "select-window",
             "-t",
             &format!("{}:{}", view_session, window_id),
-        ]).map_err(|e| {
-            log::warn!("[pty {}] select-window failed after {}ms: {}", pane_id, spawn_started.elapsed().as_millis(), e);
+        ])
+        .map_err(|e| {
+            log::warn!(
+                "[pty {}] select-window failed after {}ms: {}",
+                pane_id,
+                spawn_started.elapsed().as_millis(),
+                e
+            );
             // Clean up the view session we just created
             let _ = tmux(&["kill-session", "-t", &view_session]);
             e

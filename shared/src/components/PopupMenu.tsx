@@ -98,6 +98,8 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
   const ref = dropdownRef ?? localRef;
   const [submenu, setSubmenu] = useState<{ label: string; items: PopupMenuItem[] } | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
+  const [clampedPos, setClampedPos] = useState<{ top: number; left: number } | null>(null);
+  const prevPositionRef = useRef(position);
 
   const activeItems = submenu ? submenu.items : items;
   const actionableIndexes = activeItems
@@ -117,6 +119,47 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
     return () => window.clearTimeout(timeout);
   }, [autoFocus, ref, submenu]);
 
+  // Clamp position to stay within the viewport after the menu renders
+  useEffect(() => {
+    // When position reference changes, reset so we re-measure
+    if (prevPositionRef.current !== position) {
+      prevPositionRef.current = position;
+      setClampedPos(null);
+      return;
+    }
+    if (!isWeb || !position) { setClampedPos(null); return; }
+    const el = ref.current as any as HTMLElement | null;
+    if (!el) { setClampedPos((prev) => (prev?.top === position.top && prev?.left === position.left ? prev : position)); return; }
+    const menuRect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 8;
+    const menuW = menuRect.width || 160;
+    const menuH = menuRect.height || 0;
+
+    // Callers pass left = rect.right (the trigger's right edge).
+    // Mirror the old translateX(-100%): menu right-aligns to that point.
+    let left = position.left - menuW;
+    if (left < margin) left = margin;
+    if (left + menuW > vw - margin) left = vw - menuW - margin;
+
+    // Vertical: prefer below trigger, flip above if it would overflow
+    let top = position.top;
+    if (menuH > 0 && top + menuH > vh - margin) {
+      const triggerEl = triggerRef?.current as HTMLElement | null;
+      if (triggerEl) {
+        const triggerRect = triggerEl.getBoundingClientRect();
+        const flippedTop = triggerRect.top - menuH - 6;
+        if (flippedTop >= margin) top = flippedTop;
+        else top = Math.max(margin, vh - menuH - margin);
+      } else {
+        top = Math.max(margin, vh - menuH - margin);
+      }
+    }
+
+    setClampedPos((prev) => (prev?.top === top && prev?.left === left ? prev : { top, left }));
+  });
+
   useEffect(() => {
     if (!isWeb) return;
     const handler = (e: MouseEvent) => {
@@ -130,11 +173,13 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose, ref, triggerRef]);
 
+  // Use clamped position once available; render invisible on first frame to avoid jump
+  const resolvedPos = clampedPos;
   const menuStyle = isWeb && position ? {
     position: "fixed" as any,
-    top: position.top,
-    left: position.left,
-    transform: "translateX(-100%)" as any,
+    top: resolvedPos?.top ?? position.top,
+    left: resolvedPos?.left ?? (position.left - 160),
+    visibility: resolvedPos ? "visible" : "hidden",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,

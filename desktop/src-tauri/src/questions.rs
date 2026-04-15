@@ -232,8 +232,7 @@ pub fn parse_opencode_buttons(ansi_text: &str) -> (Vec<QuestionOption>, u16) {
 
     // Extract button labels: non-empty trimmed words separated by 2+ spaces.
     // Skip the leading border character (┃ or similar).
-    let content = button_area
-        .trim_start_matches(|c: char| c.is_whitespace() || "┃│|".contains(c));
+    let content = button_area.trim_start_matches(|c: char| c.is_whitespace() || "┃│|".contains(c));
     let mut labels: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut space_run = 0;
@@ -270,11 +269,18 @@ pub fn parse_opencode_buttons(ansi_text: &str) -> (Vec<QuestionOption>, u16) {
 
     for (idx, label) in labels.iter().enumerate() {
         // Find the column position of this label in the stripped line
-        let col = find_label_column(clean_line, label, if idx > 0 {
-            options.last().map(|o| (o.col as usize) + options.last().map(|o| o.label.len()).unwrap_or(0)).unwrap_or(0)
-        } else {
-            0
-        });
+        let col = find_label_column(
+            clean_line,
+            label,
+            if idx > 0 {
+                options
+                    .last()
+                    .map(|o| (o.col as usize) + options.last().map(|o| o.label.len()).unwrap_or(0))
+                    .unwrap_or(0)
+            } else {
+                0
+            },
+        );
 
         // Check if this label's position in the ANSI line has the selected background
         let is_selected = is_label_highlighted(ansi_line, label, selected_bg);
@@ -527,14 +533,13 @@ pub async fn question_detection_loop(
             }
 
             // Full-pane capture to get absolute row positions for mouse click targeting.
-            let (full_text, _pane_height) =
-                match crate::tmux::capture_pane_visible(pane_id) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        log::warn!("[questions] failed to capture full pane {}: {}", pane_id, e);
-                        continue;
-                    }
-                };
+            let (full_text, _pane_height) = match crate::tmux::capture_pane_visible(pane_id) {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!("[questions] failed to capture full pane {}: {}", pane_id, e);
+                    continue;
+                }
+            };
 
             let (buttons, button_line_idx) = parse_opencode_buttons(&full_text);
             if buttons.is_empty() {
@@ -814,7 +819,12 @@ fn detect_question_processes(
         .output()
     {
         Ok(o) if o.status.success() => o,
-        _ => return DetectionResult { processes: vec![], all_pane_ids: HashSet::new() },
+        _ => {
+            return DetectionResult {
+                processes: vec![],
+                all_pane_ids: HashSet::new(),
+            }
+        }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -879,7 +889,12 @@ fn detect_question_processes(
         if provider.is_none() {
             continue;
         }
-        log::debug!("[questions] pane {} pid {} detected as {:?}", pane_id, pane_pid, provider);
+        log::debug!(
+            "[questions] pane {} pid {} detected as {:?}",
+            pane_id,
+            pane_pid,
+            provider
+        );
 
         if !seen.insert(pane_id.to_string()) {
             continue;

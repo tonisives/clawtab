@@ -72,17 +72,19 @@ pub fn is_running() -> (bool, Option<u32>) {
 pub fn install() -> Result<String, String> {
     let dest = plist_dest();
     if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
     let _ = std::fs::create_dir_all("/tmp/clawtab");
 
     if !std::path::Path::new("/usr/local/bin/clawtab-daemon").exists() {
-        return Err("/usr/local/bin/clawtab-daemon not found. Run 'make build-daemon' first.".into());
+        return Err(
+            "/usr/local/bin/clawtab-daemon not found. Run 'make build-daemon' first.".into(),
+        );
     }
 
-    std::fs::write(&dest, PLIST_CONTENT)
-        .map_err(|e| format!("Failed to write plist: {}", e))?;
+    std::fs::write(&dest, PLIST_CONTENT).map_err(|e| format!("Failed to write plist: {}", e))?;
 
     let status = std::process::Command::new("launchctl")
         .args(["load", &dest.display().to_string()])
@@ -130,8 +132,7 @@ pub fn uninstall() -> Result<String, String> {
         .args(["unload", &dest.display().to_string()])
         .status();
 
-    std::fs::remove_file(&dest)
-        .map_err(|e| format!("Failed to remove plist: {}", e))?;
+    std::fs::remove_file(&dest).map_err(|e| format!("Failed to remove plist: {}", e))?;
 
     Ok("Daemon uninstalled".into())
 }

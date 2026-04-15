@@ -348,7 +348,11 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
           split.openContent(matchContent);
         }
       } else {
-        setViewingProcess(match);
+        const stillViewingPending = currentContent?.kind === "process"
+          && pendingProcess && currentContent.paneId === pendingProcess.pane_id;
+        if (stillViewingPending) {
+          setViewingProcess(match);
+        }
       }
       setScrollToSlug(match.pane_id);
       return;
@@ -357,7 +361,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
       setPendingAgentWorkDir(null);
       setPendingProcess(null);
     }
-  }, [core.processes, pendingAgentWorkDir, pendingProcess, split.tree, split.openContent, split.replaceContent, setViewingProcess, setScrollToSlug]);
+  }, [core.processes, currentContent, pendingAgentWorkDir, pendingProcess, split.tree, split.openContent, split.replaceContent, setViewingProcess, setScrollToSlug]);
 
   // Cleanup stopping processes after timeout
   useEffect(() => {

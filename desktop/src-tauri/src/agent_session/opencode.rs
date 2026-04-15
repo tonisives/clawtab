@@ -56,6 +56,7 @@ pub(super) fn resolve_session_info(
         .or(first)
         .or_else(|| normalize_optional_owned(session.title.clone()));
     info.last_query = last;
+    info.token_count = read_opencode_token_count(&session.id);
 
     if info
         .first_query
@@ -204,6 +205,44 @@ fn read_opencode_user_messages(session_id: &str) -> (Option<String>, Option<Stri
     } else {
         (first, last)
     }
+}
+
+fn read_opencode_token_count(session_id: &str) -> Option<u64> {
+    let conn = Connection::open(opencode_db_path()).ok()?;
+    let mut stmt = conn
+        .prepare(
+            "select data
+             from message
+             where session_id = ?1
+               and json_extract(data, '$.role') = 'assistant'
+             order by time_created desc, id desc
+             limit 20",
+        )
+        .ok()?;
+
+    let rows = stmt
+        .query_map([session_id], |row| row.get::<_, String>(0))
+        .ok()?;
+
+    for row in rows {
+        let Ok(data) = row else {
+            continue;
+        };
+        let Some(count) = serde_json::from_str::<serde_json::Value>(&data)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("tokens")
+                    .and_then(|tokens| tokens.get("total"))
+                    .and_then(|v| v.as_u64())
+            })
+        else {
+            continue;
+        };
+        return Some(count);
+    }
+
+    None
 }
 
 fn find_opencode_child(parent_pid: &str, snapshot: Option<&ProcessSnapshot>) -> Option<String> {

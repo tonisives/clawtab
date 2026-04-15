@@ -69,8 +69,13 @@ impl ShortcutSettings {
 
     fn migrate_missing_fields(&mut self) {
         let defaults = ShortcutSettings::default();
-        if self.reveal_in_sidebar.is_empty() { self.reveal_in_sidebar = defaults.reveal_in_sidebar; }
-        if self.toggle_auto_yes.is_empty() || self.toggle_auto_yes == "Meta+y" || self.toggle_auto_yes == "Meta+Shift+y" {
+        if self.reveal_in_sidebar.is_empty() {
+            self.reveal_in_sidebar = defaults.reveal_in_sidebar;
+        }
+        if self.toggle_auto_yes.is_empty()
+            || self.toggle_auto_yes == "Meta+y"
+            || self.toggle_auto_yes == "Meta+Shift+y"
+        {
             self.toggle_auto_yes = defaults.toggle_auto_yes;
         }
     }

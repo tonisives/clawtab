@@ -89,10 +89,14 @@ impl OsascriptNotifier {
         // Use spawn() not output() - terminal-notifier blocks until dismissed.
         let tn_result = std::process::Command::new("terminal-notifier")
             .args([
-                "-title", title,
-                "-message", body,
-                "-sender", "cc.clawtab",
-                "-sound", "default",
+                "-title",
+                title,
+                "-message",
+                body,
+                "-sender",
+                "cc.clawtab",
+                "-sound",
+                "default",
             ])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -129,10 +133,7 @@ impl Notifier for OsascriptNotifier {
                 "[notifications] question notification sent for {}",
                 question.question_id
             ),
-            Err(e) => log::error!(
-                "[notifications] question notification failed: {}",
-                e
-            ),
+            Err(e) => log::error!("[notifications] question notification failed: {}", e),
         }
     }
 
@@ -144,10 +145,7 @@ impl Notifier for OsascriptNotifier {
                 job_id,
                 event
             ),
-            Err(e) => log::error!(
-                "[notifications] job notification failed: {}",
-                e
-            ),
+            Err(e) => log::error!("[notifications] job notification failed: {}", e),
         }
     }
 }

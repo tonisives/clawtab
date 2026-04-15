@@ -53,10 +53,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     if notify.start && !params.is_reattach {
         if use_telegram {
             if let Some(ref tg) = params.telegram {
-                let text = format!(
-                    "<b>ClawTab</b>: Job <code>{}</code> started",
-                    params.job_id
-                );
+                let text = format!("<b>ClawTab</b>: Job <code>{}</code> started", params.job_id);
                 if let Err(e) =
                     crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
                 {

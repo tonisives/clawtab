@@ -15,9 +15,9 @@ pub mod config;
 mod cwt;
 pub mod daemon;
 mod debug_spawn;
+pub mod events;
 pub mod history;
 pub mod ipc;
-pub mod events;
 pub mod notifications;
 pub mod pty;
 pub mod questions;
@@ -74,8 +74,7 @@ pub struct AppState {
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
-    pub process_overrides:
-        Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>>,
+    pub process_overrides: Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>>,
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
     pub pty_manager: pty::SharedPtyManager,
@@ -260,7 +259,6 @@ pub fn refresh_shortcut_menu(
         return Ok(());
     };
 
-
     let pane_menu = if let Some(existing) = find_submenu(&menu, "Pane") {
         existing
     } else {
@@ -273,7 +271,11 @@ pub fn refresh_shortcut_menu(
     let focus_accel = shortcut_binding_to_accelerator(&shortcuts.focus_agent_input);
     let zoom_accel = shortcut_binding_to_accelerator(&shortcuts.zoom_active_pane);
     let toggle_auto_yes_accel = shortcut_binding_to_accelerator(&shortcuts.toggle_auto_yes);
-    log::info!("refresh_shortcut_menu: toggle_auto_yes binding={:?} accel={:?}", shortcuts.toggle_auto_yes, toggle_auto_yes_accel);
+    log::info!(
+        "refresh_shortcut_menu: toggle_auto_yes binding={:?} accel={:?}",
+        shortcuts.toggle_auto_yes,
+        toggle_auto_yes_accel
+    );
 
     let _ = ensure_shortcut_menu_item(
         app,
@@ -433,8 +435,7 @@ fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
             IpcResponse::AutoYesPanes(panes)
         }
         IpcCommand::SetAutoYesPanes { pane_ids } => {
-            let pane_set: std::collections::HashSet<String> =
-                pane_ids.iter().cloned().collect();
+            let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
             *state.auto_yes_panes.lock().unwrap() = pane_set;
 
             if let Ok(guard) = state.relay.lock() {
@@ -590,9 +591,7 @@ pub fn run() {
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> = Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-    let process_overrides: Arc<
-        Mutex<HashMap<String, config::settings::DetectedProcessOverride>>,
-    > = {
+    let process_overrides: Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>> = {
         let loaded = settings.lock().unwrap().process_overrides.clone();
         Arc::new(Mutex::new(loaded))
     };
@@ -911,45 +910,73 @@ pub fn run() {
             let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
             let pty_debug_item =
                 MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
-            let app_menu = Menu::with_items(app, &[
-                &Submenu::with_items(app, pkg_info.name.clone(), true, &[
-                    &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::services(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::hide(app, None)?,
-                    &PredefinedMenuItem::hide_others(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::quit(app, None)?,
-                ])?,
-                &Submenu::with_items(app, "File", true, &[
-                    &PredefinedMenuItem::close_window(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &import_item,
-                ])?,
-                &Submenu::with_items(app, "Edit", true, &[
-                    &PredefinedMenuItem::undo(app, None)?,
-                    // Redo omitted — Cmd+Y is used for Toggle Auto-yes
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::cut(app, None)?,
-                    &PredefinedMenuItem::copy(app, None)?,
-                    &PredefinedMenuItem::paste(app, None)?,
-                    &PredefinedMenuItem::select_all(app, None)?,
-                ])?,
-                &Submenu::with_items(app, "View", true, &[
-                    &PredefinedMenuItem::fullscreen(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &debug_item,
-                    &pty_debug_item,
-                ])?,
-                &Submenu::with_items(app, "Window", true, &[
-                    &PredefinedMenuItem::minimize(app, None)?,
-                    &PredefinedMenuItem::maximize(app, None)?,
-                    &PredefinedMenuItem::separator(app)?,
-                    &PredefinedMenuItem::close_window(app, None)?,
-                ])?,
-                &Submenu::with_items(app, "Help", true, &[])?,
-            ])?;
+            let app_menu = Menu::with_items(
+                app,
+                &[
+                    &Submenu::with_items(
+                        app,
+                        pkg_info.name.clone(),
+                        true,
+                        &[
+                            &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &PredefinedMenuItem::services(app, None)?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &PredefinedMenuItem::hide(app, None)?,
+                            &PredefinedMenuItem::hide_others(app, None)?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &PredefinedMenuItem::quit(app, None)?,
+                        ],
+                    )?,
+                    &Submenu::with_items(
+                        app,
+                        "File",
+                        true,
+                        &[
+                            &PredefinedMenuItem::close_window(app, None)?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &import_item,
+                        ],
+                    )?,
+                    &Submenu::with_items(
+                        app,
+                        "Edit",
+                        true,
+                        &[
+                            &PredefinedMenuItem::undo(app, None)?,
+                            // Redo omitted — Cmd+Y is used for Toggle Auto-yes
+                            &PredefinedMenuItem::separator(app)?,
+                            &PredefinedMenuItem::cut(app, None)?,
+                            &PredefinedMenuItem::copy(app, None)?,
+                            &PredefinedMenuItem::paste(app, None)?,
+                            &PredefinedMenuItem::select_all(app, None)?,
+                        ],
+                    )?,
+                    &Submenu::with_items(
+                        app,
+                        "View",
+                        true,
+                        &[
+                            &PredefinedMenuItem::fullscreen(app, None)?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &debug_item,
+                            &pty_debug_item,
+                        ],
+                    )?,
+                    &Submenu::with_items(
+                        app,
+                        "Window",
+                        true,
+                        &[
+                            &PredefinedMenuItem::minimize(app, None)?,
+                            &PredefinedMenuItem::maximize(app, None)?,
+                            &PredefinedMenuItem::separator(app)?,
+                            &PredefinedMenuItem::close_window(app, None)?,
+                        ],
+                    )?,
+                    &Submenu::with_items(app, "Help", true, &[])?,
+                ],
+            )?;
 
             app.set_menu(app_menu)?;
             {
@@ -1025,7 +1052,8 @@ pub fn run() {
             // daemon owns them. The desktop app becomes a pure UI client.
             // Use a synchronous socket probe - the async runtime isn't available
             // yet inside the Tauri setup hook.
-            let daemon_running = std::os::unix::net::UnixStream::connect("/tmp/clawtab.sock").is_ok();
+            let daemon_running =
+                std::os::unix::net::UnixStream::connect("/tmp/clawtab.sock").is_ok();
 
             if daemon_running {
                 log::info!("Daemon detected - desktop app running in UI-only mode");
@@ -1105,7 +1133,8 @@ pub fn run() {
                                 rs.server_url.clone()
                             };
                             let server_url_for_sub = rs.server_url.clone();
-                            let event_sink_for_relay: Arc<dyn events::EventSink> = Arc::clone(&event_sink);
+                            let event_sink_for_relay: Arc<dyn events::EventSink> =
+                                Arc::clone(&event_sink);
                             tauri::async_runtime::spawn(async move {
                                 relay::connect_loop(
                                     ws_url,

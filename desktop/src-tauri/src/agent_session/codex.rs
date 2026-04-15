@@ -44,8 +44,12 @@ pub(super) fn resolve_session_info(
     info.started_epoch = Some(started_secs as u64);
     info.session_started_at = format_local_timestamp(started_secs);
 
+    if let Some(rollout_path) = thread.rollout_path.as_deref() {
+        info.token_count = read_codex_rollout_token_count(&PathBuf::from(rollout_path));
+    }
+
     if info.first_query.is_none() || info.last_query.is_none() {
-        if let Some(rollout_path) = thread.rollout_path {
+        if let Some(rollout_path) = thread.rollout_path.as_deref() {
             let rollout = PathBuf::from(rollout_path);
             let (first, last) = read_codex_rollout_messages(&rollout);
             if info.first_query.is_none() {
@@ -161,6 +165,65 @@ fn read_codex_last_query(thread_id: &str) -> Option<String> {
     }
 
     last
+}
+
+fn read_codex_rollout_token_count(path: &PathBuf) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    if len == 0 {
+        return None;
+    }
+
+    let mut pos = len;
+    let mut buf = Vec::new();
+    const CHUNK_SIZE: u64 = 8192;
+    const MAX_TAIL_BYTES: usize = 512 * 1024;
+
+    while pos > 0 && buf.len() < MAX_TAIL_BYTES {
+        let start = pos.saturating_sub(CHUNK_SIZE);
+        let chunk_len = (pos - start) as usize;
+        let mut chunk = vec![0u8; chunk_len];
+        file.seek(SeekFrom::Start(start)).ok()?;
+        file.read_exact(&mut chunk).ok()?;
+        chunk.extend_from_slice(&buf);
+        buf = chunk;
+
+        let text = String::from_utf8_lossy(&buf);
+        for line in text.lines().rev() {
+            if let Some(count) = extract_codex_token_count(line) {
+                return Some(count);
+            }
+        }
+
+        pos = start;
+    }
+
+    None
+}
+
+fn extract_codex_token_count(line: &str) -> Option<u64> {
+    let value: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    if value.get("type").and_then(|v| v.as_str()) != Some("event_msg") {
+        return None;
+    }
+    let payload = value.get("payload")?;
+    if payload.get("type").and_then(|v| v.as_str()) != Some("token_count") {
+        return None;
+    }
+
+    payload
+        .get("info")
+        .and_then(|info| info.get("last_token_usage"))
+        .and_then(|usage| usage.get("total_tokens"))
+        .and_then(|v| v.as_u64())
+        .or_else(|| {
+            payload
+                .get("info")
+                .and_then(|info| info.get("total_tokens"))
+                .and_then(|v| v.as_u64())
+        })
 }
 
 fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String>) {

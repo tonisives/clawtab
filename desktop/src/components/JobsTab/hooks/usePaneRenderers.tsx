@@ -317,6 +317,7 @@ export function usePaneRenderers({
             status={core.statuses[job.slug] ?? { state: "idle" as const }}
             firstQuery={matchedProcess?.first_query ?? undefined}
             lastQuery={matchedProcess?.last_query ?? undefined}
+            tokenCount={matchedProcess?.token_count}
             onBack={() => split.handleClosePane(leafId)}
             onEdit={() => { setEditingLeafJobs((prev) => ({ ...prev, [leafId]: job })); }}
             onOpen={() => handleOpen(job.slug)}
@@ -505,6 +506,7 @@ export function usePaneRenderers({
           status={core.statuses[singleJob.slug] ?? { state: "idle" as const }}
           firstQuery={matchedProcess?.first_query ?? undefined}
           lastQuery={matchedProcess?.last_query ?? undefined}
+          tokenCount={matchedProcess?.token_count}
           onBack={() => setViewingJob(null)}
           onEdit={() => { setEditingJob(singleJob); setViewingJob(null); }}
           onOpen={() => handleOpen(singleJob.slug)}

@@ -174,6 +174,7 @@ export function DetectedProcessDetail({
       hideMessageInput
       firstQuery={process.first_query ?? undefined}
       lastQuery={process.last_query ?? undefined}
+      tokenCount={process.token_count}
       onFork={process.can_fork_session ? onFork : undefined}
       onSplitPane={onSplitPane}
       onZoomPane={onZoomPane}

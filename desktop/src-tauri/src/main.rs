@@ -6,7 +6,9 @@ fn main() {
 
     #[cfg(not(feature = "desktop"))]
     {
-        eprintln!("The clawtab desktop app requires the 'desktop' feature. Use clawtab-daemon instead.");
+        eprintln!(
+            "The clawtab desktop app requires the 'desktop' feature. Use clawtab-daemon instead."
+        );
         std::process::exit(1);
     }
 }

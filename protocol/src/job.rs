@@ -87,6 +87,8 @@ pub struct DetectedProcess {
     pub last_query: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_started_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -11,7 +11,7 @@
 ### Homebrew (recommended)
 
 ```bash
-brew install clawtab
+brew install --cask tonisives/tap/clawtab
 ```
 
 This installs the `clawtab` GUI app, `cwtctl` CLI, and `cwttui` terminal UI.

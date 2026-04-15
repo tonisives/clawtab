@@ -8,8 +8,8 @@ use clawtab_protocol::{
 };
 
 use crate::config::jobs::{JobStatus, JobsConfig};
-use crate::events::EventSink;
 use crate::config::settings::AppSettings;
+use crate::events::EventSink;
 use crate::history::HistoryStore;
 use crate::secrets::SecretsManager;
 use crate::telegram::ActiveAgent;
@@ -760,6 +760,7 @@ fn detect_processes(
             first_query: session_info.first_query,
             last_query: session_info.last_query,
             session_started_at: session_info.session_started_at,
+            token_count: session_info.token_count,
         });
     }
 

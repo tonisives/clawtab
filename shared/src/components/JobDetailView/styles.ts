@@ -129,6 +129,12 @@ export const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  tokenCount: {
+    fontSize: 11,
+    fontFamily: "monospace",
+    fontWeight: "700",
+    flexShrink: 0,
+  },
   runtimeDim: {
     color: colors.textMuted,
     fontSize: 11,

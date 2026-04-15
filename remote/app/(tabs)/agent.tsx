@@ -151,7 +151,7 @@ export default function AgentScreen() {
                     const node = e?.currentTarget ?? e?.target;
                     if (node?.getBoundingClientRect) {
                       const rect = node.getBoundingClientRect();
-                      setMenuPos({ top: rect.bottom + 6, left: rect.left });
+                      setMenuPos({ top: rect.bottom + 6, left: rect.right });
                     }
                   }
                   setMenuOpen((v) => !v);

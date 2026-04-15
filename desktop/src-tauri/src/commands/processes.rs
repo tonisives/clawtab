@@ -37,6 +37,7 @@ pub struct DetectedProcess {
     pub first_query: Option<String>,
     pub last_query: Option<String>,
     pub session_started_at: Option<String>,
+    pub token_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -341,6 +342,7 @@ fn detect_processes_blocking(
                 .and_then(|meta| meta.last_query.clone())
                 .or(session_info.last_query),
             session_started_at: session_info.session_started_at,
+            token_count: session_info.token_count,
         });
     }
 
@@ -486,7 +488,10 @@ pub async fn get_auto_yes_panes(state: State<'_, AppState>) -> Result<Vec<String
 }
 
 #[tauri::command]
-pub async fn set_auto_yes_panes(state: State<'_, AppState>, pane_ids: Vec<String>) -> Result<(), String> {
+pub async fn set_auto_yes_panes(
+    state: State<'_, AppState>,
+    pane_ids: Vec<String>,
+) -> Result<(), String> {
     if *state.ui_only_mode.lock().unwrap() {
         match crate::ipc::send_command(crate::ipc::IpcCommand::SetAutoYesPanes {
             pane_ids: pane_ids.clone(),

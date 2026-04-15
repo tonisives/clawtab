@@ -13,6 +13,7 @@ pub struct SessionInfo {
     pub last_query: Option<String>,
     pub session_started_at: Option<String>,
     pub started_epoch: Option<u64>,
+    pub token_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,7 +59,10 @@ impl ProcessProvider {
     }
 
     pub fn supports_model_flag(self) -> bool {
-        matches!(self, ProcessProvider::Claude | ProcessProvider::Codex | ProcessProvider::Opencode)
+        matches!(
+            self,
+            ProcessProvider::Claude | ProcessProvider::Codex | ProcessProvider::Opencode
+        )
     }
 
     /// Returns the CLI flag format for passing a model to this provider.

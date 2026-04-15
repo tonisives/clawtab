@@ -264,6 +264,7 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
         onToggleAutoYes={paneQuestion ? handleToggleAutoYes : undefined}
         firstQuery={activeProcess?.first_query ?? undefined}
         lastQuery={activeProcess?.last_query ?? undefined}
+        tokenCount={activeProcess?.token_count}
         renderTerminal={isAlive ? renderTerminal : undefined}
         hideMessageInput={isAlive}
       />

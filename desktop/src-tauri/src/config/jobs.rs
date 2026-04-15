@@ -472,10 +472,7 @@ impl JobsConfig {
                 slugify(&job.name, 20)
             };
 
-            let job_id = job
-                .job_id
-                .clone()
-                .unwrap_or_else(|| "default".to_string());
+            let job_id = job.job_id.clone().unwrap_or_else(|| "default".to_string());
             let new_dir = jobs_dir.join(&project_slug).join(&job_id);
 
             if new_dir.exists() {

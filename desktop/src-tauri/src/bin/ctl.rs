@@ -331,7 +331,11 @@ async fn main() {
 use clawtab_lib::daemon;
 
 fn handle_daemon_command(args: &[String]) {
-    let sub = if args.len() >= 3 { args[2].as_str() } else { "" };
+    let sub = if args.len() >= 3 {
+        args[2].as_str()
+    } else {
+        ""
+    };
     match sub {
         "install" => daemon_install(),
         "uninstall" => daemon_uninstall(),
@@ -370,7 +374,10 @@ fn daemon_status() {
     let (running, pid) = daemon::is_running();
 
     if running {
-        println!("Daemon: running (pid {})", pid.map_or("-".to_string(), |p| p.to_string()));
+        println!(
+            "Daemon: running (pid {})",
+            pid.map_or("-".to_string(), |p| p.to_string())
+        );
     } else if installed {
         println!("Daemon: installed but not running");
     } else {
@@ -385,7 +392,10 @@ fn daemon_restart() {
         .ok()
         .and_then(|o| {
             if o.status.success() {
-                String::from_utf8_lossy(&o.stdout).trim().parse::<u32>().ok()
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u32>()
+                    .ok()
             } else {
                 None
             }
