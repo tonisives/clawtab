@@ -120,6 +120,7 @@ pub fn create_window_with_cwd(
 ) -> Result<String, String> {
     let mut args = vec![
         "new-window",
+        "-a",
         "-P",
         "-F",
         "#{pane_id}",
@@ -349,9 +350,17 @@ pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String,
 
 /// Check if a tmux pane exists (hasn't been killed/closed).
 pub fn pane_exists(pane_id: &str) -> bool {
-    run(&["has-session", "-t", pane_id], "tmux::pane_exists")
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    let output = run(
+        &["list-panes", "-t", pane_id, "-F", "#{pane_id}"],
+        "tmux::pane_exists",
+    );
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            stdout.lines().any(|line| line.trim() == pane_id)
+        }
+        _ => false,
+    }
 }
 
 /// Check if a specific pane has an active (non-shell) process running.

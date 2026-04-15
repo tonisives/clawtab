@@ -177,10 +177,8 @@ export function SettingsApp() {
 
   if (showWizard || isSetupWindow) {
     return (
-      <div className="settings-container">
-        <div className="tab-content">
-          <SetupWizard onComplete={handleWizardComplete} />
-        </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", overflow: "auto", background: "var(--bg-secondary)" }}>
+        <SetupWizard onComplete={handleWizardComplete} />
       </div>
     );
   }

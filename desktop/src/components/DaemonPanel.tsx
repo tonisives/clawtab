@@ -11,6 +11,7 @@ interface DaemonStatus {
 export function DaemonPanel() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string>("");
   const [showLogs, setShowLogs] = useState(false);
@@ -63,6 +64,19 @@ export function DaemonPanel() {
     }
   };
 
+  const handleRestart = async () => {
+    setRestarting(true);
+    setError(null);
+    try {
+      await invoke<string>("daemon_restart");
+      fetchStatus();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   if (!status) {
     return (
       <div className="settings-section">
@@ -84,13 +98,24 @@ export function DaemonPanel() {
         <span className="field-group-title">Status</span>
         <div className="form-group">
           <label>Service</label>
-          <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
-            {status.running
-              ? `Running (pid ${status.pid})`
-              : status.installed
-                ? "Installed but not running"
-                : "Not installed"}
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
+              {status.running
+                ? `Running (pid ${status.pid})`
+                : status.installed
+                  ? "Installed but not running"
+                  : "Not installed"}
+            </span>
+            {status.installed && (
+              <button
+                className="btn btn-sm"
+                disabled={restarting}
+                onClick={handleRestart}
+              >
+                {restarting ? "Restarting..." : "Restart"}
+              </button>
+            )}
+          </div>
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Desktop app mode</label>

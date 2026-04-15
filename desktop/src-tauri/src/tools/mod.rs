@@ -32,7 +32,25 @@ const TOOLS: &[ToolSpec] = &[
         version_flag: "--version",
         category: "AI Agent",
         required: true,
-        group: None,
+        group: Some("ai_agent"),
+        brew_formula: None,
+    },
+    ToolSpec {
+        name: "opencode",
+        binary: "opencode",
+        version_flag: "--version",
+        category: "AI Agent",
+        required: true,
+        group: Some("ai_agent"),
+        brew_formula: None,
+    },
+    ToolSpec {
+        name: "codex",
+        binary: "codex",
+        version_flag: "--version",
+        category: "AI Agent",
+        required: true,
+        group: Some("ai_agent"),
         brew_formula: None,
     },
     // Terminal
@@ -183,16 +201,6 @@ const TOOLS: &[ToolSpec] = &[
         group: Some("browser"),
         brew_formula: None,
     },
-    // Messaging
-    ToolSpec {
-        name: "Telegram",
-        binary: "Telegram",
-        version_flag: "",
-        category: "Required",
-        required: true,
-        group: None,
-        brew_formula: Some("--cask telegram"),
-    },
 ];
 
 pub fn which(binary: &str) -> Option<String> {
@@ -281,30 +289,6 @@ fn is_terminal_running(name: &str) -> bool {
 
 /// Detect a single tool's availability
 fn detect_tool(spec: &ToolSpec, custom_paths: &HashMap<String, String>) -> ToolInfo {
-    // Telegram is a macOS .app bundle, not a PATH binary
-    if spec.name == "Telegram" {
-        let app_path = "/Applications/Telegram.app";
-        let available = std::path::Path::new(app_path).exists();
-        return ToolInfo {
-            name: spec.name.to_string(),
-            available,
-            version: if available {
-                Some("installed".to_string())
-            } else {
-                None
-            },
-            path: if available {
-                Some(app_path.to_string())
-            } else {
-                None
-            },
-            category: spec.category.to_string(),
-            required: spec.required,
-            group: spec.group.map(|s| s.to_string()),
-            brew_formula: spec.brew_formula.map(|s| s.to_string()),
-        };
-    }
-
     // Terminal.app is always available on macOS
     if spec.name == "Terminal.app" {
         return ToolInfo {

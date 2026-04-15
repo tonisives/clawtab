@@ -54,7 +54,7 @@ impl Default for ShortcutSettings {
             move_pane_up: "Ctrl+k".to_string(),
             move_pane_right: "Ctrl+l".to_string(),
             reveal_in_sidebar: "Meta+Shift+e".to_string(),
-            toggle_auto_yes: "Meta+y".to_string(),
+            toggle_auto_yes: "Prefix y".to_string(),
         }
     }
 }
@@ -70,7 +70,9 @@ impl ShortcutSettings {
     fn migrate_missing_fields(&mut self) {
         let defaults = ShortcutSettings::default();
         if self.reveal_in_sidebar.is_empty() { self.reveal_in_sidebar = defaults.reveal_in_sidebar; }
-        if self.toggle_auto_yes.is_empty() { self.toggle_auto_yes = defaults.toggle_auto_yes; }
+        if self.toggle_auto_yes.is_empty() || self.toggle_auto_yes == "Meta+y" || self.toggle_auto_yes == "Meta+Shift+y" {
+            self.toggle_auto_yes = defaults.toggle_auto_yes;
+        }
     }
 }
 

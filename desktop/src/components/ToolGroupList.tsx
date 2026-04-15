@@ -180,7 +180,7 @@ function SelectableGroupRows({
   selectedTool: string | undefined;
   onSelect: ((group: string, toolName: string) => void) | undefined;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(group.groupName === "ai_agent");
   const isSelectable = !!onSelect && !!group.groupName;
   const selected = selectedTool || group.tools.find((t) => t.available)?.name;
 

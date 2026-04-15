@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, Job, NotifyTarget, TelegramConfig, ToolInfo } from "../types";
+import type { AppSettings, TelegramConfig, ToolInfo } from "../types";
 import { ToolGroupList } from "./ToolGroupList";
 import { TelegramSetup } from "./TelegramSetup";
 import { RelayPanel } from "./RelayPanel";
@@ -9,15 +9,13 @@ type Props = {
   onComplete: () => void;
 };
 
-type Step = "welcome" | "tools" | "notifications" | "hello-world" | "web-browse" | "done";
+type Step = "welcome" | "tools" | "notifications" | "done";
 type NotifyChoice = "app" | "telegram" | "skip";
 
 const STEPS: { id: Step; label: string }[] = [
   { id: "welcome", label: "Welcome" },
   { id: "tools", label: "Tools" },
   { id: "notifications", label: "Notifications" },
-  { id: "hello-world", label: "Hello World" },
-  { id: "web-browse", label: "Web Browse" },
   { id: "done", label: "Done" },
 ];
 
@@ -32,15 +30,7 @@ export function SetupWizard({ onComplete }: Props) {
   const [preferredEditor, setPreferredEditor] = useState("");
   const [telegramConfig, setTelegramConfig] = useState<TelegramConfig | null>(null);
   const [telegramLoaded, setTelegramLoaded] = useState(false);
-  const [notifyChoice, setNotifyChoice] = useState<NotifyChoice | null>(null);
-
-  // Hello World job state
-  const [helloStatus, setHelloStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
-  const [helloError, setHelloError] = useState("");
-
-  // Web Browse job state
-  const [browseStatus, setBrowseStatus] = useState<"idle" | "creating" | "success" | "error">("idle");
-  const [browseError, setBrowseError] = useState("");
+  const [notifyChoice, setNotifyChoice] = useState<NotifyChoice | null>("skip");
 
   // Relay connection state (for "app" notification choice)
   const [relayConnected, setRelayConnected] = useState(false);
@@ -108,110 +98,6 @@ export function SetupWizard({ onComplete }: Props) {
     }
   };
 
-  // Derive notify_target and telegram_chat_id from the user's choice
-  const jobNotifyTarget: NotifyTarget = notifyChoice === "telegram" ? "telegram" : notifyChoice === "app" ? "app" : "none";
-  const jobChatId = notifyChoice === "telegram" && telegramConfig?.chat_ids?.length
-    ? telegramConfig.chat_ids[0]
-    : null;
-
-  const handleCreateHelloWorld = async () => {
-    setHelloStatus("creating");
-    setHelloError("");
-    try {
-      const job: Job = {
-        name: "hello-world",
-        job_type: "binary",
-        enabled: true,
-        path: "echo",
-        args: ["Hello World from ClawTab"],
-        cron: "",
-        secret_keys: [],
-        env: {},
-        work_dir: null,
-        tmux_session: null,
-        aerospace_workspace: null,
-        folder_path: null,
-        job_id: "default",
-        telegram_chat_id: jobChatId,
-        telegram_log_mode: "on_prompt",
-        telegram_notify: { start: true, working: true, logs: true, finish: true },
-        notify_target: jobNotifyTarget,
-        group: "general",
-        slug: "",
-        skill_paths: [],
-        params: [],
-        kill_on_end: true,
-        auto_yes: false,
-      };
-      await invoke("save_job", { job });
-      await invoke("run_job_now", { name: "hello-world" });
-      setHelloStatus("success");
-    } catch (e) {
-      setHelloStatus("error");
-      setHelloError(String(e));
-    }
-  };
-
-  const handleCreateWebBrowse = async () => {
-    if (!settings) return;
-    setBrowseStatus("creating");
-    setBrowseError("");
-    try {
-      const workDir = settings.default_work_dir || "~";
-      const folderPath = workDir.replace(/\/+$/, "");
-      const jobId = "hacker-news";
-
-      await invoke("init_cwt_folder", { folderPath, jobId });
-
-      const sendLine = notifyChoice === "telegram"
-        ? "4. Send the results to Telegram."
-        : "4. Print the results.";
-
-      const jobMd = [
-        "# Hacker News",
-        "",
-        "1. Use the WebFetch tool to fetch https://news.ycombinator.com/ and extract the top stories.",
-        "2. Pick the top 5 most interesting stories from the front page.",
-        "3. For each story, include the title, points, and comment count.",
-        sendLine,
-      ].join("\n");
-
-      await invoke("write_cwt_entry", { folderPath, jobId, content: jobMd });
-
-      const job: Job = {
-        name: "Hacker News",
-        job_type: "job",
-        enabled: true,
-        path: "",
-        args: [],
-        cron: "",
-        secret_keys: [],
-        env: {},
-        work_dir: null,
-        tmux_session: null,
-        aerospace_workspace: null,
-        folder_path: folderPath,
-        job_id: jobId,
-        telegram_chat_id: jobChatId,
-        telegram_log_mode: "on_prompt",
-        telegram_notify: { start: true, working: true, logs: true, finish: true },
-        notify_target: jobNotifyTarget,
-        group: "general",
-        slug: "",
-        skill_paths: [],
-        params: [],
-        kill_on_end: true,
-        auto_yes: false,
-      };
-      await invoke("save_job", { job });
-      await invoke("run_job_now", { name: "Hacker News" });
-      setBrowseStatus("success");
-    } catch (e) {
-      setBrowseStatus("error");
-      setBrowseError(String(e));
-    }
-  };
-
   const handleFinish = async () => {
     if (!settings) return;
     const updated: AppSettings = {
@@ -241,15 +127,11 @@ export function SetupWizard({ onComplete }: Props) {
   const canAdvance = (): boolean => {
     if (currentStep === "tools") return toolsReady;
     if (currentStep === "notifications") return notificationsReady();
-    if (currentStep === "hello-world") return helloStatus === "success";
-    if (currentStep === "web-browse") return browseStatus === "success";
     return true;
   };
 
-  const notifyLabel = jobNotifyTarget === "telegram" ? "Telegram" : jobNotifyTarget === "app" ? "App" : "None";
-
   return (
-    <div className="settings-section" style={{ maxWidth: 600, margin: "0 auto" }}>
+    <div className="settings-section" style={{ padding: "32px 24px" }}>
       <h2>ClawTab Setup</h2>
 
       <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
@@ -274,14 +156,11 @@ export function SetupWizard({ onComplete }: Props) {
         <div>
           <h3>Welcome to ClawTab</h3>
           <p className="section-description">
-            We'll set up notifications and create your first two Claude Code jobs.
-            This takes about 5 minutes.
+            Let's get you set up in a couple of steps.
           </p>
           <div style={{ marginTop: 16, fontSize: 13, lineHeight: 1.8, color: "var(--text-secondary)" }}>
             <p style={{ margin: "0 0 4px" }}>1. Check that required tools are installed</p>
             <p style={{ margin: "0 0 4px" }}>2. Choose how to receive notifications</p>
-            <p style={{ margin: "0 0 4px" }}>3. Create and run a Hello World job</p>
-            <p style={{ margin: "0 0 4px" }}>4. Create and run a web browsing job</p>
           </div>
         </div>
       )}
@@ -311,7 +190,8 @@ export function SetupWizard({ onComplete }: Props) {
           />
           {!hasAiAgent && tools.length > 0 && (
             <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
-              Claude Code is required. Run <code>npm install -g @anthropic-ai/claude-code</code> then click Rescan.
+              An AI agent is required (claude, opencode, or codex). Run{" "}
+              <code>npm install -g @anthropic-ai/claude-code</code> then click Rescan.
             </p>
           )}
           {!hasTmux && tools.length > 0 && (
@@ -408,160 +288,12 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
       )}
 
-      {currentStep === "hello-world" && (
-        <div>
-          <h3>Hello World Job</h3>
-          <p className="section-description">
-            Your first job -- a simple echo command.
-            {notifyChoice === "telegram" ? " This verifies Telegram is wired up correctly." : ""}
-          </p>
-
-          <div className="field-group" style={{ marginTop: 16 }}>
-            <span className="field-group-title">Pre-filled job</span>
-            <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> hello-world</p>
-              <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Binary (echo)</p>
-              <p style={{ margin: "0 0 4px" }}><strong>Command:</strong> echo "Hello World from ClawTab"</p>
-              <p style={{ margin: "0 0 4px" }}>
-                <strong>Notifications:</strong> {notifyLabel}
-              </p>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 16 }}>
-            {helloStatus === "idle" && (
-              <button className="btn btn-primary" onClick={handleCreateHelloWorld}>
-                Create & Run
-              </button>
-            )}
-
-            {helloStatus === "creating" && (
-              <p className="text-secondary">Creating and running job...</p>
-            )}
-
-            {helloStatus === "success" && (
-              <div>
-                <p style={{ color: "var(--success-color)" }}>
-                  Job created and running.
-                  {notifyChoice === "telegram" ? " Check your Telegram for a message." : ""}
-                  {notifyChoice === "app" ? " Check the ClawTab app for a notification." : ""}
-                </p>
-                <button
-                  className="btn btn-sm"
-                  style={{ marginTop: 8 }}
-                  onClick={async () => {
-                    try {
-                      await invoke("run_job_now", { name: "hello-world" });
-                    } catch (e) {
-                      console.error("Failed to re-run hello-world:", e);
-                    }
-                  }}
-                >
-                  Run Again
-                </button>
-              </div>
-            )}
-
-            {helloStatus === "error" && (
-              <div>
-                <p style={{ color: "var(--danger-color)" }}>
-                  Failed: {helloError}
-                </p>
-                <button className="btn" onClick={handleCreateHelloWorld} style={{ marginTop: 8 }}>
-                  Retry
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {currentStep === "web-browse" && (
-        <div>
-          <h3>Web Browse Job</h3>
-          <p className="section-description">
-            Your first real AI job -- Claude will fetch the Hacker News front page
-            and pick the top stories.
-          </p>
-
-          <div className="field-group" style={{ marginTop: 16 }}>
-            <span className="field-group-title">Pre-filled job</span>
-            <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-              <p style={{ margin: "0 0 4px" }}><strong>Name:</strong> Hacker News</p>
-              <p style={{ margin: "0 0 4px" }}><strong>Type:</strong> Folder (Claude Code)</p>
-              <p style={{ margin: "0 0 4px" }}>
-                <strong>Directory:</strong>{" "}
-                {(settings?.default_work_dir || "~").replace(/\/+$/, "")}/
-              </p>
-              <p style={{ margin: "0 0 4px" }}>
-                <strong>Notifications:</strong> {notifyLabel}
-              </p>
-            </div>
-          </div>
-
-          <p className="text-secondary" style={{ fontSize: 12, marginTop: 12 }}>
-            Claude Code will use its built-in web browsing to fetch the page.
-          </p>
-
-          <div style={{ marginTop: 16 }}>
-            {browseStatus === "idle" && (
-              <button className="btn btn-primary" onClick={handleCreateWebBrowse}>
-                Create & Run
-              </button>
-            )}
-
-            {browseStatus === "creating" && (
-              <p className="text-secondary">Creating folder and running job...</p>
-            )}
-
-            {browseStatus === "success" && (
-              <div>
-                <p style={{ color: "var(--success-color)" }}>
-                  Job created and running. Claude is fetching Hacker News.
-                  {notifyChoice === "telegram" ? " Check Telegram for results." : ""}
-                  {notifyChoice === "app" ? " Check the ClawTab app for results." : ""}
-                </p>
-                <button
-                  className="btn btn-sm"
-                  style={{ marginTop: 8 }}
-                  onClick={async () => {
-                    try {
-                      await invoke("run_job_now", { name: "Hacker News" });
-                    } catch (e) {
-                      console.error("Failed to re-run Hacker News:", e);
-                    }
-                  }}
-                >
-                  Run Again
-                </button>
-              </div>
-            )}
-
-            {browseStatus === "error" && (
-              <div>
-                <p style={{ color: "var(--danger-color)" }}>
-                  Failed: {browseError}
-                </p>
-                <button className="btn" onClick={handleCreateWebBrowse} style={{ marginTop: 8 }}>
-                  Retry
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {currentStep === "done" && (
         <div>
           <h3>Setup Complete</h3>
           <p className="section-description">
-            ClawTab is ready. Your two tutorial jobs are in the Jobs tab -- you can
-            edit, schedule, or create new ones from there.
+            ClawTab is ready. Open the Jobs tab to create your first job.
           </p>
-          <div style={{ marginTop: 12, fontSize: 13, lineHeight: 1.6 }}>
-            <p style={{ margin: "0 0 4px" }}><strong>Notifications:</strong> {notifyLabel}</p>
-            <p style={{ margin: "0 0 4px" }}><strong>Jobs created:</strong> hello-world, Hacker News</p>
-          </div>
         </div>
       )}
 
@@ -575,12 +307,6 @@ export function SetupWizard({ onComplete }: Props) {
           <button className="btn btn-primary" onClick={handleFinish}>
             Go to Jobs
           </button>
-        ) : currentStep === "hello-world" || currentStep === "web-browse" ? (
-          canAdvance() ? (
-            <button className="btn btn-primary" onClick={goNext}>
-              Next
-            </button>
-          ) : null
         ) : (
           <button
             className="btn btn-primary"

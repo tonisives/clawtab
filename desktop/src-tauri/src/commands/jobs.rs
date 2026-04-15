@@ -418,7 +418,7 @@ pub async fn run_job_now(
         config
             .jobs
             .iter()
-            .find(|j| j.slug == name)
+            .find(|j| j.slug == name || j.name == name)
             .cloned()
             .ok_or_else(|| format!("Job not found: {}", name))?
     };

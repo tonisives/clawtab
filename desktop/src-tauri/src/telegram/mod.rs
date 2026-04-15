@@ -333,6 +333,35 @@ pub async fn answer_callback_query(bot_token: &str, callback_query_id: &str) -> 
     Ok(())
 }
 
+/// Strip ANSI escape sequences from text (for sending to Telegram).
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip CSI sequences: ESC [ ... final_byte
+            if chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&ch) = chars.peek() {
+                    if ch >= '\x20' && ch <= '\x3f' {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if let Some(&ch) = chars.peek() {
+                    if ch >= '\x40' && ch <= '\x7e' {
+                        chars.next();
+                    }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 fn split_message(text: &str) -> Vec<String> {
     if text.len() <= MAX_MESSAGE_LEN {
         return vec![text.to_string()];

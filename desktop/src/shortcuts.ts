@@ -42,7 +42,7 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   move_pane_up: "Ctrl+k",
   move_pane_right: "Ctrl+l",
   reveal_in_sidebar: "Meta+Shift+e",
-  toggle_auto_yes: "Meta+y",
+  toggle_auto_yes: "Prefix y",
 };
 
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [

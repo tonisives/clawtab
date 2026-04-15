@@ -904,8 +904,8 @@ async fn send_job_notification(
     };
 
     if !output.is_empty() {
-        // Escape HTML entities in output
-        let escaped = output
+        // Strip ANSI color codes and escape HTML entities in output
+        let escaped = crate::telegram::strip_ansi(&output)
             .replace('&', "&amp;")
             .replace('<', "&lt;")
             .replace('>', "&gt;");

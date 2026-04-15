@@ -31,6 +31,11 @@ pub fn daemon_uninstall() -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn daemon_restart() -> Result<String, String> {
+    daemon::restart()
+}
+
+#[tauri::command]
 pub fn get_daemon_logs(lines: Option<usize>) -> String {
     let path = "/tmp/clawtab/daemon.stderr.log";
     let n = lines.unwrap_or(100);

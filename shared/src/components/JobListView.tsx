@@ -1157,7 +1157,6 @@ export function JobListView({
     if (!scrollToSlug || Platform.OS !== "web") return;
     const slug = scrollToSlug.slug;
     pendingScrollSlug.current = slug;
-    console.log("[reveal] Effect1 slug=", slug, "collapsedGroups=", [...(collapsedGroups ?? [])]);
 
     // Expand collapsed job group if needed
     const job = jobs.find((j) => j.slug === slug);
@@ -1167,7 +1166,6 @@ export function JobListView({
       const displayGroup = groupKey === "default"
         ? (fp ? fp.split("/").filter(Boolean).pop() ?? "General" : "General")
         : groupKey;
-      console.log("[reveal] job group=", displayGroup, "collapsed=", collapsedGroups.has(displayGroup));
       if (collapsedGroups.has(displayGroup)) {
         onToggleGroup(displayGroup);
         return; // Effect 2 will scroll once collapsedGroups updates
@@ -1199,7 +1197,6 @@ export function JobListView({
   // Effect 2: scroll+highlight whenever collapsedGroups changes OR scrollToSlug changes
   // (covers both: already-expanded items on scrollToSlug change, and newly-expanded items)
   useEffect(() => {
-    console.log("[reveal] Effect2 pending=", pendingScrollSlug.current, "collapsedGroups=", [...(collapsedGroups ?? [])]);
     if (!pendingScrollSlug.current || Platform.OS !== "web") return;
     const slug = pendingScrollSlug.current;
     const escaped = CSS.escape(slug);
@@ -1218,16 +1215,23 @@ export function JobListView({
       el.addEventListener("animationend", () => el.classList.remove("clawtab-reveal-highlight"), { once: true });
     };
 
-    // Double-rAF: first rAF waits for React to commit DOM, second waits for layout/paint
+    // Single rAF when item is already in DOM; double rAF when group was just expanded
+    // (double rAF needed so React has committed the newly-visible items).
+    // Keeping scroll in rAF 1 when possible preserves xterm focus — requestXtermPaneFocus
+    // also schedules a rAF, so scroll-before-that-rAF lets xterm's rAF restore focus last.
     let cancelled = false;
     requestAnimationFrame(() => {
       if (cancelled) return;
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        const el = findEl();
-        console.log("[reveal] Effect2 rAF el=", el);
-        if (el) doScrollAndHighlight(el);
-      });
+      const el = findEl();
+      if (el) {
+        doScrollAndHighlight(el);
+      } else {
+        requestAnimationFrame(() => {
+          if (cancelled) return;
+          const el2 = findEl();
+          if (el2) doScrollAndHighlight(el2);
+        });
+      }
     });
     return () => { cancelled = true; };
   }, [scrollToSlug, collapsedGroups]);

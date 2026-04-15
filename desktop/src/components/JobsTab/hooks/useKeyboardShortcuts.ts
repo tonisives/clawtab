@@ -470,7 +470,6 @@ export function useKeyboardShortcuts({
 
     const handleAppShortcut = (event: Event) => {
       const detail = (event as CustomEvent<{ binding?: string; paneId?: string }>).detail;
-      console.log("[handleAppShortcut]", detail?.binding, "toggleActiveAutoYes:", !!toggleActiveAutoYes);
       if (detail?.binding) runAppShortcutBinding(detail.binding, detail.paneId);
     };
 

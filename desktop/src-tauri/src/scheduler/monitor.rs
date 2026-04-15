@@ -474,7 +474,8 @@ fn diff_content(previous: &str, current: &str) -> String {
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
+    crate::telegram::strip_ansi(s)
+        .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }

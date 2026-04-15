@@ -96,6 +96,30 @@ pub fn install() -> Result<String, String> {
     }
 }
 
+pub fn restart() -> Result<String, String> {
+    let dest = plist_dest();
+    if !dest.exists() {
+        return Err("Daemon is not installed".into());
+    }
+
+    let dest_str = dest.display().to_string();
+
+    let _ = std::process::Command::new("launchctl")
+        .args(["unload", &dest_str])
+        .status();
+
+    let status = std::process::Command::new("launchctl")
+        .args(["load", &dest_str])
+        .status()
+        .map_err(|e| format!("Failed to run launchctl: {}", e))?;
+
+    if status.success() {
+        Ok("Daemon restarted".into())
+    } else {
+        Err(format!("launchctl load exited with {}", status))
+    }
+}
+
 pub fn uninstall() -> Result<String, String> {
     let dest = plist_dest();
     if !dest.exists() {

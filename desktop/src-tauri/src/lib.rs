@@ -260,21 +260,6 @@ pub fn refresh_shortcut_menu(
         return Ok(());
     };
 
-    if let Some(file_menu) = find_submenu(&menu, "File") {
-        if let Some(new_window) = find_menu_item(&file_menu, "New Window") {
-            let _ = new_window.set_accelerator::<&str>(None);
-        }
-    }
-    if let Some(edit_menu) = find_submenu(&menu, "Edit") {
-        if let Some(undo_item) = find_menu_item(&edit_menu, "Undo") {
-            let _ = undo_item.set_accelerator::<&str>(None);
-        }
-    }
-    if let Some(view_menu) = find_submenu(&menu, "View") {
-        if let Some(reload_item) = find_menu_item(&view_menu, "Reload") {
-            let _ = reload_item.set_accelerator::<&str>(None);
-        }
-    }
 
     let pane_menu = if let Some(existing) = find_submenu(&menu, "Pane") {
         existing
@@ -853,6 +838,7 @@ pub fn run() {
             commands::daemon::get_daemon_status,
             commands::daemon::daemon_install,
             commands::daemon::daemon_uninstall,
+            commands::daemon::daemon_restart,
             commands::daemon::get_daemon_logs,
         ])
         .setup(move |app| {
@@ -905,48 +891,64 @@ pub fn run() {
                 });
             }
 
-            // App menu bar - add Import Job to default File menu
+            // Build app menu manually so we can omit Redo (Cmd+Y) which would
+            // otherwise shadow our custom Toggle Auto-yes shortcut.
+            let pkg_info = app.package_info();
+            let config = app.config();
+            let about_metadata = tauri::menu::AboutMetadata {
+                name: Some(pkg_info.name.clone()),
+                version: Some(pkg_info.version.to_string()),
+                copyright: config.bundle.copyright.clone(),
+                authors: config.bundle.publisher.clone().map(|p| vec![p]),
+                ..Default::default()
+            };
             let import_item =
                 MenuItem::with_id(app, "import_cwt", "Import Job...", true, None::<&str>)?;
-            let app_menu = Menu::default(app.handle())?;
-            // Find the default File submenu and append our item
-            for item in app_menu.items()? {
-                if let Some(submenu) = item.as_submenu() {
-                    if submenu.text().unwrap_or_default() == "File" {
-                        submenu.append(&PredefinedMenuItem::separator(app)?)?;
-                        submenu.append(&import_item)?;
-                        break;
-                    }
-                }
-            }
-
-            // Append Debug + PTY Debug entries to the existing View submenu.
             let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
             let pty_debug_item =
                 MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
-            if let Some(view_menu) = find_submenu(&app_menu, "View") {
-                view_menu.append(&PredefinedMenuItem::separator(app)?)?;
-                view_menu.append(&debug_item)?;
-                view_menu.append(&pty_debug_item)?;
-            }
+            let app_menu = Menu::with_items(app, &[
+                &Submenu::with_items(app, pkg_info.name.clone(), true, &[
+                    &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ])?,
+                &Submenu::with_items(app, "File", true, &[
+                    &PredefinedMenuItem::close_window(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &import_item,
+                ])?,
+                &Submenu::with_items(app, "Edit", true, &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    // Redo omitted — Cmd+Y is used for Toggle Auto-yes
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ])?,
+                &Submenu::with_items(app, "View", true, &[
+                    &PredefinedMenuItem::fullscreen(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &debug_item,
+                    &pty_debug_item,
+                ])?,
+                &Submenu::with_items(app, "Window", true, &[
+                    &PredefinedMenuItem::minimize(app, None)?,
+                    &PredefinedMenuItem::maximize(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::close_window(app, None)?,
+                ])?,
+                &Submenu::with_items(app, "Help", true, &[])?,
+            ])?;
 
             app.set_menu(app_menu)?;
             {
-                // Debug: log all menu items and their accelerators
-                if let Some(menu) = app.menu() {
-                    for top in menu.items().unwrap_or_default() {
-                        if let Some(sub) = top.as_submenu() {
-                            log::info!("menu [{}]:", sub.text().unwrap_or_default());
-                            for item in sub.items().unwrap_or_default() {
-                                if let Some(mi) = item.as_menuitem() {
-                                    log::info!("  item {:?}", mi.text());
-                                } else if let Some(pi) = item.as_predefined_menuitem() {
-                                    log::info!("  predefined {:?}", pi.text());
-                                }
-                            }
-                        }
-                    }
-                }
                 let state = app.state::<AppState>();
                 let shortcuts = state.settings.lock().unwrap().shortcuts.clone();
                 let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
