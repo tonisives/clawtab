@@ -102,7 +102,12 @@ export function useAgentRunner({
           setShellPanes((prev) => prev.some((pane) => pane.pane_id === nextShell.pane_id) ? prev : [...prev, nextShell]);
           setShowFolderRunner(false);
           if (split.tree) {
-            split.openContent({ kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session });
+            const realContent: PaneContent = { kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session };
+            const placeholderContent: PaneContent = { kind: "process", paneId: placeholder.pane_id };
+            if (!split.replaceContent(placeholderContent, realContent, { focus: false })) {
+              split.openContent(realContent);
+            }
+            setPendingProcess(null);
           } else if (currentContentRef.current) {
             const dir = split.detailSize.w >= split.detailSize.h ? "horizontal" : "vertical";
             split.addSplitLeaf("_unused", { kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session }, dir);
