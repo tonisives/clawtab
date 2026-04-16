@@ -569,7 +569,7 @@ async fn execute_claude_job(
 
     // Every spawn gets its own window — clawtab needs independent geometry
     // per tab, which tmux splits can't give us.
-    let pane_id = tmux::create_window(&tmux_session, &window_name, &env_vars)?;
+    let pane_id = tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)?;
 
     let model_flag = model
         .filter(|_| provider.supports_model_flag())
@@ -733,7 +733,7 @@ async fn execute_folder_job(
     }
 
     // Every spawn gets its own window (see execute_claude_job).
-    let pane_id = tmux::create_window(&tmux_session, &window_name, &env_vars)?;
+    let pane_id = tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)?;
 
     let model_flag = model
         .filter(|_| provider.supports_model_flag())

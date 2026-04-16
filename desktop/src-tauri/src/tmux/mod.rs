@@ -104,14 +104,6 @@ pub fn window_exists(session: &str, window_name: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn create_window(
-    session: &str,
-    name: &str,
-    env_vars: &[(String, String)],
-) -> Result<String, String> {
-    create_window_with_cwd(session, name, None, env_vars)
-}
-
 pub fn create_window_with_cwd(
     session: &str,
     name: &str,

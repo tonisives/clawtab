@@ -805,9 +805,30 @@ impl PtyManager {
             spawn_started.elapsed().as_millis()
         );
 
+        // The tmux_session passed by the frontend may be a stale view session
+        // (e.g. clawtab-view-39 that was killed). Resolve the real owning
+        // session from the pane's current window before passing it to
+        // capture_pane, which needs a live session for break-pane.
+        let tmux_session = if is_view_session(tmux_session) || !tmux_session_exists(tmux_session) {
+            let window_id_raw = tmux(&["display-message", "-t", pane_id, "-p", "#{window_id}"])
+                .unwrap_or_default();
+            let resolved = resolve_non_view_session_for_window(&window_id_raw, tmux_session);
+            if resolved != tmux_session {
+                log::info!(
+                    "[pty {}] resolved stale session {} -> {}",
+                    pane_id,
+                    tmux_session,
+                    resolved
+                );
+            }
+            resolved
+        } else {
+            tmux_session.to_string()
+        };
+
         // Capture the pane into a ct-<orig>-<N> window in its original session
         // (idempotent). base_session here is the original tmux session.
-        let (base_session, window_id) = capture_pane(pane_id, tmux_session).map_err(|e| {
+        let (base_session, window_id) = capture_pane(pane_id, &tmux_session).map_err(|e| {
             log::warn!(
                 "[pty {}] capture_pane failed after {}ms: {}",
                 pane_id,

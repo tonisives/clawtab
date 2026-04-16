@@ -9,6 +9,7 @@ import {
 } from "./JobEditor/utils";
 
 const LAST_RUN_AGENT_FOLDER_KEY = "clawtab_last_run_agent_folder";
+const EMPTY_AGENT_QUERY_KEY = "clawtab_empty_agent_query";
 
 interface EmptyDetailAgentProps {
   onRunAgent: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) => void | Promise<void>;
@@ -25,7 +26,18 @@ const VERTICAL_PADDING = 16;
 const EXPANDED_MAX_HEIGHT = 400;
 
 export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, defaultModel, enabledModels = {}, focusSignal, folderGroups = [] }: EmptyDetailAgentProps) {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPromptState] = useState(() => {
+    if (typeof localStorage === "undefined") return "";
+    try { return localStorage.getItem(EMPTY_AGENT_QUERY_KEY) ?? ""; } catch { return ""; }
+  });
+  const setPrompt = useCallback((value: string) => {
+    setPromptState(value);
+    if (typeof localStorage === "undefined") return;
+    try {
+      if (value) localStorage.setItem(EMPTY_AGENT_QUERY_KEY, value);
+      else localStorage.removeItem(EMPTY_AGENT_QUERY_KEY);
+    } catch {}
+  }, []);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [provider, setProvider] = useState<ProcessProvider>(defaultProvider);

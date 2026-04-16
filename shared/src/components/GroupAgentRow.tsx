@@ -58,6 +58,28 @@ const MAX_ROWS = 20;
 const VERTICAL_PADDING = 12;
 const EXPANDED_MAX_HEIGHT = LINE_HEIGHT * MAX_ROWS + VERTICAL_PADDING;
 
+const AGENT_QUERY_STORAGE_PREFIX = "clawtab_group_agent_query_";
+
+function loadStoredQuery(workDir?: string): string {
+  if (!workDir || Platform.OS !== "web" || typeof localStorage === "undefined") return "";
+  try {
+    return localStorage.getItem(AGENT_QUERY_STORAGE_PREFIX + workDir) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function saveStoredQuery(workDir: string | undefined, value: string) {
+  if (!workDir || Platform.OS !== "web" || typeof localStorage === "undefined") return;
+  try {
+    if (value) {
+      localStorage.setItem(AGENT_QUERY_STORAGE_PREFIX + workDir, value);
+    } else {
+      localStorage.removeItem(AGENT_QUERY_STORAGE_PREFIX + workDir);
+    }
+  } catch {}
+}
+
 export function GroupAgentRow({
   onRunAgent,
   provider,
@@ -79,7 +101,14 @@ export function GroupAgentRow({
   focusSignal?: number;
   workDir?: string;
 }) {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPromptState] = useState(() => loadStoredQuery(workDir));
+  const setPrompt = useCallback((value: string | ((prev: string) => string)) => {
+    setPromptState((prev) => {
+      const next = typeof value === "function" ? value(prev) : value;
+      saveStoredQuery(workDir, next);
+      return next;
+    });
+  }, [workDir]);
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
