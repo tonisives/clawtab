@@ -59,6 +59,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       proc.cwd,
       proc.version,
       proc.display_name ?? null,
+      proc.pane_title ?? null,
       proc.provider,
       proc.can_fork_session,
       proc.can_send_skills,

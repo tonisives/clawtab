@@ -34,7 +34,7 @@ export function useProcessEditing({ core, viewing, lifecycle }: UseProcessEditin
       const trimmed = draft.trim();
       return trimmed || shortenPath(process.cwd);
     }
-    return process.display_name ?? shortenPath(process.cwd);
+    return process.display_name ?? process.pane_title ?? shortenPath(process.cwd);
   }, [processRenameDrafts]);
 
   const openRenameProcessDialog = useCallback((process: DetectedProcess) => {
@@ -43,7 +43,7 @@ export function useProcessEditing({ core, viewing, lifecycle }: UseProcessEditin
       title: "Edit pane title",
       label: "Title",
       field: "display_name",
-      initialValue: process.display_name ?? "",
+      initialValue: process.display_name ?? process.pane_title ?? "",
       placeholder: shortenPath(process.cwd),
     });
   }, []);
@@ -54,7 +54,7 @@ export function useProcessEditing({ core, viewing, lifecycle }: UseProcessEditin
       title: "Edit pane title",
       label: "Title",
       field: "display_name",
-      initialValue: shell.display_name ?? "",
+      initialValue: shell.display_name ?? shell.pane_title ?? "",
       placeholder: shortenPath(shell.cwd),
     });
   }, []);

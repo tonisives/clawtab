@@ -1,8 +1,9 @@
 import { useCallback, type MutableRefObject } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { DetectedProcess, PaneContent, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
-import type { Job } from "../../../types";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import { providerCapabilities } from "../utils";
+import type { Job } from "../../../types";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
 
@@ -50,7 +51,7 @@ export function useAgentRunner({
     const capabilities = providerCapabilities(resolvedProvider);
     if (workDir) {
       const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
-      const matchedGroup = matchingJob ? (matchingJob.group || "default") : null;
+      const matchedGroup = matchingJob ? (matchingJob.group || null) : null;
       const launchingShell = resolvedProvider === "shell";
       const placeholder: DetectedProcess = {
         pane_id: `_pending_${Date.now()}`, cwd: workDir, version: "", tmux_session: "", window_name: "",
@@ -64,6 +65,13 @@ export function useAgentRunner({
         setShowFolderRunner(false);
         if (split.tree) {
           split.openContent({ kind: "process", paneId: placeholder.pane_id });
+        } else if (currentContentRef.current) {
+          const dir = split.detailSize.w >= split.detailSize.h ? "horizontal" : "vertical";
+          split.addSplitLeaf("_unused", { kind: "process", paneId: placeholder.pane_id }, dir);
+          setViewingJob(null);
+          setViewingAgent(false);
+          setViewingShell(null);
+          setViewingProcess(null);
         } else {
           setViewingJob(null);
           setViewingAgent(false);
@@ -75,6 +83,11 @@ export function useAgentRunner({
 
       const result = await actions.runAgent(prompt, workDir, provider, model);
       if (result) {
+        // Pin the group override so backend detection won't reassign this pane
+        invoke("set_detected_process_group", {
+          paneId: result.pane_id,
+          group: matchedGroup ?? "",
+        }).catch(() => {});
         if (launchingShell) {
           const shellInfo = transport.getExistingPaneInfo
             ? await transport.getExistingPaneInfo(result.pane_id)
@@ -90,6 +103,13 @@ export function useAgentRunner({
           setShowFolderRunner(false);
           if (split.tree) {
             split.openContent({ kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session });
+          } else if (currentContentRef.current) {
+            const dir = split.detailSize.w >= split.detailSize.h ? "horizontal" : "vertical";
+            split.addSplitLeaf("_unused", { kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session }, dir);
+            setViewingJob(null);
+            setViewingAgent(false);
+            setViewingProcess(null);
+            setViewingShell(null);
           } else {
             setViewingJob(null);
             setViewingAgent(false);

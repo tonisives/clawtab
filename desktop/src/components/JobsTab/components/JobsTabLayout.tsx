@@ -10,6 +10,7 @@ interface JobsTabLayoutProps {
   dropOverlay: ReactNode;
   editorPaneClose: ReactNode;
   editorPaneMobile: ReactNode;
+  folderRunnerPane?: ReactNode;
   isEditorVisible: boolean;
   isMainVisible: boolean;
   isPickerVisible: boolean;
@@ -39,6 +40,7 @@ export function JobsTabLayout({
   dropOverlay,
   editorPaneClose,
   editorPaneMobile,
+  folderRunnerPane,
   isEditorVisible,
   isMainVisible,
   isPickerVisible,
@@ -108,20 +110,36 @@ export function JobsTabLayout({
                   editorPaneClose
                 ) : isPickerVisible ? (
                   pickerPaneClose
-                ) : showFolderRunner ? (
+                ) : showFolderRunner && !split.tree ? (
                   detailPane
                 ) : (
-                  <SplitDetailArea
-                    tree={split.tree}
-                    renderLeaf={renderLeaf}
-                    onRatioChange={split.handleSplitRatioChange}
-                    onFocusLeaf={split.setFocusedLeafId}
-                    focusedLeafId={split.focusedLeafId}
-                    paneColors={split.paneColors}
-                    minPaneSize={200}
-                    emptyContent={detailPane}
-                    overlay={dropOverlay}
-                  />
+                  <>
+                    <SplitDetailArea
+                      tree={split.tree}
+                      renderLeaf={renderLeaf}
+                      onRatioChange={split.handleSplitRatioChange}
+                      onFocusLeaf={split.setFocusedLeafId}
+                      focusedLeafId={split.focusedLeafId}
+                      paneColors={split.paneColors}
+                      minPaneSize={200}
+                      emptyContent={detailPane}
+                      overlay={dropOverlay}
+                    />
+                    {showFolderRunner && (
+                      <div style={{
+                        position: "absolute",
+                        inset: 0,
+                        zIndex: 20,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "rgba(0, 0, 0, 0.7)",
+                        backdropFilter: "blur(4px)",
+                      }}>
+                        {folderRunnerPane}
+                      </div>
+                    )}
+                  </>
                 )}
                 {rightPanelOverlay}
               </div>

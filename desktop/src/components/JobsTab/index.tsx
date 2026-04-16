@@ -424,6 +424,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       dropOverlay={dropOverlay}
       editorPaneClose={editorPaneClose}
       editorPaneMobile={editorPaneMobile}
+      folderRunnerPane={folderRunnerPane}
       isEditorVisible={isEditorVisible}
       isMainVisible={isMainVisible}
       isPickerVisible={isPickerVisible}

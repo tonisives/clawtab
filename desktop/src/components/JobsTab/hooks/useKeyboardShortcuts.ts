@@ -201,6 +201,13 @@ export function useKeyboardShortcuts({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const openRenameDialogForPaneId = useCallback((paneId: string): boolean => {
+    const process = core.processes.find((entry) => entry.pane_id === paneId)
+      ?? (pendingProcess?.pane_id === paneId ? pendingProcess : null);
+    if (process && !process._transient_state) {
+      openRenameProcessDialog(process);
+      return true;
+    }
+
     const shell = lifecycle.shellPanes.find((entry) => entry.pane_id === paneId);
     if (shell) {
       setEditProcessField({
@@ -208,17 +215,12 @@ export function useKeyboardShortcuts({
         title: "Edit pane title",
         label: "Title",
         field: "display_name",
-        initialValue: shell.display_name ?? "",
+        initialValue: shell.display_name ?? shell.pane_title ?? "",
         placeholder: shortenPath(shell.cwd),
       });
       return true;
     }
-
-    const process = core.processes.find((entry) => entry.pane_id === paneId)
-      ?? (pendingProcess?.pane_id === paneId ? pendingProcess : null);
-    if (!process || process._transient_state) return false;
-    openRenameProcessDialog(process);
-    return true;
+    return false;
   }, [core.processes, lifecycle.shellPanes, openRenameProcessDialog, pendingProcess, setEditProcessField]);
 
   const triggerRenameActivePane = useCallback((sourcePaneId?: string | null) => {

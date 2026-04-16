@@ -24,7 +24,7 @@ export function ShellCard({
   onRename?: () => void;
   renameShortcutHint?: string;
 }) {
-  const displayName = shell.display_name ?? shortenPath(shell.cwd);
+  const displayName = shell.display_name ?? shell.pane_title ?? shortenPath(shell.cwd);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<any>(null);

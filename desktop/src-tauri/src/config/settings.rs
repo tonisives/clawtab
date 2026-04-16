@@ -13,6 +13,11 @@ pub struct DetectedProcessOverride {
     pub display_name: Option<String>,
     pub first_query: Option<String>,
     pub last_query: Option<String>,
+    /// Group override for process detection.
+    /// `None` = no override (use normal matching logic).
+    /// `Some("")` = explicitly independent (no group).
+    /// `Some("group_name")` = pinned to a specific group.
+    pub group_override: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

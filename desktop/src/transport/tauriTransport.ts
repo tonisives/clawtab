@@ -130,13 +130,14 @@ export function createTauriTransport(): Transport {
     },
 
     async getExistingPaneInfo(paneId: string) {
-      const info = await invoke<{ pane_id: string; cwd: string; tmux_session: string; window_name: string } | null>("get_existing_pane_info", { paneId });
+      const info = await invoke<{ pane_id: string; cwd: string; tmux_session: string; window_name: string; pane_title?: string | null } | null>("get_existing_pane_info", { paneId });
       if (!info) return null;
       const shell: ShellPane = {
         pane_id: info.pane_id,
         cwd: info.cwd,
         tmux_session: info.tmux_session,
         window_name: info.window_name,
+        pane_title: info.pane_title ?? null,
       };
       return shell;
     },

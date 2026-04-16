@@ -13,7 +13,6 @@ use crate::AppState;
 #[derive(Debug, Clone)]
 struct PaneJobMatch {
     group: String,
-    slug: String,
     root: Option<String>,
 }
 
@@ -25,6 +24,7 @@ pub struct DetectedProcess {
     pub cwd: String,
     pub version: String,
     pub display_name: Option<String>,
+    pub pane_title: Option<String>,
     pub provider: String,
     pub can_fork_session: bool,
     pub can_send_skills: bool,
@@ -46,6 +46,7 @@ pub struct ExistingPaneInfo {
     pub cwd: String,
     pub tmux_session: String,
     pub window_name: String,
+    pub pane_title: Option<String>,
 }
 
 struct DetectionSnapshot {
@@ -136,7 +137,6 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
                         job.slug.clone(),
                         PaneJobMatch {
                             group: job.group.clone(),
-                            slug: job.slug.clone(),
                             root: job.folder_path.clone().or_else(|| job.work_dir.clone()),
                         },
                     )
@@ -222,7 +222,7 @@ fn detect_processes_blocking(
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}\t#{window_id}",
+            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}\t#{window_id}\t#{pane_title}",
         ],
         "processes::detect_processes::list-panes",
     );
@@ -247,8 +247,8 @@ fn detect_processes_blocking(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(7, '\t').collect();
-        if parts.len() < 7 {
+        let parts: Vec<&str> = line.splitn(8, '\t').collect();
+        if parts.len() < 8 {
             continue;
         }
 
@@ -259,6 +259,7 @@ fn detect_processes_blocking(
         let window = parts[4];
         let pane_pid = parts[5];
         let window_id = parts[6];
+        let pane_title = normalize_optional_text(parts[7].to_string());
 
         if is_view_session(session) {
             continue;
@@ -274,7 +275,12 @@ fn detect_processes_blocking(
             continue;
         }
 
-        let (matched_group, matched_job) = if let Some((group, slug)) = running_panes.get(pane_id) {
+        let (matched_group, matched_job) = if let Some(group_val) =
+            overrides.get(pane_id).and_then(|o| o.group_override.as_ref())
+        {
+            let group = if group_val.is_empty() { None } else { Some(group_val.clone()) };
+            (group, None)
+        } else if let Some((group, slug)) = running_panes.get(pane_id) {
             (Some(group.clone()), Some(slug.clone()))
         } else if let Some(job_match) = history_panes.get(pane_id).filter(|job_match| {
             job_match
@@ -282,7 +288,11 @@ fn detect_processes_blocking(
                 .as_ref()
                 .is_none_or(|root| cwd == root || cwd.starts_with(&format!("{}/", root)))
         }) {
-            (Some(job_match.group.clone()), Some(job_match.slug.clone()))
+            // Only use historical match for group, not job slug.
+            // Tmux recycles pane IDs so the history entry may be from
+            // a completely different session that reused the same ID.
+            (Some(job_match.group.clone()), None)
+
         } else {
             let best = match_entries
                 .iter()
@@ -326,6 +336,7 @@ fn detect_processes_blocking(
             cwd: cwd.to_string(),
             version,
             display_name: override_meta.and_then(|meta| meta.display_name.clone()),
+            pane_title,
             provider: provider.as_str().to_string(),
             can_fork_session,
             can_send_skills,
@@ -381,6 +392,22 @@ pub fn set_detected_process_queries(
     persist_process_overrides(&state, snapshot)
 }
 
+#[tauri::command]
+pub fn set_detected_process_group(
+    state: State<'_, AppState>,
+    pane_id: String,
+    group: String,
+) -> Result<(), String> {
+    let mut overrides = state.process_overrides.lock().unwrap();
+    let entry = overrides.entry(pane_id).or_default();
+    // "" signals "independent" (no group); non-empty signals pinned to that group.
+    entry.group_override = Some(group.trim().to_string());
+    prune_empty_overrides(&mut overrides);
+    let snapshot = overrides.clone();
+    drop(overrides);
+    persist_process_overrides(&state, snapshot)
+}
+
 fn prune_stale_process_overrides(
     state: &State<'_, AppState>,
     detected_pane_ids: &HashSet<String>,
@@ -407,7 +434,10 @@ fn normalize_optional_text(value: String) -> Option<String> {
 
 fn prune_empty_overrides(overrides: &mut HashMap<String, DetectedProcessOverride>) {
     overrides.retain(|_, meta| {
-        meta.display_name.is_some() || meta.first_query.is_some() || meta.last_query.is_some()
+        meta.display_name.is_some()
+            || meta.first_query.is_some()
+            || meta.last_query.is_some()
+            || meta.group_override.is_some()
     });
 }
 
@@ -559,7 +589,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
             "-t",
             &pane_id,
             "-p",
-            "#{pane_id}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{window_id}",
+            "#{pane_id}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{window_id}\t#{pane_title}",
         ],
         "processes::get_existing_pane_info::display-message",
     )
@@ -574,7 +604,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut parts = stdout.trim_end().splitn(5, '\t');
+    let mut parts = stdout.trim_end().splitn(6, '\t');
     let Some(found_pane_id) = parts.next() else {
         return Ok(None);
     };
@@ -590,11 +620,13 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
     let Some(window_id) = parts.next() else {
         return Ok(None);
     };
+    let pane_title = parts.next().map(|value| normalize_optional_text(value.to_string())).flatten();
 
     Ok(Some(ExistingPaneInfo {
         pane_id: found_pane_id.to_string(),
         cwd: cwd.to_string(),
         tmux_session: resolve_non_view_session_for_window(window_id, tmux_session),
         window_name: window_name.to_string(),
+        pane_title,
     }))
 }

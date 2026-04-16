@@ -132,6 +132,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
           cwd: info.cwd,
           tmux_session: info.tmux_session,
           window_name: info.window_name,
+          pane_title: info.pane_title ?? null,
           matched_group: existing?.matched_group ?? null,
           display_name: existing?.display_name ?? null,
         };
@@ -258,6 +259,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
           cwd: info.cwd,
           tmux_session: info.tmux_session,
           window_name: info.window_name,
+          pane_title: info.pane_title ?? null,
           matched_group: process.matched_group ?? null,
           display_name: process.display_name ?? null,
         };
@@ -421,6 +423,13 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
       demotedShellPaneIdsRef.current.delete(paneId);
     }
     for (const shell of promoted) {
+      // Pin the group override so backend detection won't reassign this pane
+      if (shell.matched_group !== undefined) {
+        invoke("set_detected_process_group", {
+          paneId: shell.pane_id,
+          group: shell.matched_group ?? "",
+        }).catch(() => {});
+      }
       split.replaceContent(
         { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
         { kind: "process", paneId: shell.pane_id },

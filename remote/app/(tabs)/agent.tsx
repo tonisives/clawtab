@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import type { NativeSyntheticEvent, TextInputContentSizeChangeEventData } from "react-native";
 import { useRouter } from "expo-router";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { useWsStore } from "../../src/store/ws";
@@ -60,19 +59,39 @@ export default function AgentScreen() {
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
   const providerBtnRef = useRef<any>(null);
+  const inputRef = useRef<any>(null);
   const { isWide } = useResponsive();
 
-  const onContentSizeChange = useCallback(
-    (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
-      const h = e.nativeEvent.contentSize.height;
-      const min = isWide ? 200 : 120;
-      const max = isWide ? 400 : 300;
-      // Add padding (spacing.md top + bottom)
-      const padded = h + spacing.md * 2;
-      setInputHeight(Math.min(max, Math.max(min, padded)));
-    },
-    [isWide],
-  );
+  const getTextarea = useCallback((): HTMLTextAreaElement | null => {
+    const node = inputRef.current;
+    if (!node) return null;
+    if (node instanceof HTMLTextAreaElement) return node;
+    // React Native Web may expose the DOM node via _node or _nativeNode
+    const direct = node._node ?? node._nativeNode;
+    if (direct instanceof HTMLTextAreaElement) return direct;
+    if (direct?.querySelector) return direct.querySelector("textarea");
+    // Fallback: try treating the ref as a DOM-like container
+    if (node.querySelector) return node.querySelector("textarea");
+    return null;
+  }, []);
+
+  const adjustHeight = useCallback(() => {
+    if (Platform.OS !== "web") return;
+    const el = getTextarea();
+    if (!el) return;
+    const min = isWide ? 200 : 120;
+    const max = isWide ? 400 : 300;
+    // Collapse to 0 so scrollHeight reflects actual content, not current box
+    el.style.height = "0px";
+    const needed = el.scrollHeight;
+    const clamped = Math.min(max, Math.max(min, needed));
+    el.style.height = `${clamped}px`;
+    setInputHeight(clamped);
+  }, [isWide, getTextarea]);
+
+  useEffect(() => {
+    adjustHeight();
+  }, [prompt, adjustHeight]);
 
   const DEFAULT_ENABLED = {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
@@ -145,10 +164,10 @@ export default function AgentScreen() {
             </Text>
 
             <TextInput
+              ref={inputRef}
               style={[styles.input, isWide && styles.inputWide, inputHeight != null && { height: inputHeight }]}
               value={prompt}
               onChangeText={setPrompt}
-              onContentSizeChange={onContentSizeChange}
               placeholder="What would you like the agent to do?"
               placeholderTextColor={colors.textMuted}
               multiline

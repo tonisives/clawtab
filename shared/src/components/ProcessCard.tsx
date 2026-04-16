@@ -38,8 +38,8 @@ export function ProcessCard({
   renameShortcutHint?: string;
 }) {
   const displayName = inGroup
-    ? (process.display_name ?? process.first_query ?? shortenPath(process.cwd))
-    : (process.display_name ?? shortenPath(process.cwd));
+    ? (process.display_name ?? process.pane_title ?? process.first_query ?? shortenPath(process.cwd))
+    : (process.display_name ?? process.pane_title ?? shortenPath(process.cwd));
 
   const subtitle = inGroup
     ? (process.last_query && process.last_query !== process.first_query ? process.last_query : null)
@@ -62,14 +62,14 @@ export function ProcessCard({
 
   const startEditing = useCallback(() => {
     if (!canRename) return;
-    const initialValue = process.display_name ?? "";
+    const initialValue = process.display_name ?? process.pane_title ?? "";
     setEditValue(initialValue);
     setEditing(true);
     setMenuOpen(false);
     onRenameStateChange?.(true);
     onRenameDraftChange?.(initialValue);
     setTimeout(() => { editInputRef.current?.focus(); }, 0);
-  }, [canRename, onRenameDraftChange, onRenameStateChange, process.display_name]);
+  }, [canRename, onRenameDraftChange, onRenameStateChange, process.display_name, process.pane_title]);
 
   const commitEdit = useCallback(() => {
     setEditing(false);

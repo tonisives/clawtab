@@ -103,8 +103,8 @@ export function TmuxPaneDetail({
   );
 
   const displayName = target.kind === "process"
-    ? displayNameOverride?.trim() || (target.process.display_name ?? shortenPath(target.process.cwd))
-    : shortenPath(target.shell.cwd);
+    ? displayNameOverride?.trim() || (target.process.display_name ?? target.process.pane_title ?? shortenPath(target.process.cwd))
+    : target.shell.display_name ?? target.shell.pane_title ?? shortenPath(target.shell.cwd);
   const jobType = target.kind === "process" ? target.process.provider : "shell";
 
   const syntheticJob: RemoteJob = {

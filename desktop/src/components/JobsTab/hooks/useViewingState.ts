@@ -130,10 +130,9 @@ export function useViewingState({ core, onJobSelected }: UseViewingStateParams) 
     setPickerTemplateId(null);
     setCreateForGroup(null);
     setSaveError(null);
-    setViewingJob(null);
-    setViewingProcess(null);
-    setViewingShell(null);
-    setViewingAgent(false);
+    // Preserve viewingJob/viewingProcess/viewingShell/viewingAgent so that
+    // currentContent reflects the prior pane. handleRunAgent uses this to
+    // bootstrap a split tree (existing content + new agent).
     setShowFolderRunner(true);
     setFocusEmptyAgentSignal((value) => value + 1);
   }, []);

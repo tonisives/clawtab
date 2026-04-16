@@ -11,6 +11,7 @@ export interface DetectedProcess {
   cwd: string;
   version: string;
   display_name?: string | null;
+  pane_title?: string | null;
   provider: ProcessProvider;
   can_fork_session: boolean;
   can_send_skills: boolean;
@@ -34,6 +35,7 @@ export interface ShellPane {
   cwd: string;
   tmux_session: string;
   window_name: string;
+  pane_title?: string | null;
   matched_group?: string | null;
   display_name?: string | null;
 }

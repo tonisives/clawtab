@@ -822,6 +822,7 @@ pub fn run() {
             commands::processes::get_auto_yes_panes,
             commands::processes::set_auto_yes_panes,
             commands::processes::set_detected_process_display_name,
+            commands::processes::set_detected_process_group,
             commands::processes::set_detected_process_queries,
             commands::processes::sigint_detected_process,
             commands::processes::stop_detected_process,
