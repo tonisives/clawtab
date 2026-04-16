@@ -386,7 +386,6 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
     if (!core.loaded) return;
     split.cleanStaleLeaves((content) => {
       if (content.kind === "process") {
-        if (content.paneId.startsWith("_pending_")) return false;
         if (pendingProcess?.pane_id === content.paneId) return false;
         if (demotingPaneIds.has(content.paneId)) return false;
         if (demotionCandidateIds.has(content.paneId)) return false;

@@ -56,6 +56,7 @@ pub async fn execute_job(
         relay,
         params,
         None,
+        None,
         notifier,
         None,
     )
@@ -73,6 +74,7 @@ pub async fn execute_job_with_auto_yes(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
+    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 ) {
     execute_job_inner(
@@ -86,6 +88,7 @@ pub async fn execute_job_with_auto_yes(
         relay,
         params,
         auto_yes_panes,
+        protected_panes,
         notifier,
         None,
     )
@@ -103,6 +106,7 @@ pub async fn execute_job_with_auto_yes_and_pane_notify(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
+    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
     notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 ) {
@@ -117,6 +121,7 @@ pub async fn execute_job_with_auto_yes_and_pane_notify(
         relay,
         params,
         auto_yes_panes,
+        protected_panes,
         notifier,
         Some(pane_tx),
     )
@@ -133,6 +138,7 @@ pub async fn execute_job_with_pane_notify(
     active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
+    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
     notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 ) {
@@ -147,6 +153,7 @@ pub async fn execute_job_with_pane_notify(
         relay,
         params,
         None,
+        protected_panes,
         notifier,
         Some(pane_tx),
     )
@@ -164,6 +171,7 @@ async fn execute_job_inner(
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
     auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
+    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
     notifier: Option<Arc<dyn crate::notifications::Notifier>>,
     mut pane_tx: Option<tokio::sync::oneshot::Sender<(String, String)>>,
 ) {
@@ -312,6 +320,9 @@ async fn execute_job_inner(
                     relay: Arc::clone(relay),
                     notifier: notifier.clone(),
                     is_reattach: false,
+                    protected_panes: protected_panes
+                        .map(Arc::clone)
+                        .unwrap_or_else(|| Arc::new(Mutex::new(HashSet::new()))),
                 };
                 tokio::spawn(super::monitor::monitor_pane(params));
                 return;

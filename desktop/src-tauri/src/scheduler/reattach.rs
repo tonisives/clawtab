@@ -24,6 +24,7 @@ pub fn reattach_running_jobs(
     active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
+    protected_panes: &Arc<Mutex<HashSet<String>>>,
 ) {
     if !tmux::is_available() {
         return;
@@ -250,6 +251,7 @@ pub fn reattach_running_jobs(
             relay: Arc::clone(relay),
             notifier: None,
             is_reattach: true,
+            protected_panes: Arc::clone(protected_panes),
         };
         tokio::spawn(super::monitor::monitor_pane(params));
 
@@ -271,7 +273,10 @@ pub fn reattach_running_jobs(
 /// `ct-clawtab-shell-*` (created by process demotion) are tracked only in
 /// React state — after an app restart the app has no record of them, so any
 /// that survive in tmux are orphans by definition.
-pub fn cleanup_orphaned_shell_windows() {
+///
+/// `protected_panes` names pane IDs currently open in ClawTab's UI -- any
+/// window containing such a pane is skipped so the user's live view is safe.
+pub fn cleanup_orphaned_shell_windows(protected_panes: &HashSet<String>) {
     if !tmux::is_available() {
         return;
     }
@@ -302,6 +307,19 @@ pub fn cleanup_orphaned_shell_windows() {
         };
         for w in windows {
             if w.name.starts_with("clawtab-shell-") || w.name.starts_with("ct-clawtab-shell-") {
+                // Skip if any pane in this window is currently open in ClawTab.
+                if !protected_panes.is_empty() {
+                    if let Ok(panes) = tmux::list_panes_in_window(session, &w.name) {
+                        if panes.iter().any(|p| protected_panes.contains(p)) {
+                            log::info!(
+                                "cleanup_orphaned_shell_windows: keeping {}:{} -- pane open in ClawTab",
+                                session,
+                                w.name
+                            );
+                            continue;
+                        }
+                    }
+                }
                 match tmux::kill_window(session, &w.name) {
                     Ok(_) => {
                         killed += 1;

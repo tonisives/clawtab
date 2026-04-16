@@ -25,6 +25,7 @@ pub async fn start(
     active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
     relay: Arc<Mutex<Option<RelayHandle>>>,
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
+    protected_panes: Arc<Mutex<HashSet<String>>>,
 ) {
     log::info!("Scheduler started");
 
@@ -164,6 +165,7 @@ pub async fn start(
                 let active_agents = Arc::clone(&active_agents);
                 let relay = Arc::clone(&relay);
                 let auto_yes_panes = Arc::clone(&auto_yes_panes);
+                let protected_panes = Arc::clone(&protected_panes);
                 tokio::spawn(async move {
                     executor::execute_job_with_auto_yes(
                         &job,
@@ -176,6 +178,7 @@ pub async fn start(
                         &relay,
                         &std::collections::HashMap::new(),
                         Some(&auto_yes_panes),
+                        Some(&protected_panes),
                         None,
                     )
                     .await;

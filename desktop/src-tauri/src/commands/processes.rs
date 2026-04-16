@@ -591,6 +591,16 @@ pub async fn set_auto_yes_panes(
     Ok(())
 }
 
+/// Replace the set of panes currently open in ClawTab's UI. Background
+/// cleanup paths skip any pane in this set, so a pane visible to the user
+/// (even as a plain shell) is never killed behind their back.
+#[tauri::command]
+pub fn set_protected_panes(state: State<'_, AppState>, pane_ids: Vec<String>) -> Result<(), String> {
+    let pane_set: HashSet<String> = pane_ids.into_iter().collect();
+    *state.protected_panes.lock().unwrap() = pane_set;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn sigint_detected_process(pane_id: String) -> Result<(), String> {
     crate::tmux::send_sigint_to_pane(&pane_id)?;

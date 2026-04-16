@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -34,6 +34,9 @@ pub struct MonitorParams {
     pub notifier: Option<Arc<dyn crate::notifications::Notifier>>,
     /// When true, skip the "job started" notification (used for reattach).
     pub is_reattach: bool,
+    /// Pane IDs currently open in ClawTab's UI. Used to suppress `kill_on_end`
+    /// when the user is looking at the pane.
+    pub protected_panes: Arc<Mutex<HashSet<String>>>,
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -353,9 +356,22 @@ pub async fn monitor_pane(params: MonitorParams) {
     // Save log file to disk
     save_log_file(&params.slug, &params.run_id, &full_output);
 
-    // Close the tmux pane only when the job is configured to do so.
+    // Close the tmux pane only when the job is configured to do so AND the user
+    // is not currently viewing this pane in ClawTab. A pane visible in the UI
+    // must never disappear out from under the user, even when kill_on_end is set.
     if params.kill_on_end {
-        if let Err(e) = tmux::kill_pane(&params.pane_id) {
+        let is_protected = params
+            .protected_panes
+            .lock()
+            .map(|p| p.contains(&params.pane_id))
+            .unwrap_or(false);
+        if is_protected {
+            log::warn!(
+                "[{}] Skipping kill_on_end for pane {} -- pane is open in ClawTab",
+                params.run_id,
+                params.pane_id,
+            );
+        } else if let Err(e) = tmux::kill_pane(&params.pane_id) {
             log::warn!(
                 "[{}] Failed to kill pane {}: {}",
                 params.run_id,

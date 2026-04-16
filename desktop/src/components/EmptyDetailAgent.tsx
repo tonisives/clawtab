@@ -195,11 +195,19 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
   }, []);
 
   const MIN_LINES = 5;
-  const lineCount = Math.max(prompt.split("\n").length, MIN_LINES);
-  const textareaHeight = Math.min(
-    lineCount * LINE_HEIGHT + VERTICAL_PADDING,
-    EXPANDED_MAX_HEIGHT,
-  );
+  const MIN_HEIGHT = MIN_LINES * LINE_HEIGHT + VERTICAL_PADDING;
+  const [textareaHeight, setTextareaHeight] = useState(MIN_HEIGHT);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const prev = el.style.height;
+    el.style.height = "0px";
+    const needed = el.scrollHeight;
+    el.style.height = prev;
+    const clamped = Math.min(EXPANDED_MAX_HEIGHT, Math.max(MIN_HEIGHT, needed));
+    setTextareaHeight(clamped);
+  }, [prompt, MIN_HEIGHT]);
 
   return (
     <div ref={rootRef} tabIndex={-1} style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>

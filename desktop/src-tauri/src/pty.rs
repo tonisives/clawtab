@@ -318,12 +318,15 @@ fn is_idle_shell_command(cmd: &str) -> bool {
 /// These orphans accumulate when the app crashes or force-quits while a pane
 /// viewer is open: the view session dies (or gets swept), but the captured
 /// `ct-*` window parks in its base session with no tab pointing at it.
-fn cleanup_orphaned_ct_windows() {
+///
+/// `protected_panes` names pane IDs currently open in ClawTab's UI -- any
+/// window containing such a pane is skipped even if it looks idle.
+fn cleanup_orphaned_ct_windows(protected_panes: &std::collections::HashSet<String>) {
     let raw = match tmux(&[
         "list-panes",
         "-a",
         "-F",
-        "#{session_name}\t#{window_id}\t#{window_name}\t#{pane_current_command}",
+        "#{session_name}\t#{window_id}\t#{window_name}\t#{pane_id}\t#{pane_current_command}",
     ]) {
         Ok(v) => v,
         Err(e) => {
@@ -332,18 +335,20 @@ fn cleanup_orphaned_ct_windows() {
         }
     };
 
-    let mut killed = 0usize;
-    let mut kept = 0usize;
-    let mut seen_windows: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Group panes by (session, window_id, window_name) so we can inspect all
+    // panes in a window before deciding to kill it.
+    let mut windows: std::collections::HashMap<String, (String, String, String, Vec<(String, String)>)> =
+        std::collections::HashMap::new();
     for line in raw.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() < 4 {
+        if parts.len() < 5 {
             continue;
         }
         let session = parts[0];
         let window_id = parts[1];
         let window_name = parts[2];
-        let cmd = parts[3];
+        let pane_id = parts[3];
+        let cmd = parts[4];
 
         if !window_name.starts_with("ct-") {
             continue;
@@ -354,19 +359,45 @@ fn cleanup_orphaned_ct_windows() {
         if is_view_session(session) {
             continue;
         }
-        if !seen_windows.insert(window_id.to_string()) {
+
+        let entry = windows.entry(window_id.to_string()).or_insert_with(|| {
+            (
+                session.to_string(),
+                window_id.to_string(),
+                window_name.to_string(),
+                Vec::new(),
+            )
+        });
+        entry.3.push((pane_id.to_string(), cmd.to_string()));
+    }
+
+    let mut killed = 0usize;
+    let mut kept = 0usize;
+    for (_, (session, window_id, window_name, panes)) in windows {
+        let all_idle = panes.iter().all(|(_, cmd)| is_idle_shell_command(cmd));
+        let has_protected = panes
+            .iter()
+            .any(|(pane_id, _)| protected_panes.contains(pane_id));
+
+        if has_protected {
+            log::info!(
+                "cleanup_orphaned_ct_windows: keeping {} ({}:{}) -- pane open in ClawTab",
+                window_name,
+                session,
+                window_id
+            );
+            kept += 1;
             continue;
         }
 
-        if is_idle_shell_command(cmd) {
-            match tmux(&["kill-window", "-t", window_id]) {
+        if all_idle {
+            match tmux(&["kill-window", "-t", &window_id]) {
                 Ok(_) => {
                     log::info!(
-                        "cleanup_orphaned_ct_windows: killed {} ({}:{}) idle {}",
+                        "cleanup_orphaned_ct_windows: killed {} ({}:{}) idle",
                         window_name,
                         session,
                         window_id,
-                        cmd
                     );
                     killed += 1;
                 }
@@ -378,11 +409,10 @@ fn cleanup_orphaned_ct_windows() {
             }
         } else {
             log::info!(
-                "cleanup_orphaned_ct_windows: keeping {} ({}:{}) running {}",
+                "cleanup_orphaned_ct_windows: keeping {} ({}:{}) running",
                 window_name,
                 session,
                 window_id,
-                cmd
             );
             kept += 1;
         }
@@ -698,7 +728,8 @@ impl PtyManager {
         // session is an orphan from a previous run. View sweep first so the
         // ct-* sweep doesn't see panes under view sessions.
         cleanup_orphaned_view_sessions(&[]);
-        cleanup_orphaned_ct_windows();
+        // No protected panes at startup -- the frontend syncs the set after boot.
+        cleanup_orphaned_ct_windows(&std::collections::HashSet::new());
         Self {
             sessions: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),

@@ -430,6 +430,7 @@ pub async fn run_job_now(
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
+    let protected_panes = Arc::clone(&state.protected_panes);
     let params = params.unwrap_or_default();
 
     if matches!(
@@ -451,6 +452,7 @@ pub async fn run_job_now(
                 &relay,
                 &params,
                 Some(&auto_yes_panes),
+                Some(&protected_panes),
                 pane_tx,
                 Some(notifier),
             )
@@ -479,6 +481,7 @@ pub async fn run_job_now(
                 &relay,
                 &params,
                 Some(&auto_yes_panes),
+                Some(&protected_panes),
                 Some(notifier),
             )
             .await;
@@ -573,6 +576,7 @@ pub async fn restart_job(
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
     let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
+    let protected_panes = Arc::clone(&state.protected_panes);
     let params = params.unwrap_or_default();
 
     let notifier: Arc<dyn crate::notifications::Notifier> =
@@ -589,6 +593,7 @@ pub async fn restart_job(
             &relay,
             &params,
             Some(&auto_yes_panes),
+            Some(&protected_panes),
             Some(notifier),
         )
         .await;
@@ -1207,6 +1212,7 @@ pub async fn run_agent(
     let job_status = Arc::clone(&state.job_status);
     let active_agents = Arc::clone(&state.active_agents);
     let relay = Arc::clone(&state.relay);
+    let protected_panes = Arc::clone(&state.protected_panes);
 
     let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
 
@@ -1221,6 +1227,7 @@ pub async fn run_agent(
             &active_agents,
             &relay,
             &std::collections::HashMap::new(),
+            Some(&protected_panes),
             pane_tx,
             None,
         )

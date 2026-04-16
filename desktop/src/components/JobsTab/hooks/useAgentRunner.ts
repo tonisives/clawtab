@@ -1,8 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { DetectedProcess, PaneContent, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
+import type { PaneContent, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { requestXtermPaneFocus } from "../../XtermPane";
-import { providerCapabilities } from "../utils";
 import type { Job } from "../../../types";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
@@ -22,7 +21,6 @@ export function useAgentRunner({
   actions,
   core,
   currentContentRef,
-  defaultProvider,
   lifecycle,
   split,
   transport,
@@ -30,7 +28,6 @@ export function useAgentRunner({
 }: UseAgentRunnerParams) {
   const {
     setPendingAgentWorkDir,
-    setPendingProcess,
     setShellPanes,
   } = lifecycle;
   const {
@@ -47,118 +44,67 @@ export function useAgentRunner({
   }, [transport]);
 
   const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) => {
-    const resolvedProvider = provider ?? defaultProvider;
-    const capabilities = providerCapabilities(resolvedProvider);
-    if (workDir) {
-      const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
-      const matchedGroup = matchingJob ? (matchingJob.group || null) : null;
-      const launchingShell = resolvedProvider === "shell";
-      const placeholder: DetectedProcess = {
-        pane_id: `_pending_${Date.now()}`, cwd: workDir, version: "", tmux_session: "", window_name: "",
-        provider: resolvedProvider, ...capabilities,
-        matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
-        last_query: null, session_started_at: new Date().toISOString(), _transient_state: "starting",
-      };
-
-      if (!launchingShell) {
-        setPendingProcess(placeholder);
-        setShowFolderRunner(false);
-        if (split.tree) {
-          split.openContent({ kind: "process", paneId: placeholder.pane_id });
-        } else if (currentContentRef.current) {
-          const dir = split.detailSize.w >= split.detailSize.h ? "horizontal" : "vertical";
-          split.addSplitLeaf("_unused", { kind: "process", paneId: placeholder.pane_id }, dir);
-          setViewingJob(null);
-          setViewingAgent(false);
-          setViewingShell(null);
-          setViewingProcess(null);
-        } else {
-          setViewingJob(null);
-          setViewingAgent(false);
-          setViewingShell(null);
-          setViewingProcess(placeholder);
-        }
-        setScrollToSlug(placeholder.pane_id);
-      }
-
-      const result = await actions.runAgent(prompt, workDir, provider, model);
-      if (result) {
-        // Pin the group override so backend detection won't reassign this pane
-        invoke("set_detected_process_group", {
-          paneId: result.pane_id,
-          group: matchedGroup ?? "",
-        }).catch(() => {});
-        if (launchingShell) {
-          const shellInfo = transport.getExistingPaneInfo
-            ? await transport.getExistingPaneInfo(result.pane_id)
-            : null;
-          const shell: ShellPane = shellInfo ?? {
-            pane_id: result.pane_id,
-            cwd: workDir,
-            tmux_session: result.tmux_session,
-            window_name: "",
-          };
-          const nextShell: ShellPane = { ...shell, matched_group: matchedGroup };
-          setShellPanes((prev) => prev.some((pane) => pane.pane_id === nextShell.pane_id) ? prev : [...prev, nextShell]);
-          setShowFolderRunner(false);
-          if (split.tree) {
-            const realContent: PaneContent = { kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session };
-            const placeholderContent: PaneContent = { kind: "process", paneId: placeholder.pane_id };
-            if (!split.replaceContent(placeholderContent, realContent, { focus: false })) {
-              split.openContent(realContent);
-            }
-            setPendingProcess(null);
-          } else if (currentContentRef.current) {
-            const dir = split.detailSize.w >= split.detailSize.h ? "horizontal" : "vertical";
-            split.addSplitLeaf("_unused", { kind: "terminal", paneId: nextShell.pane_id, tmuxSession: nextShell.tmux_session }, dir);
-            setViewingJob(null);
-            setViewingAgent(false);
-            setViewingProcess(null);
-            setViewingShell(null);
-          } else {
-            setViewingJob(null);
-            setViewingAgent(false);
-            setViewingProcess(null);
-            setViewingShell(nextShell);
-          }
-          setScrollToSlug(nextShell.pane_id);
-          requestXtermPaneFocus(nextShell.pane_id);
-        } else {
-          const realProcess: DetectedProcess = {
-            pane_id: result.pane_id, cwd: workDir, version: "", tmux_session: result.tmux_session, window_name: "",
-            provider: resolvedProvider, ...capabilities,
-            matched_group: matchedGroup, matched_job: null, log_lines: "", first_query: prompt.slice(0, 80),
-            last_query: null, session_started_at: new Date().toISOString(),
-          };
-          setPendingProcess(realProcess);
-          if (split.tree) {
-            const realContent: PaneContent = { kind: "process", paneId: realProcess.pane_id };
-            if (!split.replaceContent({ kind: "process", paneId: placeholder.pane_id }, realContent, { focus: false })) {
-              split.openContent(realContent);
-            }
-          } else {
-            const activeContent = currentContentRef.current;
-            const stillViewingPlaceholder = activeContent?.kind === "process"
-              && activeContent.paneId === placeholder.pane_id;
-            if (stillViewingPlaceholder) setViewingProcess(realProcess);
-          }
-          setScrollToSlug(result.pane_id);
-          requestXtermPaneFocus(result.pane_id);
-          setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
-        }
-      } else if (!launchingShell) {
-        setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
-      }
-    } else {
+    if (!workDir) {
       await actions.runAgent(prompt, workDir, provider, model);
+      return;
     }
+
+    const matchingJob = (core.jobs as Job[]).find((j) => j.folder_path === workDir || j.work_dir === workDir);
+    const matchedGroup = matchingJob ? (matchingJob.group || null) : null;
+
+    const result = await actions.runAgent(prompt, workDir, provider, model);
+    if (!result) {
+      setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
+      return;
+    }
+
+    // Pin the group override so backend detection won't reassign this pane
+    invoke("set_detected_process_group", {
+      paneId: result.pane_id,
+      group: matchedGroup ?? "",
+    }).catch(() => {});
+
+    // The backend has created a real tmux pane. Render it as a terminal immediately.
+    // If this is claude/codex, the promotion effect in useProcessLifecycle will swap
+    // terminal -> process in place once the process is detected inside the pane.
+    const shell: ShellPane = {
+      pane_id: result.pane_id,
+      cwd: workDir,
+      tmux_session: result.tmux_session,
+      window_name: "",
+      matched_group: matchedGroup,
+    };
+    setShellPanes((prev) => prev.some((pane) => pane.pane_id === shell.pane_id) ? prev : [...prev, shell]);
+
+    const terminalContent: PaneContent = {
+      kind: "terminal",
+      paneId: shell.pane_id,
+      tmuxSession: shell.tmux_session,
+    };
+
+    setShowFolderRunner(false);
+    if (split.tree) {
+      split.openContent(terminalContent);
+    } else if (currentContentRef.current) {
+      const dir = split.detailSize.w >= split.detailSize.h ? "horizontal" : "vertical";
+      split.addSplitLeaf("_unused", terminalContent, dir);
+      setViewingJob(null);
+      setViewingAgent(false);
+      setViewingProcess(null);
+      setViewingShell(null);
+    } else {
+      setViewingJob(null);
+      setViewingAgent(false);
+      setViewingProcess(null);
+      setViewingShell(shell);
+    }
+    setScrollToSlug(shell.pane_id);
+    requestXtermPaneFocus(shell.pane_id);
   }, [
     actions,
     core.jobs,
     currentContentRef,
-    defaultProvider,
     setPendingAgentWorkDir,
-    setPendingProcess,
     setScrollToSlug,
     setShellPanes,
     setShowFolderRunner,
@@ -167,7 +113,6 @@ export function useAgentRunner({
     setViewingProcess,
     setViewingShell,
     split,
-    transport,
   ]);
 
   return { handleRunAgent, handleGetAgentProviders };

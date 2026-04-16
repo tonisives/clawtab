@@ -74,6 +74,7 @@ pub struct AppState {
     pub relay_sub_required: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
+    pub protected_panes: Arc<Mutex<HashSet<String>>>,
     pub process_overrides: Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>>,
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
@@ -591,6 +592,7 @@ pub fn run() {
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> = Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let process_overrides: Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>> = {
         let loaded = settings.lock().unwrap().process_overrides.clone();
         Arc::new(Mutex::new(loaded))
@@ -615,6 +617,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        protected_panes: Arc::clone(&protected_panes),
         process_overrides: Arc::clone(&process_overrides),
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
@@ -635,6 +638,7 @@ pub fn run() {
         relay_sub_required: Arc::clone(&relay_sub_required),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
+        protected_panes: Arc::clone(&protected_panes),
         process_overrides: Arc::clone(&process_overrides),
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
@@ -651,6 +655,7 @@ pub fn run() {
     let active_agents_for_scheduler = Arc::clone(&active_agents);
     let relay_for_scheduler = Arc::clone(&relay_handle);
     let auto_yes_for_scheduler = Arc::clone(&auto_yes_panes);
+    let protected_for_scheduler = Arc::clone(&protected_panes);
 
     // Clones for reattach
     let jobs_for_reattach = Arc::clone(&jobs_config);
@@ -660,6 +665,7 @@ pub fn run() {
     let active_agents_for_reattach = Arc::clone(&active_agents);
     let relay_for_reattach = Arc::clone(&relay_handle);
     let auto_yes_for_reattach = Arc::clone(&auto_yes_panes);
+    let protected_for_reattach = Arc::clone(&protected_panes);
 
     // Clones for relay
     let relay_for_setup = Arc::clone(&relay_handle);
@@ -821,6 +827,7 @@ pub fn run() {
             commands::processes::get_active_questions,
             commands::processes::get_auto_yes_panes,
             commands::processes::set_auto_yes_panes,
+            commands::processes::set_protected_panes,
             commands::processes::set_detected_process_display_name,
             commands::processes::set_detected_process_group,
             commands::processes::set_detected_process_queries,
@@ -1089,6 +1096,7 @@ pub fn run() {
                     active_agents_for_scheduler,
                     relay_for_scheduler,
                     auto_yes_for_scheduler,
+                    protected_for_scheduler,
                 ));
                 {
                     let state: tauri::State<AppState> = app.state();
@@ -1107,8 +1115,11 @@ pub fn run() {
                         &active_agents_for_reattach,
                         &relay_for_reattach,
                         &auto_yes_for_reattach,
+                        &protected_for_reattach,
                     );
-                    scheduler::reattach::cleanup_orphaned_shell_windows();
+                    // Startup cleanup runs before the frontend can sync protected panes,
+                    // so pass an empty set -- orphans from a previous run are fair game.
+                    scheduler::reattach::cleanup_orphaned_shell_windows(&HashSet::new());
                 });
 
                 // Start relay connection if configured

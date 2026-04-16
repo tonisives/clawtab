@@ -396,6 +396,27 @@ pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String,
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// List pane IDs in a specific window. Returns panes like `%12`, `%13`.
+pub fn list_panes_in_window(session: &str, window: &str) -> Result<Vec<String>, String> {
+    let target = format!("{}:{}", session, window);
+    let output = run(
+        &["list-panes", "-t", &target, "-F", "#{pane_id}"],
+        "tmux::list_panes_in_window",
+    )
+    .map_err(|e| format!("Failed to list panes: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect())
+}
+
 /// Check if a tmux pane exists (hasn't been killed/closed).
 pub fn pane_exists(pane_id: &str) -> bool {
     let output = run(

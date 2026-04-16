@@ -49,6 +49,7 @@ fn main() {
     let active_questions: Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>> =
         Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let notification_state: Arc<Mutex<clawtab_lib::notifications::NotificationState>> = Arc::new(
         Mutex::new(clawtab_lib::notifications::NotificationState::new()),
     );
@@ -126,6 +127,7 @@ fn main() {
             Arc::clone(&active_agents),
             Arc::clone(&relay_handle),
             Arc::clone(&auto_yes_panes),
+            Arc::clone(&protected_panes),
         ));
 
         // Reattach jobs still running in tmux from previous session
@@ -138,6 +140,7 @@ fn main() {
             let active_agents = Arc::clone(&active_agents);
             let relay = Arc::clone(&relay_handle);
             let auto_yes_panes = Arc::clone(&auto_yes_panes);
+            let protected_panes = Arc::clone(&protected_panes);
             tokio::spawn(async move {
                 clawtab_lib::scheduler::reattach::reattach_running_jobs(
                     event_sink.as_ref(),
@@ -148,8 +151,10 @@ fn main() {
                     &active_agents,
                     &relay,
                     &auto_yes_panes,
+                    &protected_panes,
                 );
-                clawtab_lib::scheduler::reattach::cleanup_orphaned_shell_windows();
+                // Daemon has no ClawTab UI, so nothing is protected.
+                clawtab_lib::scheduler::reattach::cleanup_orphaned_shell_windows(&HashSet::new());
             });
         }
 
