@@ -207,6 +207,7 @@ export function EditLayout({
           onCancel={() => setPendingAutoYes(false)}
           confirmLabel="Enable"
           confirmClassName="btn btn-sm"
+          autoFocusConfirm
         />
       )}
     </div>

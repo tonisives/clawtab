@@ -13,7 +13,9 @@ use crate::AppState;
 #[derive(Debug, Clone)]
 struct PaneJobMatch {
     group: String,
+    slug: String,
     root: Option<String>,
+    started_at: String,
 }
 
 pub use crate::config::settings::DetectedProcessOverride;
@@ -93,6 +95,21 @@ fn is_semver(s: &str) -> bool {
         .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
+/// Window in which a historical run's pane_id is still considered to refer
+/// to the same logical pane. Older than this, we assume tmux recycled the
+/// pane ID to a new unrelated session.
+const HISTORY_PANE_TRUST_HOURS: i64 = 12;
+
+fn is_recent_history(started_at: &str) -> bool {
+    match chrono::DateTime::parse_from_rfc3339(started_at) {
+        Ok(ts) => {
+            let age = chrono::Utc::now().signed_duration_since(ts.with_timezone(&chrono::Utc));
+            age < chrono::Duration::hours(HISTORY_PANE_TRUST_HOURS)
+        }
+        Err(_) => false,
+    }
+}
+
 fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
     match provider {
         ProcessProvider::Claude => (true, true, true),
@@ -127,7 +144,12 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
     };
 
     let history_panes: HashMap<String, PaneJobMatch> = {
-        let jobs_by_slug: HashMap<String, PaneJobMatch> = {
+        #[derive(Clone)]
+        struct JobInfo {
+            group: String,
+            root: Option<String>,
+        }
+        let jobs_by_slug: HashMap<String, JobInfo> = {
             let config = state.jobs_config.lock().unwrap();
             config
                 .jobs
@@ -135,7 +157,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
                 .map(|job| {
                     (
                         job.slug.clone(),
-                        PaneJobMatch {
+                        JobInfo {
                             group: job.group.clone(),
                             root: job.folder_path.clone().or_else(|| job.work_dir.clone()),
                         },
@@ -157,8 +179,16 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
             if panes.contains_key(&pane_id) {
                 continue;
             }
-            if let Some(job_match) = jobs_by_slug.get(&run.job_id) {
-                panes.insert(pane_id, job_match.clone());
+            if let Some(info) = jobs_by_slug.get(&run.job_id) {
+                panes.insert(
+                    pane_id,
+                    PaneJobMatch {
+                        group: info.group.clone(),
+                        slug: run.job_id.clone(),
+                        root: info.root.clone(),
+                        started_at: run.started_at.clone(),
+                    },
+                );
             }
         }
         panes
@@ -288,11 +318,15 @@ fn detect_processes_blocking(
                 .as_ref()
                 .is_none_or(|root| cwd == root || cwd.starts_with(&format!("{}/", root)))
         }) {
-            // Only use historical match for group, not job slug.
-            // Tmux recycles pane IDs so the history entry may be from
-            // a completely different session that reused the same ID.
-            (Some(job_match.group.clone()), None)
-
+            // Tmux recycles pane IDs, so historical runs from days ago may
+            // point to a completely different session that reused the same ID.
+            // Only trust the job slug (which nests under that job's card) if
+            // the run started recently. Otherwise fall back to group-only.
+            if is_recent_history(&job_match.started_at) {
+                (Some(job_match.group.clone()), Some(job_match.slug.clone()))
+            } else {
+                (Some(job_match.group.clone()), None)
+            }
         } else {
             let best = match_entries
                 .iter()

@@ -84,6 +84,62 @@ pub fn session_exists(session: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// True for ephemeral `clawtab-*-view-N` sessions created by the PTY viewer.
+fn is_view_session(name: &str) -> bool {
+    name.starts_with("clawtab-") && name.contains("-view-")
+}
+
+/// Resolve the real owning (non-view) tmux session for a pane.
+///
+/// `display-message -t %pane_id -p '#{session_name}'` is unreliable when the
+/// pane's window is shared across a session group: tmux picks whichever group
+/// member it likes, often returning an ephemeral `clawtab-*-view-N` session.
+/// Instead, look up the pane's window_id, then list all windows to find the
+/// non-view session that owns that window.
+pub fn resolve_real_session_for_pane(pane_id: &str) -> Result<String, String> {
+    let window_id = run(
+        &["display-message", "-t", pane_id, "-p", "#{window_id}"],
+        "tmux::resolve_real_session_for_pane::window_id",
+    )
+    .map_err(|e| format!("Failed to resolve window for pane: {}", e))?;
+    if !window_id.status.success() {
+        return Err(format!(
+            "tmux error: {}",
+            String::from_utf8_lossy(&window_id.stderr).trim()
+        ));
+    }
+    let window_id = String::from_utf8_lossy(&window_id.stdout).trim().to_string();
+
+    let output = run(
+        &["list-windows", "-a", "-F", "#{session_name}\t#{window_id}"],
+        "tmux::resolve_real_session_for_pane::list_windows",
+    )
+    .map_err(|e| format!("Failed to list windows: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "tmux error: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let mut fallback: Option<String> = None;
+    for line in raw.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let session = parts.next().unwrap_or("");
+        let wid = parts.next().unwrap_or("");
+        if wid != window_id {
+            continue;
+        }
+        if !is_view_session(session) {
+            return Ok(session.to_string());
+        }
+        if fallback.is_none() {
+            fallback = Some(session.to_string());
+        }
+    }
+    fallback.ok_or_else(|| format!("no session owns window {}", window_id))
+}
+
 pub fn create_session(session: &str) -> Result<(), String> {
     let output = run(
         &["new-session", "-d", "-s", session],

@@ -47,20 +47,27 @@ export function ConfirmDialog({
   onCancel,
   confirmLabel = "Delete",
   confirmClassName = "btn btn-danger btn-sm",
+  autoFocusConfirm = false,
 }: {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
   confirmLabel?: string;
   confirmClassName?: string;
+  autoFocusConfirm?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
-    cancelRef.current?.focus();
+    if (autoFocusConfirm) {
+      confirmRef.current?.focus();
+    } else {
+      cancelRef.current?.focus();
+    }
 
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
@@ -92,7 +99,7 @@ export function ConfirmDialog({
           <button ref={cancelRef} className="btn btn-sm" onClick={onCancel}>
             Cancel
           </button>
-          <button className={confirmClassName} onClick={onConfirm}>
+          <button ref={confirmRef} className={confirmClassName} onClick={onConfirm}>
             {confirmLabel}
           </button>
         </div>

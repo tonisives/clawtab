@@ -63,6 +63,7 @@ export function Dialogs({
           message={`Enable auto-yes for "${autoYes.pendingAutoYes.title}"?\n\nAll future questions will be automatically accepted with "Yes". This stays active until you disable it.`}
           onConfirm={autoYes.confirmAutoYes} onCancel={() => autoYes.setPendingAutoYes(null)}
           confirmLabel="Enable" confirmClassName="btn btn-sm"
+          autoFocusConfirm
         />
       )}
 

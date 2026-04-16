@@ -193,20 +193,10 @@ pub async fn split_pane_plain(
     }
 
     let pane_path = tmux::get_pane_path(&pane_id)?;
-    let tmux_session = std::process::Command::new("tmux")
-        .args(["display-message", "-t", &pane_id, "-p", "#{session_name}"])
-        .output()
-        .map_err(|e| format!("Failed to get pane session: {}", e))
-        .and_then(|output| {
-            if output.status.success() {
-                Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-            } else {
-                Err(format!(
-                    "tmux error: {}",
-                    String::from_utf8_lossy(&output.stderr).trim()
-                ))
-            }
-        })?;
+    // Resolve the real (non-view) session of the source pane. Using
+    // `display-message #{session_name}` directly can return an ephemeral
+    // clawtab-*-view-N when the pane's window is shared across a session group.
+    let tmux_session = tmux::resolve_real_session_for_pane(&pane_id)?;
 
     let _ = direction;
     let suffix = SystemTime::now()

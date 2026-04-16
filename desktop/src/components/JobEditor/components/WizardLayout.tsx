@@ -258,6 +258,7 @@ export function WizardLayout({
           onCancel={() => setPendingAutoYes(false)}
           confirmLabel="Enable"
           confirmClassName="btn btn-sm"
+          autoFocusConfirm
         />
       )}
     </div>

@@ -531,31 +531,40 @@ fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), S
         "-t",
         pane_id,
         "-p",
-        "#{window_id}\t#{pane_index}\t#{window_name}",
+        "#{window_id}\t#{pane_index}\t#{window_name}\t#{window_panes}",
     ])?;
 
     let parts: Vec<&str> = origin.split('\t').collect();
-    if parts.len() < 3 {
+    if parts.len() < 4 {
         return Err(format!("malformed origin: {}", origin));
     }
     let orig_window_id = parts[0];
     let orig_pane_index = parts[1];
     let orig_window_name = parts[2];
+    let orig_window_panes: u32 = parts[3].parse().unwrap_or(1);
 
     let new_name = next_ct_window_name(tmux_session, orig_window_name);
 
-    tmux(&[
-        "break-pane",
-        "-d",
-        "-s",
-        pane_id,
-        "-t",
-        &format!("{}:", tmux_session),
-        "-n",
-        &new_name,
-    ])?;
-
-    let new_win = tmux(&["display-message", "-t", pane_id, "-p", "#{window_id}"])?;
+    // If the pane is already alone in its window, skip break-pane and just
+    // rename the window. This avoids the "sessions are grouped" error when
+    // the target session is part of a session group (e.g. because a view
+    // session is attached to it).
+    let new_win = if orig_window_panes <= 1 {
+        tmux(&["rename-window", "-t", orig_window_id, &new_name])?;
+        orig_window_id.to_string()
+    } else {
+        tmux(&[
+            "break-pane",
+            "-d",
+            "-s",
+            pane_id,
+            "-t",
+            &format!("{}:", tmux_session),
+            "-n",
+            &new_name,
+        ])?;
+        tmux(&["display-message", "-t", pane_id, "-p", "#{window_id}"])?
+    };
 
     // Origin metadata: session\twindow_id\tpane_index\twindow_name (matches the
     // format release_captured_pane expects).
