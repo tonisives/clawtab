@@ -381,14 +381,18 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
     );
   }, [core.processes, stoppingProcesses.length]);
 
-  // Clean stale process leaves from tree
+  // Clean stale process leaves from tree.
+  // Wait for both jobs and processes to load - otherwise restored process/terminal
+  // panes get purged before detect_processes returns, and the now-empty tree is
+  // persisted, permanently losing the layout.
   useEffect(() => {
-    if (!core.loaded) return;
+    if (!core.loaded || !core.processesLoaded) return;
     split.cleanStaleLeaves((content) => {
       if (content.kind === "process") {
         if (pendingProcess?.pane_id === content.paneId) return false;
         if (demotingPaneIds.has(content.paneId)) return false;
         if (demotionCandidateIds.has(content.paneId)) return false;
+        if (validatingRestoredPaneIdsRef.current.has(content.paneId)) return false;
         if (shellPanes.find((p) => p.pane_id === content.paneId)) return false;
         return !core.processes.find(p => p.pane_id === content.paneId);
       }
@@ -401,7 +405,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
       }
       return false;
     });
-  }, [core.processes, core.loaded, split.cleanStaleLeaves, pendingProcess, shellPanes, demotingPaneIds, demotionCandidateIds]);
+  }, [core.processes, core.loaded, core.processesLoaded, split.cleanStaleLeaves, pendingProcess, shellPanes, demotingPaneIds, demotionCandidateIds]);
 
   // Promote shell panes to detected processes when claude/codex is launched inside them
   useEffect(() => {

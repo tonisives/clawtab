@@ -40,6 +40,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const [statuses, setStatuses] = useState<Record<string, JobStatus>>(() => initialCacheRef.current?.statuses ?? {});
   const [processes, setProcesses] = useState<DetectedProcess[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [processesLoaded, setProcessesLoaded] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const transportRef = useRef(transport);
   transportRef.current = transport;
@@ -141,6 +142,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       }
       prevLogLinesRef.current = nextLogs;
       prevLastLogChangeRef.current = nextChanges;
+      setProcessesLoaded(true);
       const sig = signatureForProcesses(p);
       if (sig === processesSigRef.current) return;
       processesSigRef.current = sig;
@@ -248,6 +250,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
     statuses,
     processes,
     loaded,
+    processesLoaded,
     collapsedGroups,
     toggleGroup,
     getGrouped,

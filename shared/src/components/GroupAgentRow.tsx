@@ -130,10 +130,25 @@ export function GroupAgentRow({
 
   const useWebTextarea = Platform.OS === "web";
   const lineCount = prompt.split("\n").length;
-  const expandedHeight = Math.min(
+  const fallbackHeight = Math.min(
     Math.max(lineCount, 1) * LINE_HEIGHT + VERTICAL_PADDING,
     EXPANDED_MAX_HEIGHT,
   );
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+  const expandedHeight = measuredHeight ?? fallbackHeight;
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const node = inputRef.current as unknown as HTMLTextAreaElement | null;
+    if (!node || node.tagName !== "TEXTAREA") return;
+    const prev = node.style.height;
+    node.style.height = "0px";
+    const needed = node.scrollHeight;
+    node.style.height = prev;
+    const minH = LINE_HEIGHT + VERTICAL_PADDING;
+    const clamped = Math.min(EXPANDED_MAX_HEIGHT, Math.max(minH, needed));
+    setMeasuredHeight(clamped);
+  }, [prompt]);
 
   const runWithProvider = async (overrideProvider?: ProcessProvider, overrideModel?: string | null) => {
     const resolvedProvider = overrideProvider ?? provider;
