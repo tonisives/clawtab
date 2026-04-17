@@ -32,6 +32,7 @@ export interface ModelOption {
 }
 
 export const BUILTIN_MODELS: ModelOption[] = [
+  { provider: "claude", modelId: "claude-opus-4-7", label: "Claude Code (Opus 4.7)" },
   { provider: "claude", modelId: "claude-opus-4-6", label: "Claude Code (Opus 4.6)" },
   { provider: "claude", modelId: "claude-sonnet-4-6", label: "Claude Code (Sonnet 4.6)" },
   { provider: "claude", modelId: "claude-haiku-4-5", label: "Claude Code (Haiku 4.5)" },
@@ -45,6 +46,7 @@ export const BUILTIN_MODELS: ModelOption[] = [
 ];
 
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  "claude-opus-4-7": "Opus 4.7",
   "claude-opus-4-6": "Opus 4.6",
   "claude-sonnet-4-6": "Sonnet 4.6",
   "claude-haiku-4-5": "Haiku 4.5",

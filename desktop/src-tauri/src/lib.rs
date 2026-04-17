@@ -777,6 +777,7 @@ pub fn run() {
             commands::tools::detect_agent_providers,
             commands::tools::get_model_options,
             commands::tools::detect_opencode_models,
+            commands::tools::detect_claude_models,
             commands::tools::install_tool,
             commands::tools::set_tool_path,
             commands::skills::list_skills,

@@ -407,6 +407,27 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
     });
   }, [core.processes, core.loaded, core.processesLoaded, split.cleanStaleLeaves, pendingProcess, shellPanes, demotingPaneIds, demotionCandidateIds]);
 
+  // Sync the set of pane IDs currently visible in ClawTab to the Rust backend so
+  // background kill paths (cleanup_orphaned_*_windows, kill_on_end) can skip them.
+  const lastProtectedKeyRef = useRef<string>("");
+  useEffect(() => {
+    const ids = new Set<string>();
+    for (const shell of shellPanes) ids.add(shell.pane_id);
+    for (const process of core.processes) ids.add(process.pane_id);
+    if (split.tree) {
+      for (const leaf of collectLeaves(split.tree)) {
+        if (leaf.content.kind === "terminal" || leaf.content.kind === "process") {
+          ids.add(leaf.content.paneId);
+        }
+      }
+    }
+    const sorted = Array.from(ids).filter((id) => !id.startsWith("_pending_")).sort();
+    const key = sorted.join(",");
+    if (key === lastProtectedKeyRef.current) return;
+    lastProtectedKeyRef.current = key;
+    invoke("set_protected_panes", { paneIds: sorted }).catch(() => {});
+  }, [shellPanes, core.processes, split.tree]);
+
   // Promote shell panes to detected processes when claude/codex is launched inside them
   useEffect(() => {
     if (core.processes.length === 0 || shellPanes.length === 0) return;

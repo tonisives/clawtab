@@ -20,6 +20,7 @@ const PROVIDERS_WITH_MODELS: ProcessProvider[] = ["claude", "codex"]
 
 function buildAllModels(
   enabledModels: Record<string, string[]>,
+  claudeApiModels: [string, string][],
 ): ModelEntry[] {
   const entries: ModelEntry[] = []
   const enabledSets: Record<string, Set<string>> = {}
@@ -27,8 +28,28 @@ function buildAllModels(
     enabledSets[provider] = new Set(list)
   }
 
+  // Claude models from API (dynamic), fall back to BUILTIN_MODELS if unavailable
+  const claudeModels: { modelId: string; displayName: string }[] =
+    claudeApiModels.length > 0
+      ? claudeApiModels.map(([id, name]) => ({ modelId: id, displayName: name }))
+      : BUILTIN_MODELS.filter((m) => m.provider === "claude" && m.modelId).map((m) => ({
+          modelId: m.modelId!,
+          displayName: m.label,
+        }))
+
+  for (const { modelId, displayName } of claudeModels) {
+    entries.push({
+      provider: "claude",
+      modelId,
+      displayName,
+      builtin: true,
+      enabled: enabledSets["claude"]?.has(modelId) ?? false,
+    })
+  }
+
+  // Non-claude builtin models (Codex etc.)
   for (const opt of BUILTIN_MODELS) {
-    if (!opt.modelId) continue
+    if (!opt.modelId || opt.provider === "claude") continue
     entries.push({
       provider: opt.provider,
       modelId: opt.modelId,
@@ -76,18 +97,26 @@ function groupOpencodeModels(
 export function ModelsPanel() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [customModelInput, setCustomModelInput] = useState<Record<string, string>>({})
+  const [claudeApiModels, setClaudeApiModels] = useState<[string, string][]>([])
   const [opencodeModels, setOpencodeModels] = useState<string[]>([])
   const [opencodeLoading, setOpencodeLoading] = useState(false)
   const [opencodeError, setOpencodeError] = useState<string | null>(null)
   const [expandedNamespaces, setExpandedNamespaces] = useState<Set<string>>(new Set())
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
       .then(setSettings)
       .catch((e) => console.error("Failed to load settings:", e))
-  }, [])
+  }, [refreshKey])
 
-  // Detect OpenCode models on mount
+  useEffect(() => {
+    invoke<[string, string][]>("detect_claude_models")
+      .then(setClaudeApiModels)
+      .catch((e) => console.error("Failed to fetch Claude models:", e))
+  }, [refreshKey])
+
+  // Detect OpenCode models on mount and refresh
   useEffect(() => {
     setOpencodeLoading(true)
     invoke<string[]>("detect_opencode_models")
@@ -100,7 +129,9 @@ export function ModelsPanel() {
         setOpencodeModels([])
       })
       .finally(() => setOpencodeLoading(false))
-  }, [])
+  }, [refreshKey])
+
+  const refresh = () => setRefreshKey((k) => k + 1)
 
   const update = async (updates: Partial<AppSettings>) => {
     if (!settings) return
@@ -118,7 +149,7 @@ export function ModelsPanel() {
   }
 
   const enabledModels = settings.enabled_models ?? {}
-  const allModels = buildAllModels(enabledModels)
+  const allModels = buildAllModels(enabledModels, claudeApiModels)
   const defaultProvider = settings.default_provider
   const defaultModel = settings.default_model ?? null
 
@@ -203,7 +234,12 @@ export function ModelsPanel() {
 
   return (
     <div className="settings-section">
-      <h2>Models</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <h2 style={{ margin: 0 }}>Models</h2>
+        <button className="btn btn-sm" onClick={refresh} title="Refresh models">
+          Refresh
+        </button>
+      </div>
       <p className="section-description" style={{ marginTop: 0, marginBottom: 16 }}>
         Toggle which models appear in the agent dropdown. Set a default model
         or add custom model IDs.
