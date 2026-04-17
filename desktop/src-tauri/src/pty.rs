@@ -759,6 +759,28 @@ impl PtyManager {
         }
     }
 
+    /// Create a new clawtab-managed tmux window and immediately re-assert every
+    /// viewer session's intended active window. Always prefer this over calling
+    /// `tmux::create_window_with_cwd` directly — the restore step is required
+    /// after any `new-window` in a grouped base session. See
+    /// `restore_view_session_windows` for why.
+    pub fn spawn_window(
+        &self,
+        session: &str,
+        name_prefix: &str,
+        cwd: Option<&str>,
+        env: &[(String, String)],
+    ) -> Result<(String, String), String> {
+        let suffix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let window_name = format!("{}-{}", name_prefix, suffix);
+        let pane = crate::tmux::create_window_with_cwd(session, &window_name, cwd, env)?;
+        self.restore_view_session_windows();
+        Ok((pane, window_name))
+    }
+
     pub fn spawn(
         &mut self,
         pane_id: &str,

@@ -362,7 +362,6 @@ async function setupPaneInstance(inst: PaneInstance) {
   const { cols, rows } = viewport;
   debugXtermPane(paneId, "viewport ready", { elapsedMs: elapsed(), cols, rows });
 
-  console.log(`[XtermPane BIND] inst.paneId=${inst.paneId} arg.paneId=${paneId} key=${key} event=pty-output-${key}`);
   inst.outputUnlisten = await listen<number[]>(`pty-output-${key}`, (event) => {
     if (!firstOutputSeen) {
       firstOutputSeen = true;
@@ -372,7 +371,6 @@ async function setupPaneInstance(inst: PaneInstance) {
       firstContentOutputSeen = true;
       debugXtermPane(paneId, "first content pty output", { elapsedMs: elapsed(), bytes: event.payload.length });
     }
-    console.log(`[XtermPane RECV] inst.paneId=${inst.paneId} listenerKey=${key} bytes=${event.payload.length}`);
     terminal.write(new Uint8Array(event.payload));
   });
   debugXtermPane(paneId, "output listener ready", { elapsedMs: elapsed(), event: `pty-output-${key}` });
@@ -546,8 +544,6 @@ function acquirePane(paneId: string, tmuxSession: string, resolvedGroup: string)
   if (!inst) {
     inst = createPaneInstance(paneId, tmuxSession, resolvedGroup);
     paneInstances.set(paneId, inst);
-  } else if (inst.paneId !== paneId) {
-    console.error(`[XtermPane CORRUPTION] map key=${paneId} but inst.paneId=${inst.paneId}`);
   }
   if (inst.releaseTimer) {
     clearTimeout(inst.releaseTimer);

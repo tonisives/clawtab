@@ -771,7 +771,6 @@ pub fn run() {
             commands::tmux::focus_job_window,
             commands::tmux::open_job_terminal,
             commands::tmux::fork_pane,
-            commands::tmux::fork_pane_with_secrets,
             commands::tmux::split_pane_plain,
             commands::tools::detect_tools,
             commands::tools::detect_agent_providers,

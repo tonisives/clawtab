@@ -160,6 +160,65 @@ pub fn window_exists(session: &str, window_name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Resolve the tmux session that should host a fork of `pane_id`.
+///
+/// If the pane is in a ct-* window, we must use the origin session recorded in
+/// `@clawtab-origin` rather than `#{session_name}`. Session groups resolve the
+/// latter non-deterministically to whichever group member tmux feels like,
+/// often a dying clawtab-view-*.
+pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
+    let info = run(
+        &[
+            "display-message",
+            "-t",
+            pane_id,
+            "-p",
+            "#{session_name}\t#{window_id}\t#{window_name}",
+        ],
+        "tmux::resolve_fork_session::info",
+    )
+    .map_err(|e| format!("Failed to run tmux: {}", e))?;
+    if !info.status.success() {
+        return Err(format!(
+            "tmux display-message: {}",
+            String::from_utf8_lossy(&info.stderr).trim()
+        ));
+    }
+    let raw = String::from_utf8_lossy(&info.stdout).trim().to_string();
+    let parts: Vec<&str> = raw.split('\t').collect();
+    if parts.len() < 3 {
+        return Err(format!("malformed display-message output: {}", raw));
+    }
+    let session_name = parts[0];
+    let window_id = parts[1];
+    let window_name = parts[2];
+
+    if window_name.starts_with("ct-") {
+        let origin = run(
+            &[
+                "show-options",
+                "-w",
+                "-v",
+                "-t",
+                window_id,
+                "@clawtab-origin",
+            ],
+            "tmux::resolve_fork_session::origin",
+        )
+        .map_err(|e| format!("Failed to read @clawtab-origin: {}", e))?;
+        if origin.status.success() {
+            let origin_raw = String::from_utf8_lossy(&origin.stdout).trim().to_string();
+            if let Some(origin_session) = origin_raw.split('\t').next() {
+                if !origin_session.is_empty() {
+                    return Ok(origin_session.to_string());
+                }
+            }
+        }
+    }
+
+    Ok(session_name.to_string())
+}
+
 pub fn create_window_with_cwd(
     session: &str,
     name: &str,
@@ -478,6 +537,23 @@ pub fn capture_pane_full(pane_id: &str) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Mark a pane as the most recently active Claude session, so that
+/// `claude --continue` picks it up as the session to resume.
+///
+/// Types "forking" into the TUI, then sends ESC ESC to cancel it without
+/// submitting. The TUI-level keystroke updates Claude's "most recent session"
+/// bookkeeping before the window is replaced by the fork.
+pub async fn mark_pane_as_forking(pane_id: &str) -> Result<(), String> {
+    send_keys_to_tui_pane(pane_id, "forking")?;
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let _ = run(
+        &["send-keys", "-t", pane_id, "Escape", "Escape"],
+        "tmux::mark_pane_as_forking::escape",
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    Ok(())
 }
 
 /// Send C-c (SIGINT) to a specific pane by its ID.
