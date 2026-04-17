@@ -15,6 +15,7 @@ import {
   restoreIdCounter,
   dedupeIds,
   findDuplicateIds,
+  findDuplicateLeafContents,
   collectLeaves,
   replaceNode,
   removeLeaf,
@@ -195,9 +196,39 @@ export function useSplitTree(options: UseSplitTreeOptions) {
           return;
         }
       }
+      const dupeContents = findDuplicateLeafContents(splitTree);
+      if (dupeContents.length > 0) {
+        console.error("[splitTree] duplicate leaf contents detected:", dupeContents, splitTree);
+      }
     }
     saveTree(storageKey, splitTree);
   }, [storageKey, splitTree]);
+
+  // Wraps setSplitTree to validate every mutation. Logs which call site
+  // produced a tree with duplicate ids so we can find the offending path.
+  const setSplitTreeChecked = useCallback(
+    (updater: SplitNode | null | ((prev: SplitNode | null) => SplitNode | null), site: string) => {
+      setSplitTree((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        if (next !== prev) {
+          const summarize = (n: SplitNode | null) => n ? collectLeaves(n).map(l => `${l.id}:${contentKey(l.content)}`).join(",") : "null";
+          console.log(`[splitTree] ${site}: ${summarize(prev)} -> ${summarize(next)}`);
+        }
+        if (next) {
+          const dupes = findDuplicateIds(next);
+          if (dupes.length > 0) {
+            console.error(`[splitTree] ${site} produced duplicate ids:`, dupes, { prev, next });
+          }
+          const dupeContents = findDuplicateLeafContents(next);
+          if (dupeContents.length > 0) {
+            console.error(`[splitTree] ${site} produced duplicate leaf contents:`, dupeContents, { prev, next });
+          }
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   // Persist focused leaf on change
   useEffect(() => {
@@ -314,14 +345,14 @@ export function useSplitTree(options: UseSplitTreeOptions) {
           first: zone.position === "before" ? newLeaf : rootLeaf,
           second: zone.position === "after" ? newLeaf : rootLeaf,
         };
-        setSplitTree(tree);
+        setSplitTreeChecked(tree, "dragEnd:noTreeSplit");
         setFocusedLeafId(rootLeaf.id);
       }
       return;
     }
 
     // Tree exists - check if item is already in a pane (move instead of duplicate)
-    setSplitTree(prev => {
+    setSplitTreeChecked(prev => {
       if (!prev) return prev;
       const leaves = collectLeaves(prev);
       const existingLeaf = leaves.find(l => contentEquals(l.content, newContent));
@@ -352,8 +383,8 @@ export function useSplitTree(options: UseSplitTreeOptions) {
         return replaceNode(prev, zone.leafId, { type: "leaf", id: zone.leafId, content: newContent });
       }
       return splitLeaf(prev, zone.leafId, newContent, zone.direction, zone.position);
-    });
-  }, []);
+    }, "dragEnd:treeMutation");
+  }, [setSplitTreeChecked]);
 
   const handleDragCancel = useCallback(() => {
     setIsDragging(false);
@@ -363,11 +394,11 @@ export function useSplitTree(options: UseSplitTreeOptions) {
   }, []);
 
   const handleSplitRatioChange = useCallback((splitNodeId: string, ratio: number) => {
-    setSplitTree(prev => prev ? updateRatio(prev, splitNodeId, ratio) : null);
-  }, []);
+    setSplitTreeChecked(prev => prev ? updateRatio(prev, splitNodeId, ratio) : null, "ratioChange");
+  }, [setSplitTreeChecked]);
 
   const handleClosePane = useCallback((leafId: string) => {
-    setSplitTree(prev => {
+    setSplitTreeChecked(prev => {
       if (!prev) return null;
       const result = removeLeaf(prev, leafId);
       // If only one leaf remains, extract back to single-selection mode
@@ -376,9 +407,9 @@ export function useSplitTree(options: UseSplitTreeOptions) {
         return null;
       }
       return result;
-    });
+    }, "closePane");
     setFocusedLeafId(prev => prev === leafId ? null : prev);
-  }, []);
+  }, [setSplitTreeChecked]);
 
   /** When clicking a sidebar item with a tree active: focus if already in a pane, otherwise replace focused leaf */
   const handleSelectInTree = useCallback((content: PaneContent) => {
@@ -392,26 +423,26 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     }
 
     // Replace the focused leaf's content
-    setSplitTree(prev => {
+    setSplitTreeChecked(prev => {
       if (!prev) return prev;
       const target = focusedLeafId ?? collectLeaves(prev)[0]?.id;
       if (target) {
         return replaceNode(prev, target, { type: "leaf", id: target, content });
       }
       return prev;
-    });
+    }, "selectInTree");
     return true;
-  }, [splitTree, focusedLeafId]);
+  }, [splitTree, focusedLeafId, setSplitTreeChecked]);
 
   /** Remove stale leaves matching a predicate */
   const cleanStaleLeaves = useCallback((isStale: (content: PaneContent) => boolean) => {
-    setSplitTree(prev => {
+    setSplitTreeChecked(prev => {
       if (!prev) return prev;
       const cleaned = removeStaleLeaves(prev, isStale);
       if (!cleaned) return null;
       return cleaned !== prev ? cleaned : prev;
-    });
-  }, []);
+    }, "cleanStaleLeaves");
+  }, [setSplitTreeChecked]);
 
   /** Programmatically split a leaf to add new content next to it */
   const addSplitLeaf = useCallback((
@@ -419,33 +450,41 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     newContent: PaneContent,
     direction: "horizontal" | "vertical",
   ) => {
-    const currentTree = splitTreeRef.current;
-    let nextTree: SplitNode | null = null;
     let insertedLeafId: string | null = null;
-
-    if (!currentTree) {
-      const cc = currentContentRef.current;
-      if (!cc) return;
-      const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: cc };
-      const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
-      insertedLeafId = newLeaf.id;
-      nextTree = {
-        type: "split",
-        id: genPaneId(),
-        direction,
-        ratio: 0.5,
-        first: rootLeaf,
-        second: newLeaf,
-      };
-    } else {
-      nextTree = splitLeaf(currentTree, targetLeafId, newContent, direction, "after");
-      const inserted = collectLeaves(nextTree).find((leaf) => contentEquals(leaf.content, newContent));
+    setSplitTreeChecked((prev) => {
+      if (!prev) {
+        const cc = currentContentRef.current;
+        if (!cc) return prev;
+        // If the current single content is the same as what we want to add, just
+        // ignore — we don't want a tree of two identical leaves.
+        if (contentEquals(cc, newContent)) return prev;
+        const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: cc };
+        const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
+        insertedLeafId = newLeaf.id;
+        return {
+          type: "split",
+          id: genPaneId(),
+          direction,
+          ratio: 0.5,
+          first: rootLeaf,
+          second: newLeaf,
+        };
+      }
+      // If the new content already exists in the tree, just focus it instead
+      // of duplicating it.
+      const existing = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, newContent));
+      if (existing) {
+        insertedLeafId = existing.id;
+        return prev;
+      }
+      const next = splitLeaf(prev, targetLeafId, newContent, direction, "after");
+      if (next === prev) return prev;
+      const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, newContent));
       insertedLeafId = inserted?.id ?? null;
-    }
-
-    setSplitTree(nextTree);
+      return next;
+    }, "addSplitLeaf");
     if (insertedLeafId) setFocusedLeafId(insertedLeafId);
-  }, []);
+  }, [setSplitTreeChecked]);
 
   /** Open content in the current tree, preferring a split when any pane has room, otherwise replacing the largest pane. */
   const openContent = useCallback((content: PaneContent) => {
@@ -459,65 +498,77 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       return true;
     }
 
-    const containerW = detailPaneRef.current?.clientWidth ?? detailSize.w;
-    const containerH = detailPaneRef.current?.clientHeight ?? detailSize.h;
-    const leafRects = collectLeafRects(currentTree, 0, 0, containerW, containerH);
-
-    const candidate = leafRects
-      .map((leaf) => ({ leafId: leaf.id, direction: chooseSplitDirection(leaf, minPaneSize), area: leaf.w * leaf.h }))
-      .filter((leaf): leaf is { leafId: string; direction: "horizontal" | "vertical"; area: number } => !!leaf.direction)
-      .sort((a, b) => b.area - a.area)[0];
-
-    if (candidate) {
-      let insertedLeafId: string | null = null;
-      setSplitTree((prev) => {
-        if (!prev) return prev;
-        const next = splitLeaf(prev, candidate.leafId, content, candidate.direction, "after");
-        const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, content));
-        insertedLeafId = inserted?.id ?? null;
-        return next;
-      });
-      if (insertedLeafId) setFocusedLeafId(insertedLeafId);
-      return true;
-    }
-
-    const bottomLeaf = leafRects
-      .slice()
-      .sort((a, b) => (b.y + b.h) - (a.y + a.h))[0];
-    if (!bottomLeaf) return false;
-
     let insertedLeafId: string | null = null;
-    setSplitTree((prev) => {
+    setSplitTreeChecked((prev) => {
       if (!prev) return prev;
-      const next = splitLeaf(prev, bottomLeaf.id, content, "vertical", "after");
+      // Recheck inside the setter — between the snapshot above and this call,
+      // a concurrent mutation may already have added the same content.
+      const alreadyThere = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, content));
+      if (alreadyThere) {
+        insertedLeafId = alreadyThere.id;
+        return prev;
+      }
+      const containerW = detailPaneRef.current?.clientWidth ?? detailSize.w;
+      const containerH = detailPaneRef.current?.clientHeight ?? detailSize.h;
+      const leafRects = collectLeafRects(prev, 0, 0, containerW, containerH);
+      const candidate = leafRects
+        .map((leaf) => ({ leafId: leaf.id, direction: chooseSplitDirection(leaf, minPaneSize), area: leaf.w * leaf.h }))
+        .filter((leaf): leaf is { leafId: string; direction: "horizontal" | "vertical"; area: number } => !!leaf.direction)
+        .sort((a, b) => b.area - a.area)[0];
+      const target = candidate ?? (() => {
+        const bottomLeaf = leafRects.slice().sort((a, b) => (b.y + b.h) - (a.y + a.h))[0];
+        return bottomLeaf ? { leafId: bottomLeaf.id, direction: "vertical" as const } : null;
+      })();
+      if (!target) return prev;
+      const next = splitLeaf(prev, target.leafId, content, target.direction, "after");
+      if (next === prev) return prev;
       const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, content));
       insertedLeafId = inserted?.id ?? null;
       return next;
-    });
+    }, "openContent");
     if (insertedLeafId) setFocusedLeafId(insertedLeafId);
     return true;
-  }, [detailSize.h, detailSize.w, minPaneSize]);
+  }, [detailSize.h, detailSize.w, minPaneSize, setSplitTreeChecked]);
 
-  /** Replace an existing leaf's content, optionally focusing that pane. */
+  /** Replace an existing leaf's content, optionally focusing that pane.
+   *  Resolves the target leaf inside the setter so we never use a stale id. */
   const replaceContent = useCallback((from: PaneContent, to: PaneContent, options?: { focus?: boolean }) => {
     const currentTree = splitTreeRef.current;
     if (!currentTree) return false;
-    const existingLeaf = collectLeaves(currentTree).find((leaf) => contentEquals(leaf.content, from));
-    if (!existingLeaf) return false;
-    setSplitTree((prev) => {
+    const peek = collectLeaves(currentTree).find((leaf) => contentEquals(leaf.content, from));
+    if (!peek) return false;
+    let appliedLeafId: string | null = null;
+    setSplitTreeChecked((prev) => {
       if (!prev) return prev;
-      return replaceNode(prev, existingLeaf.id, { type: "leaf", id: existingLeaf.id, content: to });
-    });
-    if (options?.focus !== false) setFocusedLeafId(existingLeaf.id);
+      // If `to` already exists, just remove the `from` leaf instead of producing
+      // two leaves with the same content.
+      const existingTo = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, to));
+      if (existingTo) {
+        const fromLeaf = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, from));
+        if (!fromLeaf || fromLeaf.id === existingTo.id) {
+          appliedLeafId = existingTo.id;
+          return prev;
+        }
+        console.log(`[splitTree] replaceContent collapse: removing ${fromLeaf.id}, keeping ${existingTo.id}`, { from, to });
+        appliedLeafId = existingTo.id;
+        return removeLeaf(prev, fromLeaf.id) ?? prev;
+      }
+      const fromLeaf = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, from));
+      if (!fromLeaf) return prev;
+      console.log(`[splitTree] replaceContent: leaf ${fromLeaf.id} ${contentKey(from)} -> ${contentKey(to)}`);
+      appliedLeafId = fromLeaf.id;
+      return replaceNode(prev, fromLeaf.id, { type: "leaf", id: fromLeaf.id, content: to });
+    }, "replaceContent");
+    if (options?.focus !== false && appliedLeafId) setFocusedLeafId(appliedLeafId);
     return true;
-  }, []);
+  }, [setSplitTreeChecked]);
 
   const toggleZoomLeaf = useCallback((leafId: string) => {
     const currentTree = splitTreeRef.current;
     if (!currentTree) {
       const content = currentContentRef.current;
       if (!zoomSnapshot || !content || !contentEquals(content, zoomSnapshot.content)) return false;
-      setSplitTree(zoomSnapshot.tree);
+      setSplitTreeChecked(zoomSnapshot.tree, "zoom:restore");
       setFocusedLeafId(zoomSnapshot.focusedLeafId);
       setZoomSnapshot(null);
       return true;
@@ -525,11 +576,11 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     const leaf = collectLeaves(currentTree).find((entry) => entry.id === leafId);
     if (!leaf) return false;
     setZoomSnapshot({ tree: currentTree, focusedLeafId, content: leaf.content });
-    setSplitTree(null);
+    setSplitTreeChecked(null, "zoom:enter");
     setFocusedLeafId(null);
     onCollapseRef.current(leaf.content);
     return true;
-  }, [focusedLeafId, zoomSnapshot]);
+  }, [focusedLeafId, zoomSnapshot, setSplitTreeChecked]);
 
   // Compute selectedItems map for sidebar highlighting
   const selectedItems = useMemo((): Map<string, string> | null => {

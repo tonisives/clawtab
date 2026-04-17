@@ -49,7 +49,9 @@ export function usePaneForking({ core, split, lifecycle, viewing }: UsePaneForki
 
   const handleSplitPane = useCallback(async (paneId: string, direction: "right" | "down") => {
     try {
+      console.log(`[handleSplitPane] ENTER source=${paneId} dir=${direction}`);
       const baseShell = await invoke<ShellPane>("split_pane_plain", { paneId, direction });
+      console.log(`[handleSplitPane] invoke returned new=${baseShell.pane_id} source=${paneId}`);
       const sourceProc = core.processes.find((p) => p.pane_id === paneId);
       const sourceShell = shellPanes.find((p) => p.pane_id === paneId);
       const sourceJob = (core.jobs as Job[]).find((job) => {

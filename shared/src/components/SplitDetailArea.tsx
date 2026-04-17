@@ -152,6 +152,11 @@ function SplitNodeRenderer({
   const secondW = isH ? availableW * (1 - node.ratio) : availableW;
   const secondH = isH ? availableH : availableH * (1 - node.ratio);
 
+  // Keys keyed by node.id — without them React reconciles by position, which
+  // means restructuring the tree (leaf becomes a split, sibling order changes,
+  // etc.) makes React update the existing component instance with a different
+  // node's content rather than preserving identity. That manifests as panes
+  // displaying another leaf's content during the transient render.
   return (
     <SplitContainer
       node={node}
@@ -159,6 +164,7 @@ function SplitNodeRenderer({
       minPaneSize={minPaneSize}
     >
       <SplitNodeRenderer
+        key={node.first.id}
         node={node.first}
         renderLeaf={renderLeaf}
         onRatioChange={onRatioChange}
@@ -170,6 +176,7 @@ function SplitNodeRenderer({
         availableH={firstH}
       />
       <SplitNodeRenderer
+        key={node.second.id}
         node={node.second}
         renderLeaf={renderLeaf}
         onRatioChange={onRatioChange}

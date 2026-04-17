@@ -271,6 +271,7 @@ export function JobListView({
   const [sortOpen, setSortOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [collapsedJobPanes, setCollapsedJobPanes] = useState<Set<string>>(() => new Set());
+  const [hiddenSectionCollapsed, setHiddenSectionCollapsed] = useState(true);
   const [agentProviders, setAgentProviders] = useState<ProcessProvider[]>([]);
   const [groupAgentProviders, setGroupAgentProviders] = useState<Record<string, ProcessProvider>>(() => {
     if (!isWeb || typeof localStorage === "undefined") return {};
@@ -661,10 +662,12 @@ export function JobListView({
     // Add hidden groups section at the bottom
     if (hiddenEntries.length > 0) {
       result.push({ kind: "hidden-section" });
-      for (const entry of hiddenEntries) {
-        const displayGroup = "displayGroup" in entry ? entry.displayGroup : "Detected";
-        const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" ? entry.groupKey : "Detected";
-        result.push({ kind: "hidden-header", group, displayGroup });
+      if (!hiddenSectionCollapsed) {
+        for (const entry of hiddenEntries) {
+          const displayGroup = "displayGroup" in entry ? entry.displayGroup : "Detected";
+          const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" ? entry.groupKey : "Detected";
+          result.push({ kind: "hidden-header", group, displayGroup });
+        }
       }
     }
 
@@ -685,7 +688,7 @@ export function JobListView({
     }
 
     return result;
-  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, shellPanes]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, hiddenSectionCollapsed, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, shellPanes]);
 
   const selectableItems = useMemo((): SidebarSelectableItem[] => (
     items.flatMap((item): SidebarSelectableItem[] => {
@@ -1031,9 +1034,15 @@ export function JobListView({
 
               if (item.kind === "hidden-section") {
                 return (
-                  <View key={key} style={{ marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
-                    <Text style={[styles.groupHeader, { fontSize: 10, color: colors.textMuted }]}>Hidden Groups</Text>
-                  </View>
+                  <TouchableOpacity
+                    key={key}
+                    onPress={() => setHiddenSectionCollapsed((v) => !v)}
+                    activeOpacity={0.7}
+                    style={{ marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, flexDirection: "row", alignItems: "center" }}
+                  >
+                    <Text style={[styles.groupHeader, { fontSize: 10, color: colors.textMuted, flex: 1 }]}>Hidden Groups</Text>
+                    <Text style={{ fontSize: 10, color: colors.textMuted, marginRight: spacing.xs }}>{hiddenSectionCollapsed ? "▶" : "▼"}</Text>
+                  </TouchableOpacity>
                 );
               }
 

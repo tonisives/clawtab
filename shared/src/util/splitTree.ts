@@ -33,6 +33,26 @@ export function findDuplicateIds(node: SplitNode): string[] {
   return Array.from(counts.entries()).filter(([, n]) => n > 1).map(([id]) => id);
 }
 
+/** Return content keys (e.g. process pane ids, job slugs) that show up in
+ *  more than one leaf — even if every leaf has a distinct node id. Two leaves
+ *  with the same paneId render the same xterm twice and is the actual visible
+ *  "duplicate pane" symptom. */
+export function findDuplicateLeafContents(node: SplitNode): string[] {
+  const counts = new Map<string, number>();
+  for (const leaf of collectLeaves(node)) {
+    const key = leafContentKey(leaf.content);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).filter(([, n]) => n > 1).map(([key]) => key);
+}
+
+function leafContentKey(content: PaneContent): string {
+  if (content.kind === "job") return `job:${content.slug}`;
+  if (content.kind === "agent") return "agent";
+  if (content.kind === "terminal") return `term:${content.paneId}`;
+  return `proc:${content.paneId}`;
+}
+
 /** Walk the tree and rewrite any duplicated ids so each node has a unique id.
  *  Needed on load to heal trees persisted before the splitLeaf/replaceNode fix. */
 export function dedupeIds(root: SplitNode): SplitNode {
@@ -115,8 +135,11 @@ export function updateRatio(root: SplitNode, splitId: string, ratio: number): Sp
 }
 
 /** Split a leaf into a split node containing the original leaf and a new leaf.
- *  The surviving child gets a fresh id so the tree never holds two nodes with the
- *  same id, even transiently inside the replacement subtree. */
+ *  The surviving child keeps the original leafId so React reconciliation
+ *  preserves the existing component instance (XtermPane, etc.) — otherwise
+ *  the existing terminal would unmount/remount, racing pty_destroy and
+ *  pty_spawn for the same pane. replaceNode does only-first-match so the
+ *  reused id doesn't cascade into the replacement subtree. */
 export function splitLeaf(
   root: SplitNode,
   leafId: string,
@@ -127,7 +150,7 @@ export function splitLeaf(
   const existingContent = findLeafContent(root, leafId);
   if (existingContent === null) return root;
   const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
-  const survivingLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: existingContent };
+  const survivingLeaf: SplitNode = { type: "leaf", id: leafId, content: existingContent };
   const replacement: SplitNode = {
     type: "split",
     id: genPaneId(),

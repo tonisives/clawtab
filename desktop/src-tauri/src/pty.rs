@@ -740,6 +740,25 @@ impl PtyManager {
         self.sessions.keys().cloned().collect()
     }
 
+    /// Re-assert each viewer session's intended active window. Required after
+    /// any `tmux new-window -t base_session` because tmux pulls every grouped
+    /// peer session's active to the newly created window — even with `-d`.
+    /// Without this, all attached PTY readers start streaming the new pane's
+    /// output instead of the one they were created for.
+    pub fn restore_view_session_windows(&self) {
+        for (pane_id, viewer) in &self.sessions {
+            let target = format!("{}:{}", viewer.view_session, viewer.window_id);
+            if let Err(e) = tmux(&["select-window", "-t", &target]) {
+                log::warn!(
+                    "[pty {}] restore select-window {} failed: {}",
+                    pane_id,
+                    target,
+                    e
+                );
+            }
+        }
+    }
+
     pub fn spawn(
         &mut self,
         pane_id: &str,

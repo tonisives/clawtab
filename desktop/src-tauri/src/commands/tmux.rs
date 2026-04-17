@@ -152,7 +152,11 @@ fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
 /// but is intentionally not applied at the tmux level: every clawtab-managed
 /// pane must live alone in its own ct-* window.
 #[tauri::command]
-pub async fn fork_pane(pane_id: String, direction: String) -> Result<String, String> {
+pub async fn fork_pane(
+    state: State<'_, AppState>,
+    pane_id: String,
+    direction: String,
+) -> Result<String, String> {
     if !tmux::is_available() {
         return Err("tmux is not installed".to_string());
     }
@@ -161,7 +165,6 @@ pub async fn fork_pane(pane_id: String, direction: String) -> Result<String, Str
     let pane_path = tmux::get_pane_path(&pane_id)?;
     let target_session = resolve_fork_session(&pane_id)?;
 
-    // Send "forking" + ESC ESC to mark this as the most recent session
     tmux::send_keys_to_tui_pane(&pane_id, "forking")?;
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     let _ = std::process::Command::new("tmux")
@@ -177,6 +180,7 @@ pub async fn fork_pane(pane_id: String, direction: String) -> Result<String, Str
 
     let new_pane =
         tmux::create_window_with_cwd(&target_session, &window_name, Some(&pane_path), &[])?;
+    state.pty_manager.lock().unwrap().restore_view_session_windows();
     tmux::send_keys_to_pane("", &new_pane, "claude --continue --fork-session")?;
 
     Ok(new_pane)
@@ -185,6 +189,7 @@ pub async fn fork_pane(pane_id: String, direction: String) -> Result<String, Str
 /// Split a tmux pane without launching Claude (plain terminal).
 #[tauri::command]
 pub async fn split_pane_plain(
+    state: State<'_, AppState>,
     pane_id: String,
     direction: String,
 ) -> Result<ShellPaneResult, String> {
@@ -192,10 +197,8 @@ pub async fn split_pane_plain(
         return Err("tmux is not installed".to_string());
     }
 
+    log::info!("[split_pane_plain] ENTER source={} direction={}", pane_id, direction);
     let pane_path = tmux::get_pane_path(&pane_id)?;
-    // Resolve the real (non-view) session of the source pane. Using
-    // `display-message #{session_name}` directly can return an ephemeral
-    // clawtab-*-view-N when the pane's window is shared across a session group.
     let tmux_session = tmux::resolve_real_session_for_pane(&pane_id)?;
 
     let _ = direction;
@@ -204,8 +207,12 @@ pub async fn split_pane_plain(
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let window_name = format!("clawtab-shell-{}", suffix);
+    log::info!("[split_pane_plain] creating window session={} name={} cwd={}", tmux_session, window_name, pane_path);
     let new_pane =
         tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&pane_path), &[])?;
+
+    state.pty_manager.lock().unwrap().restore_view_session_windows();
+    log::info!("[split_pane_plain] EXIT new_pane={} window={}", new_pane, window_name);
 
     Ok(ShellPaneResult {
         pane_id: new_pane,
@@ -270,6 +277,7 @@ pub async fn fork_pane_with_secrets(
 
     let new_pane =
         tmux::create_window_with_cwd(&target_session, &window_name, Some(&pane_path), &env_vars)?;
+    state.pty_manager.lock().unwrap().restore_view_session_windows();
     let cmd = format!("claude --continue --fork-session '{}'", prompt);
     tmux::send_keys_to_pane("", &new_pane, &cmd)?;
 
