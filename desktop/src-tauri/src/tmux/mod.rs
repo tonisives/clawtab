@@ -169,6 +169,7 @@ pub fn create_window_with_cwd(
     let mut args = vec![
         "new-window",
         "-a",
+        "-d",
         "-P",
         "-F",
         "#{pane_id}",

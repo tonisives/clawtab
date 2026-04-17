@@ -37,6 +37,13 @@ export function useAutoYes(
     return () => { unlistenPromise.then((fn) => fn()); };
   }, []);
 
+  const enableAutoYesPane = useCallback((paneId: string) => {
+    const next = new Set(autoYesPaneIds);
+    next.add(paneId);
+    syncAutoYesPaneIds(next);
+    startFastQuestionPoll();
+  }, [autoYesPaneIds, startFastQuestionPoll, syncAutoYesPaneIds]);
+
   const handleToggleAutoYes = useCallback((q: ClaudeQuestion) => {
     if (autoYesPaneIds.has(q.pane_id)) {
       const next = new Set(autoYesPaneIds);
@@ -44,18 +51,20 @@ export function useAutoYes(
       syncAutoYesPaneIds(next);
       return;
     }
+    if (localStorage.getItem("desktop_auto_yes_skip_confirm") === "1") {
+      enableAutoYesPane(q.pane_id);
+      return;
+    }
     const title = q.matched_job ?? q.cwd.replace(/^\/Users\/[^/]+/, "~");
     setPendingAutoYes({ paneId: q.pane_id, title });
-  }, [autoYesPaneIds, syncAutoYesPaneIds]);
+  }, [autoYesPaneIds, syncAutoYesPaneIds, enableAutoYesPane]);
 
-  const confirmAutoYes = useCallback(() => {
+  const confirmAutoYes = useCallback((dontAskAgain?: boolean) => {
     if (!pendingAutoYes) return;
-    const next = new Set(autoYesPaneIds);
-    next.add(pendingAutoYes.paneId);
-    syncAutoYesPaneIds(next);
-    startFastQuestionPoll();
+    if (dontAskAgain) localStorage.setItem("desktop_auto_yes_skip_confirm", "1");
+    enableAutoYesPane(pendingAutoYes.paneId);
     setPendingAutoYes(null);
-  }, [pendingAutoYes, autoYesPaneIds, startFastQuestionPoll, syncAutoYesPaneIds]);
+  }, [pendingAutoYes, enableAutoYesPane]);
 
   const handleToggleAutoYesByPaneId = useCallback((paneId: string, title: string) => {
     if (autoYesPaneIds.has(paneId)) {
@@ -64,8 +73,12 @@ export function useAutoYes(
       syncAutoYesPaneIds(next);
       return;
     }
+    if (localStorage.getItem("desktop_auto_yes_skip_confirm") === "1") {
+      enableAutoYesPane(paneId);
+      return;
+    }
     setPendingAutoYes({ paneId, title });
-  }, [autoYesPaneIds, syncAutoYesPaneIds]);
+  }, [autoYesPaneIds, syncAutoYesPaneIds, enableAutoYesPane]);
 
   const handleAutoYesPress = useCallback((entry: AutoYesEntry) => {
     if (entry.jobSlug) {

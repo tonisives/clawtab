@@ -64,6 +64,7 @@ export function Dialogs({
           onConfirm={autoYes.confirmAutoYes} onCancel={() => autoYes.setPendingAutoYes(null)}
           confirmLabel="Enable" confirmClassName="btn btn-sm"
           autoFocusConfirm
+          showDontAskAgain
         />
       )}
 

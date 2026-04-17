@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 // SF Symbol: xmark.circle (outlined)
@@ -48,17 +48,20 @@ export function ConfirmDialog({
   confirmLabel = "Delete",
   confirmClassName = "btn btn-danger btn-sm",
   autoFocusConfirm = false,
+  showDontAskAgain = false,
 }: {
   message: string;
-  onConfirm: () => void;
+  onConfirm: (dontAskAgain?: boolean) => void;
   onCancel: () => void;
   confirmLabel?: string;
   confirmClassName?: string;
   autoFocusConfirm?: boolean;
+  showDontAskAgain?: boolean;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const [dontAskAgain, setDontAskAgain] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -95,11 +98,21 @@ export function ConfirmDialog({
         <p style={{ margin: "0 0 16px", fontSize: 13, lineHeight: 1.5 }}>
           {message}
         </p>
+        {showDontAskAgain && (
+          <label style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 0 12px", fontSize: 12, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={dontAskAgain}
+              onChange={(e) => setDontAskAgain(e.target.checked)}
+            />
+            Don't ask again
+          </label>
+        )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button ref={cancelRef} className="btn btn-sm" onClick={onCancel}>
             Cancel
           </button>
-          <button ref={confirmRef} className={confirmClassName} onClick={onConfirm}>
+          <button ref={confirmRef} className={confirmClassName} onClick={() => onConfirm(dontAskAgain)}>
             {confirmLabel}
           </button>
         </div>

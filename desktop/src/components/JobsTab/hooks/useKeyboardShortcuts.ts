@@ -450,6 +450,7 @@ export function useKeyboardShortcuts({
         e.preventDefault();
         const sequenceMatch = actions.find(({ binding }) => shortcutCompletesSequence(binding, [pendingShortcutStroke, stroke], shortcutSettings.prefix_key));
         if (sequenceMatch) {
+          (e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled = true;
           setPendingShortcutStroke(null);
           sequenceMatch.run();
           return;
@@ -464,6 +465,7 @@ export function useKeyboardShortcuts({
 
       const sequenceStart = actions.find(({ binding }) => shortcutStartsWith(binding, stroke, shortcutSettings.prefix_key));
       if (sequenceStart) {
+        (e as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled = true;
         e.preventDefault();
         setPendingShortcutStroke(stroke);
         return;
