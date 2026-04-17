@@ -1155,10 +1155,16 @@ export function JobListView({
 
   // pendingScrollSlug: set when a new scrollToSlug arrives; cleared after scroll+highlight
   const pendingScrollSlug = useRef<string | null>(null);
+  // Track the last scrollToSlug seq we processed so Effect 1 doesn't re-arm
+  // when its other deps (collapsedGroups, jobs) change — that would scroll
+  // to the active job every time the user collapses an unrelated group.
+  const handledScrollSeq = useRef<number | null>(null);
 
   // Effect 1: when scrollToSlug changes, expand collapsed group if needed and record pending slug
   useEffect(() => {
     if (!scrollToSlug || Platform.OS !== "web") return;
+    if (handledScrollSeq.current === scrollToSlug.seq) return;
+    handledScrollSeq.current = scrollToSlug.seq;
     const slug = scrollToSlug.slug;
     pendingScrollSlug.current = slug;
 

@@ -13,6 +13,8 @@ import { computeDropZone } from "../components/DropZoneOverlay";
 import {
   genPaneId,
   restoreIdCounter,
+  dedupeIds,
+  findDuplicateIds,
   collectLeaves,
   replaceNode,
   removeLeaf,
@@ -52,9 +54,9 @@ function loadTree(storageKey: string): SplitNode | null {
   const saved = localStorage.getItem(storageKey);
   if (saved) {
     try {
-      const tree = JSON.parse(saved) as SplitNode;
-      restoreIdCounter(tree);
-      return tree;
+      const parsed = JSON.parse(saved) as SplitNode;
+      restoreIdCounter(parsed);
+      return dedupeIds(parsed);
     } catch { /* ignore corrupt data */ }
   }
   return null;
@@ -178,8 +180,22 @@ export function useSplitTree(options: UseSplitTreeOptions) {
   });
   const [zoomSnapshot, setZoomSnapshot] = useState<{ tree: SplitNode; focusedLeafId: string | null; content: PaneContent } | null>(null);
 
-  // Persist tree on change
+  // Persist tree on change. Also assert there are no duplicate ids — if there
+  // are, the tree is corrupt and any subsequent replaceNode/splitLeaf will hit
+  // the wrong node. We auto-heal so the user isn't stuck, but log loudly so we
+  // can find which mutation introduced the duplicate.
   useEffect(() => {
+    if (splitTree) {
+      const dupes = findDuplicateIds(splitTree);
+      if (dupes.length > 0) {
+        console.error("[splitTree] duplicate ids detected, healing:", dupes, splitTree);
+        const healed = dedupeIds(splitTree);
+        if (healed !== splitTree) {
+          setSplitTree(healed);
+          return;
+        }
+      }
+    }
     saveTree(storageKey, splitTree);
   }, [storageKey, splitTree]);
 
@@ -447,14 +463,10 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     const containerH = detailPaneRef.current?.clientHeight ?? detailSize.h;
     const leafRects = collectLeafRects(currentTree, 0, 0, containerW, containerH);
 
-    const focusedRect = focusedLeafId ? leafRects.find((leaf) => leaf.id === focusedLeafId) : undefined;
-    const focusedDirection = focusedRect ? chooseSplitDirection(focusedRect, minPaneSize) : null;
-    const candidate = focusedRect && focusedDirection
-      ? { leafId: focusedRect.id, direction: focusedDirection }
-      : leafRects
-          .map((leaf) => ({ leafId: leaf.id, direction: chooseSplitDirection(leaf, minPaneSize), area: leaf.w * leaf.h }))
-          .filter((leaf): leaf is { leafId: string; direction: "horizontal" | "vertical"; area: number } => !!leaf.direction)
-          .sort((a, b) => b.area - a.area)[0];
+    const candidate = leafRects
+      .map((leaf) => ({ leafId: leaf.id, direction: chooseSplitDirection(leaf, minPaneSize), area: leaf.w * leaf.h }))
+      .filter((leaf): leaf is { leafId: string; direction: "horizontal" | "vertical"; area: number } => !!leaf.direction)
+      .sort((a, b) => b.area - a.area)[0];
 
     if (candidate) {
       let insertedLeafId: string | null = null;
@@ -484,7 +496,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     });
     if (insertedLeafId) setFocusedLeafId(insertedLeafId);
     return true;
-  }, [detailSize.h, detailSize.w, focusedLeafId, minPaneSize]);
+  }, [detailSize.h, detailSize.w, minPaneSize]);
 
   /** Replace an existing leaf's content, optionally focusing that pane. */
   const replaceContent = useCallback((from: PaneContent, to: PaneContent, options?: { focus?: boolean }) => {
