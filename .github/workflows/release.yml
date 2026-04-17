@@ -41,6 +41,11 @@ jobs:
 
           if [[ "$TAG_NAME" =~ ^v ]]; then
             VERSION="${TAG_NAME:1}"
+            CURRENT=$(node -p "require('./package.json').version")
+            if [ "$CURRENT" = "$VERSION" ]; then
+              echo "Version already $VERSION, skipping bump"
+              exit 0
+            fi
             echo "Updating version to: $VERSION"
 
             pnpm version --no-git-tag-version "$VERSION"
