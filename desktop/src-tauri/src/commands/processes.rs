@@ -266,7 +266,7 @@ fn detect_processes_blocking(
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}\t#{window_id}\t#{pane_title}",
+            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}\t#{window_id}\t#{pane_title}\t#{@clawtab-slug}",
         ],
         "processes::detect_processes::list-panes",
     );
@@ -291,7 +291,7 @@ fn detect_processes_blocking(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(8, '\t').collect();
+        let parts: Vec<&str> = line.splitn(9, '\t').collect();
         if parts.len() < 8 {
             continue;
         }
@@ -304,6 +304,9 @@ fn detect_processes_blocking(
         let pane_pid = parts[5];
         let window_id = parts[6];
         let pane_title = normalize_optional_text(parts[7].to_string());
+        let pane_slug_tag = parts
+            .get(8)
+            .and_then(|s| normalize_optional_text(s.to_string()));
 
         if is_view_session(session) {
             continue;
@@ -325,14 +328,18 @@ fn detect_processes_blocking(
             let group = if group_val.is_empty() { None } else { Some(group_val.clone()) };
             (group, None)
         } else if let Some((group, slug)) = running_panes.get(pane_id) {
+            if pane_slug_tag.as_deref() != Some(slug.as_str()) {
+                let _ = crate::tmux::set_pane_slug(pane_id, slug);
+            }
             (Some(group.clone()), Some(slug.clone()))
-        } else if let Some(group) = pane_title
+        } else if let Some(group) = pane_slug_tag
             .as_ref()
-            .and_then(|title| slug_to_group.get(title))
+            .and_then(|tag| slug_to_group.get(tag))
         {
-            // Pane was tagged with a job slug at spawn time. Authoritative and
-            // persistent — survives JobStatus transitions and pane-ID recycling.
-            (Some(group.clone()), pane_title.clone())
+            // Pane was tagged with a job slug at spawn time via tmux user
+            // option. Authoritative — unlike pane_title it can't be overwritten
+            // by the running process's terminal output.
+            (Some(group.clone()), pane_slug_tag.clone())
         } else if let Some(job_match) = history_panes.get(pane_id).filter(|job_match| {
             job_match
                 .root
@@ -344,6 +351,9 @@ fn detect_processes_blocking(
             // Only trust the job slug (which nests under that job's card) if
             // the run started recently. Otherwise fall back to group-only.
             if is_recent_history(&job_match.started_at) {
+                // Backfill the tag so future detections don't depend on the
+                // 12-hour trust window.
+                let _ = crate::tmux::set_pane_slug(pane_id, &job_match.slug);
                 (Some(job_match.group.clone()), Some(job_match.slug.clone()))
             } else {
                 (Some(job_match.group.clone()), None)

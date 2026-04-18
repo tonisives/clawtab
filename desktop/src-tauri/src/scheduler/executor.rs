@@ -613,9 +613,14 @@ async fn execute_claude_job(
 
     tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
 
-    // Tag pane with job slug so reattach can identify it
+    // Tag pane with job slug so reattach can identify it. Title is a
+    // best-effort hint (the running process can overwrite it via escape
+    // sequences); the user option is the authoritative tag.
     if let Err(e) = tmux::set_pane_title(&pane_id, &job.slug) {
         log::warn!("Failed to set pane title for '{}': {}", job.slug, e);
+    }
+    if let Err(e) = tmux::set_pane_slug(&pane_id, &job.slug) {
+        log::warn!("Failed to set pane slug for '{}': {}", job.slug, e);
     }
 
     // Move to aerospace workspace if configured
@@ -777,9 +782,14 @@ async fn execute_folder_job(
 
     tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
 
-    // Tag pane with job slug so reattach can identify it
+    // Tag pane with job slug so reattach can identify it. Title is a
+    // best-effort hint (the running process can overwrite it); the user
+    // option is the authoritative tag.
     if let Err(e) = tmux::set_pane_title(&pane_id, &job.slug) {
         log::warn!("Failed to set pane title for '{}': {}", job.slug, e);
+    }
+    if let Err(e) = tmux::set_pane_slug(&pane_id, &job.slug) {
+        log::warn!("Failed to set pane slug for '{}': {}", job.slug, e);
     }
 
     // Move to aerospace workspace if configured

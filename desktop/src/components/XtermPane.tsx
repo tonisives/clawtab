@@ -590,6 +590,12 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
     slot.appendChild(inst.container);
     inst.fit.fit();
 
+    // If a focus was requested before this pane mounted (e.g. immediately after
+    // split/fork), apply it now that the terminal's DOM is in the layout.
+    if (pendingFocusPaneIds.has(paneId)) {
+      requestXtermPaneFocus(paneId);
+    }
+
     return () => {
       const curLeafId = slot.closest("[data-leaf-id]")?.getAttribute("data-leaf-id") ?? "?";
       debugXtermPane(paneId, `unmount from leaf ${curLeafId} (containerParent=${inst.container.parentNode === slot ? "same" : inst.container.parentNode ? "other" : "none"})`);
