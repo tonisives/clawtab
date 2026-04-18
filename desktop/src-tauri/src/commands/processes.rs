@@ -143,6 +143,18 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
             .collect()
     };
 
+    // Slug -> group lookup, so a pane_title tagged with a job slug can be
+    // resolved to (group, slug) directly without depending on job_status or
+    // the history trust window.
+    let slug_to_group: HashMap<String, String> = {
+        let config = state.jobs_config.lock().unwrap();
+        config
+            .jobs
+            .iter()
+            .map(|job| (job.slug.clone(), job.group.clone()))
+            .collect()
+    };
+
     let history_panes: HashMap<String, PaneJobMatch> = {
         #[derive(Clone)]
         struct JobInfo {
@@ -221,6 +233,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
             match_entries,
             running_panes,
             history_panes,
+            slug_to_group,
             overrides,
         )
     })
@@ -242,6 +255,7 @@ fn detect_processes_blocking(
     match_entries: Vec<(String, String, String)>,
     running_panes: HashMap<String, (String, String)>,
     history_panes: HashMap<String, PaneJobMatch>,
+    slug_to_group: HashMap<String, String>,
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<DetectionSnapshot, String> {
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
@@ -312,6 +326,13 @@ fn detect_processes_blocking(
             (group, None)
         } else if let Some((group, slug)) = running_panes.get(pane_id) {
             (Some(group.clone()), Some(slug.clone()))
+        } else if let Some(group) = pane_title
+            .as_ref()
+            .and_then(|title| slug_to_group.get(title))
+        {
+            // Pane was tagged with a job slug at spawn time. Authoritative and
+            // persistent — survives JobStatus transitions and pane-ID recycling.
+            (Some(group.clone()), pane_title.clone())
         } else if let Some(job_match) = history_panes.get(pane_id).filter(|job_match| {
             job_match
                 .root

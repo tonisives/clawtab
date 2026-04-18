@@ -275,6 +275,23 @@ pub fn set_pane_title(pane_id: &str, title: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Tag a pane with the owning job's slug via a tmux per-pane user option.
+/// Unlike pane_title, this can't be overwritten by the running process's
+/// terminal output, so it survives the whole lifetime of the pane.
+pub fn set_pane_slug(pane_id: &str, slug: &str) -> Result<(), String> {
+    let output = run(
+        &["set-option", "-pt", pane_id, "@clawtab-slug", slug],
+        "tmux::set_pane_slug",
+    )
+    .map_err(|e| format!("Failed to set pane slug: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 /// Send keys to a specific pane by its ID (e.g. "%42").
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<(), String> {

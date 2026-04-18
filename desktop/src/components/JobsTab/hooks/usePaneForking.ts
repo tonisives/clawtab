@@ -62,6 +62,7 @@ export function usePaneForking({ core, split, lifecycle, viewing }: UsePaneForki
       const sourceProc = core.processes.find((p) => p.pane_id === paneId);
       const sourceLeafId = findSourceLeafId(paneId, sourceProc?.matched_job ?? null);
       graftLeaf(sourceLeafId, { kind: "process", paneId: newPaneId }, toTreeDirection(direction));
+      requestXtermPaneFocus(newPaneId);
     } catch (e) {
       console.error("fork_pane failed:", e);
     }
