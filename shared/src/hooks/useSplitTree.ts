@@ -444,24 +444,30 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     }, "cleanStaleLeaves");
   }, [setSplitTreeChecked]);
 
-  /** Programmatically split a leaf to add new content next to it */
+  /** Programmatically split a leaf to add new content next to it.
+   *  Returns the id of the inserted (or existing) leaf so callers can re-assert
+   *  focus after React commits — the internal setFocusedLeafId is best-effort
+   *  but can race with other state updates around the same render. */
   const addSplitLeaf = useCallback((
     targetLeafId: string,
     newContent: PaneContent,
     direction: "horizontal" | "vertical",
-  ) => {
+  ): string | null => {
+    // Compute against the latest committed tree synchronously so we can return
+    // the new leaf id before React flushes the state update. The updater closure
+    // can't reach the outer scope reliably because React may run it lazily and
+    // multiple times under StrictMode.
+    const prev = splitTreeRef.current;
     let insertedLeafId: string | null = null;
-    setSplitTreeChecked((prev) => {
-      if (!prev) {
-        const cc = currentContentRef.current;
-        if (!cc) return prev;
-        // If the current single content is the same as what we want to add, just
-        // ignore — we don't want a tree of two identical leaves.
-        if (contentEquals(cc, newContent)) return prev;
+    let nextTree: SplitNode | null = prev;
+
+    if (!prev) {
+      const cc = currentContentRef.current;
+      if (cc && !contentEquals(cc, newContent)) {
         const rootLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: cc };
         const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
         insertedLeafId = newLeaf.id;
-        return {
+        nextTree = {
           type: "split",
           id: genPaneId(),
           direction,
@@ -470,64 +476,58 @@ export function useSplitTree(options: UseSplitTreeOptions) {
           second: newLeaf,
         };
       }
-      // If the new content already exists in the tree, just focus it instead
-      // of duplicating it.
+    } else {
       const existing = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, newContent));
       if (existing) {
         insertedLeafId = existing.id;
-        return prev;
+      } else {
+        const next = splitLeaf(prev, targetLeafId, newContent, direction, "after");
+        if (next !== prev) {
+          const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, newContent));
+          insertedLeafId = inserted?.id ?? null;
+          nextTree = next;
+        }
       }
-      const next = splitLeaf(prev, targetLeafId, newContent, direction, "after");
-      if (next === prev) return prev;
-      const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, newContent));
-      insertedLeafId = inserted?.id ?? null;
-      return next;
-    }, "addSplitLeaf");
-    if (insertedLeafId) setFocusedLeafId(insertedLeafId);
-  }, [setSplitTreeChecked]);
-
-  /** Open content in the current tree, preferring a split when any pane has room, otherwise replacing the largest pane. */
-  const openContent = useCallback((content: PaneContent) => {
-    const currentTree = splitTreeRef.current;
-
-    if (!currentTree) return false;
-
-    const existingLeaf = collectLeaves(currentTree).find((leaf) => contentEquals(leaf.content, content));
-    if (existingLeaf) {
-      setFocusedLeafId(existingLeaf.id);
-      return true;
     }
 
-    let insertedLeafId: string | null = null;
-    setSplitTreeChecked((prev) => {
-      if (!prev) return prev;
-      // Recheck inside the setter — between the snapshot above and this call,
-      // a concurrent mutation may already have added the same content.
-      const alreadyThere = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, content));
-      if (alreadyThere) {
-        insertedLeafId = alreadyThere.id;
-        return prev;
-      }
-      const containerW = detailPaneRef.current?.clientWidth ?? detailSize.w;
-      const containerH = detailPaneRef.current?.clientHeight ?? detailSize.h;
-      const leafRects = collectLeafRects(prev, 0, 0, containerW, containerH);
-      const candidate = leafRects
-        .map((leaf) => ({ leafId: leaf.id, direction: chooseSplitDirection(leaf, minPaneSize), area: leaf.w * leaf.h }))
-        .filter((leaf): leaf is { leafId: string; direction: "horizontal" | "vertical"; area: number } => !!leaf.direction)
-        .sort((a, b) => b.area - a.area)[0];
-      const target = candidate ?? (() => {
-        const bottomLeaf = leafRects.slice().sort((a, b) => (b.y + b.h) - (a.y + a.h))[0];
-        return bottomLeaf ? { leafId: bottomLeaf.id, direction: "vertical" as const } : null;
-      })();
-      if (!target) return prev;
-      const next = splitLeaf(prev, target.leafId, content, target.direction, "after");
-      if (next === prev) return prev;
-      const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, content));
-      insertedLeafId = inserted?.id ?? null;
-      return next;
-    }, "openContent");
+    if (nextTree !== prev) setSplitTreeChecked(nextTree, "addSplitLeaf");
     if (insertedLeafId) setFocusedLeafId(insertedLeafId);
-    return true;
+    return insertedLeafId;
+  }, [setSplitTreeChecked]);
+
+  /** Open content in the current tree, preferring a split when any pane has room, otherwise replacing the largest pane.
+   *  Returns the id of the inserted (or existing) leaf, or null if no tree exists. */
+  const openContent = useCallback((content: PaneContent): string | null => {
+    const prev = splitTreeRef.current;
+    if (!prev) return null;
+
+    const existingLeaf = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, content));
+    if (existingLeaf) {
+      setFocusedLeafId(existingLeaf.id);
+      return existingLeaf.id;
+    }
+
+    const containerW = detailPaneRef.current?.clientWidth ?? detailSize.w;
+    const containerH = detailPaneRef.current?.clientHeight ?? detailSize.h;
+    const leafRects = collectLeafRects(prev, 0, 0, containerW, containerH);
+    const candidate = leafRects
+      .map((leaf) => ({ leafId: leaf.id, direction: chooseSplitDirection(leaf, minPaneSize), area: leaf.w * leaf.h }))
+      .filter((leaf): leaf is { leafId: string; direction: "horizontal" | "vertical"; area: number } => !!leaf.direction)
+      .sort((a, b) => b.area - a.area)[0];
+    const target = candidate ?? (() => {
+      const bottomLeaf = leafRects.slice().sort((a, b) => (b.y + b.h) - (a.y + a.h))[0];
+      return bottomLeaf ? { leafId: bottomLeaf.id, direction: "vertical" as const } : null;
+    })();
+    if (!target) return null;
+
+    const next = splitLeaf(prev, target.leafId, content, target.direction, "after");
+    if (next === prev) return null;
+    const inserted = collectLeaves(next).find((leaf) => contentEquals(leaf.content, content));
+    const insertedLeafId = inserted?.id ?? null;
+
+    setSplitTreeChecked(next, "openContent");
+    if (insertedLeafId) setFocusedLeafId(insertedLeafId);
+    return insertedLeafId;
   }, [detailSize.h, detailSize.w, minPaneSize, setSplitTreeChecked]);
 
   /** Replace an existing leaf's content, optionally focusing that pane.
