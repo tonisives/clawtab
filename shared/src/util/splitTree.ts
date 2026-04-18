@@ -139,21 +139,27 @@ export function updateRatio(root: SplitNode, splitId: string, ratio: number): Sp
  *  preserves the existing component instance (XtermPane, etc.) — otherwise
  *  the existing terminal would unmount/remount, racing pty_destroy and
  *  pty_spawn for the same pane. replaceNode does only-first-match so the
- *  reused id doesn't cascade into the replacement subtree. */
+ *  reused id doesn't cascade into the replacement subtree.
+ *
+ *  Pass stable pre-generated ids via newLeafId/splitNodeId when calling from
+ *  inside a React state updater — StrictMode double-invokes updaters, so
+ *  calling genPaneId() inside would produce different ids on each invocation. */
 export function splitLeaf(
   root: SplitNode,
   leafId: string,
   newContent: PaneContent,
   direction: "horizontal" | "vertical",
   position: "before" | "after",
+  newLeafId?: string,
+  splitNodeId?: string,
 ): SplitNode {
   const existingContent = findLeafContent(root, leafId);
   if (existingContent === null) return root;
-  const newLeaf: SplitNode = { type: "leaf", id: genPaneId(), content: newContent };
+  const newLeaf: SplitNode = { type: "leaf", id: newLeafId ?? genPaneId(), content: newContent };
   const survivingLeaf: SplitNode = { type: "leaf", id: leafId, content: existingContent };
   const replacement: SplitNode = {
     type: "split",
-    id: genPaneId(),
+    id: splitNodeId ?? genPaneId(),
     direction,
     ratio: 0.5,
     first: position === "before" ? newLeaf : survivingLeaf,

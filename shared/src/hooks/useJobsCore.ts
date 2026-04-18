@@ -7,6 +7,7 @@ import { groupJobs, sortGroupNames } from "../util/jobs";
 const IDLE_STATUS: JobStatus = { state: "idle" };
 const LOCAL_CACHE_JOBS_KEY = "clawtab_desktop_cached_jobs";
 const LOCAL_CACHE_STATUSES_KEY = "clawtab_desktop_cached_statuses";
+const LOCAL_COLLAPSED_GROUPS_KEY = "clawtab_collapsed_groups";
 
 function readLocalCache(): { jobs: RemoteJob[]; statuses: Record<string, JobStatus> } | null {
   if (typeof window === "undefined") return null;
@@ -41,7 +42,15 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const [processes, setProcesses] = useState<DetectedProcess[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [processesLoaded, setProcessesLoaded] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const raw = window.localStorage.getItem(LOCAL_COLLAPSED_GROUPS_KEY);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const transportRef = useRef(transport);
   transportRef.current = transport;
   const jobsRef = useRef<RemoteJob[]>(initialCacheRef.current?.jobs ?? []);
@@ -221,6 +230,9 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       const next = new Set(prev);
       if (next.has(group)) next.delete(group);
       else next.add(group);
+      try {
+        window.localStorage.setItem(LOCAL_COLLAPSED_GROUPS_KEY, JSON.stringify(Array.from(next)));
+      } catch {}
       return next;
     });
   }, []);

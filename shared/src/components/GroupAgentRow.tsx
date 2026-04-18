@@ -114,6 +114,7 @@ export function GroupAgentRow({
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [manualExpandedHeight, setManualExpandedHeight] = useState<number | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
   const [toast, setToast] = useState<{ label: string; anchorRect: DOMRect; key: number } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastKeyRef = useRef(0);
@@ -284,6 +285,8 @@ export function GroupAgentRow({
           {...commonProps}
           ref={setInputRef}
           multiline
+          onFocus={() => setInputFocused(true)}
+          onBlur={() => setInputFocused(false)}
           {...(Platform.OS === "web" && workDir ? { dataSet: { agentInput: workDir } } : {})}
           style={[
             styles.input,
@@ -317,7 +320,7 @@ export function GroupAgentRow({
             </svg>
           </div>
         )}
-        <Text style={styles.shortcutHint}>Cmd+N</Text>
+        {!inputFocused && <Text style={styles.shortcutHint}>Cmd+N</Text>}
       </View>
       <View style={styles.actionsCol}>
         <TouchableOpacity
