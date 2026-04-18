@@ -25,6 +25,19 @@
   color: var(--text-secondary);
   transition: all 0.15s ease;
   -webkit-app-region: no-drag;
+  position: relative;
+}
+
+.tab-alert-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning-color);
+  border: 1.5px solid var(--bg-secondary);
+  pointer-events: none;
 }
 
 .tab:hover {

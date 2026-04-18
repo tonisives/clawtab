@@ -351,6 +351,11 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       return;
     }
 
+    // Pre-generate stable ids — the updater runs twice under StrictMode, so any
+    // genPaneId() calls inside would produce different ids on each invocation.
+    const stableNewLeafId = genPaneId();
+    const stableSplitNodeId = genPaneId();
+
     // Tree exists - check if item is already in a pane (move instead of duplicate)
     setSplitTreeChecked(prev => {
       if (!prev) return prev;
@@ -376,13 +381,13 @@ export function useSplitTree(options: UseSplitTreeOptions) {
 
         const removed = removeLeaf(prev, existingLeaf.id);
         if (!removed) return prev; // was the only leaf
-        return splitLeaf(removed, zone.leafId, newContent, zone.direction, zone.position);
+        return splitLeaf(removed, zone.leafId, newContent, zone.direction, zone.position, stableNewLeafId, stableSplitNodeId);
       }
 
       if (zone.action === "replace") {
         return replaceNode(prev, zone.leafId, { type: "leaf", id: zone.leafId, content: newContent });
       }
-      return splitLeaf(prev, zone.leafId, newContent, zone.direction, zone.position);
+      return splitLeaf(prev, zone.leafId, newContent, zone.direction, zone.position, stableNewLeafId, stableSplitNodeId);
     }, "dragEnd:treeMutation");
   }, [setSplitTreeChecked]);
 
@@ -470,18 +475,25 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       const newLeafId = genPaneId();
       const splitId = genPaneId();
       insertedLeafId = newLeafId;
+      // Also pre-generate ids for the fallback tree-branch path inside the updater.
+      const fallbackNewLeafId = genPaneId();
+      const fallbackSplitNodeId = genPaneId();
+      // Capture cc from the synchronous snapshot — do NOT re-read currentContentRef
+      // inside the updater. The caller (e.g. handleRunAgent) may clear viewing state
+      // immediately after calling addSplitLeaf, so by the time React runs the updater
+      // currentContentRef.current could already be null.
+      const capturedCc = cc;
       setSplitTreeChecked((prev) => {
         if (prev) {
           // Tree was created by a preceding batched update — fall through to the
           // tree branch by re-using the updater logic inline.
           const existing = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, newContent));
           if (existing) return prev; // already present
-          const next = splitLeaf(prev, targetLeafId, newContent, direction, "after");
+          const next = splitLeaf(prev, targetLeafId, newContent, direction, "after", fallbackNewLeafId, fallbackSplitNodeId);
           return next !== prev ? next : prev;
         }
-        const currentCc = currentContentRef.current;
-        if (!currentCc || contentEquals(currentCc, newContent)) return prev;
-        const rootLeaf: SplitNode = { type: "leaf", id: rootLeafId, content: currentCc };
+        if (!capturedCc || contentEquals(capturedCc, newContent)) return prev;
+        const rootLeaf: SplitNode = { type: "leaf", id: rootLeafId, content: capturedCc };
         const newLeaf: SplitNode = { type: "leaf", id: newLeafId, content: newContent };
         return { type: "split", id: splitId, direction, ratio: 0.5, first: rootLeaf, second: newLeaf };
       }, "addSplitLeaf");
@@ -490,14 +502,16 @@ export function useSplitTree(options: UseSplitTreeOptions) {
       if (existing) {
         insertedLeafId = existing.id;
       } else {
-        const next = splitLeaf(snapshot, targetLeafId, newContent, direction, "after");
+        const stableNewLeafId = genPaneId();
+        const stableSplitNodeId = genPaneId();
+        const next = splitLeaf(snapshot, targetLeafId, newContent, direction, "after", stableNewLeafId, stableSplitNodeId);
         if (next !== snapshot) {
           insertedLeafId = collectLeaves(next).find((leaf) => contentEquals(leaf.content, newContent))?.id ?? null;
           setSplitTreeChecked((prev) => {
             if (!prev) return prev;
             const alreadyIn = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, newContent));
             if (alreadyIn) return prev;
-            const updated = splitLeaf(prev, targetLeafId, newContent, direction, "after");
+            const updated = splitLeaf(prev, targetLeafId, newContent, direction, "after", stableNewLeafId, stableSplitNodeId);
             return updated !== prev ? updated : prev;
           }, "addSplitLeaf");
         }
@@ -539,13 +553,16 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     const insertedLeafId = inserted?.id ?? null;
 
     // Pass an updater so batched openContent calls chain instead of overwrite.
-    // Capture target from snapshot for geometry; re-apply the same split in the updater.
+    // Pre-generate stable ids outside the updater — StrictMode double-invokes
+    // updaters, so calling genPaneId() inside would produce different ids each run.
     const { leafId: targetLeafId, direction: targetDirection } = target;
+    const stableNewLeafId = genPaneId();
+    const stableSplitNodeId = genPaneId();
     setSplitTreeChecked((prev) => {
       if (!prev) return prev;
       const alreadyIn = collectLeaves(prev).find((leaf) => contentEquals(leaf.content, content));
       if (alreadyIn) return prev;
-      const updated = splitLeaf(prev, targetLeafId, content, targetDirection, "after");
+      const updated = splitLeaf(prev, targetLeafId, content, targetDirection, "after", stableNewLeafId, stableSplitNodeId);
       return updated !== prev ? updated : prev;
     }, "openContent");
     if (insertedLeafId) setFocusedLeafId(insertedLeafId);

@@ -22,9 +22,13 @@ interface RelayStatus {
   enabled: boolean;
   connected: boolean;
   subscription_required: boolean;
+  auth_expired: boolean;
+  configured: boolean;
   server_url: string;
   device_name: string;
 }
+
+const UNAUTHORIZED_PREFIX = "UNAUTHORIZED:";
 
 interface PairDeviceResponse {
   device_id: string;
@@ -210,7 +214,7 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
     setPairError(null);
     try {
       const resp = await invoke<PairDeviceResponse>("relay_pair_device", {
-        req: { server_url: serverUrl, access_token: accessToken, device_name: deviceName },
+        req: { server_url: serverUrl, device_name: deviceName },
       });
       const newSettings: RelaySettings = {
         enabled: true,
@@ -230,10 +234,31 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
       const st = await invoke<RelayStatus>("get_relay_status");
       setStatus(st);
     } catch (e) {
-      setPairError(String(e));
+      const msg = String(e);
+      if (msg.startsWith(UNAUTHORIZED_PREFIX)) {
+        await invoke("relay_sign_out").catch(() => {});
+        setAccessToken(null);
+        setPairError(null);
+        setLoginError("Session expired — please sign in again.");
+      } else {
+        setPairError(msg);
+      }
     } finally {
       setPairing(false);
     }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await invoke("relay_sign_out");
+    } catch (e) {
+      console.error("Sign out failed:", e);
+    }
+    setAccessToken(null);
+    setPairError(null);
+    setLoginError(null);
+    const st = await invoke<RelayStatus>("get_relay_status");
+    setStatus(st);
   };
 
   const handleDisconnect = async () => {
@@ -339,6 +364,22 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
         <div className="field-group">
           <span className="field-group-title">Setup</span>
 
+          {status?.auth_expired && (
+            <div
+              style={{
+                background: "var(--warning-bg, rgba(217, 119, 6, 0.12))",
+                border: "1px solid var(--warning-color, #d97706)",
+                borderRadius: 6,
+                padding: "10px 12px",
+                marginBottom: 16,
+                fontSize: 12,
+                color: "var(--warning-color, #d97706)",
+              }}
+            >
+              Your session expired. Sign in again to pair this device.
+            </div>
+          )}
+
           {/* Step 1: Login */}
           <div style={{ opacity: accessToken ? 0.6 : 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -346,9 +387,18 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                 {accessToken ? "1. Logged in" : "1. Log in to relay server"}
               </strong>
               {accessToken && (
-                <span style={{ color: "var(--success-color)", fontSize: 12 }}>
-                  authenticated
-                </span>
+                <>
+                  <span style={{ color: "var(--success-color)", fontSize: 12 }}>
+                    authenticated
+                  </span>
+                  <button
+                    className="btn"
+                    style={{ fontSize: 11, padding: "2px 8px", minHeight: 0, marginLeft: "auto" }}
+                    onClick={handleSignOut}
+                  >
+                    Sign out
+                  </button>
+                </>
               )}
             </div>
 
@@ -496,6 +546,40 @@ export function RelayPanel({ externalAccessToken, externalRefreshToken, onExtern
                       : "Disconnected"}
                 </span>
               </div>
+              {settings.enabled && !status?.connected && !status?.subscription_required && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    background: "var(--warning-bg, rgba(217, 119, 6, 0.12))",
+                    border: "1px solid var(--warning-color, #d97706)",
+                    borderRadius: 6,
+                    padding: "10px 12px",
+                    fontSize: 12,
+                    color: "var(--warning-color, #d97706)",
+                  }}
+                >
+                  <div style={{ marginBottom: 8 }}>
+                    Not connected to the relay. Your phone cannot reach this device.
+                  </div>
+                  <button
+                    className="btn"
+                    disabled={refreshing}
+                    onClick={async () => {
+                      setRefreshing(true);
+                      try {
+                        await invoke("relay_disconnect");
+                        await invoke("relay_connect");
+                        await new Promise((r) => setTimeout(r, 2000));
+                      } catch {}
+                      const st = await invoke<RelayStatus>("get_relay_status");
+                      setStatus(st);
+                      setRefreshing(false);
+                    }}
+                  >
+                    {refreshing ? "Reconnecting..." : "Reconnect"}
+                  </button>
+                </div>
+              )}
               {status?.subscription_required && (
                 <div style={{ marginTop: 12 }}>
                   <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: "0 0 10px 0" }}>

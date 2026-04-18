@@ -16,6 +16,8 @@ pub struct RelayStatus {
     pub enabled: bool,
     pub connected: bool,
     pub subscription_required: bool,
+    pub auth_expired: bool,
+    pub configured: bool,
     pub server_url: String,
     pub device_name: String,
 }
@@ -59,15 +61,33 @@ pub fn set_relay_settings(state: State<AppState>, settings: RelaySettings) -> Re
 pub fn get_relay_status(state: State<AppState>) -> RelayStatus {
     let settings = state.settings.lock().unwrap();
     let relay = settings.relay.clone().unwrap_or_default();
+    drop(settings);
     let connected = state.relay.lock().map(|g| g.is_some()).unwrap_or(false);
     let subscription_required = *state
         .relay_sub_required
         .lock()
         .unwrap_or_else(|e| e.into_inner());
+    let auth_expired = *state
+        .relay_auth_expired
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+
+    let device_token_stored = !relay.device_token.is_empty()
+        || state
+            .secrets
+            .lock()
+            .unwrap()
+            .get(KEYCHAIN_DEVICE_TOKEN_KEY)
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+    let configured = !relay.server_url.is_empty() && device_token_stored;
+
     RelayStatus {
         enabled: relay.enabled,
         connected,
         subscription_required,
+        auth_expired,
+        configured,
         server_url: relay.server_url,
         device_name: relay.device_name,
     }
@@ -125,7 +145,6 @@ pub async fn relay_login(req: LoginRequest) -> Result<LoginResponse, String> {
 #[derive(Deserialize)]
 pub struct PairDeviceRequest {
     pub server_url: String,
-    pub access_token: String,
     pub device_name: String,
 }
 
@@ -135,37 +154,81 @@ pub struct PairDeviceResponse {
     pub device_token: String,
 }
 
-#[tauri::command]
-pub async fn relay_pair_device(req: PairDeviceRequest) -> Result<PairDeviceResponse, String> {
-    let url = format!("{}/devices/pair", req.server_url.trim_end_matches('/'));
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(&url)
-        .header("Authorization", format!("Bearer {}", req.access_token))
-        .json(&serde_json::json!({
-            "device_name": req.device_name,
-        }))
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+/// Error string prefix used when pairing fails due to auth (401 after refresh attempt).
+/// Frontend detects this prefix to clear tokens and drop back to sign-in.
+pub const ERR_UNAUTHORIZED_PREFIX: &str = "UNAUTHORIZED:";
 
-    if !resp.status().is_success() {
-        let text = resp.text().await.unwrap_or_default();
-        return Err(format!("Pairing failed: {}", text));
+#[tauri::command]
+pub async fn relay_pair_device(
+    state: State<'_, AppState>,
+    req: PairDeviceRequest,
+) -> Result<PairDeviceResponse, String> {
+    let server_url = req.server_url.trim_end_matches('/').to_string();
+    let url = format!("{}/devices/pair", server_url);
+
+    let (access_token, refresh_token) = {
+        let secrets = state.secrets.lock().unwrap();
+        (
+            secrets
+                .get(KEYCHAIN_ACCESS_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
+            secrets
+                .get(KEYCHAIN_REFRESH_TOKEN_KEY)
+                .cloned()
+                .unwrap_or_default(),
+        )
+    };
+    if access_token.is_empty() {
+        return Err(format!("{} No access token stored", ERR_UNAUTHORIZED_PREFIX));
     }
 
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Invalid response: {}", e))?;
+    let body = serde_json::json!({ "device_name": req.device_name });
+
+    let val = match relay_request(
+        reqwest::Method::POST,
+        &url,
+        &access_token,
+        &refresh_token,
+        &server_url,
+        Some(body),
+        &state,
+    )
+    .await
+    {
+        Ok(v) => {
+            *state.relay_auth_expired.lock().unwrap() = false;
+            v
+        }
+        Err(e) => {
+            let lower = e.to_lowercase();
+            if lower.contains("unauthorized") || lower.contains("token refresh failed") {
+                *state.relay_auth_expired.lock().unwrap() = true;
+                return Err(format!("{} {}", ERR_UNAUTHORIZED_PREFIX, e));
+            }
+            return Err(format!("Pairing failed: {}", e));
+        }
+    };
 
     Ok(PairDeviceResponse {
-        device_id: body["device_id"].as_str().unwrap_or_default().to_string(),
-        device_token: body["device_token"]
+        device_id: val["device_id"].as_str().unwrap_or_default().to_string(),
+        device_token: val["device_token"]
             .as_str()
             .unwrap_or_default()
             .to_string(),
     })
+}
+
+/// Clear all stored auth + device tokens. Used by the Sign Out button and by
+/// the frontend after an UNAUTHORIZED response from /devices/pair.
+#[tauri::command]
+pub fn relay_sign_out(state: State<AppState>) -> Result<(), String> {
+    let mut secrets = state.secrets.lock().unwrap();
+    let _ = secrets.delete(KEYCHAIN_ACCESS_TOKEN_KEY);
+    let _ = secrets.delete(KEYCHAIN_REFRESH_TOKEN_KEY);
+    drop(secrets);
+    *state.relay_auth_expired.lock().unwrap() = false;
+    Ok(())
 }
 
 #[tauri::command]

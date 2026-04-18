@@ -72,6 +72,7 @@ pub struct AppState {
     pub active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     pub relay: Arc<Mutex<Option<relay::RelayHandle>>>,
     pub relay_sub_required: Arc<Mutex<bool>>,
+    pub relay_auth_expired: Arc<Mutex<bool>>,
     pub active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     pub protected_panes: Arc<Mutex<HashSet<String>>>,
@@ -590,6 +591,7 @@ pub fn run() {
         Arc::new(Mutex::new(HashMap::new()));
     let relay_handle: Arc<Mutex<Option<relay::RelayHandle>>> = Arc::new(Mutex::new(None));
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let relay_auth_expired: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> = Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
@@ -615,6 +617,7 @@ pub fn run() {
         active_agents: Arc::clone(&active_agents),
         relay: Arc::clone(&relay_handle),
         relay_sub_required: Arc::clone(&relay_sub_required),
+        relay_auth_expired: Arc::clone(&relay_auth_expired),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
         protected_panes: Arc::clone(&protected_panes),
@@ -636,6 +639,7 @@ pub fn run() {
         active_agents: Arc::clone(&active_agents),
         relay: Arc::clone(&relay_handle),
         relay_sub_required: Arc::clone(&relay_sub_required),
+        relay_auth_expired: Arc::clone(&relay_auth_expired),
         active_questions: Arc::clone(&active_questions),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
         protected_panes: Arc::clone(&protected_panes),
@@ -810,6 +814,7 @@ pub fn run() {
             commands::relay::get_relay_status,
             commands::relay::relay_login,
             commands::relay::relay_pair_device,
+            commands::relay::relay_sign_out,
             commands::relay::relay_disconnect,
             commands::relay::relay_connect,
             commands::relay::relay_save_tokens,

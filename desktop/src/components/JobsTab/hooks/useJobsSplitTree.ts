@@ -39,12 +39,22 @@ export function useJobsSplitTree({
           setViewingAgent(false);
         }
       } else if (content.kind === "process") {
+        // Process may have been demoted to shell by the time onCollapse fires —
+        // check both core.processes and shellPanes so we don't show an empty view.
         const proc = core.processes.find(p => p.pane_id === content.paneId);
         if (proc) {
           setViewingProcess(proc);
           setViewingJob(null);
           setViewingShell(null);
           setViewingAgent(false);
+        } else {
+          const shell = shellPanesRef.current.find(p => p.pane_id === content.paneId);
+          if (shell) {
+            setViewingShell(shell);
+            setViewingJob(null);
+            setViewingProcess(null);
+            setViewingAgent(false);
+          }
         }
       } else if (content.kind === "terminal") {
         const shell = shellPanesRef.current.find((p) => p.pane_id === content.paneId);
@@ -53,6 +63,15 @@ export function useJobsSplitTree({
           setViewingJob(null);
           setViewingProcess(null);
           setViewingAgent(false);
+        } else {
+          // Shell may have been promoted to process — check core.processes.
+          const proc = core.processes.find(p => p.pane_id === content.paneId);
+          if (proc) {
+            setViewingProcess(proc);
+            setViewingJob(null);
+            setViewingShell(null);
+            setViewingAgent(false);
+          }
         }
       } else if (content.kind === "agent") {
         setViewingAgent(true);

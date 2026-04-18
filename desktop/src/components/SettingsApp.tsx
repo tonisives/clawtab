@@ -17,6 +17,14 @@ import clawIcon from "../assets/icon.png";
 
 type TabId = "jobs" | "secrets" | "skills" | "usage" | "settings";
 
+interface RelayStatusLite {
+  enabled: boolean;
+  connected: boolean;
+  auth_expired: boolean;
+  configured: boolean;
+  subscription_required: boolean;
+}
+
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
 
 // SF Symbol-style icons (clock, shield.lock, clock.arrow.circlepath, wrench, paperplane, gearshape)
@@ -66,6 +74,23 @@ export function SettingsApp() {
   const [importCwtKey, setImportCwtKey] = useState(0);
   const [pendingPaneId, setPendingPaneId] = useState<string | null>(null);
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>("general");
+  const [relayAlert, setRelayAlert] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      invoke<RelayStatusLite>("get_relay_status")
+        .then((s) => {
+          if (cancelled) return;
+          const disconnected = s.enabled && s.configured && !s.connected && !s.subscription_required;
+          setRelayAlert(s.auth_expired || disconnected);
+        })
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -210,11 +235,15 @@ export function SettingsApp() {
             if (tab.id === "jobs" && activeTab === "jobs") {
               setJobsResetKey((k) => k + 1);
             }
+            if (tab.id === "settings") {
+              setSettingsSubTab(relayAlert ? "remote" : "general");
+            }
             setActiveTab((current) => (current === tab.id ? "jobs" : tab.id));
           }}
-          title={tab.label}
+          title={tab.id === "settings" && relayAlert ? "Settings (relay needs attention)" : tab.label}
         >
           <span className="tab-icon">{tabIcons[tab.id]}</span>
+          {tab.id === "settings" && relayAlert && <span className="tab-alert-dot" />}
         </button>
       ))}
       {notificationsButton}
