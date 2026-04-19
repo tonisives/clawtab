@@ -4,6 +4,12 @@ version = "0.4.4"
 edition = "2021"
 default-run = "clawtab"
 
+[lints.clippy]
+too_many_lines = "warn"
+cognitive_complexity = "warn"
+type_complexity = "warn"
+too_many_arguments = "warn"
+
 [lib]
 name = "clawtab_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

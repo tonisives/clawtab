@@ -742,3 +742,330 @@ fn activate_terminal_for_session(session: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// PTY viewer helpers
+//
+// Thin named wrappers used by pty/ for the calls that were previously inline.
+// Kept together so every tmux command the PTY module sends is visible here.
+// ---------------------------------------------------------------------------
+
+fn run_capture(args: &[&str], callsite: &'static str) -> Result<String, String> {
+    let out = run(args, callsite).map_err(|e| format!("tmux {}: {}", args[0], e))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        return Err(format!("tmux {}: {}", args[0], stderr.trim()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn run_ok(args: &[&str], callsite: &'static str) -> Result<(), String> {
+    run_capture(args, callsite).map(|_| ())
+}
+
+/// `display-message -t <pane_id> -p '#{pane_width} #{pane_height}'`.
+pub fn display_pane_size(pane_id: &str) -> Result<(u16, u16), String> {
+    let raw = run_capture(
+        &[
+            "display-message",
+            "-t",
+            pane_id,
+            "-p",
+            "#{pane_width} #{pane_height}",
+        ],
+        "tmux::display_pane_size",
+    )?;
+    let parts: Vec<&str> = raw.split(' ').collect();
+    let cols: u16 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(80);
+    let rows: u16 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(24);
+    Ok((cols, rows))
+}
+
+pub struct PaneOrigin {
+    pub session: String,
+    pub window_id: String,
+    pub window_name: String,
+}
+
+/// `display-message -t <pane_id> -p '#{session_name}\t#{window_id}\t#{window_name}'`.
+pub fn display_pane_origin(pane_id: &str) -> Result<PaneOrigin, String> {
+    let raw = run_capture(
+        &[
+            "display-message",
+            "-t",
+            pane_id,
+            "-p",
+            "#{session_name}\t#{window_id}\t#{window_name}",
+        ],
+        "tmux::display_pane_origin",
+    )?;
+    let parts: Vec<&str> = raw.split('\t').collect();
+    if parts.len() != 3 {
+        return Err(format!("malformed pane origin: {}", raw));
+    }
+    Ok(PaneOrigin {
+        session: parts[0].to_string(),
+        window_id: parts[1].to_string(),
+        window_name: parts[2].to_string(),
+    })
+}
+
+pub struct PaneOriginFull {
+    pub window_id: String,
+    pub pane_index: String,
+    pub window_name: String,
+    pub window_panes: u32,
+}
+
+/// `display-message -t <pane_id> -p '#{window_id}\t#{pane_index}\t#{window_name}\t#{window_panes}'`.
+pub fn display_pane_origin_full(pane_id: &str) -> Result<PaneOriginFull, String> {
+    let raw = run_capture(
+        &[
+            "display-message",
+            "-t",
+            pane_id,
+            "-p",
+            "#{window_id}\t#{pane_index}\t#{window_name}\t#{window_panes}",
+        ],
+        "tmux::display_pane_origin_full",
+    )?;
+    let parts: Vec<&str> = raw.split('\t').collect();
+    if parts.len() < 4 {
+        return Err(format!("malformed origin: {}", raw));
+    }
+    Ok(PaneOriginFull {
+        window_id: parts[0].to_string(),
+        pane_index: parts[1].to_string(),
+        window_name: parts[2].to_string(),
+        window_panes: parts[3].parse().unwrap_or(1),
+    })
+}
+
+/// `display-message -t <pane_id> -p '#{window_id}'`.
+pub fn display_pane_window_id(pane_id: &str) -> Result<String, String> {
+    run_capture(
+        &["display-message", "-t", pane_id, "-p", "#{window_id}"],
+        "tmux::display_pane_window_id",
+    )
+}
+
+/// `display-message -t <window_id> -p '#{window_panes}'`.
+pub fn display_window_pane_count(window_id: &str) -> Result<u32, String> {
+    let raw = run_capture(
+        &["display-message", "-t", window_id, "-p", "#{window_panes}"],
+        "tmux::display_window_pane_count",
+    )?;
+    Ok(raw.trim().parse().unwrap_or(1))
+}
+
+/// `kill-session -t <session>`. Swallows errors for cleanup callers via `let _`.
+pub fn kill_session(session: &str) -> Result<(), String> {
+    run_ok(&["kill-session", "-t", session], "tmux::kill_session")
+}
+
+/// `kill-window -t <window_id>` (as opposed to [`kill_window`] which takes
+/// `session:name`).
+pub fn kill_window_by_id(window_id: &str) -> Result<(), String> {
+    run_ok(
+        &["kill-window", "-t", window_id],
+        "tmux::kill_window_by_id",
+    )
+}
+
+/// `rename-window -t <target> <new_name>`.
+pub fn rename_window(target: &str, new_name: &str) -> Result<(), String> {
+    run_ok(
+        &["rename-window", "-t", target, new_name],
+        "tmux::rename_window",
+    )
+}
+
+/// `resize-window -t <window_id> -x <cols> -y <rows>`.
+pub fn resize_window(window_id: &str, cols: u16, rows: u16) -> Result<(), String> {
+    let cols = cols.to_string();
+    let rows = rows.to_string();
+    run_ok(
+        &["resize-window", "-t", window_id, "-x", &cols, "-y", &rows],
+        "tmux::resize_window",
+    )
+}
+
+/// `break-pane -d -s <pane_id> -t <session>: -n <name>`.
+pub fn break_pane_detached(
+    pane_id: &str,
+    session: &str,
+    new_window_name: &str,
+) -> Result<(), String> {
+    let target = format!("{}:", session);
+    run_ok(
+        &[
+            "break-pane",
+            "-d",
+            "-s",
+            pane_id,
+            "-t",
+            &target,
+            "-n",
+            new_window_name,
+        ],
+        "tmux::break_pane_detached",
+    )
+}
+
+/// `join-pane -s <src_pane_id> -t <dst_window_id>`.
+pub fn join_pane(src_pane_id: &str, dst_window_id: &str) -> Result<(), String> {
+    run_ok(
+        &["join-pane", "-s", src_pane_id, "-t", dst_window_id],
+        "tmux::join_pane",
+    )
+}
+
+/// `set-option -w -t <window_id> @clawtab-origin <meta>`.
+pub fn set_window_origin(window_id: &str, meta: &str) -> Result<(), String> {
+    run_ok(
+        &[
+            "set-option",
+            "-w",
+            "-t",
+            window_id,
+            "@clawtab-origin",
+            meta,
+        ],
+        "tmux::set_window_origin",
+    )
+}
+
+/// `show-options -w -v -t <window_id> @clawtab-origin`.
+pub fn get_window_origin(window_id: &str) -> Result<String, String> {
+    run_capture(
+        &[
+            "show-options",
+            "-w",
+            "-v",
+            "-t",
+            window_id,
+            "@clawtab-origin",
+        ],
+        "tmux::get_window_origin",
+    )
+}
+
+/// `new-session -d -s <session> -n __tmp sh -c 'while :; do sleep 3600; done'`.
+/// Recreates a missing session with a long-sleeping placeholder window so a
+/// pane can be broken back into it.
+pub fn new_session_with_placeholder(session: &str) -> Result<(), String> {
+    run_ok(
+        &[
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-n",
+            "__tmp",
+            "sh",
+            "-c",
+            "while :; do sleep 3600; done",
+        ],
+        "tmux::new_session_with_placeholder",
+    )
+}
+
+/// `new-session -d -s <view_name> -t <base_session>`. Creates an ephemeral
+/// grouped view session sharing windows with `base_session`.
+pub fn new_grouped_view_session(view_name: &str, base_session: &str) -> Result<(), String> {
+    run_ok(
+        &[
+            "new-session",
+            "-d",
+            "-s",
+            view_name,
+            "-t",
+            base_session,
+        ],
+        "tmux::new_grouped_view_session",
+    )
+}
+
+/// `select-window -t <target>`. `target` is a `session:window_id` string.
+pub fn select_window(target: &str) -> Result<(), String> {
+    run_ok(&["select-window", "-t", target], "tmux::select_window")
+}
+
+/// `set-option -t <session> status off`. Used by the view session creator to
+/// hide the tmux status bar in the captured PTY.
+pub fn set_session_status_off(session: &str) -> Result<(), String> {
+    run_ok(
+        &["set-option", "-t", session, "status", "off"],
+        "tmux::set_session_status_off",
+    )
+}
+
+/// `capture-pane -e -p -t <pane_id>` — the escaped-output variant used for the
+/// initial viewer snapshot.
+pub fn capture_pane_escaped(pane_id: &str) -> Result<String, String> {
+    run_capture(
+        &["capture-pane", "-e", "-p", "-t", pane_id],
+        "tmux::capture_pane_escaped",
+    )
+}
+
+/// `list-windows -t <session> -F '#{window_id}'`.
+pub fn list_window_ids_in_session(session: &str) -> Result<Vec<String>, String> {
+    let raw = run_capture(
+        &["list-windows", "-t", session, "-F", "#{window_id}"],
+        "tmux::list_window_ids_in_session",
+    )?;
+    Ok(raw.lines().map(|l| l.trim().to_string()).collect())
+}
+
+/// `list-windows -t <session> -F '#{window_name}'`.
+pub fn list_window_names_in_session(session: &str) -> Result<Vec<String>, String> {
+    let raw = run_capture(
+        &["list-windows", "-t", session, "-F", "#{window_name}"],
+        "tmux::list_window_names_in_session",
+    )?;
+    Ok(raw.lines().map(|l| l.trim().to_string()).collect())
+}
+
+/// `list-windows -a -F '#{session_name}\t#{window_id}'`. Used by the capture
+/// helper to resolve the real (non-view) session owning a window.
+pub fn list_all_windows_with_session() -> Result<Vec<(String, String)>, String> {
+    let raw = run_capture(
+        &["list-windows", "-a", "-F", "#{session_name}\t#{window_id}"],
+        "tmux::list_all_windows_with_session",
+    )?;
+    let mut out = Vec::new();
+    for line in raw.lines() {
+        let mut parts = line.splitn(2, '\t');
+        let s = parts.next().unwrap_or("").to_string();
+        let w = parts.next().unwrap_or("").to_string();
+        if !s.is_empty() && !w.is_empty() {
+            out.push((s, w));
+        }
+    }
+    Ok(out)
+}
+
+/// `list-sessions -F '#{session_name}\t#{session_group}'`. Used by the
+/// orphaned-view-session sweep to find sessions that still share a group with
+/// at least one non-view member.
+pub fn list_sessions_with_groups() -> Result<String, String> {
+    run_capture(
+        &["list-sessions", "-F", "#{session_name}\t#{session_group}"],
+        "tmux::list_sessions_with_groups",
+    )
+}
+
+/// `list-panes -a -F '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_id}\t#{pane_current_command}'`.
+/// Used by the orphaned-ct-windows sweep to find idle ct-* windows.
+pub fn list_panes_all_with_commands() -> Result<String, String> {
+    run_capture(
+        &[
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_name}\t#{window_id}\t#{window_name}\t#{pane_id}\t#{pane_current_command}",
+        ],
+        "tmux::list_panes_all_with_commands",
+    )
+}

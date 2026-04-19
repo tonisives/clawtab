@@ -7,7 +7,7 @@ import {
   useJobActions,
   type SidebarSelectableItem,
 } from "@clawtab/shared";
-import type { PaneContent } from "@clawtab/shared";
+import type { PaneContent, SplitNode } from "@clawtab/shared";
 import { createTauriTransport } from "../../transport/tauriTransport";
 import type { Job } from "../../types";
 import type { DragData } from "../DraggableCards";
@@ -43,6 +43,12 @@ import { useJobsTabEffects } from "./hooks/useJobsTabEffects";
 import { formatShortcutSteps } from "../../shortcuts";
 
 const transport = createTauriTransport();
+
+function findTopLeftLeafId(tree: SplitNode | null): string | null {
+  let node = tree;
+  while (node && node.type === "split") node = node.first;
+  return node?.type === "leaf" ? node.id : null;
+}
 
 export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected }: JobsTabProps) {
   const core = useJobsCore(transport, 10000);
@@ -144,7 +150,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const { sidebarCollapsed } = keyboard;
 
   const isFullScreenView = !isWide && !!(editingJob || isCreating || showPicker);
-  const trafficLightInsetStyle = isWide && sidebarCollapsed ? { paddingLeft: 84 } : undefined;
+  const trafficLightInset = isWide && sidebarCollapsed ? 84 : 0;
+  const topLeftLeafId = useMemo(() => findTopLeftLeafId(split.tree), [split.tree]);
   const { recentSinglePaneContents } = useJobsTabEffects({
     core,
     createJobKey,
