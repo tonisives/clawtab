@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use clawtab_protocol::DesktopMessage;
-
 use serde::Serialize;
-use tauri::{Emitter, State};
+use tauri::State;
 
 use crate::agent_session::{detect_process_provider, detect_version_from_command, ProcessProvider};
 use crate::config::jobs::JobStatus;
@@ -206,8 +204,12 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
         panes
     };
 
+    let statuses: HashMap<String, JobStatus> =
+        match crate::ipc::send_command(crate::ipc::IpcCommand::GetStatus).await {
+            Ok(crate::ipc::IpcResponse::Status(s)) => s,
+            _ => HashMap::new(),
+        };
     let running_panes: HashMap<String, (String, String)> = {
-        let statuses = state.job_status.lock().unwrap();
         let config = state.jobs_config.lock().unwrap();
         statuses
             .iter()
@@ -551,92 +553,51 @@ pub fn send_detected_process_input(
 
 #[tauri::command]
 pub async fn get_active_questions(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
 ) -> Result<Vec<clawtab_protocol::ClaudeQuestion>, String> {
-    if *state.ui_only_mode.lock().unwrap() {
-        match crate::ipc::send_command(crate::ipc::IpcCommand::GetActiveQuestions).await {
-            Ok(crate::ipc::IpcResponse::ActiveQuestions(qs)) => return Ok(qs),
-            Ok(resp) => log::warn!("Unexpected IPC response for GetActiveQuestions: {:?}", resp),
-            Err(e) => log::warn!("IPC GetActiveQuestions failed, using local state: {}", e),
-        }
+    match crate::ipc::send_command(crate::ipc::IpcCommand::GetActiveQuestions).await {
+        Ok(crate::ipc::IpcResponse::ActiveQuestions(qs)) => Ok(qs),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
-    let yes_panes = state.auto_yes_panes.lock().unwrap();
-    Ok(state
-        .active_questions
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|q| !yes_panes.contains(&q.pane_id))
-        .cloned()
-        .collect())
 }
 
 #[tauri::command]
-pub async fn get_auto_yes_panes(state: State<'_, AppState>) -> Result<Vec<String>, String> {
-    if *state.ui_only_mode.lock().unwrap() {
-        match crate::ipc::send_command(crate::ipc::IpcCommand::GetAutoYesPanes).await {
-            Ok(crate::ipc::IpcResponse::AutoYesPanes(panes)) => return Ok(panes),
-            Ok(resp) => log::warn!("Unexpected IPC response for GetAutoYesPanes: {:?}", resp),
-            Err(e) => log::warn!("IPC GetAutoYesPanes failed, using local state: {}", e),
-        }
+pub async fn get_auto_yes_panes(_state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::GetAutoYesPanes).await {
+        Ok(crate::ipc::IpcResponse::AutoYesPanes(panes)) => Ok(panes),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
-    Ok(state
-        .auto_yes_panes
-        .lock()
-        .unwrap()
-        .iter()
-        .cloned()
-        .collect())
 }
 
 #[tauri::command]
 pub async fn set_auto_yes_panes(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     pane_ids: Vec<String>,
 ) -> Result<(), String> {
-    if *state.ui_only_mode.lock().unwrap() {
-        match crate::ipc::send_command(crate::ipc::IpcCommand::SetAutoYesPanes {
-            pane_ids: pane_ids.clone(),
-        })
-        .await
-        {
-            Ok(crate::ipc::IpcResponse::Ok) => {
-                // Also update local state so the UI stays in sync
-                let pane_set: HashSet<String> = pane_ids.into_iter().collect();
-                *state.auto_yes_panes.lock().unwrap() = pane_set;
-                if let Some(handle) = state.app_handle.lock().unwrap().as_ref() {
-                    let _ = handle.emit("auto-yes-changed", ());
-                }
-                return Ok(());
-            }
-            Ok(resp) => log::warn!("Unexpected IPC response for SetAutoYesPanes: {:?}", resp),
-            Err(e) => log::warn!("IPC SetAutoYesPanes failed, using local state: {}", e),
-        }
+    match crate::ipc::send_command(crate::ipc::IpcCommand::SetAutoYesPanes { pane_ids }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
-
-    let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
-    *state.auto_yes_panes.lock().unwrap() = pane_set;
-    if let Some(handle) = state.app_handle.lock().unwrap().as_ref() {
-        let _ = handle.emit("auto-yes-changed", ());
-    }
-
-    // Push to relay for cross-device sync
-    if let Ok(guard) = state.relay.lock() {
-        if let Some(handle) = guard.as_ref() {
-            handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
-        }
-    }
-    Ok(())
 }
 
 /// Replace the set of panes currently open in ClawTab's UI. Background
 /// cleanup paths skip any pane in this set, so a pane visible to the user
 /// (even as a plain shell) is never killed behind their back.
 #[tauri::command]
-pub fn set_protected_panes(state: State<'_, AppState>, pane_ids: Vec<String>) -> Result<(), String> {
-    let pane_set: HashSet<String> = pane_ids.into_iter().collect();
-    *state.protected_panes.lock().unwrap() = pane_set;
-    Ok(())
+pub async fn set_protected_panes(
+    _state: State<'_, AppState>,
+    pane_ids: Vec<String>,
+) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::SetProtectedPanes { pane_ids }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
+    }
 }
 
 #[tauri::command]

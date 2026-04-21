@@ -1,27 +1,22 @@
 use serde::Serialize;
-use tauri::State;
 
 use crate::daemon;
-use crate::AppState;
 
 #[derive(Serialize)]
 pub struct DaemonStatus {
     installed: bool,
     running: bool,
     pid: Option<u32>,
-    ui_only_mode: bool,
 }
 
 #[tauri::command]
-pub fn get_daemon_status(state: State<AppState>) -> DaemonStatus {
+pub fn get_daemon_status() -> DaemonStatus {
     let installed = daemon::is_installed();
     let (running, pid) = daemon::is_running();
-    let ui_only_mode = *state.ui_only_mode.lock().unwrap();
     DaemonStatus {
         installed,
         running,
         pid,
-        ui_only_mode,
     }
 }
 

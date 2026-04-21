@@ -316,6 +316,19 @@ async fn main() {
                     }
                 }
             }
+            IpcResponse::RelayStatus(status) => {
+                println!("{}", serde_json::to_string_pretty(&status).unwrap_or_default());
+            }
+            IpcResponse::PaneCreated {
+                pane_id,
+                tmux_session,
+            } => {
+                println!(
+                    "pane={} session={}",
+                    pane_id.as_deref().unwrap_or("-"),
+                    tmux_session.as_deref().unwrap_or("-")
+                );
+            }
             IpcResponse::Error(msg) => {
                 eprintln!("Error: {}", msg);
                 std::process::exit(1);

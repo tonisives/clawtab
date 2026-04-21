@@ -5,7 +5,6 @@ interface DaemonStatus {
   installed: boolean;
   running: boolean;
   pid: number | null;
-  ui_only_mode: boolean;
 }
 
 export function DaemonPanel() {
@@ -117,20 +116,20 @@ export function DaemonPanel() {
             )}
           </div>
         </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Desktop app mode</label>
-          <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
-            {status.ui_only_mode
-              ? "UI only - daemon handles background tasks"
-              : "Standalone - app handles all tasks"}
-          </span>
-          {status.ui_only_mode && (
-            <span className="hint">Restart the app after changing daemon state</span>
-          )}
-          {!status.ui_only_mode && status.running && (
-            <span className="hint">Restart the app to switch to UI-only mode</span>
-          )}
-        </div>
+        {status.installed && !status.running && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <span className="hint" style={{ color: "var(--danger-color)" }}>
+              Daemon is not running. Background tasks (scheduler, relay, auto-yes) are paused.
+            </span>
+          </div>
+        )}
+        {!status.installed && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <span className="hint" style={{ color: "var(--danger-color)" }}>
+              Daemon is not installed. Enable it below to run background tasks.
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="field-group">

@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use clawtab_lib::config::jobs::{JobStatus, JobsConfig};
 use clawtab_lib::config::settings::AppSettings;
-use clawtab_lib::events::NoopEventSink;
+use clawtab_lib::events::IpcBroadcastEventSink;
 use clawtab_lib::history::HistoryStore;
-use clawtab_lib::ipc::{self, IpcCommand, IpcResponse};
+use clawtab_lib::ipc::{self, IpcCommand, IpcRelayStatus, IpcResponse};
 use clawtab_lib::notifications::OsascriptNotifier;
 use clawtab_lib::secrets::SecretsManager;
 use clawtab_lib::telegram;
@@ -46,6 +46,7 @@ fn main() {
     let relay_handle: Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>> =
         Arc::new(Mutex::new(None));
     let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    let relay_auth_expired: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let active_questions: Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>> =
         Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
@@ -56,11 +57,23 @@ fn main() {
     let pty_manager: clawtab_lib::pty::SharedPtyManager =
         Arc::new(Mutex::new(clawtab_lib::pty::PtyManager::new()));
 
-    let event_sink: Arc<dyn clawtab_lib::events::EventSink> = Arc::new(NoopEventSink);
+    let event_subscribers = ipc::new_event_subscribers();
+    let event_sink: Arc<dyn clawtab_lib::events::EventSink> =
+        Arc::new(IpcBroadcastEventSink::new(event_subscribers.clone()));
     let notifier: Arc<dyn clawtab_lib::notifications::Notifier> = Arc::new(OsascriptNotifier);
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
+        // IPC event push server
+        {
+            let subs = event_subscribers.clone();
+            tokio::spawn(async move {
+                if let Err(e) = ipc::start_event_server(subs).await {
+                    log::error!("IPC event server error: {}", e);
+                }
+            });
+        }
+
         // IPC server
         {
             let jobs_config = Arc::clone(&jobs_config);
@@ -70,22 +83,52 @@ fn main() {
             let job_status = Arc::clone(&job_status);
             let active_agents = Arc::clone(&active_agents);
             let relay = Arc::clone(&relay_handle);
+            let relay_sub = Arc::clone(&relay_sub_required);
+            let relay_auth = Arc::clone(&relay_auth_expired);
             let auto_yes_panes = Arc::clone(&auto_yes_panes);
+            let protected_panes = Arc::clone(&protected_panes);
             let active_questions = Arc::clone(&active_questions);
+            let pty_manager = Arc::clone(&pty_manager);
+            let event_sink_for_ipc = Arc::clone(&event_sink);
+            let notifier_for_ipc = Arc::clone(&notifier);
             tokio::spawn(async move {
-                let handler = move |cmd: IpcCommand| -> IpcResponse {
-                    handle_ipc_command(
-                        &jobs_config,
-                        &secrets,
-                        &history,
-                        &settings,
-                        &job_status,
-                        &active_agents,
-                        &relay,
-                        &auto_yes_panes,
-                        &active_questions,
-                        cmd,
-                    )
+                let handler = move |cmd: IpcCommand| {
+                    let jobs_config = Arc::clone(&jobs_config);
+                    let secrets = Arc::clone(&secrets);
+                    let history = Arc::clone(&history);
+                    let settings = Arc::clone(&settings);
+                    let job_status = Arc::clone(&job_status);
+                    let active_agents = Arc::clone(&active_agents);
+                    let relay = Arc::clone(&relay);
+                    let relay_sub = Arc::clone(&relay_sub);
+                    let relay_auth = Arc::clone(&relay_auth);
+                    let auto_yes_panes = Arc::clone(&auto_yes_panes);
+                    let protected_panes = Arc::clone(&protected_panes);
+                    let active_questions = Arc::clone(&active_questions);
+                    let pty_manager = Arc::clone(&pty_manager);
+                    let event_sink_for_ipc = Arc::clone(&event_sink_for_ipc);
+                    let notifier_for_ipc = Arc::clone(&notifier_for_ipc);
+                    async move {
+                        handle_ipc_command(
+                            &jobs_config,
+                            &secrets,
+                            &history,
+                            &settings,
+                            &job_status,
+                            &active_agents,
+                            &relay,
+                            &relay_sub,
+                            &relay_auth,
+                            &auto_yes_panes,
+                            &protected_panes,
+                            &active_questions,
+                            &pty_manager,
+                            &event_sink_for_ipc,
+                            &notifier_for_ipc,
+                            cmd,
+                        )
+                        .await
+                    }
                 };
                 if let Err(e) = ipc::start_ipc_server(handler).await {
                     log::error!("IPC server error: {}", e);
@@ -251,7 +294,8 @@ fn main() {
     });
 }
 
-fn handle_ipc_command(
+#[allow(clippy::too_many_arguments)]
+async fn handle_ipc_command(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     secrets: &Arc<Mutex<SecretsManager>>,
     history: &Arc<Mutex<HistoryStore>>,
@@ -259,8 +303,14 @@ fn handle_ipc_command(
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
     relay: &Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>>,
+    relay_sub_required: &Arc<Mutex<bool>>,
+    relay_auth_expired: &Arc<Mutex<bool>>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
+    protected_panes: &Arc<Mutex<HashSet<String>>>,
     active_questions: &Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>>,
+    pty_manager: &clawtab_lib::pty::SharedPtyManager,
+    event_sink: &Arc<dyn clawtab_lib::events::EventSink>,
+    notifier: &Arc<dyn clawtab_lib::notifications::Notifier>,
     cmd: IpcCommand,
 ) -> IpcResponse {
     match cmd {
@@ -375,6 +425,7 @@ fn handle_ipc_command(
                 }
             }
 
+            event_sink.emit_auto_yes_changed();
             IpcResponse::Ok
         }
         IpcCommand::ToggleAutoYes { pane_id } => {
@@ -394,6 +445,7 @@ fn handle_ipc_command(
                 }
             }
 
+            event_sink.emit_auto_yes_changed();
             IpcResponse::Ok
         }
         IpcCommand::GetActiveQuestions => {
@@ -446,5 +498,397 @@ fn handle_ipc_command(
                 }
             }
         }
+        IpcCommand::GetRelayStatus => {
+            IpcResponse::RelayStatus(compute_relay_status(
+                settings,
+                secrets,
+                relay,
+                relay_sub_required,
+                relay_auth_expired,
+            ))
+        }
+        IpcCommand::RelayConnect => {
+            match spawn_relay_connect(
+                settings,
+                secrets,
+                relay,
+                relay_sub_required,
+                jobs_config,
+                job_status,
+                history,
+                active_agents,
+                auto_yes_panes,
+                pty_manager,
+                event_sink,
+            ) {
+                Ok(()) => IpcResponse::Ok,
+                Err(e) => IpcResponse::Error(e),
+            }
+        }
+        IpcCommand::RelayDisconnect => {
+            if let Ok(guard) = relay.lock() {
+                if let Some(handle) = guard.as_ref() {
+                    handle.disconnect();
+                }
+            }
+            IpcResponse::Ok
+        }
+        IpcCommand::ReloadSettings => {
+            *settings.lock().unwrap() = AppSettings::load();
+            IpcResponse::Ok
+        }
+        IpcCommand::StopJob { name } => {
+            let mut status = job_status.lock().unwrap();
+            match status.get(&name).cloned() {
+                Some(JobStatus::Running { .. }) | Some(JobStatus::Paused) => {
+                    status.insert(name.clone(), JobStatus::Idle);
+                    drop(status);
+                    event_sink.emit_job_status_changed(name, JobStatus::Idle);
+                    IpcResponse::Ok
+                }
+                _ => IpcResponse::Error("Job is not running".to_string()),
+            }
+        }
+        IpcCommand::ToggleJob { name } => {
+            let mut config = jobs_config.lock().unwrap();
+            if let Some(job) = config.jobs.iter_mut().find(|j| j.slug == name) {
+                job.enabled = !job.enabled;
+                let job = job.clone();
+                match config.save_job(&job) {
+                    Ok(()) => {
+                        *config = JobsConfig::load();
+                        drop(config);
+                        event_sink.emit_jobs_changed();
+                        IpcResponse::Ok
+                    }
+                    Err(e) => IpcResponse::Error(e),
+                }
+            } else {
+                IpcResponse::Error(format!("Job not found: {}", name))
+            }
+        }
+        IpcCommand::DeleteJob { name } => {
+            let mut config = jobs_config.lock().unwrap();
+            let slug = match config.jobs.iter().find(|j| j.slug == name).map(|j| j.slug.clone()) {
+                Some(s) => s,
+                None => return IpcResponse::Error(format!("Job not found: {}", name)),
+            };
+            if let Err(e) = config.delete_job(&slug) {
+                return IpcResponse::Error(e);
+            }
+            *config = JobsConfig::load();
+            drop(config);
+            clawtab_lib::relay::push_full_state_if_connected(relay, jobs_config, job_status);
+            event_sink.emit_jobs_changed();
+            IpcResponse::Ok
+        }
+        IpcCommand::AnswerQuestion { pane_id, answer } => {
+            // Remove question from active list, send answer via tmux send-keys
+            let mut qs = active_questions.lock().unwrap();
+            qs.retain(|q| q.pane_id != pane_id);
+            drop(qs);
+            let _ = std::process::Command::new("tmux")
+                .args(["send-keys", "-t", &pane_id, &answer, "Enter"])
+                .output();
+            event_sink.emit_questions_changed();
+            IpcResponse::Ok
+        }
+        IpcCommand::SetProtectedPanes { pane_ids } => {
+            *protected_panes.lock().unwrap() = pane_ids.into_iter().collect();
+            IpcResponse::Ok
+        }
+        IpcCommand::DismissQuestion { pane_id } => {
+            let mut qs = active_questions.lock().unwrap();
+            qs.retain(|q| q.pane_id != pane_id);
+            drop(qs);
+            event_sink.emit_questions_changed();
+            IpcResponse::Ok
+        }
+        IpcCommand::RunJobNow { name, params } => {
+            let job = {
+                let cfg = jobs_config.lock().unwrap();
+                cfg.jobs
+                    .iter()
+                    .find(|j| j.slug == name || j.name == name)
+                    .cloned()
+            };
+            let job = match job {
+                Some(j) => j,
+                None => return IpcResponse::Error(format!("Job not found: {}", name)),
+            };
+
+            let secrets = Arc::clone(secrets);
+            let history = Arc::clone(history);
+            let settings = Arc::clone(settings);
+            let job_status = Arc::clone(job_status);
+            let active_agents = Arc::clone(active_agents);
+            let relay = Arc::clone(relay);
+            let auto_yes_panes = Arc::clone(auto_yes_panes);
+            let protected_panes = Arc::clone(protected_panes);
+            let notifier = Arc::clone(notifier);
+
+            if matches!(
+                job.job_type,
+                clawtab_lib::config::jobs::JobType::Claude
+                    | clawtab_lib::config::jobs::JobType::Job
+            ) {
+                let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
+                tokio::spawn(async move {
+                    clawtab_lib::scheduler::executor::execute_job_with_auto_yes_and_pane_notify(
+                        &job,
+                        &secrets,
+                        &history,
+                        &settings,
+                        &job_status,
+                        "manual",
+                        &active_agents,
+                        &relay,
+                        &params,
+                        Some(&auto_yes_panes),
+                        Some(&protected_panes),
+                        pane_tx,
+                        Some(notifier),
+                    )
+                    .await;
+                });
+
+                match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
+                    Ok(Ok((pane_id, tmux_session))) => IpcResponse::PaneCreated {
+                        pane_id: Some(pane_id),
+                        tmux_session: Some(tmux_session),
+                    },
+                    _ => IpcResponse::PaneCreated {
+                        pane_id: None,
+                        tmux_session: None,
+                    },
+                }
+            } else {
+                tokio::spawn(async move {
+                    clawtab_lib::scheduler::executor::execute_job_with_auto_yes(
+                        &job,
+                        &secrets,
+                        &history,
+                        &settings,
+                        &job_status,
+                        "manual",
+                        &active_agents,
+                        &relay,
+                        &params,
+                        Some(&auto_yes_panes),
+                        Some(&protected_panes),
+                        Some(notifier),
+                    )
+                    .await;
+                });
+                IpcResponse::PaneCreated {
+                    pane_id: None,
+                    tmux_session: None,
+                }
+            }
+        }
+        IpcCommand::SigintJob { name } => {
+            let pane = {
+                let st = job_status.lock().unwrap();
+                match st.get(&name).cloned() {
+                    Some(JobStatus::Running {
+                        pane_id: Some(pane_id),
+                        ..
+                    }) => Some(pane_id),
+                    _ => None,
+                }
+            };
+            let Some(pane_id) = pane else {
+                return IpcResponse::Error("Job is not running or has no pane".to_string());
+            };
+            if let Err(e) = clawtab_lib::tmux::send_sigint_to_pane(&pane_id) {
+                return IpcResponse::Error(e);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            match clawtab_lib::tmux::send_sigint_to_pane(&pane_id) {
+                Ok(()) => IpcResponse::Ok,
+                Err(e) => IpcResponse::Error(e),
+            }
+        }
+        IpcCommand::RunAgent {
+            prompt,
+            work_dir,
+            provider,
+            model,
+        } => {
+            let (settings_snapshot, jobs_snapshot) = {
+                let s = settings.lock().unwrap().clone();
+                let j = jobs_config.lock().unwrap().jobs.clone();
+                (s, j)
+            };
+            let job = match clawtab_lib::agent::build_agent_job(
+                &prompt,
+                None,
+                &settings_snapshot,
+                &jobs_snapshot,
+                work_dir.as_deref(),
+                provider,
+                model,
+            ) {
+                Ok(j) => j,
+                Err(e) => return IpcResponse::Error(e),
+            };
+
+            let secrets = Arc::clone(secrets);
+            let history = Arc::clone(history);
+            let settings_arc = Arc::clone(settings);
+            let job_status = Arc::clone(job_status);
+            let active_agents = Arc::clone(active_agents);
+            let relay = Arc::clone(relay);
+            let protected_panes = Arc::clone(protected_panes);
+
+            let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
+
+            tokio::spawn(async move {
+                clawtab_lib::scheduler::executor::execute_job_with_pane_notify(
+                    &job,
+                    &secrets,
+                    &history,
+                    &settings_arc,
+                    &job_status,
+                    "manual",
+                    &active_agents,
+                    &relay,
+                    &HashMap::new(),
+                    Some(&protected_panes),
+                    pane_tx,
+                    None,
+                )
+                .await;
+            });
+
+            match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
+                Ok(Ok((pane_id, tmux_session))) => IpcResponse::PaneCreated {
+                    pane_id: Some(pane_id),
+                    tmux_session: Some(tmux_session),
+                },
+                _ => IpcResponse::PaneCreated {
+                    pane_id: None,
+                    tmux_session: None,
+                },
+            }
+        }
     }
+}
+
+fn compute_relay_status(
+    settings: &Arc<Mutex<AppSettings>>,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    relay: &Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>>,
+    relay_sub_required: &Arc<Mutex<bool>>,
+    relay_auth_expired: &Arc<Mutex<bool>>,
+) -> IpcRelayStatus {
+    let relay_settings = settings.lock().unwrap().relay.clone().unwrap_or_default();
+    let connected = relay.lock().map(|g| g.is_some()).unwrap_or(false);
+    let subscription_required = *relay_sub_required
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let auth_expired = *relay_auth_expired
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+
+    let device_token_stored = !relay_settings.device_token.is_empty()
+        || secrets
+            .lock()
+            .unwrap()
+            .get("relay_device_token")
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+    let configured = !relay_settings.server_url.is_empty() && device_token_stored;
+
+    IpcRelayStatus {
+        enabled: relay_settings.enabled,
+        connected,
+        subscription_required,
+        auth_expired,
+        configured,
+        server_url: relay_settings.server_url,
+        device_name: relay_settings.device_name,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn spawn_relay_connect(
+    settings: &Arc<Mutex<AppSettings>>,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    relay: &Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>>,
+    relay_sub_required: &Arc<Mutex<bool>>,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    history: &Arc<Mutex<HistoryStore>>,
+    active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
+    auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
+    pty_manager: &clawtab_lib::pty::SharedPtyManager,
+    event_sink: &Arc<dyn clawtab_lib::events::EventSink>,
+) -> Result<(), String> {
+    let settings_guard = settings.lock().unwrap();
+    let rs = settings_guard
+        .relay
+        .as_ref()
+        .ok_or_else(|| "No relay settings configured".to_string())?;
+    if rs.server_url.is_empty() {
+        return Err("Relay server URL not configured".to_string());
+    }
+    let server_url = rs.server_url.clone();
+    let yaml_token = rs.device_token.clone();
+    let ws_url = if rs.server_url.starts_with("http") {
+        rs.server_url.replacen("http", "ws", 1) + "/ws"
+    } else {
+        rs.server_url.clone()
+    };
+    drop(settings_guard);
+
+    let device_token = if yaml_token.is_empty() {
+        secrets
+            .lock()
+            .unwrap()
+            .get("relay_device_token")
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        yaml_token
+    };
+    if device_token.is_empty() {
+        return Err("Device token not configured".to_string());
+    }
+
+    *relay_sub_required.lock().unwrap() = false;
+
+    let relay = Arc::clone(relay);
+    let relay_sub = Arc::clone(relay_sub_required);
+    let jobs_config = Arc::clone(jobs_config);
+    let job_status = Arc::clone(job_status);
+    let secrets = Arc::clone(secrets);
+    let history = Arc::clone(history);
+    let settings_arc = Arc::clone(settings);
+    let active_agents = Arc::clone(active_agents);
+    let auto_yes_panes = Arc::clone(auto_yes_panes);
+    let pty_manager = Arc::clone(pty_manager);
+    let event_sink = Arc::clone(event_sink);
+
+    tokio::spawn(async move {
+        clawtab_lib::relay::connect_loop(
+            ws_url,
+            device_token,
+            server_url,
+            relay,
+            relay_sub,
+            jobs_config,
+            job_status,
+            secrets,
+            history,
+            settings_arc,
+            active_agents,
+            auto_yes_panes,
+            pty_manager,
+            event_sink,
+        )
+        .await;
+    });
+
+    Ok(())
 }
