@@ -511,6 +511,13 @@ fn persist_process_overrides(
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
+    let on_disk = crate::config::settings::AppSettings::load();
+    if settings.telegram.is_none() {
+        settings.telegram = on_disk.telegram;
+    }
+    if settings.relay.is_none() {
+        settings.relay = on_disk.relay;
+    }
     settings.process_overrides = overrides;
     settings.save()
 }

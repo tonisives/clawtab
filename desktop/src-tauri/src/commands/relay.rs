@@ -50,6 +50,12 @@ pub fn set_relay_settings(state: State<AppState>, settings: RelaySettings) -> Re
     }
 
     let mut s = state.settings.lock().unwrap();
+    // Refresh from disk so fields written by other processes (e.g. telegram via
+    // CLI) aren't clobbered by this in-memory copy.
+    let on_disk = crate::config::settings::AppSettings::load();
+    if s.telegram.is_none() {
+        s.telegram = on_disk.telegram;
+    }
     s.relay = Some(RelaySettings {
         device_token: String::new(),
         ..settings

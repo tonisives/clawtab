@@ -157,6 +157,13 @@ pub async fn set_tool_path(
     path: String,
 ) -> Result<(), String> {
     let mut s = state.settings.lock().unwrap();
+    let on_disk = crate::config::settings::AppSettings::load();
+    if s.telegram.is_none() {
+        s.telegram = on_disk.telegram;
+    }
+    if s.relay.is_none() {
+        s.relay = on_disk.relay;
+    }
     if path.is_empty() {
         s.tool_paths.remove(&tool_name);
     } else {

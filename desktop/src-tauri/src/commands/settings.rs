@@ -21,13 +21,18 @@ pub fn set_settings(
     new_settings: AppSettings,
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
-    // Preserve telegram config if the incoming payload has None,
-    // since other panels (GeneralSettings, ToolsPanel) send the full
-    // settings object that was loaded before telegram was configured.
-    let telegram = settings.telegram.clone();
+    // Re-read from disk so fields the frontend doesn't manage (telegram, relay)
+    // aren't clobbered when they were written by another process (CLI, daemon,
+    // external edit) after this in-memory copy was loaded at startup.
+    let on_disk = AppSettings::load();
+    let telegram = settings.telegram.clone().or(on_disk.telegram);
+    let relay = settings.relay.clone().or(on_disk.relay);
     *settings = new_settings;
     if settings.telegram.is_none() {
         settings.telegram = telegram;
+    }
+    if settings.relay.is_none() {
+        settings.relay = relay;
     }
     settings.save()?;
     *state.process_overrides.lock().unwrap() = settings.process_overrides.clone();
