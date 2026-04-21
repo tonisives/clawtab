@@ -238,7 +238,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     core, split, viewing, lifecycle, actions,
     questions, questionPolling, autoYes, transport,
     agentJob, agentProcess,
-    isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
+    isWide, trafficLightInset, topLeftLeafId, defaultProvider, defaultModel, enabledModels,
     autoYesShortcut,
     sidebarFocusRef,
     callbacks: {

@@ -15,6 +15,7 @@ export interface ShortcutSettings {
   move_pane_right: string;
   reveal_in_sidebar: string;
   toggle_auto_yes: string;
+  enter_copy_mode: string;
 }
 
 export type ShortcutId = keyof ShortcutSettings;
@@ -43,6 +44,7 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   move_pane_right: "Ctrl+l",
   reveal_in_sidebar: "Meta+Shift+e",
   toggle_auto_yes: "Prefix y",
+  enter_copy_mode: "Prefix u",
 };
 
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
@@ -62,6 +64,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   { id: "move_pane_right", label: "Move to right pane" },
   { id: "reveal_in_sidebar", label: "Reveal in sidebar" },
   { id: "toggle_auto_yes", label: "Toggle auto-yes" },
+  { id: "enter_copy_mode", label: "Enter copy mode" },
 ];
 
 const MODIFIER_ORDER = ["Ctrl", "Alt", "Shift", "Meta"] as const;

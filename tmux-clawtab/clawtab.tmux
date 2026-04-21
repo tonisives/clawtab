@@ -16,6 +16,11 @@
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Warn if cwtctl is missing - auto-yes sync silently fails without it.
+if ! command -v cwtctl >/dev/null 2>&1; then
+    tmux display-message "clawtab: cwtctl not in PATH - auto-yes sync disabled. Run 'make build-cwtctl'."
+fi
+
 # Key bindings (customizable via @clawtab-auto-yes-key, @clawtab-open-key)
 auto_yes_key=$(tmux show-option -gqv @clawtab-auto-yes-key)
 open_key=$(tmux show-option -gqv @clawtab-open-key)

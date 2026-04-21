@@ -266,6 +266,7 @@ function createPaneInstance(paneId: string, tmuxSession: string, resolvedGroup: 
       shortcuts.move_pane_right,
       shortcuts.reveal_in_sidebar,
       shortcuts.toggle_auto_yes,
+      shortcuts.enter_copy_mode,
     ];
 
     if (inst.pendingShortcutStrokeRef.current && e.key === "Escape") {

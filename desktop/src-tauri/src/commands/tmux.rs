@@ -151,6 +151,15 @@ pub async fn fork_pane(
     Ok(new_pane)
 }
 
+/// Enter tmux copy-mode for the given pane.
+#[tauri::command]
+pub fn enter_copy_mode(pane_id: String) -> Result<(), String> {
+    if !tmux::is_available() {
+        return Err("tmux is not installed".to_string());
+    }
+    tmux::enter_copy_mode(&pane_id)
+}
+
 /// Split a tmux pane without launching Claude (plain terminal).
 #[tauri::command]
 pub async fn split_pane_plain(

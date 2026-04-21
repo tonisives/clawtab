@@ -308,6 +308,21 @@ pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<()
     Ok(())
 }
 
+/// Enter tmux copy-mode for a specific pane.
+pub fn enter_copy_mode(pane_id: &str) -> Result<(), String> {
+    let output = run(
+        &["copy-mode", "-t", pane_id],
+        "tmux::enter_copy_mode",
+    )
+    .map_err(|e| format!("Failed to enter copy mode: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 /// Send text to a TUI pane (like Claude Code) that uses vim-style input.
 /// Types the text literally, then presses Enter to submit.
 pub fn send_keys_to_tui_pane(pane_id: &str, text: &str) -> Result<(), String> {

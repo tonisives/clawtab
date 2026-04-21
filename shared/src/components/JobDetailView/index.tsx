@@ -89,6 +89,8 @@ export interface JobDetailViewProps {
   containerStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
   // Optional style override for the top content area
   contentStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
+  // Extra left padding applied only to the first header row (e.g. macOS traffic-light inset)
+  headerLeftInset?: number;
   // Optional breadcrumb shown above the title inside the detail view
   titlePath?: string;
   // Called when log viewer column count changes (for tmux pane resize)
@@ -158,6 +160,7 @@ export function JobDetailView({
   expandOutput,
   containerStyle,
   contentStyle,
+  headerLeftInset,
   titlePath,
   onLogColumnsChange,
   renderTerminal,
@@ -335,11 +338,13 @@ export function JobDetailView({
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
 
+  const hasHeaderRow = showBackButton || !!onEditTitle;
+  const headerInsetStyle = headerLeftInset ? { paddingLeft: headerLeftInset } : null;
   const detailInner = (
     <>
       {/* Header with back button (hidden when platform provides its own nav bar) */}
-      {(showBackButton || onEditTitle) && (
-        <View style={styles.headerRow}>
+      {hasHeaderRow && (
+        <View style={[styles.headerRow, headerInsetStyle]}>
           <View style={styles.headerTitleRow}>
             {showBackButton ? (
               <TouchableOpacity onPress={onBack} style={styles.backButton} activeOpacity={0.6}>
@@ -359,7 +364,7 @@ export function JobDetailView({
 
       {/* Info row with actions */}
       <View
-        style={styles.infoRow}
+        style={[styles.infoRow, !hasHeaderRow && headerInsetStyle]}
         onLayout={(e) => setHeaderWidth(e.nativeEvent.layout.width)}
       >
         <View style={styles.infoPills}>

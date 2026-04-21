@@ -182,15 +182,27 @@ export function useKeyboardShortcuts({
     currentContent, setScrollToSlug, triggerFocusAgentInput,
   } = viewing;
 
-  const triggerRevealInSidebar = useCallback(() => {
-    if (!currentContent) return;
+  const triggerRevealInSidebar = useCallback((sourcePaneId?: string | null) => {
+    // Prefer an explicit sourcePaneId (from an xterm-dispatched shortcut or a
+    // [data-leaf-id]-targeted keydown), then fall back to the currently focused
+    // leaf, then to currentContent (the sidebar's selection).
     let id: string | null = null;
-    if (currentContent.kind === "job") id = currentContent.slug;
-    else if (currentContent.kind === "process" || currentContent.kind === "terminal") id = currentContent.paneId;
+    if (sourcePaneId) {
+      id = sourcePaneId;
+    } else if (split.tree && split.focusedLeafId) {
+      const leaf = collectLeaves(split.tree).find((l) => l.id === split.focusedLeafId);
+      const content = leaf?.content;
+      if (content?.kind === "job") id = content.slug;
+      else if (content?.kind === "process" || content?.kind === "terminal") id = content.paneId;
+    }
+    if (!id && currentContent) {
+      if (currentContent.kind === "job") id = currentContent.slug;
+      else if (currentContent.kind === "process" || currentContent.kind === "terminal") id = currentContent.paneId;
+    }
     if (!id) return;
     setScrollToSlug(id);
     sidebarFocusRef.current?.focus();
-  }, [currentContent, setScrollToSlug, sidebarFocusRef]);
+  }, [currentContent, setScrollToSlug, sidebarFocusRef, split.tree, split.focusedLeafId]);
   const {
     pendingProcess,
     setStoppingProcesses, setStoppingJobSlugs,
@@ -232,6 +244,18 @@ export function useKeyboardShortcuts({
     if (!activeProcessForRename || activeProcessForRename._transient_state) return;
     openRenameProcessDialog(activeProcessForRename);
   }, [activePaneContent, activeProcessForRename, openRenameDialogForPaneId, openRenameProcessDialog]);
+
+  const triggerEnterCopyMode = useCallback((sourcePaneId?: string | null) => {
+    let paneId: string | null = sourcePaneId ?? null;
+    if (!paneId && split.tree) {
+      const leaves = collectLeaves(split.tree);
+      const focused = leaves.find((leaf) => leaf.id === split.focusedLeafId) ?? leaves[0];
+      if (focused) paneId = getPaneIdForContent(focused.content);
+    }
+    if (!paneId) paneId = getPaneIdForContent(activePaneContent);
+    if (!paneId) return;
+    invoke("enter_copy_mode", { paneId });
+  }, [split.tree, split.focusedLeafId, getPaneIdForContent, activePaneContent]);
 
   const triggerZoomActivePane = useCallback(() => {
     const leaves = split.tree ? collectLeaves(split.tree) : [];
@@ -356,6 +380,7 @@ export function useKeyboardShortcuts({
       { binding: shortcutSettings.focus_agent_input, run: triggerFocusAgentInput },
       { binding: shortcutSettings.zoom_active_pane, run: triggerZoomActivePane },
       { binding: shortcutSettings.reveal_in_sidebar, run: triggerRevealInSidebar },
+      { binding: shortcutSettings.enter_copy_mode, run: () => triggerEnterCopyMode() },
       { binding: shortcutSettings.next_sidebar_item, run: () => navigateSidebarItems(1) },
       { binding: shortcutSettings.previous_sidebar_item, run: () => navigateSidebarItems(-1) },
       ...(toggleActiveAutoYes ? [{ binding: shortcutSettings.toggle_auto_yes, run: toggleActiveAutoYes }] : []),
@@ -384,6 +409,18 @@ export function useKeyboardShortcuts({
       if (normalizedBinding === renameBinding) {
         setPendingShortcutStroke(null);
         triggerRenameActivePane(sourcePaneId);
+        return true;
+      }
+      const revealBinding = normalizeShortcutBinding(shortcutSettings.reveal_in_sidebar, shortcutSettings.prefix_key);
+      if (normalizedBinding === revealBinding) {
+        setPendingShortcutStroke(null);
+        triggerRevealInSidebar(sourcePaneId);
+        return true;
+      }
+      const copyModeBinding = normalizeShortcutBinding(shortcutSettings.enter_copy_mode, shortcutSettings.prefix_key);
+      if (normalizedBinding === copyModeBinding) {
+        setPendingShortcutStroke(null);
+        triggerEnterCopyMode(sourcePaneId);
         return true;
       }
       const movementBindings: Array<{ binding: string; direction: PaneMoveDirection }> = [
@@ -494,6 +531,14 @@ export function useKeyboardShortcuts({
           triggerRenameActivePane(getPaneIdForContent(targetContent));
           return;
         }
+        if (normalizeShortcutBinding(singleStrokeMatch.binding, shortcutSettings.prefix_key) === normalizeShortcutBinding(shortcutSettings.reveal_in_sidebar, shortcutSettings.prefix_key)) {
+          const targetLeafId = getTargetLeafId(e.target);
+          const targetContent = targetLeafId && split.tree
+            ? collectLeaves(split.tree).find((leaf) => leaf.id === targetLeafId)?.content ?? null
+            : null;
+          triggerRevealInSidebar(getPaneIdForContent(targetContent));
+          return;
+        }
         singleStrokeMatch.run();
         return;
       }
@@ -514,7 +559,7 @@ export function useKeyboardShortcuts({
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener(APP_SHORTCUT_EVENT, handleAppShortcut);
     };
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes]);
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, triggerEnterCopyMode, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes]);
 
   useEffect(() => {
     const unlistenPromise = listen<string>("shortcut-action", (event) => {

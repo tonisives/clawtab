@@ -56,6 +56,7 @@ export function TmuxPaneDetail({
   onInjectSecrets,
   onSearchSkills,
   contentStyle,
+  headerLeftInset,
   titlePath,
   displayNameOverride,
   dragHandleProps,
@@ -76,6 +77,7 @@ export function TmuxPaneDetail({
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   contentStyle?: unknown;
+  headerLeftInset?: number;
   titlePath?: string;
   displayNameOverride?: string | null;
   dragHandleProps?: {
@@ -206,6 +208,7 @@ export function TmuxPaneDetail({
       expandOutput
       containerStyle={{ backgroundColor: "var(--bg-primary)", borderRadius: 0 } as any}
       contentStyle={contentStyle as any}
+      headerLeftInset={headerLeftInset}
       titlePath={titlePath}
       options={paneQuestion?.options}
       questionContext={paneQuestion?.context_lines}

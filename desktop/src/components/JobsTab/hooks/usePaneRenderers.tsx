@@ -47,7 +47,8 @@ interface UsePaneRenderersParams {
   agentJob: RemoteJob;
   agentProcess: DetectedProcess | null;
   isWide: boolean;
-  trafficLightInsetStyle: { paddingLeft: number } | undefined;
+  trafficLightInset: number;
+  topLeftLeafId: string | null;
   defaultProvider: ProcessProvider;
   defaultModel?: string | null;
   enabledModels?: Record<string, string[]>;
@@ -60,7 +61,7 @@ export function usePaneRenderers({
   core, split, viewing, lifecycle, actions,
   questions, questionPolling, autoYes, transport,
   agentJob, agentProcess,
-  isWide, trafficLightInsetStyle, defaultProvider, defaultModel, enabledModels,
+  isWide, trafficLightInset, topLeftLeafId, defaultProvider, defaultModel, enabledModels,
   autoYesShortcut,
   callbacks,
   sidebarFocusRef,
@@ -134,6 +135,7 @@ export function usePaneRenderers({
   }, [core, split, stopEditingLeaf]);
 
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
+    const leafHeaderInset = leafId === topLeftLeafId ? trafficLightInset : 0;
     if (content.kind === "agent") {
       return (
         <DraggableSplitPane leafId={leafId} content={content}>
@@ -148,7 +150,7 @@ export function usePaneRenderers({
               onZoomPane={() => split.toggleZoomLeaf(leafId)}
               showBackButton={!isWide}
               hidePath
-              contentStyle={trafficLightInsetStyle}
+              headerLeftInset={leafHeaderInset}
               titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
               dragHandleProps={dragHandleProps}
             />
@@ -193,7 +195,7 @@ export function usePaneRenderers({
                 onZoomPane={() => split.toggleZoomLeaf(leafId)}
                 onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
                 onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
-                contentStyle={trafficLightInsetStyle}
+                headerLeftInset={leafHeaderInset}
                 titlePath={buildProcessTitlePath(proc)}
                 displayNameOverride={processRenameDrafts[proc.pane_id] ?? null}
                 dragHandleProps={dragHandleProps}
@@ -218,7 +220,7 @@ export function usePaneRenderers({
               }}
               onSplitPane={(nextDirection: "right" | "down") => handleSplitPane(shell.pane_id, nextDirection)}
               onZoomPane={() => split.toggleZoomLeaf(leafId)}
-              contentStyle={trafficLightInsetStyle}
+              headerLeftInset={leafHeaderInset}
               titlePath={shortenPath(shell.cwd)}
               dragHandleProps={dragHandleProps}
             />
@@ -269,7 +271,7 @@ export function usePaneRenderers({
               onZoomPane={() => split.toggleZoomLeaf(leafId)}
               onInjectSecrets={() => setInjectSecretsPaneId(proc.pane_id)}
               onSearchSkills={() => setSkillSearchPaneId(proc.pane_id)}
-              contentStyle={trafficLightInsetStyle}
+              headerLeftInset={leafHeaderInset}
               titlePath={buildProcessTitlePath(proc)}
               displayNameOverride={processRenameDrafts[proc.pane_id] ?? null}
               dragHandleProps={dragHandleProps}
@@ -299,7 +301,7 @@ export function usePaneRenderers({
                 paddingTop: 28,
                 paddingRight: 20,
                 paddingBottom: 20,
-                paddingLeft: trafficLightInsetStyle?.paddingLeft ?? 20,
+                paddingLeft: leafHeaderInset || 20,
               }}
               saveError={editingLeafErrors[leafId] ?? null}
             />
@@ -340,7 +342,7 @@ export function usePaneRenderers({
               setScrollToSlug(job.slug);
               sidebarFocusRef.current?.focus();
             }}
-            contentStyle={trafficLightInsetStyle}
+            headerLeftInset={leafHeaderInset}
             titlePath={buildJobTitlePath(job, jobQuestion)}
             dragHandleProps={dragHandleProps}
             defaultAgentProvider={defaultProvider}
@@ -349,7 +351,7 @@ export function usePaneRenderers({
         )}
       </DraggableSplitPane>
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setSkillSearchPaneId, setInjectSecretsPaneId, defaultProvider, defaultModel, autoYesShortcut, transport, setScrollToSlug, sidebarFocusRef, editingLeafJobs, editingLeafErrors, stopEditingLeaf, handleSaveLeafJob]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, split.handleClosePane, split.toggleZoomLeaf, isWide, trafficLightInset, topLeftLeafId, pendingProcess, shellPanes, openRenameProcessDialog, processRenameDrafts, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setSkillSearchPaneId, setInjectSecretsPaneId, defaultProvider, defaultModel, autoYesShortcut, transport, setScrollToSlug, sidebarFocusRef, editingLeafJobs, editingLeafErrors, stopEditingLeaf, handleSaveLeafJob]);
 
   const renderSinglePaneContent = useCallback((content: PaneContent) => {
     if (content.kind === "agent") {
@@ -364,7 +366,7 @@ export function usePaneRenderers({
           onZoomPane={() => split.toggleZoomLeaf("")}
           showBackButton={!isWide}
           hidePath
-          contentStyle={trafficLightInsetStyle}
+          headerLeftInset={trafficLightInset}
           titlePath={agentProcess ? buildProcessTitlePath(agentProcess) : "Agent"}
         />
       );
@@ -418,7 +420,7 @@ export function usePaneRenderers({
             onZoomPane={() => split.toggleZoomLeaf("")}
             onInjectSecrets={() => setInjectSecretsPaneId(singleProcess.pane_id)}
             onSearchSkills={() => setSkillSearchPaneId(singleProcess.pane_id)}
-            contentStyle={trafficLightInsetStyle}
+            headerLeftInset={trafficLightInset}
             titlePath={buildProcessTitlePath(singleProcess)}
             displayNameOverride={processRenameDrafts[singleProcess.pane_id] ?? null}
           />
@@ -463,7 +465,7 @@ export function usePaneRenderers({
             onZoomPane={() => split.toggleZoomLeaf("")}
             onInjectSecrets={() => setInjectSecretsPaneId(singleProcess.pane_id)}
             onSearchSkills={() => setSkillSearchPaneId(singleProcess.pane_id)}
-            contentStyle={trafficLightInsetStyle}
+            headerLeftInset={trafficLightInset}
             titlePath={buildProcessTitlePath(singleProcess)}
             displayNameOverride={processRenameDrafts[singleProcess.pane_id] ?? null}
           />
@@ -483,7 +485,7 @@ export function usePaneRenderers({
           }}
           onSplitPane={(direction: "right" | "down") => handleSplitPane(singleShell.pane_id, direction)}
           onZoomPane={() => split.toggleZoomLeaf("")}
-          contentStyle={trafficLightInsetStyle}
+          headerLeftInset={trafficLightInset}
           titlePath={shortenPath(singleShell.cwd)}
         />
       );
@@ -529,7 +531,7 @@ export function usePaneRenderers({
             setScrollToSlug(singleJob.slug);
             sidebarFocusRef.current?.focus();
           }}
-          contentStyle={trafficLightInsetStyle}
+          headerLeftInset={trafficLightInset}
           titlePath={buildJobTitlePath(singleJob, jobQuestion)}
           defaultAgentProvider={defaultProvider}
           defaultAgentModel={defaultModel}
@@ -548,7 +550,7 @@ export function usePaneRenderers({
         folderGroups={folderRunGroups}
       />
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInsetStyle, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, defaultModel, autoYesShortcut, focusEmptyAgentSignal, folderRunGroups, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport, setScrollToSlug, sidebarFocusRef]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInset, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, defaultModel, autoYesShortcut, focusEmptyAgentSignal, folderRunGroups, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport, setScrollToSlug, sidebarFocusRef]);
 
   return { renderLeaf, renderSinglePaneContent };
 }

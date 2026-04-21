@@ -430,6 +430,7 @@ export function DesktopJobDetail({
   onStopping,
   onRevealInSidebar,
   contentStyle,
+  headerLeftInset,
   titlePath,
   dragHandleProps,
   defaultAgentProvider,
@@ -465,6 +466,7 @@ export function DesktopJobDetail({
   onStopping?: () => void;
   onRevealInSidebar?: () => void;
   contentStyle?: unknown;
+  headerLeftInset?: number;
   titlePath?: string;
   defaultAgentProvider?: ProcessProvider;
   defaultAgentModel?: string | null;
@@ -553,6 +555,7 @@ export function DesktopJobDetail({
         sectionStyle={cardSectionStyle}
         containerStyle={desktopContainerStyle}
         contentStyle={contentStyle as any}
+        headerLeftInset={headerLeftInset}
         titlePath={titlePath}
         firstQuery={firstQuery}
         lastQuery={lastQuery}
@@ -594,6 +597,7 @@ export function AgentDetail({
   showBackButton = false,
   hidePath = false,
   contentStyle,
+  headerLeftInset,
   titlePath,
   onZoomPane,
   dragHandleProps,
@@ -607,6 +611,7 @@ export function AgentDetail({
   showBackButton?: boolean;
   hidePath?: boolean;
   contentStyle?: unknown;
+  headerLeftInset?: number;
   titlePath?: string;
   onZoomPane?: () => void;
   dragHandleProps?: {
@@ -642,6 +647,7 @@ export function AgentDetail({
       sectionStyle={cardSectionStyle}
       containerStyle={desktopContainerStyle}
       contentStyle={contentStyle as any}
+      headerLeftInset={headerLeftInset}
       titlePath={titlePath}
       expandOutput
       dragHandleProps={dragHandleProps}

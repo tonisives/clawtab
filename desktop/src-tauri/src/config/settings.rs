@@ -39,6 +39,7 @@ pub struct ShortcutSettings {
     pub move_pane_right: String,
     pub reveal_in_sidebar: String,
     pub toggle_auto_yes: String,
+    pub enter_copy_mode: String,
 }
 
 impl Default for ShortcutSettings {
@@ -60,6 +61,7 @@ impl Default for ShortcutSettings {
             move_pane_right: "Ctrl+l".to_string(),
             reveal_in_sidebar: "Meta+Shift+e".to_string(),
             toggle_auto_yes: "Prefix y".to_string(),
+            enter_copy_mode: "Prefix u".to_string(),
         }
     }
 }
@@ -82,6 +84,9 @@ impl ShortcutSettings {
             || self.toggle_auto_yes == "Meta+Shift+y"
         {
             self.toggle_auto_yes = defaults.toggle_auto_yes;
+        }
+        if self.enter_copy_mode.is_empty() {
+            self.enter_copy_mode = defaults.enter_copy_mode;
         }
     }
 }

@@ -12,6 +12,20 @@ if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && ! echo "$cmd" | grep -
     exit 0
 fi
 
+# Sync state with desktop app / daemon. Do this BEFORE updating the tmux
+# border option so the border only reflects state that the daemon agreed to.
+# A silent failure here (e.g. cwtctl missing) would leave the [Y] indicator
+# showing while the daemon never auto-answers.
+if ! command -v cwtctl >/dev/null 2>&1; then
+    tmux display-message "clawtab: cwtctl not found in PATH - run 'make build-cwtctl'"
+    exit 1
+fi
+
+if ! out=$(cwtctl auto-yes toggle "$pane_id" 2>&1); then
+    tmux display-message "clawtab: auto-yes toggle failed: $out"
+    exit 1
+fi
+
 # Toggle pane-local option (read instantly by border format, no shell cache delay)
 current=$(tmux show-option -pqvt "$pane_id" @clawtab-auto-yes)
 if [ "$current" = "1" ]; then
@@ -19,6 +33,3 @@ if [ "$current" = "1" ]; then
 else
     tmux set-option -pt "$pane_id" @clawtab-auto-yes 1
 fi
-
-# Sync state with desktop app in background
-cwtctl auto-yes toggle "$pane_id" &>/dev/null &

@@ -108,6 +108,9 @@ export interface ShortcutSettings {
   move_pane_down: string;
   move_pane_up: string;
   move_pane_right: string;
+  reveal_in_sidebar: string;
+  toggle_auto_yes: string;
+  enter_copy_mode: string;
 }
 
 export interface AppSettings {

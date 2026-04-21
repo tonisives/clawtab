@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { PaneContent, ShellPane, useJobsCore, useSplitTree } from "@clawtab/shared";
+import { collectLeaves } from "@clawtab/shared";
 import type { Job } from "../../../types";
 import { SINGLE_PANE_CACHE_LIMIT, paneContentCacheKey, shouldCacheSinglePaneContent } from "../utils";
 import { saveSinglePaneContent } from "./useViewingState";
@@ -41,7 +42,11 @@ export function useJobsTabEffects({
     setViewingJob,
     setViewingProcess,
     setViewingShell,
+    setViewingAgent,
     viewingJob,
+    viewingProcess,
+    viewingShell,
+    viewingAgent,
   } = viewing;
   const [recentSinglePaneContents, setRecentSinglePaneContents] = useState<PaneContent[]>([]);
 
@@ -65,6 +70,62 @@ export function useJobsTabEffects({
       else if (!fresh && core.loaded) setViewingJob(null);
     }
   }, [core.jobs, core.loaded, setViewingJob, viewingJob]);
+
+  // When the focused leaf changes (user clicked or tabbed to another pane), mirror
+  // its content into the viewing* state so the sidebar highlight and the shortcut
+  // handlers (rename/reveal) target the focused pane instead of the last-selected
+  // sidebar item.
+  useEffect(() => {
+    if (!split.tree || !split.focusedLeafId) return;
+    const leaf = collectLeaves(split.tree).find((l) => l.id === split.focusedLeafId);
+    if (!leaf) return;
+    const content = leaf.content;
+    if (content.kind === "job") {
+      if (viewingJob?.slug === content.slug) return;
+      const job = (core.jobs as Job[]).find((j) => j.slug === content.slug);
+      if (!job) return;
+      setViewingJob(job);
+      if (viewingProcess) setViewingProcess(null);
+      if (viewingShell) setViewingShell(null);
+      if (viewingAgent) setViewingAgent(false);
+    } else if (content.kind === "process") {
+      if (viewingProcess?.pane_id === content.paneId) return;
+      const proc = core.processes.find((p) => p.pane_id === content.paneId);
+      const shell = proc ? null : shellPanes.find((s) => s.pane_id === content.paneId);
+      if (proc) {
+        setViewingProcess(proc);
+        if (viewingJob) setViewingJob(null);
+        if (viewingShell) setViewingShell(null);
+        if (viewingAgent) setViewingAgent(false);
+      } else if (shell) {
+        setViewingShell(shell);
+        if (viewingJob) setViewingJob(null);
+        if (viewingProcess) setViewingProcess(null);
+        if (viewingAgent) setViewingAgent(false);
+      }
+    } else if (content.kind === "terminal") {
+      if (viewingShell?.pane_id === content.paneId) return;
+      const shell = shellPanes.find((s) => s.pane_id === content.paneId);
+      const proc = shell ? null : core.processes.find((p) => p.pane_id === content.paneId);
+      if (shell) {
+        setViewingShell(shell);
+        if (viewingJob) setViewingJob(null);
+        if (viewingProcess) setViewingProcess(null);
+        if (viewingAgent) setViewingAgent(false);
+      } else if (proc) {
+        setViewingProcess(proc);
+        if (viewingJob) setViewingJob(null);
+        if (viewingShell) setViewingShell(null);
+        if (viewingAgent) setViewingAgent(false);
+      }
+    } else if (content.kind === "agent") {
+      if (viewingAgent) return;
+      setViewingAgent(true);
+      if (viewingJob) setViewingJob(null);
+      if (viewingProcess) setViewingProcess(null);
+      if (viewingShell) setViewingShell(null);
+    }
+  }, [split.tree, split.focusedLeafId, core.jobs, core.processes, shellPanes, viewingJob, viewingProcess, viewingShell, viewingAgent, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent]);
 
   useEffect(() => {
     if (!pendingPaneId) return;

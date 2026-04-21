@@ -259,6 +259,26 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     return () => ro.disconnect();
   }, []);
 
+  // Keep focusedLeafId in sync with real DOM focus: when any element inside a
+  // pane leaf gains focus (mouse, keyboard nav, programmatic xterm focus), the
+  // enclosing leaf becomes the focused leaf. Without this, focusedLeafId only
+  // tracks onMouseDown and programmatic selection, so keyboard-driven focus
+  // changes leave shortcuts acting on the wrong pane.
+  useEffect(() => {
+    const el = detailPaneRef.current;
+    if (!el) return;
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      const leafEl = target.closest<HTMLElement>("[data-leaf-id]");
+      const leafId = leafEl?.dataset.leafId ?? null;
+      if (!leafId) return;
+      setFocusedLeafId((prev) => (prev === leafId ? prev : leafId));
+    };
+    el.addEventListener("focusin", handleFocusIn);
+    return () => el.removeEventListener("focusin", handleFocusIn);
+  }, []);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
