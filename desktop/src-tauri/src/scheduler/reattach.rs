@@ -2,10 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::config::jobs::{JobStatus, JobType, JobsConfig, NotifyTarget};
-use crate::config::settings::AppSettings;
 use crate::events::EventSink;
-use crate::history::HistoryStore;
-use crate::relay::RelayHandle;
+use crate::job_context::JobContext;
 use crate::telegram;
 use crate::tmux;
 use chrono::Utc;
@@ -18,14 +16,15 @@ use super::monitor::{MonitorParams, TelegramStream};
 pub fn reattach_running_jobs(
     event_sink: &dyn EventSink,
     jobs_config: &Arc<Mutex<JobsConfig>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
-    auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
-    protected_panes: &Arc<Mutex<HashSet<String>>>,
+    ctx: &JobContext,
 ) {
+    let settings = &ctx.settings;
+    let job_status = &ctx.job_status;
+    let history = &ctx.history;
+    let active_agents = &ctx.active_agents;
+    let relay = &ctx.relay;
+    let auto_yes_panes = &ctx.auto_yes_panes;
+    let protected_panes = &ctx.protected_panes;
     if !tmux::is_available() {
         return;
     }

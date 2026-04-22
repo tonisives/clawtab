@@ -62,6 +62,18 @@ fn main() {
         Arc::new(IpcBroadcastEventSink::new(event_subscribers.clone()));
     let notifier: Arc<dyn clawtab_lib::notifications::Notifier> = Arc::new(OsascriptNotifier);
 
+    let ctx = clawtab_lib::job_context::JobContext {
+        secrets: Arc::clone(&secrets),
+        history: Arc::clone(&history),
+        settings: Arc::clone(&settings),
+        job_status: Arc::clone(&job_status),
+        active_agents: Arc::clone(&active_agents),
+        relay: Arc::clone(&relay_handle),
+        auto_yes_panes: Arc::clone(&auto_yes_panes),
+        protected_panes: Arc::clone(&protected_panes),
+        notifier: Some(Arc::clone(&notifier)),
+    };
+
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
         // IPC event push server
@@ -77,54 +89,30 @@ fn main() {
         // IPC server
         {
             let jobs_config = Arc::clone(&jobs_config);
-            let secrets = Arc::clone(&secrets);
-            let history = Arc::clone(&history);
-            let settings = Arc::clone(&settings);
-            let job_status = Arc::clone(&job_status);
-            let active_agents = Arc::clone(&active_agents);
-            let relay = Arc::clone(&relay_handle);
             let relay_sub = Arc::clone(&relay_sub_required);
             let relay_auth = Arc::clone(&relay_auth_expired);
-            let auto_yes_panes = Arc::clone(&auto_yes_panes);
-            let protected_panes = Arc::clone(&protected_panes);
             let active_questions = Arc::clone(&active_questions);
             let pty_manager = Arc::clone(&pty_manager);
             let event_sink_for_ipc = Arc::clone(&event_sink);
-            let notifier_for_ipc = Arc::clone(&notifier);
+            let ctx_for_ipc = ctx.clone();
             tokio::spawn(async move {
                 let handler = move |cmd: IpcCommand| {
                     let jobs_config = Arc::clone(&jobs_config);
-                    let secrets = Arc::clone(&secrets);
-                    let history = Arc::clone(&history);
-                    let settings = Arc::clone(&settings);
-                    let job_status = Arc::clone(&job_status);
-                    let active_agents = Arc::clone(&active_agents);
-                    let relay = Arc::clone(&relay);
                     let relay_sub = Arc::clone(&relay_sub);
                     let relay_auth = Arc::clone(&relay_auth);
-                    let auto_yes_panes = Arc::clone(&auto_yes_panes);
-                    let protected_panes = Arc::clone(&protected_panes);
                     let active_questions = Arc::clone(&active_questions);
                     let pty_manager = Arc::clone(&pty_manager);
                     let event_sink_for_ipc = Arc::clone(&event_sink_for_ipc);
-                    let notifier_for_ipc = Arc::clone(&notifier_for_ipc);
+                    let ctx_for_ipc = ctx_for_ipc.clone();
                     async move {
                         handle_ipc_command(
                             &jobs_config,
-                            &secrets,
-                            &history,
-                            &settings,
-                            &job_status,
-                            &active_agents,
-                            &relay,
                             &relay_sub,
                             &relay_auth,
-                            &auto_yes_panes,
-                            &protected_panes,
                             &active_questions,
                             &pty_manager,
                             &event_sink_for_ipc,
-                            &notifier_for_ipc,
+                            &ctx_for_ipc,
                             cmd,
                         )
                         .await
@@ -163,38 +151,19 @@ fn main() {
         let _scheduler_handle = tokio::spawn(clawtab_lib::scheduler::start(
             Arc::clone(&event_sink),
             Arc::clone(&jobs_config),
-            Arc::clone(&secrets),
-            Arc::clone(&history),
-            Arc::clone(&settings),
-            Arc::clone(&job_status),
-            Arc::clone(&active_agents),
-            Arc::clone(&relay_handle),
-            Arc::clone(&auto_yes_panes),
-            Arc::clone(&protected_panes),
+            ctx.clone(),
         ));
 
         // Reattach jobs still running in tmux from previous session
         {
             let event_sink = Arc::clone(&event_sink);
             let jobs_config = Arc::clone(&jobs_config);
-            let settings = Arc::clone(&settings);
-            let job_status = Arc::clone(&job_status);
-            let history = Arc::clone(&history);
-            let active_agents = Arc::clone(&active_agents);
-            let relay = Arc::clone(&relay_handle);
-            let auto_yes_panes = Arc::clone(&auto_yes_panes);
-            let protected_panes = Arc::clone(&protected_panes);
+            let ctx = ctx.clone();
             tokio::spawn(async move {
                 clawtab_lib::scheduler::reattach::reattach_running_jobs(
                     event_sink.as_ref(),
                     &jobs_config,
-                    &settings,
-                    &job_status,
-                    &history,
-                    &active_agents,
-                    &relay,
-                    &auto_yes_panes,
-                    &protected_panes,
+                    &ctx,
                 );
                 // Daemon has no ClawTab UI, so nothing is protected.
                 clawtab_lib::scheduler::reattach::cleanup_orphaned_shell_windows(&HashSet::new());
@@ -223,33 +192,23 @@ fn main() {
                         rs.server_url.clone()
                     };
                     let server_url = rs.server_url.clone();
-                    let relay = Arc::clone(&relay_handle);
                     let relay_sub = Arc::clone(&relay_sub_required);
                     let jobs_config = Arc::clone(&jobs_config);
-                    let job_status = Arc::clone(&job_status);
-                    let secrets = Arc::clone(&secrets);
-                    let history = Arc::clone(&history);
-                    let settings = Arc::clone(&settings);
-                    let active_agents = Arc::clone(&active_agents);
-                    let auto_yes_panes = Arc::clone(&auto_yes_panes);
+                    let ctx = ctx.clone();
                     let pty_manager = Arc::clone(&pty_manager);
                     let event_sink = Arc::clone(&event_sink);
                     tokio::spawn(async move {
                         clawtab_lib::relay::connect_loop(
-                            ws_url,
-                            device_token,
-                            server_url,
-                            relay,
-                            relay_sub,
-                            jobs_config,
-                            job_status,
-                            secrets,
-                            history,
-                            settings,
-                            active_agents,
-                            auto_yes_panes,
-                            pty_manager,
-                            event_sink,
+                            clawtab_lib::relay::ConnectLoopParams {
+                                ws_url,
+                                device_token,
+                                server_url,
+                                relay_sub_required: relay_sub,
+                                jobs_config,
+                                ctx,
+                                pty_manager,
+                                event_sink,
+                            },
                         )
                         .await;
                     });
@@ -262,11 +221,9 @@ fn main() {
             let telegram_state = telegram::polling::AgentState {
                 settings: Arc::clone(&settings),
                 jobs_config: Arc::clone(&jobs_config),
-                secrets: Arc::clone(&secrets),
-                history: Arc::clone(&history),
                 job_status: Arc::clone(&job_status),
                 active_agents: Arc::clone(&active_agents),
-                relay: Arc::clone(&relay_handle),
+                ctx: ctx.clone(),
             };
             tokio::spawn(async move {
                 log::info!("Telegram polling task spawned");
@@ -294,25 +251,22 @@ fn main() {
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn handle_ipc_command(
     jobs_config: &Arc<Mutex<JobsConfig>>,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>>,
     relay_sub_required: &Arc<Mutex<bool>>,
     relay_auth_expired: &Arc<Mutex<bool>>,
-    auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
-    protected_panes: &Arc<Mutex<HashSet<String>>>,
     active_questions: &Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>>,
     pty_manager: &clawtab_lib::pty::SharedPtyManager,
     event_sink: &Arc<dyn clawtab_lib::events::EventSink>,
-    notifier: &Arc<dyn clawtab_lib::notifications::Notifier>,
+    ctx: &clawtab_lib::job_context::JobContext,
     cmd: IpcCommand,
 ) -> IpcResponse {
+    let secrets = &ctx.secrets;
+    let settings = &ctx.settings;
+    let job_status = &ctx.job_status;
+    let relay = &ctx.relay;
+    let auto_yes_panes = &ctx.auto_yes_panes;
+    let protected_panes = &ctx.protected_panes;
     match cmd {
         IpcCommand::Ping => IpcResponse::Pong,
         IpcCommand::ListJobs => {
@@ -326,24 +280,14 @@ async fn handle_ipc_command(
             match job {
                 Some(job) => {
                     let job = job.clone();
-                    let secrets = Arc::clone(secrets);
-                    let history = Arc::clone(history);
-                    let settings = Arc::clone(settings);
-                    let job_status = Arc::clone(job_status);
-                    let active_agents = Arc::clone(active_agents);
-                    let relay = Arc::clone(relay);
+                    let ctx = ctx.clone();
                     tokio::spawn(async move {
                         clawtab_lib::scheduler::executor::execute_job(
                             &job,
-                            &secrets,
-                            &history,
-                            &settings,
-                            &job_status,
+                            &ctx,
                             "cli",
-                            &active_agents,
-                            &relay,
                             &HashMap::new(),
-                            None,
+                            clawtab_lib::scheduler::executor::ExecuteOpts::default(),
                         )
                         .await;
                     });
@@ -378,24 +322,14 @@ async fn handle_ipc_command(
             match job {
                 Some(job) => {
                     let job = job.clone();
-                    let secrets = Arc::clone(secrets);
-                    let history = Arc::clone(history);
-                    let settings = Arc::clone(settings);
-                    let job_status = Arc::clone(job_status);
-                    let active_agents = Arc::clone(active_agents);
-                    let relay = Arc::clone(relay);
+                    let ctx = ctx.clone();
                     tokio::spawn(async move {
                         clawtab_lib::scheduler::executor::execute_job(
                             &job,
-                            &secrets,
-                            &history,
-                            &settings,
-                            &job_status,
+                            &ctx,
                             "restart",
-                            &active_agents,
-                            &relay,
                             &HashMap::new(),
-                            None,
+                            clawtab_lib::scheduler::executor::ExecuteOpts::default(),
                         )
                         .await;
                     });
@@ -509,15 +443,9 @@ async fn handle_ipc_command(
         }
         IpcCommand::RelayConnect => {
             match spawn_relay_connect(
-                settings,
-                secrets,
-                relay,
                 relay_sub_required,
                 jobs_config,
-                job_status,
-                history,
-                active_agents,
-                auto_yes_panes,
+                ctx,
                 pty_manager,
                 event_sink,
             ) {
@@ -617,15 +545,7 @@ async fn handle_ipc_command(
                 None => return IpcResponse::Error(format!("Job not found: {}", name)),
             };
 
-            let secrets = Arc::clone(secrets);
-            let history = Arc::clone(history);
-            let settings = Arc::clone(settings);
-            let job_status = Arc::clone(job_status);
-            let active_agents = Arc::clone(active_agents);
-            let relay = Arc::clone(relay);
-            let auto_yes_panes = Arc::clone(auto_yes_panes);
-            let protected_panes = Arc::clone(protected_panes);
-            let notifier = Arc::clone(notifier);
+            let ctx = ctx.clone();
 
             if matches!(
                 job.job_type,
@@ -634,20 +554,15 @@ async fn handle_ipc_command(
             ) {
                 let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
                 tokio::spawn(async move {
-                    clawtab_lib::scheduler::executor::execute_job_with_auto_yes_and_pane_notify(
+                    clawtab_lib::scheduler::executor::execute_job(
                         &job,
-                        &secrets,
-                        &history,
-                        &settings,
-                        &job_status,
+                        &ctx,
                         "manual",
-                        &active_agents,
-                        &relay,
                         &params,
-                        Some(&auto_yes_panes),
-                        Some(&protected_panes),
-                        pane_tx,
-                        Some(notifier),
+                        clawtab_lib::scheduler::executor::ExecuteOpts {
+                            use_auto_yes: true,
+                            pane_tx: Some(pane_tx),
+                        },
                     )
                     .await;
                 });
@@ -664,19 +579,15 @@ async fn handle_ipc_command(
                 }
             } else {
                 tokio::spawn(async move {
-                    clawtab_lib::scheduler::executor::execute_job_with_auto_yes(
+                    clawtab_lib::scheduler::executor::execute_job(
                         &job,
-                        &secrets,
-                        &history,
-                        &settings,
-                        &job_status,
+                        &ctx,
                         "manual",
-                        &active_agents,
-                        &relay,
                         &params,
-                        Some(&auto_yes_panes),
-                        Some(&protected_panes),
-                        Some(notifier),
+                        clawtab_lib::scheduler::executor::ExecuteOpts {
+                            use_auto_yes: true,
+                            pane_tx: None,
+                        },
                     )
                     .await;
                 });
@@ -733,30 +644,20 @@ async fn handle_ipc_command(
                 Err(e) => return IpcResponse::Error(e),
             };
 
-            let secrets = Arc::clone(secrets);
-            let history = Arc::clone(history);
-            let settings_arc = Arc::clone(settings);
-            let job_status = Arc::clone(job_status);
-            let active_agents = Arc::clone(active_agents);
-            let relay = Arc::clone(relay);
-            let protected_panes = Arc::clone(protected_panes);
+            let ctx = ctx.clone();
 
             let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
 
             tokio::spawn(async move {
-                clawtab_lib::scheduler::executor::execute_job_with_pane_notify(
+                clawtab_lib::scheduler::executor::execute_job(
                     &job,
-                    &secrets,
-                    &history,
-                    &settings_arc,
-                    &job_status,
+                    &ctx,
                     "manual",
-                    &active_agents,
-                    &relay,
                     &HashMap::new(),
-                    Some(&protected_panes),
-                    pane_tx,
-                    None,
+                    clawtab_lib::scheduler::executor::ExecuteOpts {
+                        use_auto_yes: false,
+                        pane_tx: Some(pane_tx),
+                    },
                 )
                 .await;
             });
@@ -811,21 +712,14 @@ fn compute_relay_status(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn spawn_relay_connect(
-    settings: &Arc<Mutex<AppSettings>>,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    relay: &Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>>,
     relay_sub_required: &Arc<Mutex<bool>>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    active_agents: &Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>>,
-    auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
+    ctx: &clawtab_lib::job_context::JobContext,
     pty_manager: &clawtab_lib::pty::SharedPtyManager,
     event_sink: &Arc<dyn clawtab_lib::events::EventSink>,
 ) -> Result<(), String> {
-    let settings_guard = settings.lock().unwrap();
+    let settings_guard = ctx.settings.lock().unwrap();
     let rs = settings_guard
         .relay
         .as_ref()
@@ -843,7 +737,7 @@ fn spawn_relay_connect(
     drop(settings_guard);
 
     let device_token = if yaml_token.is_empty() {
-        secrets
+        ctx.secrets
             .lock()
             .unwrap()
             .get("relay_device_token")
@@ -858,35 +752,23 @@ fn spawn_relay_connect(
 
     *relay_sub_required.lock().unwrap() = false;
 
-    let relay = Arc::clone(relay);
     let relay_sub = Arc::clone(relay_sub_required);
     let jobs_config = Arc::clone(jobs_config);
-    let job_status = Arc::clone(job_status);
-    let secrets = Arc::clone(secrets);
-    let history = Arc::clone(history);
-    let settings_arc = Arc::clone(settings);
-    let active_agents = Arc::clone(active_agents);
-    let auto_yes_panes = Arc::clone(auto_yes_panes);
+    let ctx = ctx.clone();
     let pty_manager = Arc::clone(pty_manager);
     let event_sink = Arc::clone(event_sink);
 
     tokio::spawn(async move {
-        clawtab_lib::relay::connect_loop(
+        clawtab_lib::relay::connect_loop(clawtab_lib::relay::ConnectLoopParams {
             ws_url,
             device_token,
             server_url,
-            relay,
-            relay_sub,
+            relay_sub_required: relay_sub,
             jobs_config,
-            job_status,
-            secrets,
-            history,
-            settings_arc,
-            active_agents,
-            auto_yes_panes,
+            ctx,
             pty_manager,
             event_sink,
-        )
+        })
         .await;
     });
 

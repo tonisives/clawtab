@@ -17,6 +17,7 @@ interface Props {
   externalAccessToken: string | null
   externalRefreshToken: string | null
   onExternalTokenConsumed: () => void
+  daemonAlert?: boolean
 }
 
 const subTabs: { id: SettingsSubTab; label: string }[] = [
@@ -34,6 +35,7 @@ export function GeneralSettings({
   externalAccessToken,
   externalRefreshToken,
   onExternalTokenConsumed,
+  daemonAlert,
 }: Props) {
   return (
     <div className="settings-with-subtabs">
@@ -43,8 +45,10 @@ export function GeneralSettings({
             key={tab.id}
             className={`settings-subtab ${activeSubTab === tab.id ? "active" : ""}`}
             onClick={() => onSubTabChange(tab.id)}
+            title={tab.id === "daemon" && daemonAlert ? "Daemon is not running" : undefined}
           >
             {tab.label}
+            {tab.id === "daemon" && daemonAlert && <span className="subtab-alert-dot" />}
           </button>
         ))}
       </div>

@@ -2,30 +2,18 @@ pub mod executor;
 pub mod monitor;
 pub mod reattach;
 
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use chrono::{Duration, Local};
 use cron::Schedule;
 
 use crate::config::jobs::{JobStatus, JobsConfig};
-use crate::config::settings::AppSettings;
-use crate::history::HistoryStore;
-use crate::relay::RelayHandle;
-use crate::secrets::SecretsManager;
-use crate::telegram::ActiveAgent;
+use crate::job_context::JobContext;
 
 pub async fn start(
     event_sink: Arc<dyn crate::events::EventSink>,
     jobs_config: Arc<Mutex<JobsConfig>>,
-    secrets: Arc<Mutex<SecretsManager>>,
-    history: Arc<Mutex<HistoryStore>>,
-    settings: Arc<Mutex<AppSettings>>,
-    job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
-    active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: Arc<Mutex<Option<RelayHandle>>>,
-    auto_yes_panes: Arc<Mutex<HashSet<String>>>,
-    protected_panes: Arc<Mutex<HashSet<String>>>,
+    ctx: JobContext,
 ) {
     log::info!("Scheduler started");
 
@@ -60,7 +48,7 @@ pub async fn start(
 
             // Determine the earliest point to look back from: last run or 24h ago
             let since = {
-                let h = history.lock().unwrap();
+                let h = ctx.history.lock().unwrap();
                 h.get_by_job_id(&job.slug, 1)
                     .ok()
                     .and_then(|runs| runs.into_iter().next())
@@ -158,28 +146,17 @@ pub async fn start(
             if should_run {
                 log::info!("Cron trigger for job '{}'", job.name);
                 let job = job.clone();
-                let secrets = Arc::clone(&secrets);
-                let history = Arc::clone(&history);
-                let settings = Arc::clone(&settings);
-                let job_status = Arc::clone(&job_status);
-                let active_agents = Arc::clone(&active_agents);
-                let relay = Arc::clone(&relay);
-                let auto_yes_panes = Arc::clone(&auto_yes_panes);
-                let protected_panes = Arc::clone(&protected_panes);
+                let ctx = ctx.clone();
                 tokio::spawn(async move {
-                    executor::execute_job_with_auto_yes(
+                    executor::execute_job(
                         &job,
-                        &secrets,
-                        &history,
-                        &settings,
-                        &job_status,
+                        &ctx,
                         "cron",
-                        &active_agents,
-                        &relay,
                         &std::collections::HashMap::new(),
-                        Some(&auto_yes_panes),
-                        Some(&protected_panes),
-                        None,
+                        executor::ExecuteOpts {
+                            use_auto_yes: true,
+                            pane_tx: None,
+                        },
                     )
                     .await;
                 });
@@ -192,7 +169,7 @@ pub async fn start(
         // job stuck as Running in the UI.
         {
             let stale: Vec<(String, String)> = {
-                let statuses = job_status.lock().unwrap();
+                let statuses = ctx.job_status.lock().unwrap();
                 statuses
                     .iter()
                     .filter_map(|(slug, status)| {
@@ -209,7 +186,7 @@ pub async fn start(
                     .collect()
             };
             if !stale.is_empty() {
-                let mut statuses = job_status.lock().unwrap();
+                let mut statuses = ctx.job_status.lock().unwrap();
                 for (slug, pane_id) in &stale {
                     log::warn!(
                         "Stale running job '{}' (pane {} gone) - resetting to Idle",
@@ -218,7 +195,7 @@ pub async fn start(
                     );
                     let next = JobStatus::Idle;
                     statuses.insert(slug.clone(), next.clone());
-                    crate::relay::push_status_update(&relay, slug, &next);
+                    crate::relay::push_status_update(&ctx.relay, slug, &next);
                 }
                 drop(statuses);
                 event_sink.emit_jobs_changed();
