@@ -60,7 +60,7 @@ fn is_view_session(name: &str) -> bool {
 fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> String {
     let output = debug_spawn::run_logged(
         "tmux",
-        &["list-windows", "-a", "-F", "#{session_name}\t#{window_id}"],
+        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
         "processes::resolve_non_view_session_for_window",
     );
     let Ok(output) = output else {
@@ -72,7 +72,7 @@ fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> Strin
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
-        let mut parts = line.splitn(2, '\t');
+        let mut parts = line.splitn(2, '\x1e');
         let session = parts.next().unwrap_or("");
         let current_window_id = parts.next().unwrap_or("");
         if current_window_id == window_id && !is_view_session(session) {
@@ -268,7 +268,7 @@ fn detect_processes_blocking(
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}\t#{window_id}\t#{pane_title}\t#{@clawtab-slug}",
+            "#{pane_id}\x1e#{pane_current_command}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{pane_pid}\x1e#{window_id}\x1e#{pane_title}\x1e#{@clawtab-slug}",
         ],
         "processes::detect_processes::list-panes",
     );
@@ -293,7 +293,7 @@ fn detect_processes_blocking(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(9, '\t').collect();
+        let parts: Vec<&str> = line.splitn(9, '\x1e').collect();
         if parts.len() < 8 {
             continue;
         }
@@ -632,7 +632,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
             "-t",
             &pane_id,
             "-p",
-            "#{pane_id}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{window_id}\t#{pane_title}",
+            "#{pane_id}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{window_id}\x1e#{pane_title}",
         ],
         "processes::get_existing_pane_info::display-message",
     )
@@ -647,7 +647,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut parts = stdout.trim_end().splitn(6, '\t');
+    let mut parts = stdout.trim_end().splitn(6, '\x1e');
     let Some(found_pane_id) = parts.next() else {
         return Ok(None);
     };

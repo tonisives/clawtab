@@ -180,6 +180,10 @@ pub async fn handle_incoming(
             let processes = tokio::task::spawn_blocking(move || detect_processes(&jc, &js))
                 .await
                 .unwrap_or_default();
+            log::info!("DetectProcesses: returning {} processes", processes.len());
+            for p in &processes {
+                log::info!("  - pane={} provider={} cmd_version={} session={} cwd={}", p.pane_id, p.provider, p.version, p.tmux_session, p.cwd);
+            }
             Some(DesktopMessage::DetectedProcesses { id, processes })
         }
 
@@ -573,15 +577,30 @@ fn detect_processes(
         "tmux",
         &[
             "list-panes", "-a", "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
+            "#{pane_id}\x1e#{pane_current_command}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{pane_pid}",
         ],
         "relay::list_panes_snapshot",
     ) {
         Ok(o) if o.status.success() => o,
-        _ => return vec![],
+        Ok(o) => {
+            log::warn!("detect_processes: tmux list-panes exited {:?}: stderr={}", o.status.code(), String::from_utf8_lossy(&o.stderr));
+            return vec![];
+        }
+        Err(e) => {
+            log::warn!("detect_processes: tmux list-panes spawn error: {}", e);
+            return vec![];
+        }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let pane_lines = stdout.lines().count();
+    if pane_lines > 0 {
+        let first = stdout.lines().next().unwrap_or("");
+        let hex: String = first.bytes().take(80).map(|b| format!("{:02x} ", b)).collect();
+        log::info!("detect_processes: tmux returned {} pane lines. first_line_hex(80)={}", pane_lines, hex);
+    } else {
+        log::info!("detect_processes: tmux returned 0 pane lines");
+    }
 
     let tracked_panes: HashSet<String> = {
         let statuses = job_status.lock().unwrap();
@@ -616,15 +635,19 @@ fn detect_processes(
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 
+    let mut skipped_short = 0u32;
+    let mut skipped_view = 0u32;
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(6, '\t').collect();
+        let parts: Vec<&str> = line.splitn(6, '\x1e').collect();
         if parts.len() < 6 {
+            skipped_short += 1;
             continue;
         }
 
         let (pane_id, command, cwd, session, window, pane_pid) =
             (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
         if is_view_session(session) {
+            skipped_view += 1;
             continue;
         }
 
@@ -633,8 +656,10 @@ fn detect_processes(
                 is_semver(command).then_some(crate::agent_session::ProcessProvider::Claude)
             });
         let Some(provider) = provider else {
+            log::info!("detect_processes: pane {} cmd={} pid={} session={} -> no provider (skipped)", pane_id, command, pane_pid, session);
             continue;
         };
+        log::info!("detect_processes: pane {} cmd={} pid={} provider={:?} -> keeping", pane_id, command, pane_pid, provider);
         if !seen.insert(pane_id.to_string()) {
             continue;
         }
@@ -692,6 +717,8 @@ fn detect_processes(
             token_count: session_info.token_count,
         });
     }
+
+    log::info!("detect_processes: summary: total_lines={} skipped_short={} skipped_view={} kept={}", pane_lines, skipped_short, skipped_view, results.len());
 
     results
 }

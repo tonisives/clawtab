@@ -28,7 +28,7 @@ pub(super) fn cleanup_orphaned_view_sessions(keep: &[&str]) {
     let mut members: HashMap<String, Vec<String>> = HashMap::new();
     let mut view_sessions: Vec<(String, String)> = Vec::new();
     for line in raw.lines() {
-        let mut parts = line.splitn(2, '\t');
+        let mut parts = line.splitn(2, '\x1e');
         let name = parts.next().unwrap_or("").to_string();
         let group = parts.next().unwrap_or("").to_string();
         if name.is_empty() {
@@ -126,7 +126,7 @@ pub(super) fn cleanup_orphaned_ct_windows(
     let mut windows: std::collections::HashMap<String, WindowEntry> =
         std::collections::HashMap::new();
     for line in raw.lines() {
-        let parts: Vec<&str> = line.split('\t').collect();
+        let parts: Vec<&str> = line.split('\x1e').collect();
         if parts.len() < 5 {
             continue;
         }

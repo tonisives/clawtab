@@ -13,6 +13,10 @@ export interface ShortcutSettings {
   move_pane_down: string;
   move_pane_up: string;
   move_pane_right: string;
+  resize_pane_left: string;
+  resize_pane_right: string;
+  resize_pane_up: string;
+  resize_pane_down: string;
   reveal_in_sidebar: string;
   toggle_auto_yes: string;
   enter_copy_mode: string;
@@ -25,10 +29,37 @@ export type ShortcutId = keyof ShortcutSettings;
 
 export const APP_SHORTCUT_EVENT = "clawtab-app-shortcut";
 
+export type ShortcutGroup =
+  | "general"
+  | "sidebar"
+  | "pane_layout"
+  | "pane_navigation"
+  | "pane_resize"
+  | "pane_actions";
+
 export interface ShortcutDefinition {
   id: ShortcutId;
   label: string;
+  group: ShortcutGroup;
 }
+
+export const SHORTCUT_GROUP_LABELS: Record<ShortcutGroup, string> = {
+  general: "General",
+  sidebar: "Sidebar",
+  pane_layout: "Pane layout",
+  pane_navigation: "Pane navigation",
+  pane_resize: "Pane resize",
+  pane_actions: "Pane actions",
+};
+
+export const SHORTCUT_GROUP_ORDER: ShortcutGroup[] = [
+  "general",
+  "sidebar",
+  "pane_layout",
+  "pane_navigation",
+  "pane_resize",
+  "pane_actions",
+];
 
 export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   prefix_key: "Ctrl+2",
@@ -45,6 +76,10 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   move_pane_down: "Ctrl+j",
   move_pane_up: "Ctrl+k",
   move_pane_right: "Ctrl+l",
+  resize_pane_left: "Prefix Shift+Less",
+  resize_pane_right: "Prefix Shift+Greater",
+  resize_pane_up: "Prefix Shift+Plus",
+  resize_pane_down: "Prefix Minus",
   reveal_in_sidebar: "Meta+Shift+e",
   toggle_auto_yes: "Prefix y",
   enter_copy_mode: "Prefix u",
@@ -54,26 +89,35 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
 };
 
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
-  { id: "prefix_key", label: "Prefix key" },
-  { id: "next_sidebar_item", label: "Next sidebar item" },
-  { id: "previous_sidebar_item", label: "Previous sidebar item" },
-  { id: "toggle_sidebar", label: "Toggle sidebar" },
-  { id: "rename_active_pane", label: "Rename active pane" },
-  { id: "focus_agent_input", label: "Focus agent input" },
-  { id: "zoom_active_pane", label: "Zoom active pane" },
-  { id: "split_pane_vertical", label: "Split pane vertically" },
-  { id: "split_pane_horizontal", label: "Split pane horizontally" },
-  { id: "kill_pane", label: "Kill focused pane" },
-  { id: "move_pane_left", label: "Move to left pane" },
-  { id: "move_pane_down", label: "Move to pane below" },
-  { id: "move_pane_up", label: "Move to pane above" },
-  { id: "move_pane_right", label: "Move to right pane" },
-  { id: "reveal_in_sidebar", label: "Reveal in sidebar" },
-  { id: "toggle_auto_yes", label: "Toggle auto-yes" },
-  { id: "enter_copy_mode", label: "Enter copy mode" },
-  { id: "back_navigation", label: "Navigate back" },
-  { id: "forward_navigation", label: "Navigate forward" },
-  { id: "open_command_palette", label: "Open command palette" },
+  { id: "prefix_key", label: "Prefix key", group: "general" },
+  { id: "focus_agent_input", label: "Focus agent input", group: "general" },
+  { id: "toggle_auto_yes", label: "Toggle auto-yes", group: "general" },
+  { id: "back_navigation", label: "Navigate back", group: "general" },
+  { id: "forward_navigation", label: "Navigate forward", group: "general" },
+  { id: "open_command_palette", label: "Open command palette", group: "general" },
+
+  { id: "toggle_sidebar", label: "Toggle sidebar", group: "sidebar" },
+  { id: "next_sidebar_item", label: "Next sidebar item", group: "sidebar" },
+  { id: "previous_sidebar_item", label: "Previous sidebar item", group: "sidebar" },
+  { id: "reveal_in_sidebar", label: "Reveal in sidebar", group: "sidebar" },
+
+  { id: "split_pane_vertical", label: "Split pane vertically", group: "pane_layout" },
+  { id: "split_pane_horizontal", label: "Split pane horizontally", group: "pane_layout" },
+  { id: "zoom_active_pane", label: "Zoom active pane", group: "pane_layout" },
+  { id: "kill_pane", label: "Kill focused pane", group: "pane_layout" },
+
+  { id: "move_pane_left", label: "Move to left pane", group: "pane_navigation" },
+  { id: "move_pane_down", label: "Move to pane below", group: "pane_navigation" },
+  { id: "move_pane_up", label: "Move to pane above", group: "pane_navigation" },
+  { id: "move_pane_right", label: "Move to right pane", group: "pane_navigation" },
+
+  { id: "resize_pane_left", label: "Resize pane left", group: "pane_resize" },
+  { id: "resize_pane_right", label: "Resize pane right", group: "pane_resize" },
+  { id: "resize_pane_up", label: "Resize pane up", group: "pane_resize" },
+  { id: "resize_pane_down", label: "Resize pane down", group: "pane_resize" },
+
+  { id: "rename_active_pane", label: "Rename active pane", group: "pane_actions" },
+  { id: "enter_copy_mode", label: "Enter copy mode", group: "pane_actions" },
 ];
 
 const MODIFIER_ORDER = ["Ctrl", "Alt", "Shift", "Meta"] as const;
@@ -87,6 +131,17 @@ const SPECIAL_KEY_ALIASES: Record<string, string> = {
   ArrowRight: "Right",
   Escape: "Esc",
   Esc: "Esc",
+  "+": "Plus",
+  "-": "Minus",
+  "<": "Less",
+  ">": "Greater",
+};
+
+const KEY_DISPLAY_ALIASES: Record<string, string> = {
+  Plus: "+",
+  Minus: "-",
+  Less: "<",
+  Greater: ">",
 };
 
 const DASH_MODIFIER_ALIASES: Record<string, string> = {
@@ -117,7 +172,9 @@ function normalizeKeyPart(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
   if (trimmed.length === 1) {
-    return trimmed === " " ? "Space" : trimmed.toLowerCase();
+    if (trimmed === " ") return "Space";
+    if (trimmed in SPECIAL_KEY_ALIASES) return SPECIAL_KEY_ALIASES[trimmed];
+    return trimmed.toLowerCase();
   }
   if (trimmed in SPECIAL_KEY_ALIASES) return SPECIAL_KEY_ALIASES[trimmed];
 
@@ -132,6 +189,10 @@ function normalizeKeyPart(raw: string): string {
   if (lower === "backspace") return "Backspace";
   if (lower === "delete") return "Delete";
   if (lower === "escape" || lower === "esc") return "Esc";
+  if (lower === "plus") return "Plus";
+  if (lower === "minus") return "Minus";
+  if (lower === "less") return "Less";
+  if (lower === "greater") return "Greater";
   return trimmed;
 }
 
@@ -262,6 +323,7 @@ export function shortcutCompletesSequence(binding: string, strokes: string[], pr
 
 function formatShortcutPart(part: string): string {
   if (part === "Meta") return "Cmd";
+  if (part in KEY_DISPLAY_ALIASES) return KEY_DISPLAY_ALIASES[part];
   if (part.length === 1) return part.toUpperCase();
   return part;
 }
