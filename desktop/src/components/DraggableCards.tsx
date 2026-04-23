@@ -18,6 +18,7 @@ export function DraggableJobCard({
   status,
   onPress,
   selected,
+  softBorder,
   onStop,
   autoYesActive,
   stopping,
@@ -32,6 +33,7 @@ export function DraggableJobCard({
   status: JobStatus;
   onPress?: () => void;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   autoYesActive?: boolean;
   stopping?: boolean;
@@ -95,6 +97,7 @@ export function DraggableJobCard({
           status={status}
           onPress={onPress}
           selected={selected}
+          softBorder={softBorder}
           onStop={onStop}
           autoYesActive={autoYesActive}
           stopping={stopping}
@@ -105,6 +108,7 @@ export function DraggableJobCard({
           status={status}
           onPress={onPress}
           selected={selected}
+          softBorder={softBorder}
           defaultAgentProvider={defaultAgentProvider}
         />
       )}
@@ -118,6 +122,7 @@ export function DraggableProcessCard({
   onPress,
   inGroup,
   selected,
+  softBorder,
   onStop,
   onRename,
   onSaveName,
@@ -135,6 +140,7 @@ export function DraggableProcessCard({
   onPress?: () => void;
   inGroup?: boolean;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   onRename?: () => void;
   onSaveName?: (name: string) => void;
@@ -201,6 +207,7 @@ export function DraggableProcessCard({
         onPress={onPress}
         inGroup={inGroup}
         selected={selected}
+        softBorder={softBorder}
         onStop={onStop}
         onRename={onRename}
         onSaveName={onSaveName}
@@ -251,6 +258,7 @@ export function DraggableShellCard({
   shell,
   onPress,
   selected,
+  softBorder,
   onStop,
   onRename,
   renameShortcutHint,
@@ -258,6 +266,7 @@ export function DraggableShellCard({
   shell: ShellPane;
   onPress?: () => void;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   onRename?: () => void;
   renameShortcutHint?: string;
@@ -286,6 +295,7 @@ export function DraggableShellCard({
         shell={shell}
         onPress={onPress}
         selected={selected}
+        softBorder={softBorder}
         onStop={onStop}
         onRename={onRename}
         renameShortcutHint={renameShortcutHint}

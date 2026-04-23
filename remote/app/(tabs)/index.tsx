@@ -221,14 +221,14 @@ export default function JobsScreen() {
   }, [isWide, router, split.tree, split.handleSelectInTree, handleSelectProcess])
 
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string }) => (
+    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; softBorder?: boolean }) => (
       <DraggableJobCard {...props} />
     ),
     [],
   )
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string }) => (
+    (props: { process: DetectedProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; softBorder?: boolean }) => (
       <DraggableProcessCard {...props} />
     ),
     [],

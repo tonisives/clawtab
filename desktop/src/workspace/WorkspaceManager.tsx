@@ -68,6 +68,7 @@ function reducer(s: ReducerState, action: Action): ReducerState {
       return { ...s, activeId: action.id };
     }
     case "UPSERT": {
+      if (s.states.has(action.state.id)) return s;
       const next = new Map(s.states);
       next.set(action.state.id, action.state);
       return { ...s, states: next };

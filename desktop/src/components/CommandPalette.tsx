@@ -15,10 +15,12 @@ interface PaletteEntry {
   cwd: string;
   firstQuery: string;
   lastQuery: string;
+  paneTitle: string;
   workspaceName: string;
   paneId?: string;
   slug?: string;
   searchFields: {
+    paneTitle: string;
     firstQuery: string;
     lastQuery: string;
     workspaceName: string;
@@ -50,9 +52,10 @@ function buildEntries(params: {
 
   for (const p of processes) {
     const ws = p.matched_group ?? "default";
-    const displayName = p.display_name ?? p.cwd.replace(/^\/Users\/[^/]+/, "~");
+    const displayName = p.display_name ?? p.pane_title ?? p.cwd.replace(/^\/Users\/[^/]+/, "~");
     const firstQuery = p.first_query ?? "";
     const lastQuery = p.last_query ?? "";
+    const paneTitle = p.pane_title ?? "";
     entries.push({
       id: `agent:${p.pane_id}`,
       kind: "agent",
@@ -61,9 +64,11 @@ function buildEntries(params: {
       cwd: p.cwd,
       firstQuery,
       lastQuery,
+      paneTitle,
       workspaceName: ws,
       paneId: p.pane_id,
       searchFields: {
+        paneTitle,
         firstQuery,
         lastQuery,
         workspaceName: ws,
@@ -84,9 +89,11 @@ function buildEntries(params: {
       cwd,
       firstQuery: "",
       lastQuery: "",
+      paneTitle: "",
       workspaceName: ws,
       slug: job.slug,
       searchFields: {
+        paneTitle: "",
         firstQuery: "",
         lastQuery: "",
         workspaceName: ws,
@@ -98,7 +105,8 @@ function buildEntries(params: {
 
   for (const s of shells) {
     const ws = s.workspace_id ?? s.matched_group ?? "default";
-    const displayName = s.display_name ?? s.cwd.replace(/^\/Users\/[^/]+/, "~");
+    const displayName = s.display_name ?? s.pane_title ?? s.cwd.replace(/^\/Users\/[^/]+/, "~");
+    const paneTitle = s.pane_title ?? "";
     entries.push({
       id: `shell:${s.pane_id}`,
       kind: "shell",
@@ -107,9 +115,11 @@ function buildEntries(params: {
       cwd: s.cwd,
       firstQuery: "",
       lastQuery: "",
+      paneTitle,
       workspaceName: ws,
       paneId: s.pane_id,
       searchFields: {
+        paneTitle,
         firstQuery: "",
         lastQuery: "",
         workspaceName: ws,
@@ -128,8 +138,10 @@ function buildEntries(params: {
       cwd: "",
       firstQuery: "",
       lastQuery: "",
+      paneTitle: "",
       workspaceName: id,
       searchFields: {
+        paneTitle: "",
         firstQuery: "",
         lastQuery: "",
         workspaceName: id,
@@ -173,11 +185,12 @@ export function CommandPalette({
   const fuse = useMemo(() => {
     return new Fuse(entries, {
       keys: [
-        { name: "searchFields.firstQuery", weight: 0.3 },
-        { name: "searchFields.lastQuery", weight: 0.3 },
-        { name: "searchFields.workspaceName", weight: 0.2 },
-        { name: "searchFields.cwd", weight: 0.12 },
-        { name: "searchFields.displayName", weight: 0.08 },
+        { name: "searchFields.paneTitle", weight: 0.35 },
+        { name: "searchFields.firstQuery", weight: 0.2 },
+        { name: "searchFields.lastQuery", weight: 0.2 },
+        { name: "searchFields.workspaceName", weight: 0.12 },
+        { name: "searchFields.cwd", weight: 0.08 },
+        { name: "searchFields.displayName", weight: 0.05 },
       ],
       threshold: 0.4,
       ignoreLocation: true,
@@ -244,11 +257,30 @@ export function CommandPalette({
   return createPortal(
     <div
       ref={overlayRef}
-      className="confirm-overlay"
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}
-      style={{ alignItems: "flex-start", paddingTop: "12vh" }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0, 0, 0, 0.4)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        paddingTop: "12vh",
+        zIndex: 50000,
+      }}
     >
-      <div className="confirm-dialog" style={{ width: 560, maxWidth: "90vw", padding: 0 }}>
+      <div
+        style={{
+          background: "var(--bg-secondary)",
+          color: "var(--text-primary)",
+          border: "1px solid var(--border-color)",
+          borderRadius: 10,
+          boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
+          width: 560,
+          maxWidth: "90vw",
+          padding: 0,
+        }}
+      >
         <input
           ref={inputRef}
           type="text"
@@ -256,8 +288,18 @@ export function CommandPalette({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search agents, jobs, workspaces, shells..."
-          className="input"
-          style={{ width: "100%", fontSize: 14, border: "none", borderBottom: "1px solid var(--border)", borderRadius: 0, padding: "12px 14px", background: "transparent" }}
+          style={{
+            width: "100%",
+            fontSize: 14,
+            border: "none",
+            borderBottom: "1px solid var(--border-color, #2a2a2a)",
+            borderRadius: 0,
+            padding: "12px 14px",
+            background: "transparent",
+            color: "var(--text-primary)",
+            outline: "none",
+            boxShadow: "none",
+          }}
         />
         <div ref={listRef} style={{ maxHeight: 400, overflowY: "auto" }}>
           {results.length === 0 && (
@@ -265,42 +307,50 @@ export function CommandPalette({
               {query.trim() ? `No results for "${query}"` : "Type to search"}
             </div>
           )}
-          {results.map((entry, i) => (
-            <div
-              key={entry.id}
-              data-index={i}
-              onClick={() => activate(entry)}
-              onMouseEnter={() => setActiveIndex(i)}
-              style={{
-                padding: "8px 14px",
-                cursor: "pointer",
-                background: i === activeIndex ? "var(--bg-hover)" : "transparent",
-                borderLeft: i === activeIndex ? "2px solid var(--accent)" : "2px solid transparent",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", minWidth: 68 }}>
-                  {entry.workspaceName}
-                </span>
-                <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--bg-secondary)", color: "var(--text-muted)" }}>
-                  {entry.kind}
-                </span>
-                <span style={{ fontSize: 13, color: "var(--text-primary)", fontWeight: 500 }}>
-                  {entry.displayName}
-                </span>
+          {results.map((entry, i) => {
+            const isActive = i === activeIndex;
+            return (
+              <div
+                key={entry.id}
+                data-index={i}
+                onClick={() => activate(entry)}
+                onMouseEnter={() => setActiveIndex(i)}
+                style={{
+                  padding: "8px 14px",
+                  cursor: "pointer",
+                  background: isActive ? "var(--accent-hover)" : "transparent",
+                  borderLeft: isActive ? "3px solid var(--accent-color)" : "3px solid transparent",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted, #8e8e93)", minWidth: 68 }}>
+                    {entry.workspaceName}
+                  </span>
+                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--border-color)", color: "var(--text-muted, #8e8e93)" }}>
+                    {entry.kind}
+                  </span>
+                  <span style={{ fontSize: 13, color: isActive ? "var(--accent-color)" : "var(--text-primary)", fontWeight: isActive ? 600 : 500 }}>
+                    {entry.displayName}
+                  </span>
+                </div>
+                {entry.cwd && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", fontFamily: "monospace", paddingLeft: 76 }}>
+                    {entry.cwd}
+                  </div>
+                )}
+                {entry.paneTitle && entry.paneTitle !== entry.displayName && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {entry.paneTitle}
+                  </div>
+                )}
+                {entry.lastQuery && (
+                  <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                    {entry.lastQuery}
+                  </div>
+                )}
               </div>
-              {entry.cwd && (
-                <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "monospace", paddingLeft: 76 }}>
-                  {entry.cwd}
-                </div>
-              )}
-              {entry.lastQuery && (
-                <div style={{ fontSize: 11, color: "var(--text-muted)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                  {entry.lastQuery}
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>,
