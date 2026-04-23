@@ -11,11 +11,7 @@ use tokio_tungstenite::tungstenite::Message;
 use clawtab_protocol::{DesktopMessage, JobStatus as RemoteJobStatus, RemoteJob};
 
 use crate::config::jobs::{Job, JobStatus, JobsConfig};
-use crate::config::settings::AppSettings;
-use crate::history::HistoryStore;
 use crate::pty::SharedPtyManager;
-use crate::secrets::SecretsManager;
-use crate::telegram::ActiveAgent;
 
 /// Relay connection state, shared via Arc<Mutex<..>> in AppState.
 pub struct RelayHandle {
@@ -202,23 +198,34 @@ pub async fn check_subscription_http(
     Ok((subscribed, None, None))
 }
 
+/// Inputs for `connect_loop` grouped together to keep argument counts manageable.
+pub struct ConnectLoopParams {
+    pub ws_url: String,
+    pub device_token: String,
+    pub server_url: String,
+    pub relay_sub_required: Arc<Mutex<bool>>,
+    pub jobs_config: Arc<Mutex<JobsConfig>>,
+    pub ctx: crate::job_context::JobContext,
+    pub pty_manager: SharedPtyManager,
+    pub event_sink: Arc<dyn crate::events::EventSink>,
+}
+
 /// Start the relay connection loop. Runs forever with reconnection.
-pub async fn connect_loop(
-    ws_url: String,
-    device_token: String,
-    server_url: String,
-    relay: Arc<Mutex<Option<RelayHandle>>>,
-    relay_sub_required: Arc<Mutex<bool>>,
-    jobs_config: Arc<Mutex<JobsConfig>>,
-    job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
-    secrets: Arc<Mutex<SecretsManager>>,
-    history: Arc<Mutex<HistoryStore>>,
-    settings: Arc<Mutex<AppSettings>>,
-    active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    auto_yes_panes: Arc<Mutex<std::collections::HashSet<String>>>,
-    pty_manager: SharedPtyManager,
-    event_sink: Arc<dyn crate::events::EventSink>,
-) {
+pub async fn connect_loop(params: ConnectLoopParams) {
+    let ConnectLoopParams {
+        ws_url,
+        device_token,
+        server_url,
+        relay_sub_required,
+        jobs_config,
+        ctx,
+        pty_manager,
+        event_sink,
+    } = params;
+    let relay = ctx.relay.clone();
+    let secrets = ctx.secrets.clone();
+    let job_status = ctx.job_status.clone();
+    let auto_yes_panes = ctx.auto_yes_panes.clone();
     let mut backoff = Duration::from_secs(1);
     let max_backoff = Duration::from_secs(60);
 
@@ -290,19 +297,15 @@ pub async fn connect_loop(
                 }
 
                 run_session(
-                    ws_sink,
-                    ws_stream,
-                    rx,
-                    tx,
-                    cancel.clone(),
-                    &relay,
+                    SessionChannels {
+                        ws_sink,
+                        ws_stream,
+                        rx,
+                        tx,
+                        cancel: cancel.clone(),
+                    },
                     &jobs_config,
-                    &job_status,
-                    &secrets,
-                    &history,
-                    &settings,
-                    &active_agents,
-                    &auto_yes_panes,
+                    &ctx,
                     &pty_manager,
                     event_sink.as_ref(),
                 )
@@ -336,26 +339,31 @@ pub async fn connect_loop(
     }
 }
 
-async fn run_session<S, R>(
-    mut ws_sink: S,
-    mut ws_stream: R,
-    mut rx: mpsc::UnboundedReceiver<String>,
+struct SessionChannels<S, R> {
+    ws_sink: S,
+    ws_stream: R,
+    rx: mpsc::UnboundedReceiver<String>,
     tx: mpsc::UnboundedSender<String>,
     cancel: tokio_util::sync::CancellationToken,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
+}
+
+async fn run_session<S, R>(
+    channels: SessionChannels<S, R>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
+    ctx: &crate::job_context::JobContext,
     pty_manager: &SharedPtyManager,
     event_sink: &dyn crate::events::EventSink,
 ) where
     S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     R: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
+    let SessionChannels {
+        mut ws_sink,
+        mut ws_stream,
+        mut rx,
+        tx,
+        cancel,
+    } = channels;
     let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
     let mut last_pong = tokio::time::Instant::now();
     let pong_timeout = Duration::from_secs(90); // 3 missed pings
@@ -373,13 +381,7 @@ async fn run_session<S, R>(
                         let response = handler::handle_incoming(
                             &text,
                             jobs_config,
-                            job_status,
-                            secrets,
-                            history,
-                            settings,
-                            active_agents,
-                            relay,
-                            auto_yes_panes,
+                            ctx,
                             pty_manager,
                             event_sink,
                         ).await;

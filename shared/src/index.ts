@@ -34,6 +34,8 @@ export {
   updateRatio,
   splitLeaf,
   removeStaleLeaves,
+  leafContentKey,
+  leafContentEquals,
 } from "./util/splitTree";
 export {
   statusLabel,

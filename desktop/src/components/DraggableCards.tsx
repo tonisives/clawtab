@@ -7,10 +7,10 @@ import type { DetectedProcess, ClaudeQuestion, PaneContent, ShellPane } from "@c
 import { JobCard, RunningJobCard, ProcessCard, ShellCard } from "@clawtab/shared";
 
 export type DragData =
-  | { kind: "job"; slug: string; job?: RemoteJob; source?: "sidebar" | "detail-pane" }
-  | { kind: "process"; paneId: string; process?: DetectedProcess; question?: ClaudeQuestion; resolvedJob?: string | null; source?: "sidebar" | "detail-pane" }
-  | { kind: "terminal"; paneId: string; tmuxSession: string; shell?: ShellPane; source?: "sidebar" | "detail-pane" }
-  | { kind: "agent"; source?: "sidebar" | "detail-pane" };
+  | { kind: "job"; slug: string; job?: RemoteJob; source?: "sidebar" | "detail-pane"; sourceWorkspaceId?: string }
+  | { kind: "process"; paneId: string; process?: DetectedProcess; question?: ClaudeQuestion; resolvedJob?: string | null; source?: "sidebar" | "detail-pane"; sourceWorkspaceId?: string }
+  | { kind: "terminal"; paneId: string; tmuxSession: string; shell?: ShellPane; source?: "sidebar" | "detail-pane"; sourceWorkspaceId?: string }
+  | { kind: "agent"; source?: "sidebar" | "detail-pane"; sourceWorkspaceId?: string };
 
 export function DraggableJobCard({
   job,
@@ -18,6 +18,7 @@ export function DraggableJobCard({
   status,
   onPress,
   selected,
+  softBorder,
   onStop,
   autoYesActive,
   stopping,
@@ -32,6 +33,7 @@ export function DraggableJobCard({
   status: JobStatus;
   onPress?: () => void;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   autoYesActive?: boolean;
   stopping?: boolean;
@@ -95,6 +97,7 @@ export function DraggableJobCard({
           status={status}
           onPress={onPress}
           selected={selected}
+          softBorder={softBorder}
           onStop={onStop}
           autoYesActive={autoYesActive}
           stopping={stopping}
@@ -105,6 +108,7 @@ export function DraggableJobCard({
           status={status}
           onPress={onPress}
           selected={selected}
+          softBorder={softBorder}
           defaultAgentProvider={defaultAgentProvider}
         />
       )}
@@ -118,6 +122,7 @@ export function DraggableProcessCard({
   onPress,
   inGroup,
   selected,
+  softBorder,
   onStop,
   onRename,
   onSaveName,
@@ -135,6 +140,7 @@ export function DraggableProcessCard({
   onPress?: () => void;
   inGroup?: boolean;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   onRename?: () => void;
   onSaveName?: (name: string) => void;
@@ -201,6 +207,7 @@ export function DraggableProcessCard({
         onPress={onPress}
         inGroup={inGroup}
         selected={selected}
+        softBorder={softBorder}
         onStop={onStop}
         onRename={onRename}
         onSaveName={onSaveName}
@@ -251,6 +258,7 @@ export function DraggableShellCard({
   shell,
   onPress,
   selected,
+  softBorder,
   onStop,
   onRename,
   renameShortcutHint,
@@ -258,6 +266,7 @@ export function DraggableShellCard({
   shell: ShellPane;
   onPress?: () => void;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   onRename?: () => void;
   renameShortcutHint?: string;
@@ -286,6 +295,7 @@ export function DraggableShellCard({
         shell={shell}
         onPress={onPress}
         selected={selected}
+        softBorder={softBorder}
         onStop={onStop}
         onRename={onRename}
         renameShortcutHint={renameShortcutHint}
@@ -294,20 +304,22 @@ export function DraggableShellCard({
   );
 }
 
-function dragDataForPane(content: PaneContent): DragData {
-  if (content.kind === "job") return { kind: "job", slug: content.slug, source: "detail-pane" };
-  if (content.kind === "process") return { kind: "process", paneId: content.paneId, source: "detail-pane" };
-  if (content.kind === "terminal") return { kind: "terminal", paneId: content.paneId, tmuxSession: content.tmuxSession, source: "detail-pane" };
-  return { kind: "agent", source: "detail-pane" };
+function dragDataForPane(content: PaneContent, sourceWorkspaceId?: string): DragData {
+  if (content.kind === "job") return { kind: "job", slug: content.slug, source: "detail-pane", sourceWorkspaceId };
+  if (content.kind === "process") return { kind: "process", paneId: content.paneId, source: "detail-pane", sourceWorkspaceId };
+  if (content.kind === "terminal") return { kind: "terminal", paneId: content.paneId, tmuxSession: content.tmuxSession, source: "detail-pane", sourceWorkspaceId };
+  return { kind: "agent", source: "detail-pane", sourceWorkspaceId };
 }
 
 export function DraggableSplitPane({
   leafId,
   content,
+  sourceWorkspaceId,
   children,
 }: {
   leafId: string;
   content: PaneContent;
+  sourceWorkspaceId?: string;
   children: (dragHandleProps: {
     ref?: (node: HTMLElement | null) => void;
     attributes?: any;
@@ -317,7 +329,7 @@ export function DraggableSplitPane({
 }) {
   const { attributes, listeners, setActivatorNodeRef, isDragging } = useDraggable({
     id: `detail-pane-${leafId}`,
-    data: dragDataForPane(content),
+    data: dragDataForPane(content, sourceWorkspaceId),
   });
 
   return (

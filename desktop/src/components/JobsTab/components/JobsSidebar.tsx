@@ -2,7 +2,7 @@ import { useCallback, useMemo, type ReactNode, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { DetectedProcess, JobStatus, ProcessProvider, RemoteJob, ShellPane, SidebarSelectableItem, Transport, useJobsCore, useSplitTree } from "@clawtab/shared";
-import { JobListView } from "@clawtab/shared";
+import { JobListView, collectLeaves, leafContentKey } from "@clawtab/shared";
 import { buildModelOptions } from "../../JobEditor/utils";
 import { DraggableJobCard, DraggableProcessCard, DraggableShellCard } from "../../DraggableCards";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
@@ -13,6 +13,7 @@ import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useSidebarItems } from "../hooks/useSidebarItems";
 import type { useViewingState } from "../hooks/useViewingState";
 import { formatShortcutSteps } from "../../../shortcuts";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface JobsSidebarProps {
   activeAgentWorkDir: string | null;
@@ -59,6 +60,7 @@ export function JobsSidebar({
   transport,
   viewing,
 }: JobsSidebarProps) {
+  const mgr = useWorkspaceManager();
   const { defaultProvider, defaultModel, enabledModels, groupOrder, hiddenGroups, jobOrder, processOrder, sortMode } = settings;
   const renameShortcutHint = useMemo(
     () => formatShortcutSteps(settings.shortcutSettings.rename_active_pane).map((step) => step.join("+")).join(" "),
@@ -69,6 +71,22 @@ export function JobsSidebar({
     () => buildModelOptions(["claude", "codex", "opencode", "shell"] as ProcessProvider[], enabledModels),
     [enabledModels],
   );
+
+  const openElsewhereContentKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const [wsId, state] of mgr.getAllStates()) {
+      if (wsId === mgr.activeId) continue;
+      if (state.tree) {
+        for (const leaf of collectLeaves(state.tree)) {
+          keys.add(leafContentKey(leaf.content));
+        }
+      }
+      if (state.singlePaneContent) {
+        keys.add(leafContentKey(state.singlePaneContent));
+      }
+    }
+    return keys;
+  }, [mgr]);
   const {
     demotedShellPaneIdsRef,
     setShellPanes,
@@ -87,7 +105,7 @@ export function JobsSidebar({
   } = processEditing;
 
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => (
+    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => (
       <DraggableJobCard
         {...props}
         reorderEnabled={sortMode === "name"}
@@ -98,7 +116,7 @@ export function JobsSidebar({
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => (
+    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => (
       <DraggableProcessCard
         {...props}
         reorderEnabled
@@ -108,7 +126,7 @@ export function JobsSidebar({
   );
 
   const renderDraggableShellCard = useCallback(
-    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => (
+    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => (
       <DraggableShellCard {...props} />
     ),
     [],
@@ -212,6 +230,13 @@ export function JobsSidebar({
       wrapJobGroup={isWide && sortMode === "name" ? wrapSortableJobGroup : undefined}
       wrapProcessGroup={isWide ? wrapSortableProcessGroup : undefined}
       stoppingSlugs={stoppingJobSlugs}
+      activeWorkspaceId={mgr.activeId}
+      onActivateWorkspace={(group) => {
+        mgr.ensure(group);
+        mgr.setActive(group);
+      }}
+      dragActive={split.isDragging}
+      openElsewhereContentKeys={openElsewhereContentKeys}
     />
   );
 }

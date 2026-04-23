@@ -6,8 +6,8 @@ use tokio::process::Command;
 
 use crate::config::jobs::{Job, JobStatus, JobType, NotifyTarget};
 use crate::config::settings::AppSettings;
-use crate::history::{HistoryStore, RunRecord};
-use crate::relay::RelayHandle;
+use crate::history::RunRecord;
+use crate::job_context::JobContext;
 use crate::secrets::SecretsManager;
 use crate::telegram::ActiveAgent;
 
@@ -17,6 +17,16 @@ use super::monitor::{MonitorParams, TelegramStream};
 struct TmuxHandle {
     tmux_session: String,
     pane_id: String,
+}
+
+/// Per-call options for `execute_job`. Use `ExecuteOpts::default()` for a
+/// basic fire-and-forget run.
+#[derive(Default)]
+pub struct ExecuteOpts {
+    /// Enable auto-yes tracking for this run's tmux pane.
+    pub use_auto_yes: bool,
+    /// Channel to notify the caller of the spawned pane/session ids.
+    pub pane_tx: Option<tokio::sync::oneshot::Sender<(String, String)>>,
 }
 
 fn resolve_agent_model(
@@ -35,146 +45,26 @@ fn resolve_agent_model(
 
 pub async fn execute_job(
     job: &Job,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    ctx: &JobContext,
     trigger: &str,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
     params: &HashMap<String, String>,
-    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
+    opts: ExecuteOpts,
 ) {
-    execute_job_inner(
-        job,
-        secrets,
-        history,
-        settings,
-        job_status,
-        trigger,
-        active_agents,
-        relay,
-        params,
-        None,
-        None,
-        notifier,
-        None,
-    )
-    .await;
-}
+    let secrets = &ctx.secrets;
+    let history = &ctx.history;
+    let settings = &ctx.settings;
+    let job_status = &ctx.job_status;
+    let active_agents = &ctx.active_agents;
+    let relay = &ctx.relay;
+    let auto_yes_panes = if opts.use_auto_yes {
+        Some(&ctx.auto_yes_panes)
+    } else {
+        None
+    };
+    let protected_panes = Some(&ctx.protected_panes);
+    let notifier = ctx.notifier.clone();
+    let mut pane_tx = opts.pane_tx;
 
-pub async fn execute_job_with_auto_yes(
-    job: &Job,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    trigger: &str,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
-    params: &HashMap<String, String>,
-    auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
-) {
-    execute_job_inner(
-        job,
-        secrets,
-        history,
-        settings,
-        job_status,
-        trigger,
-        active_agents,
-        relay,
-        params,
-        auto_yes_panes,
-        protected_panes,
-        notifier,
-        None,
-    )
-    .await;
-}
-
-pub async fn execute_job_with_auto_yes_and_pane_notify(
-    job: &Job,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    trigger: &str,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
-    params: &HashMap<String, String>,
-    auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
-    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
-) {
-    execute_job_inner(
-        job,
-        secrets,
-        history,
-        settings,
-        job_status,
-        trigger,
-        active_agents,
-        relay,
-        params,
-        auto_yes_panes,
-        protected_panes,
-        notifier,
-        Some(pane_tx),
-    )
-    .await;
-}
-
-pub async fn execute_job_with_pane_notify(
-    job: &Job,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    trigger: &str,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
-    params: &HashMap<String, String>,
-    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    pane_tx: tokio::sync::oneshot::Sender<(String, String)>,
-    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
-) {
-    execute_job_inner(
-        job,
-        secrets,
-        history,
-        settings,
-        job_status,
-        trigger,
-        active_agents,
-        relay,
-        params,
-        None,
-        protected_panes,
-        notifier,
-        Some(pane_tx),
-    )
-    .await;
-}
-
-async fn execute_job_inner(
-    job: &Job,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    trigger: &str,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
-    params: &HashMap<String, String>,
-    auto_yes_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    protected_panes: Option<&Arc<Mutex<HashSet<String>>>>,
-    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
-    mut pane_tx: Option<tokio::sync::oneshot::Sender<(String, String)>>,
-) {
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
 

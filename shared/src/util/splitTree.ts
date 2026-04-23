@@ -46,11 +46,15 @@ export function findDuplicateLeafContents(node: SplitNode): string[] {
   return Array.from(counts.entries()).filter(([, n]) => n > 1).map(([key]) => key);
 }
 
-function leafContentKey(content: PaneContent): string {
+export function leafContentKey(content: PaneContent): string {
   if (content.kind === "job") return `job:${content.slug}`;
   if (content.kind === "agent") return "agent";
   if (content.kind === "terminal") return `term:${content.paneId}`;
   return `proc:${content.paneId}`;
+}
+
+export function leafContentEquals(a: PaneContent, b: PaneContent): boolean {
+  return a.kind === b.kind && leafContentKey(a) === leafContentKey(b);
 }
 
 /** Walk the tree and rewrite any duplicated ids so each node has a unique id.

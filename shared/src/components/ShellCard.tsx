@@ -13,6 +13,7 @@ export function ShellCard({
   shell,
   onPress,
   selected,
+  softBorder,
   onStop,
   onRename,
   renameShortcutHint = "Cmd+R",
@@ -20,6 +21,7 @@ export function ShellCard({
   shell: ShellPane;
   onPress?: () => void;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   onRename?: () => void;
   renameShortcutHint?: string;
@@ -33,7 +35,7 @@ export function ShellCard({
   const showMenu = !!(onStop || onRename);
 
   return (
-    <View style={[styles.card, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 }]}>
+    <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
       <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
         <JobKindIcon kind="shell" />
         <View style={styles.info}>

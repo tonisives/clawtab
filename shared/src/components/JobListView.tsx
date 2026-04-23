@@ -145,9 +145,9 @@ export interface JobListViewProps {
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
-  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => React.ReactNode;
-  renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => React.ReactNode;
-  renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => React.ReactNode;
+  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => React.ReactNode;
+  renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => React.ReactNode;
+  renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;
   wrapProcessGroup?: (group: string, processPaneIds: string[], children: React.ReactNode) => React.ReactNode;
   // Disable scrolling (e.g. during drag-and-drop)
@@ -165,6 +165,17 @@ export interface JobListViewProps {
   onProcessRenameDraftChange?: (paneId: string, value: string | null) => void;
   onProcessRenameStateChange?: (paneId: string, editing: boolean) => void;
   renameShortcutHint?: string;
+  // Per-workspace UI (desktop multi-workspace)
+  activeWorkspaceId?: string;
+  onActivateWorkspace?: (group: string) => void;
+  /** When true (a pane is being dragged), hovering a non-active workspace
+   *  group header for ~250ms switches to that workspace so the drag can end
+   *  inside its detail tree. */
+  dragActive?: boolean;
+  /** Content keys ("job:slug", "term:paneId", "proc:paneId", "agent") of items
+   *  currently open in a workspace other than the active one. Used to visually
+   *  mark those items so the user knows they're live elsewhere. */
+  openElsewhereContentKeys?: Set<string>;
 }
 
 type ListItem =
@@ -252,10 +263,21 @@ export function JobListView({
   onProcessRenameDraftChange,
   onProcessRenameStateChange,
   renameShortcutHint = "Cmd+R",
+  activeWorkspaceId,
+  onActivateWorkspace,
+  dragActive,
+  openElsewhereContentKeys,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
   const containerRef = useRef<View>(null);
+  const hoverSwitchTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!dragActive && hoverSwitchTimerRef.current) {
+      clearTimeout(hoverSwitchTimerRef.current);
+      hoverSwitchTimerRef.current = null;
+    }
+  }, [dragActive]);
 
   useEffect(() => {
     if (sidebarFocusRef) {
@@ -739,6 +761,8 @@ export function JobListView({
     const isSelected: boolean | string = rawJobColor
       ? (isJobFocused ? rawJobColor : rawJobColor + "66")
       : (selectedSlug === item.job.slug);
+    const openElsewhere = openElsewhereContentKeys?.has(`job:${item.job.slug}`) ?? false;
+    const softBorder = openElsewhere && !isSelected;
     const isRunning = status.state === "running";
     const jobPaneId = isRunning ? (status as { pane_id?: string }).pane_id : undefined;
     const jobAutoYesActive = jobPaneId ? autoYesPaneIds?.has(jobPaneId) ?? false : false;
@@ -756,6 +780,10 @@ export function JobListView({
       const isProcessSelected: boolean | string = rawColor
         ? (isFocused ? rawColor : rawColor + "66")
         : (selectedSlug === process.pane_id);
+      const childOpenElsewhere =
+        (openElsewhereContentKeys?.has(`proc:${process.pane_id}`) ?? false) ||
+        (openElsewhereContentKeys?.has(`term:${process.pane_id}`) ?? false);
+      const childSoftBorder = childOpenElsewhere && !isProcessSelected;
       const processOnStop = onStopProcess ? () => onStopProcess(process.pane_id) : undefined;
       const processOnRename = onRenameProcess ? () => onRenameProcess(process) : undefined;
       const processOnSaveName = onSaveProcessName ? (name: string) => onSaveProcessName(process, name) : undefined;
@@ -768,6 +796,7 @@ export function JobListView({
               onPress: onSelectProcess ? () => onSelectProcess(process) : undefined,
               inGroup: true,
               selected: isProcessSelected,
+              softBorder: childSoftBorder,
               onStop: processOnStop,
               onRename: processOnRename,
               onSaveName: processOnSaveName,
@@ -784,6 +813,7 @@ export function JobListView({
                 onPress={onSelectProcess ? () => onSelectProcess(process) : undefined}
                 inGroup
                 selected={isProcessSelected}
+                softBorder={childSoftBorder}
                 onStop={processOnStop}
                 onRename={processOnRename}
                 onSaveName={processOnSaveName}
@@ -816,7 +846,7 @@ export function JobListView({
       <View key={key}>
         <View style={styles.jobWithPaneToggle}>
           {customRenderJobCard ? (
-            customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping, marginTop, dimmed, dataJobSlug: item.job.slug, defaultAgentProvider })
+            customRenderJobCard({ job: item.job, group: item.job.group || "default", indexInGroup: item.idx, status, onPress: pressHandler, selected: isSelected, softBorder, onStop: jobOnStop, autoYesActive: jobAutoYesActive, stopping: isStopping, marginTop, dimmed, dataJobSlug: item.job.slug, defaultAgentProvider })
           ) : (
             <View
               {...(Platform.OS === "web" ? { dataSet: { jobSlug: item.job.slug } } : {})}
@@ -831,6 +861,7 @@ export function JobListView({
                   status={status}
                   onPress={pressHandler}
                   selected={isSelected}
+                  softBorder={softBorder}
                   onStop={jobOnStop}
                   autoYesActive={jobAutoYesActive}
                   stopping={isStopping}
@@ -842,6 +873,7 @@ export function JobListView({
                   status={status}
                   onPress={pressHandler}
                   selected={isSelected}
+                  softBorder={softBorder}
                   defaultAgentProvider={defaultAgentProvider}
                 />
               )}
@@ -872,13 +904,17 @@ export function JobListView({
     const procOnSaveName = onSaveProcessName ? (name: string) => onSaveProcessName(item.process, name) : undefined;
     const marginTop = index > 0 ? spacing.sm : undefined;
     const sortGroup = item.process.matched_group ?? `cwd:${item.process.cwd}`;
+    const openElsewhereProc = openElsewhereContentKeys?.has(`proc:${item.process.pane_id}`) ?? false;
+    const openElsewhereTerm = openElsewhereContentKeys?.has(`term:${item.process.pane_id}`) ?? false;
+    const openElsewhere = openElsewhereProc || openElsewhereTerm;
+    const softBorder = openElsewhere && !isSelected;
     return customRenderProcessCard ? (
       <View key={key}>
-        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, onStop: procOnStop, onRename: procOnRename, onSaveName: procOnSaveName, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id, startRenameSignal: renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined, onRenameDraftChange: (value: string | null) => onProcessRenameDraftChange?.(item.process.pane_id, value), onRenameStateChange: (editing: boolean) => onProcessRenameStateChange?.(item.process.pane_id, editing), renameShortcutHint })}
+        {customRenderProcessCard({ process: item.process, sortGroup, onPress: pressHandler, inGroup: item.inGroup, selected: isSelected, softBorder, onStop: procOnStop, onRename: procOnRename, onSaveName: procOnSaveName, autoYesActive: procAutoYesActive, marginTop, dataProcessId: item.process.pane_id, startRenameSignal: renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined, onRenameDraftChange: (value: string | null) => onProcessRenameDraftChange?.(item.process.pane_id, value), onRenameStateChange: (editing: boolean) => onProcessRenameStateChange?.(item.process.pane_id, editing), renameShortcutHint })}
       </View>
     ) : (
       <View key={key} {...(Platform.OS === "web" ? { dataSet: { processId: item.process.pane_id } } : {})} style={marginTop != null ? { marginTop } : undefined}>
-        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} onStop={procOnStop} onRename={procOnRename} onSaveName={procOnSaveName} autoYesActive={procAutoYesActive} startRenameSignal={renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined} onRenameDraftChange={(value) => onProcessRenameDraftChange?.(item.process.pane_id, value)} onRenameStateChange={(editing) => onProcessRenameStateChange?.(item.process.pane_id, editing)} renameShortcutHint={renameShortcutHint} />
+        <ProcessCard process={item.process} onPress={pressHandler} inGroup={item.inGroup} selected={isSelected} softBorder={softBorder} onStop={procOnStop} onRename={procOnRename} onSaveName={procOnSaveName} autoYesActive={procAutoYesActive} startRenameSignal={renameProcessPaneId === item.process.pane_id ? renameProcessSignal : undefined} onRenameDraftChange={(value) => onProcessRenameDraftChange?.(item.process.pane_id, value)} onRenameStateChange={(editing) => onProcessRenameStateChange?.(item.process.pane_id, editing)} renameShortcutHint={renameShortcutHint} />
       </View>
     );
   };
@@ -894,6 +930,41 @@ export function JobListView({
     }
     const rendered: React.ReactNode[] = [];
     let index = 0;
+    let currentGroupBuffer: React.ReactNode[] | null = null;
+    let currentGroupIsActive = false;
+    let currentGroupKey: string | null = null;
+    let prevFlushedWasActive = false;
+    const flushGroup = () => {
+      if (!currentGroupBuffer) return;
+      const buf = currentGroupBuffer;
+      const isActive = currentGroupIsActive;
+      const gKey = currentGroupKey;
+      currentGroupBuffer = null;
+      currentGroupIsActive = false;
+      currentGroupKey = null;
+      if (isActive) {
+        const isFirst = rendered.length === 0;
+        rendered.push(
+          <View
+            key={`wsgroup_${gKey}`}
+            style={[styles.activeWorkspaceGroup, isFirst ? null : { marginTop: spacing.sm / 2 }]}
+          >
+            {buf}
+          </View>,
+        );
+        prevFlushedWasActive = true;
+      } else {
+        rendered.push(...buf);
+        prevFlushedWasActive = false;
+      }
+    };
+    const pushToGroup = (node: React.ReactNode) => {
+      if (currentGroupBuffer) {
+        currentGroupBuffer.push(node);
+      } else {
+        rendered.push(node);
+      }
+    };
     while (index < items.length) {
       const item = items[index];
       if (item.kind === "job") {
@@ -909,7 +980,7 @@ export function JobListView({
         });
         const group = jobItems[0]?.job.group || "default";
         const jobSlugs = jobItems.map((jobItem) => jobItem.job.slug);
-        rendered.push(
+        pushToGroup(
           wrapJobGroup ? wrapJobGroup(group, jobSlugs, children) : children,
         );
         continue;
@@ -927,7 +998,7 @@ export function JobListView({
         });
         const group = processItems[0]?.process.matched_group ?? `cwd:${processItems[0]?.process.cwd ?? ""}`;
         const processPaneIds = processItems.map((processItem) => processItem.process.pane_id);
-        rendered.push(
+        pushToGroup(
           wrapProcessGroup ? wrapProcessGroup(group, processPaneIds, children) : children,
         );
         continue;
@@ -942,22 +1013,78 @@ export function JobListView({
               : item.kind === "hidden-section"
                 ? "hidden_section"
                 : `hh_${item.group}`;
-      rendered.push(
+      const prevWasActive = prevFlushedWasActive;
+      if (item.kind === "header" || item.kind === "hidden-section" || item.kind === "hidden-header") {
+        flushGroup();
+        if (item.kind === "header") {
+          const isWorkspaceHeaderForFlush = activeWorkspaceId != null && item.group !== "Shells" && item.group !== "Detected";
+          if (isWorkspaceHeaderForFlush) {
+            currentGroupBuffer = [];
+            currentGroupIsActive = item.group === activeWorkspaceId;
+            currentGroupKey = item.group;
+          }
+        }
+      }
+      pushToGroup(
         (() => {
               if (item.kind === "header") {
                 const isCollapsed = collapsedGroups.has(item.group);
                 const allowGroupMenu = item.group !== "Shells" && (onAddJob || onHideGroup);
+                const isWorkspaceHeader = activeWorkspaceId != null && item.group !== "Shells" && item.group !== "Detected";
+                const isActiveWorkspace = isWorkspaceHeader && item.group === activeWorkspaceId;
+                const isInactiveWorkspace = isWorkspaceHeader && !isActiveWorkspace;
+                const hoverSwitchHandlers = dragActive && isInactiveWorkspace && onActivateWorkspace
+                  ? {
+                      onMouseEnter: () => {
+                        if (hoverSwitchTimerRef.current) clearTimeout(hoverSwitchTimerRef.current);
+                        const group = item.group;
+                        hoverSwitchTimerRef.current = setTimeout(() => {
+                          onActivateWorkspace(group);
+                          hoverSwitchTimerRef.current = null;
+                        }, 250) as unknown as number;
+                      },
+                      onMouseLeave: () => {
+                        if (hoverSwitchTimerRef.current) {
+                          clearTimeout(hoverSwitchTimerRef.current);
+                          hoverSwitchTimerRef.current = null;
+                        }
+                      },
+                    }
+                  : undefined;
+                const headerMarginTop = isActiveWorkspace
+                  ? 0
+                  : index === 0
+                    ? 0
+                    : prevWasActive
+                      ? spacing.sm / 2
+                      : spacing.sm;
                 return (
-                  <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                  <View key={key} style={headerMarginTop ? { marginTop: headerMarginTop } : null} {...(hoverSwitchHandlers ?? {})}>
                     <TouchableOpacity
-                      onPress={() => onToggleGroup(item.group)}
-                      style={styles.groupHeaderRow}
+                      onPress={() => {
+                        if (onActivateWorkspace && isWorkspaceHeader) {
+                          onActivateWorkspace(item.group);
+                          return;
+                        }
+                        onToggleGroup(item.group);
+                      }}
+                      style={[styles.groupHeaderRow, isActiveWorkspace ? styles.activeWorkspaceHeaderRow : null]}
                       activeOpacity={0.6}
                     >
-                      <Text style={styles.groupHeaderArrow}>
-                        {isCollapsed ? "\u25B6" : "\u25BC"}
-                      </Text>
-                      <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+                      <TouchableOpacity
+                        onPress={(e: any) => {
+                          e?.stopPropagation?.();
+                          onToggleGroup(item.group);
+                        }}
+                        style={styles.groupHeaderArrowBtn}
+                        activeOpacity={0.6}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.groupHeaderArrow}>
+                          {isCollapsed ? "\u25B6" : "\u25BC"}
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={[styles.groupHeader, isActiveWorkspace ? styles.activeWorkspaceHeaderText : null, isInactiveWorkspace ? { opacity: 0.55 } : null]}>{item.displayGroup}</Text>
                       {item.folderPath && (
                         <Text style={styles.groupFolderPath} numberOfLines={1}>
                           {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
@@ -1004,11 +1131,13 @@ export function JobListView({
                   : (selectedSlug === keyId);
                 const shellOnStop = onStopShell ? () => onStopShell(item.shell.pane_id) : undefined;
                 const shellOnRename = onRenameShell ? () => onRenameShell(item.shell) : undefined;
+                const openElsewhere = openElsewhereContentKeys?.has(`term:${item.shell.pane_id}`) ?? false;
+                const shellSoftBorder = openElsewhere && !isSelected;
                 return (
                   <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
                     {customRenderShellCard
-                      ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, onStop: shellOnStop, onRename: shellOnRename, renameShortcutHint })
-                      : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} onStop={shellOnStop} onRename={shellOnRename} renameShortcutHint={renameShortcutHint} />
+                      ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, softBorder: shellSoftBorder, onStop: shellOnStop, onRename: shellOnRename, renameShortcutHint })
+                      : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} softBorder={shellSoftBorder} onStop={shellOnStop} onRename={shellOnRename} renameShortcutHint={renameShortcutHint} />
                     }
                   </View>
                 );
@@ -1072,6 +1201,7 @@ export function JobListView({
       );
       index += 1;
     }
+    flushGroup();
     return rendered;
   };
 
@@ -1402,6 +1532,28 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
+  },
+  activeWorkspaceGroup: {
+    backgroundColor: colors.accentBg,
+    marginLeft: -spacing.lg,
+    marginRight: -spacing.lg,
+    paddingLeft: spacing.lg,
+    paddingRight: spacing.lg,
+    paddingTop: spacing.sm / 2,
+    paddingBottom: spacing.sm / 2,
+  },
+  activeWorkspaceHeaderRow: {
+    backgroundColor: "transparent",
+    borderRadius: 6,
+  },
+  activeWorkspaceHeaderText: {
+    color: colors.accent,
+  },
+  groupHeaderArrowBtn: {
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    justifyContent: "center",
+    alignItems: "center",
   },
   addJobBtn: {
     width: 24,

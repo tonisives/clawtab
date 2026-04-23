@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { PaneContent, ShellPane, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { collectLeaves } from "@clawtab/shared";
@@ -6,6 +6,7 @@ import type { Job } from "../../../types";
 import { SINGLE_PANE_CACHE_LIMIT, paneContentCacheKey, shouldCacheSinglePaneContent } from "../utils";
 import { saveSinglePaneContent } from "./useViewingState";
 import type { useViewingState } from "./useViewingState";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface UseJobsTabEffectsParams {
   core: ReturnType<typeof useJobsCore>;
@@ -48,6 +49,12 @@ export function useJobsTabEffects({
     viewingShell,
     viewingAgent,
   } = viewing;
+  const mgr = useWorkspaceManager();
+  // Tracks the workspace we most recently persisted viewing state into. While
+  // this differs from mgr.activeId the workspace-switch effect hasn't yet
+  // restored viewing state for the new workspace, and persistence must not
+  // write stale (previous-workspace) content into the new workspace's slot.
+  const persistedActiveIdRef = useRef<string>(mgr.activeId);
   const [recentSinglePaneContents, setRecentSinglePaneContents] = useState<PaneContent[]>([]);
 
   useEffect(() => {
@@ -175,18 +182,91 @@ export function useJobsTabEffects({
     });
   }, [split.tree, currentContent]);
 
-  // Persist single-pane content (only when no split tree is active)
+  // When the active workspace changes, restore viewing state from the new
+  // workspace's persisted singlePaneContent so each workspace shows its own
+  // single-pane content instead of the previously-active workspace's.
+  useEffect(() => {
+    if (persistedActiveIdRef.current === mgr.activeId) return;
+    const target = mgr.getState(mgr.activeId);
+    // When the new workspace has a tree, the tree owns the view; clear any
+    // lingering single-pane viewing state so it doesn't persist back into the
+    // workspace's singlePaneContent slot.
+    if (target.tree) {
+      if (viewingJob) setViewingJob(null);
+      if (viewingProcess) setViewingProcess(null);
+      if (viewingShell) setViewingShell(null);
+      if (viewingAgent) setViewingAgent(false);
+      persistedActiveIdRef.current = mgr.activeId;
+      return;
+    }
+    const content = target.singlePaneContent;
+    if (!content) {
+      if (viewingJob) setViewingJob(null);
+      if (viewingProcess) setViewingProcess(null);
+      if (viewingShell) setViewingShell(null);
+      if (viewingAgent) setViewingAgent(false);
+      persistedActiveIdRef.current = mgr.activeId;
+      return;
+    }
+    if (content.kind === "job") {
+      const job = (core.jobs as Job[]).find((j) => j.slug === content.slug);
+      setViewingJob(job ?? ({ slug: content.slug } as Job));
+      if (viewingProcess) setViewingProcess(null);
+      if (viewingShell) setViewingShell(null);
+      if (viewingAgent) setViewingAgent(false);
+      persistedActiveIdRef.current = mgr.activeId;
+    } else if (content.kind === "agent") {
+      setViewingAgent(true);
+      if (viewingJob) setViewingJob(null);
+      if (viewingProcess) setViewingProcess(null);
+      if (viewingShell) setViewingShell(null);
+      persistedActiveIdRef.current = mgr.activeId;
+    } else if (content.kind === "process") {
+      const proc = core.processes.find((p) => p.pane_id === content.paneId);
+      if (proc) {
+        setViewingProcess(proc);
+        if (viewingJob) setViewingJob(null);
+        if (viewingShell) setViewingShell(null);
+        if (viewingAgent) setViewingAgent(false);
+        persistedActiveIdRef.current = mgr.activeId;
+      } else if (core.processes.length > 0) {
+        // Processes loaded but this one isn't present — content is stale.
+        if (viewingProcess) setViewingProcess(null);
+        persistedActiveIdRef.current = mgr.activeId;
+      }
+      // Else: wait for processes to load; effect re-runs via deps.
+    } else if (content.kind === "terminal") {
+      const shell = shellPanes.find((s) => s.pane_id === content.paneId);
+      if (shell) {
+        setViewingShell(shell);
+        if (viewingJob) setViewingJob(null);
+        if (viewingProcess) setViewingProcess(null);
+        if (viewingAgent) setViewingAgent(false);
+        persistedActiveIdRef.current = mgr.activeId;
+      }
+      // Else: wait for shells; effect re-runs via deps.
+    }
+  }, [mgr, mgr.activeId, core.jobs, core.processes, shellPanes, viewingJob, viewingProcess, viewingShell, viewingAgent, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent]);
+
+  // Persist single-pane content (only when no split tree is active).
   // Skip saving null while a deferred restore is still pending (process/terminal kinds
   // start with null viewing state and get resolved once backend data arrives).
+  // Skip entirely while a workspace switch is mid-restore (persistedActiveIdRef
+  // still points at the previous workspace) to avoid writing stale viewing
+  // state into the new workspace's slot.
   useEffect(() => {
+    if (persistedActiveIdRef.current !== mgr.activeId) return;
     if (split.tree) {
       saveSinglePaneContent(null);
+      mgr.updateActive({ singlePaneContent: null });
     } else if (currentContent) {
       saveSinglePaneContent(currentContent);
+      mgr.updateActive({ singlePaneContent: currentContent });
     } else if (!pendingRestore.current) {
       saveSinglePaneContent(null);
+      mgr.updateActive({ singlePaneContent: null });
     }
-  }, [split.tree, currentContent, pendingRestore]);
+  }, [split.tree, currentContent, pendingRestore, mgr, mgr.activeId]);
 
   // Deferred restoration for terminal/process panes (need backend data to be available)
   // Note: core.loaded tracks jobs, not processes. Processes load via a separate

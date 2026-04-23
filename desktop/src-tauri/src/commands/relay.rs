@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -37,10 +35,12 @@ pub fn get_relay_settings(state: State<AppState>) -> Option<RelaySettings> {
 }
 
 #[tauri::command]
-pub fn set_relay_settings(state: State<AppState>, settings: RelaySettings) -> Result<(), String> {
+pub async fn set_relay_settings(
+    state: State<'_, AppState>,
+    settings: RelaySettings,
+) -> Result<(), String> {
     let device_token = settings.device_token.clone();
 
-    // Store device_token in keychain, save empty string in yaml
     if !device_token.is_empty() {
         state
             .secrets
@@ -49,53 +49,37 @@ pub fn set_relay_settings(state: State<AppState>, settings: RelaySettings) -> Re
             .set(KEYCHAIN_DEVICE_TOKEN_KEY, &device_token)?;
     }
 
-    let mut s = state.settings.lock().unwrap();
-    // Refresh from disk so fields written by other processes (e.g. telegram via
-    // CLI) aren't clobbered by this in-memory copy.
-    let on_disk = crate::config::settings::AppSettings::load();
-    if s.telegram.is_none() {
-        s.telegram = on_disk.telegram;
+    {
+        let mut s = state.settings.lock().unwrap();
+        let on_disk = crate::config::settings::AppSettings::load();
+        if s.telegram.is_none() {
+            s.telegram = on_disk.telegram;
+        }
+        s.relay = Some(RelaySettings {
+            device_token: String::new(),
+            ..settings
+        });
+        s.save()?;
     }
-    s.relay = Some(RelaySettings {
-        device_token: String::new(),
-        ..settings
-    });
-    s.save()
+
+    let _ = crate::ipc::send_command(crate::ipc::IpcCommand::ReloadSettings).await;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn get_relay_status(state: State<AppState>) -> RelayStatus {
-    let settings = state.settings.lock().unwrap();
-    let relay = settings.relay.clone().unwrap_or_default();
-    drop(settings);
-    let connected = state.relay.lock().map(|g| g.is_some()).unwrap_or(false);
-    let subscription_required = *state
-        .relay_sub_required
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let auth_expired = *state
-        .relay_auth_expired
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-
-    let device_token_stored = !relay.device_token.is_empty()
-        || state
-            .secrets
-            .lock()
-            .unwrap()
-            .get(KEYCHAIN_DEVICE_TOKEN_KEY)
-            .map(|t| !t.is_empty())
-            .unwrap_or(false);
-    let configured = !relay.server_url.is_empty() && device_token_stored;
-
-    RelayStatus {
-        enabled: relay.enabled,
-        connected,
-        subscription_required,
-        auth_expired,
-        configured,
-        server_url: relay.server_url,
-        device_name: relay.device_name,
+pub async fn get_relay_status(_state: State<'_, AppState>) -> Result<RelayStatus, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::GetRelayStatus).await {
+        Ok(crate::ipc::IpcResponse::RelayStatus(s)) => Ok(RelayStatus {
+            enabled: s.enabled,
+            connected: s.connected,
+            subscription_required: s.subscription_required,
+            auth_expired: s.auth_expired,
+            configured: s.configured,
+            server_url: s.server_url,
+            device_name: s.device_name,
+        }),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
 }
 
@@ -238,92 +222,26 @@ pub fn relay_sign_out(state: State<AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn relay_disconnect(state: State<AppState>) {
-    if let Ok(guard) = state.relay.lock() {
-        if let Some(handle) = guard.as_ref() {
-            handle.disconnect();
-        }
+pub async fn relay_disconnect(_state: State<'_, AppState>) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::RelayDisconnect).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
 }
 
-/// Connect (or reconnect) to the relay server using the saved settings.
 #[tauri::command]
-pub fn relay_connect(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
-    let settings = state.settings.lock().unwrap();
-    let rs = settings
-        .relay
-        .as_ref()
-        .ok_or("No relay settings configured")?;
-    if rs.server_url.is_empty() {
-        return Err("Relay server URL not configured".to_string());
+pub async fn relay_connect(
+    _app: tauri::AppHandle,
+    _state: State<'_, AppState>,
+) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::RelayConnect).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
-
-    let server_url = rs.server_url.clone();
-
-    // Read device_token from yaml, fall back to keychain
-    let device_token = if rs.device_token.is_empty() {
-        drop(settings);
-        state
-            .secrets
-            .lock()
-            .unwrap()
-            .get(KEYCHAIN_DEVICE_TOKEN_KEY)
-            .cloned()
-            .unwrap_or_default()
-    } else {
-        let token = rs.device_token.clone();
-        drop(settings);
-        token
-    };
-
-    if device_token.is_empty() {
-        return Err("Device token not configured".to_string());
-    }
-
-    let settings = state.settings.lock().unwrap();
-    let rs = settings.relay.as_ref().unwrap();
-    let ws_url = if rs.server_url.starts_with("http") {
-        rs.server_url.replacen("http", "ws", 1) + "/ws"
-    } else {
-        rs.server_url.clone()
-    };
-    drop(settings);
-
-    // Clear subscription-required flag on manual connect
-    *state.relay_sub_required.lock().unwrap() = false;
-
-    let relay = Arc::clone(&state.relay);
-    let relay_sub = Arc::clone(&state.relay_sub_required);
-    let jobs_config = Arc::clone(&state.jobs_config);
-    let job_status = Arc::clone(&state.job_status);
-    let secrets = Arc::clone(&state.secrets);
-    let history = Arc::clone(&state.history);
-    let settings = Arc::clone(&state.settings);
-    let active_agents = Arc::clone(&state.active_agents);
-    let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
-    let pty_manager = Arc::clone(&state.pty_manager);
-
-    tauri::async_runtime::spawn(async move {
-        crate::relay::connect_loop(
-            ws_url,
-            device_token,
-            server_url,
-            relay,
-            relay_sub,
-            jobs_config,
-            job_status,
-            secrets,
-            history,
-            settings,
-            active_agents,
-            auto_yes_panes,
-            pty_manager,
-            std::sync::Arc::new(crate::events::TauriEventSink::new(app)),
-        )
-        .await;
-    });
-
-    Ok(())
 }
 
 #[tauri::command]

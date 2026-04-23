@@ -35,11 +35,29 @@ export interface SplitDragData {
   paneId?: string;
   tmuxSession?: string;
   source?: "sidebar" | "detail-pane";
+  /** Source workspace id when dragging a pane from a detail view. Used by the
+   *  WorkspaceManager to MOVE (not copy) across workspaces. */
+  sourceWorkspaceId?: string;
+}
+
+/** Controlled mode: caller owns tree/focus state and persistence.
+ *  The hook treats `controlled.tree` / `controlled.focusedLeafId` as inputs
+ *  and calls `onChange` whenever it wants to mutate either. Used by the
+ *  desktop WorkspaceManager to drive multiple workspaces from a single
+ *  active hook instance. `id` scopes the active workspace so the hook can
+ *  reset its internal refs when the caller switches workspaces. */
+export interface UseSplitTreeControlled {
+  id: string;
+  tree: SplitNode | null;
+  focusedLeafId: string | null;
+  onChange: (patch: { tree?: SplitNode | null; focusedLeafId?: string | null }) => void;
 }
 
 export interface UseSplitTreeOptions {
-  /** localStorage key for tree persistence */
-  storageKey: string;
+  /** localStorage key for tree persistence. Mutually exclusive with `controlled`. */
+  storageKey?: string;
+  /** Controlled mode. Mutually exclusive with `storageKey`. */
+  controlled?: UseSplitTreeControlled;
   /** Minimum pane size in pixels (default 200) */
   minPaneSize?: number;
   /** Called when tree collapses to a single leaf - restore single-selection mode */
@@ -156,11 +174,16 @@ function chooseSplitDirection(
 export function useSplitTree(options: UseSplitTreeOptions) {
   const {
     storageKey,
+    controlled,
     minPaneSize = 200,
     onCollapse,
     onReplaceSingle,
     currentContent,
   } = options;
+
+  if (!storageKey && !controlled) {
+    throw new Error("useSplitTree requires either storageKey or controlled");
+  }
 
   // Use refs for callbacks to avoid stale closures
   const onCollapseRef = useRef(onCollapse);
@@ -169,17 +192,42 @@ export function useSplitTree(options: UseSplitTreeOptions) {
   onReplaceSingleRef.current = onReplaceSingle;
   const currentContentRef = useRef(currentContent);
   currentContentRef.current = currentContent;
+  const controlledRef = useRef(controlled);
+  controlledRef.current = controlled;
 
-  // Split tree state
-  const [splitTree, setSplitTree] = useState<SplitNode | null>(() => loadTree(storageKey));
+  // Split tree state. In controlled mode seed from controlled inputs, and
+  // reset when controlled.id changes (workspace switch). Otherwise load from
+  // storageKey and persist back to it via an effect.
+  const [splitTree, setSplitTree] = useState<SplitNode | null>(() => {
+    if (controlled) {
+      if (controlled.tree) restoreIdCounter(controlled.tree);
+      return controlled.tree;
+    }
+    return loadTree(storageKey!);
+  });
   const [focusedLeafId, setFocusedLeafId] = useState<string | null>(() => {
-    const saved = loadFocusedLeaf(storageKey);
+    if (controlled) return controlled.focusedLeafId;
+    const saved = loadFocusedLeaf(storageKey!);
     if (!saved) return null;
-    const tree = loadTree(storageKey);
+    const tree = loadTree(storageKey!);
     if (!tree) return null;
     return collectLeaves(tree).some(l => l.id === saved) ? saved : null;
   });
   const [zoomSnapshot, setZoomSnapshot] = useState<{ tree: SplitNode; focusedLeafId: string | null; content: PaneContent } | null>(null);
+
+  // When the controlled id changes (workspace switch), hydrate state from the
+  // new workspace's controlled input. Track lastId so we don't repeatedly
+  // reset on every render.
+  const lastControlledIdRef = useRef<string | null>(controlled?.id ?? null);
+  useEffect(() => {
+    if (!controlled) return;
+    if (lastControlledIdRef.current === controlled.id) return;
+    lastControlledIdRef.current = controlled.id;
+    if (controlled.tree) restoreIdCounter(controlled.tree);
+    setSplitTree(controlled.tree);
+    setFocusedLeafId(controlled.focusedLeafId);
+    setZoomSnapshot(null);
+  }, [controlled?.id, controlled?.tree, controlled?.focusedLeafId, controlled]);
 
   // Persist tree on change. Also assert there are no duplicate ids — if there
   // are, the tree is corrupt and any subsequent replaceNode/splitLeaf will hit
@@ -201,7 +249,13 @@ export function useSplitTree(options: UseSplitTreeOptions) {
         console.error("[splitTree] duplicate leaf contents detected:", dupeContents, splitTree);
       }
     }
-    saveTree(storageKey, splitTree);
+    if (controlledRef.current) {
+      if (splitTree !== controlledRef.current.tree) {
+        controlledRef.current.onChange({ tree: splitTree });
+      }
+    } else if (storageKey) {
+      saveTree(storageKey, splitTree);
+    }
   }, [storageKey, splitTree]);
 
   // Wraps setSplitTree to validate every mutation. Logs which call site
@@ -232,7 +286,13 @@ export function useSplitTree(options: UseSplitTreeOptions) {
 
   // Persist focused leaf on change
   useEffect(() => {
-    saveFocusedLeaf(storageKey, focusedLeafId);
+    if (controlledRef.current) {
+      if (focusedLeafId !== controlledRef.current.focusedLeafId) {
+        controlledRef.current.onChange({ focusedLeafId });
+      }
+    } else if (storageKey) {
+      saveFocusedLeaf(storageKey, focusedLeafId);
+    }
   }, [storageKey, focusedLeafId]);
 
   // DnD state

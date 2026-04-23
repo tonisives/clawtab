@@ -15,6 +15,7 @@ export function ProcessCard({
   onPress,
   inGroup,
   selected,
+  softBorder,
   onStop,
   onRename,
   onSaveName,
@@ -28,6 +29,7 @@ export function ProcessCard({
   onPress?: () => void;
   inGroup?: boolean;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   onRename?: () => void;
   onSaveName?: (name: string) => void;
@@ -134,7 +136,7 @@ export function ProcessCard({
   const kind = kindForProcess(process);
 
   return (
-    <View style={[styles.processCard, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 }]}>
+    <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={editing ? undefined : onPress}

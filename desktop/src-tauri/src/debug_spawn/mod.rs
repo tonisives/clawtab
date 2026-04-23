@@ -100,21 +100,23 @@ where
         .join(" ")
 }
 
-fn record(
-    program: &str,
+struct SpawnRecord<'a> {
+    program: &'a str,
     args_str: String,
     callsite: &'static str,
     ts_start_ms: i64,
     duration_ms: i64,
     exit_code: Option<i32>,
-    stderr: &[u8],
+    stderr: &'a [u8],
     pid: Option<i64>,
-) {
+}
+
+fn record(r: SpawnRecord) {
     let Some(store) = STORE.get() else {
         return;
     };
-    let head_len = stderr.len().min(STDERR_HEAD_BYTES);
-    let stderr_head = String::from_utf8_lossy(&stderr[..head_len]).into_owned();
+    let head_len = r.stderr.len().min(STDERR_HEAD_BYTES);
+    let stderr_head = String::from_utf8_lossy(&r.stderr[..head_len]).into_owned();
     let Ok(conn) = store.lock() else {
         return;
     };
@@ -123,17 +125,17 @@ fn record(
            (ts_start_ms, duration_ms, program, args, callsite, exit_code, stderr_head, pid)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
-            ts_start_ms,
-            duration_ms,
-            program,
-            args_str,
-            callsite,
-            exit_code,
+            r.ts_start_ms,
+            r.duration_ms,
+            r.program,
+            r.args_str,
+            r.callsite,
+            r.exit_code,
             stderr_head,
-            pid
+            r.pid
         ],
     );
-    let cutoff = ts_start_ms - RETENTION_SECS * 1000;
+    let cutoff = r.ts_start_ms - RETENTION_SECS * 1000;
     let _ = conn.execute(
         "DELETE FROM spawn_events WHERE ts_start_ms < ?1",
         params![cutoff],
@@ -150,29 +152,29 @@ pub fn run_logged(program: &str, args: &[&str], callsite: &'static str) -> std::
     let args_str = args_to_string(args);
     match &out {
         Ok(output) => {
-            record(
+            record(SpawnRecord {
                 program,
                 args_str,
                 callsite,
-                ts,
+                ts_start_ms: ts,
                 duration_ms,
-                output.status.code(),
-                &output.stderr,
-                None,
-            );
+                exit_code: output.status.code(),
+                stderr: &output.stderr,
+                pid: None,
+            });
         }
         Err(e) => {
             let err = e.to_string();
-            record(
+            record(SpawnRecord {
                 program,
                 args_str,
                 callsite,
-                ts,
+                ts_start_ms: ts,
                 duration_ms,
-                None,
-                err.as_bytes(),
-                None,
-            );
+                exit_code: None,
+                stderr: err.as_bytes(),
+                pid: None,
+            });
         }
     }
     out

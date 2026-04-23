@@ -5,6 +5,7 @@ import { requestXtermPaneFocus } from "../../XtermPane";
 import type { Job } from "../../../types";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface UseAgentRunnerParams {
   actions: ReturnType<typeof useJobActions>;
@@ -38,6 +39,7 @@ export function useAgentRunner({
     setViewingProcess,
     setViewingShell,
   } = viewing;
+  const mgr = useWorkspaceManager();
 
   const handleGetAgentProviders = useCallback(async () => {
     return await transport.listAgentProviders?.() ?? [];
@@ -73,6 +75,7 @@ export function useAgentRunner({
       tmux_session: result.tmux_session,
       window_name: "",
       matched_group: matchedGroup,
+      workspace_id: mgr.activeId,
     };
     setShellPanes((prev) => prev.some((pane) => pane.pane_id === shell.pane_id) ? prev : [...prev, shell]);
 

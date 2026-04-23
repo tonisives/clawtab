@@ -9,6 +9,7 @@ import type { DragData } from "../../DraggableCards";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
 import type { useQuestionPolling } from "../../../hooks/useQuestionPolling";
 import type { useViewingState } from "./useViewingState";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface UseJobsTabHandlersParams {
   actions: ReturnType<typeof useJobActions>;
@@ -39,6 +40,7 @@ export function useJobsTabHandlers({
   split,
   viewing,
 }: UseJobsTabHandlersParams) {
+  const mgr = useWorkspaceManager();
   const {
     editingJob,
     paramsDialog,
@@ -148,9 +150,25 @@ export function useJobsTabHandlers({
     if (data?.kind === "process" && data.source === "sidebar" && overId) {
       handleProcessReorder(data.paneId, overId);
     }
+    // Cross-workspace MOVE: pane dragged from another workspace into the
+    // active one. Route through the manager so the source tree loses the
+    // leaf atomically. Skip split.handleDragEnd (which would copy).
+    const sourceWs = data?.source === "detail-pane" ? data.sourceWorkspaceId : undefined;
+    if (sourceWs && sourceWs !== mgr.activeId && data) {
+      let content: import("@clawtab/shared").PaneContent | null = null;
+      if (data.kind === "job") content = { kind: "job", slug: data.slug };
+      else if (data.kind === "process") content = { kind: "process", paneId: data.paneId };
+      else if (data.kind === "terminal") content = { kind: "terminal", paneId: data.paneId, tmuxSession: data.tmuxSession };
+      if (content) {
+        mgr.movePaneTo(mgr.activeId, content);
+        split.handleDragCancel();
+        blurActiveListElement();
+        return;
+      }
+    }
     split.handleDragEnd(event);
     blurActiveListElement();
-  }, [blurActiveListElement, handleJobReorder, handleProcessReorder, split]);
+  }, [blurActiveListElement, handleJobReorder, handleProcessReorder, mgr, split]);
 
   const handleDragCancel = useCallback(() => {
     split.handleDragCancel();

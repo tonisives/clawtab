@@ -3,9 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::config::jobs::{Job, JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
-use crate::history::HistoryStore;
-use crate::relay::RelayHandle;
-use crate::secrets::SecretsManager;
+use crate::job_context::JobContext;
 use crate::tmux;
 
 use super::commands::{self, AgentCommand};
@@ -25,11 +23,9 @@ fn lock_or_log<'a, T>(mutex: &'a Mutex<T>, name: &str) -> Option<std::sync::Mute
 pub struct AgentState {
     pub settings: Arc<Mutex<AppSettings>>,
     pub jobs_config: Arc<Mutex<JobsConfig>>,
-    pub secrets: Arc<Mutex<SecretsManager>>,
-    pub history: Arc<Mutex<HistoryStore>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    pub relay: Arc<Mutex<Option<RelayHandle>>>,
+    pub ctx: JobContext,
 }
 
 pub async fn start_polling(state: AgentState) {
@@ -273,24 +269,14 @@ async fn handle_message(
                             )
                         } else {
                             let job = job.clone();
-                            let secrets = Arc::clone(&state.secrets);
-                            let history = Arc::clone(&state.history);
-                            let settings = Arc::clone(&state.settings);
-                            let job_status = Arc::clone(&state.job_status);
-                            let active_agents = Arc::clone(&state.active_agents);
-                            let relay = Arc::clone(&state.relay);
+                            let ctx = state.ctx.clone();
                             tokio::spawn(async move {
                                 crate::scheduler::executor::execute_job(
                                     &job,
-                                    &secrets,
-                                    &history,
-                                    &settings,
-                                    &job_status,
+                                    &ctx,
                                     "telegram",
-                                    &active_agents,
-                                    &relay,
                                     &params,
-                                    None,
+                                    crate::scheduler::executor::ExecuteOpts::default(),
                                 )
                                 .await;
                             });
@@ -298,24 +284,14 @@ async fn handle_message(
                         }
                     }
                     Some(job) => {
-                        let secrets = Arc::clone(&state.secrets);
-                        let history = Arc::clone(&state.history);
-                        let settings = Arc::clone(&state.settings);
-                        let job_status = Arc::clone(&state.job_status);
-                        let active_agents = Arc::clone(&state.active_agents);
-                        let relay = Arc::clone(&state.relay);
+                        let ctx = state.ctx.clone();
                         tokio::spawn(async move {
                             crate::scheduler::executor::execute_job(
                                 &job,
-                                &secrets,
-                                &history,
-                                &settings,
-                                &job_status,
+                                &ctx,
                                 "telegram",
-                                &active_agents,
-                                &relay,
                                 &params,
-                                None,
+                                crate::scheduler::executor::ExecuteOpts::default(),
                             )
                             .await;
                         });
@@ -395,27 +371,16 @@ async fn handle_agent_command(
         Err(e) => return format!("Failed to build agent job: {}", e),
     };
 
-    let secrets = Arc::clone(&state.secrets);
-    let history = Arc::clone(&state.history);
-    let settings_arc = Arc::clone(&state.settings);
-    let job_status = Arc::clone(&state.job_status);
-
     let active_agents = Arc::clone(&state.active_agents);
-    let active_agents_for_exec = Arc::clone(&state.active_agents);
-    let relay = Arc::clone(&state.relay);
+    let ctx = state.ctx.clone();
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job,
-            &secrets,
-            &history,
-            &settings_arc,
-            &job_status,
+            &ctx,
             "telegram",
-            &active_agents_for_exec,
-            &relay,
             &std::collections::HashMap::new(),
-            None,
+            crate::scheduler::executor::ExecuteOpts::default(),
         )
         .await;
     });

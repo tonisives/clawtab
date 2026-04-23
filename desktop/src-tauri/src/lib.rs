@@ -18,6 +18,7 @@ mod debug_spawn;
 pub mod events;
 pub mod history;
 pub mod ipc;
+pub mod job_context;
 pub mod notifications;
 pub mod pty;
 pub mod questions;
@@ -26,7 +27,7 @@ pub mod scheduler;
 pub mod secrets;
 pub mod telegram;
 mod terminal;
-mod tmux;
+pub mod tmux;
 mod tools;
 #[cfg(feature = "desktop")]
 mod updater;
@@ -56,9 +57,6 @@ use config::settings::{AppSettings, ShortcutSettings};
 #[cfg(feature = "desktop")]
 use history::HistoryStore;
 #[cfg(feature = "desktop")]
-use ipc::{IpcCommand, IpcResponse};
-#[cfg(feature = "desktop")]
-#[cfg(feature = "desktop")]
 use secrets::SecretsManager;
 
 #[cfg(feature = "desktop")]
@@ -80,7 +78,6 @@ pub struct AppState {
     pub notification_state: Arc<Mutex<notifications::NotificationState>>,
     pub app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
     pub pty_manager: pty::SharedPtyManager,
-    pub ui_only_mode: Arc<Mutex<bool>>,
 }
 
 #[cfg(feature = "desktop")]
@@ -312,219 +309,6 @@ pub fn refresh_shortcut_menu(
 }
 
 #[cfg(feature = "desktop")]
-fn handle_ipc_command(state: &AppState, cmd: IpcCommand) -> IpcResponse {
-    match cmd {
-        IpcCommand::Ping => IpcResponse::Pong,
-        IpcCommand::ListJobs => {
-            let jobs = state.jobs_config.lock().unwrap();
-            let names: Vec<String> = jobs.jobs.iter().map(|j| j.name.clone()).collect();
-            IpcResponse::Jobs(names)
-        }
-        IpcCommand::RunJob { name } => {
-            let jobs = state.jobs_config.lock().unwrap();
-            let job = jobs.jobs.iter().find(|j| j.name == name);
-            match job {
-                Some(job) => {
-                    let job = job.clone();
-                    let secrets = Arc::clone(&state.secrets);
-                    let history = Arc::clone(&state.history);
-                    let settings = Arc::clone(&state.settings);
-                    let job_status = Arc::clone(&state.job_status);
-                    let active_agents = Arc::clone(&state.active_agents);
-                    let relay = Arc::clone(&state.relay);
-                    tauri::async_runtime::spawn(async move {
-                        scheduler::executor::execute_job(
-                            &job,
-                            &secrets,
-                            &history,
-                            &settings,
-                            &job_status,
-                            "cli",
-                            &active_agents,
-                            &relay,
-                            &std::collections::HashMap::new(),
-                            None,
-                        )
-                        .await;
-                    });
-                    IpcResponse::Ok
-                }
-                None => IpcResponse::Error(format!("Job not found: {}", name)),
-            }
-        }
-        IpcCommand::PauseJob { name } => {
-            let mut status = state.job_status.lock().unwrap();
-            match status.get(&name) {
-                Some(config::jobs::JobStatus::Running { .. }) => {
-                    status.insert(name, config::jobs::JobStatus::Paused);
-                    IpcResponse::Ok
-                }
-                _ => IpcResponse::Error("Job is not running".to_string()),
-            }
-        }
-        IpcCommand::ResumeJob { name } => {
-            let mut status = state.job_status.lock().unwrap();
-            match status.get(&name) {
-                Some(config::jobs::JobStatus::Paused) => {
-                    status.insert(name, config::jobs::JobStatus::Idle);
-                    IpcResponse::Ok
-                }
-                _ => IpcResponse::Error("Job is not paused".to_string()),
-            }
-        }
-        IpcCommand::RestartJob { name } => {
-            let jobs = state.jobs_config.lock().unwrap();
-            let job = jobs.jobs.iter().find(|j| j.name == name);
-            match job {
-                Some(job) => {
-                    let job = job.clone();
-                    let secrets = Arc::clone(&state.secrets);
-                    let history = Arc::clone(&state.history);
-                    let settings = Arc::clone(&state.settings);
-                    let job_status = Arc::clone(&state.job_status);
-                    let active_agents = Arc::clone(&state.active_agents);
-                    let relay = Arc::clone(&state.relay);
-                    tauri::async_runtime::spawn(async move {
-                        scheduler::executor::execute_job(
-                            &job,
-                            &secrets,
-                            &history,
-                            &settings,
-                            &job_status,
-                            "restart",
-                            &active_agents,
-                            &relay,
-                            &std::collections::HashMap::new(),
-                            None,
-                        )
-                        .await;
-                    });
-                    IpcResponse::Ok
-                }
-                None => IpcResponse::Error(format!("Job not found: {}", name)),
-            }
-        }
-        IpcCommand::GetStatus => {
-            let status = state.job_status.lock().unwrap().clone();
-            IpcResponse::Status(status)
-        }
-        IpcCommand::OpenSettings => {
-            // GUI-only command, handled by the Tauri app
-            IpcResponse::Ok
-        }
-        IpcCommand::OpenPane { pane_id } => {
-            if let Some(handle) = state.app_handle.lock().unwrap().as_ref() {
-                // Show the window
-                if let Some(window) = handle.get_webview_window("settings") {
-                    #[cfg(target_os = "macos")]
-                    let _ = handle.set_activation_policy(tauri::ActivationPolicy::Regular);
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-                // Emit event to frontend
-                let _ = handle.emit("open-pane", &pane_id);
-            }
-            IpcResponse::Ok
-        }
-        IpcCommand::GetAutoYesPanes => {
-            let panes: Vec<String> = state
-                .auto_yes_panes
-                .lock()
-                .unwrap()
-                .iter()
-                .cloned()
-                .collect();
-            IpcResponse::AutoYesPanes(panes)
-        }
-        IpcCommand::SetAutoYesPanes { pane_ids } => {
-            let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
-            *state.auto_yes_panes.lock().unwrap() = pane_set;
-
-            if let Ok(guard) = state.relay.lock() {
-                if let Some(handle) = guard.as_ref() {
-                    handle
-                        .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
-                }
-            }
-
-            IpcResponse::Ok
-        }
-        IpcCommand::ToggleAutoYes { pane_id } => {
-            let mut panes = state.auto_yes_panes.lock().unwrap();
-            let was_enabled = panes.contains(&pane_id);
-            if was_enabled {
-                panes.remove(&pane_id);
-            } else {
-                panes.insert(pane_id.clone());
-            }
-            let pane_ids: Vec<String> = panes.iter().cloned().collect();
-            drop(panes);
-
-            // Push to relay for cross-device sync
-            if let Ok(guard) = state.relay.lock() {
-                if let Some(handle) = guard.as_ref() {
-                    handle
-                        .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
-                }
-            }
-
-            IpcResponse::Ok
-        }
-        IpcCommand::GetActiveQuestions => {
-            let qs = state.active_questions.lock().unwrap().clone();
-            IpcResponse::ActiveQuestions(qs)
-        }
-        IpcCommand::ListSecretKeys => {
-            let secrets = state.secrets.lock().unwrap();
-            IpcResponse::SecretKeys(secrets.list_keys())
-        }
-        IpcCommand::GetSecretValues { keys } => {
-            let secrets = state.secrets.lock().unwrap();
-            let pairs: Vec<(String, String)> = keys
-                .iter()
-                .filter_map(|k| secrets.get(k).map(|v| (k.clone(), v.clone())))
-                .collect();
-            IpcResponse::SecretValues(pairs)
-        }
-        IpcCommand::GetPaneInfo { pane_id } => {
-            // Resolve pane_pid from tmux
-            let pane_pid = std::process::Command::new("tmux")
-                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_id} #{pane_pid}"])
-                .output()
-                .ok()
-                .and_then(|o| {
-                    if o.status.success() {
-                        let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                        stdout
-                            .lines()
-                            .find(|l| l.starts_with(&format!("{} ", pane_id)))
-                            .and_then(|l| l.split_whitespace().nth(1))
-                            .map(|s| s.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default();
-
-            if pane_pid.is_empty() {
-                IpcResponse::PaneInfo {
-                    first_query: None,
-                    last_query: None,
-                    session_started_at: None,
-                }
-            } else {
-                let info = agent_session::resolve_session_info(&pane_pid);
-                IpcResponse::PaneInfo {
-                    first_query: info.first_query,
-                    last_query: info.last_query,
-                    session_started_at: info.session_started_at,
-                }
-            }
-        }
-    }
-}
-
-#[cfg(feature = "desktop")]
 fn init_file_logger() {
     use std::fs;
 
@@ -605,8 +389,6 @@ pub fn run() {
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
     let pty_manager: pty::SharedPtyManager = Arc::new(Mutex::new(pty::PtyManager::new()));
 
-    let ui_only_mode: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-
     let app_state = AppState {
         settings: Arc::clone(&settings),
         jobs_config: Arc::clone(&jobs_config),
@@ -625,88 +407,9 @@ pub fn run() {
         notification_state: Arc::clone(&notification_state),
         app_handle: Arc::clone(&ipc_app_handle),
         pty_manager: Arc::clone(&pty_manager),
-        ui_only_mode: Arc::clone(&ui_only_mode),
     };
 
-    // Clones for IPC handler
-    let state_for_ipc = AppState {
-        settings: Arc::clone(&settings),
-        jobs_config: Arc::clone(&jobs_config),
-        secrets: Arc::clone(&secrets),
-        history: Arc::clone(&history),
-        scheduler: Arc::clone(&app_state.scheduler),
-        job_status: Arc::clone(&job_status),
-        active_agents: Arc::clone(&active_agents),
-        relay: Arc::clone(&relay_handle),
-        relay_sub_required: Arc::clone(&relay_sub_required),
-        relay_auth_expired: Arc::clone(&relay_auth_expired),
-        active_questions: Arc::clone(&active_questions),
-        auto_yes_panes: Arc::clone(&auto_yes_panes),
-        protected_panes: Arc::clone(&protected_panes),
-        process_overrides: Arc::clone(&process_overrides),
-        notification_state: Arc::clone(&notification_state),
-        app_handle: Arc::clone(&ipc_app_handle),
-        pty_manager: Arc::clone(&pty_manager),
-        ui_only_mode: Arc::clone(&ui_only_mode),
-    };
-
-    // Clones for scheduler
-    let jobs_for_scheduler = Arc::clone(&jobs_config);
-    let secrets_for_scheduler = Arc::clone(&secrets);
-    let history_for_scheduler = Arc::clone(&history);
-    let settings_for_scheduler = Arc::clone(&settings);
-    let job_status_for_scheduler = Arc::clone(&job_status);
-    let active_agents_for_scheduler = Arc::clone(&active_agents);
-    let relay_for_scheduler = Arc::clone(&relay_handle);
-    let auto_yes_for_scheduler = Arc::clone(&auto_yes_panes);
-    let protected_for_scheduler = Arc::clone(&protected_panes);
-
-    // Clones for reattach
-    let jobs_for_reattach = Arc::clone(&jobs_config);
-    let settings_for_reattach = Arc::clone(&settings);
-    let job_status_for_reattach = Arc::clone(&job_status);
-    let history_for_reattach = Arc::clone(&history);
-    let active_agents_for_reattach = Arc::clone(&active_agents);
-    let relay_for_reattach = Arc::clone(&relay_handle);
-    let auto_yes_for_reattach = Arc::clone(&auto_yes_panes);
-    let protected_for_reattach = Arc::clone(&protected_panes);
-
-    // Clones for relay
-    let relay_for_setup = Arc::clone(&relay_handle);
-    let relay_sub_for_setup = Arc::clone(&relay_sub_required);
-    let settings_for_relay = Arc::clone(&settings);
-    let jobs_for_relay = Arc::clone(&jobs_config);
-    let job_status_for_relay = Arc::clone(&job_status);
-    let secrets_for_relay = Arc::clone(&secrets);
-    let history_for_relay = Arc::clone(&history);
-    let active_agents_for_relay = Arc::clone(&active_agents);
-    let auto_yes_for_relay = Arc::clone(&auto_yes_panes);
-    let pty_manager_for_relay = Arc::clone(&pty_manager);
-
-    // Clones for question detection loop
-    let jobs_for_questions = Arc::clone(&jobs_config);
-    let job_status_for_questions = Arc::clone(&job_status);
-    let relay_for_questions = Arc::clone(&relay_handle);
-    let active_questions_for_loop = Arc::clone(&active_questions);
-    let auto_yes_for_questions = Arc::clone(&auto_yes_panes);
-    let notification_state_for_questions = Arc::clone(&notification_state);
-
-    // Clones for fs watcher
-    let jobs_for_watcher = Arc::clone(&jobs_config);
-
-    // Clones for update checker
     let settings_for_updater = Arc::clone(&settings);
-
-    // Clones for telegram agent
-    let telegram_agent_state = telegram::polling::AgentState {
-        settings: Arc::clone(&settings),
-        jobs_config: Arc::clone(&jobs_config),
-        secrets: Arc::clone(&secrets),
-        history: Arc::clone(&history),
-        job_status: Arc::clone(&job_status),
-        active_agents: Arc::clone(&active_agents),
-        relay: Arc::clone(&relay_handle),
-    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -1061,149 +764,15 @@ pub fn run() {
                 });
             }
 
-            // Check if the daemon is already running. If so, skip spawning
-            // background tasks (scheduler, questions, relay, etc.) since the
-            // daemon owns them. The desktop app becomes a pure UI client.
-            // Use a synchronous socket probe - the async runtime isn't available
-            // yet inside the Tauri setup hook.
-            let daemon_running =
-                std::os::unix::net::UnixStream::connect("/tmp/clawtab.sock").is_ok();
-
-            if daemon_running {
-                log::info!("Daemon detected - desktop app running in UI-only mode");
-                *ui_only_mode.lock().unwrap() = true;
-            } else {
-                log::info!("No daemon detected - desktop app running all background tasks");
-
-                // Start IPC server (only when daemon is not running)
-                tauri::async_runtime::spawn(async move {
-                    let handler = move |cmd: IpcCommand| -> IpcResponse {
-                        handle_ipc_command(&state_for_ipc, cmd)
-                    };
-                    if let Err(e) = ipc::start_ipc_server(handler).await {
-                        log::error!("IPC server error: {}", e);
-                    }
-                });
-
-                // Create shared trait objects for background tasks
-                let event_sink: Arc<dyn events::EventSink> =
-                    Arc::new(events::TauriEventSink::new(app.handle().clone()));
-                let notifier: Arc<dyn notifications::Notifier> =
-                    Arc::new(notifications::TauriNotifier::new(app.handle().clone()));
-
-                // Start scheduler
-                let scheduler_handle = tauri::async_runtime::spawn(scheduler::start(
-                    Arc::clone(&event_sink),
-                    jobs_for_scheduler,
-                    secrets_for_scheduler,
-                    history_for_scheduler,
-                    settings_for_scheduler,
-                    job_status_for_scheduler,
-                    active_agents_for_scheduler,
-                    relay_for_scheduler,
-                    auto_yes_for_scheduler,
-                    protected_for_scheduler,
-                ));
-                {
-                    let state: tauri::State<AppState> = app.state();
-                    *state.scheduler.lock().unwrap() = Some(scheduler_handle);
-                }
-
-                // Reattach jobs still running in tmux from previous session
-                let event_sink_for_reattach: Arc<dyn events::EventSink> = Arc::clone(&event_sink);
-                tauri::async_runtime::spawn(async move {
-                    scheduler::reattach::reattach_running_jobs(
-                        event_sink_for_reattach.as_ref(),
-                        &jobs_for_reattach,
-                        &settings_for_reattach,
-                        &job_status_for_reattach,
-                        &history_for_reattach,
-                        &active_agents_for_reattach,
-                        &relay_for_reattach,
-                        &auto_yes_for_reattach,
-                        &protected_for_reattach,
-                    );
-                    // Startup cleanup runs before the frontend can sync protected panes,
-                    // so pass an empty set -- orphans from a previous run are fair game.
-                    scheduler::reattach::cleanup_orphaned_shell_windows(&HashSet::new());
-                });
-
-                // Start relay connection if configured
-                {
-                    let relay_settings = settings_for_relay.lock().unwrap().relay.clone();
-                    if let Some(rs) = relay_settings {
-                        // Read device_token from yaml, fall back to keychain
-                        let device_token = if rs.device_token.is_empty() {
-                            secrets_for_relay
-                                .lock()
-                                .unwrap()
-                                .get("relay_device_token")
-                                .cloned()
-                                .unwrap_or_default()
-                        } else {
-                            rs.device_token.clone()
-                        };
-
-                        if rs.enabled && !rs.server_url.is_empty() && !device_token.is_empty() {
-                            let ws_url = if rs.server_url.starts_with("http") {
-                                rs.server_url.replacen("http", "ws", 1) + "/ws"
-                            } else {
-                                rs.server_url.clone()
-                            };
-                            let server_url_for_sub = rs.server_url.clone();
-                            let event_sink_for_relay: Arc<dyn events::EventSink> =
-                                Arc::clone(&event_sink);
-                            tauri::async_runtime::spawn(async move {
-                                relay::connect_loop(
-                                    ws_url,
-                                    device_token,
-                                    server_url_for_sub,
-                                    relay_for_setup,
-                                    relay_sub_for_setup,
-                                    jobs_for_relay,
-                                    job_status_for_relay,
-                                    secrets_for_relay,
-                                    history_for_relay,
-                                    settings_for_relay,
-                                    active_agents_for_relay,
-                                    auto_yes_for_relay,
-                                    pty_manager_for_relay,
-                                    event_sink_for_relay,
-                                )
-                                .await;
-                            });
-                        }
-                    }
-                }
-
-                // Start question detection loop
-                let notifier_for_questions = Arc::clone(&notifier);
-                tauri::async_runtime::spawn(async move {
-                    questions::question_detection_loop(
-                        jobs_for_questions,
-                        job_status_for_questions,
-                        relay_for_questions,
-                        active_questions_for_loop,
-                        auto_yes_for_questions,
-                        notifier_for_questions,
-                        notification_state_for_questions,
-                    )
-                    .await;
-                });
-
-                // Start telegram agent polling
-                tauri::async_runtime::spawn(async move {
-                    log::info!("Telegram polling task spawned");
-                    telegram::polling::start_polling(telegram_agent_state).await;
-                    log::error!("Telegram polling loop exited unexpectedly");
-                });
-
-                // Watch jobs config dir for external changes
-                let event_sink_for_watcher: Arc<dyn events::EventSink> = Arc::clone(&event_sink);
-                tauri::async_runtime::spawn(async move {
-                    watcher::watch_jobs_dir(jobs_for_watcher, event_sink_for_watcher).await;
-                });
-            }
+            // Desktop is always a UI-only client. The clawtab-daemon owns
+            // scheduler, relay, question detection, telegram polling, watcher,
+            // and shared state (job_status, auto_yes_panes, relay handle, etc.).
+            // Shared-state commands proxy to the daemon via IPC; the daemon
+            // pushes state-change events back over a subscription socket.
+            let event_app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                events::run_daemon_event_subscription(event_app_handle).await;
+            });
 
             // Always start auto-update checker (desktop-only concern)
             updater::start_update_checker(app.handle().clone(), settings_for_updater);

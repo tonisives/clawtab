@@ -8,11 +8,9 @@ use clawtab_protocol::{
 };
 
 use crate::config::jobs::{JobStatus, JobsConfig};
-use crate::config::settings::AppSettings;
 use crate::events::EventSink;
 use crate::history::HistoryStore;
-use crate::secrets::SecretsManager;
-use crate::telegram::ActiveAgent;
+use crate::job_context::JobContext;
 
 use crate::pty::{OutputSink, SharedPtyManager};
 
@@ -23,16 +21,15 @@ use super::{job_to_remote, status_to_remote, RelayHandle};
 pub async fn handle_incoming(
     text: &str,
     jobs_config: &Arc<Mutex<JobsConfig>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
-    auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
+    ctx: &JobContext,
     pty_manager: &SharedPtyManager,
     event_sink: &dyn EventSink,
 ) -> Option<String> {
+    let job_status = &ctx.job_status;
+    let history = &ctx.history;
+    let settings = &ctx.settings;
+    let relay = &ctx.relay;
+    let auto_yes_panes = &ctx.auto_yes_panes;
     let msg: ClientMessage = match serde_json::from_str(text) {
         Ok(m) => m,
         Err(_) => {
@@ -61,17 +58,7 @@ pub async fn handle_incoming(
         }
 
         ClientMessage::RunJob { id, name, params } => {
-            let result = run_job(
-                &name,
-                &params,
-                jobs_config,
-                secrets,
-                history,
-                settings,
-                job_status,
-                active_agents,
-                relay,
-            );
+            let result = run_job(&name, &params, jobs_config, ctx);
             event_sink.emit_jobs_changed();
             Some(DesktopMessage::RunJobAck {
                 id,
@@ -159,17 +146,7 @@ pub async fn handle_incoming(
             prompt,
             work_dir,
         } => {
-            let result = run_agent(
-                &prompt,
-                work_dir.as_deref(),
-                jobs_config,
-                secrets,
-                history,
-                settings,
-                job_status,
-                active_agents,
-                relay,
-            );
+            let result = run_agent(&prompt, work_dir.as_deref(), jobs_config, ctx);
             Some(DesktopMessage::RunAgentAck {
                 id,
                 success: result.is_ok(),
@@ -179,23 +156,14 @@ pub async fn handle_incoming(
 
         ClientMessage::CreateJob {
             id,
-            name,
-            job_type,
-            path,
-            prompt,
-            cron,
-            group,
+            name: _,
+            job_type: _,
+            path: _,
+            prompt: _,
+            cron: _,
+            group: _,
         } => {
-            let result = create_job(
-                &name,
-                &job_type,
-                &path,
-                &prompt,
-                &cron,
-                &group,
-                jobs_config,
-                settings,
-            );
+            let result = create_job();
             if result.is_ok() {
                 event_sink.emit_jobs_changed();
             }
@@ -384,12 +352,7 @@ fn run_job(
     name: &str,
     params: &HashMap<String, String>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    ctx: &JobContext,
 ) -> Result<(), String> {
     let job = {
         let config = jobs_config.lock().unwrap();
@@ -401,26 +364,16 @@ fn run_job(
             .ok_or_else(|| format!("job not found: {}", name))?
     };
 
-    let secrets = Arc::clone(secrets);
-    let history = Arc::clone(history);
-    let settings = Arc::clone(settings);
-    let job_status = Arc::clone(job_status);
-    let active_agents = Arc::clone(active_agents);
-    let relay = Arc::clone(relay);
+    let ctx = ctx.clone();
     let params = params.clone();
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job,
-            &secrets,
-            &history,
-            &settings,
-            &job_status,
+            &ctx,
             "remote",
-            &active_agents,
-            &relay,
             &params,
-            None,
+            crate::scheduler::executor::ExecuteOpts::default(),
         )
         .await;
     });
@@ -547,40 +500,25 @@ fn run_agent(
     prompt: &str,
     work_dir: Option<&str>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
-    secrets: &Arc<Mutex<SecretsManager>>,
-    history: &Arc<Mutex<HistoryStore>>,
-    settings: &Arc<Mutex<AppSettings>>,
-    job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    ctx: &JobContext,
 ) -> Result<String, String> {
     let (s, jobs) = {
-        let s = settings.lock().unwrap().clone();
+        let s = ctx.settings.lock().unwrap().clone();
         let j = jobs_config.lock().unwrap().jobs.clone();
         (s, j)
     };
     let job = crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, None, None)?;
     let job_id = job.name.clone();
 
-    let secrets = Arc::clone(secrets);
-    let history = Arc::clone(history);
-    let settings = Arc::clone(settings);
-    let job_status = Arc::clone(job_status);
-    let active_agents = Arc::clone(active_agents);
-    let relay = Arc::clone(relay);
+    let ctx = ctx.clone();
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job,
-            &secrets,
-            &history,
-            &settings,
-            &job_status,
+            &ctx,
             "remote",
-            &active_agents,
-            &relay,
             &HashMap::new(),
-            None,
+            crate::scheduler::executor::ExecuteOpts::default(),
         )
         .await;
     });
@@ -588,16 +526,7 @@ fn run_agent(
     Ok(job_id)
 }
 
-fn create_job(
-    _name: &str,
-    _job_type: &str,
-    _path: &str,
-    _prompt: &str,
-    _cron: &str,
-    _group: &str,
-    _jobs_config: &Arc<Mutex<JobsConfig>>,
-    _settings: &Arc<Mutex<AppSettings>>,
-) -> Result<(), String> {
+fn create_job() -> Result<(), String> {
     // TODO: implement remote job creation
     Err("remote job creation not yet implemented".to_string())
 }

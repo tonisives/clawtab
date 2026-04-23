@@ -15,11 +15,13 @@ export function DraggableJobCard({
   status,
   onPress,
   selected,
+  softBorder,
 }: {
   job: RemoteJob
   status: JobStatus
   onPress?: () => void
   selected?: boolean | string
+  softBorder?: boolean
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-job-${job.slug}`,
@@ -34,9 +36,9 @@ export function DraggableJobCard({
       {...attributes}
     >
       {status.state === "running" ? (
-        <RunningJobCard job={job} status={status} onPress={onPress} selected={selected} />
+        <RunningJobCard job={job} status={status} onPress={onPress} selected={selected} softBorder={softBorder} />
       ) : (
-        <JobCard job={job} status={status} onPress={onPress} selected={selected} />
+        <JobCard job={job} status={status} onPress={onPress} selected={selected} softBorder={softBorder} />
       )}
     </div>
   )
@@ -47,11 +49,13 @@ export function DraggableProcessCard({
   onPress,
   inGroup,
   selected,
+  softBorder,
 }: {
   process: DetectedProcess
   onPress?: () => void
   inGroup?: boolean
   selected?: boolean | string
+  softBorder?: boolean
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-process-${process.pane_id}`,
@@ -65,7 +69,7 @@ export function DraggableProcessCard({
       {...listeners}
       {...attributes}
     >
-      <ProcessCard process={process} onPress={onPress} inGroup={inGroup} selected={selected} />
+      <ProcessCard process={process} onPress={onPress} inGroup={inGroup} selected={selected} softBorder={softBorder} />
     </div>
   )
 }

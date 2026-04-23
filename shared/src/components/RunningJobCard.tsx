@@ -15,6 +15,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   status,
   onPress,
   selected,
+  softBorder,
   onStop,
   autoYesActive,
   stopping,
@@ -24,6 +25,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   status: JobStatus;
   onPress?: () => void;
   selected?: boolean | string;
+  softBorder?: boolean;
   onStop?: () => void;
   autoYesActive?: boolean;
   stopping?: boolean;
@@ -37,7 +39,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   const showMenu = onStop && !stopping;
   return (
     <TouchableOpacity
-      style={[styles.card, selected && { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2 }]}
+      style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2 } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}
       onPress={onPress}
       activeOpacity={0.7}
     >

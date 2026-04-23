@@ -272,6 +272,8 @@ function createPaneInstance(paneId: string, tmuxSession: string, resolvedGroup: 
     if (inst.pendingShortcutStrokeRef.current && e.key === "Escape") {
       inst.pendingShortcutStrokeRef.current = null;
       inst.suppressedKeyRef.current = "Escape";
+      e.preventDefault();
+      e.stopPropagation();
       return false;
     }
 
@@ -291,6 +293,8 @@ function createPaneInstance(paneId: string, tmuxSession: string, resolvedGroup: 
         inst.pendingShortcutStrokeRef.current = null;
         inst.suppressedKeyRef.current = e.key;
       }
+      e.preventDefault();
+      e.stopPropagation();
       return false;
     }
 
@@ -299,6 +303,8 @@ function createPaneInstance(paneId: string, tmuxSession: string, resolvedGroup: 
     if (appBindings.some((binding) => shortcutStartsWith(binding, stroke, shortcuts.prefix_key))) {
       inst.pendingShortcutStrokeRef.current = stroke;
       inst.suppressedKeyRef.current = e.key;
+      e.preventDefault();
+      e.stopPropagation();
       return false;
     }
 
@@ -311,6 +317,8 @@ function createPaneInstance(paneId: string, tmuxSession: string, resolvedGroup: 
         dispatchAppShortcut(singleStrokeBinding, paneId, action);
       }
       inst.suppressedKeyRef.current = e.key;
+      e.preventDefault();
+      e.stopPropagation();
       return false;
     }
     return true;

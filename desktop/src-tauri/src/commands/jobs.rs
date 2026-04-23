@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
@@ -8,7 +7,6 @@ use crate::agent_session::ProcessProvider;
 use crate::config::jobs::{Job, JobStatus};
 use crate::config::settings::AppSettings;
 use crate::cwt::CwtFolder;
-use crate::scheduler;
 use crate::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,11 +58,8 @@ pub fn save_cached_jobs_snapshot(
 pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Result<(), String> {
     let mut config = state.jobs_config.lock().unwrap();
 
-    // Derive slug if not set
     let mut job = job;
     if job.slug.is_empty() {
-        // If a job with the same name already exists, reuse its slug
-        // to update in place instead of creating a duplicate.
         if let Some(existing) = config.jobs.iter().find(|j| j.name == job.name) {
             job.slug = existing.slug.clone();
         } else {
@@ -77,19 +72,13 @@ pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Resu
     }
 
     config.save_job(&job)?;
-
-    // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
 
-    // Regenerate all cwt.md context files (agent + per-job)
     let settings = state.settings.lock().unwrap().clone();
     let jobs = config.jobs.clone();
     drop(config);
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
-
-    // Push updated jobs to relay
-    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -152,9 +141,6 @@ pub fn rename_job(
     drop(config);
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
-
-    // Push updated jobs to relay
-    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -236,8 +222,6 @@ pub fn import_job_folder(
     drop(config);
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
-
-    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
 
     let _ = app.emit("jobs-changed", ());
 
@@ -358,248 +342,111 @@ pub fn duplicate_job(
     ensure_agent_dir(&settings, &jobs);
     regenerate_all_cwt_contexts(&settings, &jobs);
 
-    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
-
     let _ = app.emit("jobs-changed", ());
 
     Ok(result)
 }
 
 #[tauri::command]
-pub fn delete_job(
-    app: tauri::AppHandle,
-    state: State<AppState>,
+pub async fn delete_job(
+    _app: tauri::AppHandle,
+    _state: State<'_, AppState>,
     name: String,
 ) -> Result<(), String> {
-    let mut config = state.jobs_config.lock().unwrap();
-
-    let slug = config
-        .jobs
-        .iter()
-        .find(|j| j.slug == name)
-        .map(|j| j.slug.clone())
-        .ok_or_else(|| format!("Job not found: {}", name))?;
-
-    config.delete_job(&slug)?;
-
-    // Refresh in-memory list
-    *config = crate::config::jobs::JobsConfig::load();
-    drop(config);
-
-    // Push updated jobs to relay
-    crate::relay::push_full_state_if_connected(&state.relay, &state.jobs_config, &state.job_status);
-
-    let _ = app.emit("jobs-changed", ());
-
-    Ok(())
+    match crate::ipc::send_command(crate::ipc::IpcCommand::DeleteJob { name }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
+    }
 }
 
 #[tauri::command]
-pub fn toggle_job(state: State<AppState>, name: String) -> Result<(), String> {
-    let mut config = state.jobs_config.lock().unwrap();
-    if let Some(job) = config.jobs.iter_mut().find(|j| j.slug == name) {
-        job.enabled = !job.enabled;
-        let job = job.clone();
-        config.save_job(&job)?;
-        *config = crate::config::jobs::JobsConfig::load();
+pub async fn toggle_job(_state: State<'_, AppState>, name: String) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::ToggleJob { name }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
-    Ok(())
 }
 
 #[tauri::command]
 pub async fn run_job_now(
-    app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
+    _app_handle: tauri::AppHandle,
+    _state: State<'_, AppState>,
     name: String,
     params: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Option<RunAgentResult>, String> {
-    let job = {
-        let config = state.jobs_config.lock().unwrap();
-        config
-            .jobs
-            .iter()
-            .find(|j| j.slug == name || j.name == name)
-            .cloned()
-            .ok_or_else(|| format!("Job not found: {}", name))?
-    };
-
-    let secrets = Arc::clone(&state.secrets);
-    let history = Arc::clone(&state.history);
-    let settings = Arc::clone(&state.settings);
-    let job_status = Arc::clone(&state.job_status);
-    let active_agents = Arc::clone(&state.active_agents);
-    let relay = Arc::clone(&state.relay);
-    let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
-    let protected_panes = Arc::clone(&state.protected_panes);
     let params = params.unwrap_or_default();
-
-    if matches!(
-        job.job_type,
-        crate::config::jobs::JobType::Claude | crate::config::jobs::JobType::Job
-    ) {
-        let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
-        let notifier: Arc<dyn crate::notifications::Notifier> =
-            Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
-        tauri::async_runtime::spawn(async move {
-            scheduler::executor::execute_job_with_auto_yes_and_pane_notify(
-                &job,
-                &secrets,
-                &history,
-                &settings,
-                &job_status,
-                "manual",
-                &active_agents,
-                &relay,
-                &params,
-                Some(&auto_yes_panes),
-                Some(&protected_panes),
-                pane_tx,
-                Some(notifier),
-            )
-            .await;
-        });
-
-        match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
-            Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult {
-                pane_id,
-                tmux_session,
-            })),
-            _ => Ok(None),
-        }
-    } else {
-        let notifier: Arc<dyn crate::notifications::Notifier> =
-            Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
-        tauri::async_runtime::spawn(async move {
-            scheduler::executor::execute_job_with_auto_yes(
-                &job,
-                &secrets,
-                &history,
-                &settings,
-                &job_status,
-                "manual",
-                &active_agents,
-                &relay,
-                &params,
-                Some(&auto_yes_panes),
-                Some(&protected_panes),
-                Some(notifier),
-            )
-            .await;
-        });
-
-        Ok(None)
-    }
-}
-
-#[tauri::command]
-pub fn pause_job(state: State<AppState>, name: String) -> Result<(), String> {
-    let mut status = state.job_status.lock().unwrap();
-    match status.get(&name) {
-        Some(JobStatus::Running { .. }) => {
-            status.insert(name, JobStatus::Paused);
-            Ok(())
-        }
-        _ => Err("Job is not running".to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn resume_job(state: State<AppState>, name: String) -> Result<(), String> {
-    let mut status = state.job_status.lock().unwrap();
-    match status.get(&name) {
-        Some(JobStatus::Paused) => {
-            status.insert(name, JobStatus::Idle);
-            Ok(())
-        }
-        _ => Err("Job is not paused".to_string()),
-    }
-}
-
-#[tauri::command]
-pub fn sigint_job(state: State<AppState>, name: String) -> Result<(), String> {
-    let status = state.job_status.lock().unwrap();
-    match status.get(&name).cloned() {
-        Some(JobStatus::Running {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::RunJobNow { name, params }).await {
+        Ok(crate::ipc::IpcResponse::PaneCreated {
             pane_id: Some(pane_id),
-            ..
-        }) => {
-            drop(status);
-            crate::tmux::send_sigint_to_pane(&pane_id)?;
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            crate::tmux::send_sigint_to_pane(&pane_id)
-        }
-        _ => Err("Job is not running or has no pane".to_string()),
+            tmux_session: Some(tmux_session),
+        }) => Ok(Some(RunAgentResult {
+            pane_id,
+            tmux_session,
+        })),
+        Ok(crate::ipc::IpcResponse::PaneCreated { .. }) => Ok(None),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
 }
 
 #[tauri::command]
-pub fn stop_job(state: State<AppState>, name: String) -> Result<(), String> {
-    let mut status = state.job_status.lock().unwrap();
-    match status.get(&name).cloned() {
-        Some(JobStatus::Running {
-            pane_id: Some(pane_id),
-            ..
-        }) => {
-            let _ = crate::tmux::kill_pane(&pane_id);
-            status.insert(name, JobStatus::Idle);
-            Ok(())
-        }
-        Some(JobStatus::Running { .. }) | Some(JobStatus::Paused) => {
-            status.insert(name, JobStatus::Idle);
-            Ok(())
-        }
-        _ => Err("Job is not running".to_string()),
+pub async fn pause_job(_state: State<'_, AppState>, name: String) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::PauseJob { name }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub async fn resume_job(_state: State<'_, AppState>, name: String) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::ResumeJob { name }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub async fn sigint_job(_state: State<'_, AppState>, name: String) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::SigintJob { name }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
+    }
+}
+
+#[tauri::command]
+pub async fn stop_job(_state: State<'_, AppState>, name: String) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::StopJob { name }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
 }
 
 #[tauri::command]
 pub async fn restart_job(
-    app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
+    _app_handle: tauri::AppHandle,
+    _state: State<'_, AppState>,
     name: String,
-    params: Option<std::collections::HashMap<String, String>>,
+    _params: Option<std::collections::HashMap<String, String>>,
 ) -> Result<(), String> {
-    let job = {
-        let config = state.jobs_config.lock().unwrap();
-        config
-            .jobs
-            .iter()
-            .find(|j| j.slug == name)
-            .cloned()
-            .ok_or_else(|| format!("Job not found: {}", name))?
-    };
-
-    let secrets = Arc::clone(&state.secrets);
-    let history = Arc::clone(&state.history);
-    let settings = Arc::clone(&state.settings);
-    let job_status = Arc::clone(&state.job_status);
-    let active_agents = Arc::clone(&state.active_agents);
-    let relay = Arc::clone(&state.relay);
-    let auto_yes_panes = Arc::clone(&state.auto_yes_panes);
-    let protected_panes = Arc::clone(&state.protected_panes);
-    let params = params.unwrap_or_default();
-
-    let notifier: Arc<dyn crate::notifications::Notifier> =
-        Arc::new(crate::notifications::TauriNotifier::new(app_handle.clone()));
-    tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job_with_auto_yes(
-            &job,
-            &secrets,
-            &history,
-            &settings,
-            &job_status,
-            "restart",
-            &active_agents,
-            &relay,
-            &params,
-            Some(&auto_yes_panes),
-            Some(&protected_panes),
-            Some(notifier),
-        )
-        .await;
-    });
-
-    Ok(())
+    match crate::ipc::send_command(crate::ipc::IpcCommand::RestartJob { name }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
+    }
 }
 
 #[tauri::command]
@@ -1175,8 +1022,6 @@ fn generate_cwt_context(job: &Job, _settings: &AppSettings) -> String {
     out
 }
 
-pub use crate::agent::build_agent_job;
-
 #[derive(serde::Serialize)]
 pub struct RunAgentResult {
     pub pane_id: String,
@@ -1185,61 +1030,30 @@ pub struct RunAgentResult {
 
 #[tauri::command]
 pub async fn run_agent(
-    state: State<'_, AppState>,
+    _state: State<'_, AppState>,
     prompt: String,
     work_dir: Option<String>,
     provider: Option<ProcessProvider>,
     model: Option<String>,
 ) -> Result<Option<RunAgentResult>, String> {
-    let (settings, jobs) = {
-        let s = state.settings.lock().unwrap().clone();
-        let j = state.jobs_config.lock().unwrap().jobs.clone();
-        (s, j)
-    };
-    let job = build_agent_job(
-        &prompt,
-        None,
-        &settings,
-        &jobs,
-        work_dir.as_deref(),
+    match crate::ipc::send_command(crate::ipc::IpcCommand::RunAgent {
+        prompt,
+        work_dir,
         provider,
         model,
-    )?;
-
-    let secrets = Arc::clone(&state.secrets);
-    let history = Arc::clone(&state.history);
-    let settings_arc = Arc::clone(&state.settings);
-    let job_status = Arc::clone(&state.job_status);
-    let active_agents = Arc::clone(&state.active_agents);
-    let relay = Arc::clone(&state.relay);
-    let protected_panes = Arc::clone(&state.protected_panes);
-
-    let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
-
-    tauri::async_runtime::spawn(async move {
-        scheduler::executor::execute_job_with_pane_notify(
-            &job,
-            &secrets,
-            &history,
-            &settings_arc,
-            &job_status,
-            "manual",
-            &active_agents,
-            &relay,
-            &std::collections::HashMap::new(),
-            Some(&protected_panes),
-            pane_tx,
-            None,
-        )
-        .await;
-    });
-
-    // Wait for the pane to be created (up to 10s)
-    match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
-        Ok(Ok((pane_id, tmux_session))) => Ok(Some(RunAgentResult {
+    })
+    .await
+    {
+        Ok(crate::ipc::IpcResponse::PaneCreated {
+            pane_id: Some(pane_id),
+            tmux_session: Some(tmux_session),
+        }) => Ok(Some(RunAgentResult {
             pane_id,
             tmux_session,
         })),
-        _ => Ok(None),
+        Ok(crate::ipc::IpcResponse::PaneCreated { .. }) => Ok(None),
+        Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
+        Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
+        Err(e) => Err(format!("Daemon unavailable: {}", e)),
     }
 }

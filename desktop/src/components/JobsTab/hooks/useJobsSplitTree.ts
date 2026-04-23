@@ -1,8 +1,9 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useMemo, type MutableRefObject } from "react";
 import type { RemoteJob, ShellPane, PaneContent, SplitDragData, useJobsCore } from "@clawtab/shared";
 import { useSplitTree } from "@clawtab/shared";
 import type { Job } from "../../../types";
 import type { useViewingState } from "./useViewingState";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface UseJobsSplitTreeParams {
   core: ReturnType<typeof useJobsCore>;
@@ -26,8 +27,22 @@ export function useJobsSplitTree({
     handleSelectShellDirect,
   } = viewing;
 
+  const mgr = useWorkspaceManager();
+  const activeState = mgr.getState(mgr.activeId);
+
+  const onChange = useCallback((patch: { tree?: ReturnType<typeof mgr.getState>["tree"]; focusedLeafId?: string | null }) => {
+    mgr.updateState(mgr.activeId, patch);
+  }, [mgr]);
+
+  const controlled = useMemo(() => ({
+    id: activeState.id,
+    tree: activeState.tree,
+    focusedLeafId: activeState.focusedLeafId,
+    onChange,
+  }), [activeState.id, activeState.tree, activeState.focusedLeafId, onChange]);
+
   return useSplitTree({
-    storageKey: "desktop_split_tree",
+    controlled,
     minPaneSize: 200,
     onCollapse: useCallback((content: PaneContent) => {
       if (content.kind === "job") {
@@ -39,8 +54,6 @@ export function useJobsSplitTree({
           setViewingAgent(false);
         }
       } else if (content.kind === "process") {
-        // Process may have been demoted to shell by the time onCollapse fires —
-        // check both core.processes and shellPanes so we don't show an empty view.
         const proc = core.processes.find(p => p.pane_id === content.paneId);
         if (proc) {
           setViewingProcess(proc);
@@ -64,7 +77,6 @@ export function useJobsSplitTree({
           setViewingProcess(null);
           setViewingAgent(false);
         } else {
-          // Shell may have been promoted to process — check core.processes.
           const proc = core.processes.find(p => p.pane_id === content.paneId);
           if (proc) {
             setViewingProcess(proc);

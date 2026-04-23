@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
 import { JobsTab } from "./JobsTab";
+import { WorkspaceProvider } from "../workspace/WorkspaceManager";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
@@ -75,6 +76,7 @@ export function SettingsApp() {
   const [pendingPaneId, setPendingPaneId] = useState<string | null>(null);
   const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>("general");
   const [relayAlert, setRelayAlert] = useState(false);
+  const [daemonAlert, setDaemonAlert] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +86,12 @@ export function SettingsApp() {
           if (cancelled) return;
           const disconnected = s.enabled && s.configured && !s.connected && !s.subscription_required;
           setRelayAlert(s.auth_expired || disconnected);
+        })
+        .catch(() => {});
+      invoke<{ installed: boolean; running: boolean }>("get_daemon_status")
+        .then((s) => {
+          if (cancelled) return;
+          setDaemonAlert(s.installed && !s.running);
         })
         .catch(() => {});
     };
@@ -236,14 +244,20 @@ export function SettingsApp() {
               setJobsResetKey((k) => k + 1);
             }
             if (tab.id === "settings") {
-              setSettingsSubTab(relayAlert ? "remote" : "general");
+              setSettingsSubTab(daemonAlert ? "daemon" : relayAlert ? "remote" : "general");
             }
             setActiveTab((current) => (current === tab.id ? "jobs" : tab.id));
           }}
-          title={tab.id === "settings" && relayAlert ? "Settings (relay needs attention)" : tab.label}
+          title={
+            tab.id === "settings" && daemonAlert
+              ? "Settings (daemon not running)"
+              : tab.id === "settings" && relayAlert
+                ? "Settings (relay needs attention)"
+                : tab.label
+          }
         >
           <span className="tab-icon">{tabIcons[tab.id]}</span>
-          {tab.id === "settings" && relayAlert && <span className="tab-alert-dot" />}
+          {tab.id === "settings" && (relayAlert || daemonAlert) && <span className="tab-alert-dot" />}
         </button>
       ))}
       {notificationsButton}
@@ -293,27 +307,30 @@ export function SettingsApp() {
           externalAccessToken={authCallbackToken}
           externalRefreshToken={authCallbackRefreshToken}
           onExternalTokenConsumed={() => { setAuthCallbackToken(null); setAuthCallbackRefreshToken(null); }}
+          daemonAlert={daemonAlert}
         />
       )}
     </>
   );
 
   return (
-    <div className="settings-container">
-      <div className="tab-content">
-        <JobsTab
-          key={jobsResetKey}
-          pendingTemplateId={pendingTemplateId}
-          onTemplateHandled={() => setPendingTemplateId(null)}
-          createJobKey={createJobKey}
-          importCwtKey={importCwtKey}
-          pendingPaneId={pendingPaneId}
-          onPaneHandled={() => setPendingPaneId(null)}
-          navBar={navBar}
-          rightPanelOverlay={rightPanelOverlay}
-          onJobSelected={() => setActiveTab("jobs")}
-        />
+    <WorkspaceProvider>
+      <div className="settings-container">
+        <div className="tab-content">
+          <JobsTab
+            key={jobsResetKey}
+            pendingTemplateId={pendingTemplateId}
+            onTemplateHandled={() => setPendingTemplateId(null)}
+            createJobKey={createJobKey}
+            importCwtKey={importCwtKey}
+            pendingPaneId={pendingPaneId}
+            onPaneHandled={() => setPendingPaneId(null)}
+            navBar={navBar}
+            rightPanelOverlay={rightPanelOverlay}
+            onJobSelected={() => setActiveTab("jobs")}
+          />
+        </div>
       </div>
-    </div>
+    </WorkspaceProvider>
   );
 }
