@@ -38,6 +38,9 @@ export interface ShellPane {
   pane_title?: string | null;
   matched_group?: string | null;
   display_name?: string | null;
+  // Client-side sticky workspace association. Set at shell creation to the
+  // active workspace id so cross-cwd use doesn't move the pane out.
+  workspace_id?: string;
 }
 
 export interface QuestionOption {

@@ -165,6 +165,13 @@ export interface JobListViewProps {
   onProcessRenameDraftChange?: (paneId: string, value: string | null) => void;
   onProcessRenameStateChange?: (paneId: string, editing: boolean) => void;
   renameShortcutHint?: string;
+  // Per-workspace UI (desktop multi-workspace)
+  activeWorkspaceId?: string;
+  onActivateWorkspace?: (group: string) => void;
+  /** When true (a pane is being dragged), hovering a non-active workspace
+   *  group header for ~250ms switches to that workspace so the drag can end
+   *  inside its detail tree. */
+  dragActive?: boolean;
 }
 
 type ListItem =
@@ -252,10 +259,20 @@ export function JobListView({
   onProcessRenameDraftChange,
   onProcessRenameStateChange,
   renameShortcutHint = "Cmd+R",
+  activeWorkspaceId,
+  onActivateWorkspace,
+  dragActive,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
   const containerRef = useRef<View>(null);
+  const hoverSwitchTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!dragActive && hoverSwitchTimerRef.current) {
+      clearTimeout(hoverSwitchTimerRef.current);
+      hoverSwitchTimerRef.current = null;
+    }
+  }, [dragActive]);
 
   useEffect(() => {
     if (sidebarFocusRef) {
@@ -947,17 +964,43 @@ export function JobListView({
               if (item.kind === "header") {
                 const isCollapsed = collapsedGroups.has(item.group);
                 const allowGroupMenu = item.group !== "Shells" && (onAddJob || onHideGroup);
+                const isWorkspaceHeader = activeWorkspaceId != null && item.group !== "Shells" && item.group !== "Detected";
+                const isActiveWorkspace = isWorkspaceHeader && item.group === activeWorkspaceId;
+                const isInactiveWorkspace = isWorkspaceHeader && !isActiveWorkspace;
+                const hoverSwitchHandlers = dragActive && isInactiveWorkspace && onActivateWorkspace
+                  ? {
+                      onMouseEnter: () => {
+                        if (hoverSwitchTimerRef.current) clearTimeout(hoverSwitchTimerRef.current);
+                        const group = item.group;
+                        hoverSwitchTimerRef.current = setTimeout(() => {
+                          onActivateWorkspace(group);
+                          hoverSwitchTimerRef.current = null;
+                        }, 250) as unknown as number;
+                      },
+                      onMouseLeave: () => {
+                        if (hoverSwitchTimerRef.current) {
+                          clearTimeout(hoverSwitchTimerRef.current);
+                          hoverSwitchTimerRef.current = null;
+                        }
+                      },
+                    }
+                  : undefined;
                 return (
-                  <View key={key} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                  <View key={key} style={[index > 0 ? { marginTop: spacing.sm } : null, isActiveWorkspace ? styles.activeWorkspaceAccent : null]} {...(hoverSwitchHandlers ?? {})}>
                     <TouchableOpacity
-                      onPress={() => onToggleGroup(item.group)}
+                      onPress={() => {
+                        if (onActivateWorkspace && isWorkspaceHeader) {
+                          onActivateWorkspace(item.group);
+                        }
+                        onToggleGroup(item.group);
+                      }}
                       style={styles.groupHeaderRow}
                       activeOpacity={0.6}
                     >
                       <Text style={styles.groupHeaderArrow}>
                         {isCollapsed ? "\u25B6" : "\u25BC"}
                       </Text>
-                      <Text style={styles.groupHeader}>{item.displayGroup}</Text>
+                      <Text style={[styles.groupHeader, isInactiveWorkspace ? { opacity: 0.55 } : null]}>{item.displayGroup}</Text>
                       {item.folderPath && (
                         <Text style={styles.groupFolderPath} numberOfLines={1}>
                           {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
@@ -1402,6 +1445,11 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
+  },
+  activeWorkspaceAccent: {
+    borderLeftWidth: 2,
+    borderLeftColor: colors.accent,
+    marginLeft: -2,
   },
   addJobBtn: {
     width: 24,

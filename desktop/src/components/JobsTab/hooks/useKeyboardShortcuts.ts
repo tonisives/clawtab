@@ -56,6 +56,9 @@ interface UseKeyboardShortcutsParams {
   sidebarSelectableItems: SidebarSelectableItem[];
   sidebarFocusRef: React.RefObject<{ focus: () => void } | null>;
   toggleActiveAutoYes?: () => void;
+  onBackNavigation?: () => void;
+  onForwardNavigation?: () => void;
+  onOpenCommandPalette?: () => void;
 }
 
 function collectLeafRects(
@@ -174,6 +177,9 @@ export function useKeyboardShortcuts({
   handleSelectJob, handleSelectProcess, handleSelectShell,
   sidebarSelectableItems, sidebarFocusRef,
   toggleActiveAutoYes,
+  onBackNavigation,
+  onForwardNavigation,
+  onOpenCommandPalette,
 }: UseKeyboardShortcutsParams) {
   const { shortcutSettings } = settings;
   const {
@@ -401,6 +407,9 @@ export function useKeyboardShortcuts({
       { binding: shortcutSettings.move_pane_up, run: () => runMovePaneShortcut("up") },
       { binding: shortcutSettings.move_pane_down, run: () => runMovePaneShortcut("down") },
       { binding: shortcutSettings.move_pane_right, run: () => runMovePaneShortcut("right") },
+      ...(onBackNavigation ? [{ binding: shortcutSettings.back_navigation, run: onBackNavigation }] : []),
+      ...(onForwardNavigation ? [{ binding: shortcutSettings.forward_navigation, run: onForwardNavigation }] : []),
+      ...(onOpenCommandPalette ? [{ binding: shortcutSettings.open_command_palette, run: onOpenCommandPalette }] : []),
     ];
 
     const runAppShortcutBinding = (binding: string, sourcePaneId?: string) => {
@@ -559,7 +568,7 @@ export function useKeyboardShortcuts({
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener(APP_SHORTCUT_EVENT, handleAppShortcut);
     };
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, triggerEnterCopyMode, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes]);
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, triggerEnterCopyMode, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes, onBackNavigation, onForwardNavigation, onOpenCommandPalette]);
 
   useEffect(() => {
     const unlistenPromise = listen<string>("shortcut-action", (event) => {

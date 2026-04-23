@@ -13,6 +13,7 @@ import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useSidebarItems } from "../hooks/useSidebarItems";
 import type { useViewingState } from "../hooks/useViewingState";
 import { formatShortcutSteps } from "../../../shortcuts";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface JobsSidebarProps {
   activeAgentWorkDir: string | null;
@@ -59,6 +60,7 @@ export function JobsSidebar({
   transport,
   viewing,
 }: JobsSidebarProps) {
+  const mgr = useWorkspaceManager();
   const { defaultProvider, defaultModel, enabledModels, groupOrder, hiddenGroups, jobOrder, processOrder, sortMode } = settings;
   const renameShortcutHint = useMemo(
     () => formatShortcutSteps(settings.shortcutSettings.rename_active_pane).map((step) => step.join("+")).join(" "),
@@ -212,6 +214,12 @@ export function JobsSidebar({
       wrapJobGroup={isWide && sortMode === "name" ? wrapSortableJobGroup : undefined}
       wrapProcessGroup={isWide ? wrapSortableProcessGroup : undefined}
       stoppingSlugs={stoppingJobSlugs}
+      activeWorkspaceId={mgr.activeId}
+      onActivateWorkspace={(group) => {
+        mgr.ensure(group);
+        mgr.setActive(group);
+      }}
+      dragActive={split.isDragging}
     />
   );
 }

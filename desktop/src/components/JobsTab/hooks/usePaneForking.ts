@@ -6,6 +6,7 @@ import type { Job } from "../../../types";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface UsePaneForkingParams {
   core: ReturnType<typeof useJobsCore>;
@@ -24,6 +25,7 @@ function toTreeDirection(d: Direction): TreeDirection {
 export function usePaneForking({ core, split, lifecycle, viewing }: UsePaneForkingParams) {
   const { shellPanes, setShellPanes } = lifecycle;
   const { setScrollToSlug } = viewing;
+  const mgr = useWorkspaceManager();
 
   const findSourceLeafId = useCallback((sourcePaneId: string, matchedJobSlug: string | null): string | null => {
     const leaves = split.tree ? collectLeaves(split.tree) : [];
@@ -94,6 +96,7 @@ export function usePaneForking({ core, split, lifecycle, viewing }: UsePaneForki
           ?? sourceShell?.matched_group
           ?? sourceJob?.group
           ?? null,
+        workspace_id: sourceShell?.workspace_id ?? mgr.activeId,
       };
       setShellPanes((prev) => prev.some((p) => p.pane_id === shell.pane_id) ? prev : [...prev, shell]);
       setScrollToSlug(shell.pane_id);

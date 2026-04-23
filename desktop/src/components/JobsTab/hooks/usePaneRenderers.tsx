@@ -4,6 +4,7 @@ import type { RemoteJob, ClaudeQuestion, PaneContent, DetectedProcess, ProcessPr
 import { shortenPath, type useJobsCore, type useSplitTree } from "@clawtab/shared";
 import { DesktopJobDetail, AgentDetail } from "../../JobDetailSections";
 import { DraggableSplitPane } from "../../DraggableCards";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 import { EmptyDetailAgent } from "../../EmptyDetailAgent";
 import { TmuxPaneDetail } from "../../TmuxPaneDetail";
 import { JobEditorPane } from "../components/JobEditorPane";
@@ -84,6 +85,7 @@ export function usePaneRenderers({
     setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId,
     processRenameDrafts, folderRunGroups,
   } = callbacks;
+  const mgr = useWorkspaceManager();
   const [editingLeafJobs, setEditingLeafJobs] = useState<Record<string, Job>>({});
   const [editingLeafErrors, setEditingLeafErrors] = useState<Record<string, string | null>>({});
 
@@ -138,7 +140,7 @@ export function usePaneRenderers({
     const leafHeaderInset = leafId === topLeftLeafId ? trafficLightInset : 0;
     if (content.kind === "agent") {
       return (
-        <DraggableSplitPane leafId={leafId} content={content}>
+        <DraggableSplitPane leafId={leafId} content={content} sourceWorkspaceId={mgr.activeId}>
           {(dragHandleProps) => (
             <AgentDetail
               transport={transport}
@@ -168,7 +170,7 @@ export function usePaneRenderers({
       }
       if (proc) {
         return (
-          <DraggableSplitPane leafId={leafId} content={content}>
+          <DraggableSplitPane leafId={leafId} content={content} sourceWorkspaceId={mgr.activeId}>
             {(dragHandleProps) => (
               <TmuxPaneDetail
                 target={{ kind: "process", process: proc }}
@@ -206,7 +208,7 @@ export function usePaneRenderers({
       }
       if (!shell) return null;
       return (
-        <DraggableSplitPane leafId={leafId} content={content}>
+        <DraggableSplitPane leafId={leafId} content={content} sourceWorkspaceId={mgr.activeId}>
           {(dragHandleProps) => (
             <TmuxPaneDetail
               target={{ kind: "shell", shell }}
@@ -245,7 +247,7 @@ export function usePaneRenderers({
         );
       }
       return (
-        <DraggableSplitPane leafId={leafId} content={content}>
+        <DraggableSplitPane leafId={leafId} content={content} sourceWorkspaceId={mgr.activeId}>
           {(dragHandleProps) => (
             <TmuxPaneDetail
               target={{ kind: "process", process: proc }}
@@ -286,7 +288,7 @@ export function usePaneRenderers({
     const editingLeafJob = editingLeafJobs[leafId];
     if (editingLeafJob) {
       return (
-        <DraggableSplitPane leafId={leafId} content={content}>
+        <DraggableSplitPane leafId={leafId} content={content} sourceWorkspaceId={mgr.activeId}>
           {() => (
             <JobEditorPane
               createForGroup={null}
@@ -312,7 +314,7 @@ export function usePaneRenderers({
     const jobQuestion = questions.find((q) => q.matched_job === job.slug);
     const matchedProcess = core.processes.find((p) => p.matched_job === job.slug);
     return (
-      <DraggableSplitPane leafId={leafId} content={content}>
+      <DraggableSplitPane leafId={leafId} content={content} sourceWorkspaceId={mgr.activeId}>
         {(dragHandleProps) => (
           <DesktopJobDetail
             transport={transport} job={job}

@@ -2,12 +2,22 @@ import { useCallback } from "react";
 import type { DetectedProcess, PaneContent, RemoteJob, ShellPane, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import type { useViewingState } from "./useViewingState";
+import type { Job } from "../../../types";
+import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
 interface UsePaneSelectionParams {
   core: ReturnType<typeof useJobsCore>;
   onJobSelected?: () => void;
   split: ReturnType<typeof useSplitTree>;
   viewing: ReturnType<typeof useViewingState>;
+}
+
+function groupForJob(job: RemoteJob): string {
+  return (job as Job).group || "default";
+}
+
+function groupForProcess(process: DetectedProcess): string {
+  return process.matched_group ?? "default";
 }
 
 export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePaneSelectionParams) {
@@ -17,9 +27,17 @@ export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePan
     handleSelectShellDirect,
     setShowFolderRunner,
   } = viewing;
+  const mgr = useWorkspaceManager();
 
   const handleSelectJob = useCallback((job: RemoteJob) => {
     setShowFolderRunner(false);
+    const group = groupForJob(job);
+    if (group !== mgr.activeId) {
+      mgr.ensure(group);
+      mgr.setActive(group);
+      handleSelectJobDirect(job);
+      return;
+    }
     const content: PaneContent = { kind: "job", slug: job.slug };
     if (split.tree && split.handleSelectInTree(content)) {
       onJobSelected?.();
@@ -29,11 +47,19 @@ export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePan
       return;
     }
     handleSelectJobDirect(job);
-  }, [split.tree, split.handleSelectInTree, handleSelectJobDirect, onJobSelected, core.statuses, setShowFolderRunner]);
+  }, [mgr, split.tree, split.handleSelectInTree, handleSelectJobDirect, onJobSelected, core.statuses, setShowFolderRunner]);
 
   const handleSelectProcess = useCallback((process: DetectedProcess) => {
     setShowFolderRunner(false);
-    if (process.cwd.endsWith("/clawtab/agent")) {
+    const group = groupForProcess(process);
+    const isAgentDir = process.cwd.endsWith("/clawtab/agent");
+    if (group !== mgr.activeId) {
+      mgr.ensure(group);
+      mgr.setActive(group);
+      handleSelectProcessDirect(process);
+      return;
+    }
+    if (isAgentDir) {
       const content: PaneContent = { kind: "agent" };
       if (split.tree && split.handleSelectInTree(content)) {
         onJobSelected?.();
@@ -49,10 +75,17 @@ export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePan
       return;
     }
     handleSelectProcessDirect(process);
-  }, [split.tree, split.handleSelectInTree, handleSelectProcessDirect, onJobSelected, setShowFolderRunner]);
+  }, [mgr, split.tree, split.handleSelectInTree, handleSelectProcessDirect, onJobSelected, setShowFolderRunner]);
 
   const handleSelectShell = useCallback((shell: ShellPane) => {
     setShowFolderRunner(false);
+    const shellWs = shell.workspace_id ?? mgr.activeId;
+    if (shellWs !== mgr.activeId) {
+      mgr.ensure(shellWs);
+      mgr.setActive(shellWs);
+      handleSelectShellDirect(shell);
+      return;
+    }
     const content: PaneContent = { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session };
     if (split.tree && split.handleSelectInTree(content)) {
       onJobSelected?.();
@@ -60,7 +93,7 @@ export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePan
       return;
     }
     handleSelectShellDirect(shell);
-  }, [split.tree, split.handleSelectInTree, handleSelectShellDirect, onJobSelected, setShowFolderRunner]);
+  }, [mgr, split.tree, split.handleSelectInTree, handleSelectShellDirect, onJobSelected, setShowFolderRunner]);
 
   return { handleSelectJob, handleSelectProcess, handleSelectShell };
 }

@@ -12,6 +12,7 @@ import { createTauriTransport } from "../../transport/tauriTransport";
 import type { Job } from "../../types";
 import type { DragData } from "../DraggableCards";
 import { EmptyDetailAgent } from "../EmptyDetailAgent";
+import { CommandPalette } from "../CommandPalette";
 import { useImportJob } from "../../hooks/useImportJob";
 import type { JobsTabProps } from "./types";
 import { useWindowSize } from "./hooks/useWindowSize";
@@ -40,6 +41,7 @@ import { useJobsTabHandlers } from "./hooks/useJobsTabHandlers";
 import { useFolderRunGroups } from "./hooks/useFolderRunGroups";
 import { useJobsNotifications } from "./hooks/useJobsNotifications";
 import { useJobsTabEffects } from "./hooks/useJobsTabEffects";
+import { useFocusHistory } from "../../workspace/useFocusHistory";
 import { formatShortcutSteps } from "../../shortcuts";
 
 const transport = createTauriTransport();
@@ -137,6 +139,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     }
   }, [activePaneContent, autoYes, core.processes, getPaneIdForContent, questions]);
 
+  const focusHistory = useFocusHistory();
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
   const keyboard = useKeyboardShortcuts({
     core, split, viewing, lifecycle, settings,
     transport,
@@ -146,6 +151,9 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     handleSelectJob, handleSelectProcess, handleSelectShell,
     sidebarSelectableItems, sidebarFocusRef,
     toggleActiveAutoYes,
+    onBackNavigation: focusHistory.back,
+    onForwardNavigation: focusHistory.forward,
+    onOpenCommandPalette: () => setCommandPaletteOpen(true),
   });
   const { sidebarCollapsed } = keyboard;
 
@@ -310,25 +318,46 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   );
 
   const dialogs = (
-    <Dialogs
-      viewing={viewing}
-      autoYes={autoYes}
-      importJob={importJob}
-      missedCronJobs={{
-        names: missedCronJobs,
-        runAll: handleRunMissedJobs,
-        clear: () => setMissedCronJobs([]),
-      }}
-      paneDialogs={{
-        skillSearchPaneId,
-        setSkillSearchPaneId,
-        injectSecretsPaneId,
-        setInjectSecretsPaneId,
-        onForkWithSecrets: handleForkWithSecrets,
-        processEditing,
-      }}
-      handleRunWithParams={handleRunWithParams}
-    />
+    <>
+      <Dialogs
+        viewing={viewing}
+        autoYes={autoYes}
+        importJob={importJob}
+        missedCronJobs={{
+          names: missedCronJobs,
+          runAll: handleRunMissedJobs,
+          clear: () => setMissedCronJobs([]),
+        }}
+        paneDialogs={{
+          skillSearchPaneId,
+          setSkillSearchPaneId,
+          injectSecretsPaneId,
+          setInjectSecretsPaneId,
+          onForkWithSecrets: handleForkWithSecrets,
+          processEditing,
+        }}
+        handleRunWithParams={handleRunWithParams}
+      />
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        jobs={core.jobs}
+        processes={core.processes}
+        shells={shellPanes}
+        onSelectJob={(slug) => {
+          const job = core.jobs.find((j) => j.slug === slug);
+          if (job) handleSelectJob(job);
+        }}
+        onSelectProcess={(paneId) => {
+          const proc = core.processes.find((p) => p.pane_id === paneId);
+          if (proc) handleSelectProcess(proc);
+        }}
+        onSelectShell={(paneId) => {
+          const shell = shellPanes.find((s) => s.pane_id === paneId);
+          if (shell) handleSelectShell(shell);
+        }}
+      />
+    </>
   );
 
   const jobListView = (
