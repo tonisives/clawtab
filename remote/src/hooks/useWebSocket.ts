@@ -127,6 +127,7 @@ export function useWebSocket() {
           break;
         case "detected_processes":
           useJobsStore.getState().setDetectedProcesses(msg.processes);
+          useWsStore.getState().desktopOnline || useWsStore.setState({ desktopOnline: true });
           break;
         case "settings_response":
           useJobsStore.getState().setDesktopSettings(msg.enabled_models, msg.default_provider, msg.default_model);

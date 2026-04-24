@@ -50,6 +50,12 @@ pub async fn handle_incoming(
                 .into_iter()
                 .map(|(k, v)| (k, status_to_remote(&v)))
                 .collect();
+            log::info!(
+                "ListJobs: returning {} jobs, {} statuses (id={})",
+                remote_jobs.len(),
+                remote_statuses.len(),
+                id
+            );
             Some(DesktopMessage::JobsList {
                 id,
                 jobs: remote_jobs,
