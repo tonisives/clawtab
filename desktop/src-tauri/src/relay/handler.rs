@@ -692,14 +692,18 @@ fn detect_processes(
         }
 
         // Agent detection. Shell is *not* returned by detect_process_provider;
-        // we promote to Shell explicitly for ct-* windows below.
+        // we promote to Shell only for windows ClawTab explicitly created
+        // (ct-clawtab-shell-* via process demotion, clawtab-shell-* via split).
+        // Plain ct-* captures (view wrappers for user-owned panes) must never
+        // auto-surface as clawtab shells.
         let agent_provider =
             crate::agent_session::detect_process_provider(pane_pid, None).or_else(|| {
                 is_semver(command).then_some(crate::agent_session::ProcessProvider::Claude)
             });
-        let is_ct_window = window.starts_with("ct-");
+        let is_clawtab_shell_window = window.starts_with("ct-clawtab-shell-")
+            || window.starts_with("clawtab-shell-");
 
-        let provider = match (agent_provider, is_ct_window) {
+        let provider = match (agent_provider, is_clawtab_shell_window) {
             (Some(p), _) => p,
             (None, true) => crate::agent_session::ProcessProvider::Shell,
             (None, false) => continue,
