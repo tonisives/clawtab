@@ -43,8 +43,11 @@ impl PtyManager {
         // session is an orphan from a previous run. View sweep first so the
         // ct-* sweep doesn't see panes under view sessions.
         cleanup_orphaned_view_sessions(&[]);
-        // No protected panes at startup -- the frontend syncs the set after boot.
-        cleanup_orphaned_ct_windows(&std::collections::HashSet::new());
+        // Read protected pane IDs persisted by the daemon's last SetProtectedPanes
+        // IPC. The webview has not booted yet, so we cannot ask the frontend.
+        // Without this, plain idle shells get swept before the user sees them.
+        let protected = crate::config::protected_panes::load_set();
+        cleanup_orphaned_ct_windows(&protected);
         Self {
             sessions: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),
