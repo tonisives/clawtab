@@ -20,6 +20,7 @@ import {
 import type { useViewingState } from "./useViewingState";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useJobsTabSettings } from "./useJobsTabSettings";
+import { requestXtermPaneFocus } from "../../XtermPane";
 
 interface Transport {
   stopJob: (slug: string) => void;
@@ -266,12 +267,15 @@ export function useKeyboardShortcuts({
   const triggerZoomActivePane = useCallback(() => {
     const leaves = split.tree ? collectLeaves(split.tree) : [];
     const focusedLeaf = leaves.find((leaf) => leaf.id === split.focusedLeafId) ?? leaves[0];
+    const targetContent = focusedLeaf?.content ?? activePaneContent;
+    const paneId = getPaneIdForContent(targetContent);
     if (focusedLeaf) {
       split.toggleZoomLeaf(focusedLeaf.id);
-      return;
+    } else {
+      split.toggleZoomLeaf("");
     }
-    split.toggleZoomLeaf("");
-  }, [split.tree, split.focusedLeafId, split.toggleZoomLeaf]);
+    if (paneId) requestAnimationFrame(() => requestXtermPaneFocus(paneId));
+  }, [split.tree, split.focusedLeafId, split.toggleZoomLeaf, activePaneContent, getPaneIdForContent]);
 
   const navigateSidebarItems = useCallback((direction: 1 | -1) => {
     if (sidebarSelectableItems.length === 0) return;
