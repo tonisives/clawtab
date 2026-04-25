@@ -11,6 +11,7 @@ export interface JobsTabProps {
   navBar?: React.ReactNode | ((notificationsButton: React.ReactNode) => React.ReactNode);
   rightPanelOverlay?: React.ReactNode;
   onJobSelected?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export type { ExistingPaneInfo } from "../../types";

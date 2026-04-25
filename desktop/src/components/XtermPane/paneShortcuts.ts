@@ -33,6 +33,8 @@ function collectAppBindings(shortcuts: ShortcutSettings): string[] {
     shortcuts.reveal_in_sidebar,
     shortcuts.toggle_auto_yes,
     shortcuts.enter_copy_mode,
+    shortcuts.back_navigation,
+    shortcuts.forward_navigation,
   ];
 }
 

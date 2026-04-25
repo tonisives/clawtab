@@ -115,6 +115,10 @@ export interface ShortcutSettings {
   reveal_in_sidebar: string;
   toggle_auto_yes: string;
   enter_copy_mode: string;
+  back_navigation: string;
+  forward_navigation: string;
+  open_command_palette: string;
+  open_settings: string;
 }
 
 export interface AppSettings {

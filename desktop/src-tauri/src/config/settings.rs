@@ -44,6 +44,10 @@ pub struct ShortcutSettings {
     pub reveal_in_sidebar: String,
     pub toggle_auto_yes: String,
     pub enter_copy_mode: String,
+    pub back_navigation: String,
+    pub forward_navigation: String,
+    pub open_command_palette: String,
+    pub open_settings: String,
 }
 
 impl Default for ShortcutSettings {
@@ -70,6 +74,10 @@ impl Default for ShortcutSettings {
             reveal_in_sidebar: "Meta+Shift+e".to_string(),
             toggle_auto_yes: "Prefix y".to_string(),
             enter_copy_mode: "Prefix u".to_string(),
+            back_navigation: "Meta+[".to_string(),
+            forward_navigation: "Meta+]".to_string(),
+            open_command_palette: "Meta+p".to_string(),
+            open_settings: "Meta+,".to_string(),
         }
     }
 }

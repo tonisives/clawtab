@@ -33,6 +33,7 @@ export {
   removeLeaf,
   updateRatio,
   splitLeaf,
+  findParentSplit,
   removeStaleLeaves,
   leafContentKey,
   leafContentEquals,

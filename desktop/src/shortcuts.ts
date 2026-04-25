@@ -23,6 +23,7 @@ export interface ShortcutSettings {
   back_navigation: string;
   forward_navigation: string;
   open_command_palette: string;
+  open_settings: string;
 }
 
 export type ShortcutId = keyof ShortcutSettings;
@@ -86,6 +87,7 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   back_navigation: "Meta+[",
   forward_navigation: "Meta+]",
   open_command_palette: "Meta+p",
+  open_settings: "Meta+,",
 };
 
 export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
@@ -95,6 +97,7 @@ export const SHORTCUT_DEFINITIONS: ShortcutDefinition[] = [
   { id: "back_navigation", label: "Navigate back", group: "general" },
   { id: "forward_navigation", label: "Navigate forward", group: "general" },
   { id: "open_command_palette", label: "Open command palette", group: "general" },
+  { id: "open_settings", label: "Open settings", group: "general" },
 
   { id: "toggle_sidebar", label: "Toggle sidebar", group: "sidebar" },
   { id: "next_sidebar_item", label: "Next sidebar item", group: "sidebar" },

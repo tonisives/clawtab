@@ -4,9 +4,13 @@ import type { AppSettings } from "../types";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_DEFINITIONS,
+  SHORTCUT_GROUP_LABELS,
+  SHORTCUT_GROUP_ORDER,
   eventToShortcutBinding,
   formatShortcutSteps,
   resolveShortcutSettings,
+  type ShortcutDefinition,
+  type ShortcutGroup,
   type ShortcutId,
 } from "../shortcuts";
 
@@ -91,14 +95,16 @@ export function ShortcutsPanel() {
       }
 
       const nextStrokes = [...recording.strokes, binding].slice(0, 2);
-      if (nextStrokes.length < 2) {
+      const firstStrokeIsPrefix = nextStrokes[0] === currentShortcuts.prefix_key;
+
+      if (nextStrokes.length === 1 && firstStrokeIsPrefix) {
         setRecording({ ...recording, strokes: nextStrokes });
         return;
       }
 
-      const resolvedBinding = nextStrokes[0] === currentShortcuts.prefix_key
+      const resolvedBinding = nextStrokes.length === 2 && firstStrokeIsPrefix
         ? `Prefix ${nextStrokes[1]}`
-        : nextStrokes.join(" ");
+        : nextStrokes[0];
 
       const newSettings: AppSettings = {
         ...settings,
@@ -177,24 +183,62 @@ export function ShortcutsPanel() {
       })
     : SHORTCUT_DEFINITIONS;
 
+  const groupedShortcuts = SHORTCUT_GROUP_ORDER.map((group) => ({
+    group,
+    items: filtered.filter((s) => s.group === group),
+  })).filter((g) => g.items.length > 0);
+
+  const renderShortcutRow = (shortcut: ShortcutDefinition) => (
+    <tr key={shortcut.id}>
+      <td className="shortcut-label">{shortcut.label}</td>
+      <td className="shortcut-keys">
+        {formatShortcutSteps(getDisplayBinding(shortcut.id)).map((step, stepIndex) => (
+          <span key={stepIndex}>
+            {stepIndex > 0 && <span className="shortcut-plus" style={{ margin: "0 10px" }}>then</span>}
+            {step.map((key, keyIndex) => (
+              <span key={`${stepIndex}-${keyIndex}`}>
+                {keyIndex > 0 && <span className="shortcut-plus">+</span>}
+                <kbd>{key}</kbd>
+              </span>
+            ))}
+          </span>
+        ))}
+      </td>
+      <td className="shortcut-actions">
+        <button
+          className="btn btn-sm"
+          onClick={(event) => {
+            event.currentTarget.blur();
+            setRecording({ id: shortcut.id, strokes: [] });
+          }}
+        >
+          {recording?.id === shortcut.id ? "Recording..." : "Edit"}
+        </button>
+        <button
+          className="btn btn-sm btn-secondary"
+          onClick={() => saveShortcut(shortcut.id, DEFAULT_SHORTCUTS[shortcut.id])}
+        >
+          Reset
+        </button>
+      </td>
+    </tr>
+  );
+
   return (
     <div className="settings-section">
       <h2>Keyboard Shortcuts</h2>
       <div className="field-group">
-        <div className="shortcuts-search-bar">
-          <input
-            ref={searchRef}
-            type="text"
-            placeholder="Search shortcuts..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="shortcuts-search-input"
-          />
-        </div>
         <div className="shortcuts-header">
-          <span className="field-group-title" style={{ marginBottom: 0, paddingBottom: 0, borderBottom: "none" }}>
-            General
-          </span>
+          <div className="shortcuts-search-bar" style={{ flex: 1, marginBottom: 0 }}>
+            <input
+              ref={searchRef}
+              type="text"
+              placeholder="Search shortcuts..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="shortcuts-search-input"
+            />
+          </div>
           <button className="btn btn-sm" onClick={() => saveShortcuts({ ...DEFAULT_SHORTCUTS })}>
             Reset all
           </button>
@@ -208,46 +252,34 @@ export function ShortcutsPanel() {
                 : "Press the second key for the sequence, Enter to save the first key as-is, or Escape to cancel."
             : "Click Edit, then press the shortcut you want. Two-keystroke bindings and Prefix-based shortcuts are supported. Press Escape to cancel."}
         </p>
-        <table className="shortcuts-table">
-          <tbody>
-            {filtered.map((shortcut) => (
-              <tr key={shortcut.id}>
-                <td className="shortcut-label">{shortcut.label}</td>
-                <td className="shortcut-keys">
-                  {formatShortcutSteps(getDisplayBinding(shortcut.id)).map((step, stepIndex) => (
-                    <span key={stepIndex}>
-                      {stepIndex > 0 && <span className="shortcut-plus" style={{ margin: "0 10px" }}>then</span>}
-                      {step.map((key, keyIndex) => (
-                        <span key={`${stepIndex}-${keyIndex}`}>
-                          {keyIndex > 0 && <span className="shortcut-plus">+</span>}
-                          <kbd>{key}</kbd>
-                        </span>
-                      ))}
-                    </span>
-                  ))}
-                </td>
-                <td className="shortcut-actions">
-                  <button
-                    className="btn btn-sm"
-                    onClick={(event) => {
-                      event.currentTarget.blur();
-                      setRecording({ id: shortcut.id, strokes: [] });
-                    }}
-                  >
-                    {recording?.id === shortcut.id ? "Recording..." : "Edit"}
-                  </button>
-                  <button
-                    className="btn btn-sm btn-secondary"
-                    onClick={() => saveShortcut(shortcut.id, DEFAULT_SHORTCUTS[shortcut.id])}
-                  >
-                    Reset
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
+      {groupedShortcuts.map(({ group, items }) => (
+        <ShortcutGroupSection
+          key={group}
+          group={group}
+          items={items}
+          renderRow={renderShortcutRow}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ShortcutGroupSection({
+  group,
+  items,
+  renderRow,
+}: {
+  group: ShortcutGroup;
+  items: ShortcutDefinition[];
+  renderRow: (item: ShortcutDefinition) => React.ReactNode;
+}) {
+  return (
+    <div className="field-group shortcuts-group">
+      <span className="field-group-title">{SHORTCUT_GROUP_LABELS[group]}</span>
+      <table className="shortcuts-table">
+        <tbody>{items.map(renderRow)}</tbody>
+      </table>
     </div>
   );
 }

@@ -90,6 +90,30 @@ export function findNode(root: SplitNode, id: string): SplitNode | null {
   return null;
 }
 
+/** Find the nearest ancestor split node containing `leafId`, optionally
+ *  filtered by direction (so resize-left/right walks past vertical splits to
+ *  find the nearest horizontal split that actually controls width). */
+export function findParentSplit(
+  root: SplitNode,
+  leafId: string,
+  direction?: "horizontal" | "vertical",
+): Extract<SplitNode, { type: "split" }> | null {
+  const walk = (
+    node: SplitNode,
+    ancestors: Extract<SplitNode, { type: "split" }>[],
+  ): Extract<SplitNode, { type: "split" }> | null => {
+    if (node.type === "leaf") {
+      if (node.id !== leafId) return null;
+      for (let i = ancestors.length - 1; i >= 0; i--) {
+        if (!direction || ancestors[i].direction === direction) return ancestors[i];
+      }
+      return null;
+    }
+    return walk(node.first, [...ancestors, node]) ?? walk(node.second, [...ancestors, node]);
+  };
+  return walk(root, []);
+}
+
 /** Immutably replace a node by ID. Only the first match is replaced so a
  *  replacement that itself contains the same id (e.g. splitLeaf reusing the
  *  target's id for the surviving leaf) doesn't cascade into further replacements. */

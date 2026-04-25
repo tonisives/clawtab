@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { DetectedProcess, ShellPane, PaneContent, RemoteJob, SplitNode } from "@clawtab/shared";
 import {
   collectLeaves,
+  findParentSplit,
   shortenPath,
   type SidebarSelectableItem,
   type useJobsCore,
@@ -27,7 +28,12 @@ interface Transport {
 }
 
 type PaneMoveDirection = "left" | "right" | "up" | "down";
+type PaneResizeDirection = "left" | "right" | "up" | "down";
 type LeafRect = { id: string; x: number; y: number; w: number; h: number };
+
+const RESIZE_STEP = 0.05;
+const RESIZE_MIN_RATIO = 0.05;
+const RESIZE_MAX_RATIO = 0.95;
 
 interface EditProcessField {
   paneId: string;
@@ -60,6 +66,7 @@ interface UseKeyboardShortcutsParams {
   onBackNavigation?: () => void;
   onForwardNavigation?: () => void;
   onOpenCommandPalette?: () => void;
+  onOpenSettings?: () => void;
 }
 
 function collectLeafRects(
@@ -181,6 +188,7 @@ export function useKeyboardShortcuts({
   onBackNavigation,
   onForwardNavigation,
   onOpenCommandPalette,
+  onOpenSettings,
 }: UseKeyboardShortcutsParams) {
   const { shortcutSettings } = settings;
   const {
@@ -347,6 +355,25 @@ export function useKeyboardShortcuts({
       if (nextLeafId) split.setFocusedLeafId(nextLeafId);
     };
 
+    const runResizePaneShortcut = (direction: PaneResizeDirection, options?: { sourcePaneId?: string; sourceLeafId?: string | null }) => {
+      const tree = split.tree;
+      if (!tree) return;
+      const sourceLeafId = options?.sourceLeafId ?? (options?.sourcePaneId
+        ? collectLeaves(tree).find((leaf) => paneContentMatchesPaneId(leaf.content, options.sourcePaneId!))?.id
+        : null);
+      const leafId = sourceLeafId ?? split.focusedLeafId ?? collectLeaves(tree)[0]?.id ?? null;
+      if (!leafId) return;
+      const splitDirection = direction === "left" || direction === "right" ? "horizontal" : "vertical";
+      const parent = findParentSplit(tree, leafId, splitDirection);
+      if (!parent) return;
+      const leafIsFirst = collectLeaves(parent.first).some((l) => l.id === leafId);
+      const grow = direction === "right" || direction === "down";
+      const delta = leafIsFirst === grow ? RESIZE_STEP : -RESIZE_STEP;
+      const next = Math.min(RESIZE_MAX_RATIO, Math.max(RESIZE_MIN_RATIO, parent.ratio + delta));
+      if (next === parent.ratio) return;
+      split.handleSplitRatioChange(parent.id, next);
+    };
+
     const runKillPaneShortcut = () => {
       const focusedLeaf = split.tree
         ? collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId) ?? collectLeaves(split.tree)[0]
@@ -411,9 +438,14 @@ export function useKeyboardShortcuts({
       { binding: shortcutSettings.move_pane_up, run: () => runMovePaneShortcut("up") },
       { binding: shortcutSettings.move_pane_down, run: () => runMovePaneShortcut("down") },
       { binding: shortcutSettings.move_pane_right, run: () => runMovePaneShortcut("right") },
+      { binding: shortcutSettings.resize_pane_left, run: () => runResizePaneShortcut("left") },
+      { binding: shortcutSettings.resize_pane_right, run: () => runResizePaneShortcut("right") },
+      { binding: shortcutSettings.resize_pane_up, run: () => runResizePaneShortcut("up") },
+      { binding: shortcutSettings.resize_pane_down, run: () => runResizePaneShortcut("down") },
       ...(onBackNavigation ? [{ binding: shortcutSettings.back_navigation, run: onBackNavigation }] : []),
       ...(onForwardNavigation ? [{ binding: shortcutSettings.forward_navigation, run: onForwardNavigation }] : []),
       ...(onOpenCommandPalette ? [{ binding: shortcutSettings.open_command_palette, run: onOpenCommandPalette }] : []),
+      ...(onOpenSettings ? [{ binding: shortcutSettings.open_settings, run: onOpenSettings }] : []),
     ];
 
     const runAppShortcutBinding = (binding: string, sourcePaneId?: string) => {
@@ -446,6 +478,18 @@ export function useKeyboardShortcuts({
       if (movement) {
         setPendingShortcutStroke(null);
         runMovePaneShortcut(movement.direction, { sourcePaneId });
+        return true;
+      }
+      const resizeBindings: Array<{ binding: string; direction: PaneResizeDirection }> = [
+        { binding: shortcutSettings.resize_pane_left, direction: "left" },
+        { binding: shortcutSettings.resize_pane_right, direction: "right" },
+        { binding: shortcutSettings.resize_pane_up, direction: "up" },
+        { binding: shortcutSettings.resize_pane_down, direction: "down" },
+      ];
+      const resize = resizeBindings.find((candidate) => normalizeShortcutBinding(candidate.binding, shortcutSettings.prefix_key) === normalizedBinding);
+      if (resize) {
+        setPendingShortcutStroke(null);
+        runResizePaneShortcut(resize.direction, { sourcePaneId });
         return true;
       }
       const splitBindings: Array<{ binding: string; direction: "right" | "down" }> = [
@@ -572,7 +616,7 @@ export function useKeyboardShortcuts({
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener(APP_SHORTCUT_EVENT, handleAppShortcut);
     };
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, triggerEnterCopyMode, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes, onBackNavigation, onForwardNavigation, onOpenCommandPalette]);
+  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.handleSplitRatioChange, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, triggerEnterCopyMode, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes, onBackNavigation, onForwardNavigation, onOpenCommandPalette, onOpenSettings]);
 
   useEffect(() => {
     const unlistenPromise = listen<string>("shortcut-action", (event) => {

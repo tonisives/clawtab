@@ -52,7 +52,7 @@ function findTopLeftLeafId(tree: SplitNode | null): string | null {
   return node?.type === "leaf" ? node.id : null;
 }
 
-export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected }: JobsTabProps) {
+export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected, onOpenSettings }: JobsTabProps) {
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const settings = useJobsTabSettings();
@@ -154,6 +154,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     onBackNavigation: focusHistory.back,
     onForwardNavigation: focusHistory.forward,
     onOpenCommandPalette: () => setCommandPaletteOpen(true),
+    onOpenSettings,
   });
   const { sidebarCollapsed } = keyboard;
 

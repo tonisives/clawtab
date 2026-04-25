@@ -328,6 +328,10 @@ export function SettingsApp() {
             navBar={navBar}
             rightPanelOverlay={rightPanelOverlay}
             onJobSelected={() => setActiveTab("jobs")}
+            onOpenSettings={() => {
+              setSettingsSubTab(daemonAlert ? "daemon" : relayAlert ? "remote" : "general");
+              setActiveTab((current) => (current === "settings" ? "jobs" : "settings"));
+            }}
           />
         </div>
       </div>

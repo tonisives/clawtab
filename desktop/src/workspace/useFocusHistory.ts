@@ -10,6 +10,10 @@ interface Stack {
   index: number;
 }
 
+function entryKey(workspaceId: WorkspaceId, contentKey: string): string {
+  return `${workspaceId}|${contentKey}`;
+}
+
 function loadStack(): Stack {
   if (typeof localStorage === "undefined") return { entries: [], index: -1 };
   const raw = localStorage.getItem(FOCUS_HISTORY_KEY);
@@ -38,7 +42,6 @@ export interface FocusHistoryApi {
 export function useFocusHistory(): FocusHistoryApi {
   const mgr = useWorkspaceManager();
   const stackRef = useRef<Stack>(loadStack());
-  const lastPushedKeyRef = useRef<string>("");
   const suppressNextPushRef = useRef(false);
 
   const currentContentKey = useCallback((wsId: WorkspaceId, leafId: string | null): string => {
@@ -62,19 +65,18 @@ export function useFocusHistory(): FocusHistoryApi {
     }
     const leafId = activeFocusedLeafId;
     const contentKey = currentContentKey(mgr.activeId, leafId);
-    const stackKey = `${mgr.activeId}|${leafId ?? ""}|${contentKey}`;
-    if (stackKey === lastPushedKeyRef.current) return;
-    lastPushedKeyRef.current = stackKey;
-
-    const entry: FocusHistoryEntry = {
-      workspaceId: mgr.activeId,
-      leafId,
-      contentKey,
-      ts: Date.now(),
-    };
+    if (!contentKey) return;
+    const key = entryKey(mgr.activeId, contentKey);
     const stack = stackRef.current;
-    const truncated = stack.entries.slice(0, stack.index + 1);
-    truncated.push(entry);
+
+    const current = stack.index >= 0 ? stack.entries[stack.index] : null;
+    if (current && entryKey(current.workspaceId, current.contentKey) === key) return;
+
+    // Drop any forward history (browser-style) and any prior occurrence of the same pane (MRU dedup)
+    const truncated = stack.entries
+      .slice(0, stack.index + 1)
+      .filter((e) => entryKey(e.workspaceId, e.contentKey) !== key);
+    truncated.push({ workspaceId: mgr.activeId, leafId, contentKey, ts: Date.now() });
     const trimmed = truncated.length > MAX_HISTORY
       ? truncated.slice(truncated.length - MAX_HISTORY)
       : truncated;
@@ -82,27 +84,37 @@ export function useFocusHistory(): FocusHistoryApi {
     saveStack(stackRef.current);
   }, [mgr.activeId, activeFocusedLeafId, currentContentKey, mgr]);
 
-  const isEntryValid = useCallback((entry: FocusHistoryEntry): boolean => {
+  const resolveLeafId = useCallback((entry: FocusHistoryEntry): string | null | undefined => {
     const ws = mgr.getState(entry.workspaceId);
-    if (entry.leafId == null) {
-      if (!ws.singlePaneContent) return false;
-      return leafContentKey(ws.singlePaneContent) === entry.contentKey;
+    if (!ws.tree) {
+      if (ws.singlePaneContent && leafContentKey(ws.singlePaneContent) === entry.contentKey) return null;
+      return undefined;
     }
-    if (!ws.tree) return false;
-    const leaf = collectLeaves(ws.tree).find((l) => l.id === entry.leafId);
-    if (!leaf) return false;
-    return leafContentKey(leaf.content) === entry.contentKey;
+    const leaves = collectLeaves(ws.tree);
+    // Prefer the original leafId if it still hosts the same content
+    if (entry.leafId) {
+      const original = leaves.find((l) => l.id === entry.leafId);
+      if (original && leafContentKey(original.content) === entry.contentKey) return entry.leafId;
+    }
+    // Fall back to any leaf with matching content (handles split tree restructuring)
+    const match = leaves.find((l) => leafContentKey(l.content) === entry.contentKey);
+    return match ? match.id : undefined;
   }, [mgr]);
 
+  const isEntryValid = useCallback((entry: FocusHistoryEntry): boolean => {
+    return resolveLeafId(entry) !== undefined;
+  }, [resolveLeafId]);
+
   const applyEntry = useCallback((entry: FocusHistoryEntry): void => {
+    const leafId = resolveLeafId(entry);
+    if (leafId === undefined) return;
     suppressNextPushRef.current = true;
     if (entry.workspaceId !== mgr.activeId) {
       mgr.ensure(entry.workspaceId);
       mgr.setActive(entry.workspaceId);
     }
-    mgr.updateState(entry.workspaceId, { focusedLeafId: entry.leafId });
-    lastPushedKeyRef.current = `${entry.workspaceId}|${entry.leafId ?? ""}|${entry.contentKey}`;
-  }, [mgr]);
+    mgr.updateState(entry.workspaceId, { focusedLeafId: leafId });
+  }, [mgr, resolveLeafId]);
 
   const back = useCallback(() => {
     const stack = stackRef.current;

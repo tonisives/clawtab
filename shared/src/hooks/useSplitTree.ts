@@ -229,6 +229,16 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     setZoomSnapshot(null);
   }, [controlled?.id, controlled?.tree, controlled?.focusedLeafId, controlled]);
 
+  // Within the same workspace, accept external focusedLeafId updates (e.g. focus
+  // history navigation, cross-pane selection). Without this, programmatic focus
+  // changes via controlled.onChange round-trip back as controlled.focusedLeafId
+  // but never reach internal state, so the visible focus stays put.
+  useEffect(() => {
+    if (!controlled) return;
+    if (controlled.id !== lastControlledIdRef.current) return;
+    setFocusedLeafId((prev) => (prev === controlled.focusedLeafId ? prev : controlled.focusedLeafId));
+  }, [controlled?.id, controlled?.focusedLeafId, controlled]);
+
   // Persist tree on change. Also assert there are no duplicate ids — if there
   // are, the tree is corrupt and any subsequent replaceNode/splitLeaf will hit
   // the wrong node. We auto-heal so the user isn't stuck, but log loudly so we

@@ -852,6 +852,10 @@ input[type="password"]:disabled,
   margin: 0 0 12px;
 }
 
+.shortcuts-group .shortcuts-table {
+  margin-top: 4px;
+}
+
 .shortcut-actions {
   width: 1%;
   padding-left: 16px !important;
