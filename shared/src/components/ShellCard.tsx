@@ -17,6 +17,8 @@ export function ShellCard({
   onStop,
   onRename,
   renameShortcutHint = "Cmd+R",
+  onMoveToWorkspace,
+  moveToWorkspaceLabel,
 }: {
   shell: ShellPane;
   onPress?: () => void;
@@ -25,6 +27,8 @@ export function ShellCard({
   onStop?: () => void;
   onRename?: () => void;
   renameShortcutHint?: string;
+  onMoveToWorkspace?: () => void;
+  moveToWorkspaceLabel?: string;
 }) {
   const displayName = shell.display_name ?? shell.pane_title ?? shortenPath(shell.cwd);
 
@@ -32,7 +36,8 @@ export function ShellCard({
   const menuBtnRef = useRef<any>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
-  const showMenu = !!(onStop || onRename);
+  const canMoveToWorkspace = !!onMoveToWorkspace && !!moveToWorkspaceLabel;
+  const showMenu = !!(onStop || onRename || canMoveToWorkspace);
 
   return (
     <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
@@ -75,7 +80,8 @@ export function ShellCard({
           onClose={() => setMenuOpen(false)}
           items={[
             ...(onRename ? [{ type: "item" as const, label: "Rename", hint: renameShortcutHint, onPress: () => { onRename(); setMenuOpen(false); } }] : []),
-            ...(onRename && onStop ? [{ type: "separator" as const }] : []),
+            ...(canMoveToWorkspace ? [{ type: "item" as const, label: moveToWorkspaceLabel!, onPress: () => { onMoveToWorkspace!(); setMenuOpen(false); } }] : []),
+            ...((onRename || canMoveToWorkspace) && onStop ? [{ type: "separator" as const }] : []),
             ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}
         />

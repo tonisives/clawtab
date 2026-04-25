@@ -23,6 +23,7 @@ export interface WorkspaceIndex {
 }
 
 export const DEFAULT_WORKSPACE_ID: WorkspaceId = "default";
+export const DETECTED_WORKSPACE_ID: WorkspaceId = "detected";
 
 export function emptyWorkspaceState(id: WorkspaceId): WorkspaceState {
   return { id, tree: null, focusedLeafId: null, singlePaneContent: null };

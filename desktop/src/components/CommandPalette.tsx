@@ -38,6 +38,7 @@ export interface CommandPaletteProps {
   onSelectJob: (slug: string) => void;
   onSelectProcess: (paneId: string) => void;
   onSelectShell: (paneId: string) => void;
+  onSelectWorkspace?: (workspaceId: string) => void;
 }
 
 function buildEntries(params: {
@@ -163,6 +164,7 @@ export function CommandPalette({
   onSelectJob,
   onSelectProcess,
   onSelectShell,
+  onSelectWorkspace,
 }: CommandPaletteProps) {
   const mgr = useWorkspaceManager();
   const [query, setQuery] = useState("");
@@ -231,6 +233,8 @@ export function CommandPalette({
       requestXtermPaneFocus(entry.paneId);
     } else if (entry.kind === "job" && entry.slug) {
       onSelectJob(entry.slug);
+    } else if (entry.kind === "workspace") {
+      onSelectWorkspace?.(entry.workspaceId);
     }
     onClose();
   };

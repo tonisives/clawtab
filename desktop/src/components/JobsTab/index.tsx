@@ -42,6 +42,7 @@ import { useFolderRunGroups } from "./hooks/useFolderRunGroups";
 import { useJobsNotifications } from "./hooks/useJobsNotifications";
 import { useJobsTabEffects } from "./hooks/useJobsTabEffects";
 import { useFocusHistory } from "../../workspace/useFocusHistory";
+import { useWorkspaceManager } from "../../workspace/WorkspaceManager";
 import { formatShortcutSteps } from "../../shortcuts";
 
 const transport = createTauriTransport();
@@ -56,6 +57,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const settings = useJobsTabSettings();
+  const wsMgr = useWorkspaceManager();
   const { defaultProvider, defaultModel, enabledModels } = settings;
 
   // Viewing / navigation state (extracted hook)
@@ -305,6 +307,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       enabledModels={enabledModels}
       focusSignal={focusEmptyAgentSignal}
       folderGroups={folderRunGroups}
+      activeWorkspaceId={wsMgr.activeId}
     />
   );
 
@@ -358,6 +361,15 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         onSelectShell={(paneId) => {
           const shell = shellPanes.find((s) => s.pane_id === paneId);
           if (shell) handleSelectShell(shell);
+        }}
+        onSelectWorkspace={(workspaceId) => {
+          // CommandPalette already called wsMgr.setActive; the workspace-switch
+          // effect will derive currentContent shortly. If the target has no
+          // panes, EmptyDetailAgent will render — focus its textarea and
+          // pre-select the workspace folder.
+          const target = wsMgr.getState(workspaceId);
+          const hasContent = !!target.tree || !!target.singlePaneContent;
+          if (!hasContent) viewing.setFocusEmptyAgentSignal((v) => v + 1);
         }}
       />
     </>

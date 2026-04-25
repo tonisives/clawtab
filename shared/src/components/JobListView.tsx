@@ -672,8 +672,8 @@ export function JobListView({
           }
         }
       } else {
-        result.push({ kind: "header", group: "Detected", displayGroup: "Detected" });
-        if (!collapsedGroups.has("Detected")) {
+        result.push({ kind: "header", group: "detected", displayGroup: "Detected" });
+        if (!collapsedGroups.has("detected")) {
           for (const proc of entry.procs) {
             result.push({ kind: "process", process: proc });
           }
@@ -687,7 +687,7 @@ export function JobListView({
       if (!hiddenSectionCollapsed) {
         for (const entry of hiddenEntries) {
           const displayGroup = "displayGroup" in entry ? entry.displayGroup : "Detected";
-          const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" ? entry.groupKey : "Detected";
+          const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" ? entry.groupKey : "detected";
           result.push({ kind: "hidden-header", group, displayGroup });
         }
       }
@@ -1017,7 +1017,7 @@ export function JobListView({
       if (item.kind === "header" || item.kind === "hidden-section" || item.kind === "hidden-header") {
         flushGroup();
         if (item.kind === "header") {
-          const isWorkspaceHeaderForFlush = activeWorkspaceId != null && item.group !== "Shells" && item.group !== "Detected";
+          const isWorkspaceHeaderForFlush = activeWorkspaceId != null && item.group !== "Shells";
           if (isWorkspaceHeaderForFlush) {
             currentGroupBuffer = [];
             currentGroupIsActive = item.group === activeWorkspaceId;
@@ -1030,7 +1030,7 @@ export function JobListView({
               if (item.kind === "header") {
                 const isCollapsed = collapsedGroups.has(item.group);
                 const allowGroupMenu = item.group !== "Shells" && (onAddJob || onHideGroup);
-                const isWorkspaceHeader = activeWorkspaceId != null && item.group !== "Shells" && item.group !== "Detected";
+                const isWorkspaceHeader = activeWorkspaceId != null && item.group !== "Shells";
                 const isActiveWorkspace = isWorkspaceHeader && item.group === activeWorkspaceId;
                 const isInactiveWorkspace = isWorkspaceHeader && !isActiveWorkspace;
                 const hoverSwitchHandlers = dragActive && isInactiveWorkspace && onActivateWorkspace

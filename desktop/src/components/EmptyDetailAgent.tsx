@@ -19,13 +19,14 @@ interface EmptyDetailAgentProps {
   enabledModels?: Record<string, string[]>;
   focusSignal?: number;
   folderGroups?: { group: string; folderPath: string }[];
+  activeWorkspaceId?: string;
 }
 
 const LINE_HEIGHT = 18;
 const VERTICAL_PADDING = 16;
 const EXPANDED_MAX_HEIGHT = 400;
 
-export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, defaultModel, enabledModels = {}, focusSignal, folderGroups = [] }: EmptyDetailAgentProps) {
+export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, defaultModel, enabledModels = {}, focusSignal, folderGroups = [], activeWorkspaceId }: EmptyDetailAgentProps) {
   const [prompt, setPromptState] = useState(() => {
     if (typeof localStorage === "undefined") return "";
     try { return localStorage.getItem(EMPTY_AGENT_QUERY_KEY) ?? ""; } catch { return ""; }
@@ -146,9 +147,13 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
     if (focusSignal === lastFocusSignalRef.current) return;
     lastFocusSignalRef.current = focusSignal;
     if (typeof focusSignal === "number" && focusSignal > 0) {
+      if (activeWorkspaceId) {
+        const match = folderOptions.find((opt) => opt.group === activeWorkspaceId);
+        if (match) setWorkDir(match.folderPath);
+      }
       requestAnimationFrame(focusTextarea);
     }
-  }, [focusSignal, focusTextarea]);
+  }, [focusSignal, focusTextarea, activeWorkspaceId, folderOptions, setWorkDir]);
 
   const handleRunRef = useRef(handleRun);
   useEffect(() => { handleRunRef.current = handleRun; }, [handleRun]);

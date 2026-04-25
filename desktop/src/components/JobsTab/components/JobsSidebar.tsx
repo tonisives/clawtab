@@ -72,6 +72,32 @@ export function JobsSidebar({
     [enabledModels],
   );
 
+  const cwdToGroup = useMemo(() => {
+    const map = new Map<string, { groupKey: string; displayName: string }>();
+    for (const job of core.jobs) {
+      const fp = job.folder_path ?? job.work_dir;
+      if (!fp) continue;
+      if (map.has(fp)) continue;
+      const groupKey = job.group || "default";
+      const displayName = groupKey === "default"
+        ? (fp.split("/").filter(Boolean).pop() ?? "General")
+        : groupKey;
+      map.set(fp, { groupKey, displayName });
+    }
+    return map;
+  }, [core.jobs]);
+
+  const moveToWorkspaceForCwd = useCallback((cwd: string, currentGroup: string | null | undefined) => {
+    const target = cwdToGroup.get(cwd);
+    if (!target) return null;
+    if ((currentGroup ?? null) === target.groupKey) return null;
+    return target;
+  }, [cwdToGroup]);
+
+  const handleMoveProcessToWorkspace = useCallback((paneId: string, groupKey: string) => {
+    invoke("set_detected_process_group", { paneId, group: groupKey }).catch(() => {});
+  }, []);
+
   const openElsewhereContentKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const [wsId, state] of mgr.getAllStates()) {
@@ -116,20 +142,32 @@ export function JobsSidebar({
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => (
-      <DraggableProcessCard
-        {...props}
-        reorderEnabled
-      />
-    ),
-    [],
+    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => {
+      const target = moveToWorkspaceForCwd(props.process.cwd, props.process.matched_group);
+      return (
+        <DraggableProcessCard
+          {...props}
+          reorderEnabled
+          onMoveToWorkspace={target ? () => handleMoveProcessToWorkspace(props.process.pane_id, target.groupKey) : undefined}
+          moveToWorkspaceLabel={target ? `Move to ${target.displayName}` : undefined}
+        />
+      );
+    },
+    [moveToWorkspaceForCwd, handleMoveProcessToWorkspace],
   );
 
   const renderDraggableShellCard = useCallback(
-    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => (
-      <DraggableShellCard {...props} />
-    ),
-    [],
+    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => {
+      const target = moveToWorkspaceForCwd(props.shell.cwd, props.shell.matched_group);
+      return (
+        <DraggableShellCard
+          {...props}
+          onMoveToWorkspace={target ? () => handleMoveProcessToWorkspace(props.shell.pane_id, target.groupKey) : undefined}
+          moveToWorkspaceLabel={target ? `Move to ${target.displayName}` : undefined}
+        />
+      );
+    },
+    [moveToWorkspaceForCwd, handleMoveProcessToWorkspace],
   );
 
   const wrapSortableJobGroup = useCallback((group: string, jobSlugs: string[], children: ReactNode) => (

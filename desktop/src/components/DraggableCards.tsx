@@ -134,6 +134,8 @@ export function DraggableProcessCard({
   reorderEnabled,
   marginTop,
   dataProcessId,
+  onMoveToWorkspace,
+  moveToWorkspaceLabel,
 }: {
   process: DetectedProcess;
   sortGroup: string;
@@ -152,6 +154,8 @@ export function DraggableProcessCard({
   reorderEnabled?: boolean;
   marginTop?: number;
   dataProcessId?: string;
+  onMoveToWorkspace?: () => void;
+  moveToWorkspaceLabel?: string;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: process.pane_id,
@@ -216,6 +220,8 @@ export function DraggableProcessCard({
         onRenameDraftChange={onRenameDraftChange}
         onRenameStateChange={onRenameStateChange}
         renameShortcutHint={renameShortcutHint}
+        onMoveToWorkspace={onMoveToWorkspace}
+        moveToWorkspaceLabel={moveToWorkspaceLabel}
       />
     </div>
   );
@@ -262,6 +268,8 @@ export function DraggableShellCard({
   onStop,
   onRename,
   renameShortcutHint,
+  onMoveToWorkspace,
+  moveToWorkspaceLabel,
 }: {
   shell: ShellPane;
   onPress?: () => void;
@@ -270,6 +278,8 @@ export function DraggableShellCard({
   onStop?: () => void;
   onRename?: () => void;
   renameShortcutHint?: string;
+  onMoveToWorkspace?: () => void;
+  moveToWorkspaceLabel?: string;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `shell-${shell.pane_id}`,
@@ -299,6 +309,8 @@ export function DraggableShellCard({
         onStop={onStop}
         onRename={onRename}
         renameShortcutHint={renameShortcutHint}
+        onMoveToWorkspace={onMoveToWorkspace}
+        moveToWorkspaceLabel={moveToWorkspaceLabel}
       />
     </div>
   );

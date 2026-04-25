@@ -4,6 +4,7 @@ import { requestXtermPaneFocus } from "../../XtermPane";
 import type { useViewingState } from "./useViewingState";
 import type { Job } from "../../../types";
 import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
+import { DETECTED_WORKSPACE_ID } from "../../../workspace/types";
 
 interface UsePaneSelectionParams {
   core: ReturnType<typeof useJobsCore>;
@@ -22,7 +23,7 @@ function groupForJob(job: RemoteJob): string {
 }
 
 function groupForProcess(process: DetectedProcess): string {
-  return process.matched_group ?? "default";
+  return process.matched_group ?? DETECTED_WORKSPACE_ID;
 }
 
 export function usePaneSelection({ core, onJobSelected, split, viewing }: UsePaneSelectionParams) {

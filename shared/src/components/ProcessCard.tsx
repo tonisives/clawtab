@@ -24,6 +24,8 @@ export function ProcessCard({
   onRenameDraftChange,
   onRenameStateChange,
   renameShortcutHint = "Cmd+R",
+  onMoveToWorkspace,
+  moveToWorkspaceLabel,
 }: {
   process: DetectedProcess;
   onPress?: () => void;
@@ -38,6 +40,8 @@ export function ProcessCard({
   onRenameDraftChange?: (value: string | null) => void;
   onRenameStateChange?: (editing: boolean) => void;
   renameShortcutHint?: string;
+  onMoveToWorkspace?: () => void;
+  moveToWorkspaceLabel?: string;
 }) {
   const displayName = inGroup
     ? (process.display_name ?? process.pane_title ?? process.first_query ?? shortenPath(process.cwd))
@@ -132,7 +136,8 @@ export function ProcessCard({
     </Tooltip>
   );
 
-  const showMenu = (onStop || onRename || onSaveName) && !transient;
+  const canMoveToWorkspace = !!onMoveToWorkspace && !!moveToWorkspaceLabel && !transient;
+  const showMenu = (onStop || onRename || onSaveName || canMoveToWorkspace) && !transient;
   const kind = kindForProcess(process);
 
   return (
@@ -205,14 +210,15 @@ export function ProcessCard({
           ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </TouchableOpacity>
-      {menuOpen && (onStop || onRename || onSaveName) && (
+      {menuOpen && (onStop || onRename || onSaveName || canMoveToWorkspace) && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
             ...(canRename ? [{ type: "item" as const, label: "Rename", hint: renameShortcutHint, onPress: () => { startEditing(); } }] : []),
-            ...(canRename && onStop ? [{ type: "separator" as const }] : []),
+            ...(canMoveToWorkspace ? [{ type: "item" as const, label: moveToWorkspaceLabel!, onPress: () => { onMoveToWorkspace!(); setMenuOpen(false); } }] : []),
+            ...((canRename || canMoveToWorkspace) && onStop ? [{ type: "separator" as const }] : []),
             ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}
         />

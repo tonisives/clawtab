@@ -595,9 +595,10 @@ export function usePaneRenderers({
         enabledModels={enabledModels}
         focusSignal={focusEmptyAgentSignal}
         folderGroups={folderRunGroups}
+        activeWorkspaceId={mgr.activeId}
       />
     );
-  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInset, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, defaultModel, autoYesShortcut, focusEmptyAgentSignal, folderRunGroups, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport, setScrollToSlug, sidebarFocusRef]);
+  }, [agentJob, agentProcess, core.statuses, core.jobs, core.processes, questions, autoYes, actions, handleOpen, handleDuplicate, handleDuplicateToFolder, core.reload, handleFork, handleSplitPane, questionPolling, buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath, isWide, trafficLightInset, pendingProcess, shellPanes, selectAdjacentItem, openRenameProcessDialog, processRenameDrafts, split.toggleZoomLeaf, handleRunAgent, handleGetAgentProviders, defaultProvider, defaultModel, autoYesShortcut, focusEmptyAgentSignal, folderRunGroups, mgr.activeId, stoppingProcesses, setStoppingProcesses, setStoppingJobSlugs, demotedShellPaneIdsRef, setShellPanes, setPendingAgentWorkDir, setPendingProcess, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId, transport, setScrollToSlug, sidebarFocusRef]);
 
   return { renderLeaf, renderSinglePaneContent };
 }
