@@ -26,6 +26,10 @@ pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
         <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>RUST_LOG</key>
         <string>info</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>LC_ALL</key>
+        <string>en_US.UTF-8</string>
     </dict>
 </dict>
 </plist>"#;

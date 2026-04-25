@@ -165,8 +165,12 @@ fn main() {
                     &jobs_config,
                     &ctx,
                 );
-                // Daemon has no ClawTab UI, so nothing is protected.
-                clawtab_lib::scheduler::reattach::cleanup_orphaned_shell_windows(&HashSet::new());
+                // Use the protected-panes set persisted by the previous app session.
+                // Without this, restarting the daemon while the app is closed (or
+                // before the app boots) would sweep the user's plain shell panes.
+                clawtab_lib::scheduler::reattach::cleanup_orphaned_shell_windows(
+                    &clawtab_lib::config::protected_panes::load_set(),
+                );
             });
         }
 
@@ -522,7 +526,13 @@ async fn handle_ipc_command(
             IpcResponse::Ok
         }
         IpcCommand::SetProtectedPanes { pane_ids } => {
-            *protected_panes.lock().unwrap() = pane_ids.into_iter().collect();
+            let set: HashSet<String> = pane_ids.into_iter().collect();
+            *protected_panes.lock().unwrap() = set.clone();
+            let mut sorted: Vec<String> = set.into_iter().collect();
+            sorted.sort();
+            if let Err(e) = clawtab_lib::config::protected_panes::save(&sorted) {
+                log::warn!("persist protected_panes failed: {}", e);
+            }
             IpcResponse::Ok
         }
         IpcCommand::DismissQuestion { pane_id } => {

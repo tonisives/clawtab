@@ -50,6 +50,12 @@ pub async fn handle_incoming(
                 .into_iter()
                 .map(|(k, v)| (k, status_to_remote(&v)))
                 .collect();
+            log::info!(
+                "ListJobs: returning {} jobs, {} statuses (id={})",
+                remote_jobs.len(),
+                remote_statuses.len(),
+                id
+            );
             Some(DesktopMessage::JobsList {
                 id,
                 jobs: remote_jobs,
@@ -180,6 +186,10 @@ pub async fn handle_incoming(
             let processes = tokio::task::spawn_blocking(move || detect_processes(&jc, &js))
                 .await
                 .unwrap_or_default();
+            log::info!("DetectProcesses: returning {} processes", processes.len());
+            for p in &processes {
+                log::info!("  - pane={} provider={} cmd_version={} session={} window={} group={:?} job={:?} cwd={}", p.pane_id, p.provider, p.version, p.tmux_session, p.window_name, p.matched_group, p.matched_job, p.cwd);
+            }
             Some(DesktopMessage::DetectedProcesses { id, processes })
         }
 
@@ -569,30 +579,70 @@ fn detect_processes(
         name.starts_with("clawtab-") && name.contains("-view-")
     }
 
+    fn normalize_optional_text(value: String) -> Option<String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }
+
     let output = match crate::debug_spawn::run_logged(
         "tmux",
         &[
             "list-panes", "-a", "-F",
-            "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}\t#{session_name}\t#{window_name}\t#{pane_pid}",
+            "#{pane_id}\x1e#{pane_current_command}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{pane_pid}\x1e#{window_id}\x1e#{pane_title}\x1e#{@clawtab-slug}",
         ],
         "relay::list_panes_snapshot",
     ) {
         Ok(o) if o.status.success() => o,
-        _ => return vec![],
+        Ok(o) => {
+            log::warn!("detect_processes: tmux list-panes exited {:?}: stderr={}", o.status.code(), String::from_utf8_lossy(&o.stderr));
+            return vec![];
+        }
+        Err(e) => {
+            log::warn!("detect_processes: tmux list-panes spawn error: {}", e);
+            return vec![];
+        }
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let pane_lines = stdout.lines().count();
+    if pane_lines > 0 {
+        let first = stdout.lines().next().unwrap_or("");
+        let hex: String = first.bytes().take(80).map(|b| format!("{:02x} ", b)).collect();
+        log::info!("detect_processes: tmux returned {} pane lines. first_line_hex(80)={}", pane_lines, hex);
+    } else {
+        log::info!("detect_processes: tmux returned 0 pane lines");
+    }
 
-    let tracked_panes: HashSet<String> = {
+    // Running jobs: pane_id -> (group, slug)
+    let running_panes: HashMap<String, (String, String)> = {
+        let config = jobs_config.lock().unwrap();
         let statuses = job_status.lock().unwrap();
         statuses
-            .values()
-            .filter_map(|s| match s {
+            .iter()
+            .filter_map(|(slug, status)| match status {
                 JobStatus::Running {
                     pane_id: Some(pid), ..
-                } => Some(pid.clone()),
+                } => config
+                    .jobs
+                    .iter()
+                    .find(|job| job.slug == *slug)
+                    .map(|job| (pid.clone(), (job.group.clone(), job.slug.clone()))),
                 _ => None,
             })
+            .collect()
+    };
+
+    // Slug -> group, for @clawtab-slug tag resolution.
+    let slug_to_group: HashMap<String, String> = {
+        let config = jobs_config.lock().unwrap();
+        config
+            .jobs
+            .iter()
+            .map(|job| (job.slug.clone(), job.group.clone()))
             .collect()
     };
 
@@ -603,9 +653,9 @@ fn detect_processes(
             .iter()
             .filter_map(|job| {
                 if let Some(ref fp) = job.folder_path {
-                    Some((fp.clone(), job.group.clone(), job.name.clone()))
+                    Some((fp.clone(), job.group.clone(), job.slug.clone()))
                 } else if let Some(ref wd) = job.work_dir {
-                    Some((wd.clone(), job.group.clone(), job.name.clone()))
+                    Some((wd.clone(), job.group.clone(), job.slug.clone()))
                 } else {
                     None
                 }
@@ -616,40 +666,77 @@ fn detect_processes(
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 
+    let mut skipped_short = 0u32;
+    let mut skipped_view = 0u32;
+    let mut skipped_placeholder = 0u32;
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(6, '\t').collect();
-        if parts.len() < 6 {
+        let parts: Vec<&str> = line.splitn(9, '\x1e').collect();
+        if parts.len() < 8 {
+            skipped_short += 1;
             continue;
         }
 
-        let (pane_id, command, cwd, session, window, pane_pid) =
-            (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+        let pane_id = parts[0];
+        let command = parts[1];
+        let cwd = parts[2];
+        let session = parts[3];
+        let window = parts[4];
+        let pane_pid = parts[5];
+        let _window_id = parts[6];
+        let pane_title = normalize_optional_text(parts[7].to_string());
+        let pane_slug_tag = parts
+            .get(8)
+            .and_then(|s| normalize_optional_text(s.to_string()));
+
         if is_view_session(session) {
+            skipped_view += 1;
+            continue;
+        }
+        if window == "__placeholder" {
+            skipped_placeholder += 1;
             continue;
         }
 
-        let provider =
+        // Agent detection. Shell is *not* returned by detect_process_provider;
+        // we promote to Shell only for windows ClawTab explicitly created
+        // (ct-clawtab-shell-* via process demotion, clawtab-shell-* via split).
+        // Plain ct-* captures (view wrappers for user-owned panes) must never
+        // auto-surface as clawtab shells.
+        let agent_provider =
             crate::agent_session::detect_process_provider(pane_pid, None).or_else(|| {
                 is_semver(command).then_some(crate::agent_session::ProcessProvider::Claude)
             });
-        let Some(provider) = provider else {
-            continue;
+        let is_clawtab_shell_window = window.starts_with("ct-clawtab-shell-")
+            || window.starts_with("clawtab-shell-");
+
+        let provider = match (agent_provider, is_clawtab_shell_window) {
+            (Some(p), _) => p,
+            (None, true) => crate::agent_session::ProcessProvider::Shell,
+            (None, false) => continue,
         };
+
         if !seen.insert(pane_id.to_string()) {
             continue;
         }
-        if tracked_panes.contains(pane_id) {
-            continue;
-        }
 
-        let mut matched_group = None;
-        let matched_job = None;
-        for (root, group, _name) in &match_entries {
-            if cwd == root || cwd.starts_with(&format!("{}/", root)) {
-                matched_group = Some(group.clone());
-                break;
+        // Job matching order mirrors desktop: running -> tag -> cwd root.
+        let (matched_group, matched_job) = if let Some((group, slug)) = running_panes.get(pane_id) {
+            (Some(group.clone()), Some(slug.clone()))
+        } else if let Some(group) = pane_slug_tag
+            .as_ref()
+            .and_then(|tag| slug_to_group.get(tag))
+        {
+            (Some(group.clone()), pane_slug_tag.clone())
+        } else {
+            let best = match_entries
+                .iter()
+                .filter(|(root, _, _)| cwd == root || cwd.starts_with(&format!("{}/", root)))
+                .max_by_key(|(root, _, _)| root.len());
+            match best {
+                Some((_, group, _)) => (Some(group.clone()), None),
+                None => (None, None),
             }
-        }
+        };
 
         let log_lines = crate::tmux::capture_pane(session, pane_id, 5)
             .unwrap_or_default()
@@ -669,6 +756,12 @@ fn detect_processes(
             crate::agent_session::ProcessProvider::Shell => (false, false, false),
         };
 
+        // Prefer pane_title for shell tabs (e.g. "resumes>job-app editor") so
+        // the remote UI shows something useful instead of a raw window name.
+        let display_window = pane_title
+            .clone()
+            .unwrap_or_else(|| window.to_string());
+
         results.push(RemoteDetectedProcess {
             pane_id: pane_id.to_string(),
             cwd: cwd.to_string(),
@@ -682,7 +775,7 @@ fn detect_processes(
             can_send_skills,
             can_inject_secrets,
             tmux_session: session.to_string(),
-            window_name: window.to_string(),
+            window_name: display_window,
             matched_group,
             matched_job,
             log_lines,
@@ -692,6 +785,11 @@ fn detect_processes(
             token_count: session_info.token_count,
         });
     }
+
+    log::info!(
+        "detect_processes: summary: total_lines={} skipped_short={} skipped_view={} skipped_placeholder={} kept={}",
+        pane_lines, skipped_short, skipped_view, skipped_placeholder, results.len()
+    );
 
     results
 }

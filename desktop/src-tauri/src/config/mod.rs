@@ -1,4 +1,5 @@
 pub mod jobs;
+pub mod protected_panes;
 pub mod settings;
 
 use std::path::PathBuf;

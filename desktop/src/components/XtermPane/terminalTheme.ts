@@ -1,0 +1,32 @@
+import type { ITerminalOptions } from "@xterm/xterm";
+
+export const TERMINAL_OPTIONS: ITerminalOptions = {
+  fontSize: 12,
+  fontFamily: "monospace",
+  theme: {
+    background: "#1c1c1e",
+    foreground: "#e4e4e4",
+    cursor: "#7986cb",
+    cursorAccent: "#0a0a0a",
+    selectionBackground: "rgba(121, 134, 203, 0.3)",
+    selectionForeground: "#e4e4e4",
+    black: "#161616",
+    red: "#ff453a",
+    green: "#32d74b",
+    yellow: "#ff9f0a",
+    blue: "#7986cb",
+    magenta: "#da77f2",
+    cyan: "#66d9e8",
+    white: "#e4e4e4",
+    brightBlack: "#555",
+    brightRed: "#ff6b6b",
+    brightGreen: "#51cf66",
+    brightYellow: "#ffd43b",
+    brightBlue: "#91d5ff",
+    brightMagenta: "#e599f7",
+    brightCyan: "#99e9f2",
+    brightWhite: "#ffffff",
+  },
+  allowProposedApi: true,
+  scrollback: 10000,
+};

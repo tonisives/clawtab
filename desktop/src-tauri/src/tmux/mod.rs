@@ -111,7 +111,7 @@ pub fn resolve_real_session_for_pane(pane_id: &str) -> Result<String, String> {
     let window_id = String::from_utf8_lossy(&window_id.stdout).trim().to_string();
 
     let output = run(
-        &["list-windows", "-a", "-F", "#{session_name}\t#{window_id}"],
+        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
         "tmux::resolve_real_session_for_pane::list_windows",
     )
     .map_err(|e| format!("Failed to list windows: {}", e))?;
@@ -124,7 +124,7 @@ pub fn resolve_real_session_for_pane(pane_id: &str) -> Result<String, String> {
     let raw = String::from_utf8_lossy(&output.stdout);
     let mut fallback: Option<String> = None;
     for line in raw.lines() {
-        let mut parts = line.splitn(2, '\t');
+        let mut parts = line.splitn(2, '\x1e');
         let session = parts.next().unwrap_or("");
         let wid = parts.next().unwrap_or("");
         if wid != window_id {
@@ -173,7 +173,7 @@ pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
             "-t",
             pane_id,
             "-p",
-            "#{session_name}\t#{window_id}\t#{window_name}",
+            "#{session_name}\x1e#{window_id}\x1e#{window_name}",
         ],
         "tmux::resolve_fork_session::info",
     )
@@ -185,7 +185,7 @@ pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
         ));
     }
     let raw = String::from_utf8_lossy(&info.stdout).trim().to_string();
-    let parts: Vec<&str> = raw.split('\t').collect();
+    let parts: Vec<&str> = raw.split('\x1e').collect();
     if parts.len() < 3 {
         return Err(format!("malformed display-message output: {}", raw));
     }
@@ -802,7 +802,7 @@ pub struct PaneOrigin {
     pub window_name: String,
 }
 
-/// `display-message -t <pane_id> -p '#{session_name}\t#{window_id}\t#{window_name}'`.
+/// `display-message -t <pane_id> -p '#{session_name}\x1e#{window_id}\x1e#{window_name}'`.
 pub fn display_pane_origin(pane_id: &str) -> Result<PaneOrigin, String> {
     let raw = run_capture(
         &[
@@ -810,11 +810,11 @@ pub fn display_pane_origin(pane_id: &str) -> Result<PaneOrigin, String> {
             "-t",
             pane_id,
             "-p",
-            "#{session_name}\t#{window_id}\t#{window_name}",
+            "#{session_name}\x1e#{window_id}\x1e#{window_name}",
         ],
         "tmux::display_pane_origin",
     )?;
-    let parts: Vec<&str> = raw.split('\t').collect();
+    let parts: Vec<&str> = raw.split('\x1e').collect();
     if parts.len() != 3 {
         return Err(format!("malformed pane origin: {}", raw));
     }
@@ -832,7 +832,7 @@ pub struct PaneOriginFull {
     pub window_panes: u32,
 }
 
-/// `display-message -t <pane_id> -p '#{window_id}\t#{pane_index}\t#{window_name}\t#{window_panes}'`.
+/// `display-message -t <pane_id> -p '#{window_id}\x1e#{pane_index}\x1e#{window_name}\x1e#{window_panes}'`.
 pub fn display_pane_origin_full(pane_id: &str) -> Result<PaneOriginFull, String> {
     let raw = run_capture(
         &[
@@ -840,11 +840,11 @@ pub fn display_pane_origin_full(pane_id: &str) -> Result<PaneOriginFull, String>
             "-t",
             pane_id,
             "-p",
-            "#{window_id}\t#{pane_index}\t#{window_name}\t#{window_panes}",
+            "#{window_id}\x1e#{pane_index}\x1e#{window_name}\x1e#{window_panes}",
         ],
         "tmux::display_pane_origin_full",
     )?;
-    let parts: Vec<&str> = raw.split('\t').collect();
+    let parts: Vec<&str> = raw.split('\x1e').collect();
     if parts.len() < 4 {
         return Err(format!("malformed origin: {}", raw));
     }
@@ -1042,16 +1042,16 @@ pub fn list_window_names_in_session(session: &str) -> Result<Vec<String>, String
     Ok(raw.lines().map(|l| l.trim().to_string()).collect())
 }
 
-/// `list-windows -a -F '#{session_name}\t#{window_id}'`. Used by the capture
+/// `list-windows -a -F '#{session_name}\x1e#{window_id}'`. Used by the capture
 /// helper to resolve the real (non-view) session owning a window.
 pub fn list_all_windows_with_session() -> Result<Vec<(String, String)>, String> {
     let raw = run_capture(
-        &["list-windows", "-a", "-F", "#{session_name}\t#{window_id}"],
+        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
         "tmux::list_all_windows_with_session",
     )?;
     let mut out = Vec::new();
     for line in raw.lines() {
-        let mut parts = line.splitn(2, '\t');
+        let mut parts = line.splitn(2, '\x1e');
         let s = parts.next().unwrap_or("").to_string();
         let w = parts.next().unwrap_or("").to_string();
         if !s.is_empty() && !w.is_empty() {
@@ -1061,17 +1061,17 @@ pub fn list_all_windows_with_session() -> Result<Vec<(String, String)>, String> 
     Ok(out)
 }
 
-/// `list-sessions -F '#{session_name}\t#{session_group}'`. Used by the
+/// `list-sessions -F '#{session_name}\x1e#{session_group}'`. Used by the
 /// orphaned-view-session sweep to find sessions that still share a group with
 /// at least one non-view member.
 pub fn list_sessions_with_groups() -> Result<String, String> {
     run_capture(
-        &["list-sessions", "-F", "#{session_name}\t#{session_group}"],
+        &["list-sessions", "-F", "#{session_name}\x1e#{session_group}"],
         "tmux::list_sessions_with_groups",
     )
 }
 
-/// `list-panes -a -F '#{session_name}\t#{window_id}\t#{window_name}\t#{pane_id}\t#{pane_current_command}'`.
+/// `list-panes -a -F '#{session_name}\x1e#{window_id}\x1e#{window_name}\x1e#{pane_id}\x1e#{pane_current_command}'`.
 /// Used by the orphaned-ct-windows sweep to find idle ct-* windows.
 pub fn list_panes_all_with_commands() -> Result<String, String> {
     run_capture(
@@ -1079,7 +1079,7 @@ pub fn list_panes_all_with_commands() -> Result<String, String> {
             "list-panes",
             "-a",
             "-F",
-            "#{session_name}\t#{window_id}\t#{window_name}\t#{pane_id}\t#{pane_current_command}",
+            "#{session_name}\x1e#{window_id}\x1e#{window_name}\x1e#{pane_id}\x1e#{pane_current_command}",
         ],
         "tmux::list_panes_all_with_commands",
     )

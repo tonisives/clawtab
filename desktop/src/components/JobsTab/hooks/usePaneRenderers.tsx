@@ -1,4 +1,4 @@
-import { useCallback, useState, type RefObject } from "react";
+import { useCallback, useState, type CSSProperties, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { RemoteJob, ClaudeQuestion, PaneContent, DetectedProcess, ProcessProvider, Transport } from "@clawtab/shared";
 import { shortenPath, type useJobsCore, type useSplitTree } from "@clawtab/shared";
@@ -56,6 +56,45 @@ interface UsePaneRenderersParams {
   autoYesShortcut?: string;
   callbacks: PaneCallbacks;
   sidebarFocusRef: RefObject<{ focus: () => void } | null>;
+}
+
+function ErrorPlaceholder({ message, onClose, headerLeftInset = 0 }: { message: string; onClose: () => void; headerLeftInset?: number }) {
+  const wrap: CSSProperties = { position: "relative", display: "flex", flex: 1, justifyContent: "center", alignItems: "center" };
+  const btn: CSSProperties = {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 24,
+    height: 24,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 4,
+    border: "none",
+    background: "transparent",
+    color: "var(--text-muted)",
+    cursor: "pointer",
+    fontSize: 16,
+    lineHeight: 1,
+    padding: 0,
+  };
+  const text: CSSProperties = { color: "var(--text-muted)", fontSize: 15, paddingLeft: headerLeftInset };
+  return (
+    <div style={wrap}>
+      <button
+        type="button"
+        style={btn}
+        onClick={onClose}
+        title="Close pane"
+        aria-label="Close pane"
+        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--hover-bg, rgba(127,127,127,0.15))"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+      >
+        {"\u2715"}
+      </button>
+      <span style={text}>{message}</span>
+    </div>
+  );
 }
 
 export function usePaneRenderers({
@@ -166,7 +205,7 @@ export function usePaneRenderers({
         ?? stoppingProcesses.find((sp) => sp.process.pane_id === content.paneId)?.process;
       const shell = shellPanes.find((p) => p.pane_id === content.paneId);
       if (!shell && !proc) {
-        return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Tmux pane not found</span></div>;
+        return <ErrorPlaceholder message="Tmux pane not found" onClose={() => split.handleClosePane(leafId)} headerLeftInset={leafHeaderInset} />;
       }
       if (proc) {
         return (
@@ -235,7 +274,7 @@ export function usePaneRenderers({
       const proc = core.processes.find((p) => p.pane_id === content.paneId)
         ?? stoppingProcesses.find((sp) => sp.process.pane_id === content.paneId)?.process
         ?? (pendingProcess?.pane_id === content.paneId ? pendingProcess : null);
-      if (!proc) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span></div>;
+      if (!proc) return <ErrorPlaceholder message="Process not found" onClose={() => split.handleClosePane(leafId)} headerLeftInset={leafHeaderInset} />;
       if (proc.pane_id.startsWith("_pending_")) {
         return (
           <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>
@@ -284,7 +323,7 @@ export function usePaneRenderers({
     }
 
     const job = (core.jobs as Job[]).find((j) => j.slug === content.slug);
-    if (!job) return <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}><span style={{ color: "var(--text-muted)", fontSize: 15 }}>Job not found</span></div>;
+    if (!job) return <ErrorPlaceholder message="Job not found" onClose={() => split.handleClosePane(leafId)} headerLeftInset={leafHeaderInset} />;
     const editingLeafJob = editingLeafJobs[leafId];
     if (editingLeafJob) {
       return (
@@ -390,9 +429,11 @@ export function usePaneRenderers({
       }
       if (!singleProcess) {
         return (
-          <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Process not found</span>
-          </div>
+          <ErrorPlaceholder
+            message="Process not found"
+            onClose={() => setViewingProcess(null)}
+            headerLeftInset={trafficLightInset}
+          />
         );
       }
       return (
@@ -434,9 +475,11 @@ export function usePaneRenderers({
       const singleShell = shellPanes.find((p) => p.pane_id === content.paneId);
       if (!singleShell && !singleProcess) {
         return (
-          <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Tmux pane not found</span>
-          </div>
+          <ErrorPlaceholder
+            message="Tmux pane not found"
+            onClose={() => { setViewingProcess(null); setViewingShell(null); }}
+            headerLeftInset={trafficLightInset}
+          />
         );
       }
       if (singleProcess) {
@@ -497,9 +540,11 @@ export function usePaneRenderers({
       const singleJob = (core.jobs as Job[]).find((j) => j.slug === content.slug);
       if (!singleJob) {
         return (
-          <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 15 }}>Job not found</span>
-          </div>
+          <ErrorPlaceholder
+            message="Job not found"
+            onClose={() => setViewingJob(null)}
+            headerLeftInset={trafficLightInset}
+          />
         );
       }
       const jobQuestion = questions.find((q) => q.matched_job === singleJob.slug);
