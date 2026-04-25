@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { acquirePane, releasePane } from "./paneInstance";
 import { debugXtermPane, isFocusPending, requestXtermPaneFocus } from "./paneRegistry";
+import { fitAndSyncPty } from "./paneResize";
 import type { XtermPaneProps } from "./types";
 
 export { requestXtermPaneFocus } from "./paneRegistry";
@@ -32,12 +33,10 @@ export const XtermPane = memo(function XtermPane({ paneId, tmuxSession, group, o
     // Fit synchronously now, then again on the next frame after layout settles.
     // Split-tree restructure can move the container into a slot whose width/height
     // is still mid-reflow; the second fit ensures the terminal matches the final
-    // visible size and avoids the "stale content" symptom that zoom-out/in fixes.
-    inst.fit.fit();
-    const fitRaf = requestAnimationFrame(() => {
-      if (inst.cancelled) return;
-      inst.fit.fit();
-    });
+    // visible size. Each pass also pushes pty_resize immediately when the size
+    // changed, so siblings reflow without waiting for the ResizeObserver debounce.
+    fitAndSyncPty(inst, "immediate");
+    const fitRaf = requestAnimationFrame(() => fitAndSyncPty(inst, "immediate"));
 
     if (isFocusPending(paneId)) {
       requestXtermPaneFocus(paneId);

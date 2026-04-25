@@ -1,5 +1,6 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "@xterm/xterm/css/xterm.css";
@@ -67,6 +68,13 @@ export function createPaneInstance(paneId: string, tmuxSession: string, resolved
   const fit = new FitAddon();
   terminal.loadAddon(fit);
   terminal.open(container);
+  try {
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => webgl.dispose());
+    terminal.loadAddon(webgl);
+  } catch (err) {
+    debugXtermPane(paneId, "webgl addon unavailable, falling back to canvas/dom", { error: String(err) });
+  }
 
   const inst: PaneInstance = {
     container,
@@ -95,6 +103,9 @@ export function createPaneInstance(paneId: string, tmuxSession: string, resolved
     onExitRef: { current: undefined },
     cancelled: false,
     firstContentOutputSeen: false,
+    lastSentCols: 0,
+    lastSentRows: 0,
+    resizeTimer: null,
   };
 
   loadShortcutSettings(inst);
@@ -114,6 +125,7 @@ function teardownPaneInstance(inst: PaneInstance) {
   if (inst.focusInHandler) container.removeEventListener("focusin", inst.focusInHandler);
   if (inst.focusOutHandler) container.removeEventListener("focusout", inst.focusOutHandler);
   if (inst.refreshTimer) clearTimeout(inst.refreshTimer);
+  if (inst.resizeTimer) clearTimeout(inst.resizeTimer);
   inst.observer?.disconnect();
   inst.dataDisposable?.dispose();
   inst.outputUnlisten?.();

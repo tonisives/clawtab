@@ -3,6 +3,8 @@ import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { PaneInstance } from "./types";
 
+const RESIZE_DEBOUNCE_MS = 30;
+
 export async function waitForViewportReady(
   el: HTMLDivElement,
   term: Terminal,
@@ -55,45 +57,59 @@ export async function waitForViewportReady(
   });
 }
 
-export function wireResizeObserver(inst: PaneInstance, initialCols: number, initialRows: number) {
-  const { paneId, container, terminal, fit } = inst;
-  let resizeTimer: ReturnType<typeof setTimeout> | null = null;
-  let prevWidth = 0;
-  let prevHeight = 0;
-  let prevCols = initialCols;
-  let prevRows = initialRows;
+// Fit the terminal to its container and, if the dimensions changed since the
+// last value sent to the PTY, send pty_resize. `mode` controls timing:
+//   - "immediate": fire IPC synchronously. Use for split/mount transitions
+//     where the user needs the sibling to reflow without delay.
+//   - "debounced": coalesce rapid calls (e.g. drag-resize) into one IPC.
+//
+// Always reads `terminal.cols/rows` at send time — never trusts a stale cache —
+// so the PTY size and xterm size cannot diverge even if multiple resizes are
+// in flight.
+export function fitAndSyncPty(inst: PaneInstance, mode: "immediate" | "debounced") {
+  if (inst.cancelled) return;
+  const { paneId, terminal, fit } = inst;
+  fit.fit();
+  const cols = terminal.cols;
+  const rows = terminal.rows;
+  if (cols < 2 || rows < 2) return;
+  if (cols === inst.lastSentCols && rows === inst.lastSentRows) return;
 
-  requestAnimationFrame(() => {
+  if (inst.resizeTimer) {
+    clearTimeout(inst.resizeTimer);
+    inst.resizeTimer = null;
+  }
+
+  const send = () => {
+    inst.resizeTimer = null;
     if (inst.cancelled) return;
     fit.fit();
-    if (terminal.cols !== prevCols || terminal.rows !== prevRows) {
-      prevCols = terminal.cols;
-      prevRows = terminal.rows;
-      invoke("pty_resize", { paneId, cols: terminal.cols, rows: terminal.rows }).catch(() => {});
-    }
-  });
+    const sendCols = terminal.cols;
+    const sendRows = terminal.rows;
+    if (sendCols < 2 || sendRows < 2) return;
+    if (sendCols === inst.lastSentCols && sendRows === inst.lastSentRows) return;
+    inst.lastSentCols = sendCols;
+    inst.lastSentRows = sendRows;
+    invoke("pty_resize", { paneId, cols: sendCols, rows: sendRows }).catch(() => {});
+  };
 
-  inst.observer = new ResizeObserver((entries) => {
-    const entry = entries[0];
-    if (!entry) return;
-    const width = Math.round(entry.contentRect.width);
-    const height = Math.round(entry.contentRect.height);
-    if (width === prevWidth && height === prevHeight) return;
-    prevWidth = width;
-    prevHeight = height;
-    fit.fit();
-    if (terminal.cols === prevCols && terminal.rows === prevRows) return;
-    if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      prevCols = terminal.cols;
-      prevRows = terminal.rows;
-      invoke("pty_resize", {
-        paneId,
-        cols: terminal.cols,
-        rows: terminal.rows,
-      }).catch(() => {});
-    }, 150);
+  if (mode === "immediate") {
+    send();
+  } else {
+    inst.resizeTimer = setTimeout(send, RESIZE_DEBOUNCE_MS);
+  }
+}
+
+export function wireResizeObserver(inst: PaneInstance, initialCols: number, initialRows: number) {
+  inst.lastSentCols = initialCols;
+  inst.lastSentRows = initialRows;
+
+  // Catch any final layout settle on the next frame after spawn.
+  requestAnimationFrame(() => fitAndSyncPty(inst, "immediate"));
+
+  inst.observer = new ResizeObserver(() => {
+    fitAndSyncPty(inst, "debounced");
   });
-  inst.observer.observe(container);
-  inst.observedEl = container;
+  inst.observer.observe(inst.container);
+  inst.observedEl = inst.container;
 }

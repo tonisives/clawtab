@@ -41,6 +41,11 @@ export type PaneInstance = {
   cancelled: boolean;
   // setup-time state previously held in setupPaneInstance closures
   firstContentOutputSeen: boolean;
+  // Last cols/rows we sent to the PTY. Shared by the ResizeObserver and the
+  // mount-time immediate sync so they don't fight or send duplicate IPCs.
+  lastSentCols: number;
+  lastSentRows: number;
+  resizeTimer: ReturnType<typeof setTimeout> | null;
 };
 
 export interface PtySpawnResult {
