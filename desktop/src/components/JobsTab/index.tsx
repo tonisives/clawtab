@@ -193,6 +193,8 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
     core,
     handleJobReorder,
     handleProcessReorder,
+    handleSelectJob,
+    handleSelectProcess,
     handleSplitPane,
     missedCronJobs,
     onTemplateHandled,

@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from "@dnd-kit/core";
-import type { AutoYesEntry, ClaudeQuestion, DetectedProcess, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
+import type { AutoYesEntry, ClaudeQuestion, DetectedProcess, RemoteJob, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { collectLeaves, shortenPath } from "@clawtab/shared";
 import type { Job } from "../../../types";
 import type { DragData } from "../../DraggableCards";
@@ -17,6 +17,8 @@ interface UseJobsTabHandlersParams {
   core: ReturnType<typeof useJobsCore>;
   handleJobReorder: (sourceSlug: string, targetSlug: string) => boolean;
   handleProcessReorder: (sourcePaneId: string, targetPaneId: string) => boolean;
+  handleSelectJob: (job: RemoteJob) => void;
+  handleSelectProcess: (process: DetectedProcess) => void;
   handleSplitPane: (paneId: string, direction: "right" | "down") => void;
   missedCronJobs: string[];
   onTemplateHandled?: () => void;
@@ -32,6 +34,8 @@ export function useJobsTabHandlers({
   core,
   handleJobReorder,
   handleProcessReorder,
+  handleSelectJob,
+  handleSelectProcess,
   handleSplitPane,
   missedCronJobs,
   onTemplateHandled,
@@ -195,8 +199,17 @@ export function useJobsTabHandlers({
   }, [core.jobs, setCreateForGroup, setIsCreating]);
 
   const handleQuestionNavigate = useCallback((q: ClaudeQuestion, resolvedJob: string | null) => {
+    if (resolvedJob) {
+      const job = (core.jobs as Job[]).find((j) => j.slug === resolvedJob);
+      if (job) { handleSelectJob(job as unknown as RemoteJob); return; }
+    }
+    const proc = core.processes.find((p) => p.pane_id === q.pane_id);
+    if (proc) {
+      handleSelectProcess(proc);
+      return;
+    }
     questionPolling.handleQuestionNavigate(q, resolvedJob, core.jobs as Job[], core.processes, setViewingJob, setViewingProcess);
-  }, [core.jobs, core.processes, questionPolling, setViewingJob, setViewingProcess]);
+  }, [core.jobs, core.processes, handleSelectJob, handleSelectProcess, questionPolling, setViewingJob, setViewingProcess]);
 
   const handleAutoYesPress = useCallback((entry: AutoYesEntry) => {
     const result = autoYes.handleAutoYesPress(entry);

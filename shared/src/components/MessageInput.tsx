@@ -15,9 +15,11 @@ import { radius, spacing } from "../theme/spacing";
 export function MessageInput({
   onSend,
   placeholder = "Send message...",
+  avoidKeyboard = true,
 }: {
   onSend: (text: string) => void;
   placeholder?: string;
+  avoidKeyboard?: boolean;
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -36,40 +38,46 @@ export function MessageInput({
     setSending(true);
   };
 
+  const inner = (
+    <View style={styles.container}>
+      <TextInput
+        style={styles.input}
+        value={text}
+        onChangeText={setText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        returnKeyType="send"
+        inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
+        onSubmitEditing={handleSend}
+        blurOnSubmit={false}
+        editable={!sending}
+      />
+      {sending ? (
+        <View style={styles.sendingIndicator}>
+          <ActivityIndicator size="small" color={colors.accent} />
+          <Text style={styles.sendingText}>Sent</Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
+          onPress={handleSend}
+          disabled={!text.trim()}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.sendText}>Send</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  if (!avoidKeyboard) return inner;
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={90}
     >
-      <View style={styles.container}>
-        <TextInput
-          style={styles.input}
-          value={text}
-          onChangeText={setText}
-          placeholder={placeholder}
-          placeholderTextColor={colors.textMuted}
-          returnKeyType="send"
-          inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
-          onSubmitEditing={handleSend}
-          blurOnSubmit={false}
-          editable={!sending}
-        />
-        {sending ? (
-          <View style={styles.sendingIndicator}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.sendingText}>Sent</Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.sendBtn, !text.trim() && styles.sendBtnDisabled]}
-            onPress={handleSend}
-            disabled={!text.trim()}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.sendText}>Send</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {inner}
     </KeyboardAvoidingView>
   );
 }

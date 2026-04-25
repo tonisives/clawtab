@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
@@ -207,7 +207,10 @@ export default function ProcessDetailScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
       <Stack.Screen
         options={{
           title: displayName,
@@ -289,9 +292,10 @@ export default function ProcessDetailScreen() {
         <MessageInput
           onSend={handleSend}
           placeholder={freetextOptionNumber ? "Type your answer..." : "Send input..."}
+          avoidKeyboard={false}
         />
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
