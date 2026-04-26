@@ -3,6 +3,7 @@ import type { RemoteJob } from "@clawtab/shared";
 import type { ShellPane } from "@clawtab/shared";
 import {
   DropZoneOverlay,
+  collectLeaves,
   useJobsCore,
   useJobActions,
   type SidebarSelectableItem,
@@ -370,6 +371,20 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           const target = wsMgr.getState(workspaceId);
           const hasContent = !!target.tree || !!target.singlePaneContent;
           if (!hasContent) viewing.setFocusEmptyAgentSignal((v) => v + 1);
+
+          let scrollId: string | null = null;
+          if (target.tree) {
+            const leaves = collectLeaves(target.tree);
+            const focused = leaves.find((l) => l.id === target.focusedLeafId) ?? leaves[0];
+            const c = focused?.content;
+            if (c?.kind === "job") scrollId = c.slug;
+            else if (c?.kind === "process" || c?.kind === "terminal") scrollId = c.paneId;
+          } else if (target.singlePaneContent) {
+            const c = target.singlePaneContent;
+            if (c.kind === "job") scrollId = c.slug;
+            else if (c.kind === "process" || c.kind === "terminal") scrollId = c.paneId;
+          }
+          if (scrollId) viewing.setScrollToSlug(scrollId);
         }}
       />
     </>
