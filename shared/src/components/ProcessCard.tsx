@@ -141,7 +141,7 @@ export function ProcessCard({
   const kind = kindForProcess(process);
 
   return (
-    <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
+    <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={editing ? undefined : onPress}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type UIEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -6,7 +6,7 @@ import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
 import { JobsTab } from "./JobsTab";
 import { WorkspaceProvider } from "../workspace/WorkspaceManager";
 import { SecretsPanel } from "./SecretsPanel";
-import { GeneralSettings } from "./GeneralSettings";
+import { GeneralSettings, readStoredSettingsSubTab } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
 import { UsagePanel } from "./UsagePanel";
 import type { SettingsSubTab } from "./GeneralSettings";
@@ -17,6 +17,9 @@ import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
 type TabId = "jobs" | "secrets" | "skills" | "usage" | "settings";
+const tabIds: TabId[] = ["jobs", "secrets", "skills", "usage", "settings"];
+const SETTINGS_ACTIVE_TAB_KEY = "desktop_settings_active_tab";
+const PANEL_SCROLL_PREFIX = "desktop_settings_panel_scroll";
 
 interface RelayStatusLite {
   enabled: boolean;
@@ -27,6 +30,20 @@ interface RelayStatusLite {
 }
 
 const isSetupWindow = new URLSearchParams(window.location.search).has("setup");
+
+function readStoredTab(): TabId {
+  if (typeof localStorage === "undefined") return "jobs";
+  try {
+    const value = localStorage.getItem(SETTINGS_ACTIVE_TAB_KEY);
+    return tabIds.includes(value as TabId) ? (value as TabId) : "jobs";
+  } catch {
+    return "jobs";
+  }
+}
+
+function panelScrollKey(id: TabId): string {
+  return `${PANEL_SCROLL_PREFIX}_${id}`;
+}
 
 // SF Symbol-style icons (clock, shield.lock, clock.arrow.circlepath, wrench, paperplane, gearshape)
 const tabIcons: Record<TabId, React.ReactNode> = {
@@ -64,7 +81,7 @@ const tabIcons: Record<TabId, React.ReactNode> = {
 };
 
 export function SettingsApp() {
-  const [activeTab, setActiveTab] = useState<TabId>("jobs");
+  const [activeTab, setActiveTab] = useState<TabId>(readStoredTab);
   const [jobsResetKey, setJobsResetKey] = useState(0);
   const [showWizard, setShowWizard] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -74,9 +91,49 @@ export function SettingsApp() {
   const [authCallbackRefreshToken, setAuthCallbackRefreshToken] = useState<string | null>(null);
   const [importCwtKey, setImportCwtKey] = useState(0);
   const [pendingPaneId, setPendingPaneId] = useState<string | null>(null);
-  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>("general");
+  const [settingsSubTab, setSettingsSubTab] = useState<SettingsSubTab>(readStoredSettingsSubTab);
   const [relayAlert, setRelayAlert] = useState(false);
   const [daemonAlert, setDaemonAlert] = useState(false);
+  const panelScrollRefs = useRef<Partial<Record<TabId, HTMLDivElement>>>({});
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SETTINGS_ACTIVE_TAB_KEY, activeTab);
+    } catch {
+      // localStorage can be unavailable in test or restricted webview contexts.
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "jobs") return;
+    const node = panelScrollRefs.current[activeTab];
+    if (!node) return;
+    let y = 0;
+    try {
+      const raw = localStorage.getItem(panelScrollKey(activeTab));
+      y = raw ? Number(raw) : 0;
+    } catch {
+      y = 0;
+    }
+    if (!Number.isFinite(y)) return;
+    const restore = () => {
+      node.scrollTop = y;
+    };
+    const frame = requestAnimationFrame(restore);
+    const timer = window.setTimeout(restore, 100);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [activeTab]);
+
+  const handlePanelScroll = (id: TabId, event: UIEvent<HTMLDivElement>) => {
+    try {
+      localStorage.setItem(panelScrollKey(id), String(event.currentTarget.scrollTop));
+    } catch {
+      // Ignore persistence failures; scrolling should never be blocked by storage.
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -243,9 +300,6 @@ export function SettingsApp() {
             if (tab.id === "jobs" && activeTab === "jobs") {
               setJobsResetKey((k) => k + 1);
             }
-            if (tab.id === "settings") {
-              setSettingsSubTab(daemonAlert ? "daemon" : relayAlert ? "remote" : "general");
-            }
             setActiveTab((current) => (current === tab.id ? "jobs" : tab.id));
           }}
           title={
@@ -284,12 +338,19 @@ export function SettingsApp() {
   );
 
   const renderPanel = (id: TabId, label: string, content: React.ReactNode) => (
-    <div key={id} style={{ display: activeTab === id ? "flex" : "none", flexDirection: "column", flex: 1, position: "absolute", inset: 0, background: "var(--bg-secondary)", zIndex: 20000 }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "12px 20px 0", flexShrink: 0 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>{label}</span>
+    <div key={id} className="settings-panel-overlay" style={{ display: activeTab === id ? "flex" : "none" }}>
+      <div className="settings-panel-header" data-tauri-drag-region>
+        <span className="settings-panel-title">{label}</span>
         {panelClose}
       </div>
-      <div style={{ flex: 1, overflow: "auto", padding: "12px 20px 20px" }}>
+      <div
+        ref={(node) => {
+          if (node) panelScrollRefs.current[id] = node;
+          else delete panelScrollRefs.current[id];
+        }}
+        className="settings-panel-body"
+        onScroll={(event) => handlePanelScroll(id, event)}
+      >
         {content}
       </div>
     </div>
@@ -329,7 +390,6 @@ export function SettingsApp() {
             rightPanelOverlay={rightPanelOverlay}
             onJobSelected={() => setActiveTab("jobs")}
             onOpenSettings={() => {
-              setSettingsSubTab(daemonAlert ? "daemon" : relayAlert ? "remote" : "general");
               setActiveTab((current) => (current === "settings" ? "jobs" : "settings"));
             }}
           />

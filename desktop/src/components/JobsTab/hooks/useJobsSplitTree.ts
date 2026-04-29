@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type MutableRefObject } from "react";
+import { useCallback, useMemo, useRef, type MutableRefObject } from "react";
 import type { RemoteJob, ShellPane, PaneContent, SplitDragData, useJobsCore } from "@clawtab/shared";
 import { useSplitTree } from "@clawtab/shared";
 import type { Job } from "../../../types";
@@ -30,9 +30,18 @@ export function useJobsSplitTree({
   const mgr = useWorkspaceManager();
   const activeState = mgr.getState(mgr.activeId);
 
+  // mgr is a new reference on every reducer dispatch (any workspace mutation).
+  // Capturing it in a useCallback dep would rebuild onChange every render, which
+  // rebuilds `controlled` and re-fires useSplitTree's controlled-sync effects
+  // every render. Hold mgr in a ref instead so onChange stays stable, and
+  // useSplitTree's effects only fire when id/tree/focusedLeafId actually change.
+  const mgrRef = useRef(mgr);
+  mgrRef.current = mgr;
+
   const onChange = useCallback((patch: { tree?: ReturnType<typeof mgr.getState>["tree"]; focusedLeafId?: string | null }) => {
-    mgr.updateState(mgr.activeId, patch);
-  }, [mgr]);
+    const cur = mgrRef.current;
+    cur.updateState(cur.activeId, patch);
+  }, []);
 
   const controlled = useMemo(() => ({
     id: activeState.id,

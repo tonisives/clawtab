@@ -8,7 +8,6 @@ import {
   resolveShortcutSettings,
   type ShortcutSettings,
 } from "../../../shortcuts";
-import { seedEnabledModels } from "../../JobEditor/utils";
 
 export function useJobsTabSettings() {
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
@@ -36,16 +35,7 @@ export function useJobsTabSettings() {
         setShortcutSettings(resolveShortcutSettings(settings));
         setDefaultProvider(settings.default_provider);
         setDefaultModel(settings.default_model ?? null);
-        const models = settings.enabled_models ?? {};
-        const hasAny = Object.values(models).some((list) => list.length > 0);
-        if (hasAny) {
-          setEnabledModels(models);
-        } else {
-          // First launch or upgrade: seed with builtin defaults
-          const seeded = seedEnabledModels();
-          setEnabledModels(seeded);
-          invoke("set_settings", { newSettings: { ...settings, enabled_models: seeded } }).catch(() => {});
-        }
+        setEnabledModels(settings.enabled_models ?? {});
       })
       .catch(() => setShortcutSettings(DEFAULT_SHORTCUTS));
 

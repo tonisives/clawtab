@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use tauri::State;
 
 use crate::agent_session::ProcessProvider;
@@ -36,41 +35,6 @@ pub async fn detect_agent_providers() -> Result<Vec<ProcessProvider>, String> {
     })
     .await
     .map_err(|e| format!("Detection failed: {}", e))?
-}
-
-/// Returns per-provider model options: builtin models merged with user-configured custom models.
-/// Each value is a list of (model_id, display_name) pairs.
-#[tauri::command]
-pub fn get_model_options(state: State<'_, AppState>) -> HashMap<String, Vec<(String, String)>> {
-    let enabled_models = {
-        let s = state.settings.lock().unwrap();
-        s.enabled_models.clone()
-    };
-    let providers = [
-        ProcessProvider::Claude,
-        ProcessProvider::Codex,
-        ProcessProvider::Opencode,
-        ProcessProvider::Shell,
-    ];
-    let mut result = HashMap::new();
-    for provider in providers {
-        let key = provider.as_str().to_string();
-        let mut models: Vec<(String, String)> = provider
-            .builtin_models()
-            .iter()
-            .map(|(id, name)| (id.to_string(), name.to_string()))
-            .collect();
-        // Append user-configured custom models
-        if let Some(custom) = enabled_models.get(&key) {
-            for model_id in custom {
-                if !models.iter().any(|(id, _)| id == model_id) {
-                    models.push((model_id.clone(), model_id.clone()));
-                }
-            }
-        }
-        result.insert(key, models);
-    }
-    result
 }
 
 /// Fetches available Claude models from the Anthropic API using the stored OAuth token.
@@ -112,18 +76,87 @@ pub async fn detect_claude_models() -> Result<Vec<(String, String)>, String> {
     }
 
     let body: serde_json::Value = resp.json().await.map_err(|e| format!("parse error: {}", e))?;
-    let models = body["data"]
+    // The /v1/models endpoint returns the full Anthropic API catalog, but Claude Code's
+    // /model command only allows the current latest of each family (opus, sonnet, haiku).
+    // Older revisions like opus-4-6, opus-4-1, sonnet-4-5 are listed by the API but cannot
+    // actually be selected in Claude Code, so filter to the highest version per family.
+    let mut entries: Vec<(String, String, String, u32, u32)> = body["data"]
         .as_array()
         .ok_or_else(|| "unexpected response shape".to_string())?
         .iter()
         .filter_map(|m| {
             let id = m["id"].as_str()?.to_string();
             let name = m["display_name"].as_str().unwrap_or(&id).to_string();
-            Some((id, name))
+            let (family, major, minor) = parse_claude_family(&id)?;
+            Some((id, name, family.to_string(), major, minor))
+        })
+        .collect();
+    // Sort highest version first
+    entries.sort_by(|a, b| b.3.cmp(&a.3).then(b.4.cmp(&a.4)));
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let models: Vec<(String, String)> = entries
+        .into_iter()
+        .filter_map(|(id, name, family, _, _)| {
+            if seen.insert(family) { Some((id, name)) } else { None }
         })
         .collect();
 
     Ok(models)
+}
+
+/// Parse a Claude model id like "claude-opus-4-7" into ("opus", 4, 7).
+/// Returns None for ids that don't match the family pattern.
+fn parse_claude_family(id: &str) -> Option<(&'static str, u32, u32)> {
+    let stripped = id.strip_prefix("claude-")?;
+    let (family_token, family) = if stripped.starts_with("opus-") {
+        ("opus-", "opus")
+    } else if stripped.starts_with("sonnet-") {
+        ("sonnet-", "sonnet")
+    } else if stripped.starts_with("haiku-") {
+        ("haiku-", "haiku")
+    } else {
+        return None;
+    };
+    let rest = stripped.strip_prefix(family_token)?;
+    let mut parts = rest.split('-');
+    let major: u32 = parts.next()?.parse().ok()?;
+    let minor: u32 = parts.next().unwrap_or("0").parse().ok()?;
+    Some((family, major, minor))
+}
+
+/// Runs `codex debug models` and returns (slug, display_name) for models that are
+/// listable and supported in the API (drops hidden entries like codex-auto-review).
+#[tauri::command]
+pub async fn detect_codex_models() -> Result<Vec<(String, String)>, String> {
+    tokio::task::spawn_blocking(|| {
+        let output = std::process::Command::new("codex")
+            .args(["debug", "models"])
+            .output()
+            .map_err(|e| format!("failed to run codex debug models: {}", e))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("codex debug models failed: {}", stderr));
+        }
+        let body: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .map_err(|e| format!("failed to parse codex models json: {}", e))?;
+        let models = body["models"]
+            .as_array()
+            .ok_or_else(|| "unexpected response shape: missing models array".to_string())?
+            .iter()
+            .filter(|m| {
+                m["visibility"].as_str() == Some("list")
+                    && m["supported_in_api"].as_bool().unwrap_or(false)
+            })
+            .filter_map(|m| {
+                let slug = m["slug"].as_str()?.to_string();
+                let name = m["display_name"].as_str().unwrap_or(&slug).to_string();
+                Some((slug, name))
+            })
+            .collect();
+        Ok(models)
+    })
+    .await
+    .map_err(|e| format!("Task failed: {}", e))?
 }
 
 /// Runs `opencode models` and returns the list of available model IDs (e.g. "opencode/big-pickle").

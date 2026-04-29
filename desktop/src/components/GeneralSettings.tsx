@@ -10,6 +10,9 @@ import { ModelsPanel } from "./ModelsPanel"
 import { DaemonPanel } from "./DaemonPanel"
 
 export type SettingsSubTab = "general" | "remote" | "telegram" | "shortcuts" | "models" | "daemon"
+const settingsSubTabIds: SettingsSubTab[] = ["general", "remote", "telegram", "shortcuts", "models", "daemon"]
+const SETTINGS_SUBTAB_KEY = "desktop_settings_subtab"
+const SETTINGS_SUBTAB_SCROLL_PREFIX = "desktop_settings_subtab_scroll"
 
 interface Props {
   activeSubTab: SettingsSubTab
@@ -29,6 +32,16 @@ const subTabs: { id: SettingsSubTab; label: string }[] = [
   { id: "daemon", label: "Daemon" },
 ]
 
+export function readStoredSettingsSubTab(): SettingsSubTab {
+  if (typeof localStorage === "undefined") return "general"
+  try {
+    const value = localStorage.getItem(SETTINGS_SUBTAB_KEY)
+    return settingsSubTabIds.includes(value as SettingsSubTab) ? (value as SettingsSubTab) : "general"
+  } catch {
+    return "general"
+  }
+}
+
 export function GeneralSettings({
   activeSubTab,
   onSubTabChange,
@@ -37,6 +50,48 @@ export function GeneralSettings({
   onExternalTokenConsumed,
   daemonAlert,
 }: Props) {
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SETTINGS_SUBTAB_KEY, activeSubTab)
+    } catch {
+      // Keep settings usable if storage is unavailable.
+    }
+  }, [activeSubTab])
+
+  useEffect(() => {
+    const node = contentRef.current
+    if (!node) return
+    let y = 0
+    try {
+      const raw = localStorage.getItem(`${SETTINGS_SUBTAB_SCROLL_PREFIX}_${activeSubTab}`)
+      y = raw ? Number(raw) : 0
+    } catch {
+      y = 0
+    }
+    if (!Number.isFinite(y)) return
+    const restore = () => {
+      node.scrollTop = y
+    }
+    const frame = requestAnimationFrame(restore)
+    const timer = window.setTimeout(restore, 100)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [activeSubTab])
+
+  const handleContentScroll = () => {
+    const node = contentRef.current
+    if (!node) return
+    try {
+      localStorage.setItem(`${SETTINGS_SUBTAB_SCROLL_PREFIX}_${activeSubTab}`, String(node.scrollTop))
+    } catch {
+      // Ignore persistence failures; scrolling should remain unaffected.
+    }
+  }
+
   return (
     <div className="settings-with-subtabs">
       <div className="settings-subtab-bar">
@@ -52,7 +107,7 @@ export function GeneralSettings({
           </button>
         ))}
       </div>
-      <div className="settings-subtab-content">
+      <div ref={contentRef} className="settings-subtab-content" onScroll={handleContentScroll}>
         {activeSubTab === "general" && <GeneralSettingsContent />}
         {activeSubTab === "remote" && (
           <RelayPanel

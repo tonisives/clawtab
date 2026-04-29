@@ -13,5 +13,28 @@
 <body>
   <div id="root"></div>
   <script type="module" src="/src/pty_debug.tsx"></script>
+  <script>
+    const attrs = { autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false' };
+    const apply = (el) => {
+      for (const [k, v] of Object.entries(attrs)) {
+        if (el.getAttribute(k) !== v) el.setAttribute(k, v);
+      }
+      if (el.spellcheck !== false) el.spellcheck = false;
+    };
+    const start = () => {
+      const root = document.getElementById('root');
+      if (!root) return;
+      root.querySelectorAll('input, textarea').forEach(apply);
+      const observer = new MutationObserver(() => {
+        document.querySelectorAll('input, textarea').forEach(apply);
+      });
+      observer.observe(root, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start);
+    } else {
+      start();
+    }
+  </script>
 </body>
 </html>

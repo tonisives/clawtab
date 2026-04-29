@@ -40,7 +40,7 @@ export function ShellCard({
   const showMenu = !!(onStop || onRename || canMoveToWorkspace);
 
   return (
-    <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1 } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
+    <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
       <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
         <JobKindIcon kind="shell" />
         <View style={styles.info}>

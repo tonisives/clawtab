@@ -944,10 +944,15 @@ export function JobListView({
       currentGroupKey = null;
       if (isActive) {
         const isFirst = rendered.length === 0;
+        const isCollapsed = gKey != null && collapsedGroups.has(gKey);
         rendered.push(
           <View
             key={`wsgroup_${gKey}`}
-            style={[styles.activeWorkspaceGroup, isFirst ? null : { marginTop: spacing.sm / 2 }]}
+            style={[
+              styles.activeWorkspaceGroup,
+              { marginTop: isFirst ? 18 : 18 + spacing.sm / 2 },
+              isCollapsed ? null : { paddingBottom: spacing.sm / 2 + 5 },
+            ]}
           >
             {buf}
           </View>,
@@ -1541,6 +1546,8 @@ const styles = StyleSheet.create({
     paddingRight: spacing.lg,
     paddingTop: spacing.sm / 2,
     paddingBottom: spacing.sm / 2,
+    borderRadius: 8,
+    boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.08), inset -1px -1px 0 rgba(0,0,0,0.12)",
   },
   activeWorkspaceHeaderRow: {
     backgroundColor: "transparent",

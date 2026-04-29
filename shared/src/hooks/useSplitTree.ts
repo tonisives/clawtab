@@ -217,27 +217,32 @@ export function useSplitTree(options: UseSplitTreeOptions) {
 
   // When the controlled id changes (workspace switch), hydrate state from the
   // new workspace's controlled input. Track lastId so we don't repeatedly
-  // reset on every render.
+  // reset on every render. Deps intentionally exclude `controlled` itself —
+  // the consumer rebuilds it on every render (see useJobsSplitTree), and
+  // depending on the object reference would re-run this effect every commit.
   const lastControlledIdRef = useRef<string | null>(controlled?.id ?? null);
+  const controlledTree = controlled?.tree ?? null;
+  const controlledFocusedLeafId = controlled?.focusedLeafId ?? null;
+  const controlledId = controlled?.id ?? null;
   useEffect(() => {
-    if (!controlled) return;
-    if (lastControlledIdRef.current === controlled.id) return;
-    lastControlledIdRef.current = controlled.id;
-    if (controlled.tree) restoreIdCounter(controlled.tree);
-    setSplitTree(controlled.tree);
-    setFocusedLeafId(controlled.focusedLeafId);
-    setZoomSnapshot(null);
-  }, [controlled?.id, controlled?.tree, controlled?.focusedLeafId, controlled]);
+    if (controlledId === null) return;
+    if (lastControlledIdRef.current === controlledId) return;
+    lastControlledIdRef.current = controlledId;
+    if (controlledTree) restoreIdCounter(controlledTree);
+    setSplitTree((prev) => (prev === controlledTree ? prev : controlledTree));
+    setFocusedLeafId((prev) => (prev === controlledFocusedLeafId ? prev : controlledFocusedLeafId));
+    setZoomSnapshot((prev) => (prev === null ? prev : null));
+  }, [controlledId, controlledTree, controlledFocusedLeafId]);
 
   // Within the same workspace, accept external focusedLeafId updates (e.g. focus
   // history navigation, cross-pane selection). Without this, programmatic focus
   // changes via controlled.onChange round-trip back as controlled.focusedLeafId
   // but never reach internal state, so the visible focus stays put.
   useEffect(() => {
-    if (!controlled) return;
-    if (controlled.id !== lastControlledIdRef.current) return;
-    setFocusedLeafId((prev) => (prev === controlled.focusedLeafId ? prev : controlled.focusedLeafId));
-  }, [controlled?.id, controlled?.focusedLeafId, controlled]);
+    if (controlledId === null) return;
+    if (controlledId !== lastControlledIdRef.current) return;
+    setFocusedLeafId((prev) => (prev === controlledFocusedLeafId ? prev : controlledFocusedLeafId));
+  }, [controlledId, controlledFocusedLeafId]);
 
   // Persist tree on change. Also assert there are no duplicate ids — if there
   // are, the tree is corrupt and any subsequent replaceNode/splitLeaf will hit

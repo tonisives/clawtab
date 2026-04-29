@@ -48,11 +48,16 @@ export function SplitDetailArea({
     if (!focusedLeafId) return;
     const container = containerRef.current;
     if (!container) return;
+    const leafEl = container.querySelector(`[data-leaf-id="${focusedLeafId}"]`);
+    if (!leafEl) return;
+    // Skip if focus is already inside the target leaf. Otherwise this fights with
+    // requestXtermPaneFocus and the focusin listener in useSplitTree: each focus
+    // attempt triggers a focusin that bubbles to the container, which writes back
+    // to focusedLeafId; if a sibling pane also self-focuses we get a ping-pong.
+    if (leafEl.contains(document.activeElement)) return;
     const raf = requestAnimationFrame(() => {
-      const leafEl = container.querySelector(`[data-leaf-id="${focusedLeafId}"]`);
-      if (!leafEl) return;
       const ta = leafEl.querySelector(".xterm-helper-textarea");
-      if (ta instanceof HTMLElement) ta.focus();
+      if (ta instanceof HTMLElement && !leafEl.contains(document.activeElement)) ta.focus();
     });
     return () => cancelAnimationFrame(raf);
   }, [focusedLeafId]);

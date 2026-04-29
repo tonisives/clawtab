@@ -105,7 +105,11 @@ export function JobsTabLayout({
                   <div onMouseDown={onResizeHandleMouseDown} style={{ width: 9, backgroundColor: "transparent", marginLeft: -5, marginRight: -4, zIndex: 10, cursor: "col-resize", flexShrink: 0, position: "relative" }} />
                 </>
               )}
-              <div ref={split.detailPaneRef} className="detail-pane" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", position: "relative" }}>
+              <div
+                ref={split.detailPaneRef}
+                className={`detail-pane ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+                style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-secondary)", position: "relative" }}
+              >
                 {isEditorVisible ? (
                   editorPaneClose
                 ) : isPickerVisible ? (

@@ -199,11 +199,46 @@
   cursor: pointer;
   color: var(--text-secondary);
   transition: all 0.15s ease;
+  -webkit-app-region: no-drag;
 }
 
 .panel-close-btn:hover {
   background: var(--hover-bg);
   color: var(--text-primary);
+}
+
+.settings-panel-overlay {
+  flex-direction: column;
+  flex: 1;
+  position: absolute;
+  inset: 0;
+  background: var(--bg-secondary);
+  z-index: 20000;
+}
+
+.settings-panel-header {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 12px 20px 0;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.detail-pane.sidebar-collapsed .settings-panel-header {
+  padding-left: 88px;
+}
+
+.settings-panel-title {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-panel-body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 20px 20px;
 }
 
 /* Settings sub-tabs */

@@ -39,25 +39,6 @@ impl ProcessProvider {
         self.as_str()
     }
 
-    /// Returns (model_id, display_name) pairs for builtin models.
-    pub fn builtin_models(self) -> &'static [(&'static str, &'static str)] {
-        match self {
-            ProcessProvider::Claude => &[
-                ("claude-opus-4-6", "Opus 4.6"),
-                ("claude-sonnet-4-6", "Sonnet 4.6"),
-                ("claude-haiku-4-5", "Haiku 4.5"),
-            ],
-            ProcessProvider::Codex => &[
-                ("gpt-5.4", "GPT-5.4"),
-                ("gpt-5.4-mini", "GPT-5.4 Mini"),
-                ("gpt-5.3-codex", "GPT-5.3 Codex"),
-                ("o3", "o3"),
-                ("o4-mini", "o4-mini"),
-            ],
-            ProcessProvider::Opencode | ProcessProvider::Shell => &[],
-        }
-    }
-
     pub fn supports_model_flag(self) -> bool {
         matches!(
             self,

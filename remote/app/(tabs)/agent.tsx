@@ -20,15 +20,14 @@ import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
 import { JobKindIcon, PopupMenu } from "@clawtab/shared";
 import type { ProcessProvider, AgentModelOption } from "@clawtab/shared";
-import { BUILTIN_MODELS, buildModelOptions, labelForProviderModel } from "../../src/lib/agentModels";
+import { BARE_PROVIDER_OPTIONS, buildModelOptions, labelForProviderModel } from "../../src/lib/agentModels";
 
 const STORAGE_KEY = "clawtab_agent_model_v2";
 
 const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode"];
-// Default to claude+sonnet selection
-const DEFAULT_MODEL: AgentModelOption = BUILTIN_MODELS.find(
-  (m) => m.provider === "claude" && m.modelId === "claude-sonnet-4-6"
-) ?? BUILTIN_MODELS[0];
+// Bare claude entry; the actual model gets resolved from server-pushed enabled_models.
+const DEFAULT_MODEL: AgentModelOption =
+  BARE_PROVIDER_OPTIONS.find((m) => m.provider === "claude") ?? BARE_PROVIDER_OPTIONS[0];
 
 function getStoredModel(): AgentModelOption {
   if (Platform.OS !== "web" || typeof localStorage === "undefined") return DEFAULT_MODEL;

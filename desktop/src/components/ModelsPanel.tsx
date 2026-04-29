@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core"
 import type { ProcessProvider } from "@clawtab/shared"
 import type { AppSettings } from "../types"
 import {
-  BUILTIN_MODELS,
   labelForProvider,
   labelForProviderModel,
 } from "./JobEditor/utils"
@@ -20,7 +19,7 @@ const PROVIDERS_WITH_MODELS: ProcessProvider[] = ["claude", "codex"]
 
 function buildAllModels(
   enabledModels: Record<string, string[]>,
-  claudeApiModels: [string, string][],
+  apiModels: Record<ProcessProvider, [string, string][]>,
 ): ModelEntry[] {
   const entries: ModelEntry[] = []
   const enabledSets: Record<string, Set<string>> = {}
@@ -28,38 +27,19 @@ function buildAllModels(
     enabledSets[provider] = new Set(list)
   }
 
-  // Claude models from API (dynamic), fall back to BUILTIN_MODELS if unavailable
-  const claudeModels: { modelId: string; displayName: string }[] =
-    claudeApiModels.length > 0
-      ? claudeApiModels.map(([id, name]) => ({ modelId: id, displayName: name }))
-      : BUILTIN_MODELS.filter((m) => m.provider === "claude" && m.modelId).map((m) => ({
-          modelId: m.modelId!,
-          displayName: m.label,
-        }))
-
-  for (const { modelId, displayName } of claudeModels) {
-    entries.push({
-      provider: "claude",
-      modelId,
-      displayName,
-      builtin: true,
-      enabled: enabledSets["claude"]?.has(modelId) ?? false,
-    })
+  for (const provider of PROVIDERS_WITH_MODELS) {
+    const apiList = apiModels[provider] ?? []
+    for (const [modelId, displayName] of apiList) {
+      entries.push({
+        provider,
+        modelId,
+        displayName,
+        builtin: true,
+        enabled: enabledSets[provider]?.has(modelId) ?? false,
+      })
+    }
   }
 
-  // Non-claude builtin models (Codex etc.)
-  for (const opt of BUILTIN_MODELS) {
-    if (!opt.modelId || opt.provider === "claude") continue
-    entries.push({
-      provider: opt.provider,
-      modelId: opt.modelId,
-      displayName: opt.label,
-      builtin: true,
-      enabled: enabledSets[opt.provider]?.has(opt.modelId) ?? false,
-    })
-  }
-
-  // Custom models (in enabled_models but not in builtins)
   for (const provider of PROVIDERS_WITH_MODELS) {
     const custom = enabledModels[provider] ?? []
     for (const modelId of custom) {
@@ -98,6 +78,7 @@ export function ModelsPanel() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [customModelInput, setCustomModelInput] = useState<Record<string, string>>({})
   const [claudeApiModels, setClaudeApiModels] = useState<[string, string][]>([])
+  const [codexApiModels, setCodexApiModels] = useState<[string, string][]>([])
   const [opencodeModels, setOpencodeModels] = useState<string[]>([])
   const [opencodeLoading, setOpencodeLoading] = useState(false)
   const [opencodeError, setOpencodeError] = useState<string | null>(null)
@@ -115,6 +96,31 @@ export function ModelsPanel() {
       .then(setClaudeApiModels)
       .catch((e) => console.error("Failed to fetch Claude models:", e))
   }, [refreshKey])
+
+  useEffect(() => {
+    invoke<[string, string][]>("detect_codex_models")
+      .then(setCodexApiModels)
+      .catch((e) => console.error("Failed to fetch Codex models:", e))
+  }, [refreshKey])
+
+  // First-launch seeding: when a provider has no enabled models yet but detection
+  // returned a list, enable them all once.
+  useEffect(() => {
+    if (!settings) return
+    const enabled = settings.enabled_models ?? {}
+    const updates: Record<string, string[]> = {}
+    if ((!enabled.claude || enabled.claude.length === 0) && claudeApiModels.length > 0) {
+      updates.claude = claudeApiModels.map(([id]) => id)
+    }
+    if ((!enabled.codex || enabled.codex.length === 0) && codexApiModels.length > 0) {
+      updates.codex = codexApiModels.map(([id]) => id)
+    }
+    if (Object.keys(updates).length === 0) return
+    const next = { ...enabled, ...updates }
+    invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
+      .then(() => setSettings({ ...settings, enabled_models: next }))
+      .catch((e) => console.error("Failed to seed enabled_models:", e))
+  }, [settings, claudeApiModels, codexApiModels])
 
   // Detect OpenCode models on mount and refresh
   useEffect(() => {
@@ -149,7 +155,12 @@ export function ModelsPanel() {
   }
 
   const enabledModels = settings.enabled_models ?? {}
-  const allModels = buildAllModels(enabledModels, claudeApiModels)
+  const allModels = buildAllModels(enabledModels, {
+    claude: claudeApiModels,
+    codex: codexApiModels,
+    opencode: [],
+    shell: [],
+  })
   const defaultProvider = settings.default_provider
   const defaultModel = settings.default_model ?? null
 

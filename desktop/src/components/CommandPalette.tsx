@@ -7,6 +7,28 @@ import { requestXtermPaneFocus } from "./XtermPane";
 
 type EntryKind = "agent" | "job" | "shell" | "workspace";
 
+const RECENCY_KEY = "clawtab.cmdp.recency.v1";
+
+function loadRecency(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(RECENCY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRecency(map: Record<string, number>) {
+  try {
+    const entries = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 200);
+    localStorage.setItem(RECENCY_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // ignore
+  }
+}
+
 interface PaletteEntry {
   id: string;
   kind: EntryKind;
@@ -19,6 +41,7 @@ interface PaletteEntry {
   workspaceName: string;
   paneId?: string;
   slug?: string;
+  recencyMs: number;
   searchFields: {
     paneTitle: string;
     firstQuery: string;
@@ -47,8 +70,9 @@ function buildEntries(params: {
   shells: ShellPane[];
   workspaceIds: string[];
   activeId: string;
+  recency: Record<string, number>;
 }): PaletteEntry[] {
-  const { jobs, processes, shells, workspaceIds } = params;
+  const { jobs, processes, shells, workspaceIds, recency } = params;
   const entries: PaletteEntry[] = [];
 
   for (const p of processes) {
@@ -57,8 +81,15 @@ function buildEntries(params: {
     const firstQuery = p.first_query ?? "";
     const lastQuery = p.last_query ?? "";
     const paneTitle = p.pane_title ?? "";
+    const id = `agent:${p.pane_id}`;
+    const startedMs = p.session_started_at ? Date.parse(p.session_started_at) : 0;
+    const recencyMs = Math.max(
+      recency[id] ?? 0,
+      p._last_log_change ?? 0,
+      Number.isFinite(startedMs) ? startedMs : 0,
+    );
     entries.push({
-      id: `agent:${p.pane_id}`,
+      id,
       kind: "agent",
       workspaceId: ws,
       displayName,
@@ -68,6 +99,7 @@ function buildEntries(params: {
       paneTitle,
       workspaceName: ws,
       paneId: p.pane_id,
+      recencyMs,
       searchFields: {
         paneTitle,
         firstQuery,
@@ -82,8 +114,9 @@ function buildEntries(params: {
   for (const job of jobs) {
     const ws = job.group || "default";
     const cwd = job.folder_path ?? job.work_dir ?? "";
+    const id = `job:${job.slug}`;
     entries.push({
-      id: `job:${job.slug}`,
+      id,
       kind: "job",
       workspaceId: ws,
       displayName: job.name,
@@ -93,6 +126,7 @@ function buildEntries(params: {
       paneTitle: "",
       workspaceName: ws,
       slug: job.slug,
+      recencyMs: recency[id] ?? 0,
       searchFields: {
         paneTitle: "",
         firstQuery: "",
@@ -108,8 +142,9 @@ function buildEntries(params: {
     const ws = s.workspace_id ?? s.matched_group ?? "default";
     const displayName = s.display_name ?? s.pane_title ?? s.cwd.replace(/^\/Users\/[^/]+/, "~");
     const paneTitle = s.pane_title ?? "";
+    const id = `shell:${s.pane_id}`;
     entries.push({
-      id: `shell:${s.pane_id}`,
+      id,
       kind: "shell",
       workspaceId: ws,
       displayName,
@@ -119,6 +154,7 @@ function buildEntries(params: {
       paneTitle,
       workspaceName: ws,
       paneId: s.pane_id,
+      recencyMs: recency[id] ?? 0,
       searchFields: {
         paneTitle,
         firstQuery: "",
@@ -131,8 +167,9 @@ function buildEntries(params: {
   }
 
   for (const id of workspaceIds) {
+    const entryId = `workspace:${id}`;
     entries.push({
-      id: `workspace:${id}`,
+      id: entryId,
       kind: "workspace",
       workspaceId: id,
       displayName: id,
@@ -141,6 +178,7 @@ function buildEntries(params: {
       lastQuery: "",
       paneTitle: "",
       workspaceName: id,
+      recencyMs: recency[entryId] ?? 0,
       searchFields: {
         paneTitle: "",
         firstQuery: "",
@@ -169,6 +207,7 @@ export function CommandPalette({
   const mgr = useWorkspaceManager();
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [recencyMap, setRecencyMap] = useState<Record<string, number>>(() => loadRecency());
   const inputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -181,8 +220,9 @@ export function CommandPalette({
       shells,
       workspaceIds: mgr.ids,
       activeId: mgr.activeId,
+      recency: recencyMap,
     });
-  }, [open, jobs, processes, shells, mgr.ids, mgr.activeId]);
+  }, [open, jobs, processes, shells, mgr.ids, mgr.activeId, recencyMap]);
 
   const fuse = useMemo(() => {
     return new Fuse(entries, {
@@ -202,14 +242,33 @@ export function CommandPalette({
 
   const results = useMemo(() => {
     const trimmed = query.trim();
-    if (!trimmed) return entries.slice(0, 50);
-    return fuse.search(trimmed).slice(0, 50).map((r) => r.item);
+    const now = Date.now();
+    // Recency bonus decays over a 24h window: 1.0 if just used, ~0 after a day.
+    const recencyBoost = (ms: number) => {
+      if (!ms) return 0;
+      const ageHrs = Math.max(0, (now - ms) / 3_600_000);
+      return Math.exp(-ageHrs / 8); // half-life ~5.5h, ~0.05 at 24h
+    };
+    if (!trimmed) {
+      return [...entries]
+        .sort((a, b) => (b.recencyMs - a.recencyMs))
+        .slice(0, 50);
+    }
+    // Blend Fuse score (lower=better) with recency bonus. Cap bonus at 0.15
+    // so a fresh-but-irrelevant pane can't outrank a clearly better text match.
+    const scored = fuse.search(trimmed).map((r) => ({
+      item: r.item,
+      score: (r.score ?? 1) - 0.15 * recencyBoost(r.item.recencyMs),
+    }));
+    scored.sort((a, b) => a.score - b.score);
+    return scored.slice(0, 50).map((r) => r.item);
   }, [fuse, query, entries]);
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
     setActiveIndex(0);
+    setRecencyMap(loadRecency());
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
@@ -223,6 +282,9 @@ export function CommandPalette({
   }, [activeIndex]);
 
   const activate = (entry: PaletteEntry) => {
+    const next = { ...recencyMap, [entry.id]: Date.now() };
+    setRecencyMap(next);
+    saveRecency(next);
     mgr.ensure(entry.workspaceId);
     if (entry.workspaceId !== mgr.activeId) mgr.setActive(entry.workspaceId);
     if (entry.kind === "agent" && entry.paneId) {
@@ -292,6 +354,10 @@ export function CommandPalette({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Search agents, jobs, workspaces, shells..."
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           style={{
             width: "100%",
             fontSize: 14,

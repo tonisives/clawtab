@@ -39,7 +39,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   const showMenu = onStop && !stopping;
   return (
     <TouchableOpacity
-      style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2 } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}
+      style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}
       onPress={onPress}
       activeOpacity={0.7}
     >
