@@ -457,6 +457,13 @@ fn read_codex_status_cli_snapshot() -> Result<ProviderUsageSnapshot, String> {
 }
 
 fn resolve_codex_binary() -> PathBuf {
+    let resolved = resolve_codex_binary_inner();
+    #[cfg(target_os = "macos")]
+    strip_quarantine(&resolved);
+    resolved
+}
+
+fn resolve_codex_binary_inner() -> PathBuf {
     for var_name in ["CLAWTAB_CODEX_PATH", "CODEX_PATH", "CODEX_BINARY"] {
         if let Ok(value) = std::env::var(var_name) {
             let candidate = PathBuf::from(value);
@@ -492,6 +499,44 @@ fn resolve_codex_binary() -> PathBuf {
     }
 
     PathBuf::from("codex")
+}
+
+#[cfg(target_os = "macos")]
+fn strip_quarantine(path: &Path) {
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+
+    static STRIPPED: OnceLock<Mutex<Vec<PathBuf>>> = OnceLock::new();
+    let stripped = STRIPPED.get_or_init(|| Mutex::new(Vec::new()));
+
+    let canonical = match std::fs::canonicalize(path) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    {
+        let guard = stripped.lock().unwrap();
+        if guard.iter().any(|p| p == &canonical) {
+            return;
+        }
+    }
+
+    let has_quarantine = Command::new("xattr")
+        .arg(&canonical)
+        .output()
+        .ok()
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .map(|s| s.lines().any(|l| l.trim() == "com.apple.quarantine"))
+        .unwrap_or(false);
+
+    if has_quarantine {
+        let _ = Command::new("xattr")
+            .args(["-dr", "com.apple.quarantine"])
+            .arg(&canonical)
+            .output();
+    }
+
+    stripped.lock().unwrap().push(canonical);
 }
 
 fn is_executable_file(path: &Path) -> bool {
