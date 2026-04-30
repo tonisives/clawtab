@@ -134,10 +134,16 @@ pub struct Job {
     pub agent_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<String>,
+    #[serde(default = "default_max_history")]
+    pub max_history: u32,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_max_history() -> u32 {
+    3
 }
 
 fn default_group() -> String {

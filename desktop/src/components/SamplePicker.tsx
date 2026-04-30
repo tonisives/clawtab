@@ -141,6 +141,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
           params: [],
           kill_on_end: true,
           auto_yes: false,
+          max_history: 3,
         };
         await invoke("save_job", { job });
       } else {
@@ -168,6 +169,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
           params: [],
           kill_on_end: true,
           auto_yes: false,
+          max_history: 3,
         };
         await invoke("save_job", { job });
       }
@@ -217,6 +219,7 @@ export function SamplePicker({ autoCreateTemplateId, onCreated, onCancel, header
         params: [],
         kill_on_end: true,
           auto_yes: false,
+          max_history: 3,
       };
       await invoke("save_job", { job });
       onCreated();

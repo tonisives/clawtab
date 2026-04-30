@@ -303,6 +303,27 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub fn prune_job_to_limit(&self, job_id: &str, keep: u32) -> Result<usize, String> {
+        if keep == 0 {
+            return Ok(0);
+        }
+        let deleted = self
+            .conn
+            .execute(
+                "DELETE FROM runs
+                 WHERE job_name = ?1
+                   AND id NOT IN (
+                     SELECT id FROM runs
+                     WHERE job_name = ?1
+                     ORDER BY started_at DESC
+                     LIMIT ?2
+                   )",
+                params![job_id, keep as i64],
+            )
+            .map_err(|e| format!("Failed to prune job history: {}", e))?;
+        Ok(deleted)
+    }
+
     pub fn clear(&self) -> Result<(), String> {
         self.conn
             .execute("DELETE FROM runs", [])

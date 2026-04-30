@@ -187,6 +187,9 @@ pub fn reattach_running_jobs(
             if let Err(e) = h.insert(&record) {
                 log::error!("Failed to insert reattach record: {}", e);
             }
+            if let Err(e) = h.prune_job_to_limit(&job.slug, job.max_history) {
+                log::error!("Failed to prune job history for {}: {}", job.slug, e);
+            }
         }
 
         // Register in active_agents for Telegram

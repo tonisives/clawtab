@@ -99,6 +99,9 @@ pub async fn execute_job(
         if let Err(e) = h.insert(&record) {
             log::error!("Failed to insert run record: {}", e);
         }
+        if let Err(e) = h.prune_job_to_limit(&job.slug, job.max_history) {
+            log::error!("Failed to prune job history for {}: {}", job.slug, e);
+        }
     }
 
     log::info!("[{}] Starting job '{}' ({})", run_id, job.name, trigger);

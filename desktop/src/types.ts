@@ -38,6 +38,7 @@ export interface Job {
   agent_provider?: ProcessProvider | null;
   agent_model?: string | null;
   added_at?: string;
+  max_history: number;
 }
 
 export interface AerospaceWorkspace {

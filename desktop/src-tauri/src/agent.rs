@@ -220,5 +220,6 @@ pub fn build_agent_job(
         agent_provider: provider,
         agent_model: model,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
+        max_history: 3,
     })
 }

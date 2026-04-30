@@ -202,6 +202,7 @@ pub fn import_job_folder(
         agent_provider: None,
         agent_model: None,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
+        max_history: 3,
     };
 
     // Copy job.md to central location
@@ -309,6 +310,7 @@ pub fn duplicate_job(
         agent_provider: source.agent_provider,
         agent_model: source.agent_model.clone(),
         added_at: Some(chrono::Utc::now().to_rfc3339()),
+        max_history: source.max_history,
     };
 
     // Derive slug and save

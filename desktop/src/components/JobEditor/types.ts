@@ -50,6 +50,7 @@ export const emptyJob: Job = {
   auto_yes: false,
   agent_provider: null,
   aerospace_workspace: null,
+  max_history: 3,
 };
 
 export interface JobEditorProps {
