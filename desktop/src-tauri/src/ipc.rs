@@ -4,12 +4,16 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::Mutex as AsyncMutex;
 
-pub fn socket_path() -> PathBuf {
+pub fn daemon_socket_path() -> PathBuf {
     PathBuf::from("/tmp/clawtab.sock")
 }
 
-pub fn event_socket_path() -> PathBuf {
+pub fn daemon_event_socket_path() -> PathBuf {
     PathBuf::from("/tmp/clawtab-events.sock")
+}
+
+pub fn desktop_socket_path() -> PathBuf {
+    PathBuf::from("/tmp/clawtab-desktop.sock")
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -22,7 +26,6 @@ pub enum IpcCommand {
     RestartJob { name: String },
     GetStatus,
     OpenSettings,
-    OpenPane { pane_id: String },
     GetAutoYesPanes,
     SetAutoYesPanes { pane_ids: Vec<String> },
     ToggleAutoYes { pane_id: String },
@@ -67,6 +70,26 @@ pub enum IpcCommand {
     },
 }
 
+/// Direction for pane focus changes. Used by external integrations
+/// (vim/tmux configs) calling into the desktop app via cwtctl.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PaneDirection {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// Commands sent to the desktop app's UI socket. The daemon doesn't handle
+/// these - they require the GUI process. Kept separate from IpcCommand so the
+/// daemon never deserializes UI variants.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum DesktopIpcCommand {
+    FocusPane { direction: PaneDirection },
+    OpenPane { pane_id: String },
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IpcRelayStatus {
     pub enabled: bool,
@@ -78,6 +101,10 @@ pub struct IpcRelayStatus {
     pub device_name: String,
 }
 
+/// Shared response type for both the daemon and desktop sockets. The desktop
+/// handler only ever returns `Ok` or `Error(String)`; the richer variants are
+/// daemon-only. This keeps the wire format symmetric and lets cwtctl reuse one
+/// big response match regardless of which socket it talked to.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum IpcResponse {
     Pong,
@@ -153,12 +180,17 @@ pub async fn broadcast_event(subs: &EventSubscribers, event: &IpcEvent) {
     }
 }
 
-pub async fn start_ipc_server<F, Fut>(handler: F) -> Result<(), String>
+/// Generic request/response Unix-socket server. Handler is parameterized over
+/// the command and response types, so the same loop serves both the daemon
+/// socket (`IpcCommand` -> `IpcResponse`) and the desktop socket
+/// (`DesktopIpcCommand` -> `IpcResponse`).
+async fn run_server<C, R, F, Fut>(path: PathBuf, handler: F) -> Result<(), String>
 where
-    F: Fn(IpcCommand) -> Fut + Send + Sync + 'static,
-    Fut: std::future::Future<Output = IpcResponse> + Send + 'static,
+    C: serde::de::DeserializeOwned + Send + 'static,
+    R: serde::Serialize + Send + 'static,
+    F: Fn(C) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = R> + Send + 'static,
 {
-    let path = socket_path();
     let _ = std::fs::remove_file(&path);
 
     let listener =
@@ -173,7 +205,7 @@ where
             Ok((stream, _)) => {
                 let handler = handler.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(stream, handler).await {
+                    if let Err(e) = handle_client::<C, R, F, Fut>(stream, handler).await {
                         log::error!("Error handling IPC client: {}", e);
                     }
                 });
@@ -185,10 +217,26 @@ where
     }
 }
 
+pub async fn start_ipc_server<F, Fut>(handler: F) -> Result<(), String>
+where
+    F: Fn(IpcCommand) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = IpcResponse> + Send + 'static,
+{
+    run_server::<IpcCommand, IpcResponse, _, _>(daemon_socket_path(), handler).await
+}
+
+pub async fn start_desktop_ipc_server<F, Fut>(handler: F) -> Result<(), String>
+where
+    F: Fn(DesktopIpcCommand) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = IpcResponse> + Send + 'static,
+{
+    run_server::<DesktopIpcCommand, IpcResponse, _, _>(desktop_socket_path(), handler).await
+}
+
 /// Start the event-push server. Clients connect, the daemon pushes newline-
 /// delimited JSON `IpcEvent` values. No request/response; the client just reads.
 pub async fn start_event_server(subs: EventSubscribers) -> Result<(), String> {
-    let path = event_socket_path();
+    let path = daemon_event_socket_path();
     let _ = std::fs::remove_file(&path);
 
     let listener =
@@ -211,10 +259,15 @@ pub async fn start_event_server(subs: EventSubscribers) -> Result<(), String> {
     }
 }
 
-async fn handle_client<F, Fut>(stream: UnixStream, handler: std::sync::Arc<F>) -> Result<(), String>
+async fn handle_client<C, R, F, Fut>(
+    stream: UnixStream,
+    handler: std::sync::Arc<F>,
+) -> Result<(), String>
 where
-    F: Fn(IpcCommand) -> Fut,
-    Fut: std::future::Future<Output = IpcResponse>,
+    C: serde::de::DeserializeOwned,
+    R: serde::Serialize,
+    F: Fn(C) -> Fut,
+    Fut: std::future::Future<Output = R>,
 {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -232,7 +285,7 @@ where
             continue;
         }
 
-        let cmd: IpcCommand =
+        let cmd: C =
             serde_json::from_str(trimmed).map_err(|e| format!("Invalid command: {}", e))?;
 
         let response = handler(cmd).await;
@@ -251,9 +304,12 @@ where
     Ok(())
 }
 
-pub async fn send_command(cmd: IpcCommand) -> Result<IpcResponse, String> {
-    let path = socket_path();
-
+/// Generic single-shot client send. Used by both daemon and desktop wrappers.
+async fn send<C, R>(path: PathBuf, cmd: C) -> Result<R, String>
+where
+    C: serde::Serialize,
+    R: serde::de::DeserializeOwned,
+{
     let stream = UnixStream::connect(&path)
         .await
         .map_err(|e| format!("Failed to connect (is clawtab running?): {}", e))?;
@@ -275,16 +331,24 @@ pub async fn send_command(cmd: IpcCommand) -> Result<IpcResponse, String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    let response: IpcResponse =
+    let response: R =
         serde_json::from_str(line.trim()).map_err(|e| format!("Invalid response: {}", e))?;
 
     Ok(response)
 }
 
+pub async fn send_command(cmd: IpcCommand) -> Result<IpcResponse, String> {
+    send(daemon_socket_path(), cmd).await
+}
+
+pub async fn send_desktop_command(cmd: DesktopIpcCommand) -> Result<IpcResponse, String> {
+    send(desktop_socket_path(), cmd).await
+}
+
 /// Connect to the daemon's event server. Returns a reader yielding newline-
 /// delimited `IpcEvent` JSON. Caller parses each line and dispatches.
 pub async fn subscribe_events() -> Result<BufReader<tokio::net::unix::OwnedReadHalf>, String> {
-    let path = event_socket_path();
+    let path = daemon_event_socket_path();
     let stream = UnixStream::connect(&path)
         .await
         .map_err(|e| format!("Failed to connect to event server: {}", e))?;

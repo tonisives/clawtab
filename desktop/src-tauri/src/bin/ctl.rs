@@ -1,21 +1,28 @@
 use std::env;
 
-use clawtab_lib::ipc::{self, IpcCommand, IpcResponse};
+use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDirection};
+
+/// Routes a parsed command to either the daemon or the desktop-app socket.
+/// `cwtctl` originally only spoke to the daemon; UI actions like `pane focus`
+/// and `open` live on the desktop socket so the daemon stays UI-agnostic.
+enum Target {
+    Daemon(IpcCommand),
+    Desktop(DesktopIpcCommand),
+}
 
 fn print_usage() {
     eprintln!("cwtctl - CLI for ClawTab");
     eprintln!();
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
-    eprintln!("Commands:");
-    eprintln!("  ping              Check if ClawTab is running");
+    eprintln!("Commands (require daemon):");
+    eprintln!("  ping              Check if ClawTab daemon is running");
     eprintln!("  list | ls         List all jobs");
     eprintln!("  run <name>        Run a job by name");
     eprintln!("  pause <name>      Pause a running job");
     eprintln!("  resume <name>     Resume a paused job");
     eprintln!("  restart <name>    Restart a job");
     eprintln!("  status            Show job statuses");
-    eprintln!("  open [pane_id]    Open current tmux pane in ClawTab (uses $TMUX_PANE if omitted)");
     eprintln!("  auto-yes          Show auto-yes panes");
     eprintln!("  auto-yes toggle [pane_id]  Toggle auto-yes for pane (uses $TMUX_PANE if omitted)");
     eprintln!("  auto-yes check [pane_id]   Check if pane has auto-yes (exit 0=on, 1=off)");
@@ -23,6 +30,10 @@ fn print_usage() {
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret values as KEY=VALUE lines");
     eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
+    eprintln!();
+    eprintln!("Pane (require desktop app):");
+    eprintln!("  open [pane_id]              Open tmux pane in ClawTab (uses $TMUX_PANE if omitted)");
+    eprintln!("  pane focus <left|right|up|down>  Move focus between ClawTab panes");
     eprintln!();
     eprintln!("Daemon:");
     eprintln!("  daemon install    Install launchd service (auto-start on login)");
@@ -62,7 +73,7 @@ async fn main() {
         return;
     }
 
-    let ipc_cmd = match command {
+    let target = match command {
         "open" => {
             let pane_id = if args.len() >= 3 {
                 args[2].clone()
@@ -74,34 +85,65 @@ async fn main() {
                     std::process::exit(1);
                 })
             };
-            IpcCommand::OpenPane { pane_id }
+            Target::Desktop(DesktopIpcCommand::OpenPane { pane_id })
         }
-        "ping" => IpcCommand::Ping,
-        "list" | "ls" => IpcCommand::ListJobs,
-        "run" => IpcCommand::RunJob {
+        "pane" => {
+            let sub = args.get(2).map(String::as_str).unwrap_or("");
+            match sub {
+                "focus" => {
+                    let dir_str = args.get(3).map(String::as_str).unwrap_or("");
+                    let direction = match dir_str {
+                        "left" => PaneDirection::Left,
+                        "right" => PaneDirection::Right,
+                        "up" => PaneDirection::Up,
+                        "down" => PaneDirection::Down,
+                        "" => {
+                            eprintln!("Error: 'pane focus' requires a direction (left|right|up|down)");
+                            std::process::exit(1);
+                        }
+                        other => {
+                            eprintln!("Error: unknown direction '{}'. Expected left|right|up|down", other);
+                            std::process::exit(1);
+                        }
+                    };
+                    Target::Desktop(DesktopIpcCommand::FocusPane { direction })
+                }
+                "" => {
+                    eprintln!("Error: 'pane' requires a subcommand (focus)");
+                    std::process::exit(1);
+                }
+                other => {
+                    eprintln!("Unknown 'pane' subcommand: {}", other);
+                    std::process::exit(1);
+                }
+            }
+        }
+        "ping" => Target::Daemon(IpcCommand::Ping),
+        "list" | "ls" => Target::Daemon(IpcCommand::ListJobs),
+        "run" => Target::Daemon(IpcCommand::RunJob {
             name: require_name(&args, "run"),
-        },
-        "pause" => IpcCommand::PauseJob {
+        }),
+        "pause" => Target::Daemon(IpcCommand::PauseJob {
             name: require_name(&args, "pause"),
-        },
-        "resume" => IpcCommand::ResumeJob {
+        }),
+        "resume" => Target::Daemon(IpcCommand::ResumeJob {
             name: require_name(&args, "resume"),
-        },
-        "restart" => IpcCommand::RestartJob {
+        }),
+        "restart" => Target::Daemon(IpcCommand::RestartJob {
             name: require_name(&args, "restart"),
-        },
-        "status" => IpcCommand::GetStatus,
+        }),
+        "status" => Target::Daemon(IpcCommand::GetStatus),
         "secrets" => {
             if args.len() >= 3 && args[2] == "get" {
                 if args.len() < 4 {
                     eprintln!("Error: 'secrets get' requires at least one key");
                     std::process::exit(1);
                 }
-                IpcCommand::GetSecretValues {
+                Target::Daemon(IpcCommand::GetSecretValues {
                     keys: args[3..].to_vec(),
-                }
+                })
             } else {
-                IpcCommand::ListSecretKeys
+                Target::Daemon(IpcCommand::ListSecretKeys)
             }
         }
         "pane-info" => {
@@ -201,12 +243,12 @@ async fn main() {
                         std::process::exit(1);
                     })
                 };
-                IpcCommand::ToggleAutoYes { pane_id }
+                Target::Daemon(IpcCommand::ToggleAutoYes { pane_id })
             } else if args.len() >= 3 && args[2] == "check" {
                 // pane_id resolved later in check_pane
-                IpcCommand::GetAutoYesPanes
+                Target::Daemon(IpcCommand::GetAutoYesPanes)
             } else {
-                IpcCommand::GetAutoYesPanes
+                Target::Daemon(IpcCommand::GetAutoYesPanes)
             }
         }
         _ => {
@@ -227,7 +269,12 @@ async fn main() {
         None
     };
 
-    match ipc::send_command(ipc_cmd).await {
+    let response_result = match target {
+        Target::Daemon(cmd) => ipc::send_command(cmd).await,
+        Target::Desktop(cmd) => ipc::send_desktop_command(cmd).await,
+    };
+
+    match response_result {
         Ok(response) => match response {
             IpcResponse::Pong => {
                 println!("pong");

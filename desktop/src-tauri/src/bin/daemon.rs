@@ -347,7 +347,6 @@ async fn handle_ipc_command(
             IpcResponse::Status(status)
         }
         IpcCommand::OpenSettings => IpcResponse::Error("requires desktop app".to_string()),
-        IpcCommand::OpenPane { .. } => IpcResponse::Error("requires desktop app".to_string()),
         IpcCommand::GetAutoYesPanes => {
             let panes: Vec<String> = auto_yes_panes.lock().unwrap().iter().cloned().collect();
             IpcResponse::AutoYesPanes(panes)

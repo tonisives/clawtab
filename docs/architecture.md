@@ -8,12 +8,17 @@ graph TB
         React["React 19 Frontend"]
     end
 
-    subgraph Core["Rust Core"]
+    subgraph DesktopProc["Desktop App Process"]
         Commands["Tauri Commands"]
+        DesktopIpc["Desktop IPC Server\n/tmp/clawtab-desktop.sock"]
+    end
+
+    subgraph DaemonProc["Daemon Process"]
         Scheduler["Cron Scheduler"]
         Executor["Job Executor"]
         Monitor["Pane Monitor"]
-        IpcServer["IPC Server"]
+        IpcServer["Daemon IPC Server\n/tmp/clawtab.sock"]
+        EventServer["Event Server\n/tmp/clawtab-events.sock"]
         TgPoller["Telegram Agent Poller"]
         RelayConn["Relay Client"]
     end
@@ -47,12 +52,22 @@ graph TB
     Commands --> Gopass
     TgPoller -->|8s poll| TgAPI
     TgPoller --> Executor
-    CLI -->|Unix socket| IpcServer
-    TUI -->|Unix socket| IpcServer
-    IpcServer --> Commands
+    CLI -->|Daemon socket| IpcServer
+    CLI -->|Desktop socket| DesktopIpc
+    TUI -->|Daemon socket| IpcServer
+    DesktopIpc --> Commands
+    EventServer -.->|push| Commands
     RelayConn <-->|WebSocket| RelayServer
     Mobile <-->|WebSocket| RelayServer
 ```
+
+## Why two IPC sockets
+
+The daemon owns background lifecycle (cron scheduling, job execution, relay, Telegram polling, auto-yes) and runs even when the GUI window is closed. It is intentionally UI-agnostic.
+
+The desktop app owns UI state (focused pane, layout tree, splits). Operations that change UI state -- "focus the pane to the left", "open this tmux pane in the GUI" -- belong to the desktop process and are served on a separate socket at `/tmp/clawtab-desktop.sock`.
+
+`cwtctl` picks the right socket per command. `cwtctl status` talks to the daemon; `cwtctl pane focus left` talks to the desktop app. Both sockets share the same wire format (newline-delimited JSON) and the same `IpcResponse` type, but each has its own command enum (`IpcCommand` for the daemon, `DesktopIpcCommand` for the desktop) so neither side ever deserializes the other's variants.
 
 ## Tech Stack
 
@@ -121,7 +136,7 @@ sequenceDiagram
 src-tauri/src/
   lib.rs                    # App state, IPC handler, Tauri setup
   main.rs                   # Entry point
-  ipc.rs                    # Unix socket server/client
+  ipc.rs                    # Unix socket server/client (daemon + desktop sockets, IpcCommand + DesktopIpcCommand)
   config/
     mod.rs                  # Config dir: ~/.config/clawtab/
     jobs.rs                 # Job schema, folder-based storage, slug generation

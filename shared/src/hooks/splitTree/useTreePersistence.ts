@@ -60,6 +60,7 @@ export function useTreePersistence(opts: {
     }
     if (controlledRef.current) {
       if (splitTree !== controlledRef.current.tree) {
+        console.log("[persist] tree", { id: controlledRef.current.id, internalRef: splitTree, controlledRef: controlledRef.current.tree });
         controlledRef.current.onChange({ tree: splitTree });
       }
     } else if (storageKey) {
@@ -71,6 +72,7 @@ export function useTreePersistence(opts: {
   useEffect(() => {
     if (controlledRef.current) {
       if (focusedLeafId !== controlledRef.current.focusedLeafId) {
+        console.log("[persist] focus", { id: controlledRef.current.id, internal: focusedLeafId, controlled: controlledRef.current.focusedLeafId });
         controlledRef.current.onChange({ focusedLeafId });
       }
     } else if (storageKey) {

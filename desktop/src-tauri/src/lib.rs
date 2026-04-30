@@ -584,6 +584,40 @@ pub fn run() {
             // Set app handle for IPC
             *ipc_app_handle.lock().unwrap() = Some(app.handle().clone());
 
+            // Desktop IPC socket: UI-only commands (cwtctl pane focus, cwtctl open).
+            // Lives on the desktop process, not the daemon, so the daemon stays
+            // UI-agnostic. See ipc.rs DesktopIpcCommand and docs/architecture.md.
+            {
+                let app_handle_for_desktop_ipc = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let result = ipc::start_desktop_ipc_server(move |cmd| {
+                        let app_handle = app_handle_for_desktop_ipc.clone();
+                        async move {
+                            match cmd {
+                                ipc::DesktopIpcCommand::FocusPane { direction } => {
+                                    let action = match direction {
+                                        ipc::PaneDirection::Left => "move_pane_left",
+                                        ipc::PaneDirection::Right => "move_pane_right",
+                                        ipc::PaneDirection::Up => "move_pane_up",
+                                        ipc::PaneDirection::Down => "move_pane_down",
+                                    };
+                                    let _ = app_handle.emit("shortcut-action", action);
+                                    ipc::IpcResponse::Ok
+                                }
+                                ipc::DesktopIpcCommand::OpenPane { pane_id } => {
+                                    let _ = app_handle.emit("open-pane", pane_id);
+                                    ipc::IpcResponse::Ok
+                                }
+                            }
+                        }
+                    })
+                    .await;
+                    if let Err(e) = result {
+                        log::error!("Desktop IPC server failed: {}", e);
+                    }
+                });
+            }
+
             // Tray menu
             let secrets_for_usage = app.state::<AppState>().secrets.clone();
             let app_for_usage = app.handle().clone();

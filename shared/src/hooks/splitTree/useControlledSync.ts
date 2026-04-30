@@ -34,6 +34,7 @@ export function useControlledSync(opts: {
   useEffect(() => {
     if (controlledId === null) return;
     if (lastControlledIdRef.current === controlledId) return;
+    console.log("[ctrlSync] ws-switch", { from: lastControlledIdRef.current, to: controlledId, treeRef: controlledTree, focused: controlledFocusedLeafId });
     lastControlledIdRef.current = controlledId;
     if (controlledTree) restoreIdCounter(controlledTree);
     setSplitTree((prev) => (prev === controlledTree ? prev : controlledTree));
@@ -44,6 +45,7 @@ export function useControlledSync(opts: {
   useEffect(() => {
     if (controlledId === null) return;
     if (controlledId !== lastControlledIdRef.current) return;
+    console.log("[ctrlSync] focus-sync", { id: controlledId, controlledFocused: controlledFocusedLeafId });
     setFocusedLeafId((prev) => (prev === controlledFocusedLeafId ? prev : controlledFocusedLeafId));
   }, [controlledId, controlledFocusedLeafId, setFocusedLeafId]);
 }

@@ -607,6 +607,11 @@ export function useKeyboardShortcuts({
         triggerRenameActivePane(detail.paneId);
         return;
       }
+      const movePaneAction = detail?.action?.match(/^move_pane_(left|right|up|down)$/);
+      if (movePaneAction) {
+        runMovePaneShortcut(movePaneAction[1] as PaneMoveDirection, { sourcePaneId: detail?.paneId });
+        return;
+      }
       if (detail?.binding) runAppShortcutBinding(detail.binding, detail.paneId);
     };
 
@@ -624,6 +629,13 @@ export function useKeyboardShortcuts({
       if (event.payload === "focus_agent_input") triggerFocusAgentInput();
       if (event.payload === "zoom_active_pane") triggerZoomActivePane();
       if (event.payload === "toggle_auto_yes") toggleActiveAutoYes?.();
+      if (/^move_pane_(left|right|up|down)$/.test(event.payload)) {
+        // Forward to the in-page handler so the existing pane-movement code
+        // path runs. Sent from the desktop IPC socket (cwtctl pane focus).
+        window.dispatchEvent(
+          new CustomEvent(APP_SHORTCUT_EVENT, { detail: { action: event.payload } }),
+        );
+      }
     });
 
     return () => {
