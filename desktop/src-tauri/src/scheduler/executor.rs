@@ -134,7 +134,7 @@ pub async fn execute_job(
 
     let result: Result<(Option<i32>, String, String, Option<TmuxHandle>), String> =
         match job.job_type {
-            JobType::Binary => execute_binary_job(job, secrets, settings, result_file.as_deref())
+            JobType::Binary => execute_binary_job(job, secrets, settings, params, result_file.as_deref())
                 .await
                 .map(|(code, out, err)| (code, out, err, None)),
             JobType::Claude => {
@@ -414,6 +414,7 @@ async fn execute_binary_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
+    params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String), String> {
     let work_dir = job.work_dir.clone().unwrap_or_else(|| {
@@ -450,6 +451,14 @@ async fn execute_binary_job(
 
     if let Some(p) = result_file {
         cmd.env("CLAWTAB_RESULT_FILE", p);
+    }
+
+    // Trigger params -> CLAWTAB_PARAM_<UPPER_KEY>. Lets binary jobs accept
+    // per-invocation inputs from /v1/triggers/run without needing a Claude
+    // agent for templating.
+    for (k, v) in params {
+        let key = format!("CLAWTAB_PARAM_{}", k.to_ascii_uppercase());
+        cmd.env(key, v);
     }
 
     cmd.current_dir(&work_dir);
