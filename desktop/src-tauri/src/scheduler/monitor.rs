@@ -37,6 +37,11 @@ pub struct MonitorParams {
     /// Pane IDs currently open in ClawTab's UI. Used to suppress `kill_on_end`
     /// when the user is looking at the pane.
     pub protected_panes: Arc<Mutex<HashSet<String>>>,
+    /// External trigger id, set when this run was started via the triggers
+    /// crate webhook. When set, the monitor reads `result_file` on finish and
+    /// pushes a `DesktopMessage::TriggerResult` to the relay.
+    pub trigger_id: Option<String>,
+    pub result_file: Option<std::path::PathBuf>,
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -434,6 +439,22 @@ pub async fn monitor_pane(params: MonitorParams) {
                 n.notify_job(&params.job_id, "completed");
             }
         }
+    }
+
+    if let Some(ref tid) = params.trigger_id {
+        let parsed = params
+            .result_file
+            .as_ref()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+        crate::relay::push_trigger_result(
+            &params.relay,
+            tid,
+            "succeeded",
+            Some(0),
+            parsed,
+            None,
+        );
     }
 
     log::info!(

@@ -17,6 +17,11 @@ pub enum ClientMessage {
         name: String,
         #[serde(default)]
         params: HashMap<String, String>,
+        /// When set, this run was started by a remote trigger (webhook).
+        /// The desktop should use this as the run_id and produce a structured
+        /// result file at logs/<trigger_id>.json.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trigger_id: Option<String>,
     },
     PauseJob {
         id: String,
@@ -54,6 +59,11 @@ pub enum ClientMessage {
         prompt: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         work_dir: Option<String>,
+        /// When set, this run was started by a remote trigger (webhook).
+        /// The desktop should use this as the run_id and produce a structured
+        /// result file at logs/<trigger_id>.json.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        trigger_id: Option<String>,
     },
     CreateJob {
         id: String,
@@ -288,6 +298,20 @@ pub enum DesktopMessage {
     /// PTY session ended
     PtyExit {
         pane_id: String,
+    },
+    /// Final result for a remote-trigger run. Sent by the desktop when a run
+    /// started with `trigger_id` finishes. Carries a structured JSON payload
+    /// (read from logs/<trigger_id>.json on disk if produced) plus exit_code.
+    TriggerResult {
+        trigger_id: String,
+        /// "succeeded" | "failed"
+        status: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exit_code: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        result: Option<serde_json::Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
 }
 

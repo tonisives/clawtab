@@ -156,6 +156,7 @@ pub async fn start(
                         executor::ExecuteOpts {
                             use_auto_yes: true,
                             pane_tx: None,
+                            ..Default::default()
                         },
                     )
                     .await;

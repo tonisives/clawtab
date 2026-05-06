@@ -63,8 +63,13 @@ pub async fn handle_incoming(
             })
         }
 
-        ClientMessage::RunJob { id, name, params } => {
-            let result = run_job(&name, &params, jobs_config, ctx);
+        ClientMessage::RunJob {
+            id,
+            name,
+            params,
+            trigger_id,
+        } => {
+            let result = run_job(&name, &params, trigger_id, jobs_config, ctx);
             event_sink.emit_jobs_changed();
             Some(DesktopMessage::RunJobAck {
                 id,
@@ -151,8 +156,9 @@ pub async fn handle_incoming(
             id,
             prompt,
             work_dir,
+            trigger_id,
         } => {
-            let result = run_agent(&prompt, work_dir.as_deref(), jobs_config, ctx);
+            let result = run_agent(&prompt, work_dir.as_deref(), trigger_id, jobs_config, ctx);
             Some(DesktopMessage::RunAgentAck {
                 id,
                 success: result.is_ok(),
@@ -361,6 +367,7 @@ pub async fn handle_incoming(
 fn run_job(
     name: &str,
     params: &HashMap<String, String>,
+    trigger_id: Option<String>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
 ) -> Result<(), String> {
@@ -376,14 +383,18 @@ fn run_job(
 
     let ctx = ctx.clone();
     let params = params.clone();
+    let trigger = if trigger_id.is_some() { "trigger" } else { "remote" };
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job,
             &ctx,
-            "remote",
+            trigger,
             &params,
-            crate::scheduler::executor::ExecuteOpts::default(),
+            crate::scheduler::executor::ExecuteOpts {
+                trigger_id,
+                ..Default::default()
+            },
         )
         .await;
     });
@@ -509,6 +520,7 @@ fn get_run_history(
 fn run_agent(
     prompt: &str,
     work_dir: Option<&str>,
+    trigger_id: Option<String>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
 ) -> Result<String, String> {
@@ -521,14 +533,18 @@ fn run_agent(
     let job_id = job.name.clone();
 
     let ctx = ctx.clone();
+    let trigger = if trigger_id.is_some() { "trigger" } else { "remote" };
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
             &job,
             &ctx,
-            "remote",
+            trigger,
             &HashMap::new(),
-            crate::scheduler::executor::ExecuteOpts::default(),
+            crate::scheduler::executor::ExecuteOpts {
+                trigger_id,
+                ..Default::default()
+            },
         )
         .await;
     });
