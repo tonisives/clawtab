@@ -67,6 +67,9 @@ export function ApiTokensSection() {
     setCreating(true);
     try {
       const created = await api.createApiToken(trimmed);
+      // Refresh token list first so the cleanup effect sees the new token
+      // before we add its secret to state, preventing premature eviction.
+      await refresh();
       const next = { ...secrets, [created.id]: created.secret };
       setSecrets(next);
       await saveSecrets(next);
@@ -74,7 +77,6 @@ export function ApiTokensSection() {
       setRevealed((r) => ({ ...r, [created.id]: true }));
       setName("");
       setShowCreate(false);
-      await refresh();
     } catch (e) {
       alertError("Error", e instanceof Error ? e.message : String(e));
     } finally {
@@ -137,8 +139,8 @@ export function ApiTokensSection() {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>API Tokens</Text>
       <Text style={styles.helpText}>
-        Trigger jobs and agents on your desktop from CI, n8n, Zapier, or your own scripts. Tokens
-        are shown only once on creation.
+        Trigger jobs and agents on your desktop from CI, n8n, Zapier, or your own scripts. Token
+        secrets are stored in this browser so you can copy them anytime.
       </Text>
 
       {loading ? (
