@@ -254,6 +254,8 @@ pub fn reattach_running_jobs(
             notifier: None,
             is_reattach: true,
             protected_panes: Arc::clone(protected_panes),
+            trigger_id: None,
+            result_file: None,
         };
         tokio::spawn(super::monitor::monitor_pane(params));
 

@@ -543,6 +543,9 @@ async fn handle_desktop_message(state: &AppState, user_id: Uuid, text: &str) {
                 hub.send_raw_to_mobiles(guest.guest_id, text);
             }
         }
+    } else if let DesktopMessage::TriggerResult { ref trigger_id, ref status, exit_code, ref result, ref error } = msg {
+        // Internal-only channel for the triggers service. Do NOT fanout to mobiles.
+        handle_trigger_result(state, user_id, trigger_id, status, exit_code, result, error).await;
     } else {
         // Forward raw JSON to all mobile clients (avoids re-serialization)
         let hub = state.hub.read().await;
@@ -830,5 +833,62 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::UnsubscribePty { .. }
         | ClientMessage::PtyInput { .. }
         | ClientMessage::PtyResize { .. } => None,
+    }
+}
+
+/// Persist a trigger run result and notify any waiters in the triggers service.
+async fn handle_trigger_result(
+    state: &AppState,
+    user_id: Uuid,
+    trigger_id: &str,
+    status: &str,
+    exit_code: Option<i32>,
+    result: &Option<serde_json::Value>,
+    error: &Option<String>,
+) {
+    let Ok(id) = Uuid::parse_str(trigger_id) else {
+        tracing::warn!("trigger_result with malformed id: {trigger_id}");
+        return;
+    };
+
+    let final_status = match status {
+        "succeeded" | "failed" => status,
+        other => {
+            tracing::warn!("trigger_result with unexpected status {other}; coercing to failed");
+            "failed"
+        }
+    };
+
+    let updated = sqlx::query(
+        "UPDATE trigger_runs
+         SET status = $1, exit_code = $2, result = $3, error = $4, finished_at = now()
+         WHERE id = $5 AND user_id = $6 AND status NOT IN ('succeeded', 'failed', 'no_device')",
+    )
+    .bind(final_status)
+    .bind(exit_code)
+    .bind(result)
+    .bind(error)
+    .bind(id)
+    .bind(user_id)
+    .execute(&state.pool)
+    .await;
+
+    match updated {
+        Ok(res) if res.rows_affected() > 0 => {
+            // Wake any pending waiters in the triggers service via Postgres NOTIFY.
+            if let Err(e) = sqlx::query("SELECT pg_notify('trigger_result', $1)")
+                .bind(id.to_string())
+                .execute(&state.pool)
+                .await
+            {
+                tracing::warn!("pg_notify trigger_result failed: {e}");
+            }
+        }
+        Ok(_) => {
+            tracing::debug!("trigger_result ignored (already terminal or wrong owner): {id}");
+        }
+        Err(e) => {
+            tracing::warn!("failed to persist trigger_result {id}: {e}");
+        }
     }
 }

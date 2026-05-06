@@ -571,6 +571,7 @@ async fn handle_ipc_command(
                         clawtab_lib::scheduler::executor::ExecuteOpts {
                             use_auto_yes: true,
                             pane_tx: Some(pane_tx),
+                            ..Default::default()
                         },
                     )
                     .await;
@@ -596,6 +597,7 @@ async fn handle_ipc_command(
                         clawtab_lib::scheduler::executor::ExecuteOpts {
                             use_auto_yes: true,
                             pane_tx: None,
+                            ..Default::default()
                         },
                     )
                     .await;
@@ -666,6 +668,7 @@ async fn handle_ipc_command(
                     clawtab_lib::scheduler::executor::ExecuteOpts {
                         use_auto_yes: false,
                         pane_tx: Some(pane_tx),
+                        ..Default::default()
                     },
                 )
                 .await;
