@@ -141,7 +141,6 @@ export interface AppSettings {
   job_order: Record<string, string[]>;
   hidden_groups: string[];
   relay: RelaySettings | null;
-  show_in_dock: boolean;
   show_tray_icon: boolean;
   hide_titlebar: boolean;
   process_overrides: Record<string, DetectedProcessOverride>;

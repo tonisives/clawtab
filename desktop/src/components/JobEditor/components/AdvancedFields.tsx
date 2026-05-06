@@ -7,9 +7,10 @@ interface AdvancedFieldsProps {
   isShellJob: boolean;
   persistTmuxSession: (val: string) => void;
   setPendingAutoYes: (v: boolean) => void;
+  existingGroups?: string[];
 }
 
-export function AdvancedFields({ form, setForm, isNew, isShellJob, persistTmuxSession, setPendingAutoYes }: AdvancedFieldsProps) {
+export function AdvancedFields({ form, setForm, isNew, isShellJob, persistTmuxSession, setPendingAutoYes, existingGroups = [] }: AdvancedFieldsProps) {
   return (
     <>
       {form.job_type === "job" && !isShellJob && (
@@ -67,11 +68,29 @@ export function AdvancedFields({ form, setForm, isNew, isShellJob, persistTmuxSe
         <label>Group</label>
         <input
           type="text"
+          list="job-editor-existing-groups"
           value={form.group}
           onChange={(e) => setForm((prev) => ({ ...prev, group: e.target.value || "default" }))}
           placeholder=""
         />
-        <span className="hint">Jobs are grouped by this label in the list</span>
+        <datalist id="job-editor-existing-groups">
+          {existingGroups.map((g) => <option key={g} value={g} />)}
+        </datalist>
+        <span className="hint">Jobs are grouped by this label in the list. Pick existing or type a new one.</span>
+      </div>
+
+      <div className="form-group">
+        <label>Max History</label>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={form.max_history}
+          onChange={(e) => {
+            const n = parseInt(e.target.value, 10);
+            setForm((prev) => ({ ...prev, max_history: Number.isFinite(n) && n > 0 ? n : 1 }));
+          }}
+        />
+        <span className="hint">How many recent runs to keep in history. Older runs are pruned after each new run.</span>
       </div>
     </>
   );

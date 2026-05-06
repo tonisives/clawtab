@@ -20,9 +20,14 @@ export function SecretsFields({
   addSecretKey, setAddSecretKey, addSecretValue, setAddSecretValue,
   addSecretVisible, setAddSecretVisible, toggleSecret, handleAddSecretInline,
 }: SecretsFieldsProps) {
-  const filtered = availableSecrets?.filter((s) =>
+  const filtered = (availableSecrets?.filter((s) =>
     !secretSearch || s.key.toLowerCase().includes(secretSearch.toLowerCase())
-  ) ?? [];
+  ) ?? []).slice().sort((a, b) => {
+    const aSel = form.secret_keys.includes(a.key);
+    const bSel = form.secret_keys.includes(b.key);
+    if (aSel !== bSel) return aSel ? -1 : 1;
+    return a.key.localeCompare(b.key);
+  });
 
   return (
     <div className="form-group">

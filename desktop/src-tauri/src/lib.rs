@@ -505,7 +505,6 @@ pub fn run() {
             commands::browser::check_browser_session,
             commands::browser::clear_browser_session,
             commands::browser::check_playwright_installed,
-            commands::settings::set_dock_visibility,
             commands::settings::set_titlebar_visibility,
             commands::settings::set_tray_icon_visibility,
             commands::updater::get_version,
@@ -562,17 +561,11 @@ pub fn run() {
             commands::daemon::get_daemon_logs,
         ])
         .setup(move |app| {
-            // Show in Dock by default; if user disabled it, switch to Accessory (tray-only)
             #[cfg(target_os = "macos")]
             {
                 let state = app.state::<AppState>();
-                let settings = state.settings.lock().unwrap();
-                let show = settings.show_in_dock;
-                let hide_titlebar = settings.hide_titlebar;
-                drop(settings);
-                if !show {
-                    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                }
+                let hide_titlebar = state.settings.lock().unwrap().hide_titlebar;
+                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                 // Config defaults to Overlay; restore Visible if user disabled it
                 if !hide_titlebar {
                     if let Some(window) = app.get_webview_window("settings") {
@@ -627,8 +620,6 @@ pub fn run() {
                 tray.on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
                         if let Some(window) = app.get_webview_window("settings") {
-                            #[cfg(target_os = "macos")]
-                            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
@@ -776,24 +767,10 @@ pub fn run() {
             // Hide settings window on close instead of quitting
             if let Some(settings_window) = app.get_webview_window("settings") {
                 let window = settings_window.clone();
-                let app_handle = app.handle().clone();
                 settings_window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = window.hide();
-                        #[cfg(target_os = "macos")]
-                        {
-                            let show = app_handle
-                                .state::<AppState>()
-                                .settings
-                                .lock()
-                                .unwrap()
-                                .show_in_dock;
-                            if !show {
-                                let _ = app_handle
-                                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
-                            }
-                        }
                     }
                 });
             }

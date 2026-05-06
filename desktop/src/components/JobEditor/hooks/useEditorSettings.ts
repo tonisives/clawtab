@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProcessProvider } from "@clawtab/shared";
+import type { RemoteJob } from "@clawtab/shared";
 import type { AppSettings, Job } from "../../../types";
 
 interface UseEditorSettingsParams {
@@ -17,6 +18,14 @@ export function useEditorSettings({ form, setForm, isNew, isWizard }: UseEditorS
   const [enabledModels, setEnabledModels] = useState<Record<string, string[]>>({});
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
+  const [existingGroups, setExistingGroups] = useState<string[]>([]);
+
+  useEffect(() => {
+    invoke<RemoteJob[]>("get_jobs").then((jobs) => {
+      const groups = Array.from(new Set(jobs.map((j) => j.group).filter(Boolean))).sort();
+      setExistingGroups(groups);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
@@ -62,6 +71,7 @@ export function useEditorSettings({ form, setForm, isNew, isWizard }: UseEditorS
     enabledModels,
     preferredEditor,
     telegramChats,
+    existingGroups,
     persistTmuxSession,
   };
 }

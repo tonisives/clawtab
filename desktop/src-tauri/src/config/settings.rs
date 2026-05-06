@@ -150,8 +150,6 @@ pub struct AppSettings {
     pub hidden_groups: Vec<String>,
     /// Remote relay server settings
     pub relay: Option<RelaySettings>,
-    /// Whether to show the app icon in the macOS Dock
-    pub show_in_dock: bool,
     /// Whether to show the app icon in the system tray/menu bar
     #[serde(default = "default_true")]
     pub show_tray_icon: bool,
@@ -191,7 +189,6 @@ impl Default for AppSettings {
             job_order: HashMap::new(),
             hidden_groups: Vec::new(),
             relay: None,
-            show_in_dock: true,
             show_tray_icon: true,
             hide_titlebar: true,
             process_overrides: HashMap::new(),

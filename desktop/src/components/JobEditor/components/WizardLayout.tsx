@@ -176,12 +176,22 @@ export function WizardLayout({
               />
             </CollapsibleFieldGroup>
 
-            <CollapsibleFieldGroup title="Secrets" expanded={wizard.secretsExpanded} onToggle={() => wizard.setSecretsExpanded(!wizard.secretsExpanded)}>
+            <CollapsibleFieldGroup
+              title="Secrets"
+              expanded={wizard.secretsExpanded}
+              onToggle={() => wizard.setSecretsExpanded(!wizard.secretsExpanded)}
+              badge={form.secret_keys.length > 0 ? <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: "normal" }}>{form.secret_keys.join(", ")}</span> : null}
+            >
               <SecretsFields form={form} {...secrets} />
             </CollapsibleFieldGroup>
 
             {!isShellJob && (
-              <CollapsibleFieldGroup title="Skills" expanded={wizard.skillsExpanded} onToggle={() => wizard.setSkillsExpanded(!wizard.skillsExpanded)}>
+              <CollapsibleFieldGroup
+                title="Skills"
+                expanded={wizard.skillsExpanded}
+                onToggle={() => wizard.setSkillsExpanded(!wizard.skillsExpanded)}
+                badge={form.skill_paths.length > 0 ? <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: "normal" }}>{form.skill_paths.map(p => p.split("/").pop() || p).join(", ")}</span> : null}
+              >
                 <SkillsFields
                   form={form}
                   availableSkills={secrets.availableSkills}
@@ -206,6 +216,7 @@ export function WizardLayout({
                 isShellJob={isShellJob}
                 persistTmuxSession={settings.persistTmuxSession}
                 setPendingAutoYes={setPendingAutoYes}
+                existingGroups={settings.existingGroups}
               />
             </CollapsibleFieldGroup>
           </div>

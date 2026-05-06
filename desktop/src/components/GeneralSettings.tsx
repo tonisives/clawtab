@@ -154,15 +154,6 @@ function GeneralSettingsContent() {
     }
   }
 
-  const toggleDock = async (visible: boolean) => {
-    await update({ show_in_dock: visible })
-    try {
-      await invoke("set_dock_visibility", { visible })
-    } catch (e) {
-      console.error("Failed to set dock visibility:", e)
-    }
-  }
-
   const toggleTitlebar = async (hidden: boolean) => {
     await update({ hide_titlebar: hidden })
     try {
@@ -211,17 +202,6 @@ function GeneralSettingsContent() {
 
       <div className="field-group">
         <span className="field-group-title">Appearance</span>
-        <div className="form-group">
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={settings.show_in_dock}
-              onChange={(e) => toggleDock(e.target.checked)}
-            />
-            Show in Dock
-          </label>
-          <span className="hint">When disabled, ClawTab runs as a menu bar-only app</span>
-        </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label className="checkbox-label">
             <input

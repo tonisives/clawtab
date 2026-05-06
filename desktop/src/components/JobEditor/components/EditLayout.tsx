@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Job } from "../../../types";
 import { ConfirmDialog } from "../../ConfirmDialog";
 import type { useScheduleState } from "../hooks/useScheduleState";
@@ -5,7 +6,7 @@ import type { useContentEditor } from "../hooks/useContentEditor";
 import type { useSecretsAndSkills } from "../hooks/useSecretsAndSkills";
 import type { useEditorSettings } from "../hooks/useEditorSettings";
 import type { useJobImport } from "../hooks/useJobImport";
-import { FieldGroup } from "./FieldGroup";
+import { FieldGroup, CollapsibleFieldGroup } from "./FieldGroup";
 import { IdentityFields } from "./IdentityFields";
 import { DirectionsFields } from "./DirectionsFields";
 import { ParamsFields } from "./ParamsFields";
@@ -48,6 +49,10 @@ export function EditLayout({
   paramInput, setParamInput, argsText, setArgsText, envText, setEnvText,
   pendingAutoYes, setPendingAutoYes,
 }: EditLayoutProps) {
+  const [secretsExpanded, setSecretsExpanded] = useState(false);
+  const [skillsExpanded, setSkillsExpanded] = useState(false);
+  const [notificationsExpanded, setNotificationsExpanded] = useState(false);
+  const [tmuxExpanded, setTmuxExpanded] = useState(false);
   return (
     <div className="settings-section">
       <div className="section-header" style={{ justifyContent: "space-between" }}>
@@ -152,20 +157,6 @@ export function EditLayout({
         />
       </FieldGroup>
 
-      <FieldGroup title="Secrets">
-        <SecretsFields form={form} {...secrets} />
-      </FieldGroup>
-
-      {!isShellJob && (
-        <FieldGroup title="Skills">
-          <SkillsFields
-            form={form}
-            availableSkills={secrets.availableSkills}
-            toggleSkill={secrets.toggleSkill}
-          />
-        </FieldGroup>
-      )}
-
       <FieldGroup title="Config">
         <ConfigFields
           form={form}
@@ -174,28 +165,60 @@ export function EditLayout({
           envText={envText}
           setEnvText={setEnvText}
           setPendingAutoYes={setPendingAutoYes}
+          existingGroups={settings.existingGroups}
         />
+        {(form.job_type === "claude" || form.job_type === "job") && (
+          <CollapsibleFieldGroup
+            title="Tmux Session"
+            expanded={tmuxExpanded}
+            onToggle={() => setTmuxExpanded(!tmuxExpanded)}
+            badge={form.tmux_session ? <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: "normal" }}>{form.tmux_session}</span> : null}
+          >
+            <div className="form-group">
+              <input
+                type="text"
+                value={form.tmux_session ?? ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, tmux_session: e.target.value || null }))}
+                onBlur={(e) => { if (isNew) settings.persistTmuxSession(e.target.value); }}
+                placeholder=""
+              />
+              <span className="hint">Override the default cwt session name. Leave empty to use the default.</span>
+            </div>
+          </CollapsibleFieldGroup>
+        )}
       </FieldGroup>
 
-      <FieldGroup title="Runtime">
-        {(form.job_type === "claude" || form.job_type === "job") && (
-          <div className="form-group">
-            <label>Tmux Session</label>
-            <input
-              type="text"
-              value={form.tmux_session ?? ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, tmux_session: e.target.value || null }))}
-              onBlur={(e) => { if (isNew) settings.persistTmuxSession(e.target.value); }}
-              placeholder=""
-            />
-          </div>
-        )}
+      <CollapsibleFieldGroup
+        title="Secrets"
+        expanded={secretsExpanded}
+        onToggle={() => setSecretsExpanded(!secretsExpanded)}
+        badge={form.secret_keys.length > 0 ? <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: "normal" }}>{form.secret_keys.join(", ")}</span> : null}
+      >
+        <SecretsFields form={form} {...secrets} />
+      </CollapsibleFieldGroup>
+
+      {!isShellJob && (
+        <CollapsibleFieldGroup
+          title="Skills"
+          expanded={skillsExpanded}
+          onToggle={() => setSkillsExpanded(!skillsExpanded)}
+          badge={form.skill_paths.length > 0 ? <span style={{ fontSize: 11, color: "var(--text-secondary)", fontWeight: "normal" }}>{form.skill_paths.map(p => p.split("/").pop() || p).join(", ")}</span> : null}
+        >
+          <SkillsFields
+            form={form}
+            availableSkills={secrets.availableSkills}
+            toggleSkill={secrets.toggleSkill}
+          />
+        </CollapsibleFieldGroup>
+      )}
+
+      <CollapsibleFieldGroup title="Notifications" expanded={notificationsExpanded} onToggle={() => setNotificationsExpanded(!notificationsExpanded)}>
         <NotificationFields
           form={form}
           setForm={setForm}
           telegramChats={settings.telegramChats}
         />
-      </FieldGroup>
+      </CollapsibleFieldGroup>
 
       {pendingAutoYes && (
         <ConfirmDialog

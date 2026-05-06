@@ -70,8 +70,6 @@ pub fn write_editor_log(lines: Vec<String>) -> Result<(), String> {
 #[tauri::command]
 pub fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("settings") {
-        #[cfg(target_os = "macos")]
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
         let _ = window.show();
         let _ = window.set_focus();
         Ok(())
@@ -86,20 +84,6 @@ pub fn get_hostname() -> String {
         .to_string_lossy()
         .trim_end_matches(".local")
         .to_string()
-}
-
-#[tauri::command]
-pub fn set_dock_visibility(app: tauri::AppHandle, visible: bool) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let policy = if visible {
-            tauri::ActivationPolicy::Regular
-        } else {
-            tauri::ActivationPolicy::Accessory
-        };
-        let _ = app.set_activation_policy(policy);
-    }
-    Ok(())
 }
 
 #[tauri::command]
