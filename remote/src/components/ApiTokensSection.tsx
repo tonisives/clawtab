@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, Text, Pressable, StyleSheet, TextInput, ActivityIndicator, Platform } from "react-native";
 import * as api from "../api/client";
+import * as storage from "../lib/storage";
 import { alertError, confirm } from "../lib/platform";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+
+const SECRETS_KEY = "clawtab_api_token_secrets";
+
+async function loadSavedSecrets(): Promise<Record<string, string>> {
+  try {
+    const raw = await storage.getItem(SECRETS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveSecrets(secrets: Record<string, string>): Promise<void> {
+  await storage.setItem(SECRETS_KEY, JSON.stringify(secrets));
+}
 
 export function ApiTokensSection() {
   const [tokens, setTokens] = useState<api.ApiToken[]>([]);
@@ -11,7 +27,10 @@ export function ApiTokensSection() {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [justCreated, setJustCreated] = useState<api.CreatedApiToken | null>(null);
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [triggersUrl, setTriggersUrl] = useState<string>("");
 
   const refresh = useCallback(async () => {
@@ -26,7 +45,21 @@ export function ApiTokensSection() {
   useEffect(() => {
     refresh().finally(() => setLoading(false));
     api.getTriggersBaseUrl().then(setTriggersUrl);
+    loadSavedSecrets().then(setSecrets);
   }, [refresh]);
+
+  // Drop secrets for tokens that no longer exist (revoked or deleted elsewhere).
+  useEffect(() => {
+    if (loading || Object.keys(secrets).length === 0) return;
+    const liveIds = new Set(tokens.map((t) => t.id));
+    const cleaned = Object.fromEntries(
+      Object.entries(secrets).filter(([id]) => liveIds.has(id)),
+    );
+    if (Object.keys(cleaned).length !== Object.keys(secrets).length) {
+      setSecrets(cleaned);
+      saveSecrets(cleaned);
+    }
+  }, [tokens, secrets, loading]);
 
   const handleCreate = async () => {
     const trimmed = name.trim();
@@ -34,7 +67,11 @@ export function ApiTokensSection() {
     setCreating(true);
     try {
       const created = await api.createApiToken(trimmed);
-      setJustCreated(created);
+      const next = { ...secrets, [created.id]: created.secret };
+      setSecrets(next);
+      await saveSecrets(next);
+      setJustCreatedId(created.id);
+      setRevealed((r) => ({ ...r, [created.id]: true }));
       setName("");
       setShowCreate(false);
       await refresh();
@@ -52,6 +89,12 @@ export function ApiTokensSection() {
       async () => {
         try {
           await api.revokeApiToken(token.id);
+          if (secrets[token.id]) {
+            const next = { ...secrets };
+            delete next[token.id];
+            setSecrets(next);
+            await saveSecrets(next);
+          }
           await refresh();
         } catch (e) {
           alertError("Error", e instanceof Error ? e.message : String(e));
@@ -60,11 +103,31 @@ export function ApiTokensSection() {
     );
   };
 
-  const copyToClipboard = async (text: string) => {
+  const handleForgetSecret = (id: string) => {
+    confirm(
+      "Forget secret",
+      "Stop storing this token in the browser? The token stays valid; you just won't be able to copy it from here anymore.",
+      async () => {
+        const next = { ...secrets };
+        delete next[id];
+        setSecrets(next);
+        await saveSecrets(next);
+        setRevealed((r) => {
+          const n = { ...r };
+          delete n[id];
+          return n;
+        });
+      },
+    );
+  };
+
+  const copyToClipboard = async (id: string, text: string) => {
     try {
       if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(text);
       }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500);
     } catch {
       // ignore
     }
@@ -78,26 +141,6 @@ export function ApiTokensSection() {
         are shown only once on creation.
       </Text>
 
-      {justCreated && (
-        <View style={styles.createdCard}>
-          <Text style={styles.createdLabel}>New token (copy now, you won't see it again):</Text>
-          <View style={styles.secretRow}>
-            <Text style={styles.secretText} selectable numberOfLines={1}>
-              {justCreated.secret}
-            </Text>
-            <Pressable
-              style={styles.copyBtn}
-              onPress={() => copyToClipboard(justCreated.secret)}
-            >
-              <Text style={styles.copyBtnText}>Copy</Text>
-            </Pressable>
-          </View>
-          <Pressable onPress={() => setJustCreated(null)} style={styles.dismissBtn}>
-            <Text style={styles.dismissText}>Dismiss</Text>
-          </Pressable>
-        </View>
-      )}
-
       {loading ? (
         <View style={styles.row}>
           <ActivityIndicator size="small" color={colors.textMuted} />
@@ -107,20 +150,60 @@ export function ApiTokensSection() {
           <Text style={styles.emptyText}>No tokens yet</Text>
         </View>
       ) : (
-        tokens.map((t) => (
-          <View key={t.id} style={styles.tokenRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.tokenName}>{t.name}</Text>
-              <Text style={styles.tokenMeta} numberOfLines={1}>
-                {t.prefix}... created {new Date(t.created_at).toLocaleDateString()}
-                {t.last_used_at ? `  last used ${new Date(t.last_used_at).toLocaleDateString()}` : "  never used"}
-              </Text>
+        tokens.map((t) => {
+          const savedSecret = secrets[t.id];
+          const isRevealed = !!revealed[t.id];
+          const isJustCreated = justCreatedId === t.id;
+          return (
+            <View key={t.id} style={styles.tokenCard}>
+              <View style={styles.tokenRow}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.tokenName}>{t.name}</Text>
+                    {isJustCreated && (
+                      <View style={styles.newBadge}>
+                        <Text style={styles.newBadgeText}>NEW</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.tokenMeta} numberOfLines={1}>
+                    {t.prefix}... created {new Date(t.created_at).toLocaleDateString()}
+                    {t.last_used_at ? `  last used ${new Date(t.last_used_at).toLocaleDateString()}` : "  never used"}
+                  </Text>
+                </View>
+                <Pressable style={styles.revokeBtn} onPress={() => handleRevoke(t)}>
+                  <Text style={styles.revokeText}>Revoke</Text>
+                </Pressable>
+              </View>
+
+              {savedSecret && (
+                <View style={styles.secretRow}>
+                  <Text style={styles.secretText} selectable numberOfLines={1}>
+                    {isRevealed ? savedSecret : `${t.prefix}${"•".repeat(24)}`}
+                  </Text>
+                  <Pressable
+                    style={styles.toggleBtn}
+                    onPress={() => setRevealed((r) => ({ ...r, [t.id]: !r[t.id] }))}
+                  >
+                    <Text style={styles.toggleBtnText}>{isRevealed ? "Hide" : "Show"}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.copyBtn}
+                    onPress={() => copyToClipboard(t.id, savedSecret)}
+                  >
+                    <Text style={styles.copyBtnText}>{copiedId === t.id ? "Copied!" : "Copy"}</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {savedSecret && (
+                <Pressable onPress={() => handleForgetSecret(t.id)} style={styles.forgetBtn}>
+                  <Text style={styles.forgetText}>Forget secret on this device</Text>
+                </Pressable>
+              )}
             </View>
-            <Pressable style={styles.revokeBtn} onPress={() => handleRevoke(t)}>
-              <Text style={styles.revokeText}>Revoke</Text>
-            </Pressable>
-          </View>
-        ))
+          );
+        })
       )}
 
       {showCreate ? (
@@ -213,15 +296,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: "italic",
   },
-  tokenRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
+  tokenCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  tokenRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  newBadge: {
+    backgroundColor: colors.success,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  newBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
   tokenName: {
     color: colors.text,
@@ -304,19 +407,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  createdCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.success,
-    gap: spacing.sm,
-  },
-  createdLabel: {
-    color: colors.success,
-    fontSize: 13,
-    fontWeight: "600",
-  },
   secretRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -331,23 +421,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: Platform.select({ web: "monospace", default: "Menlo" }),
   },
+  toggleBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  toggleBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   copyBtn: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.sm,
     backgroundColor: colors.accent,
+    minWidth: 64,
+    alignItems: "center",
   },
   copyBtnText: {
     color: "#fff",
     fontSize: 12,
     fontWeight: "600",
   },
-  dismissBtn: {
-    alignSelf: "flex-end",
+  forgetBtn: {
+    alignSelf: "flex-start",
   },
-  dismissText: {
+  forgetText: {
     color: colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
+    textDecorationLine: "underline",
   },
   usageBlock: {
     marginTop: spacing.md,
