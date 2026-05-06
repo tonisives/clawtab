@@ -26,6 +26,10 @@ path = "src/bin/tui.rs"
 name = "clawtab-daemon"
 path = "src/bin/daemon.rs"
 
+[[bin]]
+name = "cwttui-sidebar"
+path = "src/bin/sidebar.rs"
+
 [features]
 default = ["desktop"]
 desktop = [

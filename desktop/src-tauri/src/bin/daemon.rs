@@ -682,6 +682,50 @@ async fn handle_ipc_command(
                 },
             }
         }
+        IpcCommand::ListAllPanes => match clawtab_lib::tmux::list_panes_all_with_commands() {
+            Ok(raw) => {
+                let entries = raw
+                    .lines()
+                    .filter_map(|line| {
+                        let mut parts = line.split('\x1e');
+                        Some(clawtab_lib::ipc::PaneEntry {
+                            session: parts.next()?.to_string(),
+                            window_id: parts.next()?.to_string(),
+                            window_name: parts.next()?.to_string(),
+                            pane_id: parts.next()?.to_string(),
+                            current_command: parts.next().unwrap_or("").to_string(),
+                        })
+                    })
+                    .collect();
+                IpcResponse::AllPanes(entries)
+            }
+            Err(e) => IpcResponse::Error(e),
+        },
+        IpcCommand::OpenJobFolder { name } => {
+            let dir = {
+                let jobs = jobs_config.lock().unwrap();
+                jobs.jobs
+                    .iter()
+                    .find(|j| j.name == name)
+                    .and_then(|j| {
+                        j.folder_path.clone().or_else(|| {
+                            std::path::Path::new(&j.path)
+                                .parent()
+                                .map(|p| p.to_string_lossy().into_owned())
+                        })
+                    })
+            };
+            match dir {
+                Some(d) => {
+                    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "open".to_string());
+                    match std::process::Command::new(&editor).arg(&d).spawn() {
+                        Ok(_) => IpcResponse::Ok,
+                        Err(e) => IpcResponse::Error(format!("Failed to spawn {}: {}", editor, e)),
+                    }
+                }
+                None => IpcResponse::Error(format!("Job '{}' has no folder", name)),
+            }
+        }
     }
 }
 

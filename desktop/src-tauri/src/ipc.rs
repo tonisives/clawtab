@@ -68,6 +68,19 @@ pub enum IpcCommand {
     SetProtectedPanes {
         pane_ids: Vec<String>,
     },
+
+    // tmux popup sidebar (cwttui-sidebar) helpers
+    ListAllPanes,
+    OpenJobFolder { name: String },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PaneEntry {
+    pub session: String,
+    pub window_id: String,
+    pub window_name: String,
+    pub pane_id: String,
+    pub current_command: String,
 }
 
 /// Direction for pane focus changes. Used by external integrations
@@ -125,6 +138,7 @@ pub enum IpcResponse {
         pane_id: Option<String>,
         tmux_session: Option<String>,
     },
+    AllPanes(Vec<PaneEntry>),
     Error(String),
 }
 
