@@ -8,6 +8,7 @@ pub struct Config {
     pub relay_internal_url: String,
     pub relay_internal_secret: String,
     pub max_sync_wait_ms: u64,
+    pub token_encryption_key: String,
 }
 
 impl Config {
@@ -27,6 +28,8 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(60_000),
+            token_encryption_key: env::var("TOKEN_ENCRYPTION_KEY")
+                .map_err(|_| anyhow::anyhow!("TOKEN_ENCRYPTION_KEY must be set"))?,
         })
     }
 }

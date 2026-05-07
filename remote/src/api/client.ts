@@ -433,6 +433,11 @@ export async function revokeApiToken(id: string): Promise<void> {
   await triggersRequest(`/api/tokens/${id}`, { method: "DELETE" });
 }
 
+export async function revealApiTokenSecret(id: string): Promise<string> {
+  const resp = await triggersRequest<{ secret: string }>(`/api/tokens/${id}/secret`, { method: "GET" });
+  return resp.secret;
+}
+
 export async function getTriggersBaseUrl(): Promise<string> {
   const serverUrl = await getServerUrl();
   return serverUrl === DEFAULT_SERVER ? DEFAULT_TRIGGERS : serverUrl.replace(/relay/, "triggers");

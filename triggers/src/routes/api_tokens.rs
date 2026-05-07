@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::auth::api_token::{hash_token, TOKEN_PREFIX};
 use crate::auth::Claims;
+use crate::crypto;
 use crate::error::AppError;
 use crate::AppState;
 
@@ -59,15 +60,19 @@ pub async fn create(
     let token_hash = hash_token(&secret);
     let prefix: String = secret.chars().take(12).collect();
 
+    let token_encrypted = crypto::encrypt(&secret, &state.config.token_encryption_key)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
     let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO api_tokens (user_id, name, token_hash, prefix, expires_at)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        "INSERT INTO api_tokens (user_id, name, token_hash, prefix, expires_at, token_encrypted)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
     )
     .bind(claims.sub)
     .bind(&body.name)
     .bind(&token_hash)
     .bind(&prefix)
     .bind(expires_at)
+    .bind(&token_encrypted)
     .fetch_one(&state.pool)
     .await?;
 
@@ -126,4 +131,36 @@ pub async fn revoke(
     }
 
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Serialize)]
+pub struct RevealResponse {
+    pub secret: String,
+}
+
+pub async fn reveal(
+    State(state): State<AppState>,
+    claims: Claims,
+    Path(id): Path<Uuid>,
+) -> Result<Json<RevealResponse>, AppError> {
+    let row: Option<(Option<String>, Option<chrono::DateTime<Utc>>)> = sqlx::query_as(
+        "SELECT token_encrypted, revoked_at FROM api_tokens WHERE id = $1 AND user_id = $2",
+    )
+    .bind(id)
+    .bind(claims.sub)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let (token_encrypted, revoked_at) = row.ok_or(AppError::NotFound("token not found".into()))?;
+
+    if revoked_at.is_some() {
+        return Err(AppError::NotFound("token not found".into()));
+    }
+
+    let encrypted = token_encrypted.ok_or(AppError::NotFound("secret not available".into()))?;
+
+    let secret = crypto::decrypt(&encrypted, &state.config.token_encryption_key)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    Ok(Json(RevealResponse { secret }))
 }

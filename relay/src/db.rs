@@ -7,7 +7,9 @@ pub async fn create_pool(database_url: &str) -> anyhow::Result<PgPool> {
         .connect(database_url)
         .await?;
 
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.set_ignore_missing(true);
+    migrator.run(&pool).await?;
 
     tracing::info!("database connected and migrations applied");
     Ok(pool)

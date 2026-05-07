@@ -13,6 +13,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/tokens", post(api_tokens::create))
         .route("/api/tokens", get(api_tokens::list))
         .route("/api/tokens/{id}", delete(api_tokens::revoke))
+        .route("/api/tokens/{id}/secret", get(api_tokens::reveal))
         .layer(middleware::from_fn_with_state(state.clone(), jwt_middleware));
 
     let triggers_api = Router::new()

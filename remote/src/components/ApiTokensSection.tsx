@@ -31,6 +31,7 @@ export function ApiTokensSection() {
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [revealingId, setRevealingId] = useState<string | null>(null);
   const [triggersUrl, setTriggersUrl] = useState<string>("");
 
   const refresh = useCallback(async () => {
@@ -123,6 +124,21 @@ export function ApiTokensSection() {
     );
   };
 
+  const handleRevealFromServer = async (id: string) => {
+    setRevealingId(id);
+    try {
+      const secret = await api.revealApiTokenSecret(id);
+      const next = { ...secrets, [id]: secret };
+      setSecrets(next);
+      await saveSecrets(next);
+      setRevealed((r) => ({ ...r, [id]: true }));
+    } catch (e) {
+      alertError("Error", e instanceof Error ? e.message : String(e));
+    } finally {
+      setRevealingId(null);
+    }
+  };
+
   const copyToClipboard = async (id: string, text: string) => {
     try {
       if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
@@ -140,7 +156,7 @@ export function ApiTokensSection() {
       <Text style={styles.sectionTitle}>API Tokens</Text>
       <Text style={styles.helpText}>
         Trigger jobs and agents on your desktop from CI, n8n, Zapier, or your own scripts. Token
-        secrets are stored in this browser so you can copy them anytime.
+        secrets can be copied anytime.
       </Text>
 
       {loading ? (
@@ -201,6 +217,18 @@ export function ApiTokensSection() {
               {savedSecret && (
                 <Pressable onPress={() => handleForgetSecret(t.id)} style={styles.forgetBtn}>
                   <Text style={styles.forgetText}>Forget secret on this device</Text>
+                </Pressable>
+              )}
+
+              {!savedSecret && (
+                <Pressable
+                  style={[styles.revealBtn, revealingId === t.id && styles.btnDisabled]}
+                  onPress={() => handleRevealFromServer(t.id)}
+                  disabled={revealingId === t.id}
+                >
+                  <Text style={styles.revealBtnText}>
+                    {revealingId === t.id ? "Loading..." : "Show secret"}
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -455,6 +483,19 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 11,
     textDecorationLine: "underline",
+  },
+  revealBtn: {
+    alignSelf: "flex-start",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  revealBtnText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
   },
   usageBlock: {
     marginTop: spacing.md,
