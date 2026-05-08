@@ -187,8 +187,27 @@ pub fn reattach_running_jobs(
             if let Err(e) = h.insert(&record) {
                 log::error!("Failed to insert reattach record: {}", e);
             }
-            if let Err(e) = h.prune_job_to_limit(&job.slug, job.max_history) {
-                log::error!("Failed to prune job history for {}: {}", job.slug, e);
+            match h.prune_job_to_limit(&job.slug, job.max_history) {
+                Ok(pruned_panes) => {
+                    let protected: HashSet<String> = protected_panes
+                        .lock()
+                        .ok()
+                        .map(|g| g.clone())
+                        .unwrap_or_default();
+                    for pid in pruned_panes {
+                        if protected.contains(&pid) {
+                            log::info!(
+                                "Skipping prune kill for pane {} (open in ClawTab)",
+                                pid
+                            );
+                            continue;
+                        }
+                        if let Err(e) = crate::tmux::kill_pane(&pid) {
+                            log::warn!("Failed to kill pruned pane {}: {}", pid, e);
+                        }
+                    }
+                }
+                Err(e) => log::error!("Failed to prune job history for {}: {}", job.slug, e),
             }
         }
 
@@ -254,6 +273,8 @@ pub fn reattach_running_jobs(
             notifier: None,
             is_reattach: true,
             protected_panes: Arc::clone(protected_panes),
+            trigger_id: None,
+            result_file: None,
         };
         tokio::spawn(super::monitor::monitor_pane(params));
 

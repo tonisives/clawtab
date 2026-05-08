@@ -303,12 +303,32 @@ impl HistoryStore {
         Ok(())
     }
 
-    pub fn prune_job_to_limit(&self, job_id: &str, keep: u32) -> Result<usize, String> {
+    pub fn prune_job_to_limit(&self, job_id: &str, keep: u32) -> Result<Vec<String>, String> {
         if keep == 0 {
-            return Ok(0);
+            return Ok(Vec::new());
         }
-        let deleted = self
+        let mut stmt = self
             .conn
+            .prepare(
+                "SELECT pane_id FROM runs
+                 WHERE job_name = ?1
+                   AND id NOT IN (
+                     SELECT id FROM runs
+                     WHERE job_name = ?1
+                     ORDER BY started_at DESC
+                     LIMIT ?2
+                   )
+                   AND pane_id IS NOT NULL",
+            )
+            .map_err(|e| format!("Failed to prepare prune query: {}", e))?;
+        let pane_ids: Vec<String> = stmt
+            .query_map(params![job_id, keep as i64], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Failed to query pruned panes: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+        drop(stmt);
+
+        self.conn
             .execute(
                 "DELETE FROM runs
                  WHERE job_name = ?1
@@ -321,7 +341,7 @@ impl HistoryStore {
                 params![job_id, keep as i64],
             )
             .map_err(|e| format!("Failed to prune job history: {}", e))?;
-        Ok(deleted)
+        Ok(pane_ids)
     }
 
     pub fn clear(&self) -> Result<(), String> {

@@ -27,6 +27,11 @@ pub struct ExecuteOpts {
     pub use_auto_yes: bool,
     /// Channel to notify the caller of the spawned pane/session ids.
     pub pane_tx: Option<tokio::sync::oneshot::Sender<(String, String)>>,
+    /// External trigger id. When set, used as run_id and threaded into
+    /// the spawned process via CLAWTAB_RESULT_FILE so the job can write a
+    /// structured result. On finish the monitor reads that file and pushes
+    /// a TriggerResult to the relay.
+    pub trigger_id: Option<String>,
 }
 
 fn resolve_agent_model(
@@ -64,9 +69,30 @@ pub async fn execute_job(
     let protected_panes = Some(&ctx.protected_panes);
     let notifier = ctx.notifier.clone();
     let mut pane_tx = opts.pane_tx;
+    let trigger_id = opts.trigger_id;
 
-    let run_id = uuid::Uuid::new_v4().to_string();
+    let run_id = trigger_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let started_at = Utc::now().to_rfc3339();
+
+    // Pre-compute the result file path so we can both inject it into the
+    // child process env and read it back on finish. trigger_id-only feature.
+    let result_file: Option<std::path::PathBuf> = trigger_id.as_ref().and_then(|_| {
+        crate::config::config_dir().map(|d| {
+            d.join("jobs")
+                .join(&job.slug)
+                .join("logs")
+                .join(format!("{}.json", run_id))
+        })
+    });
+    if let Some(ref p) = result_file {
+        if let Some(parent) = p.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::warn!("Failed to pre-create result dir {}: {}", parent.display(), e);
+            }
+        }
+    }
 
     // Mark as running (pane_id filled in later for tmux jobs)
     {
@@ -99,8 +125,25 @@ pub async fn execute_job(
         if let Err(e) = h.insert(&record) {
             log::error!("Failed to insert run record: {}", e);
         }
-        if let Err(e) = h.prune_job_to_limit(&job.slug, job.max_history) {
-            log::error!("Failed to prune job history for {}: {}", job.slug, e);
+        match h.prune_job_to_limit(&job.slug, job.max_history) {
+            Ok(pruned_panes) => {
+                let protected: HashSet<String> = protected_panes
+                    .and_then(|p| p.lock().ok().map(|g| g.clone()))
+                    .unwrap_or_default();
+                for pane_id in pruned_panes {
+                    if protected.contains(&pane_id) {
+                        log::info!(
+                            "Skipping prune kill for pane {} (open in ClawTab)",
+                            pane_id
+                        );
+                        continue;
+                    }
+                    if let Err(e) = crate::tmux::kill_pane(&pane_id) {
+                        log::warn!("Failed to kill pruned pane {}: {}", pane_id, e);
+                    }
+                }
+            }
+            Err(e) => log::error!("Failed to prune job history for {}: {}", job.slug, e),
         }
     }
 
@@ -108,11 +151,15 @@ pub async fn execute_job(
 
     let result: Result<(Option<i32>, String, String, Option<TmuxHandle>), String> =
         match job.job_type {
-            JobType::Binary => execute_binary_job(job, secrets, settings)
+            JobType::Binary => execute_binary_job(job, secrets, settings, params, result_file.as_deref())
                 .await
                 .map(|(code, out, err)| (code, out, err, None)),
-            JobType::Claude => execute_claude_job(job, secrets, settings, params).await,
-            JobType::Job => execute_folder_job(job, secrets, settings, params).await,
+            JobType::Claude => {
+                execute_claude_job(job, secrets, settings, params, result_file.as_deref()).await
+            }
+            JobType::Job => {
+                execute_folder_job(job, secrets, settings, params, result_file.as_deref()).await
+            }
         };
 
     // Get telegram config for notifications
@@ -216,6 +263,8 @@ pub async fn execute_job(
                     protected_panes: protected_panes
                         .map(Arc::clone)
                         .unwrap_or_else(|| Arc::new(Mutex::new(HashSet::new()))),
+                    trigger_id: trigger_id.clone(),
+                    result_file: result_file.clone(),
                 };
                 tokio::spawn(super::monitor::monitor_pane(params));
                 return;
@@ -283,6 +332,22 @@ pub async fn execute_job(
                 }
                 NotifyTarget::None => {}
             }
+
+            if let Some(ref tid) = trigger_id {
+                let parsed = result_file
+                    .as_ref()
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+                let status_str = if success { "succeeded" } else { "failed" };
+                crate::relay::push_trigger_result(
+                    relay,
+                    tid,
+                    status_str,
+                    exit_code,
+                    parsed,
+                    None,
+                );
+            }
         }
         Err(e) => {
             let finished_at = Utc::now().to_rfc3339();
@@ -331,6 +396,17 @@ pub async fn execute_job(
                 }
                 NotifyTarget::None => {}
             }
+
+            if let Some(ref tid) = trigger_id {
+                crate::relay::push_trigger_result(
+                    relay,
+                    tid,
+                    "failed",
+                    Some(-1),
+                    None,
+                    Some(e.clone()),
+                );
+            }
         }
     }
 }
@@ -355,6 +431,8 @@ async fn execute_binary_job(
     job: &Job,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
+    params: &HashMap<String, String>,
+    result_file: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String), String> {
     let work_dir = job.work_dir.clone().unwrap_or_else(|| {
         let s = settings.lock().unwrap();
@@ -388,6 +466,18 @@ async fn execute_binary_job(
         cmd.env(k, v);
     }
 
+    if let Some(p) = result_file {
+        cmd.env("CLAWTAB_RESULT_FILE", p);
+    }
+
+    // Trigger params -> CLAWTAB_PARAM_<UPPER_KEY>. Lets binary jobs accept
+    // per-invocation inputs from /v1/triggers/run without needing a Claude
+    // agent for templating.
+    for (k, v) in params {
+        let key = format!("CLAWTAB_PARAM_{}", k.to_ascii_uppercase());
+        cmd.env(key, v);
+    }
+
     cmd.current_dir(&work_dir);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -413,6 +503,7 @@ async fn execute_claude_job(
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
+    result_file: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::tmux;
 
@@ -437,7 +528,13 @@ async fn execute_claude_job(
         (provider, model, session, wd, command)
     };
 
-    let env_vars = collect_env_vars(job, secrets, settings);
+    let mut env_vars = collect_env_vars(job, secrets, settings);
+    if let Some(p) = result_file {
+        env_vars.push((
+            "CLAWTAB_RESULT_FILE".to_string(),
+            p.to_string_lossy().into_owned(),
+        ));
+    }
 
     let window_name = project_window_name(job);
     let prompt_path = &job.path;
@@ -544,6 +641,7 @@ async fn execute_folder_job(
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
+    result_file: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::cwt::CwtFolder;
     use crate::tmux;
@@ -630,7 +728,13 @@ async fn execute_folder_job(
         prompt_parts.join("\n\n")
     };
 
-    let env_vars = collect_env_vars(job, secrets, settings);
+    let mut env_vars = collect_env_vars(job, secrets, settings);
+    if let Some(p) = result_file {
+        env_vars.push((
+            "CLAWTAB_RESULT_FILE".to_string(),
+            p.to_string_lossy().into_owned(),
+        ));
+    }
     let window_name = project_window_name(job);
 
     if !tmux::is_available() {

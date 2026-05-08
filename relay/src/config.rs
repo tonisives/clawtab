@@ -26,6 +26,10 @@ pub struct Config {
 
     // Redis (optional)
     pub redis_url: Option<String>,
+
+    /// Shared secret for the /_internal/* endpoints called by the triggers service.
+    /// When None, internal endpoints reject all requests.
+    pub relay_internal_secret: Option<String>,
 }
 
 impl Config {
@@ -57,6 +61,7 @@ impl Config {
             apns_team_id: env::var("APNS_TEAM_ID").ok(),
             apns_topic: env::var("APNS_TOPIC").ok(),
             redis_url: env::var("REDIS_URL").ok(),
+            relay_internal_secret: env::var("RELAY_INTERNAL_SECRET").ok(),
         }
     }
 }

@@ -28,7 +28,7 @@ fn print_usage() {
     eprintln!("  auto-yes check [pane_id]   Check if pane has auto-yes (exit 0=on, 1=off)");
     eprintln!("  pane-info [pane_id]        Show first query and session date for a Claude pane");
     eprintln!("  secrets           List secret key names");
-    eprintln!("  secrets get <k1> [k2 ...]  Get secret values as KEY=VALUE lines");
+    eprintln!("  secrets get <k1> [k2 ...]  Get secret value (single key) or KEY=VALUE lines (multiple keys)");
     eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
     eprintln!();
     eprintln!("Pane (require desktop app):");
@@ -314,8 +314,12 @@ async fn main() {
                 }
             }
             IpcResponse::SecretValues(pairs) => {
-                for (k, v) in pairs {
-                    println!("{}={}", k, v);
+                if pairs.len() == 1 {
+                    println!("{}", pairs[0].1);
+                } else {
+                    for (k, v) in pairs {
+                        println!("{}={}", k, v);
+                    }
                 }
             }
             IpcResponse::PaneInfo {

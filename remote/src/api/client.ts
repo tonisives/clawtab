@@ -9,6 +9,7 @@ const KEYS = {
 
 const DEFAULT_SERVER = "https://relay.clawtab.cc";
 const DEFAULT_BACKEND = "https://backend.clawtab.cc";
+const DEFAULT_TRIGGERS = "https://triggers.clawtab.cc";
 
 export interface AuthResponse {
   user_id: string;
@@ -348,6 +349,98 @@ export async function deleteAccount(): Promise<void> {
 
 export async function removeShare(shareId: string): Promise<void> {
   await request(`/shares/${shareId}`, { method: "DELETE" }, true);
+}
+
+async function triggersRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const serverUrl = await getServerUrl();
+  const triggersUrl = serverUrl === DEFAULT_SERVER ? DEFAULT_TRIGGERS : serverUrl.replace(/relay/, "triggers");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
+
+  const originalToken = await storage.getItem(KEYS.accessToken);
+  if (originalToken) {
+    headers["Authorization"] = `Bearer ${originalToken}`;
+  }
+
+  let resp = await fetch(`${triggersUrl}${path}`, { ...options, headers });
+
+  if (resp.status === 401) {
+    try {
+      const currentToken = await storage.getItem(KEYS.accessToken);
+      if (currentToken && currentToken !== originalToken) {
+        headers["Authorization"] = `Bearer ${currentToken}`;
+      } else {
+        await refreshToken();
+        const newToken = await storage.getItem(KEYS.accessToken);
+        if (newToken) {
+          headers["Authorization"] = `Bearer ${newToken}`;
+        }
+      }
+      resp = await fetch(`${triggersUrl}${path}`, { ...options, headers });
+    } catch {
+      // refresh failed
+    }
+  }
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    let message = `HTTP ${resp.status}`;
+    if (text) {
+      try {
+        const json = JSON.parse(text);
+        message = json.error || json.message || text;
+      } catch {
+        message = text;
+      }
+    }
+    throw new Error(message);
+  }
+
+  return resp.json();
+}
+
+export interface ApiToken {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface CreatedApiToken extends ApiToken {
+  secret: string;
+}
+
+export async function listApiTokens(): Promise<ApiToken[]> {
+  return triggersRequest<ApiToken[]>("/api/tokens", { method: "GET" });
+}
+
+export async function createApiToken(name: string, expiresInDays?: number): Promise<CreatedApiToken> {
+  return triggersRequest<CreatedApiToken>("/api/tokens", {
+    method: "POST",
+    body: JSON.stringify({ name, expires_in_days: expiresInDays ?? null }),
+  });
+}
+
+export async function revokeApiToken(id: string): Promise<void> {
+  await triggersRequest(`/api/tokens/${id}`, { method: "DELETE" });
+}
+
+export async function revealApiTokenSecret(id: string): Promise<string> {
+  const resp = await triggersRequest<{ secret: string }>(`/api/tokens/${id}/secret`, { method: "GET" });
+  return resp.secret;
+}
+
+export async function getTriggersBaseUrl(): Promise<string> {
+  const serverUrl = await getServerUrl();
+  return serverUrl === DEFAULT_SERVER ? DEFAULT_TRIGGERS : serverUrl.replace(/relay/, "triggers");
 }
 
 export async function postAnswer(

@@ -5,6 +5,7 @@ import { useAuthStore } from "../../src/store/auth";
 import { useWsStore } from "../../src/store/ws";
 import { useJobsStore } from "../../src/store/jobs";
 import { ContentContainer } from "../../src/components/ContentContainer";
+import { ApiTokensSection } from "../../src/components/ApiTokensSection";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { ShareSection } from "@clawtab/shared";
 import * as api from "../../src/api/client";
@@ -271,6 +272,8 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
               />
             )}
           </View>
+
+          <ApiTokensSection />
 
           <View style={styles.section}>
             <Pressable style={[styles.dangerBtn, isWide && styles.btnConstrained]} onPress={handleLogout}>

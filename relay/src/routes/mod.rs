@@ -12,6 +12,7 @@ mod google_callback;
 mod apple_auth;
 mod apple_callback;
 mod iap;
+mod internal;
 mod notifications;
 mod share;
 mod subscription;
@@ -92,11 +93,16 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/shares/{id}", delete(share::remove))
         .route("/shares/{id}", patch(share::update))
         .route("/account", delete(account::delete_account))
-        .layer(middleware::from_fn_with_state(state, auth_middleware));
+        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+
+    let internal = Router::new()
+        .route("/_internal/dispatch", post(internal::dispatch))
+        .layer(middleware::from_fn_with_state(state, internal::internal_secret_middleware));
 
     public
         .merge(rate_limited_auth)
         .merge(auth_session_routes)
         .merge(authenticated)
+        .merge(internal)
         .layer(middleware::from_fn(log_errors))
 }

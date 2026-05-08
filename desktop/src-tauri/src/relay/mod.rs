@@ -117,6 +117,28 @@ pub fn push_log_chunk(relay: &Arc<Mutex<Option<RelayHandle>>>, job_id: &str, con
     }
 }
 
+/// Push the final structured result for a remote-trigger run to the relay.
+pub fn push_trigger_result(
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    trigger_id: &str,
+    status: &str,
+    exit_code: Option<i32>,
+    result: Option<serde_json::Value>,
+    error: Option<String>,
+) {
+    if let Ok(guard) = relay.lock() {
+        if let Some(handle) = guard.as_ref() {
+            handle.send_message(&DesktopMessage::TriggerResult {
+                trigger_id: trigger_id.to_string(),
+                status: status.to_string(),
+                exit_code,
+                result,
+                error,
+            });
+        }
+    }
+}
+
 /// Check subscription status via HTTP. Returns (subscribed, Option<new_access_token>, Option<new_refresh_token>).
 pub async fn check_subscription_http(
     server_url: &str,
