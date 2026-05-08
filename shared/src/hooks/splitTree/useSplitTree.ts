@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { SplitNode } from "../../types/splitTree";
 import { useControlledSync } from "./useControlledSync";
 import { useDerivedData } from "./useDerivedData";
 import { useDragDrop } from "./useDragDrop";
@@ -31,6 +32,13 @@ export function useSplitTree(options: UseSplitTreeOptions) {
   const controlledRef = useRef(controlled);
   controlledRef.current = controlled;
 
+  // Tracks the last tree/focus we hydrated from controlled. Used to suppress
+  // the persist effects from echoing a value that came from sync. Without this,
+  // sync (external -> internal) and persist (internal -> external) form a
+  // ping-pong loop whenever the two sides start out of agreement.
+  const lastSyncedTreeRef = useRef<SplitNode | null>(controlled?.tree ?? null);
+  const lastSyncedFocusRef = useRef<string | null>(controlled?.focusedLeafId ?? null);
+
   const detailPaneRef = useRef<HTMLDivElement>(null);
   const [detailSize, setDetailSize] = useState({ w: 0, h: 0 });
 
@@ -45,7 +53,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     return () => ro.disconnect();
   }, []);
 
-  const persistence = useTreePersistence({ storageKey, controlledRef });
+  const persistence = useTreePersistence({ storageKey, controlledRef, lastSyncedTreeRef, lastSyncedFocusRef });
   const { splitTree, splitTreeRef, setSplitTree, setSplitTreeChecked, focusedLeafId, setFocusedLeafId } = persistence;
 
   const zoom = useZoom({
@@ -62,6 +70,8 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     setSplitTree,
     setFocusedLeafId,
     setZoomSnapshot: zoom.setZoomSnapshot,
+    lastSyncedTreeRef,
+    lastSyncedFocusRef,
   });
 
   useFocusTracking({ detailPaneRef, setFocusedLeafId });

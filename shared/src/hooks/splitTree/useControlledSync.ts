@@ -1,4 +1,4 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { SplitNode } from "../../types/splitTree";
 import { restoreIdCounter } from "../../util/splitTree";
 import type { UseSplitTreeControlled, ZoomSnapshot } from "./types";
@@ -23,8 +23,10 @@ export function useControlledSync(opts: {
   setSplitTree: Dispatch<SetStateAction<SplitNode | null>>;
   setFocusedLeafId: Dispatch<SetStateAction<string | null>>;
   setZoomSnapshot: Dispatch<SetStateAction<ZoomSnapshot | null>>;
+  lastSyncedTreeRef: MutableRefObject<SplitNode | null>;
+  lastSyncedFocusRef: MutableRefObject<string | null>;
 }) {
-  const { controlled, setSplitTree, setFocusedLeafId, setZoomSnapshot } = opts;
+  const { controlled, setSplitTree, setFocusedLeafId, setZoomSnapshot, lastSyncedTreeRef, lastSyncedFocusRef } = opts;
 
   const lastControlledIdRef = useRef<string | null>(controlled?.id ?? null);
   const controlledTree = controlled?.tree ?? null;
@@ -36,14 +38,17 @@ export function useControlledSync(opts: {
     if (lastControlledIdRef.current === controlledId) return;
     lastControlledIdRef.current = controlledId;
     if (controlledTree) restoreIdCounter(controlledTree);
+    lastSyncedTreeRef.current = controlledTree;
+    lastSyncedFocusRef.current = controlledFocusedLeafId;
     setSplitTree((prev) => (prev === controlledTree ? prev : controlledTree));
     setFocusedLeafId((prev) => (prev === controlledFocusedLeafId ? prev : controlledFocusedLeafId));
     setZoomSnapshot((prev) => (prev === null ? prev : null));
-  }, [controlledId, controlledTree, controlledFocusedLeafId, setSplitTree, setFocusedLeafId, setZoomSnapshot]);
+  }, [controlledId, controlledTree, controlledFocusedLeafId, setSplitTree, setFocusedLeafId, setZoomSnapshot, lastSyncedTreeRef, lastSyncedFocusRef]);
 
   useEffect(() => {
     if (controlledId === null) return;
     if (controlledId !== lastControlledIdRef.current) return;
+    lastSyncedFocusRef.current = controlledFocusedLeafId;
     setFocusedLeafId((prev) => (prev === controlledFocusedLeafId ? prev : controlledFocusedLeafId));
-  }, [controlledId, controlledFocusedLeafId, setFocusedLeafId]);
+  }, [controlledId, controlledFocusedLeafId, setFocusedLeafId, lastSyncedFocusRef]);
 }

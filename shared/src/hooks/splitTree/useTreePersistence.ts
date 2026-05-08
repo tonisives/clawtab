@@ -16,8 +16,10 @@ import type { UseSplitTreeControlled } from "./types";
 export function useTreePersistence(opts: {
   storageKey?: string;
   controlledRef: MutableRefObject<UseSplitTreeControlled | undefined>;
+  lastSyncedTreeRef: MutableRefObject<SplitNode | null>;
+  lastSyncedFocusRef: MutableRefObject<string | null>;
 }) {
-  const { storageKey, controlledRef } = opts;
+  const { storageKey, controlledRef, lastSyncedTreeRef, lastSyncedFocusRef } = opts;
 
   const [splitTree, setSplitTree] = useState<SplitNode | null>(() => {
     const controlled = controlledRef.current;
@@ -59,26 +61,31 @@ export function useTreePersistence(opts: {
       }
     }
     if (controlledRef.current) {
+      // Skip if the current internal tree is the same one we just received
+      // from controlled (i.e. set by useControlledSync). Otherwise persist
+      // and sync round-trip in a loop, since the controlled value lags by
+      // one render: we'd push internal back as a "change" and the next sync
+      // would clobber it again.
+      if (splitTree === lastSyncedTreeRef.current) return;
       if (splitTree !== controlledRef.current.tree) {
-        console.log("[persist] tree", { id: controlledRef.current.id, internalRef: splitTree, controlledRef: controlledRef.current.tree });
         controlledRef.current.onChange({ tree: splitTree });
       }
     } else if (storageKey) {
       saveTree(storageKey, splitTree);
     }
-  }, [storageKey, splitTree, controlledRef]);
+  }, [storageKey, splitTree, controlledRef, lastSyncedTreeRef]);
 
   // Persist focused leaf on change.
   useEffect(() => {
     if (controlledRef.current) {
+      if (focusedLeafId === lastSyncedFocusRef.current) return;
       if (focusedLeafId !== controlledRef.current.focusedLeafId) {
-        console.log("[persist] focus", { id: controlledRef.current.id, internal: focusedLeafId, controlled: controlledRef.current.focusedLeafId });
         controlledRef.current.onChange({ focusedLeafId });
       }
     } else if (storageKey) {
       saveFocusedLeaf(storageKey, focusedLeafId);
     }
-  }, [storageKey, focusedLeafId, controlledRef]);
+  }, [storageKey, focusedLeafId, controlledRef, lastSyncedFocusRef]);
 
   const setSplitTreeChecked = useCallback(
     (updater: SplitNode | null | ((prev: SplitNode | null) => SplitNode | null), site: string) => {
