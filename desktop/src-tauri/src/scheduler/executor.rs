@@ -125,8 +125,25 @@ pub async fn execute_job(
         if let Err(e) = h.insert(&record) {
             log::error!("Failed to insert run record: {}", e);
         }
-        if let Err(e) = h.prune_job_to_limit(&job.slug, job.max_history) {
-            log::error!("Failed to prune job history for {}: {}", job.slug, e);
+        match h.prune_job_to_limit(&job.slug, job.max_history) {
+            Ok(pruned_panes) => {
+                let protected: HashSet<String> = protected_panes
+                    .and_then(|p| p.lock().ok().map(|g| g.clone()))
+                    .unwrap_or_default();
+                for pane_id in pruned_panes {
+                    if protected.contains(&pane_id) {
+                        log::info!(
+                            "Skipping prune kill for pane {} (open in ClawTab)",
+                            pane_id
+                        );
+                        continue;
+                    }
+                    if let Err(e) = crate::tmux::kill_pane(&pane_id) {
+                        log::warn!("Failed to kill pruned pane {}: {}", pane_id, e);
+                    }
+                }
+            }
+            Err(e) => log::error!("Failed to prune job history for {}: {}", job.slug, e),
         }
     }
 
