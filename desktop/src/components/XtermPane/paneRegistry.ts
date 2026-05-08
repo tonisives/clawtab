@@ -35,6 +35,11 @@ export function getFocusedPane(): string | null {
 }
 
 export function requestXtermPaneFocus(paneId: string) {
+  // Only one pane is pending focus at any time. Otherwise, when two panes both
+  // self-focus on mount (XtermPane checks isFocusPending), they keep stealing
+  // focus from each other via the rAF retry, which feeds focusin events into
+  // useFocusTracking and infinite-loops the persist/sync split-tree effects.
+  pendingFocusPaneIds.clear();
   pendingFocusPaneIds.add(paneId);
   window.setTimeout(() => pendingFocusPaneIds.delete(paneId), 2000);
   const inst = paneInstances.get(paneId);
