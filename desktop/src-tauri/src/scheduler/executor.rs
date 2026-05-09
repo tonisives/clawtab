@@ -453,7 +453,7 @@ async fn execute_binary_job(
 
     // Inject secrets
     {
-        let sm = secrets.lock().unwrap();
+        let mut sm = secrets.lock().unwrap();
         for key in &job.secret_keys {
             if let Some(value) = sm.get(key) {
                 cmd.env(key, value);
@@ -827,7 +827,7 @@ fn collect_env_vars(
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
 ) -> Vec<(String, String)> {
-    let sm = secrets.lock().unwrap();
+    let mut sm = secrets.lock().unwrap();
     let mut vars = Vec::new();
 
     let is_agent = job.name == "agent";

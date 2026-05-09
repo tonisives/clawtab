@@ -380,6 +380,9 @@ async fn main() {
                     tmux_session.as_deref().unwrap_or("-")
                 );
             }
+            IpcResponse::AllPanes(panes) => {
+                println!("{}", serde_json::to_string_pretty(&panes).unwrap_or_default());
+            }
             IpcResponse::Error(msg) => {
                 eprintln!("Error: {}", msg);
                 std::process::exit(1);

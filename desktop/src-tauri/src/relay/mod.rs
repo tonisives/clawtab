@@ -254,7 +254,7 @@ pub async fn connect_loop(params: ConnectLoopParams) {
     loop {
         // Check subscription before attempting WS connect
         let (access_token, refresh_token_val) = {
-            let s = secrets.lock().unwrap();
+            let mut s = secrets.lock().unwrap();
             (
                 s.get("relay_access_token").cloned().unwrap_or_default(),
                 s.get("relay_refresh_token").cloned().unwrap_or_default(),
