@@ -390,11 +390,11 @@ async fn handle_ipc_command(
             IpcResponse::ActiveQuestions(qs)
         }
         IpcCommand::ListSecretKeys => {
-            let s = secrets.lock().unwrap();
+            let mut s = secrets.lock().unwrap();
             IpcResponse::SecretKeys(s.list_keys())
         }
         IpcCommand::GetSecretValues { keys } => {
-            let s = secrets.lock().unwrap();
+            let mut s = secrets.lock().unwrap();
             let pairs: Vec<(String, String)> = keys
                 .iter()
                 .filter_map(|k| s.get(k).map(|v| (k.clone(), v.clone())))
@@ -748,13 +748,12 @@ fn compute_relay_status(
         .lock()
         .unwrap_or_else(|e| e.into_inner());
 
-    let device_token_stored = !relay_settings.device_token.is_empty()
-        || secrets
-            .lock()
-            .unwrap()
-            .get("relay_device_token")
+    let device_token_stored = !relay_settings.device_token.is_empty() || {
+        let mut s = secrets.lock().unwrap();
+        s.get("relay_device_token")
             .map(|t| !t.is_empty())
-            .unwrap_or(false);
+            .unwrap_or(false)
+    };
     let configured = !relay_settings.server_url.is_empty() && device_token_stored;
 
     IpcRelayStatus {

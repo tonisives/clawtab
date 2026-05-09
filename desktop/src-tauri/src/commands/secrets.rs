@@ -5,7 +5,7 @@ use crate::AppState;
 
 #[tauri::command]
 pub fn list_secrets(state: State<AppState>) -> Vec<SecretEntry> {
-    let secrets = state.secrets.lock().unwrap();
+    let mut secrets = state.secrets.lock().unwrap();
     secrets.list_entries()
 }
 

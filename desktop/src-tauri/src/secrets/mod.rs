@@ -29,12 +29,12 @@ impl SecretsManager {
     }
 
     /// Get a secret value by key from keychain
-    pub fn get(&self, key: &str) -> Option<&String> {
+    pub fn get(&mut self, key: &str) -> Option<&String> {
         self.keychain.get(key)
     }
 
     /// List all secret keys with their source
-    pub fn list_entries(&self) -> Vec<SecretEntry> {
+    pub fn list_entries(&mut self) -> Vec<SecretEntry> {
         let mut entries: Vec<SecretEntry> = self
             .keychain
             .list_keys()
@@ -50,7 +50,7 @@ impl SecretsManager {
     }
 
     /// List just the key names
-    pub fn list_keys(&self) -> Vec<String> {
+    pub fn list_keys(&mut self) -> Vec<String> {
         self.list_entries().into_iter().map(|e| e.key).collect()
     }
 

@@ -751,7 +751,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     let zai_token = {
-                        let secrets = secrets_for_usage.lock().unwrap();
+                        let mut secrets = secrets_for_usage.lock().unwrap();
                         let explicit = usage::ZAI_TOKEN_KEYS
                             .iter()
                             .map(|key| secrets.get(key).cloned())

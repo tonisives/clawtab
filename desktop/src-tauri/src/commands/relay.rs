@@ -26,8 +26,14 @@ pub fn get_relay_settings(state: State<AppState>) -> Option<RelaySettings> {
     // Populate device_token from keychain if yaml field is empty
     if let Some(ref mut rs) = relay {
         if rs.device_token.is_empty() {
-            if let Some(token) = state.secrets.lock().unwrap().get(KEYCHAIN_DEVICE_TOKEN_KEY) {
-                rs.device_token = token.clone();
+            let token = state
+                .secrets
+                .lock()
+                .unwrap()
+                .get(KEYCHAIN_DEVICE_TOKEN_KEY)
+                .cloned();
+            if let Some(token) = token {
+                rs.device_token = token;
             }
         }
     }

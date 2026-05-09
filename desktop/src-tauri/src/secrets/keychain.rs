@@ -15,11 +15,13 @@ impl KeychainBackend {
         backend
     }
 
-    pub fn get(&self, key: &str) -> Option<&String> {
+    pub fn get(&mut self, key: &str) -> Option<&String> {
+        self.reload_all();
         self.cache.get(key)
     }
 
-    pub fn list_keys(&self) -> Vec<String> {
+    pub fn list_keys(&mut self) -> Vec<String> {
+        self.reload_all();
         let mut keys: Vec<String> = self.cache.keys().cloned().collect();
         keys.sort();
         keys
@@ -82,6 +84,7 @@ impl KeychainBackend {
             }
         };
 
+        self.cache.clear();
         let text = String::from_utf8_lossy(&output.stdout);
         let mut current_is_ours = false;
         let mut current_account: Option<String> = None;
