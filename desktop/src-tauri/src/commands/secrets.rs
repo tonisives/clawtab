@@ -5,20 +5,28 @@ use crate::AppState;
 
 #[tauri::command]
 pub fn list_secrets(state: State<AppState>) -> Vec<SecretEntry> {
-    let mut secrets = state.secrets.lock().unwrap();
+    let secrets = state.secrets.lock().unwrap();
     secrets.list_entries()
 }
 
 #[tauri::command]
-pub fn set_secret(state: State<AppState>, key: String, value: String) -> Result<(), String> {
-    let mut secrets = state.secrets.lock().unwrap();
-    secrets.set(&key, &value)
+pub async fn set_secret(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+    {
+        let mut secrets = state.secrets.lock().unwrap();
+        secrets.set(&key, &value)?;
+    }
+    let _ = crate::ipc::send_command(crate::ipc::IpcCommand::ReloadSecrets).await;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn delete_secret(state: State<AppState>, key: String) -> Result<(), String> {
-    let mut secrets = state.secrets.lock().unwrap();
-    secrets.delete(&key)
+pub async fn delete_secret(state: State<'_, AppState>, key: String) -> Result<(), String> {
+    {
+        let mut secrets = state.secrets.lock().unwrap();
+        secrets.delete(&key)?;
+    }
+    let _ = crate::ipc::send_command(crate::ipc::IpcCommand::ReloadSecrets).await;
+    Ok(())
 }
 
 #[tauri::command]

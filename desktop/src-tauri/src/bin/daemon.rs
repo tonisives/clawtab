@@ -390,16 +390,20 @@ async fn handle_ipc_command(
             IpcResponse::ActiveQuestions(qs)
         }
         IpcCommand::ListSecretKeys => {
-            let mut s = secrets.lock().unwrap();
+            let s = secrets.lock().unwrap();
             IpcResponse::SecretKeys(s.list_keys())
         }
         IpcCommand::GetSecretValues { keys } => {
-            let mut s = secrets.lock().unwrap();
+            let s = secrets.lock().unwrap();
             let pairs: Vec<(String, String)> = keys
                 .iter()
                 .filter_map(|k| s.get(k).map(|v| (k.clone(), v.clone())))
                 .collect();
             IpcResponse::SecretValues(pairs)
+        }
+        IpcCommand::ReloadSecrets => {
+            secrets.lock().unwrap().reload();
+            IpcResponse::Ok
         }
         IpcCommand::GetPaneInfo { pane_id } => {
             let pane_pid = std::process::Command::new("tmux")
@@ -749,7 +753,7 @@ fn compute_relay_status(
         .unwrap_or_else(|e| e.into_inner());
 
     let device_token_stored = !relay_settings.device_token.is_empty() || {
-        let mut s = secrets.lock().unwrap();
+        let s = secrets.lock().unwrap();
         s.get("relay_device_token")
             .map(|t| !t.is_empty())
             .unwrap_or(false)

@@ -114,7 +114,7 @@ pub async fn fork_pane(
         Vec::new()
     } else {
         let secrets = Arc::clone(&state.secrets);
-        let mut store = secrets.lock().unwrap();
+        let store = secrets.lock().unwrap();
         let vars: Vec<(String, String)> = secret_keys
             .iter()
             .filter_map(|k| store.get(k).map(|v| (k.clone(), v.clone())))

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import type { SecretEntry } from "../types";
 import { ConfirmDialog, DeleteButton } from "./ConfirmDialog";
@@ -119,6 +120,94 @@ function GopassTreeView({
   );
 }
 
+function GopassPopup({
+  onClose,
+  search,
+  setSearch,
+  loading,
+  error,
+  entries,
+  tree,
+  expanded,
+  toggleFolder,
+  onImport,
+}: {
+  onClose: () => void;
+  search: string;
+  setSearch: (v: string) => void;
+  loading: boolean;
+  error: string | null;
+  entries: string[];
+  tree: TreeNode[];
+  expanded: Set<string>;
+  toggleFolder: (path: string) => void;
+  onImport: (path: string) => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      if (dialog?.open) dialog.close();
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      className="confirm-overlay"
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      onClick={(e) => {
+        if (e.target === dialogRef.current) onClose();
+      }}
+    >
+      <div className="confirm-dialog" style={{ width: 480 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <strong style={{ fontSize: 13 }}>Import from gopass</strong>
+          <button className="btn btn-sm" onClick={onClose}>Close</button>
+        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filter entries..."
+          style={{ width: "100%", marginBottom: 8 }}
+          autoFocus
+        />
+        <div style={{ maxHeight: 350, overflowY: "auto" }}>
+          {loading ? (
+            <p className="text-secondary">Loading gopass entries...</p>
+          ) : error ? (
+            <pre style={{ color: "var(--error, #c33)", fontSize: 12, whiteSpace: "pre-wrap", margin: 0 }}>
+              {error}
+            </pre>
+          ) : entries.length === 0 ? (
+            <p className="text-secondary">No entries found.</p>
+          ) : (
+            <GopassTreeView
+              nodes={tree}
+              expanded={expanded}
+              toggleFolder={toggleFolder}
+              onImport={onImport}
+              depth={0}
+            />
+          )}
+        </div>
+      </div>
+    </dialog>,
+    document.body,
+  );
+}
+
 export function SecretsPanel() {
   const [secrets, setSecrets] = useState<SecretEntry[]>([]);
   const [newKey, setNewKey] = useState("");
@@ -132,6 +221,7 @@ export function SecretsPanel() {
   const [gopassSearch, setGopassSearch] = useState("");
   const [showGopassPopup, setShowGopassPopup] = useState(false);
   const [gopassLoading, setGopassLoading] = useState(false);
+  const [gopassError, setGopassError] = useState<string | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   const loadSecrets = async () => {
@@ -191,19 +281,23 @@ export function SecretsPanel() {
   };
 
   const handleOpenGopassPopup = async () => {
+    setShowGopassPopup(true);
+    setGopassError(null);
+    setGopassEntries([]);
     setGopassLoading(true);
     try {
       const entries = await invoke<string[]>("list_gopass_store");
       setGopassEntries(entries);
-      setShowGopassPopup(true);
     } catch (e) {
       console.error("Failed to list gopass store:", e);
+      setGopassError(typeof e === "string" ? e : (e instanceof Error ? e.message : String(e)));
     } finally {
       setGopassLoading(false);
     }
   };
 
   const handleImportGopass = async (gopassPath: string) => {
+    setGopassError(null);
     try {
       const value = await invoke<string>("fetch_gopass_value", { gopassPath });
       setNewValue(value);
@@ -211,6 +305,7 @@ export function SecretsPanel() {
       setGopassSearch("");
     } catch (e) {
       console.error("Failed to fetch gopass secret:", e);
+      setGopassError(typeof e === "string" ? e : (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -383,53 +478,23 @@ export function SecretsPanel() {
       )}
 
       {showGopassPopup && (
-        <div
-          className="confirm-overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowGopassPopup(false);
-              setGopassSearch("");
-              setExpandedFolders(new Set());
-            }
+        <GopassPopup
+          onClose={() => {
+            setShowGopassPopup(false);
+            setGopassSearch("");
+            setGopassError(null);
+            setExpandedFolders(new Set());
           }}
-        >
-          <div className="confirm-dialog" style={{ width: 480 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <strong style={{ fontSize: 13 }}>Import from gopass</strong>
-              <button
-                className="btn btn-sm"
-                onClick={() => {
-                  setShowGopassPopup(false);
-                  setGopassSearch("");
-                  setExpandedFolders(new Set());
-                }}
-              >
-                Close
-              </button>
-            </div>
-            <input
-              type="text"
-              value={gopassSearch}
-              onChange={(e) => setGopassSearch(e.target.value)}
-              placeholder="Filter entries..."
-              style={{ width: "100%", marginBottom: 8 }}
-              autoFocus
-            />
-            <div style={{ maxHeight: 350, overflowY: "auto" }}>
-              {filteredGopassEntries.length === 0 ? (
-                <p className="text-secondary">No entries found.</p>
-              ) : (
-                <GopassTreeView
-                  nodes={gopassTree}
-                  expanded={effectiveExpanded}
-                  toggleFolder={toggleFolder}
-                  onImport={handleImportGopass}
-                  depth={0}
-                />
-              )}
-            </div>
-          </div>
-        </div>
+          search={gopassSearch}
+          setSearch={setGopassSearch}
+          loading={gopassLoading}
+          error={gopassError}
+          entries={filteredGopassEntries}
+          tree={gopassTree}
+          expanded={effectiveExpanded}
+          toggleFolder={toggleFolder}
+          onImport={handleImportGopass}
+        />
       )}
     </div>
   );

@@ -163,7 +163,7 @@ pub async fn relay_pair_device(
     let url = format!("{}/devices/pair", server_url);
 
     let (access_token, refresh_token) = {
-        let mut secrets = state.secrets.lock().unwrap();
+        let secrets = state.secrets.lock().unwrap();
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -264,7 +264,7 @@ pub fn relay_save_tokens(
 
 #[tauri::command]
 pub fn relay_get_pending_token(state: State<AppState>) -> Result<Option<String>, String> {
-    let mut secrets = state.secrets.lock().unwrap();
+    let secrets = state.secrets.lock().unwrap();
     Ok(secrets
         .get(KEYCHAIN_ACCESS_TOKEN_KEY)
         .cloned()
@@ -293,7 +293,7 @@ pub async fn relay_check_subscription(
     }
 
     let (access_token, refresh_token_val) = {
-        let mut secrets = state.secrets.lock().unwrap();
+        let secrets = state.secrets.lock().unwrap();
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -367,7 +367,7 @@ fn get_relay_auth(state: &AppState) -> Result<(String, String, String), String> 
         return Err("No relay server configured".to_string());
     }
     let (access_token, refresh_token) = {
-        let mut secrets = state.secrets.lock().unwrap();
+        let secrets = state.secrets.lock().unwrap();
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)

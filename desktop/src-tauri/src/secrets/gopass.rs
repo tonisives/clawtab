@@ -21,8 +21,14 @@ impl GopassBackend {
             .map_err(|e| format!("Failed to run gopass: {}", e))?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("gopass error: {}", stderr.trim()));
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() { stderr } else { stdout };
+            return Err(format!(
+                "gopass ls --flat failed (exit {}): {}",
+                output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "?".into()),
+                if detail.is_empty() { "<no output>".into() } else { detail }
+            ));
         }
 
         Ok(String::from_utf8_lossy(&output.stdout)

@@ -15,16 +15,18 @@ impl KeychainBackend {
         backend
     }
 
-    pub fn get(&mut self, key: &str) -> Option<&String> {
-        self.reload_all();
+    pub fn get(&self, key: &str) -> Option<&String> {
         self.cache.get(key)
     }
 
-    pub fn list_keys(&mut self) -> Vec<String> {
-        self.reload_all();
+    pub fn list_keys(&self) -> Vec<String> {
         let mut keys: Vec<String> = self.cache.keys().cloned().collect();
         keys.sort();
         keys
+    }
+
+    pub fn reload(&mut self) {
+        self.reload_all();
     }
 
     pub fn set(&mut self, key: &str, value: &str) -> Result<(), String> {

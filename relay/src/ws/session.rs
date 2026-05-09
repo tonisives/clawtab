@@ -602,15 +602,36 @@ async fn handle_claude_questions_push(
         .ok();
     }
 
-    // Find the first question that hasn't been pushed yet (per-question dedup).
+    // Find the first question that hasn't been pushed yet. Two layers of dedup:
+    //   1. question_id (pane_id + options hash) for 24h - the primary check
+    //   2. content (user + cwd + options) for 5 min - safety net for cases where
+    //      the question_id drifts (pane_id changes, options reparsed slightly
+    //      differently, etc.) and the user already saw the same prompt recently.
+    const CONTENT_DEDUP_TTL_SECONDS: u64 = 300;
     let unpushed = if let Some(ref redis) = state.redis {
         let mut conn = redis.clone();
         let mut found = None;
         for q in &questions {
-            if !crate::push_limiter::is_question_pushed(&mut conn, &q.question_id).await {
-                found = Some(q);
-                break;
+            if crate::push_limiter::is_question_pushed(&mut conn, &q.question_id).await {
+                continue;
             }
+            if crate::push_limiter::is_content_pushed(
+                &mut conn,
+                user_id,
+                &q.cwd,
+                &q.options,
+                CONTENT_DEDUP_TTL_SECONDS,
+            )
+            .await
+            {
+                tracing::debug!(
+                    question_id = %q.question_id,
+                    "content already pushed recently, skipping"
+                );
+                continue;
+            }
+            found = Some(q);
+            break;
         }
         found
     } else {

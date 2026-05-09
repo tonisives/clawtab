@@ -42,6 +42,10 @@ pub enum IpcCommand {
     // Settings
     ReloadSettings,
 
+    // Secrets cache: invalidate the daemon's in-memory keychain cache
+    // (sent by the UI / cwtctl after writing or deleting a secret).
+    ReloadSecrets,
+
     // Job lifecycle (state-touching)
     StopJob { name: String },
     ToggleJob { name: String },
