@@ -111,11 +111,14 @@ export function useAgentRunner({
       return;
     }
 
-    // Pin the group override so backend detection won't reassign this pane
-    invoke("set_detected_process_group", {
-      paneId: result.pane_id,
-      group: matchedGroup ?? "",
-    }).catch(() => {});
+    // Pin the group override so backend detection won't reassign this pane.
+    // Only set when group is known - if unknown, let backend CWD matching assign it.
+    if (matchedGroup !== null) {
+      invoke("set_detected_process_group", {
+        paneId: result.pane_id,
+        group: matchedGroup,
+      }).catch(() => {});
+    }
 
     // The backend has created a real tmux pane. Render it as a terminal immediately.
     // If this is claude/codex, the promotion effect in useProcessLifecycle will swap

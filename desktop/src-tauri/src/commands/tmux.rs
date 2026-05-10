@@ -151,6 +151,49 @@ pub async fn fork_pane(
     Ok(new_pane)
 }
 
+/// Split a tmux pane and run an initial command in the new pane. The new pane
+/// uses `cwd` as its working directory if provided, otherwise it inherits the
+/// source pane's path. Used to resume a Claude session in a new split.
+#[tauri::command]
+pub async fn split_pane_with_command(
+    state: State<'_, AppState>,
+    pane_id: String,
+    direction: String,
+    command: String,
+    cwd: Option<String>,
+) -> Result<ShellPaneResult, String> {
+    if !tmux::is_available() {
+        return Err("tmux is not installed".to_string());
+    }
+    let _ = direction;
+
+    let source_path = tmux::get_pane_path(&pane_id)?;
+    let pane_path = cwd
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or(source_path);
+    let tmux_session = tmux::resolve_real_session_for_pane(&pane_id)?;
+
+    let (new_pane, window_name) = state.pty_manager.lock().unwrap().spawn_window(
+        &tmux_session,
+        "clawtab-shell",
+        Some(&pane_path),
+        &[],
+    )?;
+
+    if !command.trim().is_empty() {
+        tmux::send_keys_to_pane("", &new_pane, &command)?;
+    }
+
+    Ok(ShellPaneResult {
+        pane_id: new_pane,
+        cwd: pane_path,
+        tmux_session,
+        window_name,
+    })
+}
+
 /// Enter tmux copy-mode for the given pane.
 #[tauri::command]
 pub fn enter_copy_mode(pane_id: String) -> Result<(), String> {

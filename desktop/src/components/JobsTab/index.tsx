@@ -118,7 +118,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const { handleSelectJob, handleSelectProcess, handleSelectShell } = usePaneSelection({ core, onJobSelected, split, viewing });
 
   const importJob = useImportJob(core.jobs as Job[], core.reload, importCwtKey);
-  const { handleFork, handleForkWithSecrets, handleSplitPane } = usePaneForking({ core, split, lifecycle, viewing });
+  const { handleFork, handleForkWithSecrets, handleSplitPane, handleResumeSession } = usePaneForking({ core, split, lifecycle, viewing });
 
   // Resizable list pane
   const { listWidth, onResizeHandleMouseDown } = useResizablePane();
@@ -362,6 +362,10 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
         onSelectShell={(paneId) => {
           const shell = shellPanes.find((s) => s.pane_id === paneId);
           if (shell) handleSelectShell(shell);
+        }}
+        onResumeSession={(sessionId, cwd) => {
+          const sourcePaneId = getPaneIdForContent(activePaneContent);
+          void handleResumeSession(sessionId, cwd, sourcePaneId);
         }}
         onSelectWorkspace={(workspaceId) => {
           // CommandPalette already called wsMgr.setActive; the workspace-switch

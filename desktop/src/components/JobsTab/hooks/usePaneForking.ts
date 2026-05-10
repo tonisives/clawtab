@@ -80,38 +80,61 @@ export function usePaneForking({ core, split, lifecycle, viewing }: UsePaneForki
     [forkImpl],
   );
 
+  const attachShellPane = useCallback((baseShell: ShellPane, sourcePaneId: string, direction: Direction) => {
+    const sourceProc = core.processes.find((p) => p.pane_id === sourcePaneId);
+    const sourceShell = shellPanes.find((p) => p.pane_id === sourcePaneId);
+    const sourceJob = (core.jobs as Job[]).find((job) => {
+      const status = core.statuses[job.slug];
+      const statusPaneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
+      return statusPaneId === sourcePaneId || sourceProc?.matched_job === job.slug;
+    });
+    const shell: ShellPane = {
+      ...baseShell,
+      matched_group: sourceProc?.matched_group
+        ?? sourceShell?.matched_group
+        ?? sourceJob?.group
+        ?? null,
+      workspace_id: sourceShell?.workspace_id ?? mgr.activeId,
+    };
+    setShellPanes((prev) => prev.some((p) => p.pane_id === shell.pane_id) ? prev : [...prev, shell]);
+    setScrollToSlug(shell.pane_id);
+
+    const sourceLeafId = findSourceLeafId(sourcePaneId, sourceProc?.matched_job ?? null);
+    graftLeaf(
+      sourceLeafId,
+      { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
+      toTreeDirection(direction),
+    );
+    requestXtermPaneFocus(shell.pane_id);
+  }, [core, findSourceLeafId, graftLeaf, mgr, setScrollToSlug, setShellPanes, shellPanes]);
+
   const handleSplitPane = useCallback(async (paneId: string, direction: Direction) => {
     try {
       const baseShell = await invoke<ShellPane>("split_pane_plain", { paneId, direction });
-      const sourceProc = core.processes.find((p) => p.pane_id === paneId);
-      const sourceShell = shellPanes.find((p) => p.pane_id === paneId);
-      const sourceJob = (core.jobs as Job[]).find((job) => {
-        const status = core.statuses[job.slug];
-        const statusPaneId = status?.state === "running" ? (status as { pane_id?: string }).pane_id : undefined;
-        return statusPaneId === paneId || sourceProc?.matched_job === job.slug;
-      });
-      const shell: ShellPane = {
-        ...baseShell,
-        matched_group: sourceProc?.matched_group
-          ?? sourceShell?.matched_group
-          ?? sourceJob?.group
-          ?? null,
-        workspace_id: sourceShell?.workspace_id ?? mgr.activeId,
-      };
-      setShellPanes((prev) => prev.some((p) => p.pane_id === shell.pane_id) ? prev : [...prev, shell]);
-      setScrollToSlug(shell.pane_id);
-
-      const sourceLeafId = findSourceLeafId(paneId, sourceProc?.matched_job ?? null);
-      graftLeaf(
-        sourceLeafId,
-        { kind: "terminal", paneId: shell.pane_id, tmuxSession: shell.tmux_session },
-        toTreeDirection(direction),
-      );
-      requestXtermPaneFocus(shell.pane_id);
+      attachShellPane(baseShell, paneId, direction);
     } catch (e) {
       console.error("split_pane_plain failed:", e);
     }
-  }, [core, findSourceLeafId, graftLeaf, setScrollToSlug, setShellPanes, shellPanes]);
+  }, [attachShellPane]);
 
-  return { handleFork, handleForkWithSecrets, handleSplitPane };
+  const handleResumeSession = useCallback(async (sessionId: string, cwd: string, sourcePaneId: string | null) => {
+    if (!sourcePaneId) {
+      console.warn("handleResumeSession: no source pane to split from");
+      return;
+    }
+    const command = `claude --resume ${sessionId}`;
+    try {
+      const baseShell = await invoke<ShellPane>("split_pane_with_command", {
+        paneId: sourcePaneId,
+        direction: "right",
+        command,
+        cwd: cwd || null,
+      });
+      attachShellPane(baseShell, sourcePaneId, "right");
+    } catch (e) {
+      console.error("split_pane_with_command failed:", e);
+    }
+  }, [attachShellPane]);
+
+  return { handleFork, handleForkWithSecrets, handleSplitPane, handleResumeSession };
 }

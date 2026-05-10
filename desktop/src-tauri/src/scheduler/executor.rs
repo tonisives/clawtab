@@ -127,23 +127,44 @@ pub async fn execute_job(
         }
         match h.prune_job_to_limit(&job.slug, job.max_history) {
             Ok(pruned_panes) => {
-                let protected: HashSet<String> = protected_panes
-                    .and_then(|p| p.lock().ok().map(|g| g.clone()))
-                    .unwrap_or_default();
                 for pane_id in pruned_panes {
-                    if protected.contains(&pane_id) {
-                        log::info!(
-                            "Skipping prune kill for pane {} (open in ClawTab)",
-                            pane_id
-                        );
-                        continue;
-                    }
                     if let Err(e) = crate::tmux::kill_pane(&pane_id) {
                         log::warn!("Failed to kill pruned pane {}: {}", pane_id, e);
                     }
                 }
             }
             Err(e) => log::error!("Failed to prune job history for {}: {}", job.slug, e),
+        }
+    }
+
+    // Also kill orphan tmux panes for this slug whose history rows were already
+    // pruned in earlier runs but the panes remained alive (kill_on_end=false).
+    // The new pane is about to spawn, so keep `max_history - 1` existing panes.
+    // Order by history.started_at (authoritative); panes without a history row
+    // are treated as oldest and killed first.
+    if job.max_history > 0 {
+        let keep = job.max_history.saturating_sub(1) as usize;
+        let started_map = {
+            let h = history.lock().unwrap();
+            h.pane_started_at_for_job(&job.slug).unwrap_or_default()
+        };
+        match crate::tmux::list_panes_by_slug(&job.slug) {
+            Ok(panes) => {
+                let mut with_ts: Vec<(String, String)> = panes
+                    .into_iter()
+                    .map(|(pid, _)| {
+                        let ts = started_map.get(&pid).cloned().unwrap_or_default();
+                        (pid, ts)
+                    })
+                    .collect();
+                with_ts.sort_by(|a, b| b.1.cmp(&a.1));
+                for (pane_id, _) in with_ts.into_iter().skip(keep) {
+                    if let Err(e) = crate::tmux::kill_pane(&pane_id) {
+                        log::warn!("Failed to kill orphan pane {}: {}", pane_id, e);
+                    }
+                }
+            }
+            Err(e) => log::warn!("Failed to list panes for slug {}: {}", job.slug, e),
         }
     }
 

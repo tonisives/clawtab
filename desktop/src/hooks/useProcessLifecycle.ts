@@ -448,11 +448,12 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
       demotedShellPaneIdsRef.current.delete(paneId);
     }
     for (const shell of promoted) {
-      // Pin the group override so backend detection won't reassign this pane
-      if (shell.matched_group !== undefined) {
+      // Pin the group override so backend detection won't reassign this pane.
+      // Only set when group is known - if unknown, let backend CWD matching assign it.
+      if (shell.matched_group !== null && shell.matched_group !== undefined) {
         invoke("set_detected_process_group", {
           paneId: shell.pane_id,
-          group: shell.matched_group ?? "",
+          group: shell.matched_group,
         }).catch(() => {});
       }
       split.replaceContent(

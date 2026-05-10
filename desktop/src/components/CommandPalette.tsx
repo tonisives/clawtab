@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Fuse from "fuse.js";
+import { invoke } from "@tauri-apps/api/core";
 import type { DetectedProcess, RemoteJob, ShellPane } from "@clawtab/shared";
 import { useWorkspaceManager } from "../workspace/WorkspaceManager";
 import { requestXtermPaneFocus } from "./XtermPane";
 
 type EntryKind = "agent" | "job" | "shell" | "workspace";
+type Tab = "panes" | "history";
 
 const RECENCY_KEY = "clawtab.cmdp.recency.v1";
 
@@ -52,6 +54,15 @@ interface PaletteEntry {
   };
 }
 
+interface HistoryHit {
+  session_id: string;
+  project_dir: string;
+  cwd: string;
+  first_user_message: string;
+  match_snippet: string | null;
+  mtime_ms: number;
+}
+
 export interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
@@ -62,6 +73,7 @@ export interface CommandPaletteProps {
   onSelectProcess: (paneId: string) => void;
   onSelectShell: (paneId: string) => void;
   onSelectWorkspace?: (workspaceId: string) => void;
+  onResumeSession?: (sessionId: string, cwd: string) => void;
 }
 
 function buildEntries(params: {
@@ -193,6 +205,27 @@ function buildEntries(params: {
   return entries;
 }
 
+function formatRelativeTime(ms: number): string {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return "just now";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d`;
+  const months = Math.floor(days / 30);
+  return `${months}mo`;
+}
+
+function cwdBasename(cwd: string): string {
+  if (!cwd) return "";
+  const trimmed = cwd.replace(/\/$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
 export function CommandPalette({
   open,
   onClose,
@@ -203,14 +236,21 @@ export function CommandPalette({
   onSelectProcess,
   onSelectShell,
   onSelectWorkspace,
+  onResumeSession,
 }: CommandPaletteProps) {
   const mgr = useWorkspaceManager();
+  const [tab, setTab] = useState<Tab>("panes");
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [recencyMap, setRecencyMap] = useState<Record<string, number>>(() => loadRecency());
+  const [historyHits, setHistoryHits] = useState<HistoryHit[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const historyReqIdRef = useRef(0);
 
   const entries = useMemo(() => {
     if (!open) return [];
@@ -240,48 +280,91 @@ export function CommandPalette({
     });
   }, [entries]);
 
-  const results = useMemo(() => {
+  const paneResults = useMemo(() => {
     const trimmed = query.trim();
     const now = Date.now();
-    // Recency bonus decays over a 24h window: 1.0 if just used, ~0 after a day.
     const recencyBoost = (ms: number) => {
       if (!ms) return 0;
       const ageHrs = Math.max(0, (now - ms) / 3_600_000);
-      return Math.exp(-ageHrs / 8); // half-life ~5.5h, ~0.05 at 24h
+      return Math.exp(-ageHrs / 8);
     };
     if (!trimmed) {
       return [...entries]
         .sort((a, b) => (b.recencyMs - a.recencyMs))
         .slice(0, 50);
     }
-    // Blend Fuse score (lower=better) with recency bonus. Cap bonus at 0.15
-    // so a fresh-but-irrelevant pane can't outrank a clearly better text match.
     const scored = fuse.search(trimmed).map((r) => ({
       item: r.item,
       score: (r.score ?? 1) - 0.15 * recencyBoost(r.item.recencyMs),
     }));
     scored.sort((a, b) => a.score - b.score);
-    return scored.slice(0, 50).map((r) => r.item);
+    const ranked = scored.slice(0, 50).map((r) => r.item);
+
+    // Pin workspaces whose name contains the query (case-insensitive substring).
+    const lower = trimmed.toLowerCase();
+    const pinnedIds = new Set<string>();
+    const pinned: PaletteEntry[] = [];
+    for (const e of entries) {
+      if (e.kind !== "workspace") continue;
+      if (!e.workspaceName.toLowerCase().includes(lower)) continue;
+      pinned.push(e);
+      pinnedIds.add(e.id);
+    }
+    pinned.sort((a, b) => b.recencyMs - a.recencyMs);
+    if (pinned.length === 0) return ranked;
+    const rest = ranked.filter((e) => !pinnedIds.has(e.id));
+    return [...pinned, ...rest].slice(0, 50);
   }, [fuse, query, entries]);
+
+  // Fetch history when on history tab. Debounce query input.
+  useEffect(() => {
+    if (!open || tab !== "history") return;
+    const reqId = ++historyReqIdRef.current;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    const timer = window.setTimeout(async () => {
+      try {
+        const hits = await invoke<HistoryHit[]>("search_claude_history", {
+          query,
+          limit: 100,
+        });
+        if (historyReqIdRef.current !== reqId) return;
+        setHistoryHits(hits);
+        setHistoryLoading(false);
+      } catch (e) {
+        if (historyReqIdRef.current !== reqId) return;
+        setHistoryError(String(e));
+        setHistoryHits([]);
+        setHistoryLoading(false);
+      }
+    }, query.trim() ? 200 : 0);
+    return () => window.clearTimeout(timer);
+  }, [open, tab, query]);
+
+  const resultCount = tab === "panes" ? paneResults.length : historyHits.length;
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
+    setTab("panes");
     setActiveIndex(0);
     setRecencyMap(loadRecency());
+    setHistoryHits([]);
+    setHistoryError(null);
+    setCopiedId(null);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [query]);
+  }, [query, tab]);
 
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${activeIndex}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
-  const activate = (entry: PaletteEntry) => {
+  const activatePane = (entry: PaletteEntry) => {
     const next = { ...recencyMap, [entry.id]: Date.now() };
     setRecencyMap(next);
     saveRecency(next);
@@ -301,22 +384,52 @@ export function CommandPalette({
     onClose();
   };
 
+  const openHistoryHit = (hit: HistoryHit) => {
+    if (!onResumeSession) return;
+    onResumeSession(hit.session_id, hit.cwd);
+    onClose();
+  };
+
+  const copyHistoryId = async (hit: HistoryHit) => {
+    try {
+      await navigator.clipboard.writeText(hit.session_id);
+      setCopiedId(hit.session_id);
+      window.setTimeout(() => {
+        setCopiedId((id) => (id === hit.session_id ? null : id));
+      }, 1200);
+    } catch (e) {
+      console.error("clipboard write failed:", e);
+    }
+  };
+
   if (!open) return null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       e.preventDefault();
       onClose();
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      setTab((t) => (t === "panes" ? "history" : "panes"));
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActiveIndex((i) => Math.min(results.length - 1, i + 1));
+      setActiveIndex((i) => Math.min(resultCount - 1, i + 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveIndex((i) => Math.max(0, i - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const entry = results[activeIndex];
-      if (entry) activate(entry);
+      if (tab === "panes") {
+        const entry = paneResults[activeIndex];
+        if (entry) activatePane(entry);
+      } else {
+        const hit = historyHits[activeIndex];
+        if (hit) openHistoryHit(hit);
+      }
+    } else if (tab === "history" && (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "c") {
+      e.preventDefault();
+      const hit = historyHits[activeIndex];
+      if (hit) void copyHistoryId(hit);
     }
   };
 
@@ -342,18 +455,50 @@ export function CommandPalette({
           border: "1px solid var(--border-color)",
           borderRadius: 10,
           boxShadow: "0 8px 32px rgba(0, 0, 0, 0.2)",
-          width: 560,
+          width: 620,
           maxWidth: "90vw",
           padding: 0,
         }}
       >
+        <div style={{ display: "flex", gap: 4, padding: "8px 10px 0 10px" }}>
+          {(["panes", "history"] as Tab[]).map((t) => {
+            const active = t === tab;
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: active ? "var(--accent-color)" : "var(--text-muted, #8e8e93)",
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  padding: "4px 10px 6px",
+                  borderBottom: active ? "2px solid var(--accent-color)" : "2px solid transparent",
+                  cursor: "pointer",
+                  fontWeight: active ? 600 : 500,
+                }}
+              >
+                {t === "panes" ? "Panes" : "History"}
+              </button>
+            );
+          })}
+          <div style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-muted, #8e8e93)", alignSelf: "flex-end", paddingBottom: 6 }}>
+            Tab to switch
+          </div>
+        </div>
         <input
           ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Search agents, jobs, workspaces, shells..."
+          placeholder={
+            tab === "panes"
+              ? "Search agents, jobs, workspaces, shells..."
+              : "Search Claude session history..."
+          }
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -364,64 +509,159 @@ export function CommandPalette({
             border: "none",
             borderBottom: "1px solid var(--border-color, #2a2a2a)",
             borderRadius: 0,
-            padding: "12px 14px",
+            padding: "10px 14px",
             background: "transparent",
             color: "var(--text-primary)",
             outline: "none",
             boxShadow: "none",
           }}
         />
-        <div ref={listRef} style={{ maxHeight: 400, overflowY: "auto" }}>
-          {results.length === 0 && (
-            <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
-              {query.trim() ? `No results for "${query}"` : "Type to search"}
-            </div>
-          )}
-          {results.map((entry, i) => {
-            const isActive = i === activeIndex;
-            return (
-              <div
-                key={entry.id}
-                data-index={i}
-                onClick={() => activate(entry)}
-                onMouseEnter={() => setActiveIndex(i)}
-                style={{
-                  padding: "8px 14px",
-                  cursor: "pointer",
-                  background: isActive ? "var(--accent-hover)" : "transparent",
-                  borderLeft: isActive ? "3px solid var(--accent-color)" : "3px solid transparent",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                  <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted, #8e8e93)", minWidth: 68 }}>
-                    {entry.workspaceName}
-                  </span>
-                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--border-color)", color: "var(--text-muted, #8e8e93)" }}>
-                    {entry.kind}
-                  </span>
-                  <span style={{ fontSize: 13, color: isActive ? "var(--accent-color)" : "var(--text-primary)", fontWeight: isActive ? 600 : 500 }}>
-                    {entry.displayName}
-                  </span>
-                </div>
-                {entry.cwd && (
-                  <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", fontFamily: "monospace", paddingLeft: 76 }}>
-                    {entry.cwd}
-                  </div>
-                )}
-                {entry.paneTitle && entry.paneTitle !== entry.displayName && (
-                  <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {entry.paneTitle}
-                  </div>
-                )}
-                {entry.lastQuery && (
-                  <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                    {entry.lastQuery}
-                  </div>
-                )}
+        <div ref={listRef} style={{ maxHeight: 440, overflowY: "auto" }}>
+          {tab === "panes" ? (
+            paneResults.length === 0 ? (
+              <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+                {query.trim() ? `No results for "${query}"` : "Type to search"}
               </div>
-            );
-          })}
+            ) : (
+              paneResults.map((entry, i) => {
+                const isActive = i === activeIndex;
+                return (
+                  <div
+                    key={entry.id}
+                    data-index={i}
+                    onClick={() => activatePane(entry)}
+                    onMouseEnter={() => setActiveIndex(i)}
+                    style={{
+                      padding: "8px 14px",
+                      cursor: "pointer",
+                      background: isActive ? "var(--accent-hover)" : "transparent",
+                      borderLeft: isActive ? "3px solid var(--accent-color)" : "3px solid transparent",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                      <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted, #8e8e93)", minWidth: 68 }}>
+                        {entry.workspaceName}
+                      </span>
+                      <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--border-color)", color: "var(--text-muted, #8e8e93)" }}>
+                        {entry.kind}
+                      </span>
+                      <span style={{ fontSize: 13, color: isActive ? "var(--accent-color)" : "var(--text-primary)", fontWeight: isActive ? 600 : 500 }}>
+                        {entry.displayName}
+                      </span>
+                    </div>
+                    {entry.cwd && (
+                      <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", fontFamily: "monospace", paddingLeft: 76 }}>
+                        {entry.cwd}
+                      </div>
+                    )}
+                    {entry.paneTitle && entry.paneTitle !== entry.displayName && (
+                      <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {entry.paneTitle}
+                      </div>
+                    )}
+                    {entry.lastQuery && (
+                      <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                        {entry.lastQuery}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )
+          ) : historyError ? (
+            <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+              {historyError}
+            </div>
+          ) : historyLoading && historyHits.length === 0 ? (
+            <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+              Searching...
+            </div>
+          ) : historyHits.length === 0 ? (
+            <div style={{ padding: 16, color: "var(--text-muted)", fontSize: 13 }}>
+              {query.trim() ? `No sessions match "${query}"` : "No sessions found"}
+            </div>
+          ) : (
+            historyHits.map((hit, i) => {
+              const isActive = i === activeIndex;
+              const baseName = cwdBasename(hit.cwd) || hit.project_dir;
+              const rel = formatRelativeTime(hit.mtime_ms);
+              const snippet = hit.match_snippet || hit.first_user_message;
+              const wasCopied = copiedId === hit.session_id;
+              return (
+                <div
+                  key={hit.session_id}
+                  data-index={i}
+                  onClick={() => openHistoryHit(hit)}
+                  onMouseEnter={() => setActiveIndex(i)}
+                  style={{
+                    padding: "8px 14px",
+                    cursor: "pointer",
+                    background: isActive ? "var(--accent-hover)" : "transparent",
+                    borderLeft: isActive ? "3px solid var(--accent-color)" : "3px solid transparent",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                    <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted, #8e8e93)", minWidth: 68, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {baseName}
+                    </span>
+                    <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: "var(--border-color)", color: "var(--text-muted, #8e8e93)" }}>
+                      session
+                    </span>
+                    <span style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)" }}>
+                      {rel}
+                    </span>
+                    <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); void copyHistoryId(hit); }}
+                        style={{
+                          fontSize: 11,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          border: "1px solid var(--border-color)",
+                          background: "transparent",
+                          color: wasCopied ? "var(--accent-color)" : "var(--text-primary)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {wasCopied ? "Copied!" : "Copy ID"}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openHistoryHit(hit); }}
+                        style={{
+                          fontSize: 11,
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          border: "1px solid var(--accent-color)",
+                          background: isActive ? "var(--accent-color)" : "transparent",
+                          color: isActive ? "var(--bg-secondary)" : "var(--accent-color)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Open
+                      </button>
+                    </span>
+                  </div>
+                  {hit.cwd && (
+                    <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", fontFamily: "monospace", paddingLeft: 76, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {hit.cwd}
+                    </div>
+                  )}
+                  {snippet && (
+                    <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                      {snippet}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
         </div>
+        {tab === "history" && (
+          <div style={{ padding: "6px 14px", borderTop: "1px solid var(--border-color, #2a2a2a)", fontSize: 10, color: "var(--text-muted, #8e8e93)", display: "flex", gap: 14 }}>
+            <span>Enter: open in new pane</span>
+            <span>Cmd+Shift+C: copy session ID</span>
+          </div>
+        )}
       </div>
     </div>,
     document.body,

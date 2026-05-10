@@ -189,19 +189,7 @@ pub fn reattach_running_jobs(
             }
             match h.prune_job_to_limit(&job.slug, job.max_history) {
                 Ok(pruned_panes) => {
-                    let protected: HashSet<String> = protected_panes
-                        .lock()
-                        .ok()
-                        .map(|g| g.clone())
-                        .unwrap_or_default();
                     for pid in pruned_panes {
-                        if protected.contains(&pid) {
-                            log::info!(
-                                "Skipping prune kill for pane {} (open in ClawTab)",
-                                pid
-                            );
-                            continue;
-                        }
                         if let Err(e) = crate::tmux::kill_pane(&pid) {
                             log::warn!("Failed to kill pruned pane {}: {}", pid, e);
                         }

@@ -292,6 +292,43 @@ pub fn set_pane_slug(pane_id: &str, slug: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// List `(pane_id, pane_pid)` for every pane tagged with the given slug.
+/// `pane_pid` is a monotonically-increasing OS pid that serves as a proxy for
+/// pane age (older panes have smaller pids). Used by prune-to-limit to identify
+/// orphan panes whose history entries were already trimmed.
+pub fn list_panes_by_slug(slug: &str) -> Result<Vec<(String, u64)>, String> {
+    let output = run(
+        &[
+            "list-panes",
+            "-a",
+            "-F",
+            "#{@clawtab-slug}\x1e#{pane_id}\x1e#{pane_pid}",
+        ],
+        "tmux::list_panes_by_slug",
+    )
+    .map_err(|e| format!("Failed to list panes: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut panes = Vec::new();
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('\x1e').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        if parts[0] != slug {
+            continue;
+        }
+        let pid: u64 = parts[2].parse().unwrap_or(0);
+        panes.push((parts[1].to_string(), pid));
+    }
+    Ok(panes)
+}
+
 /// Send keys to a specific pane by its ID (e.g. "%42").
 /// Pane IDs starting with '%' are global tmux targets and used directly.
 pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<(), String> {

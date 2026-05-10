@@ -282,6 +282,33 @@ impl HistoryStore {
         Ok(records)
     }
 
+    /// Map of `pane_id` -> `started_at` for every history row of `job_id`.
+    /// Lets the orphan sweep order live tmux panes by their authoritative run
+    /// start time (pid-based ordering is unreliable due to wraparound).
+    pub fn pane_started_at_for_job(
+        &self,
+        job_id: &str,
+    ) -> Result<std::collections::HashMap<String, String>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT pane_id, started_at FROM runs
+                 WHERE job_name = ?1 AND pane_id IS NOT NULL",
+            )
+            .map_err(|e| format!("Failed to prepare query: {}", e))?;
+        let rows = stmt
+            .query_map(params![job_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Failed to query pane started_at: {}", e))?;
+        let mut map = std::collections::HashMap::new();
+        for r in rows {
+            let (pid, ts) = r.map_err(|e| format!("Failed to read row: {}", e))?;
+            map.insert(pid, ts);
+        }
+        Ok(map)
+    }
+
     pub fn delete_by_id(&self, id: &str) -> Result<(), String> {
         self.conn
             .execute("DELETE FROM runs WHERE id = ?1", params![id])
