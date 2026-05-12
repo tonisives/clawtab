@@ -2,7 +2,7 @@ import { useCallback, useMemo, type ReactNode, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { DetectedProcess, JobStatus, ProcessProvider, RemoteJob, ShellPane, SidebarSelectableItem, Transport, useJobsCore, useSplitTree } from "@clawtab/shared";
-import { JobListView, collectLeaves, leafContentKey } from "@clawtab/shared";
+import { JobListView, JobCard, RunningJobCard, ProcessCard, ShellCard, collectLeaves, leafContentKey, colors, spacing } from "@clawtab/shared";
 import { buildModelOptions } from "../../JobEditor/utils";
 import { DraggableJobCard, DraggableProcessCard, DraggableShellCard } from "../../DraggableCards";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
@@ -14,6 +14,54 @@ import type { useSidebarItems } from "../hooks/useSidebarItems";
 import type { useViewingState } from "../hooks/useViewingState";
 import { formatShortcutSteps } from "../../../shortcuts";
 import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
+
+function PinOverlay({ onUnpin }: { onUnpin: () => void }) {
+  return (
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        onUnpin();
+      }}
+      title="Unpin"
+      style={{
+        position: "absolute",
+        top: 8,
+        right: 28,
+        width: 14,
+        height: 14,
+        borderRadius: 4,
+        border: "none",
+        background: "transparent",
+        color: "var(--accent, #58a6ff)",
+        padding: 0,
+        cursor: "pointer",
+        zIndex: 6,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        userSelect: "none",
+      }}
+    >
+      <svg
+        width={10}
+        height={10}
+        viewBox="0 0 16 16"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        style={{ display: "block" }}
+      >
+        <path d="M10.5 1.5l4 4-2 1-3.5 3.5 1 3-2 1-3-3-3.5 3.5-1-1 3.5-3.5-3-3 1-2 3 1 3.5-3.5z" />
+      </svg>
+    </button>
+  );
+}
 
 interface JobsSidebarProps {
   activeAgentWorkDir: string | null;
@@ -130,44 +178,58 @@ export function JobsSidebar({
     renameProcessPaneId,
   } = processEditing;
 
+  const pinnedSet = useMemo(() => new Set(settings.pinnedItems), [settings.pinnedItems]);
+  const togglePin = settings.togglePin;
+
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => (
-      <DraggableJobCard
-        {...props}
-        reorderEnabled={sortMode === "name"}
-        defaultAgentProvider={defaultProvider}
-      />
-    ),
-    [sortMode, defaultProvider],
+    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => {
+      const pinKey = `job:${props.job.slug}`;
+      return (
+        <DraggableJobCard
+          {...props}
+          reorderEnabled={sortMode === "name"}
+          defaultAgentProvider={defaultProvider}
+          pinned={pinnedSet.has(pinKey)}
+          onTogglePin={() => togglePin(pinKey)}
+        />
+      );
+    },
+    [sortMode, defaultProvider, pinnedSet, togglePin],
   );
 
   const renderDraggableProcessCard = useCallback(
     (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => {
       const target = moveToWorkspaceForCwd(props.process.cwd, props.process.matched_group);
+      const pinKey = `process:${props.process.pane_id}`;
       return (
         <DraggableProcessCard
           {...props}
           reorderEnabled
           onMoveToWorkspace={target ? () => handleMoveProcessToWorkspace(props.process.pane_id, target.groupKey) : undefined}
           moveToWorkspaceLabel={target ? `Move to ${target.displayName}` : undefined}
+          pinned={pinnedSet.has(pinKey)}
+          onTogglePin={() => togglePin(pinKey)}
         />
       );
     },
-    [moveToWorkspaceForCwd, handleMoveProcessToWorkspace],
+    [moveToWorkspaceForCwd, handleMoveProcessToWorkspace, pinnedSet, togglePin],
   );
 
   const renderDraggableShellCard = useCallback(
     (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => {
       const target = moveToWorkspaceForCwd(props.shell.cwd, props.shell.matched_group);
+      const pinKey = `shell:${props.shell.pane_id}`;
       return (
         <DraggableShellCard
           {...props}
           onMoveToWorkspace={target ? () => handleMoveProcessToWorkspace(props.shell.pane_id, target.groupKey) : undefined}
           moveToWorkspaceLabel={target ? `Move to ${target.displayName}` : undefined}
+          pinned={pinnedSet.has(pinKey)}
+          onTogglePin={() => togglePin(pinKey)}
         />
       );
     },
-    [moveToWorkspaceForCwd, handleMoveProcessToWorkspace],
+    [moveToWorkspaceForCwd, handleMoveProcessToWorkspace, pinnedSet, togglePin],
   );
 
   const wrapSortableJobGroup = useCallback((group: string, jobSlugs: string[], children: ReactNode) => (
@@ -196,6 +258,123 @@ export function JobsSidebar({
     [agentRunner],
   );
 
+  const pinnedHeader = useMemo(() => {
+    if (settings.pinnedItems.length === 0) return null;
+    const jobBySlug = new Map(core.jobs.map((j) => [j.slug, j as RemoteJob]));
+    const procByPaneId = new Map(sidebarItems.detectedProcesses.map((p) => [p.pane_id, p]));
+    const shellByPaneId = new Map(shellPanes.map((s) => [s.pane_id, s]));
+
+    const rendered: ReactNode[] = [];
+    for (const key of settings.pinnedItems) {
+      const colonIdx = key.indexOf(":");
+      if (colonIdx < 0) continue;
+      const kind = key.slice(0, colonIdx);
+      const id = key.slice(colonIdx + 1);
+
+      if (kind === "job") {
+        const job = jobBySlug.get(id);
+        if (!job) continue;
+        const status = core.statuses[id] ?? { state: "idle" as const };
+        const rawColor = split.selectedItems?.get(id);
+        const isFocused = !split.focusedItemKey || split.focusedItemKey === id;
+        const selected: boolean | string = rawColor
+          ? (isFocused ? rawColor : rawColor + "66")
+          : false;
+        const isStopping = stoppingJobSlugs.has(id);
+        const onStop = status.state === "running" && !isStopping
+          ? () => {
+              setStoppingJobSlugs((prev) => new Set(prev).add(id));
+              core.requestFastPoll(`job:${id}`);
+              transport.stopJob(id);
+            }
+          : undefined;
+        rendered.push(
+          <div
+            key={`pinned-${key}`}
+            style={{ marginTop: rendered.length === 0 ? 0 : spacing.sm, position: "relative" }}
+          >
+            {status.state === "running" ? (
+              <RunningJobCard
+                job={job}
+                status={status}
+                onPress={() => onSelectJob(job)}
+                selected={selected}
+                onStop={onStop}
+                autoYesActive={(status as any).pane_id ? autoYes.autoYesPaneIds?.has((status as any).pane_id) : false}
+                stopping={isStopping}
+                defaultAgentProvider={defaultProvider}
+              />
+            ) : (
+              <JobCard
+                job={job}
+                status={status}
+                onPress={() => onSelectJob(job)}
+                selected={selected}
+                defaultAgentProvider={defaultProvider}
+              />
+            )}
+            <PinOverlay onUnpin={() => settings.togglePin(key)} />
+          </div>,
+        );
+      } else if (kind === "process") {
+        const proc = procByPaneId.get(id);
+        if (!proc) continue;
+        const rawColor = split.selectedItems?.get(id) ?? split.selectedItems?.get(`_term_${id}`);
+        const isFocused = !split.focusedItemKey || split.focusedItemKey === id || split.focusedItemKey === `_term_${id}`;
+        const selected: boolean | string = rawColor
+          ? (isFocused ? rawColor : rawColor + "66")
+          : false;
+        rendered.push(
+          <div
+            key={`pinned-${key}`}
+            style={{ marginTop: rendered.length === 0 ? 0 : spacing.sm, position: "relative" }}
+          >
+            <ProcessCard
+              process={proc}
+              onPress={() => onSelectProcess(proc)}
+              selected={selected}
+              autoYesActive={autoYes.autoYesPaneIds?.has(id) ?? false}
+            />
+            <PinOverlay onUnpin={() => settings.togglePin(key)} />
+          </div>,
+        );
+      } else if (kind === "shell") {
+        const shell = shellByPaneId.get(id);
+        if (!shell) continue;
+        const termKey = `_term_${id}`;
+        const rawColor = split.selectedItems?.get(termKey);
+        const isFocused = !split.focusedItemKey || split.focusedItemKey === termKey;
+        const selected: boolean | string = rawColor
+          ? (isFocused ? rawColor : rawColor + "66")
+          : false;
+        rendered.push(
+          <div
+            key={`pinned-${key}`}
+            style={{ marginTop: rendered.length === 0 ? 0 : spacing.sm, position: "relative" }}
+          >
+            <ShellCard
+              shell={shell}
+              onPress={() => onSelectShell(shell)}
+              selected={selected}
+            />
+            <PinOverlay onUnpin={() => settings.togglePin(key)} />
+          </div>,
+        );
+      }
+    }
+
+    if (rendered.length === 0) return null;
+
+    return (
+      <div style={{ marginBottom: spacing.md, paddingBottom: spacing.sm, borderBottom: `1px solid ${colors.border}` }}>
+        <div style={{ color: colors.textSecondary, fontSize: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, paddingTop: spacing.sm, paddingBottom: spacing.sm, paddingLeft: spacing.xs, paddingRight: spacing.xs }}>
+          Pinned
+        </div>
+        {rendered}
+      </div>
+    );
+  }, [settings, settings.pinnedItems, core.jobs, core.statuses, core.requestFastPoll, sidebarItems.detectedProcesses, shellPanes, split.selectedItems, split.focusedItemKey, stoppingJobSlugs, setStoppingJobSlugs, transport, onSelectJob, onSelectProcess, onSelectShell, autoYes.autoYesPaneIds, defaultProvider]);
+
   return (
     <JobListView
       jobs={core.jobs}
@@ -223,6 +402,7 @@ export function JobsSidebar({
       hiddenGroups={hiddenGroups}
       onHideGroup={settings.handleHideGroup}
       onUnhideGroup={settings.handleUnhideGroup}
+      headerContent={pinnedHeader}
       showEmpty={core.loaded}
       emptyMessage="No jobs configured yet."
       scrollToSlug={viewing.scrollToSlug}

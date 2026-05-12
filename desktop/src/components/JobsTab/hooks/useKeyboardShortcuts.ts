@@ -375,9 +375,14 @@ export function useKeyboardShortcuts({
     };
 
     const runKillPaneShortcut = () => {
+      const zoomedLeaf = !split.tree && split.zoomSnapshot
+        ? collectLeaves(split.zoomSnapshot.tree).find((leaf) => leaf.content === split.zoomSnapshot!.content)
+          ?? collectLeaves(split.zoomSnapshot.tree).find((leaf) => leaf.id === split.zoomSnapshot!.focusedLeafId)
+          ?? null
+        : null;
       const focusedLeaf = split.tree
         ? collectLeaves(split.tree).find((leaf) => leaf.id === split.focusedLeafId) ?? collectLeaves(split.tree)[0]
-        : null;
+        : zoomedLeaf;
       const content = focusedLeaf?.content ?? currentContent;
       if (!content) return;
 
@@ -621,7 +626,7 @@ export function useKeyboardShortcuts({
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener(APP_SHORTCUT_EVENT, handleAppShortcut);
     };
-  }, [pendingShortcutStroke, split.tree, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.handleSplitRatioChange, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, triggerEnterCopyMode, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes, onBackNavigation, onForwardNavigation, onOpenCommandPalette, onOpenSettings]);
+  }, [pendingShortcutStroke, split.tree, split.zoomSnapshot, split.focusedLeafId, split.setFocusedLeafId, split.handleClosePane, split.handleSplitRatioChange, split.detailPaneRef, split.detailSize.w, split.detailSize.h, currentContent, core.processes, core.requestFastPoll, getPaneIdForContent, handleSplitPane, navigateSidebarItems, pendingProcess, shortcutSettings, triggerRenameActivePane, triggerFocusAgentInput, triggerZoomActivePane, triggerRevealInSidebar, triggerEnterCopyMode, setStoppingProcesses, setStoppingJobSlugs, setShellPanes, demotedShellPaneIdsRef, setViewingJob, setViewingProcess, setViewingShell, setViewingAgent, transport, sidebarFocusRef, toggleActiveAutoYes, onBackNavigation, onForwardNavigation, onOpenCommandPalette, onOpenSettings]);
 
   useEffect(() => {
     const unlistenPromise = listen<string>("shortcut-action", (event) => {

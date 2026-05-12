@@ -3,6 +3,7 @@ import type { PaneContent } from "@clawtab/shared";
 import { AgentDetail } from "../../JobDetailSections";
 import { DraggableSplitPane } from "../../DraggableCards";
 import type { PaneContext } from "./paneTypes";
+import { makeZoomAwareClose } from "./zoomAwareClose";
 
 type DragHandleProps = {
   ref?: (node: HTMLElement | null) => void;
@@ -24,7 +25,7 @@ export function AgentPane({ content, ctx }: Props) {
 
   const close = mode.kind === "leaf"
     ? () => split.handleClosePane(mode.leafId)
-    : () => viewing.setViewingAgent(false);
+    : makeZoomAwareClose(split, () => viewing.setViewingAgent(false));
 
   const zoom = mode.kind === "leaf"
     ? () => split.toggleZoomLeaf(mode.leafId)

@@ -10,6 +10,7 @@ import {
   updateRatio,
 } from "../../util/splitTree";
 import { chooseSplitDirection, collectLeafRects, contentEquals, contentKey } from "./helpers";
+import type { ZoomSnapshot } from "./types";
 
 export function useTreeMutations(opts: {
   splitTree: SplitNode | null;
@@ -25,6 +26,8 @@ export function useTreeMutations(opts: {
     site: string,
   ) => void;
   setFocusedLeafId: Dispatch<SetStateAction<string | null>>;
+  zoomSnapshotRef: MutableRefObject<ZoomSnapshot | null>;
+  setZoomSnapshot: Dispatch<SetStateAction<ZoomSnapshot | null>>;
 }) {
   const {
     splitTree,
@@ -37,6 +40,8 @@ export function useTreeMutations(opts: {
     onCollapseRef,
     setSplitTreeChecked,
     setFocusedLeafId,
+    zoomSnapshotRef,
+    setZoomSnapshot,
   } = opts;
 
   const handleSplitRatioChange = useCallback((splitNodeId: string, ratio: number) => {
@@ -44,6 +49,28 @@ export function useTreeMutations(opts: {
   }, [setSplitTreeChecked]);
 
   const handleClosePane = useCallback((leafId: string) => {
+    const snapshot = zoomSnapshotRef.current;
+    if (snapshot && !splitTreeRef.current) {
+      const restored = removeLeaf(snapshot.tree, leafId);
+      if (!restored) {
+        setZoomSnapshot(null);
+        setFocusedLeafId(null);
+        return;
+      }
+      if (restored.type === "leaf") {
+        setZoomSnapshot(null);
+        setFocusedLeafId(null);
+        onCollapseRef.current(restored.content);
+        return;
+      }
+      setZoomSnapshot(null);
+      setSplitTreeChecked(restored, "closePane:zoomRestore");
+      const restoredFocus = snapshot.focusedLeafId && snapshot.focusedLeafId !== leafId
+        ? snapshot.focusedLeafId
+        : collectLeaves(restored)[0]?.id ?? null;
+      setFocusedLeafId(restoredFocus);
+      return;
+    }
     setSplitTreeChecked(prev => {
       if (!prev) return null;
       const result = removeLeaf(prev, leafId);
@@ -54,7 +81,7 @@ export function useTreeMutations(opts: {
       return result;
     }, "closePane");
     setFocusedLeafId(prev => prev === leafId ? null : prev);
-  }, [setSplitTreeChecked, setFocusedLeafId, onCollapseRef]);
+  }, [setSplitTreeChecked, setFocusedLeafId, onCollapseRef, splitTreeRef, zoomSnapshotRef, setZoomSnapshot]);
 
   const handleSelectInTree = useCallback((content: PaneContent) => {
     if (!splitTree) return false;

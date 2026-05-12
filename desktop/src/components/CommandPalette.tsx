@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Fuse from "fuse.js";
 import { invoke } from "@tauri-apps/api/core";
@@ -217,6 +217,27 @@ function formatRelativeTime(ms: number): string {
   if (days < 30) return `${days}d`;
   const months = Math.floor(days / 30);
   return `${months}mo`;
+}
+
+function highlightQuery(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text;
+  const lower = text.toLowerCase();
+  const q = query.trim().toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let pos = 0;
+  let idx = lower.indexOf(q, pos);
+  while (idx !== -1) {
+    if (idx > pos) parts.push(text.slice(pos, idx));
+    parts.push(
+      <mark key={idx} style={{ background: "var(--accent-color)", color: "var(--bg-secondary)", borderRadius: 2, padding: "0 1px" }}>
+        {text.slice(idx, idx + q.length)}
+      </mark>
+    );
+    pos = idx + q.length;
+    idx = lower.indexOf(q, pos);
+  }
+  if (pos < text.length) parts.push(text.slice(pos));
+  return parts.length > 0 ? <>{parts}</> : text;
 }
 
 function cwdBasename(cwd: string): string {
@@ -585,8 +606,9 @@ export function CommandPalette({
               const isActive = i === activeIndex;
               const baseName = cwdBasename(hit.cwd) || hit.project_dir;
               const rel = formatRelativeTime(hit.mtime_ms);
-              const snippet = hit.match_snippet || hit.first_user_message;
               const wasCopied = copiedId === hit.session_id;
+              // Show match snippet when searching (highlighted), otherwise show first user message.
+              const descText = hit.match_snippet || hit.first_user_message;
               return (
                 <div
                   key={hit.session_id}
@@ -646,9 +668,9 @@ export function CommandPalette({
                       {hit.cwd}
                     </div>
                   )}
-                  {snippet && (
+                  {descText && (
                     <div style={{ fontSize: 11, color: "var(--text-muted, #8e8e93)", paddingLeft: 76, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                      {snippet}
+                      {highlightQuery(descText, query)}
                     </div>
                   )}
                 </div>

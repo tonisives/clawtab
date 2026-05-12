@@ -516,6 +516,28 @@ async fn execute_binary_job(
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let exit_code = output.status.code();
 
+    // Write combined log file next to the job definition.
+    if let Some(log_dir) = crate::config::jobs::JobsConfig::jobs_dir_public()
+        .map(|d| d.join(&job.slug).join("logs"))
+    {
+        if std::fs::create_dir_all(&log_dir).is_ok() {
+            let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+            let code = exit_code.unwrap_or(-1);
+            let log_path = log_dir.join(format!("{}-exit{}.log", ts, code));
+            let mut content = String::new();
+            if !stdout.is_empty() {
+                content.push_str(&stdout);
+            }
+            if !stderr.is_empty() {
+                if !content.is_empty() {
+                    content.push('\n');
+                }
+                content.push_str(&stderr);
+            }
+            let _ = std::fs::write(&log_path, content);
+        }
+    }
+
     Ok((exit_code, stdout, stderr))
 }
 

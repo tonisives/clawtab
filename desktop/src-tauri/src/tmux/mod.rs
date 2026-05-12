@@ -166,6 +166,11 @@ pub fn window_exists(session: &str, window_name: &str) -> bool {
 /// `@clawtab-origin` rather than `#{session_name}`. Session groups resolve the
 /// latter non-deterministically to whichever group member tmux feels like,
 /// often a dying clawtab-view-*.
+///
+/// For all other windows (e.g. clawtab-shell-*), we use the same window-ID
+/// scan as `resolve_real_session_for_pane` so that panes viewed through an
+/// ephemeral view session are still routed to the real owning session, not to
+/// the view session or the user's own tmux session.
 pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
     let info = run(
         &[
@@ -189,7 +194,6 @@ pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
     if parts.len() < 3 {
         return Err(format!("malformed display-message output: {}", raw));
     }
-    let session_name = parts[0];
     let window_id = parts[1];
     let window_name = parts[2];
 
@@ -216,7 +220,39 @@ pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
         }
     }
 
-    Ok(session_name.to_string())
+    // For non-ct-* windows (e.g. clawtab-shell-*), resolve via window-ID scan
+    // so that panes viewed through a view session are correctly routed to the
+    // real owning session rather than the ephemeral view session (or whatever
+    // session tmux happens to report for the group member).
+    let all_windows = run(
+        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
+        "tmux::resolve_fork_session::list_windows",
+    )
+    .map_err(|e| format!("Failed to list windows: {}", e))?;
+    if all_windows.status.success() {
+        let raw_all = String::from_utf8_lossy(&all_windows.stdout);
+        let mut fallback: Option<String> = None;
+        for line in raw_all.lines() {
+            let mut ps = line.splitn(2, '\x1e');
+            let session = ps.next().unwrap_or("");
+            let wid = ps.next().unwrap_or("");
+            if wid != window_id {
+                continue;
+            }
+            if !is_view_session(session) {
+                return Ok(session.to_string());
+            }
+            if fallback.is_none() {
+                fallback = Some(session.to_string());
+            }
+        }
+        if let Some(s) = fallback {
+            return Ok(s);
+        }
+    }
+
+    // Last resort: use whatever session_name tmux reported
+    Ok(parts[0].to_string())
 }
 
 pub fn create_window_with_cwd(

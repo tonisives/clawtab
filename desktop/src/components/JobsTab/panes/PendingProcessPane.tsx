@@ -5,8 +5,16 @@ export function PendingProcessPane({ ctx }: { ctx: PaneContext }) {
   const onBack = () => {
     lifecycle.setPendingAgentWorkDir(null);
     lifecycle.setPendingProcess(null);
-    if (mode.kind === "leaf") split.handleClosePane(mode.leafId);
-    else viewing.setViewingProcess(null);
+    if (mode.kind === "leaf") {
+      split.handleClosePane(mode.leafId);
+      return;
+    }
+    const zoomedId = split.getZoomedLeafId();
+    if (zoomedId) {
+      split.handleClosePane(zoomedId);
+      return;
+    }
+    viewing.setViewingProcess(null);
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 20 }}>

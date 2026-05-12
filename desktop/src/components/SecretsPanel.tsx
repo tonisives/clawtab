@@ -210,6 +210,7 @@ function GopassPopup({
 
 export function SecretsPanel() {
   const [secrets, setSecrets] = useState<SecretEntry[]>([]);
+  const [search, setSearch] = useState("");
   const [newKey, setNewKey] = useState("");
   const [newValue, setNewValue] = useState("");
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -338,6 +339,10 @@ export function SecretsPanel() {
     return all;
   }, [gopassSearch, expandedFolders, filteredGopassEntries]);
 
+  const filteredSecrets = search.trim()
+    ? secrets.filter((s) => s.key.toLowerCase().includes(search.trim().toLowerCase()))
+    : secrets;
+
   return (
     <div className="settings-section">
       <div className="section-header">
@@ -347,6 +352,16 @@ export function SecretsPanel() {
         Secrets are stored in macOS Keychain and injected as environment variables into jobs.
         {gopassAvailable && " You can also import secrets from your gopass store."}
       </p>
+
+      <div className="form-group" style={{ marginBottom: 12 }}>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search secrets..."
+          style={{ maxWidth: "100%" }}
+        />
+      </div>
 
       <div className="field-group">
         <span className="field-group-title">Add Secret</span>
@@ -394,6 +409,10 @@ export function SecretsPanel() {
         <div className="empty-state">
           <p>No secrets stored yet.</p>
         </div>
+      ) : filteredSecrets.length === 0 ? (
+        <div className="empty-state">
+          <p>No secrets match "{search}".</p>
+        </div>
       ) : (
         <table className="data-table">
           <thead>
@@ -405,7 +424,7 @@ export function SecretsPanel() {
             </tr>
           </thead>
           <tbody>
-            {secrets.map((secret) => (
+            {filteredSecrets.map((secret) => (
               <tr key={secret.key}>
                 <td>
                   <code>{secret.key}</code>

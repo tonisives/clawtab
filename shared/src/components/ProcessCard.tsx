@@ -283,9 +283,9 @@ const styles = StyleSheet.create({
   },
   rightColExpanded: {
     justifyContent: "space-between",
-    height: 50,
-    marginTop: -13,
-    marginBottom: -5,
+    height: 44,
+    marginTop: -10,
+    marginBottom: -3,
     marginRight: -6,
   },
   spacer: {

@@ -6,6 +6,66 @@ import type { RemoteJob, JobStatus } from "@clawtab/shared";
 import type { DetectedProcess, ClaudeQuestion, PaneContent, ShellPane } from "@clawtab/shared";
 import { JobCard, RunningJobCard, ProcessCard, ShellCard } from "@clawtab/shared";
 
+function PinIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      width={10}
+      height={10}
+      viewBox="0 0 16 16"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ display: "block" }}
+    >
+      <path d="M10.5 1.5l4 4-2 1-3.5 3.5 1 3-2 1-3-3-3.5 3.5-1-1 3.5-3.5-3-3 1-2 3 1 3.5-3.5z" />
+    </svg>
+  );
+}
+
+function PinButton({
+  pinned,
+  onToggle,
+}: {
+  pinned: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onPointerDown={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        onToggle();
+      }}
+      title={pinned ? "Unpin" : "Pin to top"}
+      style={{
+        position: "absolute",
+        top: 8,
+        right: 28,
+        width: 14,
+        height: 14,
+        borderRadius: 4,
+        border: "none",
+        background: "transparent",
+        color: pinned ? "var(--accent, #58a6ff)" : "rgba(255,255,255,0.5)",
+        padding: 0,
+        cursor: "pointer",
+        zIndex: 6,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        userSelect: "none",
+      }}
+    >
+      <PinIcon filled={pinned} />
+    </button>
+  );
+}
+
 export type DragData =
   | { kind: "job"; slug: string; job?: RemoteJob; source?: "sidebar" | "detail-pane"; sourceWorkspaceId?: string }
   | { kind: "process"; paneId: string; process?: DetectedProcess; question?: ClaudeQuestion; resolvedJob?: string | null; source?: "sidebar" | "detail-pane"; sourceWorkspaceId?: string }
@@ -27,6 +87,8 @@ export function DraggableJobCard({
   dimmed,
   dataJobSlug,
   defaultAgentProvider,
+  pinned,
+  onTogglePin,
 }: {
   job: RemoteJob;
   group: string;
@@ -42,6 +104,8 @@ export function DraggableJobCard({
   dimmed?: boolean;
   dataJobSlug?: string;
   defaultAgentProvider?: DetectedProcess["provider"];
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: job.slug,
@@ -112,6 +176,7 @@ export function DraggableJobCard({
           defaultAgentProvider={defaultAgentProvider}
         />
       )}
+      {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
     </div>
   );
 }
@@ -136,6 +201,8 @@ export function DraggableProcessCard({
   dataProcessId,
   onMoveToWorkspace,
   moveToWorkspaceLabel,
+  pinned,
+  onTogglePin,
 }: {
   process: DetectedProcess;
   sortGroup: string;
@@ -156,6 +223,8 @@ export function DraggableProcessCard({
   dataProcessId?: string;
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: process.pane_id,
@@ -223,6 +292,7 @@ export function DraggableProcessCard({
         onMoveToWorkspace={onMoveToWorkspace}
         moveToWorkspaceLabel={moveToWorkspaceLabel}
       />
+      {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
     </div>
   );
 }
@@ -270,6 +340,8 @@ export function DraggableShellCard({
   renameShortcutHint,
   onMoveToWorkspace,
   moveToWorkspaceLabel,
+  pinned,
+  onTogglePin,
 }: {
   shell: ShellPane;
   onPress?: () => void;
@@ -280,6 +352,8 @@ export function DraggableShellCard({
   renameShortcutHint?: string;
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `shell-${shell.pane_id}`,
@@ -296,7 +370,7 @@ export function DraggableShellCard({
     <div
       ref={setNodeRef}
       data-shell-id={shell.pane_id}
-      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none" }}
+      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none", position: "relative" }}
       {...listeners}
       {...attributes}
       tabIndex={-1}
@@ -312,6 +386,7 @@ export function DraggableShellCard({
         onMoveToWorkspace={onMoveToWorkspace}
         moveToWorkspaceLabel={moveToWorkspaceLabel}
       />
+      {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
     </div>
   );
 }

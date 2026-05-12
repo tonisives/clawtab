@@ -1,4 +1,4 @@
-import { useCallback, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { PaneContent, SplitNode } from "../../types/splitTree";
 import { collectLeaves } from "../../util/splitTree";
 import { contentEquals } from "./helpers";
@@ -24,7 +24,15 @@ export function useZoom(opts: {
     setFocusedLeafId,
   } = opts;
 
-  const [zoomSnapshot, setZoomSnapshot] = useState<ZoomSnapshot | null>(null);
+  const [zoomSnapshot, setZoomSnapshotState] = useState<ZoomSnapshot | null>(null);
+  const zoomSnapshotRef = useRef<ZoomSnapshot | null>(null);
+  const setZoomSnapshot = useCallback<Dispatch<SetStateAction<ZoomSnapshot | null>>>((value) => {
+    setZoomSnapshotState((prev) => {
+      const next = typeof value === "function" ? (value as (p: ZoomSnapshot | null) => ZoomSnapshot | null)(prev) : value;
+      zoomSnapshotRef.current = next;
+      return next;
+    });
+  }, []);
 
   const toggleZoomLeaf = useCallback((leafId: string) => {
     const currentTree = splitTreeRef.current;
@@ -45,5 +53,13 @@ export function useZoom(opts: {
     return true;
   }, [focusedLeafId, zoomSnapshot, setSplitTreeChecked, setFocusedLeafId, splitTreeRef, currentContentRef, onCollapseRef]);
 
-  return { zoomSnapshot, setZoomSnapshot, toggleZoomLeaf };
+  const getZoomedLeafId = useCallback(() => {
+    const snap = zoomSnapshotRef.current;
+    if (!snap || splitTreeRef.current) return null;
+    const leaves = collectLeaves(snap.tree);
+    const match = leaves.find((leaf) => contentEquals(leaf.content, snap.content));
+    return match?.id ?? snap.focusedLeafId ?? leaves[0]?.id ?? null;
+  }, [splitTreeRef]);
+
+  return { zoomSnapshot, zoomSnapshotRef, setZoomSnapshot, toggleZoomLeaf, getZoomedLeafId };
 }

@@ -3,6 +3,7 @@ import type { DetectedProcess, PaneContent } from "@clawtab/shared";
 import { TmuxPaneDetail } from "../../TmuxPaneDetail";
 import { DraggableSplitPane } from "../../DraggableCards";
 import type { PaneContext } from "./paneTypes";
+import { makeZoomAwareClose } from "./zoomAwareClose";
 
 type DragHandleProps = {
   ref?: (node: HTMLElement | null) => void;
@@ -25,7 +26,7 @@ export function ProcessTmuxView({ content, process, ctx }: Props) {
 
   const close = mode.kind === "leaf"
     ? () => split.handleClosePane(mode.leafId)
-    : () => viewing.setViewingProcess(null);
+    : makeZoomAwareClose(split, () => viewing.setViewingProcess(null));
 
   const zoom = mode.kind === "leaf"
     ? () => split.toggleZoomLeaf(mode.leafId)

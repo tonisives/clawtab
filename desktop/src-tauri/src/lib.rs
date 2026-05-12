@@ -161,6 +161,16 @@ fn open_pty_debug_window(app: &tauri::AppHandle) {
 }
 
 #[cfg(feature = "desktop")]
+fn open_tmux_debug_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("tmux_debug") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    } else {
+        log::warn!("tmux_debug window not registered in tauri.conf.json");
+    }
+}
+
+#[cfg(feature = "desktop")]
 fn find_submenu(menu: &Menu<tauri::Wry>, title: &str) -> Option<Submenu<tauri::Wry>> {
     menu.items().ok()?.into_iter().find_map(|item| {
         item.as_submenu()
@@ -475,6 +485,8 @@ pub fn run() {
             commands::status::send_job_input,
             commands::tmux::list_tmux_sessions,
             commands::tmux::list_tmux_windows,
+            commands::tmux::list_tmux_debug_windows,
+            commands::tmux::move_tmux_windows_to_session,
             commands::tmux::focus_job_window,
             commands::tmux::open_job_terminal,
             commands::tmux::fork_pane,
@@ -654,6 +666,8 @@ pub fn run() {
             let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
             let pty_debug_item =
                 MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
+            let tmux_debug_item =
+                MenuItem::with_id(app, "view_tmux_debug", "Tmux Debug", true, None::<&str>)?;
             let app_menu = Menu::with_items(
                 app,
                 &[
@@ -700,12 +714,13 @@ pub fn run() {
                         app,
                         "View",
                         true,
-                        &[
-                            &PredefinedMenuItem::fullscreen(app, None)?,
-                            &PredefinedMenuItem::separator(app)?,
-                            &debug_item,
-                            &pty_debug_item,
-                        ],
+                        &[&PredefinedMenuItem::fullscreen(app, None)?],
+                    )?,
+                    &Submenu::with_items(
+                        app,
+                        "Debug",
+                        true,
+                        &[&debug_item, &pty_debug_item, &tmux_debug_item],
                     )?,
                     &Submenu::with_items(
                         app,
@@ -738,6 +753,8 @@ pub fn run() {
                     open_debug_window(app);
                 } else if event.id.as_ref() == "view_pty_debug" {
                     open_pty_debug_window(app);
+                } else if event.id.as_ref() == "view_tmux_debug" {
+                    open_tmux_debug_window(app);
                 } else if event.id.as_ref() == MENU_SHORTCUT_RENAME_ACTIVE_PANE {
                     let _ = app.emit("shortcut-action", "rename_active_pane");
                 } else if event.id.as_ref() == MENU_SHORTCUT_FOCUS_AGENT_INPUT {

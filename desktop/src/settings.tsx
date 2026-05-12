@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { SettingsApp } from "./components/SettingsApp";
+import { WorkspaceProvider } from "./workspace/WorkspaceManager";
 import "./settings.css";
 
 // Capture console output to /tmp/clawtab/editor.log
@@ -77,7 +78,9 @@ invoke("write_editor_log", { lines: ["--- editor session start ---"] }).catch(()
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <SettingsApp />
+      <WorkspaceProvider>
+        <SettingsApp />
+      </WorkspaceProvider>
     </ErrorBoundary>
   </React.StrictMode>,
 );

@@ -22,6 +22,7 @@ export default defineConfig(async () => ({
         settings: resolve(__dirname, "settings.html"),
         debug: resolve(__dirname, "debug.html"),
         pty_debug: resolve(__dirname, "pty_debug.html"),
+        tmux_debug: resolve(__dirname, "tmux_debug.html"),
       },
     },
   },

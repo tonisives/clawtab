@@ -44,6 +44,15 @@
         "visible": false,
         "center": true,
         "title": "ClawTab PTY Debug"
+      },
+      {
+        "label": "tmux_debug",
+        "url": "/tmux_debug.html",
+        "width": 1100,
+        "height": 760,
+        "visible": false,
+        "center": true,
+        "title": "ClawTab Tmux Debug"
       }
     ],
     "security": {

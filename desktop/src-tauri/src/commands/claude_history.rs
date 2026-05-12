@@ -91,6 +91,16 @@ fn message_role(msg: &MessageField) -> Option<&str> {
     }
 }
 
+fn is_noise_message(s: &str) -> bool {
+    let t = s.trim_start();
+    t.starts_with("<local-command")
+        || t.starts_with("<command-")
+        || t.starts_with("<system-reminder")
+        || t.starts_with("<!-- Auto-generated")
+        || t.starts_with("Unknown command:")
+        || t.starts_with("This session is being continued")
+}
+
 fn first_user_message(file: &Path) -> (Option<String>, Option<String>) {
     let f = match fs::File::open(file) {
         Ok(f) => f,
@@ -99,7 +109,7 @@ fn first_user_message(file: &Path) -> (Option<String>, Option<String>) {
     let reader = BufReader::new(f);
     let mut cwd: Option<String> = None;
     let mut first_msg: Option<String> = None;
-    for line in reader.lines().take(50).flatten() {
+    for line in reader.lines().take(200).flatten() {
         let entry: JsonlEntry = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(_) => continue,
@@ -129,7 +139,7 @@ fn first_user_message(file: &Path) -> (Option<String>, Option<String>) {
             }
             if let Some(t) = extract_text_from_message(m) {
                 let trimmed = t.trim();
-                if trimmed.is_empty() || trimmed.starts_with("<local-command-") {
+                if trimmed.is_empty() || is_noise_message(trimmed) {
                     continue;
                 }
                 first_msg = Some(truncate(trimmed, 240));
@@ -289,15 +299,24 @@ pub async fn search_claude_history(
     let mut entries: Vec<(PathBuf, i64)> =
         files.into_iter().map(|p| (p.clone(), mtime_ms(&p))).collect();
     entries.sort_by(|a, b| b.1.cmp(&a.1));
-    entries.truncate(cap);
 
-    let mut hits = Vec::with_capacity(entries.len());
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut hits: Vec<HistoryHit> = Vec::with_capacity(cap);
     for (path, mtime) in entries {
+        if hits.len() >= cap {
+            break;
+        }
+        if is_subagent_path(&path) {
+            continue;
+        }
         let session_id = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
+        if session_id.is_empty() || !seen.insert(session_id.clone()) {
+            continue;
+        }
         let project_dir = path
             .parent()
             .and_then(|p| p.file_name())
@@ -318,4 +337,13 @@ pub async fn search_claude_history(
     }
 
     Ok(hits)
+}
+
+fn is_subagent_path(path: &Path) -> bool {
+    path.components().any(|c| c.as_os_str() == "subagents")
+        || path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.starts_with("agent-"))
+            .unwrap_or(false)
 }

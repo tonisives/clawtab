@@ -25,6 +25,16 @@ export function useJobsTabSettings() {
       return {};
     }
   });
+  const [pinnedItems, setPinnedItems] = useState<string[]>(() => {
+    const raw = localStorage.getItem("desktop_pinned_items");
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+    } catch {
+      return [];
+    }
+  });
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<JobSortMode>("name");
 
@@ -78,6 +88,19 @@ export function useJobsTabSettings() {
     localStorage.setItem("desktop_process_order", JSON.stringify(next));
   }, []);
 
+  const persistPinnedItems = useCallback((next: string[]) => {
+    setPinnedItems(next);
+    localStorage.setItem("desktop_pinned_items", JSON.stringify(next));
+  }, []);
+
+  const togglePin = useCallback((key: string) => {
+    setPinnedItems((prev) => {
+      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      localStorage.setItem("desktop_pinned_items", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const handleHideGroup = useCallback((group: string) => {
     setHiddenGroups((prev) => {
       const next = new Set(prev);
@@ -108,11 +131,14 @@ export function useJobsTabSettings() {
     groupOrder,
     jobOrder,
     processOrder,
+    pinnedItems,
     sortMode,
     setSortMode,
     hiddenGroups,
     persistJobOrder,
     persistProcessOrder,
+    persistPinnedItems,
+    togglePin,
     handleHideGroup,
     handleUnhideGroup,
   };

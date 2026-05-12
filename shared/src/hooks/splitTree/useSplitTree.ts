@@ -97,6 +97,8 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     onCollapseRef,
     setSplitTreeChecked,
     setFocusedLeafId,
+    zoomSnapshotRef: zoom.zoomSnapshotRef,
+    setZoomSnapshot: zoom.setZoomSnapshot,
   });
 
   const derived = useDerivedData({ splitTree, focusedLeafId, currentContent });
@@ -123,6 +125,8 @@ export function useSplitTree(options: UseSplitTreeOptions) {
     openContent: mutations.openContent,
     replaceContent: mutations.replaceContent,
     toggleZoomLeaf: zoom.toggleZoomLeaf,
+    zoomSnapshot: zoom.zoomSnapshot,
+    getZoomedLeafId: zoom.getZoomedLeafId,
     selectedItems: derived.selectedItems,
     focusedItemKey: derived.focusedItemKey,
     paneColors: derived.paneColors,

@@ -5,6 +5,7 @@ import { DraggableSplitPane } from "../../DraggableCards";
 import { JobEditorPane } from "../components/JobEditorPane";
 import { ErrorPlaceholder } from "./ErrorPlaceholder";
 import type { PaneContext } from "./paneTypes";
+import { makeZoomAwareClose } from "./zoomAwareClose";
 import type { Job } from "../../../types";
 
 type DragHandleProps = {
@@ -31,7 +32,7 @@ export function JobPane({ content, ctx }: Props) {
   if (!job) {
     const onClose = mode.kind === "leaf"
       ? () => split.handleClosePane(mode.leafId)
-      : () => viewing.setViewingJob(null);
+      : makeZoomAwareClose(split, () => viewing.setViewingJob(null));
     return <ErrorPlaceholder message="Job not found" onClose={onClose} headerLeftInset={headerLeftInset} />;
   }
 
@@ -71,7 +72,7 @@ export function JobPane({ content, ctx }: Props) {
 
   const close = mode.kind === "leaf"
     ? () => split.handleClosePane(mode.leafId)
-    : () => viewing.setViewingJob(null);
+    : makeZoomAwareClose(split, () => viewing.setViewingJob(null));
 
   const onEdit = mode.kind === "leaf"
     ? () => leafJobEditing.startEditing(mode.leafId, job)

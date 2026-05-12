@@ -6,6 +6,7 @@ import { DraggableSplitPane } from "../../DraggableCards";
 import { ErrorPlaceholder } from "./ErrorPlaceholder";
 import { ProcessTmuxView } from "./ProcessTmuxView";
 import type { PaneContext } from "./paneTypes";
+import { makeZoomAwareClose } from "./zoomAwareClose";
 
 type DragHandleProps = {
   ref?: (node: HTMLElement | null) => void;
@@ -34,7 +35,7 @@ export function TerminalPane({ content, ctx }: Props) {
   if (!shell && !proc) {
     const onClose = mode.kind === "leaf"
       ? () => split.handleClosePane(mode.leafId)
-      : () => { viewing.setViewingProcess(null); viewing.setViewingShell(null); };
+      : makeZoomAwareClose(split, () => { viewing.setViewingProcess(null); viewing.setViewingShell(null); });
     return <ErrorPlaceholder message="Tmux pane not found" onClose={onClose} headerLeftInset={headerLeftInset} />;
   }
 
@@ -46,7 +47,7 @@ export function TerminalPane({ content, ctx }: Props) {
 
   const close = mode.kind === "leaf"
     ? () => split.handleClosePane(mode.leafId)
-    : () => viewing.setViewingShell(null);
+    : makeZoomAwareClose(split, () => viewing.setViewingShell(null));
 
   const zoom = mode.kind === "leaf"
     ? () => split.toggleZoomLeaf(mode.leafId)

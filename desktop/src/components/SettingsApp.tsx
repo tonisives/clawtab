@@ -4,7 +4,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
 import { JobsTab } from "./JobsTab";
-import { WorkspaceProvider } from "../workspace/WorkspaceManager";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings, readStoredSettingsSubTab } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
@@ -375,26 +374,24 @@ export function SettingsApp() {
   );
 
   return (
-    <WorkspaceProvider>
-      <div className="settings-container">
-        <div className="tab-content">
-          <JobsTab
-            key={jobsResetKey}
-            pendingTemplateId={pendingTemplateId}
-            onTemplateHandled={() => setPendingTemplateId(null)}
-            createJobKey={createJobKey}
-            importCwtKey={importCwtKey}
-            pendingPaneId={pendingPaneId}
-            onPaneHandled={() => setPendingPaneId(null)}
-            navBar={navBar}
-            rightPanelOverlay={rightPanelOverlay}
-            onJobSelected={() => setActiveTab("jobs")}
-            onOpenSettings={() => {
-              setActiveTab((current) => (current === "settings" ? "jobs" : "settings"));
-            }}
-          />
-        </div>
+    <div className="settings-container">
+      <div className="tab-content">
+        <JobsTab
+          key={jobsResetKey}
+          pendingTemplateId={pendingTemplateId}
+          onTemplateHandled={() => setPendingTemplateId(null)}
+          createJobKey={createJobKey}
+          importCwtKey={importCwtKey}
+          pendingPaneId={pendingPaneId}
+          onPaneHandled={() => setPendingPaneId(null)}
+          navBar={navBar}
+          rightPanelOverlay={rightPanelOverlay}
+          onJobSelected={() => setActiveTab("jobs")}
+          onOpenSettings={() => {
+            setActiveTab((current) => (current === "settings" ? "jobs" : "settings"));
+          }}
+        />
       </div>
-    </WorkspaceProvider>
+    </div>
   );
 }

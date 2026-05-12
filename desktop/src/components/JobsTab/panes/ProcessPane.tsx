@@ -3,6 +3,7 @@ import { ErrorPlaceholder } from "./ErrorPlaceholder";
 import { PendingProcessPane } from "./PendingProcessPane";
 import { ProcessTmuxView } from "./ProcessTmuxView";
 import type { PaneContext } from "./paneTypes";
+import { makeZoomAwareClose } from "./zoomAwareClose";
 
 interface Props {
   content: Extract<PaneContent, { kind: "process" }>;
@@ -20,7 +21,7 @@ export function ProcessPane({ content, ctx }: Props) {
   if (!proc) {
     const onClose = mode.kind === "leaf"
       ? () => split.handleClosePane(mode.leafId)
-      : () => viewing.setViewingProcess(null);
+      : makeZoomAwareClose(split, () => viewing.setViewingProcess(null));
     return <ErrorPlaceholder message="Process not found" onClose={onClose} headerLeftInset={headerLeftInset} />;
   }
 
