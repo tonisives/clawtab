@@ -14,6 +14,7 @@ export interface Transport {
   deleteJob(name: string): Promise<void>;
   getRunHistory(name: string): Promise<RunRecord[]>;
   getRunDetail(runId: string): Promise<RunDetail | null>;
+  tailRunLog?(runId: string, offset: number): Promise<{ content: string; offset: number }>;
   detectProcesses(): Promise<DetectedProcess[]>;
   sendInput(name: string, text: string, freetext?: string): Promise<void>;
   subscribeLogs(name: string, onChunk: (content: string) => void): () => void;

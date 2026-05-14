@@ -27,9 +27,11 @@ function PinIcon({ filled }: { filled: boolean }) {
 function PinButton({
   pinned,
   onToggle,
+  inFrame,
 }: {
   pinned: boolean;
   onToggle: () => void;
+  inFrame?: boolean;
 }) {
   return (
     <button
@@ -43,18 +45,15 @@ function PinButton({
       }}
       title={pinned ? "Unpin" : "Pin to top"}
       style={{
-        position: "absolute",
-        top: 8,
-        right: 28,
-        width: 14,
-        height: 14,
+        ...(inFrame
+          ? { width: 18, height: 18 }
+          : { position: "absolute", top: 8, right: 28, width: 14, height: 14, zIndex: 6 }),
         borderRadius: 4,
         border: "none",
         background: "transparent",
         color: pinned ? "var(--accent, #58a6ff)" : "rgba(255,255,255,0.5)",
         padding: 0,
         cursor: "pointer",
-        zIndex: 6,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -63,6 +62,27 @@ function PinButton({
     >
       <PinIcon filled={pinned} />
     </button>
+  );
+}
+
+function ShellControlsFrame({ pinned, onTogglePin }: { pinned: boolean; onTogglePin: () => void }) {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: 6,
+        right: 30,
+        height: 18,
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        zIndex: 6,
+        pointerEvents: "auto",
+      }}
+    >
+      <PinButton pinned={pinned} onToggle={onTogglePin} inFrame />
+    </div>
   );
 }
 
@@ -386,7 +406,7 @@ export function DraggableShellCard({
         onMoveToWorkspace={onMoveToWorkspace}
         moveToWorkspaceLabel={moveToWorkspaceLabel}
       />
-      {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
+      {onTogglePin ? <ShellControlsFrame pinned={!!pinned} onTogglePin={onTogglePin} /> : null}
     </div>
   );
 }

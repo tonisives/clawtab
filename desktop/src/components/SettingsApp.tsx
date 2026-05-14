@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { onOpenUrl, getCurrent } from "@tauri-apps/plugin-deep-link";
 import { JobsTab } from "./JobsTab";
+import { MindMapPanel } from "./MindMap";
 import { SecretsPanel } from "./SecretsPanel";
 import { GeneralSettings, readStoredSettingsSubTab } from "./GeneralSettings";
 import { SkillsPanel } from "./SkillsPanel";
@@ -15,8 +16,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { GearIcon } from "./icons";
 import clawIcon from "../assets/icon.png";
 
-type TabId = "jobs" | "secrets" | "skills" | "usage" | "settings";
-const tabIds: TabId[] = ["jobs", "secrets", "skills", "usage", "settings"];
+type TabId = "jobs" | "mindmap" | "secrets" | "skills" | "usage" | "settings";
+const tabIds: TabId[] = ["jobs", "mindmap", "secrets", "skills", "usage", "settings"];
 const SETTINGS_ACTIVE_TAB_KEY = "desktop_settings_active_tab";
 const PANEL_SCROLL_PREFIX = "desktop_settings_panel_scroll";
 
@@ -51,6 +52,20 @@ const tabIcons: Record<TabId, React.ReactNode> = {
     <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10" />
       <path d="M12 6v6l4 2" />
+    </svg>
+  ),
+  // sparkles / constellation
+  mindmap: (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="2.5" />
+      <circle cx="5" cy="6" r="1.6" />
+      <circle cx="19" cy="6" r="1.6" />
+      <circle cx="5" cy="18" r="1.6" />
+      <circle cx="19" cy="18" r="1.6" />
+      <line x1="12" y1="12" x2="5" y2="6" />
+      <line x1="12" y1="12" x2="19" y2="6" />
+      <line x1="12" y1="12" x2="5" y2="18" />
+      <line x1="12" y1="12" x2="19" y2="18" />
     </svg>
   ),
   // lock.shield (SF: lock.shield)
@@ -273,6 +288,7 @@ export function SettingsApp() {
   }
 
   const tabs: { id: TabId; label: string }[] = [
+    { id: "mindmap", label: "Mind Map" },
     { id: "secrets", label: "Secrets" },
     { id: "skills", label: "Skills" },
     { id: "usage", label: "Usage" },
@@ -357,6 +373,7 @@ export function SettingsApp() {
 
   const rightPanelOverlay = (
     <>
+      {renderPanel("mindmap", "Mind Map", <MindMapPanel onRequestJobsTab={() => setActiveTab("jobs")} />)}
       {renderPanel("secrets", "Secrets", <SecretsPanel />)}
       {renderPanel("skills", "Skills", <SkillsPanel />)}
       {renderPanel("usage", "Usage", <UsagePanel />)}

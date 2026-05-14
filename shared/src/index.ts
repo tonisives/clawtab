@@ -20,7 +20,7 @@ export { spacing, radius } from "./theme/spacing";
 export { PANE_COLORS, assignPaneColors } from "./theme/paneColors";
 
 // Utils
-export { formatTime, formatDuration, timeAgo, shortenPath, compactPath, compactCron } from "./util/format";
+export { formatTime, formatDuration, timeAgo, shortenPath, compactPath, fitPath, compactCron } from "./util/format";
 export { nextCronDate, formatNextRun, describeCron, cronTooltip } from "./util/cron";
 export { groupJobs, sortGroupNames, findYesOption, isFreetextOption, typeIcon } from "./util/jobs";
 export { collapseSeparators, stripSeparators, truncateLogLines } from "./util/logs";
@@ -54,7 +54,7 @@ export { JobCard } from "./components/JobCard";
 export { RunningJobCard } from "./components/RunningJobCard";
 export { ProcessCard } from "./components/ProcessCard";
 export { ShellCard } from "./components/ShellCard";
-export { JobKindIcon, kindForJob, kindForProcess, kindForShell } from "./components/JobKindIcon";
+export { JobKindIcon, kindForJob, kindForProcess, kindForShell, type JobKind } from "./components/JobKindIcon";
 export { LogViewer } from "./components/LogViewer";
 export { MessageInput } from "./components/MessageInput";
 export { ParamsDialog } from "./components/ParamsDialog";

@@ -144,7 +144,12 @@ export function JobsSidebar({
 
   const handleMoveProcessToWorkspace = useCallback((paneId: string, groupKey: string) => {
     invoke("set_detected_process_group", { paneId, group: groupKey }).catch(() => {});
-  }, []);
+    // Optimistically update local shellPanes so the card moves immediately;
+    // backend poll re-confirms within 5s.
+    lifecycle.setShellPanes((prev) =>
+      prev.map((p) => (p.pane_id === paneId ? { ...p, matched_group: groupKey } : p)),
+    );
+  }, [lifecycle.setShellPanes]);
 
   const openElsewhereContentKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -455,6 +460,8 @@ export function JobsSidebar({
       }}
       dragActive={split.isDragging}
       openElsewhereContentKeys={openElsewhereContentKeys}
+      groupTabView={settings.groupTabView}
+      onGroupTabViewChange={settings.setGroupTabViewFor}
     />
   );
 }

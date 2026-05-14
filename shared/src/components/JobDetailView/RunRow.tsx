@@ -18,6 +18,7 @@ export const RunRow = memo(function RunRow({
   run,
   transport,
   currentState,
+  currentRunId,
   defaultExpanded,
   onZoom,
   renderRunTerminal,
@@ -27,14 +28,20 @@ export const RunRow = memo(function RunRow({
   run: RunRecord;
   transport: Transport;
   currentState: string;
+  currentRunId?: string;
   defaultExpanded?: boolean;
   onZoom?: (run: RunRecord, logContent: string) => void;
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
   onOpenLiveRunZoom?: (run: RunRecord, pane: ShellPane) => void;
   onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
 }) {
-  const color = runStatusColor(run, currentState);
-  const label = runStatusLabel(run, currentState);
+  // Only the current run can be "running"; everything else with no finished_at
+  // is genuinely interrupted (the executor task died before it could update
+  // finished_at, e.g. daemon restart).
+  const isCurrentRun = !!currentRunId && run.id === currentRunId;
+  const effectiveState = isCurrentRun ? currentState : "idle";
+  const color = runStatusColor(run, effectiveState);
+  const label = runStatusLabel(run, effectiveState);
   const duration = formatDuration(run.started_at, run.finished_at);
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
   const [detail, setDetail] = useState<RunDetail | null>(null);
@@ -46,6 +53,7 @@ export const RunRow = memo(function RunRow({
   const scrollRef = useRef<ScrollView>(null);
   const runWebRef = useRef<HTMLElement | null>(null);
   const paneId = run.pane_id ?? detail?.pane_id ?? null;
+  const [liveLog, setLiveLog] = useState<string>("");
 
   useEffect(() => {
     if (!transport.getExistingPaneInfo || !paneId) {
@@ -80,6 +88,40 @@ export const RunRow = memo(function RunRow({
     }
   }, [defaultExpanded, run.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Live-tail the on-disk log for binary runs that are still going (no tmux
+  // pane, no finished_at). Stops once the run finishes or the row collapses.
+  const isFinishedForTail = !!run.finished_at || run.exit_code != null;
+  const tailEligible =
+    expanded
+    && !livePane
+    && !isFinishedForTail
+    && !!(run.log_path ?? detail?.log_path)
+    && !!transport.tailRunLog;
+  useEffect(() => {
+    if (!tailEligible || !transport.tailRunLog) return;
+    let cancelled = false;
+    let offset = 0;
+    setLiveLog("");
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const chunk = await transport.tailRunLog!(run.id, offset);
+        if (!cancelled && chunk.content) {
+          setLiveLog((prev) => prev + chunk.content);
+        }
+        if (!cancelled) offset = chunk.offset;
+      } catch (e) {
+        console.warn("tail_run_log failed:", e);
+      }
+    };
+    poll();
+    const handle = setInterval(poll, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(handle);
+    };
+  }, [tailEligible, run.id, transport]);
+
   useEffect(() => {
     if (!expanded || !detail) return;
     if (isWeb) {
@@ -96,7 +138,9 @@ export const RunRow = memo(function RunRow({
     }
   }, [expanded, detail]);
 
-  const logContentRaw = detail
+  const logContentRaw = liveLog
+    ? liveLog
+    : detail
     ? [detail.stdout, detail.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
     : run.stdout || run.stderr
       ? [run.stdout, run.stderr].filter(Boolean).join("\n--- stderr ---\n") || "(no output)"
@@ -111,7 +155,8 @@ export const RunRow = memo(function RunRow({
 
   const hasStoredLogs = !!logContentRaw;
   const isFinishedRun = !!run.finished_at || run.exit_code != null;
-  const canLoadStoredLogs = isFinishedRun || hasStoredLogs;
+  const hasLogFile = !!run.log_path || !!detail?.log_path;
+  const canLoadStoredLogs = isFinishedRun || hasStoredLogs || hasLogFile;
   const canExpand = !!livePane || (!!paneId && paneLookupPending) || canLoadStoredLogs;
 
   useEffect(() => {
@@ -122,7 +167,11 @@ export const RunRow = memo(function RunRow({
     if (!canExpand) return;
     const next = !expanded;
     setExpanded(next);
-    if (next && !detail && !loading && canLoadStoredLogs) {
+    // For unfinished binary runs we tail the on-disk log instead of pulling
+    // a static detail snapshot - the tail effect handles the initial read.
+    const willTail =
+      next && !livePane && !isFinishedRun && !!(run.log_path ?? detail?.log_path) && !!transport.tailRunLog;
+    if (next && !detail && !loading && canLoadStoredLogs && !willTail) {
       setLoading(true);
       transport.getRunDetail(run.id).then((d) => {
         setDetail(d);

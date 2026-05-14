@@ -62,6 +62,7 @@ export interface RunRecord {
   stdout?: string;
   stderr?: string;
   pane_id?: string | null;
+  log_path?: string | null;
 }
 
 export interface RunDetail {
@@ -74,4 +75,5 @@ export interface RunDetail {
   stdout: string;
   stderr: string;
   pane_id?: string | null;
+  log_path?: string | null;
 }

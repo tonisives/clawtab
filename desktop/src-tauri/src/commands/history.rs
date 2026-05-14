@@ -12,7 +12,79 @@ pub fn get_history(state: State<AppState>) -> Result<Vec<RunRecord>, String> {
 #[tauri::command]
 pub fn get_run_detail(state: State<AppState>, id: String) -> Result<Option<RunRecord>, String> {
     let history = state.history.lock().unwrap();
-    history.get_by_id(&id)
+    let mut record = match history.get_by_id(&id)? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    // Fallback: if DB stdout/stderr are empty (e.g. the run was interrupted
+    // before the executor could flush its captured buffers, or the row predates
+    // streaming logs), pull the content from the on-disk log file if present.
+    if record.stdout.is_empty() && record.stderr.is_empty() {
+        if let Some(ref path) = record.log_path {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                record.stdout = content;
+            }
+        }
+    }
+
+    Ok(Some(record))
+}
+
+/// Tail a run's on-disk log starting at `offset` bytes. Used for live viewing
+/// of binary jobs while they're still running.
+#[tauri::command]
+pub fn tail_run_log(
+    state: State<AppState>,
+    run_id: String,
+    offset: u64,
+) -> Result<TailChunk, String> {
+    let log_path = {
+        let h = state.history.lock().unwrap();
+        let rec = h
+            .get_by_id(&run_id)?
+            .ok_or_else(|| format!("Run '{}' not found", run_id))?;
+        rec.log_path
+    };
+    let Some(path) = log_path else {
+        return Ok(TailChunk {
+            content: String::new(),
+            offset,
+        });
+    };
+    let Ok(metadata) = std::fs::metadata(&path) else {
+        return Ok(TailChunk {
+            content: String::new(),
+            offset,
+        });
+    };
+    let size = metadata.len();
+    // File rotated/truncated: start over from 0.
+    let start = if offset > size { 0 } else { offset };
+    if start >= size {
+        return Ok(TailChunk {
+            content: String::new(),
+            offset: size,
+        });
+    }
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file =
+        std::fs::File::open(&path).map_err(|e| format!("Failed to open log file: {}", e))?;
+    file.seek(SeekFrom::Start(start))
+        .map_err(|e| format!("Failed to seek log file: {}", e))?;
+    let mut buf = Vec::with_capacity((size - start) as usize);
+    file.read_to_end(&mut buf)
+        .map_err(|e| format!("Failed to read log file: {}", e))?;
+    Ok(TailChunk {
+        content: String::from_utf8_lossy(&buf).into_owned(),
+        offset: size,
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct TailChunk {
+    pub content: String,
+    pub offset: u64,
 }
 
 #[tauri::command]

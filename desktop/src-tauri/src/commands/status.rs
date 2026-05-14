@@ -28,7 +28,7 @@ async fn get_status_via_ipc(name: &str) -> Result<JobStatus, String> {
 
 #[tauri::command]
 pub async fn get_running_job_logs(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     name: String,
 ) -> Result<String, String> {
     let status = get_status_via_ipc(&name).await?;
@@ -41,7 +41,18 @@ pub async fn get_running_job_logs(
             let capture = crate::tmux::capture_pane(&session, &pane_id, 200)?;
             Ok(capture.trim().to_string())
         }
-        JobStatus::Running { .. } => Ok(String::new()),
+        // Binary jobs have no tmux pane. Fall back to the streaming log file
+        // we now record for the currently-running run.
+        JobStatus::Running { run_id, .. } => {
+            let log_path = {
+                let h = state.history.lock().unwrap();
+                h.get_by_id(&run_id)?.and_then(|r| r.log_path)
+            };
+            let Some(path) = log_path else {
+                return Ok(String::new());
+            };
+            Ok(std::fs::read_to_string(&path).unwrap_or_default())
+        }
         _ => Err("Job is not running".to_string()),
     }
 }

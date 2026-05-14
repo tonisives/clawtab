@@ -62,6 +62,7 @@ export interface ExistingPaneInfo {
   tmux_session: string;
   window_name: string;
   pane_title?: string | null;
+  matched_group?: string | null;
 }
 
 export type SecretSource = "keychain";

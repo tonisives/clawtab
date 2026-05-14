@@ -176,10 +176,16 @@ export interface JobListViewProps {
    *  currently open in a workspace other than the active one. Used to visually
    *  mark those items so the user knows they're live elsewhere. */
   openElsewhereContentKeys?: Set<string>;
+  /** Persisted per-group choice between the "tabs" view (shells/processes/agent)
+   *  and the "jobs" view (configured RemoteJobs). Only shown when a group has
+   *  more than one RemoteJob. */
+  groupTabView?: Record<string, "tabs" | "jobs">;
+  onGroupTabViewChange?: (group: string, view: "tabs" | "jobs") => void;
 }
 
 type ListItem =
   | { kind: "header"; group: string; displayGroup: string; folderPath?: string }
+  | { kind: "group-tab-toggle"; group: string; view: "tabs" | "jobs" }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: DetectedProcess; inGroup?: boolean }
   | { kind: "shell"; shell: ShellPane }
@@ -267,6 +273,8 @@ export function JobListView({
   onActivateWorkspace,
   dragActive,
   openElsewhereContentKeys,
+  groupTabView,
+  onGroupTabViewChange,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -644,20 +652,36 @@ export function JobListView({
           result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath });
         }
         if (!collapsedGroups.has(entry.displayGroup)) {
-          let jobIdx = 0;
-          for (const job of entry.jobs) {
-            result.push({ kind: "job", job, idx: jobIdx++ });
-          }
-          for (const proc of entry.procs) {
-            result.push({ kind: "process", process: proc, inGroup: true });
-          }
-          for (const shell of matchedShellsByGroup.get(entry.group) ?? []) {
-            result.push({ kind: "shell", shell });
-          }
-          if (onRunAgent) {
-            const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
-            if (groupWorkDir) {
-              result.push({ kind: "group-agent", workDir: groupWorkDir });
+          const groupShells = matchedShellsByGroup.get(entry.group) ?? [];
+          const hasTabsContent = entry.procs.length > 0 || groupShells.length > 0;
+          const hasJobs = entry.jobs.length > 0;
+          const persisted = groupTabView?.[entry.group];
+          // Default: if there's no tabs content but there are jobs, show jobs;
+          // otherwise show tabs.
+          const defaultView: "tabs" | "jobs" = !hasTabsContent && hasJobs ? "jobs" : "tabs";
+          let view: "tabs" | "jobs" = persisted ?? defaultView;
+          // Guard against showing an empty side: if user picked jobs but there
+          // are none, fall back to tabs (and vice versa).
+          if (view === "jobs" && !hasJobs) view = "tabs";
+          if (view === "tabs" && !hasTabsContent && hasJobs) view = "jobs";
+          result.push({ kind: "group-tab-toggle", group: entry.group, view });
+          if (view === "jobs") {
+            let jobIdx = 0;
+            for (const job of entry.jobs) {
+              result.push({ kind: "job", job, idx: jobIdx++ });
+            }
+          } else {
+            for (const proc of entry.procs) {
+              result.push({ kind: "process", process: proc, inGroup: true });
+            }
+            for (const shell of groupShells) {
+              result.push({ kind: "shell", shell });
+            }
+            if (onRunAgent) {
+              const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
+              if (groupWorkDir) {
+                result.push({ kind: "group-agent", workDir: groupWorkDir });
+              }
             }
           }
         }
@@ -1011,6 +1035,8 @@ export function JobListView({
       const key =
         item.kind === "header"
           ? `h_${item.group}`
+          : item.kind === "group-tab-toggle"
+            ? `gtt_${item.group}`
           : item.kind === "shell"
               ? `s_${item.shell.pane_id}`
             : item.kind === "group-agent"
@@ -1122,6 +1148,50 @@ export function JobListView({
                         </TouchableOpacity>
                       )}
                     </TouchableOpacity>
+                  </View>
+                );
+              }
+
+              if (item.kind === "group-tab-toggle") {
+                const isTabs = item.view === "tabs";
+                const renderSeg = (label: string, active: boolean, onPress: () => void) => (
+                  <TouchableOpacity
+                    onPress={onPress}
+                    activeOpacity={0.7}
+                    style={{
+                      paddingHorizontal: spacing.sm,
+                      paddingVertical: 2,
+                      borderRadius: 4,
+                      backgroundColor: active ? colors.surfaceHover : "transparent",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: active ? "600" : "400",
+                        color: active ? colors.text : colors.textMuted,
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+                return (
+                  <View
+                    key={key}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: spacing.xs,
+                      paddingLeft: spacing.md,
+                      paddingTop: spacing.xs,
+                      paddingBottom: spacing.xs,
+                    }}
+                  >
+                    {renderSeg("tabs", isTabs, () => onGroupTabViewChange?.(item.group, "tabs"))}
+                    <Text style={{ color: colors.textMuted, fontSize: 11 }}>|</Text>
+                    {renderSeg("jobs", !isTabs, () => onGroupTabViewChange?.(item.group, "jobs"))}
                   </View>
                 );
               }
@@ -1324,6 +1394,11 @@ export function JobListView({
         onToggleGroup(displayGroup);
         return; // Effect 2 will scroll once collapsedGroups updates
       }
+      // Make sure the jobs view is active so the target card is in the DOM.
+      if ((groupTabView?.[groupKey] ?? "tabs") !== "jobs") {
+        onGroupTabViewChange?.(groupKey, "jobs");
+        return; // Effect 2 will scroll once items update
+      }
     }
 
     // Expand collapsed detected-process group if needed
@@ -1346,7 +1421,7 @@ export function JobListView({
     }
 
     // Group already expanded — scroll immediately (no state change needed)
-  }, [scrollToSlug, jobs, collapsedGroups, onToggleGroup, detectedProcesses, shellPanes]);
+  }, [scrollToSlug, jobs, collapsedGroups, onToggleGroup, detectedProcesses, shellPanes, groupTabView, onGroupTabViewChange]);
 
   // Effect 2: scroll+highlight whenever collapsedGroups changes OR scrollToSlug changes
   // (covers both: already-expanded items on scrollToSlug change, and newly-expanded items)

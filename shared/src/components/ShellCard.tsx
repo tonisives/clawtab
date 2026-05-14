@@ -1,13 +1,59 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { ShellPane } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
-import { shortenPath } from "../util/format";
+import { fitPath, shortenPath } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { JobKindIcon } from "./JobKindIcon";
 
 const isWeb = Platform.OS === "web";
+
+// Lazily-allocated 2d canvas for sync text measurement on web. Reused across cards.
+let measureCanvas: HTMLCanvasElement | null = null;
+function measureTextPx(text: string, font: string): number {
+  if (!isWeb || typeof document === "undefined") return text.length * 7;
+  if (!measureCanvas) measureCanvas = document.createElement("canvas");
+  const ctx = measureCanvas.getContext("2d");
+  if (!ctx) return text.length * 7;
+  ctx.font = font;
+  return ctx.measureText(text).width;
+}
+
+function useFittedPath(rawPath: string): { ref: (node: any) => void; text: string } {
+  const [text, setText] = useState(() => shortenPath(rawPath));
+  const elRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!isWeb) {
+      setText(shortenPath(rawPath));
+      return;
+    }
+    const el = elRef.current;
+    if (!el) return;
+
+    const recompute = () => {
+      const width = el.clientWidth;
+      if (width <= 0) {
+        setText(shortenPath(rawPath));
+        return;
+      }
+      const cs = window.getComputedStyle(el);
+      const font = `${cs.fontStyle} ${cs.fontVariant} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      setText(fitPath(rawPath, width, (t) => measureTextPx(t, font)));
+    };
+
+    recompute();
+    const observer = new ResizeObserver(recompute);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [rawPath]);
+
+  const ref = (node: any) => {
+    elRef.current = node ?? null;
+  };
+  return { ref, text };
+}
 
 export function ShellCard({
   shell,
@@ -30,7 +76,9 @@ export function ShellCard({
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
 }) {
-  const displayName = shell.display_name ?? shell.pane_title ?? shortenPath(shell.cwd);
+  const explicitName = shell.display_name ?? shell.pane_title ?? null;
+  const fitted = useFittedPath(shell.cwd);
+  const displayName = explicitName ?? fitted.text;
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<any>(null);
@@ -41,17 +89,19 @@ export function ShellCard({
 
   return (
     <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
-      <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity style={[styles.row, showMenu && styles.rowWithMenu]} onPress={onPress} activeOpacity={0.7}>
         <JobKindIcon kind="shell" />
         <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>
+          <Text ref={explicitName ? undefined : fitted.ref as any} style={styles.name} numberOfLines={1}>
             {displayName}
           </Text>
           <Text style={styles.subtitle} numberOfLines={1}>
             Shell pane
           </Text>
         </View>
-        {showMenu ? (
+      </TouchableOpacity>
+      {showMenu ? (
+        <View style={styles.controlsFrame} pointerEvents="box-none">
           <TouchableOpacity
             ref={menuBtnRef}
             onPress={(e: any) => {
@@ -71,8 +121,8 @@ export function ShellCard({
           >
             <Text style={styles.moreBtnText}>{"\u2026"}</Text>
           </TouchableOpacity>
-        ) : null}
-      </TouchableOpacity>
+        </View>
+      ) : null}
       {menuOpen && showMenu && (
         <PopupMenu
           triggerRef={menuBtnRef}
@@ -100,19 +150,29 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  rowWithMenu: { paddingRight: 44 },
   info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 13, fontWeight: "500" },
   subtitle: { color: colors.textMuted, fontSize: 11 },
+  controlsFrame: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    height: 18,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
   moreBtn: {
     width: 20,
-    height: 20,
+    height: 18,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: -4,
   },
   moreBtnText: {
     color: colors.textSecondary,
     fontSize: 14,
-    lineHeight: 14,
+    lineHeight: 18,
+    textAlign: "center",
   },
 });

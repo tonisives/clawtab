@@ -4,12 +4,9 @@ import { JobKindIcon, PopupMenu } from "@clawtab/shared";
 import type { ProcessProvider } from "@clawtab/shared";
 import {
   buildModelOptions,
-  labelForProviderModel,
-  type ModelOption,
 } from "./JobEditor/utils";
 
 const LAST_RUN_AGENT_FOLDER_KEY = "clawtab_last_run_agent_folder";
-const EMPTY_AGENT_QUERY_KEY = "clawtab_empty_agent_query";
 
 interface EmptyDetailAgentProps {
   onRunAgent: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) => void | Promise<void>;
@@ -22,41 +19,17 @@ interface EmptyDetailAgentProps {
   activeWorkspaceId?: string;
 }
 
-const LINE_HEIGHT = 18;
-const VERTICAL_PADDING = 16;
-const EXPANDED_MAX_HEIGHT = 400;
-
-export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, defaultModel, enabledModels = {}, focusSignal, folderGroups = [], activeWorkspaceId }: EmptyDetailAgentProps) {
-  const [prompt, setPromptState] = useState(() => {
-    if (typeof localStorage === "undefined") return "";
-    try { return localStorage.getItem(EMPTY_AGENT_QUERY_KEY) ?? ""; } catch { return ""; }
-  });
-  const setPrompt = useCallback((value: string) => {
-    setPromptState(value);
-    if (typeof localStorage === "undefined") return;
-    try {
-      if (value) localStorage.setItem(EMPTY_AGENT_QUERY_KEY, value);
-      else localStorage.removeItem(EMPTY_AGENT_QUERY_KEY);
-    } catch {}
-  }, []);
-  const [sending, setSending] = useState(false);
-  const sendingRef = useRef(false);
-  const [provider, setProvider] = useState<ProcessProvider>(defaultProvider);
-  const [model, setModel] = useState<string | null>(defaultModel ?? null);
+export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, enabledModels = {}, folderGroups = [], activeWorkspaceId }: EmptyDetailAgentProps) {
   const [providers, setProviders] = useState<ProcessProvider[]>([defaultProvider]);
   const [workDir, setWorkDirState] = useState<string | null>(() => {
     if (typeof localStorage === "undefined") return null;
     return localStorage.getItem(LAST_RUN_AGENT_FOLDER_KEY);
   });
-  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
-  const [providerMenuPos, setProviderMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [folderMenuOpen, setFolderMenuOpen] = useState(false);
   const [folderMenuPos, setFolderMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const providerButtonRef = useRef<HTMLButtonElement>(null);
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const folderButtonRef = useRef<HTMLButtonElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const lastFocusSignalRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,11 +40,6 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
       .catch(() => {});
     return () => { cancelled = true; };
   }, [defaultProvider, getAgentProviders]);
-
-  useEffect(() => {
-    setProvider(defaultProvider);
-    setModel(defaultModel ?? null);
-  }, [defaultProvider, defaultModel]);
 
   const modelOptions = useMemo(
     () => buildModelOptions(providers, enabledModels),
@@ -95,6 +63,12 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
   }, []);
 
   useEffect(() => {
+    if (!activeWorkspaceId) return;
+    const match = folderOptions.find((opt) => opt.group === activeWorkspaceId);
+    if (match && match.folderPath !== workDir) setWorkDir(match.folderPath);
+  }, [activeWorkspaceId, folderOptions, setWorkDir, workDir]);
+
+  useEffect(() => {
     if (workDir) return;
     const firstFolder = folderOptions[0]?.folderPath;
     if (firstFolder) setWorkDir(firstFolder);
@@ -110,22 +84,6 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
     };
   }, [folderOptions, workDir]);
 
-  const handleRun = useCallback(async () => {
-    if (provider !== "shell" && !prompt.trim()) return;
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
-    try {
-      await onRunAgent(prompt.trim(), workDir ?? undefined, provider, model ?? undefined);
-      setPrompt("");
-    } finally {
-      sendingRef.current = false;
-      setSending(false);
-    }
-  }, [prompt, workDir, provider, model, onRunAgent]);
-
-  const canRun = provider === "shell" || !!prompt.trim();
-
   const handleFolderPick = useCallback(async () => {
     setFolderMenuOpen(false);
     const selected = await open({ directory: true, multiple: false, title: "Choose folder" });
@@ -133,187 +91,44 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
       const dir = typeof selected === "string" ? selected : (selected as string[])[0];
       setWorkDir(dir?.replace(/\/+$/, "") ?? null);
     }
-  }, []);
+  }, [setWorkDir]);
 
-  const focusTextarea = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.focus();
-    const len = el.value.length;
-    try { el.setSelectionRange(len, len); } catch {}
-  }, []);
-
-  useEffect(() => {
-    if (focusSignal === lastFocusSignalRef.current) return;
-    lastFocusSignalRef.current = focusSignal;
-    if (typeof focusSignal === "number" && focusSignal > 0) {
-      if (activeWorkspaceId) {
-        const match = folderOptions.find((opt) => opt.group === activeWorkspaceId);
-        if (match) setWorkDir(match.folderPath);
-      }
-      requestAnimationFrame(focusTextarea);
+  const launch = useCallback(async (provider: ProcessProvider, modelId: string | null) => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    try {
+      await onRunAgent("", workDir ?? undefined, provider, modelId ?? undefined);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
-  }, [focusSignal, focusTextarea, activeWorkspaceId, folderOptions, setWorkDir]);
+  }, [onRunAgent, workDir]);
 
-  const handleRunRef = useRef(handleRun);
-  useEffect(() => { handleRunRef.current = handleRun; }, [handleRun]);
-  const providerRef = useRef(provider);
-  useEffect(() => { providerRef.current = provider; }, [provider]);
-  const modelRef = useRef(model);
-  useEffect(() => { modelRef.current = model; }, [model]);
-  const modelOptionsRef = useRef(modelOptions);
-  useEffect(() => { modelOptionsRef.current = modelOptions; }, [modelOptions]);
-
-  const selectModelOption = useCallback((opt: ModelOption) => {
-    setProvider(opt.provider);
-    setModel(opt.modelId);
-    setProviderMenuOpen(false);
-  }, []);
-
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        void handleRunRef.current();
-        return;
-      }
-      if (e.altKey && e.key === "Tab") {
-        e.preventDefault();
-        e.stopPropagation();
-        const opts = modelOptionsRef.current;
-        if (opts.length <= 1) return;
-        const foundIndex = opts.findIndex((o) => o.provider === providerRef.current && o.modelId === modelRef.current);
-        const step = e.shiftKey ? -1 : 1;
-        const currentIndex = foundIndex !== -1 ? foundIndex : (step === 1 ? -1 : opts.length);
-        const nextIndex = (currentIndex + step + opts.length) % opts.length;
-        const next = opts[nextIndex];
-        setProvider(next.provider);
-        setModel(next.modelId);
-        setProviderMenuOpen(false);
-      }
-    };
-    el.addEventListener("keydown", handler, true);
-    return () => el.removeEventListener("keydown", handler, true);
-  }, []);
-
-  const MIN_LINES = 5;
-  const MIN_HEIGHT = MIN_LINES * LINE_HEIGHT + VERTICAL_PADDING;
-  const [textareaHeight, setTextareaHeight] = useState(MIN_HEIGHT);
-
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    const prev = el.style.height;
-    el.style.height = "0px";
-    const needed = el.scrollHeight;
-    el.style.height = prev;
-    const clamped = Math.min(EXPANDED_MAX_HEIGHT, Math.max(MIN_HEIGHT, needed));
-    setTextareaHeight(clamped);
-  }, [prompt, MIN_HEIGHT]);
+  const launchableOptions = modelOptions.filter((opt) => opt.provider !== "shell");
 
   return (
-    <div ref={rootRef} tabIndex={-1} style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, width: "90%" }}>
-        <div style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center", marginBottom: 4 }}>
-          Run an agent in a folder
+    <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, width: 360, maxWidth: "90%" }}>
+        <div style={{ color: "var(--text-muted)", fontSize: 13, textAlign: "center" }}>
+          Run in folder
         </div>
-        <div style={{ position: "relative" }}>
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Enter prompt..."
-            disabled={sending}
-            style={{
-              width: "100%",
-              height: textareaHeight,
-              minHeight: LINE_HEIGHT + VERTICAL_PADDING,
-              maxHeight: EXPANDED_MAX_HEIGHT,
-              padding: "8px 12px",
-              paddingRight: 68,
-              borderRadius: 6,
-              border: "1px solid var(--border-light)",
-              background: "var(--bg-primary, #0a0a0a)",
-              color: "var(--text)",
-              fontSize: 13,
-              lineHeight: `${LINE_HEIGHT}px`,
-              resize: "none",
-              overflow: "auto",
-              outline: "none",
-              fontFamily: "inherit",
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <button
-            ref={providerButtonRef}
-            onClick={(e) => {
-              if (modelOptions.length <= 1) return;
-              const rect = e.currentTarget.getBoundingClientRect();
-              setProviderMenuPos({ top: rect.bottom + 6, left: rect.right });
-              setProviderMenuOpen((o) => !o);
-            }}
-            style={{
-              height: 28,
-              minWidth: 36,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              paddingLeft: 6,
-              paddingRight: modelOptions.length > 1 ? 7 : 8,
-              borderRadius: 999,
-              background: "rgba(10, 10, 10, 0.55)",
-              border: "1px solid rgba(255, 255, 255, 0.08)",
-              cursor: modelOptions.length > 1 ? "pointer" : "default",
-              color: "var(--text)",
-              fontSize: 12,
-              whiteSpace: "nowrap",
-            }}
-          >
-            <JobKindIcon kind={provider} size={16} compact bare />
-            <span>{labelForProviderModel(provider, model)}</span>
-            {modelOptions.length > 1 && (
-              <span style={{ color: "var(--text-muted)", fontSize: 9, marginTop: -1 }}>&#9662;</span>
-            )}
-          </button>
-          {selectedFolder && (
-            <span
-              style={{
-                color: workDir ? "var(--accent, #7986cb)" : "var(--text-muted)",
-                fontSize: 12,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                minWidth: 0,
-                maxWidth: 220,
-              }}
-              title={selectedFolder.folderPath}
-            >
-              {selectedFolder.label}
-            </span>
-          )}
+        <div style={{ display: "flex", justifyContent: "center" }}>
           <button
             ref={folderButtonRef}
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
-              setFolderMenuPos({ top: rect.bottom + 6, left: rect.right });
+              setFolderMenuPos({ top: rect.bottom + 6, left: rect.left });
               setFolderMenuOpen((open) => !open);
             }}
             title={selectedFolder ? selectedFolder.folderPath : "Pick folder"}
             style={{
-              height: 28,
-              minWidth: 36,
+              height: 30,
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              paddingLeft: 8,
-              paddingRight: 8,
+              gap: 6,
+              paddingLeft: 12,
+              paddingRight: 12,
               borderRadius: 999,
               background: workDir ? "rgba(121, 134, 203, 0.12)" : "rgba(10, 10, 10, 0.55)",
               border: workDir ? "1px solid rgba(121, 134, 203, 0.25)" : "1px solid rgba(255, 255, 255, 0.08)",
@@ -323,56 +138,41 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              maxWidth: "100%",
             }}
           >
-            ...
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+              {selectedFolder ? selectedFolder.label : "Pick folder ..."}
+            </span>
+            <span style={{ color: "var(--text-muted)", fontSize: 9, marginTop: -1 }}>&#9662;</span>
           </button>
-          <div style={{ flex: 1 }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+          {launchableOptions.map((opt) => (
+            <button
+              key={`${opt.provider}:${opt.modelId ?? ""}`}
+              onClick={() => { void launch(opt.provider, opt.modelId); }}
+              disabled={sending}
+              style={launchItemStyle(sending)}
+            >
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18 }}>
+                <JobKindIcon kind={opt.provider} size={16} compact bare />
+              </span>
+              <span style={{ flex: 1, textAlign: "left" }}>{opt.label}</span>
+            </button>
+          ))}
           <button
-            onClick={() => { void handleRun(); }}
-            disabled={!canRun || sending}
-            style={{
-              height: 28,
-              width: 28,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 6,
-              background: "var(--accent, #7986cb)",
-              border: "none",
-              cursor: canRun && !sending ? "pointer" : "default",
-              opacity: !canRun || sending ? 0.5 : 1,
-              padding: 0,
-            }}
+            onClick={() => { void launch("shell", null); }}
+            disabled={sending}
+            style={launchItemStyle(sending)}
           >
-            <div
-              style={{
-                width: 0,
-                height: 0,
-                borderLeft: "6px solid #fff",
-                borderTop: "4px solid transparent",
-                borderBottom: "4px solid transparent",
-                marginLeft: 2,
-              }}
-            />
+            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18 }}>
+              <JobKindIcon kind="shell" size={16} compact bare />
+            </span>
+            <span style={{ flex: 1, textAlign: "left" }}>Terminal</span>
           </button>
         </div>
       </div>
-      {providerMenuOpen && modelOptions.length > 1 && (
-        <PopupMenu
-          items={modelOptions.map((opt) => ({
-            type: "item" as const,
-            label: opt.label,
-            active: opt.provider === provider && opt.modelId === model,
-            icon: <JobKindIcon kind={opt.provider} size={16} compact bare />,
-            onPress: () => selectModelOption(opt),
-          }))}
-          position={providerMenuPos}
-          onClose={() => setProviderMenuOpen(false)}
-          triggerRef={providerButtonRef as any}
-          autoFocus
-        />
-      )}
       {folderMenuOpen && (
         <PopupMenu
           items={[
@@ -401,4 +201,23 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
       )}
     </div>
   );
+}
+
+function launchItemStyle(disabled: boolean): React.CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "8px 12px",
+    borderRadius: 6,
+    background: "rgba(255, 255, 255, 0.03)",
+    border: "1px solid var(--border-light, rgba(255,255,255,0.08))",
+    cursor: disabled ? "default" : "pointer",
+    color: "var(--text)",
+    fontSize: 13,
+    fontFamily: "inherit",
+    opacity: disabled ? 0.5 : 1,
+    width: "100%",
+    textAlign: "left",
+  };
 }

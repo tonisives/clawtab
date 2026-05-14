@@ -183,6 +183,7 @@ pub fn reattach_running_jobs(
                 stdout: String::new(),
                 stderr: String::new(),
                 pane_id: Some(pane_id.clone()),
+                log_path: None,
             };
             if let Err(e) = h.insert(&record) {
                 log::error!("Failed to insert reattach record: {}", e);

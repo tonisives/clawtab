@@ -471,6 +471,7 @@ pub fn run() {
             commands::history::get_run_detail,
             commands::history::get_job_runs,
             commands::history::open_run_log,
+            commands::history::tail_run_log,
             commands::history::delete_run,
             commands::history::delete_runs,
             commands::history::clear_history,

@@ -37,6 +37,21 @@ export function useJobsTabSettings() {
   });
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<JobSortMode>("name");
+  const [groupTabView, setGroupTabView] = useState<Record<string, "tabs" | "jobs">>(() => {
+    const raw = localStorage.getItem("desktop_group_tab_view");
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return {};
+      const out: Record<string, "tabs" | "jobs"> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (v === "tabs" || v === "jobs") out[k] = v;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  });
 
   // Init shortcut settings + listen for settings-updated
   useEffect(() => {
@@ -101,6 +116,14 @@ export function useJobsTabSettings() {
     });
   }, []);
 
+  const setGroupTabViewFor = useCallback((group: string, view: "tabs" | "jobs") => {
+    setGroupTabView((prev) => {
+      const next = { ...prev, [group]: view };
+      localStorage.setItem("desktop_group_tab_view", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const handleHideGroup = useCallback((group: string) => {
     setHiddenGroups((prev) => {
       const next = new Set(prev);
@@ -141,5 +164,7 @@ export function useJobsTabSettings() {
     togglePin,
     handleHideGroup,
     handleUnhideGroup,
+    groupTabView,
+    setGroupTabViewFor,
   };
 }

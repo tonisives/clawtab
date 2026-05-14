@@ -89,3 +89,18 @@ export function compactPath(path: string | null | undefined): string {
   const compacted = parts.slice(0, -1).map((p) => (p === "~" ? "~" : p[0] || p));
   return [...compacted, last].join("/");
 }
+
+/**
+ * Show `shortenPath(path)` if it fits within `maxWidth`, otherwise collapse to
+ * `compactPath(path)` (intermediate segments to first char).
+ */
+export function fitPath(
+  path: string | null | undefined,
+  maxWidth: number,
+  measure: (text: string) => number,
+): string {
+  if (!path) return "";
+  const short = shortenPath(path);
+  if (maxWidth <= 0 || measure(short) <= maxWidth) return short;
+  return compactPath(path);
+}

@@ -90,13 +90,40 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
     Promise.all(
       shellPanes.map(async (pane) => {
         const info = await invoke<ExistingPaneInfo | null>("get_existing_pane_info", { paneId: pane.pane_id }).catch(() => null);
-        return { pane_id: pane.pane_id, exists: !!info };
+        return { pane_id: pane.pane_id, info };
       }),
     ).then((results) => {
-      const deadIds = new Set(results.filter((r) => !r.exists).map((r) => r.pane_id));
-      if (deadIds.size > 0) {
+      const deadIds = new Set(results.filter((r) => !r.info).map((r) => r.pane_id));
+      // The pane's cwd, title, and matched_group can all change after the
+      // initial restore (user runs `cd`, pins a group via "Move to workspace",
+      // edits jobs config). Diff each field against current state and patch
+      // only what changed.
+      type Patch = Partial<Pick<ShellPane, "cwd" | "tmux_session" | "window_name" | "pane_title" | "matched_group">>;
+      const patches = new Map<string, Patch>();
+      for (const { pane_id, info } of results) {
+        if (!info) continue;
+        const current = shellPanes.find((p) => p.pane_id === pane_id);
+        if (!current) continue;
+        const patch: Patch = {};
+        if (info.cwd !== current.cwd) patch.cwd = info.cwd;
+        if (info.tmux_session !== current.tmux_session) patch.tmux_session = info.tmux_session;
+        if (info.window_name !== current.window_name) patch.window_name = info.window_name;
+        const freshTitle = info.pane_title ?? null;
+        if (freshTitle !== (current.pane_title ?? null)) patch.pane_title = freshTitle;
+        const freshGroup = info.matched_group ?? null;
+        if (freshGroup !== (current.matched_group ?? null)) patch.matched_group = freshGroup;
+        if (Object.keys(patch).length > 0) patches.set(pane_id, patch);
+      }
+      if (deadIds.size > 0 || patches.size > 0) {
         for (const paneId of deadIds) demotedShellPaneIdsRef.current.delete(paneId);
-        setShellPanes((prev) => prev.filter((p) => !deadIds.has(p.pane_id)));
+        setShellPanes((prev) => {
+          const next = prev.filter((p) => !deadIds.has(p.pane_id));
+          if (patches.size === 0) return next;
+          return next.map((p) => {
+            const patch = patches.get(p.pane_id);
+            return patch ? { ...p, ...patch } : p;
+          });
+        });
       }
     });
   }, [shellPanes, demotedShellPaneIdsRef]);
@@ -133,7 +160,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
           tmux_session: info.tmux_session,
           window_name: info.window_name,
           pane_title: info.pane_title ?? null,
-          matched_group: existing?.matched_group ?? null,
+          matched_group: info.matched_group ?? existing?.matched_group ?? null,
           display_name: existing?.display_name ?? null,
         };
       }),
@@ -260,7 +287,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
           tmux_session: info.tmux_session,
           window_name: info.window_name,
           pane_title: info.pane_title ?? null,
-          matched_group: process.matched_group ?? null,
+          matched_group: process.matched_group ?? info.matched_group ?? null,
           display_name: process.display_name ?? null,
         };
         return shell;

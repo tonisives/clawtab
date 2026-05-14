@@ -2,3 +2,5 @@ packages:
   - desktop
   - remote
   - shared
+allowBuilds:
+  esbuild: set this to true or false

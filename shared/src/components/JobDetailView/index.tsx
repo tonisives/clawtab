@@ -696,6 +696,7 @@ export function JobDetailView({
                     run={run}
                     transport={transport}
                     currentState={state}
+                    currentRunId={status.state === "running" ? status.run_id : undefined}
                     defaultExpanded={expandRunId ? run.id === expandRunId : (!isRunning && i === 0)}
                     onZoom={(r, content) => setZoomRun({ run: r, logContent: content })}
                     renderRunTerminal={renderRunTerminal}

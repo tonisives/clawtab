@@ -47,6 +47,7 @@ pub struct ExistingPaneInfo {
     pub tmux_session: String,
     pub window_name: String,
     pub pane_title: Option<String>,
+    pub matched_group: Option<String>,
 }
 
 struct DetectionSnapshot {
@@ -620,7 +621,10 @@ pub fn stop_detected_process(state: State<'_, AppState>, pane_id: String) -> Res
 }
 
 #[tauri::command]
-pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo>, String> {
+pub fn get_existing_pane_info(
+    state: State<'_, AppState>,
+    pane_id: String,
+) -> Result<Option<ExistingPaneInfo>, String> {
     if !crate::tmux::pane_exists(&pane_id) {
         return Ok(None);
     }
@@ -632,7 +636,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
             "-t",
             &pane_id,
             "-p",
-            "#{pane_id}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{window_id}\x1e#{pane_title}",
+            "#{pane_id}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{window_id}\x1e#{pane_title}\x1e#{@clawtab-slug}",
         ],
         "processes::get_existing_pane_info::display-message",
     )
@@ -647,7 +651,7 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut parts = stdout.trim_end().splitn(6, '\x1e');
+    let mut parts = stdout.trim_end().splitn(7, '\x1e');
     let Some(found_pane_id) = parts.next() else {
         return Ok(None);
     };
@@ -664,6 +668,11 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
         return Ok(None);
     };
     let pane_title = parts.next().map(|value| normalize_optional_text(value.to_string())).flatten();
+    let pane_slug_tag = parts
+        .next()
+        .and_then(|value| normalize_optional_text(value.to_string()));
+
+    let matched_group = resolve_pane_group(&state, found_pane_id, cwd, pane_slug_tag.as_deref());
 
     Ok(Some(ExistingPaneInfo {
         pane_id: found_pane_id.to_string(),
@@ -671,5 +680,51 @@ pub fn get_existing_pane_info(pane_id: String) -> Result<Option<ExistingPaneInfo
         tmux_session: resolve_non_view_session_for_window(window_id, tmux_session),
         window_name: window_name.to_string(),
         pane_title,
+        matched_group,
     }))
+}
+
+/// Resolve a pane's group using the same priority as `detect_processes`, but
+/// without the running-job or history-trust steps (those require more state and
+/// are racy outside of a full detection pass).
+///
+/// Priority: explicit `group_override` -> tmux `@clawtab-slug` tag -> longest
+/// pwd-prefix match against job folder_path/work_dir. Empty string overrides
+/// signal "no group" (independent) and are returned as None.
+fn resolve_pane_group(
+    state: &State<'_, AppState>,
+    pane_id: &str,
+    cwd: &str,
+    pane_slug_tag: Option<&str>,
+) -> Option<String> {
+    if let Some(override_entry) = state.process_overrides.lock().unwrap().get(pane_id) {
+        if let Some(group_val) = override_entry.group_override.as_ref() {
+            if group_val.is_empty() {
+                return None;
+            }
+            return Some(group_val.clone());
+        }
+    }
+
+    let config = state.jobs_config.lock().unwrap();
+
+    if let Some(tag) = pane_slug_tag {
+        if let Some(job) = config.jobs.iter().find(|job| job.slug == tag) {
+            return Some(job.group.clone());
+        }
+    }
+
+    config
+        .jobs
+        .iter()
+        .filter_map(|job| {
+            let root = job.folder_path.as_deref().or(job.work_dir.as_deref())?;
+            if cwd == root || cwd.starts_with(&format!("{}/", root)) {
+                Some((root.to_string(), job.group.clone()))
+            } else {
+                None
+            }
+        })
+        .max_by_key(|(root, _)| root.len())
+        .map(|(_, group)| group)
 }

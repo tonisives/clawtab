@@ -108,6 +108,26 @@ pub async fn execute_job(
         crate::relay::push_status_update(relay, &job.slug, &new_status);
     }
 
+    // Pre-compute the streaming log path for binary jobs so it's persisted
+    // on the row from the start. tmux jobs ignore this (their output lives
+    // in tmux's scrollback / capture).
+    let stream_log_path: Option<std::path::PathBuf> = if matches!(job.job_type, JobType::Binary) {
+        crate::config::jobs::JobsConfig::jobs_dir_public().map(|d| {
+            d.join(&job.slug)
+                .join("logs")
+                .join(format!("{}.log", run_id))
+        })
+    } else {
+        None
+    };
+    if let Some(ref p) = stream_log_path {
+        if let Some(parent) = p.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                log::warn!("Failed to pre-create log dir {}: {}", parent.display(), e);
+            }
+        }
+    }
+
     let record = RunRecord {
         id: run_id.clone(),
         job_id: job.slug.clone(),
@@ -118,6 +138,9 @@ pub async fn execute_job(
         stdout: String::new(),
         stderr: String::new(),
         pane_id: None,
+        log_path: stream_log_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
     };
 
     {
@@ -172,9 +195,16 @@ pub async fn execute_job(
 
     let result: Result<(Option<i32>, String, String, Option<TmuxHandle>), String> =
         match job.job_type {
-            JobType::Binary => execute_binary_job(job, secrets, settings, params, result_file.as_deref())
-                .await
-                .map(|(code, out, err)| (code, out, err, None)),
+            JobType::Binary => execute_binary_job(
+                job,
+                secrets,
+                settings,
+                params,
+                result_file.as_deref(),
+                stream_log_path.as_deref(),
+            )
+            .await
+            .map(|(code, out, err)| (code, out, err, None)),
             JobType::Claude => {
                 execute_claude_job(job, secrets, settings, params, result_file.as_deref()).await
             }
@@ -454,6 +484,7 @@ async fn execute_binary_job(
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
+    stream_log_path: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String), String> {
     let work_dir = job.work_dir.clone().unwrap_or_else(|| {
         let s = settings.lock().unwrap();
@@ -503,40 +534,99 @@ async fn execute_binary_job(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn process: {}", e))?;
 
-    let output = child
-        .wait_with_output()
+    let stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture stdout".to_string())?;
+    let stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture stderr".to_string())?;
+
+    // Open the streaming log file. Writers from both reader tasks share an
+    // Arc<Mutex<File>> so interleaving stays line-coherent; line-based reads
+    // mean a single lock per line and no torn writes between stdout/stderr.
+    let log_file: Option<Arc<Mutex<std::fs::File>>> = stream_log_path.and_then(|p| {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(p)
+        {
+            Ok(f) => Some(Arc::new(Mutex::new(f))),
+            Err(e) => {
+                log::warn!("Failed to open stream log {}: {}", p.display(), e);
+                None
+            }
+        }
+    });
+
+    use tokio::io::AsyncBufReadExt;
+    let stdout_buf = Arc::new(Mutex::new(String::new()));
+    let stderr_buf = Arc::new(Mutex::new(String::new()));
+
+    let stdout_task = {
+        let buf = Arc::clone(&stdout_buf);
+        let file = log_file.clone();
+        tokio::spawn(async move {
+            let mut reader = tokio::io::BufReader::new(stdout_pipe).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                {
+                    let mut b = buf.lock().unwrap();
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+                if let Some(ref f) = file {
+                    use std::io::Write;
+                    let mut g = f.lock().unwrap();
+                    let _ = g.write_all(line.as_bytes());
+                    let _ = g.write_all(b"\n");
+                    let _ = g.flush();
+                }
+            }
+        })
+    };
+
+    let stderr_task = {
+        let buf = Arc::clone(&stderr_buf);
+        let file = log_file.clone();
+        tokio::spawn(async move {
+            let mut reader = tokio::io::BufReader::new(stderr_pipe).lines();
+            while let Ok(Some(line)) = reader.next_line().await {
+                {
+                    let mut b = buf.lock().unwrap();
+                    b.push_str(&line);
+                    b.push('\n');
+                }
+                if let Some(ref f) = file {
+                    use std::io::Write;
+                    let mut g = f.lock().unwrap();
+                    let _ = g.write_all(line.as_bytes());
+                    let _ = g.write_all(b"\n");
+                    let _ = g.flush();
+                }
+            }
+        })
+    };
+
+    let status = child
+        .wait()
         .await
         .map_err(|e| format!("Failed to wait for process: {}", e))?;
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let exit_code = output.status.code();
-
-    // Write combined log file next to the job definition.
-    if let Some(log_dir) = crate::config::jobs::JobsConfig::jobs_dir_public()
-        .map(|d| d.join(&job.slug).join("logs"))
-    {
-        if std::fs::create_dir_all(&log_dir).is_ok() {
-            let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-            let code = exit_code.unwrap_or(-1);
-            let log_path = log_dir.join(format!("{}-exit{}.log", ts, code));
-            let mut content = String::new();
-            if !stdout.is_empty() {
-                content.push_str(&stdout);
-            }
-            if !stderr.is_empty() {
-                if !content.is_empty() {
-                    content.push('\n');
-                }
-                content.push_str(&stderr);
-            }
-            let _ = std::fs::write(&log_path, content);
-        }
-    }
+    let stdout = Arc::try_unwrap(stdout_buf)
+        .map(|m| m.into_inner().unwrap())
+        .unwrap_or_default();
+    let stderr = Arc::try_unwrap(stderr_buf)
+        .map(|m| m.into_inner().unwrap())
+        .unwrap_or_default();
+    let exit_code = status.code();
 
     Ok((exit_code, stdout, stderr))
 }
