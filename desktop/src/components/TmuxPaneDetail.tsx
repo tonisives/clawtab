@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ClaudeQuestion, DetectedProcess, RemoteJob, ShellPane, Transport, JobStatus } from "@clawtab/shared";
@@ -60,6 +61,7 @@ export function TmuxPaneDetail({
   titlePath,
   displayNameOverride,
   dragHandleProps,
+  headerActionsBeforeClose,
 }: {
   target: TmuxPaneTarget;
   questions?: ClaudeQuestion[];
@@ -86,6 +88,7 @@ export function TmuxPaneDetail({
     listeners?: Record<string, unknown>;
     isDragging?: boolean;
   };
+  headerActionsBeforeClose?: ReactNode;
 }) {
   const onStoppedRef = useRef(onStopped);
   onStoppedRef.current = onStopped;
@@ -226,6 +229,7 @@ export function TmuxPaneDetail({
       onInjectSecrets={process?.can_inject_secrets ? onInjectSecrets : undefined}
       onSearchSkills={process?.can_send_skills ? onSearchSkills : undefined}
       dragHandleProps={dragHandleProps}
+      headerActionsBeforeClose={headerActionsBeforeClose}
       extraMenuItems={debugMenuItems}
     />
   );

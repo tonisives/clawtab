@@ -184,8 +184,7 @@ export interface JobListViewProps {
 }
 
 type ListItem =
-  | { kind: "header"; group: string; displayGroup: string; folderPath?: string }
-  | { kind: "group-tab-toggle"; group: string; view: "tabs" | "jobs" }
+  | { kind: "header"; group: string; displayGroup: string; folderPath?: string; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean } }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: DetectedProcess; inGroup?: boolean }
   | { kind: "shell"; shell: ShellPane }
@@ -648,23 +647,20 @@ export function JobListView({
 
     for (const entry of visibleGroups) {
       if (entry.type === "job") {
+        const groupShells = matchedShellsByGroup.get(entry.group) ?? [];
+        const hasTabsContent = entry.procs.length > 0 || groupShells.length > 0;
+        const hasJobs = entry.jobs.length > 0;
+        const persisted = groupTabView?.[entry.group];
+        const defaultView: "tabs" | "jobs" = !hasTabsContent && hasJobs ? "jobs" : "tabs";
+        let view: "tabs" | "jobs" = persisted ?? defaultView;
+        if (view === "jobs" && !hasJobs) view = "tabs";
+        if (view === "tabs" && !hasTabsContent && hasJobs) view = "jobs";
+        const expanded = !collapsedGroups.has(entry.displayGroup);
+        const tabsToggle = expanded ? { group: entry.group, view, hasTabs: hasTabsContent, hasJobs } : undefined;
         if (hasMultipleGroups || result.length > 0 || query) {
-          result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath });
+          result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, tabsToggle });
         }
-        if (!collapsedGroups.has(entry.displayGroup)) {
-          const groupShells = matchedShellsByGroup.get(entry.group) ?? [];
-          const hasTabsContent = entry.procs.length > 0 || groupShells.length > 0;
-          const hasJobs = entry.jobs.length > 0;
-          const persisted = groupTabView?.[entry.group];
-          // Default: if there's no tabs content but there are jobs, show jobs;
-          // otherwise show tabs.
-          const defaultView: "tabs" | "jobs" = !hasTabsContent && hasJobs ? "jobs" : "tabs";
-          let view: "tabs" | "jobs" = persisted ?? defaultView;
-          // Guard against showing an empty side: if user picked jobs but there
-          // are none, fall back to tabs (and vice versa).
-          if (view === "jobs" && !hasJobs) view = "tabs";
-          if (view === "tabs" && !hasTabsContent && hasJobs) view = "jobs";
-          result.push({ kind: "group-tab-toggle", group: entry.group, view });
+        if (expanded) {
           if (view === "jobs") {
             let jobIdx = 0;
             for (const job of entry.jobs) {
@@ -734,7 +730,7 @@ export function JobListView({
     }
 
     return result;
-  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, hiddenSectionCollapsed, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, shellPanes]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, hiddenSectionCollapsed, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, shellPanes, groupTabView]);
 
   const selectableItems = useMemo((): SidebarSelectableItem[] => (
     items.flatMap((item): SidebarSelectableItem[] => {
@@ -1035,8 +1031,6 @@ export function JobListView({
       const key =
         item.kind === "header"
           ? `h_${item.group}`
-          : item.kind === "group-tab-toggle"
-            ? `gtt_${item.group}`
           : item.kind === "shell"
               ? `s_${item.shell.pane_id}`
             : item.kind === "group-agent"
@@ -1121,6 +1115,50 @@ export function JobListView({
                           {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
                         </Text>
                       )}
+                      {item.tabsToggle && item.tabsToggle.hasTabs && item.tabsToggle.hasJobs && (
+                        <View
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            backgroundColor: colors.surface,
+                            borderWidth: 1,
+                            borderColor: colors.border,
+                            borderRadius: 999,
+                            padding: 2,
+                            marginLeft: spacing.xs,
+                          }}
+                        >
+                          {(["tabs", "jobs"] as const).map((v) => {
+                            const active = item.tabsToggle!.view === v;
+                            return (
+                              <TouchableOpacity
+                                key={v}
+                                onPress={(e: any) => {
+                                  e?.stopPropagation?.();
+                                  onGroupTabViewChange?.(item.tabsToggle!.group, v);
+                                }}
+                                activeOpacity={0.7}
+                                style={{
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 2,
+                                  borderRadius: 999,
+                                  backgroundColor: active ? colors.accent : "transparent",
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: "600",
+                                    color: active ? "#ffffff" : colors.textSecondary,
+                                  }}
+                                >
+                                  {v === "tabs" ? "Tabs" : "Jobs"}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
                       {allowGroupMenu && (
                         <TouchableOpacity
                           ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
@@ -1148,50 +1186,6 @@ export function JobListView({
                         </TouchableOpacity>
                       )}
                     </TouchableOpacity>
-                  </View>
-                );
-              }
-
-              if (item.kind === "group-tab-toggle") {
-                const isTabs = item.view === "tabs";
-                const renderSeg = (label: string, active: boolean, onPress: () => void) => (
-                  <TouchableOpacity
-                    onPress={onPress}
-                    activeOpacity={0.7}
-                    style={{
-                      paddingHorizontal: spacing.sm,
-                      paddingVertical: 2,
-                      borderRadius: 4,
-                      backgroundColor: active ? colors.surfaceHover : "transparent",
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        fontWeight: active ? "600" : "400",
-                        color: active ? colors.text : colors.textMuted,
-                        letterSpacing: 0.5,
-                      }}
-                    >
-                      {label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-                return (
-                  <View
-                    key={key}
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: spacing.xs,
-                      paddingLeft: spacing.md,
-                      paddingTop: spacing.xs,
-                      paddingBottom: spacing.xs,
-                    }}
-                  >
-                    {renderSeg("tabs", isTabs, () => onGroupTabViewChange?.(item.group, "tabs"))}
-                    <Text style={{ color: colors.textMuted, fontSize: 11 }}>|</Text>
-                    {renderSeg("jobs", !isTabs, () => onGroupTabViewChange?.(item.group, "jobs"))}
                   </View>
                 );
               }

@@ -1,5 +1,6 @@
 import type { DetectedProcess, ShellPane } from "@clawtab/shared";
 import type { Job } from "../../types";
+import type { PaletteViewId } from "../CommandPalette";
 
 export interface JobsTabProps {
   pendingTemplateId?: string | null;
@@ -12,6 +13,7 @@ export interface JobsTabProps {
   rightPanelOverlay?: React.ReactNode;
   onJobSelected?: () => void;
   onOpenSettings?: () => void;
+  onSelectView?: (viewId: PaletteViewId) => void;
 }
 
 export type { ExistingPaneInfo } from "../../types";

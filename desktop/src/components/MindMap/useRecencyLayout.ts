@@ -33,6 +33,7 @@ export interface GroupNodeData extends Record<string, unknown> {
   childCount: number;
   size: number;
   emphasis: number;
+  onAdd?: (group: string, anchor: { x: number; y: number }) => void;
 }
 
 export interface LayoutPosition {
@@ -86,7 +87,11 @@ export interface OverrideMap {
   [nodeId: string]: LayoutPosition | undefined;
 }
 
-export function useRecencyLayout(items: MindItem[], overrides: OverrideMap = {}): LayoutResult {
+export function useRecencyLayout(
+  items: MindItem[],
+  overrides: OverrideMap = {},
+  onGroupAdd?: (group: string, anchor: { x: number; y: number }) => void,
+): LayoutResult {
   return useMemo(() => {
     if (items.length === 0) return { nodes: [], edges: [] };
 
@@ -134,7 +139,7 @@ export function useRecencyLayout(items: MindItem[], overrides: OverrideMap = {})
         id: groupId,
         type: "groupHub",
         position: { x: gx - groupSize / 2, y: gy - groupSize / 2 },
-        data: { group: group.name, childCount: group.items.length, size: groupSize, emphasis },
+        data: { group: group.name, childCount: group.items.length, size: groupSize, emphasis, onAdd: onGroupAdd },
         draggable: true,
         selectable: false,
       };
@@ -170,10 +175,27 @@ export function useRecencyLayout(items: MindItem[], overrides: OverrideMap = {})
         };
         nodes.push(agentNode);
 
+        // Edge handles: pick the nearest side of each endpoint based on
+        // relative geometry so the line attaches sensibly (e.g. agent-bottom
+        // to group-top when the agent sits above).
+        const dx = baseX - gx;
+        const dy = baseY - gy;
+        const horizontal = Math.abs(dx) > Math.abs(dy);
+        let sourceHandle: "t" | "b" | "l" | "r";
+        let targetHandle: "t" | "b" | "l" | "r";
+        if (horizontal) {
+          sourceHandle = dx >= 0 ? "r" : "l";
+          targetHandle = dx >= 0 ? "l" : "r";
+        } else {
+          sourceHandle = dy >= 0 ? "b" : "t";
+          targetHandle = dy >= 0 ? "t" : "b";
+        }
         edges.push({
           id: `e:${groupId}->${agentId}`,
           source: groupId,
           target: agentId,
+          sourceHandle,
+          targetHandle,
           animated: item.running,
           style: {
             stroke: item.running ? "rgb(48, 209, 88)" : "var(--border-color)",
@@ -185,5 +207,5 @@ export function useRecencyLayout(items: MindItem[], overrides: OverrideMap = {})
     });
 
     return { nodes, edges };
-  }, [items, overrides]);
+  }, [items, overrides, onGroupAdd]);
 }

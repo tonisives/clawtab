@@ -28,7 +28,10 @@ function AgentNodeImpl({ data }: NodeProps) {
       style={{ width: d.width, height: d.height, opacity: d.opacity }}
       title={item.sublabel ? `${item.label} — ${item.sublabel}` : item.label}
     >
-      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
+      <Handle id="t" type="target" position={Position.Top} style={{ opacity: 0, top: 0 }} />
+      <Handle id="b" type="target" position={Position.Bottom} style={{ opacity: 0, bottom: 0 }} />
+      <Handle id="l" type="target" position={Position.Left} style={{ opacity: 0, left: 0 }} />
+      <Handle id="r" type="target" position={Position.Right} style={{ opacity: 0, right: 0 }} />
       {item.working && <span className="mindmap-working-ring" aria-hidden="true" />}
       {kind && (
         <span className="mindmap-agent-provider" aria-hidden="true">
@@ -39,7 +42,6 @@ function AgentNodeImpl({ data }: NodeProps) {
         <span className="label">{item.label}</span>
         {item.sublabel && <span className="sublabel">{item.sublabel}</span>}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
     </div>
   );
 }

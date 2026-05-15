@@ -352,28 +352,47 @@ export function SettingsApp() {
     </button>
   );
 
-  const renderPanel = (id: TabId, label: string, content: React.ReactNode) => (
-    <div key={id} className="settings-panel-overlay" style={{ display: activeTab === id ? "flex" : "none" }}>
-      <div className="settings-panel-header" data-tauri-drag-region>
-        <span className="settings-panel-title">{label}</span>
-        {panelClose}
+  const renderPanel = (id: TabId, label: string, content: React.ReactNode, options?: { fullBleed?: boolean }) => {
+    if (options?.fullBleed) {
+      return (
+        <div key={id} className="settings-panel-overlay settings-panel-overlay-full" style={{ display: activeTab === id ? "flex" : "none" }}>
+          <div className="settings-panel-fullbleed-close">{panelClose}</div>
+          <div
+            ref={(node) => {
+              if (node) panelScrollRefs.current[id] = node;
+              else delete panelScrollRefs.current[id];
+            }}
+            className="settings-panel-body settings-panel-body-full"
+            onScroll={(event) => handlePanelScroll(id, event)}
+          >
+            {content}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div key={id} className="settings-panel-overlay" style={{ display: activeTab === id ? "flex" : "none" }}>
+        <div className="settings-panel-header" data-tauri-drag-region>
+          <span className="settings-panel-title">{label}</span>
+          {panelClose}
+        </div>
+        <div
+          ref={(node) => {
+            if (node) panelScrollRefs.current[id] = node;
+            else delete panelScrollRefs.current[id];
+          }}
+          className="settings-panel-body"
+          onScroll={(event) => handlePanelScroll(id, event)}
+        >
+          {content}
+        </div>
       </div>
-      <div
-        ref={(node) => {
-          if (node) panelScrollRefs.current[id] = node;
-          else delete panelScrollRefs.current[id];
-        }}
-        className="settings-panel-body"
-        onScroll={(event) => handlePanelScroll(id, event)}
-      >
-        {content}
-      </div>
-    </div>
-  );
+    );
+  };
 
   const rightPanelOverlay = (
     <>
-      {renderPanel("mindmap", "Mind Map", <MindMapPanel onRequestJobsTab={() => setActiveTab("jobs")} />)}
+      {renderPanel("mindmap", "Mind Map", <MindMapPanel onRequestJobsTab={() => setActiveTab("jobs")} />, { fullBleed: true })}
       {renderPanel("secrets", "Secrets", <SecretsPanel />)}
       {renderPanel("skills", "Skills", <SkillsPanel />)}
       {renderPanel("usage", "Usage", <UsagePanel />)}
@@ -406,6 +425,15 @@ export function SettingsApp() {
           onJobSelected={() => setActiveTab("jobs")}
           onOpenSettings={() => {
             setActiveTab((current) => (current === "settings" ? "jobs" : "settings"));
+          }}
+          onSelectView={(viewId) => {
+            if (viewId.startsWith("settings:")) {
+              const sub = viewId.slice("settings:".length) as SettingsSubTab;
+              setActiveTab("settings");
+              setSettingsSubTab(sub);
+              return;
+            }
+            setActiveTab(viewId as TabId);
           }}
         />
       </div>

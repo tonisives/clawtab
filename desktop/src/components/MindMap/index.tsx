@@ -1,14 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useJobsCore, shortenPath, type ClaudeQuestion, type DetectedProcess, type JobStatus, type RemoteJob } from "@clawtab/shared";
 import { createTauriTransport } from "../../transport/tauriTransport";
 import { useQuestionPolling } from "../../hooks/useQuestionPolling";
 import { useAutoYes } from "../../hooks/useAutoYes";
+import { useFolderRunGroups } from "../JobsTab/hooks/useFolderRunGroups";
 import { MindMapCanvas } from "./MindMapCanvas";
 import type { MindItem } from "./useRecencyLayout";
 import type { Job } from "../../types";
 import "./MindMap.css";
 
-const WORKING_WINDOW_MS = 4000;
+const WORKING_WINDOW_MS = 12000;
 
 interface MindMapPanelProps {
   onRequestJobsTab: () => void;
@@ -25,7 +26,7 @@ function parseTs(value: string | null | undefined): number {
 function buildAgentItems(processes: DetectedProcess[], questions: ClaudeQuestion[], now: number): MindItem[] {
   const askingByPane = new Set(questions.map((q) => q.pane_id));
   return processes
-    .filter((p) => p.provider !== "shell")
+    .filter((p) => p.provider !== "shell" || !!p.matched_group)
     .map((p) => {
       const sessionTs = parseTs(p.session_started_at);
       const lastLog = p._last_log_change ?? 0;
@@ -110,41 +111,45 @@ export function MindMapPanel({ onRequestJobsTab }: MindMapPanelProps) {
   const core = useJobsCore(transport, 10000);
   const { questions, startFastQuestionPoll, dismissQuestion } = useQuestionPolling();
   const autoYes = useAutoYes(questions, core.processes, core.jobs as Job[], startFastQuestionPoll);
+  const folderRunGroups = useFolderRunGroups(core);
   const [kind, setKind] = useState<MindMapKind>("agents");
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const items = useMemo<MindItem[]>(() => {
-    const now = Date.now();
     if (kind === "agents") return buildAgentItems(core.processes, questions, now);
     return buildJobItems(core.jobs, core.statuses, core.processes, questions, now);
-  }, [kind, core.jobs, core.statuses, core.processes, questions]);
+  }, [kind, core.jobs, core.statuses, core.processes, questions, now]);
 
-  const toolbar = (
-    <div className="mindmap-toolbar">
-      <div className="mindmap-pill-toggle" role="tablist" aria-label="Mind Map mode">
-        <button
-          role="tab"
-          aria-selected={kind === "agents"}
-          className={kind === "agents" ? "active" : ""}
-          onClick={() => setKind("agents")}
-        >
-          Agents
-        </button>
-        <button
-          role="tab"
-          aria-selected={kind === "jobs"}
-          className={kind === "jobs" ? "active" : ""}
-          onClick={() => setKind("jobs")}
-        >
-          Jobs
-        </button>
-      </div>
+  const floatingToggle = (
+    <div className="mindmap-floating-toggle mindmap-pill-toggle" role="tablist" aria-label="Mind Map mode">
+      <button
+        role="tab"
+        aria-selected={kind === "agents"}
+        className={kind === "agents" ? "active" : ""}
+        onClick={() => setKind("agents")}
+      >
+        Agents
+      </button>
+      <button
+        role="tab"
+        aria-selected={kind === "jobs"}
+        className={kind === "jobs" ? "active" : ""}
+        onClick={() => setKind("jobs")}
+      >
+        Jobs
+      </button>
     </div>
   );
 
   if (!core.loaded && core.jobs.length === 0 && core.processes.length === 0) {
     return (
       <div className="mindmap-root">
-        {toolbar}
+        {floatingToggle}
         <div className="mindmap-empty">Loading...</div>
       </div>
     );
@@ -154,7 +159,7 @@ export function MindMapPanel({ onRequestJobsTab }: MindMapPanelProps) {
     const label = kind === "agents" ? "agents" : "jobs";
     return (
       <div className="mindmap-root">
-        {toolbar}
+        {floatingToggle}
         <div className="mindmap-empty">No {label} yet.</div>
       </div>
     );
@@ -162,11 +167,14 @@ export function MindMapPanel({ onRequestJobsTab }: MindMapPanelProps) {
 
   return (
     <div className="mindmap-root">
-      {toolbar}
+      {floatingToggle}
       <MindMapCanvas
+        kind={kind}
         items={items}
         questions={questions}
         autoYes={autoYes}
+        transport={transport}
+        folderGroups={folderRunGroups}
         onDismissQuestion={dismissQuestion}
         onRequestJobsTab={onRequestJobsTab}
       />

@@ -241,6 +241,26 @@
   padding: 12px 20px 20px;
 }
 
+.settings-panel-body-full {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-panel-overlay-full {
+  position: absolute;
+  inset: 0;
+}
+
+.settings-panel-fullbleed-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+
 /* Settings sub-tabs */
 .settings-with-subtabs {
   display: flex;

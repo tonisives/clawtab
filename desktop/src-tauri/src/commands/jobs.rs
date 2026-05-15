@@ -376,12 +376,12 @@ pub async fn toggle_job(_state: State<'_, AppState>, name: String) -> Result<(),
 #[tauri::command]
 pub async fn run_job_now(
     _app_handle: tauri::AppHandle,
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     name: String,
     params: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Option<RunAgentResult>, String> {
     let params = params.unwrap_or_default();
-    match crate::ipc::send_command(crate::ipc::IpcCommand::RunJobNow { name, params }).await {
+    let result = match crate::ipc::send_command(crate::ipc::IpcCommand::RunJobNow { name, params }).await {
         Ok(crate::ipc::IpcResponse::PaneCreated {
             pane_id: Some(pane_id),
             tmux_session: Some(tmux_session),
@@ -393,7 +393,12 @@ pub async fn run_job_now(
         Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
         Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
         Err(e) => Err(format!("Daemon unavailable: {}", e)),
-    }
+    };
+    // The daemon's new-window dragged every grouped view session's active
+    // window to the new pane. Restore each viewer's intended window so the
+    // existing PTY readers stop streaming the new pane's output.
+    state.pty_manager.lock().unwrap().restore_view_session_windows();
+    result
 }
 
 #[tauri::command]
@@ -1032,13 +1037,13 @@ pub struct RunAgentResult {
 
 #[tauri::command]
 pub async fn run_agent(
-    _state: State<'_, AppState>,
+    state: State<'_, AppState>,
     prompt: String,
     work_dir: Option<String>,
     provider: Option<ProcessProvider>,
     model: Option<String>,
 ) -> Result<Option<RunAgentResult>, String> {
-    match crate::ipc::send_command(crate::ipc::IpcCommand::RunAgent {
+    let result = match crate::ipc::send_command(crate::ipc::IpcCommand::RunAgent {
         prompt,
         work_dir,
         provider,
@@ -1057,5 +1062,10 @@ pub async fn run_agent(
         Ok(crate::ipc::IpcResponse::Error(e)) => Err(e),
         Ok(resp) => Err(format!("Unexpected IPC response: {:?}", resp)),
         Err(e) => Err(format!("Daemon unavailable: {}", e)),
-    }
+    };
+    // The daemon's new-window dragged every grouped view session's active
+    // window to the new pane. Restore each viewer's intended window so the
+    // existing PTY readers stop streaming the new pane's output.
+    state.pty_manager.lock().unwrap().restore_view_session_windows();
+    result
 }

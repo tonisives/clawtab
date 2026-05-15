@@ -54,7 +54,7 @@ function findTopLeftLeafId(tree: SplitNode | null): string | null {
   return node?.type === "leaf" ? node.id : null;
 }
 
-export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected, onOpenSettings }: JobsTabProps) {
+export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, importCwtKey, pendingPaneId, onPaneHandled, navBar, rightPanelOverlay, onJobSelected, onOpenSettings, onSelectView }: JobsTabProps) {
   const core = useJobsCore(transport, 10000);
   const actions = useJobActions(transport, core.reloadStatuses);
   const settings = useJobsTabSettings();
@@ -367,6 +367,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
           const sourcePaneId = getPaneIdForContent(activePaneContent);
           void handleResumeSession(sessionId, cwd, sourcePaneId);
         }}
+        onSelectView={onSelectView}
         onSelectWorkspace={(workspaceId) => {
           // CommandPalette already called wsMgr.setActive; the workspace-switch
           // effect will derive currentContent shortly. If the target has no

@@ -6,8 +6,37 @@ import type { DetectedProcess, RemoteJob, ShellPane } from "@clawtab/shared";
 import { useWorkspaceManager } from "../workspace/WorkspaceManager";
 import { requestXtermPaneFocus } from "./XtermPane";
 
-type EntryKind = "agent" | "job" | "shell" | "workspace";
+type EntryKind = "agent" | "job" | "shell" | "workspace" | "view";
 type Tab = "panes" | "history";
+
+export type PaletteViewId =
+  | "jobs"
+  | "mindmap"
+  | "secrets"
+  | "skills"
+  | "usage"
+  | "settings"
+  | "settings:general"
+  | "settings:remote"
+  | "settings:telegram"
+  | "settings:shortcuts"
+  | "settings:models"
+  | "settings:daemon";
+
+const VIEW_ENTRIES: { id: PaletteViewId; label: string; group: string }[] = [
+  { id: "jobs", label: "Jobs", group: "View" },
+  { id: "mindmap", label: "Mind Map", group: "View" },
+  { id: "secrets", label: "Secrets", group: "View" },
+  { id: "skills", label: "Skills", group: "View" },
+  { id: "usage", label: "Usage", group: "View" },
+  { id: "settings", label: "Settings", group: "View" },
+  { id: "settings:general", label: "Settings - General", group: "Settings" },
+  { id: "settings:remote", label: "Settings - Remote", group: "Settings" },
+  { id: "settings:telegram", label: "Settings - Telegram", group: "Settings" },
+  { id: "settings:shortcuts", label: "Settings - Shortcuts", group: "Settings" },
+  { id: "settings:models", label: "Settings - Models", group: "Settings" },
+  { id: "settings:daemon", label: "Settings - Daemon", group: "Settings" },
+];
 
 const RECENCY_KEY = "clawtab.cmdp.recency.v1";
 
@@ -43,6 +72,7 @@ interface PaletteEntry {
   workspaceName: string;
   paneId?: string;
   slug?: string;
+  viewId?: PaletteViewId;
   recencyMs: number;
   searchFields: {
     paneTitle: string;
@@ -74,6 +104,7 @@ export interface CommandPaletteProps {
   onSelectShell: (paneId: string) => void;
   onSelectWorkspace?: (workspaceId: string) => void;
   onResumeSession?: (sessionId: string, cwd: string) => void;
+  onSelectView?: (viewId: PaletteViewId) => void;
 }
 
 function buildEntries(params: {
@@ -202,6 +233,31 @@ function buildEntries(params: {
     });
   }
 
+  for (const view of VIEW_ENTRIES) {
+    const entryId = `view:${view.id}`;
+    entries.push({
+      id: entryId,
+      kind: "view",
+      workspaceId: "",
+      displayName: view.label,
+      cwd: "",
+      firstQuery: "",
+      lastQuery: "",
+      paneTitle: "",
+      workspaceName: view.group,
+      viewId: view.id,
+      recencyMs: recency[entryId] ?? 0,
+      searchFields: {
+        paneTitle: view.label,
+        firstQuery: "",
+        lastQuery: "",
+        workspaceName: view.group,
+        cwd: "",
+        displayName: view.label,
+      },
+    });
+  }
+
   return entries;
 }
 
@@ -258,6 +314,7 @@ export function CommandPalette({
   onSelectShell,
   onSelectWorkspace,
   onResumeSession,
+  onSelectView,
 }: CommandPaletteProps) {
   const mgr = useWorkspaceManager();
   const [tab, setTab] = useState<Tab>("panes");
@@ -389,6 +446,11 @@ export function CommandPalette({
     const next = { ...recencyMap, [entry.id]: Date.now() };
     setRecencyMap(next);
     saveRecency(next);
+    if (entry.kind === "view" && entry.viewId) {
+      onSelectView?.(entry.viewId);
+      onClose();
+      return;
+    }
     mgr.ensure(entry.workspaceId);
     if (entry.workspaceId !== mgr.activeId) mgr.setActive(entry.workspaceId);
     if (entry.kind === "agent" && entry.paneId) {

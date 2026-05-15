@@ -162,23 +162,31 @@ pub fn build_agent_job(
         format!("@{}\n\n{}", cwt_md_path.display(), prompt)
     };
 
-    // Derive name/slug and work_dir from target_dir
+    // Derive name/slug and work_dir from target_dir. Slug must be unique per
+    // spawn: executor.rs prunes panes by slug (list_panes_by_slug), so reusing
+    // an existing pane's slug would kill it when a new agent/shell is spawned
+    // in the same folder.
+    let unique_suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
     let (job_id, job_slug, work_dir) = if let Some(dir) = target_dir {
         let project_dir = std::path::Path::new(dir);
         let folder = project_dir
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("agent");
-        let slug = format!("agent-{}", folder);
+        let name = format!("agent-{}", folder);
+        let slug = format!("agent-{}-{}", folder, unique_suffix);
         (
-            slug.clone(),
+            name,
             slug,
             project_dir.to_string_lossy().to_string(),
         )
     } else {
         (
             "agent".to_string(),
-            "agent".to_string(),
+            format!("agent-{}", unique_suffix),
             agent_dir.display().to_string(),
         )
     };

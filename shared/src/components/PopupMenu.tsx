@@ -5,22 +5,43 @@ import { spacing, radius } from "../theme/spacing";
 
 const isWeb = Platform.OS === "web";
 
+// Load react-dom lazily on web only. On native this stays null and the menu
+// renders inline. We use an async import to keep react-dom out of the static
+// dependency graph for native bundlers, but resolve it at module load so the
+// portal is ready before any menu opens.
 let createPortalFn: ((children: ReactNode, container: Element) => ReactNode) | null = null;
+let portalReady = false;
+const portalListeners = new Set<() => void>();
+
 if (isWeb) {
-  import("react-dom").then((mod) => { createPortalFn = mod.createPortal; });
+  import("react-dom").then((m) => {
+    createPortalFn = m.createPortal as typeof createPortalFn;
+    portalReady = true;
+    portalListeners.forEach((fn) => fn());
+    portalListeners.clear();
+  }).catch(() => {
+    portalReady = true;
+  });
+}
+
+function usePortalReady(): boolean {
+  const [ready, setReady] = useState(portalReady);
+  useEffect(() => {
+    if (portalReady) {
+      if (!ready) setReady(true);
+      return;
+    }
+    const listener = () => setReady(true);
+    portalListeners.add(listener);
+    return () => { portalListeners.delete(listener); };
+  }, [ready]);
+  return ready;
 }
 
 function PortalWeb({ children }: { children: ReactNode }) {
-  const [, forceUpdate] = useState(0);
-  useEffect(() => {
-    if (isWeb && !createPortalFn) {
-      import("react-dom").then((mod) => {
-        createPortalFn = mod.createPortal;
-        forceUpdate((n) => n + 1);
-      });
-    }
-  }, []);
-  if (!isWeb || !createPortalFn) return <>{children}</>;
+  const ready = usePortalReady();
+  if (!isWeb) return <>{children}</>;
+  if (!ready || !createPortalFn) return <>{children}</>;
   return createPortalFn(children, document.body);
 }
 
@@ -173,20 +194,18 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose, ref, triggerRef]);
 
-  // Use clamped position once available; render invisible on first frame to avoid jump
   const resolvedPos = clampedPos;
   const menuStyle = isWeb && position ? {
     position: "fixed" as any,
     top: resolvedPos?.top ?? position.top,
     left: resolvedPos?.left ?? (position.left - 160),
-    visibility: resolvedPos ? "visible" : "hidden",
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderLight,
     borderRadius: radius.sm,
     minWidth: 160,
-    zIndex: 9999,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+    zIndex: 2147483647,
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04)",
     paddingVertical: 4,
   } as any : styles.menu;
 

@@ -123,6 +123,7 @@ export interface JobDetailViewProps {
     listeners?: Record<string, unknown>;
     isDragging?: boolean;
   };
+  headerActionsBeforeClose?: ReactNode;
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
   onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
   defaultAgentProvider?: ProcessProvider;
@@ -178,6 +179,7 @@ export function JobDetailView({
   onRevealInSidebar,
   onStopping,
   dragHandleProps,
+  headerActionsBeforeClose,
   renderRunTerminal,
   onSplitRunPane,
   defaultAgentProvider = "claude",
@@ -517,7 +519,10 @@ export function JobDetailView({
                 style={styles.moreBtn}
                 onPress={(e: any) => {
                   if (isWeb) {
-                    const node = e?.currentTarget ?? e?.target;
+                    const refNode = settingsBtnRef.current as any;
+                    const node = (refNode && typeof refNode.getBoundingClientRect === "function")
+                      ? refNode
+                      : (e?.currentTarget ?? e?.target);
                     if (node?.getBoundingClientRect) {
                       const rect = node.getBoundingClientRect();
                       setMenuPos({ top: rect.bottom + 4, left: rect.right });
@@ -561,6 +566,7 @@ export function JobDetailView({
               )}
             </View>
           )}
+          {headerActionsBeforeClose}
           {/* Close pane "x" button - always last in actions row */}
           {!showBackButton && (
             <TouchableOpacity

@@ -3,7 +3,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  ControlButton,
   ReactFlowProvider,
   useReactFlow,
   type Node,
@@ -14,6 +13,7 @@ import "@xyflow/react/dist/style.css";
 import { GroupNode } from "./GroupNode";
 import { AgentNode } from "./AgentNode";
 import { AgentModal, type ModalRect } from "./AgentModal";
+import { GroupSpawnPopup } from "./GroupSpawnPopup";
 import {
   useRecencyLayout,
   type AgentNodeData,
@@ -23,33 +23,24 @@ import {
   type LayoutPosition,
 } from "./useRecencyLayout";
 import type { useAutoYes } from "../../hooks/useAutoYes";
-import type { ClaudeQuestion } from "@clawtab/shared";
+import type { ClaudeQuestion, ProcessProvider, ShellPane, Transport } from "@clawtab/shared";
+
+interface FolderGroup {
+  group: string;
+  folderPath: string;
+}
+
+type MindMapKind = "agents" | "jobs";
 
 interface Props {
+  kind: MindMapKind;
   items: MindItem[];
   questions: ClaudeQuestion[];
   autoYes: ReturnType<typeof useAutoYes>;
+  transport: Transport;
+  folderGroups: FolderGroup[];
   onDismissQuestion: (questionId: string) => void;
   onRequestJobsTab: () => void;
-}
-
-function RecenterButton() {
-  const { fitView } = useReactFlow();
-  return (
-    <ControlButton
-      onClick={() => fitView({ padding: 0.2, duration: 400 })}
-      title="Recenter"
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="12" r="3" fill="currentColor" />
-        <line x1="12" y1="2" x2="12" y2="5" />
-        <line x1="12" y1="19" x2="12" y2="22" />
-        <line x1="2" y1="12" x2="5" y2="12" />
-        <line x1="19" y1="12" x2="22" y2="12" />
-      </svg>
-    </ControlButton>
-  );
 }
 
 const DEFAULT_W = 720;
@@ -57,8 +48,8 @@ const DEFAULT_H = 520;
 const MIN_W = 360;
 const MIN_H = 260;
 const GAP = 12;
-const REPULSION_MARGIN = 28;
-const SPRING = 0.18;
+const REPULSION_MARGIN = 24;
+const SPRING = 0.2;
 
 function rectsOverlap(a: ModalRect, b: ModalRect): boolean {
   return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
@@ -107,40 +98,119 @@ interface NodeBox {
   height: number;
 }
 
-function CanvasInner({ items, questions, autoYes, onDismissQuestion, onRequestJobsTab }: Props) {
+interface ModalConnector {
+  id: string;
+  path: string;
+}
+
+// Pluggable modal kind: "item" for existing mind items, "shell" for freshly
+// spawned shells that haven't been promoted to a DetectedProcess yet.
+interface ShellModalEntry {
+  kind: "shell";
+  shell: ShellPane;
+  label: string;
+  group: string;
+}
+type ShellModalMap = Record<string, ShellModalEntry>;
+
+const EMPTY_MODALS: Record<string, ModalRect> = {};
+const EMPTY_ORDER: string[] = [];
+const EMPTY_OVERRIDES: OverrideMap = {};
+const EMPTY_SHELL_MODALS: ShellModalMap = {};
+
+function CanvasInner({
+  kind,
+  items,
+  questions,
+  autoYes,
+  transport,
+  folderGroups,
+  onDismissQuestion,
+  onRequestJobsTab,
+}: Props) {
   const rf = useReactFlow();
   const containerRef = useRef<HTMLDivElement>(null);
-  const [modals, setModals] = useState<Record<string, ModalRect>>({});
-  const [order, setOrder] = useState<string[]>([]);
-  const [manualOverrides, setManualOverrides] = useState<OverrideMap>({});
-  const [repulsion, setRepulsion] = useState<OverrideMap>({});
+  const [modalsByKind, setModalsByKind] = useState<Record<MindMapKind, Record<string, ModalRect>>>({ agents: {}, jobs: {} });
+  const [orderByKind, setOrderByKind] = useState<Record<MindMapKind, string[]>>({ agents: [], jobs: [] });
+  const [overridesByKind, setOverridesByKind] = useState<Record<MindMapKind, OverrideMap>>({ agents: {}, jobs: {} });
+  const [shellModalsByKind, setShellModalsByKind] = useState<Record<MindMapKind, ShellModalMap>>({ agents: {}, jobs: {} });
+  const [modalConnectors, setModalConnectors] = useState<ModalConnector[]>([]);
+  const [spawnPopup, setSpawnPopup] = useState<{
+    group: string;
+    folderPath?: string;
+    anchor: { x: number; y: number };
+  } | null>(null);
 
-  const mergedOverrides = useMemo<OverrideMap>(() => {
-    const out: OverrideMap = {};
-    for (const k of Object.keys(manualOverrides)) out[k] = manualOverrides[k];
-    for (const k of Object.keys(repulsion)) {
-      const existing = out[k];
-      const r = repulsion[k];
-      if (!r) continue;
-      out[k] = existing
-        ? { x: existing.x + r.x, y: existing.y + r.y }
-        : { x: r.x, y: r.y };
+  const modals = modalsByKind[kind] ?? EMPTY_MODALS;
+  const order = orderByKind[kind] ?? EMPTY_ORDER;
+  const manualOverrides = overridesByKind[kind] ?? EMPTY_OVERRIDES;
+  const shellModals = shellModalsByKind[kind] ?? EMPTY_SHELL_MODALS;
+
+  const modalsRef = useRef<Record<string, ModalRect>>({});
+  modalsRef.current = modals;
+  const manualRef = useRef<OverrideMap>({});
+  manualRef.current = manualOverrides;
+  const draggingRef = useRef<Set<string>>(new Set());
+
+  // Group + button click: anchor popup to the button's screen position.
+  const handleGroupAdd = useCallback((group: string, anchorScreen: { x: number; y: number }) => {
+    const folderPath = folderGroups.find((g) => g.group === group)?.folderPath;
+    setSpawnPopup({ group, folderPath, anchor: anchorScreen });
+  }, [folderGroups]);
+
+  // Add synthetic items for freshly spawned panes until a real detected process arrives for the same paneId.
+  const effectiveItems = useMemo<MindItem[]>(() => {
+    const realPaneIds = new Set<string>();
+    for (const it of items) if (it.paneId) realPaneIds.add(it.paneId);
+    const extras: MindItem[] = [];
+    for (const [id, entry] of Object.entries(shellModals)) {
+      if (realPaneIds.has(entry.shell.pane_id)) continue;
+      extras.push({
+        id,
+        label: entry.label,
+        sublabel: entry.shell.cwd,
+        group: entry.group,
+        score: Date.now(),
+        running: true,
+        state: "running",
+        paneId: entry.shell.pane_id,
+      });
     }
-    return out;
-  }, [manualOverrides, repulsion]);
+    return extras.length === 0 ? items : [...items, ...extras];
+  }, [items, shellModals]);
 
-  const { nodes, edges } = useRecencyLayout(items, mergedOverrides);
+  const { nodes: layoutNodes, edges } = useRecencyLayout(effectiveItems, manualOverrides, handleGroupAdd);
+
+  // Push layout into ReactFlow store. Merge: preserve in-flight drag positions,
+  // accept new layout for everything else. The RAF loop will re-apply repulsion
+  // on top each frame.
+  useEffect(() => {
+    rf.setNodes((curr) => {
+      const currById = new Map(curr.map((n) => [n.id, n]));
+      const dragging = draggingRef.current;
+      return layoutNodes.map((ln) => {
+        const existing = currById.get(ln.id);
+        if (!existing) return ln;
+        if (dragging.has(ln.id)) {
+          return { ...existing, data: ln.data };
+        }
+        return { ...ln, position: existing.position, selected: existing.selected };
+      });
+    });
+  }, [rf, layoutNodes]);
+  useEffect(() => {
+    rf.setEdges(edges);
+  }, [rf, edges]);
 
   const nodeTypes = useMemo(() => ({ groupHub: GroupNode, agent: AgentNode }), []);
 
   const itemsById = useMemo(() => {
     const m = new Map<string, MindItem>();
-    for (const it of items) m.set(it.id, it);
+    for (const it of effectiveItems) m.set(it.id, it);
     return m;
-  }, [items]);
+  }, [effectiveItems]);
 
-  // Build base node boxes (no overrides) for repulsion math.
-  const { nodes: baseNodes } = useRecencyLayout(items, {});
+  const { nodes: baseNodes } = useRecencyLayout(effectiveItems, {});
   const nodeBoxes = useMemo<NodeBox[]>(() => {
     return baseNodes.map((n) => {
       let w = 0;
@@ -157,29 +227,40 @@ function CanvasInner({ items, questions, autoYes, onDismissQuestion, onRequestJo
       return { id: n.id, baseX: n.position.x, baseY: n.position.y, width: w, height: h };
     });
   }, [baseNodes]);
+  const nodeBoxesRef = useRef<NodeBox[]>([]);
+  nodeBoxesRef.current = nodeBoxes;
 
-  // Animation loop: compute target repulsion from current modal rects + node base
-  // positions, then smoothly interpolate.
-  const targetRepulsionRef = useRef<OverrideMap>({});
-  const rafRef = useRef<number | null>(null);
-  const reactFlowInstanceRef = useRef(rf);
-  reactFlowInstanceRef.current = rf;
+  const repulsionRef = useRef<Record<string, LayoutPosition>>({});
 
+  const sameConnectors = (a: ModalConnector[], b: ModalConnector[]) => (
+    a.length === b.length && a.every((it, idx) => it.id === b[idx]?.id && it.path === b[idx]?.path)
+  );
+
+  // Animation loop. Computes target repulsion against *base* position (not
+  // current displaced position) so a node pushed out of a modal stays pushed
+  // - no oscillation as it crosses the boundary while springing.
   useEffect(() => {
-    const compute = () => {
-      const inst = reactFlowInstanceRef.current;
+    let raf = 0;
+    const tick = () => {
+      const inst = rf;
       const container = containerRef.current;
       if (!container) {
-        targetRepulsionRef.current = {};
+        raf = requestAnimationFrame(tick);
         return;
       }
       const containerRect = container.getBoundingClientRect();
-      // Convert each modal (container-relative px) to flow coordinates.
-      const modalsInFlow = Object.values(modals).map((m) => {
-        const screenA = { x: containerRect.left + m.x, y: containerRect.top + m.y };
-        const screenB = { x: containerRect.left + m.x + m.width, y: containerRect.top + m.y + m.height };
-        const a = inst.screenToFlowPosition(screenA);
-        const b = inst.screenToFlowPosition(screenB);
+      const modalsArr = Object.values(modalsRef.current);
+
+      // When modals cover 50%+ of the viewport, there's nowhere to nudge nodes
+      // to. Stop applying repulsion and let modals render on top instead.
+      const viewportArea = containerRect.width * containerRect.height;
+      let modalArea = 0;
+      for (const m of modalsArr) modalArea += m.width * m.height;
+      const skipRepulsion = viewportArea > 0 && modalArea / viewportArea >= 0.5;
+
+      const modalsInFlow = skipRepulsion ? [] : modalsArr.map((m) => {
+        const a = inst.screenToFlowPosition({ x: containerRect.left + m.x, y: containerRect.top + m.y });
+        const b = inst.screenToFlowPosition({ x: containerRect.left + m.x + m.width, y: containerRect.top + m.y + m.height });
         return {
           x: Math.min(a.x, b.x) - REPULSION_MARGIN,
           y: Math.min(a.y, b.y) - REPULSION_MARGIN,
@@ -188,80 +269,162 @@ function CanvasInner({ items, questions, autoYes, onDismissQuestion, onRequestJo
         };
       });
 
-      const next: OverrideMap = {};
-      for (const box of nodeBoxes) {
-        // Apply any manual override first when measuring current position.
-        const mo = manualOverrides[box.id];
-        const cx = (mo ? mo.x : box.baseX) + box.width / 2;
-        const cy = (mo ? mo.y : box.baseY) + box.height / 2;
-        let dx = 0;
-        let dy = 0;
+      const manual = manualRef.current;
+      const dragging = draggingRef.current;
+      const prev = repulsionRef.current;
+      const next: Record<string, LayoutPosition> = {};
+      let anyChange = false;
+
+      for (const box of nodeBoxesRef.current) {
+        if (dragging.has(box.id)) continue;
+        const mo = manual[box.id];
+        const baseX = mo ? mo.x : box.baseX;
+        const baseY = mo ? mo.y : box.baseY;
+        // Compute push relative to BASE position - decouples target from the
+        // node's current (displaced) position so it doesn't ping-pong across
+        // the boundary while springing back.
+        const baseCx = baseX + box.width / 2;
+        const baseCy = baseY + box.height / 2;
+
+        let tx = 0;
+        let ty = 0;
         for (const m of modalsInFlow) {
-          const mxCenter = m.x + m.w / 2;
-          const myCenter = m.y + m.h / 2;
-          // Closest point on rect to node center.
-          const cxClamped = Math.max(m.x, Math.min(cx, m.x + m.w));
-          const cyClamped = Math.max(m.y, Math.min(cy, m.y + m.h));
-          const inside = cxClamped === cx && cyClamped === cy;
+          const inside =
+            baseCx >= m.x && baseCx <= m.x + m.w && baseCy >= m.y && baseCy <= m.y + m.h;
           if (!inside) continue;
-          // Push toward nearest side of the modal.
-          const distLeft = cx - m.x;
-          const distRight = m.x + m.w - cx;
-          const distTop = cy - m.y;
-          const distBottom = m.y + m.h - cy;
+          const distLeft = baseCx - m.x;
+          const distRight = m.x + m.w - baseCx;
+          const distTop = baseCy - m.y;
+          const distBottom = m.y + m.h - baseCy;
           const minDist = Math.min(distLeft, distRight, distTop, distBottom);
-          if (minDist === distLeft) dx -= distLeft + box.width / 2;
-          else if (minDist === distRight) dx += distRight + box.width / 2;
-          else if (minDist === distTop) dy -= distTop + box.height / 2;
-          else dy += distBottom + box.height / 2;
-          // Tiny center bias to avoid two-modal stalemate
-          dx += (cx - mxCenter) * 0.05;
-          dy += (cy - myCenter) * 0.05;
+          if (minDist === distLeft) tx -= distLeft + box.width / 2;
+          else if (minDist === distRight) tx += distRight + box.width / 2;
+          else if (minDist === distTop) ty -= distTop + box.height / 2;
+          else ty += distBottom + box.height / 2;
         }
-        if (dx !== 0 || dy !== 0) next[box.id] = { x: dx, y: dy };
+
+        const p = prev[box.id] ?? { x: 0, y: 0 };
+        const nx = p.x + (tx - p.x) * SPRING;
+        const ny = p.y + (ty - p.y) * SPRING;
+        const settled = tx === 0 && ty === 0 && Math.abs(nx) < 0.3 && Math.abs(ny) < 0.3;
+        if (!settled) {
+          next[box.id] = { x: nx, y: ny };
+          if (!prev[box.id] || Math.abs(nx - p.x) > 0.05 || Math.abs(ny - p.y) > 0.05) anyChange = true;
+        } else if (prev[box.id]) {
+          anyChange = true;
+        }
       }
-      targetRepulsionRef.current = next;
-    };
 
-    const tick = () => {
-      compute();
-      setRepulsion((prev) => {
-        const target = targetRepulsionRef.current;
-        const ids = new Set<string>([...Object.keys(prev), ...Object.keys(target)]);
-        const next: OverrideMap = {};
-        let changed = false;
-        for (const id of ids) {
-          const p = prev[id] ?? { x: 0, y: 0 };
-          const t = target[id] ?? { x: 0, y: 0 };
-          const nx = p.x + (t.x - p.x) * SPRING;
-          const ny = p.y + (t.y - p.y) * SPRING;
-          if (Math.abs(nx) < 0.5 && Math.abs(ny) < 0.5) {
-            if (prev[id]) changed = true;
-            continue;
-          }
-          if (!prev[id] || Math.abs(nx - p.x) > 0.05 || Math.abs(ny - p.y) > 0.05) changed = true;
-          next[id] = { x: nx, y: ny };
+      repulsionRef.current = next;
+
+      if (anyChange) {
+        inst.setNodes((curr) =>
+          curr.map((n) => {
+            if (dragging.has(n.id)) return n;
+            const box = nodeBoxesRef.current.find((b) => b.id === n.id);
+            if (!box) return n;
+            const mo = manual[n.id];
+            const baseX = mo ? mo.x : box.baseX;
+            const baseY = mo ? mo.y : box.baseY;
+            const off = next[n.id] ?? { x: 0, y: 0 };
+            const targetX = baseX + off.x;
+            const targetY = baseY + off.y;
+            if (Math.abs(n.position.x - targetX) < 0.05 && Math.abs(n.position.y - targetY) < 0.05) return n;
+            return { ...n, position: { x: targetX, y: targetY } };
+          }),
+        );
+      }
+
+      // Recompute edge handles based on current node centers so edges always
+      // attach to the side of each endpoint that faces the other endpoint.
+      const liveNodes = inst.getNodes();
+      const centers = new Map<string, { cx: number; cy: number; w: number; h: number }>();
+      for (const n of liveNodes) {
+        let w = 0, h = 0;
+        const t = n.type;
+        if (t === "agent") {
+          const d = n.data as AgentNodeData;
+          w = d.width;
+          h = d.height;
+        } else if (t === "groupHub") {
+          const d = n.data as GroupNodeData;
+          w = d.size;
+          h = d.size;
         }
-        return changed ? next : prev;
+        centers.set(n.id, {
+          cx: n.position.x + w / 2,
+          cy: n.position.y + h / 2,
+          w,
+          h,
+        });
+      }
+      let edgesChanged = false;
+      const newEdges = inst.getEdges().map((e) => {
+        const s = centers.get(e.source);
+        const t = centers.get(e.target);
+        if (!s || !t) return e;
+        const dx = t.cx - s.cx;
+        const dy = t.cy - s.cy;
+        const horizontal = Math.abs(dx) > Math.abs(dy);
+        let sh: "t" | "b" | "l" | "r";
+        let th: "t" | "b" | "l" | "r";
+        if (horizontal) {
+          sh = dx >= 0 ? "r" : "l";
+          th = dx >= 0 ? "l" : "r";
+        } else {
+          sh = dy >= 0 ? "b" : "t";
+          th = dy >= 0 ? "t" : "b";
+        }
+        if (e.sourceHandle === sh && e.targetHandle === th) return e;
+        edgesChanged = true;
+        return { ...e, sourceHandle: sh, targetHandle: th };
       });
-      rafRef.current = requestAnimationFrame(tick);
+      if (edgesChanged) inst.setEdges(newEdges);
+
+      const openModals = modalsRef.current;
+      const connectors: ModalConnector[] = [];
+      for (const [id, modal] of Object.entries(openModals)) {
+        const center = centers.get(id);
+        if (!center) continue;
+        const sourceScreen = inst.flowToScreenPosition({ x: center.cx, y: center.cy });
+        const sx = sourceScreen.x - containerRect.left;
+        const sy = sourceScreen.y - containerRect.top;
+        const mx = modal.x + modal.width / 2;
+        const my = modal.y + modal.height / 2;
+        const dx = mx - sx;
+        const dy = my - sy;
+        let tx = modal.x + modal.width / 2;
+        let ty = modal.y + modal.height / 2;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          tx = dx >= 0 ? modal.x : modal.x + modal.width;
+          ty = Math.max(modal.y + 18, Math.min(modal.y + modal.height - 18, sy));
+        } else {
+          tx = Math.max(modal.x + 18, Math.min(modal.x + modal.width - 18, sx));
+          ty = dy >= 0 ? modal.y : modal.y + modal.height;
+        }
+        const c1x = sx + (tx - sx) * 0.45;
+        const c1y = sy;
+        const c2x = sx + (tx - sx) * 0.55;
+        const c2y = ty;
+        connectors.push({
+          id,
+          path: `M ${sx.toFixed(1)} ${sy.toFixed(1)} C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${tx.toFixed(1)} ${ty.toFixed(1)}`,
+        });
+      }
+      setModalConnectors((prev) => sameConnectors(prev, connectors) ? prev : connectors);
+
+      raf = requestAnimationFrame(tick);
     };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [rf]);
 
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-  }, [modals, nodeBoxes, manualOverrides]);
-
-  const handleNodeClick: NodeMouseHandler = useCallback((_event, node: Node) => {
-    if (node.type !== "agent") return;
-    const data = node.data as AgentNodeData;
-    const id = data.item.id;
-
-    setModals((prev) => {
+  const placeModal = useCallback((id: string) => {
+    setModalsByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
       if (prev[id]) {
-        setOrder((ord) => [...ord.filter((x) => x !== id), id]);
-        return prev;
+        setOrderByKind((ordAll) => ({ ...ordAll, [kind]: [...(ordAll[kind] ?? []).filter((x) => x !== id), id] }));
+        return prevAll;
       }
       const bounds = containerRef.current?.getBoundingClientRect() ?? { width: 1200, height: 800 };
       const existing = Object.values(prev);
@@ -270,48 +433,138 @@ function CanvasInner({ items, questions, autoYes, onDismissQuestion, onRequestJo
       const pos = findPlacement(existing, w, h, { width: bounds.width, height: bounds.height });
       const nextZ = existing.reduce((m, r) => Math.max(m, r.z), 0) + 1;
       const rect: ModalRect = { x: pos.x, y: pos.y, width: w, height: h, z: nextZ };
-      setOrder((ord) => [...ord.filter((x) => x !== id), id]);
-      return { ...prev, [id]: rect };
+      setOrderByKind((ordAll) => ({ ...ordAll, [kind]: [...(ordAll[kind] ?? []).filter((x) => x !== id), id] }));
+      return { ...prevAll, [kind]: { ...prev, [id]: rect } };
     });
-  }, []);
+  }, [kind]);
+
+  const handleNodeClick: NodeMouseHandler = useCallback((event, node: Node) => {
+    if (event.shiftKey) return;
+    if (node.type !== "agent") return;
+    const data = node.data as AgentNodeData;
+    placeModal(data.item.id);
+  }, [placeModal]);
 
   const handleClose = useCallback((id: string) => {
-    setModals((prev) => {
+    setModalsByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
+      if (!prev[id]) return prevAll;
       const next = { ...prev };
       delete next[id];
-      return next;
+      return { ...prevAll, [kind]: next };
     });
-    setOrder((ord) => ord.filter((x) => x !== id));
-  }, []);
+    setOrderByKind((ordAll) => ({ ...ordAll, [kind]: (ordAll[kind] ?? []).filter((x) => x !== id) }));
+    setShellModalsByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
+      if (!prev[id]) return prevAll;
+      const next = { ...prev };
+      delete next[id];
+      return { ...prevAll, [kind]: next };
+    });
+  }, [kind]);
 
   const handleChange = useCallback((id: string, rect: ModalRect) => {
-    setModals((prev) => (prev[id] ? { ...prev, [id]: rect } : prev));
-  }, []);
+    setModalsByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
+      if (!prev[id]) return prevAll;
+      return { ...prevAll, [kind]: { ...prev, [id]: rect } };
+    });
+  }, [kind]);
 
   const handleFocus = useCallback((id: string) => {
-    setModals((prev) => {
+    setModalsByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
       const cur = prev[id];
-      if (!cur) return prev;
+      if (!cur) return prevAll;
       const maxZ = Object.values(prev).reduce((m, r) => Math.max(m, r.z), 0);
-      if (cur.z === maxZ) return prev;
-      return { ...prev, [id]: { ...cur, z: maxZ + 1 } };
+      if (cur.z === maxZ) return prevAll;
+      return { ...prevAll, [kind]: { ...prev, [id]: { ...cur, z: maxZ + 1 } } };
     });
-    setOrder((ord) => [...ord.filter((x) => x !== id), id]);
+    setOrderByKind((ordAll) => ({ ...ordAll, [kind]: [...(ordAll[kind] ?? []).filter((x) => x !== id), id] }));
+  }, [kind]);
+
+  const handleNodeDragStart: OnNodeDrag = useCallback((_event, node, nodes) => {
+    const set = new Set<string>();
+    for (const n of nodes) set.add(n.id);
+    set.add(node.id);
+    draggingRef.current = set;
   }, []);
 
-  const handleNodeDragStop: OnNodeDrag = useCallback((_event, node) => {
-    const pos: LayoutPosition = { x: node.position.x, y: node.position.y };
-    setManualOverrides((prev) => ({ ...prev, [node.id]: pos }));
+  const handleNodeDrag: OnNodeDrag = useCallback((_event, _node, nodes) => {
+    const set = new Set<string>();
+    for (const n of nodes) set.add(n.id);
+    draggingRef.current = set;
   }, []);
+
+  const handleNodeDragStop: OnNodeDrag = useCallback((_event, node, nodes) => {
+    setOverridesByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
+      const next = { ...prev };
+      const all = nodes.length > 0 ? nodes : [node];
+      for (const n of all) {
+        next[n.id] = { x: n.position.x, y: n.position.y };
+      }
+      return { ...prevAll, [kind]: next };
+    });
+    for (const n of nodes.length > 0 ? nodes : [node]) {
+      delete repulsionRef.current[n.id];
+    }
+    draggingRef.current = new Set();
+  }, [kind]);
+
+  const handleSelectionDragStop = useCallback((_event: React.MouseEvent, nodes: Node[]) => {
+    setOverridesByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
+      const next = { ...prev };
+      for (const n of nodes) next[n.id] = { x: n.position.x, y: n.position.y };
+      return { ...prevAll, [kind]: next };
+    });
+    for (const n of nodes) delete repulsionRef.current[n.id];
+    draggingRef.current = new Set();
+  }, [kind]);
+
+  const handleSpawn = useCallback(async (provider: ProcessProvider | "shell", modelId: string | null, workDir: string, group: string) => {
+    setSpawnPopup(null);
+    const result = await transport.runAgent("", workDir, provider, modelId ?? undefined);
+    if (!result) return;
+    const paneId = result.pane_id;
+    const shell: ShellPane = {
+      pane_id: paneId,
+      cwd: workDir,
+      tmux_session: result.tmux_session,
+      window_name: "",
+      matched_group: group,
+    };
+    const modalId = `pane:${paneId}`;
+    setShellModalsByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
+      return {
+        ...prevAll,
+        [kind]: {
+          ...prev,
+          [modalId]: {
+            kind: "shell",
+            shell,
+            label: provider === "shell" ? "Terminal" : `${provider}`,
+            group,
+          },
+        },
+      };
+    });
+    placeModal(modalId);
+  }, [kind, transport, placeModal]);
 
   return (
     <div className="mindmap-canvas" ref={containerRef}>
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        defaultNodes={layoutNodes}
+        defaultEdges={edges}
         nodeTypes={nodeTypes}
         onNodeClick={handleNodeClick}
+        onNodeDragStart={handleNodeDragStart}
+        onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
+        onSelectionDragStop={handleSelectionDragStop}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
@@ -320,16 +573,52 @@ function CanvasInner({ items, questions, autoYes, onDismissQuestion, onRequestJo
         nodesDraggable
         nodesConnectable={false}
         elementsSelectable
+        multiSelectionKeyCode="Shift"
+        selectionKeyCode="Shift"
       >
         <Background gap={24} size={1} />
-        <Controls showInteractive={false}>
-          <RecenterButton />
-        </Controls>
+        <Controls showInteractive={false} showZoom={false} />
       </ReactFlow>
+      <svg className="mindmap-modal-connectors" aria-hidden="true">
+        {modalConnectors.map((connector) => (
+          <path key={connector.id} d={connector.path} />
+        ))}
+      </svg>
       {order.map((id) => {
         const item = itemsById.get(id);
+        const shellEntry = shellModals[id];
         const rect = modals[id];
-        if (!item || !rect) return null;
+        if (!rect) return null;
+        if (shellEntry) {
+          const ephemeralItem: MindItem = {
+            id,
+            label: shellEntry.label,
+            sublabel: shellEntry.shell.cwd,
+            group: shellEntry.group,
+            score: Date.now(),
+            running: true,
+            state: "running",
+            paneId: shellEntry.shell.pane_id,
+          };
+          return (
+            <AgentModal
+              key={id}
+              item={ephemeralItem}
+              shell={shellEntry.shell}
+              rect={rect}
+              containerRef={containerRef}
+              questions={questions}
+              autoYes={autoYes}
+              onDismissQuestion={onDismissQuestion}
+              onClose={handleClose}
+              onChange={handleChange}
+              onFocus={handleFocus}
+              onRequestJobsTab={onRequestJobsTab}
+              onStopped={handleClose}
+            />
+          );
+        }
+        if (!item) return null;
         return (
           <AgentModal
             key={id}
@@ -343,9 +632,20 @@ function CanvasInner({ items, questions, autoYes, onDismissQuestion, onRequestJo
             onChange={handleChange}
             onFocus={handleFocus}
             onRequestJobsTab={onRequestJobsTab}
+            onStopped={handleClose}
           />
         );
       })}
+      {spawnPopup && (
+        <GroupSpawnPopup
+          group={spawnPopup.group}
+          folderPath={spawnPopup.folderPath}
+          anchor={spawnPopup.anchor}
+          transport={transport}
+          onSpawn={handleSpawn}
+          onClose={() => setSpawnPopup(null)}
+        />
+      )}
     </div>
   );
 }
