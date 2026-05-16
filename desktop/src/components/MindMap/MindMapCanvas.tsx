@@ -14,6 +14,7 @@ import { GroupNode } from "./GroupNode";
 import { AgentNode } from "./AgentNode";
 import { AgentModal, type ModalRect } from "./AgentModal";
 import { GroupSpawnPopup } from "./GroupSpawnPopup";
+import { GearIcon } from "../icons";
 import {
   useRecencyLayout,
   type AgentNodeData,
@@ -52,8 +53,207 @@ const REPULSION_MARGIN = 24;
 const SPRING = 0.2;
 const MAX_MODAL_NUDGE = 160;
 const MAX_MODAL_DEPTH = 180;
+const MODAL_ATTRACTION_MARGIN = 26;
+const MAX_MODAL_ATTRACTION = 220;
 const COLLISION_MARGIN = 18;
 const MAX_COLLISION_NUDGE = 260;
+const MAX_GROUP_ROOT_OVERLAP = 74;
+const LEAF_FAN_GAP = 16;
+const LEAF_FAN_ROW_GAP = 14;
+const LEAF_FAN_ROOT_GAP = 24;
+const LEAF_FAN_EASE = 0.44;
+const LEAF_FAN_COLLISION_MARGIN = 12;
+
+type FanSide = "top" | "right" | "bottom" | "left";
+
+interface FlowRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface FlowSegment {
+  from: LayoutPosition;
+  to: LayoutPosition;
+}
+
+function rectOverlap(a: FlowRect, b: FlowRect): { x: number; y: number } {
+  return {
+    x: Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x),
+    y: Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y),
+  };
+}
+
+function ccw(a: LayoutPosition, b: LayoutPosition, c: LayoutPosition): boolean {
+  return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x);
+}
+
+function segmentsIntersect(a: LayoutPosition, b: LayoutPosition, c: LayoutPosition, d: LayoutPosition): boolean {
+  return ccw(a, c, d) !== ccw(b, c, d) && ccw(a, b, c) !== ccw(a, b, d);
+}
+
+function segmentCrossesRect(segment: FlowSegment, rect: FlowRect, margin = 0): boolean {
+  const r = { x: rect.x - margin, y: rect.y - margin, w: rect.w + margin * 2, h: rect.h + margin * 2 };
+  const pointInside = (p: LayoutPosition) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+  if (pointInside(segment.from) || pointInside(segment.to)) return true;
+  const tl = { x: r.x, y: r.y };
+  const tr = { x: r.x + r.w, y: r.y };
+  const br = { x: r.x + r.w, y: r.y + r.h };
+  const bl = { x: r.x, y: r.y + r.h };
+  return (
+    segmentsIntersect(segment.from, segment.to, tl, tr) ||
+    segmentsIntersect(segment.from, segment.to, tr, br) ||
+    segmentsIntersect(segment.from, segment.to, br, bl) ||
+    segmentsIntersect(segment.from, segment.to, bl, tl)
+  );
+}
+
+function pushAwayFromRect(rect: FlowRect, blocker: FlowRect): LayoutPosition {
+  const overlap = rectOverlap(rect, blocker);
+  if (overlap.x <= -COLLISION_MARGIN || overlap.y <= -COLLISION_MARGIN) return { x: 0, y: 0 };
+  const dx = rect.x + rect.w / 2 - (blocker.x + blocker.w / 2);
+  const dy = rect.y + rect.h / 2 - (blocker.y + blocker.h / 2);
+  if (overlap.x < overlap.y) {
+    return { x: (dx >= 0 ? 1 : -1) * Math.min(MAX_COLLISION_NUDGE, overlap.x + COLLISION_MARGIN), y: 0 };
+  }
+  return { x: 0, y: (dy >= 0 ? 1 : -1) * Math.min(MAX_COLLISION_NUDGE, overlap.y + COLLISION_MARGIN) };
+}
+
+function nodeRect(n: Node): FlowRect | null {
+  if (n.type === "agent") {
+    const d = n.data as AgentNodeData;
+    return { x: n.position.x, y: n.position.y, w: d.width, h: d.height };
+  }
+  if (n.type === "groupHub") {
+    const d = n.data as GroupNodeData;
+    return { x: n.position.x, y: n.position.y, w: d.size, h: d.size };
+  }
+  return null;
+}
+
+function sideAngle(side: FanSide): number {
+  if (side === "right") return 0;
+  if (side === "bottom") return Math.PI / 2;
+  if (side === "left") return Math.PI;
+  return -Math.PI / 2;
+}
+
+function preferredFanSide(rootCenter: LayoutPosition, groupRects: FlowRect[]): FanSide {
+  if (groupRects.length <= 1) return "top";
+  const centers = groupRects.map((r) => ({ x: r.x + r.w / 2, y: r.y + r.h / 2 }));
+  const minY = Math.min(...centers.map((c) => c.y));
+  const maxY = Math.max(...centers.map((c) => c.y));
+  const minX = Math.min(...centers.map((c) => c.x));
+  const maxX = Math.max(...centers.map((c) => c.x));
+  const verticalBand = Math.max(160, (maxY - minY) * 0.18);
+  const horizontalBand = Math.max(180, (maxX - minX) * 0.16);
+  if (rootCenter.y <= minY + verticalBand) return "top";
+  if (rootCenter.y >= maxY - verticalBand) return "bottom";
+  if (rootCenter.x <= minX + horizontalBand) return "left";
+  if (rootCenter.x >= maxX - horizontalBand) return "right";
+
+  const spaces = [
+    { side: "top" as FanSide, value: rootCenter.y - minY },
+    { side: "bottom" as FanSide, value: maxY - rootCenter.y },
+    { side: "left" as FanSide, value: rootCenter.x - minX },
+    { side: "right" as FanSide, value: maxX - rootCenter.x },
+  ];
+  spaces.sort((a, b) => b.value - a.value);
+  return spaces[0].side;
+}
+
+function compactLeafFanTargets(
+  rootNode: Node,
+  children: Node[],
+  rootSize: number,
+  side: FanSide,
+): Map<string, LayoutPosition> {
+  const targets = new Map<string, LayoutPosition>();
+  const rootCenter = {
+    x: rootNode.position.x + rootSize / 2,
+    y: rootNode.position.y + rootSize / 2,
+  };
+  const count = children.length;
+  if (count === 0) return targets;
+  const maxChildW = children.reduce((max, child) => {
+    const d = child.data as AgentNodeData;
+    return Math.max(max, d.width);
+  }, 0);
+  const maxChildH = children.reduce((max, child) => {
+    const d = child.data as AgentNodeData;
+    return Math.max(max, d.height);
+  }, 0);
+  const perLine = Math.max(1, Math.min(5, Math.ceil(Math.sqrt(count * 1.4))));
+  const majorGap = rootSize / 2 + LEAF_FAN_ROOT_GAP;
+  children.forEach((child, index) => {
+    const d = child.data as AgentNodeData;
+    const line = Math.floor(index / perLine);
+    const lineStart = line * perLine;
+    const lineCount = Math.min(perLine, count - lineStart);
+    const inLine = index - lineStart;
+    const cross = (inLine - (lineCount - 1) / 2);
+    const lineInset = line * Math.min(28, (maxChildW + LEAF_FAN_GAP) * 0.12);
+    if (side === "top" || side === "bottom") {
+      const direction = side === "top" ? -1 : 1;
+      const x = rootCenter.x + cross * (maxChildW + LEAF_FAN_GAP) + (line % 2 === 0 ? 0 : lineInset) - d.width / 2;
+      const y = rootCenter.y + direction * (majorGap + maxChildH / 2 + line * (maxChildH + LEAF_FAN_ROW_GAP)) - d.height / 2;
+      targets.set(child.id, { x, y });
+      return;
+    }
+    const direction = side === "left" ? -1 : 1;
+    const x = rootCenter.x + direction * (majorGap + maxChildW / 2 + line * (maxChildW + LEAF_FAN_ROW_GAP)) - d.width / 2;
+    const y = rootCenter.y + cross * (maxChildH + LEAF_FAN_GAP) + (line % 2 === 0 ? 0 : lineInset) - d.height / 2;
+    targets.set(child.id, {
+      x,
+      y,
+    });
+  });
+  return targets;
+}
+
+function scoreLeafFanTargets(
+  rootCenter: LayoutPosition,
+  children: Node[],
+  targets: Map<string, LayoutPosition>,
+  side: FanSide,
+  preferred: FanSide,
+  obstacles: Array<FlowRect & { id: string; type: Node["type"] }>,
+): number {
+  const rects = children.map((child) => {
+    const d = child.data as AgentNodeData;
+    const pos = targets.get(child.id) ?? child.position;
+    return { id: child.id, x: pos.x, y: pos.y, w: d.width, h: d.height };
+  });
+  let score = side === preferred ? 0 : 900;
+  const angleDelta = Math.abs(Math.atan2(Math.sin(sideAngle(side) - sideAngle(preferred)), Math.cos(sideAngle(side) - sideAngle(preferred))));
+  score += angleDelta > Math.PI / 2 ? 900 : 0;
+
+  for (let i = 0; i < rects.length; i++) {
+    const a = rects[i];
+    const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+    score += Math.hypot(ac.x - rootCenter.x, ac.y - rootCenter.y) * 0.12;
+    const edge = { from: rootCenter, to: ac };
+
+    for (let j = i + 1; j < rects.length; j++) {
+      const overlap = rectOverlap(a, rects[j]);
+      if (overlap.x > -LEAF_FAN_COLLISION_MARGIN && overlap.y > -LEAF_FAN_COLLISION_MARGIN) {
+        score += 10000 + Math.max(0, overlap.x) * Math.max(0, overlap.y);
+      }
+    }
+    for (const blocker of obstacles) {
+      const overlap = rectOverlap(a, blocker);
+      if (overlap.x > -LEAF_FAN_COLLISION_MARGIN && overlap.y > -LEAF_FAN_COLLISION_MARGIN) {
+        score += blocker.type === "groupHub" ? 22000 : 14000;
+        score += Math.max(0, overlap.x) * Math.max(0, overlap.y);
+      }
+      if (segmentCrossesRect(edge, blocker, LEAF_FAN_COLLISION_MARGIN / 2)) {
+        score += blocker.type === "groupHub" ? 6000 : 3200;
+      }
+    }
+  }
+  return score;
+}
 
 function rectsOverlap(a: ModalRect, b: ModalRect): boolean {
   return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
@@ -140,6 +340,7 @@ function CanvasInner({
   const [overridesByKind, setOverridesByKind] = useState<Record<MindMapKind, OverrideMap>>({ agents: {}, jobs: {} });
   const [shellModalsByKind, setShellModalsByKind] = useState<Record<MindMapKind, ShellModalMap>>({ agents: {}, jobs: {} });
   const [modalConnectors, setModalConnectors] = useState<ModalConnector[]>([]);
+  const [mapSettingsOpen, setMapSettingsOpen] = useState(false);
   const [spawnPopup, setSpawnPopup] = useState<{
     group: string;
     folderPath?: string;
@@ -268,10 +469,11 @@ function CanvasInner({
       for (const m of modalsArr) modalArea += m.width * m.height;
       const skipRepulsion = viewportArea > 0 && modalArea / viewportArea >= 0.5;
 
-      const modalsInFlow = skipRepulsion ? [] : modalsArr.map((m) => {
+      const modalsInFlow = skipRepulsion ? [] : Object.entries(modalsRef.current).map(([id, m]) => {
         const a = inst.screenToFlowPosition({ x: containerRect.left + m.x, y: containerRect.top + m.y });
         const b = inst.screenToFlowPosition({ x: containerRect.left + m.x + m.width, y: containerRect.top + m.y + m.height });
         return {
+          id,
           x: Math.min(a.x, b.x) - REPULSION_MARGIN,
           y: Math.min(a.y, b.y) - REPULSION_MARGIN,
           w: Math.abs(b.x - a.x) + REPULSION_MARGIN * 2,
@@ -285,23 +487,36 @@ function CanvasInner({
       const next: Record<string, LayoutPosition> = {};
       let anyChange = false;
       const liveNodesForRepulsion = inst.getNodes();
-      const livePositions = new Map(liveNodesForRepulsion.map((n) => [n.id, n.position]));
-      const draggedGroupRects = nodeBoxesRef.current
-        .filter((box) => box.type === "groupHub" && dragging.has(box.id))
+      const liveByIdForRepulsion = new Map(liveNodesForRepulsion.map((n) => [n.id, n]));
+      const boxById = new Map(nodeBoxesRef.current.map((box) => [box.id, box]));
+      const draggedRects = nodeBoxesRef.current
+        .filter((box) => dragging.has(box.id))
         .map((box) => {
-          const pos = livePositions.get(box.id);
+          const pos = liveByIdForRepulsion.get(box.id)?.position;
           if (!pos) return null;
           return {
             id: box.id,
-            cx: pos.x + box.width / 2,
-            cy: pos.y + box.height / 2,
+            type: box.type,
             x: pos.x,
             y: pos.y,
             w: box.width,
             h: box.height,
           };
         })
-        .filter((it): it is { id: string; cx: number; cy: number; x: number; y: number; w: number; h: number } => Boolean(it));
+        .filter((it): it is FlowRect & { id: string; type: Node["type"] } => Boolean(it));
+      const draggedEdges: FlowSegment[] = [];
+      for (const edge of inst.getEdges()) {
+        if (!dragging.has(edge.source) && !dragging.has(edge.target)) continue;
+        const source = liveByIdForRepulsion.get(edge.source);
+        const target = liveByIdForRepulsion.get(edge.target);
+        const sourceBox = boxById.get(edge.source);
+        const targetBox = boxById.get(edge.target);
+        if (!source || !target || !sourceBox || !targetBox) continue;
+        draggedEdges.push({
+          from: { x: source.position.x + sourceBox.width / 2, y: source.position.y + sourceBox.height / 2 },
+          to: { x: target.position.x + targetBox.width / 2, y: target.position.y + targetBox.height / 2 },
+        });
+      }
 
       for (const box of nodeBoxesRef.current) {
         if (dragging.has(box.id)) continue;
@@ -332,23 +547,55 @@ function CanvasInner({
           else ty += Math.min(MAX_MODAL_NUDGE, distBottom + box.height / 2);
         }
 
-        if (draggedGroupRects.length > 0) {
-          const rect = { x: baseX + tx, y: baseY + ty, w: box.width, h: box.height };
-          for (const blocker of draggedGroupRects) {
-            const overlapX = Math.min(rect.x + rect.w, blocker.x + blocker.w) - Math.max(rect.x, blocker.x);
-            const overlapY = Math.min(rect.y + rect.h, blocker.y + blocker.h) - Math.max(rect.y, blocker.y);
-            if (overlapX <= -COLLISION_MARGIN || overlapY <= -COLLISION_MARGIN) continue;
-            const dx = rect.x + rect.w / 2 - blocker.cx;
-            const dy = rect.y + rect.h / 2 - blocker.cy;
-            if (overlapX < overlapY) {
-              const dir = dx >= 0 ? 1 : -1;
-              tx += dir * Math.min(MAX_COLLISION_NUDGE, overlapX + COLLISION_MARGIN);
-              rect.x = baseX + tx;
+        if (box.type === "agent") {
+          const modal = modalsInFlow.find((m) => `agent:${m.id}` === box.id);
+          if (modal) {
+            const modalCx = modal.x + modal.w / 2;
+            const modalCy = modal.y + modal.h / 2;
+            const dx = modalCx - baseCx;
+            const dy = modalCy - baseCy;
+            let targetX = baseX;
+            let targetY = baseY;
+            if (Math.abs(dx) >= Math.abs(dy)) {
+              targetX = dx >= 0
+                ? modal.x - box.width - MODAL_ATTRACTION_MARGIN
+                : modal.x + modal.w + MODAL_ATTRACTION_MARGIN;
+              targetY = modalCy - box.height / 2;
             } else {
-              const dir = dy >= 0 ? 1 : -1;
-              ty += dir * Math.min(MAX_COLLISION_NUDGE, overlapY + COLLISION_MARGIN);
-              rect.y = baseY + ty;
+              targetX = modalCx - box.width / 2;
+              targetY = dy >= 0
+                ? modal.y - box.height - MODAL_ATTRACTION_MARGIN
+                : modal.y + modal.h + MODAL_ATTRACTION_MARGIN;
             }
+            const attractX = Math.max(-MAX_MODAL_ATTRACTION, Math.min(MAX_MODAL_ATTRACTION, targetX - baseX));
+            const attractY = Math.max(-MAX_MODAL_ATTRACTION, Math.min(MAX_MODAL_ATTRACTION, targetY - baseY));
+            tx += (attractX - tx) * 0.72;
+            ty += (attractY - ty) * 0.72;
+          }
+        }
+
+        if (draggedRects.length > 0 || draggedEdges.length > 0) {
+          const rect = { x: baseX + tx, y: baseY + ty, w: box.width, h: box.height };
+          for (const blocker of draggedRects) {
+            const delta = pushAwayFromRect(rect, blocker);
+            tx += delta.x;
+            ty += delta.y;
+            rect.x = baseX + tx;
+            rect.y = baseY + ty;
+          }
+          for (const segment of draggedEdges) {
+            if (!segmentCrossesRect(segment, rect, COLLISION_MARGIN / 2)) continue;
+            const segCx = (segment.from.x + segment.to.x) / 2;
+            const segCy = (segment.from.y + segment.to.y) / 2;
+            const dx = rect.x + rect.w / 2 - segCx;
+            const dy = rect.y + rect.h / 2 - segCy;
+            if (Math.abs(dx) > Math.abs(dy)) {
+              tx += (dx >= 0 ? 1 : -1) * Math.min(MAX_COLLISION_NUDGE, rect.w / 2 + COLLISION_MARGIN);
+            } else {
+              ty += (dy >= 0 ? 1 : -1) * Math.min(MAX_COLLISION_NUDGE, rect.h / 2 + COLLISION_MARGIN);
+            }
+            rect.x = baseX + tx;
+            rect.y = baseY + ty;
           }
         }
 
@@ -435,19 +682,33 @@ function CanvasInner({
       for (const [id, modal] of Object.entries(openModals)) {
         const center = centers.get(`agent:${id}`);
         if (!center) continue;
-        const mx = modal.x + modal.width / 2;
-        const my = modal.y + modal.height / 2;
         const centerScreen = inst.flowToScreenPosition({ x: center.cx, y: center.cy });
         const cx = centerScreen.x - containerRect.left;
         const cy = centerScreen.y - containerRect.top;
+        const hooks: Array<{ x: number; y: number }> = [];
+        for (const pct of [0, 0.25, 0.5, 0.75, 1]) {
+          hooks.push({ x: modal.x + modal.width * pct, y: modal.y });
+          hooks.push({ x: modal.x + modal.width * pct, y: modal.y + modal.height });
+          hooks.push({ x: modal.x, y: modal.y + modal.height * pct });
+          hooks.push({ x: modal.x + modal.width, y: modal.y + modal.height * pct });
+        }
+        let targetHook = hooks[0];
+        let targetDist = Infinity;
+        for (const hook of hooks) {
+          const dist = Math.hypot(hook.x - cx, hook.y - cy);
+          if (dist < targetDist) {
+            targetHook = hook;
+            targetDist = dist;
+          }
+        }
         const flowHalfW = center.w / 2;
         const flowHalfH = center.h / 2;
         const rightScreen = inst.flowToScreenPosition({ x: center.cx + flowHalfW, y: center.cy });
         const bottomScreen = inst.flowToScreenPosition({ x: center.cx, y: center.cy + flowHalfH });
         const halfW = Math.abs(rightScreen.x - centerScreen.x);
         const halfH = Math.abs(bottomScreen.y - centerScreen.y);
-        const dx = mx - cx;
-        const dy = my - cy;
+        const dx = targetHook.x - cx;
+        const dy = targetHook.y - cy;
         let sx = cx;
         let sy = cy;
         if (halfW > 0 && halfH > 0) {
@@ -460,15 +721,8 @@ function CanvasInner({
             sy = cy + dy * scale;
           }
         }
-        let tx = modal.x + modal.width / 2;
-        let ty = modal.y + modal.height / 2;
-        if (Math.abs(dx) > Math.abs(dy)) {
-          tx = dx >= 0 ? modal.x : modal.x + modal.width;
-          ty = Math.max(modal.y + 18, Math.min(modal.y + modal.height - 18, sy));
-        } else {
-          tx = Math.max(modal.x + 18, Math.min(modal.x + modal.width - 18, sx));
-          ty = dy >= 0 ? modal.y : modal.y + modal.height;
-        }
+        const tx = targetHook.x;
+        const ty = targetHook.y;
         const c1x = sx + (tx - sx) * 0.45;
         const c1y = sy;
         const c2x = sx + (tx - sx) * 0.55;
@@ -581,15 +835,71 @@ function CanvasInner({
         const dx = groupNode.position.x - groupDrag.lastPosition.x;
         const dy = groupNode.position.y - groupDrag.lastPosition.y;
         if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-          rf.setNodes((curr) => curr.map((n) => (
-            groupDrag.childIds.includes(n.id)
-              ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
-              : n
-          )));
-          groupDragRef.current = {
-            ...groupDrag,
-            lastPosition: { x: groupNode.position.x, y: groupNode.position.y },
-          };
+          const d = groupNode.data as GroupNodeData;
+          const candidateRect: FlowRect = { x: groupNode.position.x, y: groupNode.position.y, w: d.size, h: d.size };
+          const tooDeep = rf.getNodes().some((n) => {
+            if (n.id === groupDrag.groupId || n.type !== "groupHub") return false;
+            const other = n.data as GroupNodeData;
+            const overlap = rectOverlap(candidateRect, { x: n.position.x, y: n.position.y, w: other.size, h: other.size });
+            return overlap.x > MAX_GROUP_ROOT_OVERLAP && overlap.y > MAX_GROUP_ROOT_OVERLAP;
+          });
+          if (tooDeep) {
+            rf.setNodes((curr) => curr.map((n) => (
+              n.id === groupDrag.groupId
+                ? { ...n, position: groupDrag.lastPosition }
+                : n
+            )));
+          } else {
+            const rootCenter = {
+              x: groupNode.position.x + d.size / 2,
+              y: groupNode.position.y + d.size / 2,
+            };
+            rf.setNodes((curr) => {
+              const draggedIds = new Set([groupDrag.groupId, ...groupDrag.childIds]);
+              const children = groupDrag.childIds
+                .map((id) => curr.find((n) => n.id === id))
+                .filter((n): n is Node => Boolean(n));
+              const groupRects = curr
+                .filter((n) => n.type === "groupHub")
+                .map(nodeRect)
+                .filter((rect): rect is FlowRect => Boolean(rect));
+              const obstacles = curr
+                .filter((n) => !draggedIds.has(n.id))
+                .map((n) => {
+                  const rect = nodeRect(n);
+                  return rect ? { ...rect, id: n.id, type: n.type } : null;
+                })
+                .filter((rect): rect is FlowRect & { id: string; type: Node["type"] } => Boolean(rect));
+              const preferred = preferredFanSide(rootCenter, groupRects);
+              let bestTargets = compactLeafFanTargets(groupNode, children, d.size, preferred);
+              let bestScore = scoreLeafFanTargets(rootCenter, children, bestTargets, preferred, preferred, obstacles);
+              for (const side of ["top", "bottom", "left", "right"] as FanSide[]) {
+                if (side === preferred) continue;
+                const candidate = compactLeafFanTargets(groupNode, children, d.size, side);
+                const score = scoreLeafFanTargets(rootCenter, children, candidate, side, preferred, obstacles);
+                if (score < bestScore) {
+                  bestScore = score;
+                  bestTargets = candidate;
+                }
+              }
+              return curr.map((n) => {
+                if (!groupDrag.childIds.includes(n.id)) return n;
+                const target = bestTargets.get(n.id);
+                if (!target) return { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } };
+                return {
+                  ...n,
+                  position: {
+                    x: n.position.x + (target.x - n.position.x) * LEAF_FAN_EASE,
+                    y: n.position.y + (target.y - n.position.y) * LEAF_FAN_EASE,
+                  },
+                };
+              });
+            });
+            groupDragRef.current = {
+              ...groupDrag,
+              lastPosition: { x: groupNode.position.x, y: groupNode.position.y },
+            };
+          }
         }
       }
       set.add(groupDrag.groupId);
@@ -604,11 +914,16 @@ function CanvasInner({
       const next = { ...prev };
       const groupDrag = groupDragRef.current;
       const liveById = new Map(rf.getNodes().map((n) => [n.id, n]));
-      const all = nodes.length > 0 ? nodes : [node];
+      const all = nodes.length > 0 ? [...nodes] : [node];
       if (groupDrag) {
+        const liveGroup = liveById.get(groupDrag.groupId);
+        if (liveGroup) all.push(liveGroup);
         all.push(...groupDrag.childIds.map((id) => liveById.get(id)).filter((n): n is Node => Boolean(n)));
       }
+      const seen = new Set<string>();
       for (const n of all) {
+        if (seen.has(n.id)) continue;
+        seen.add(n.id);
         const off = repulsionRef.current[n.id] ?? { x: 0, y: 0 };
         next[n.id] = { x: n.position.x - off.x, y: n.position.y - off.y };
       }
@@ -674,6 +989,17 @@ function CanvasInner({
     placeModal(modalId);
   }, [kind, transport, placeModal]);
 
+  const handleResetLayout = useCallback(() => {
+    draggingRef.current = new Set();
+    groupDragRef.current = null;
+    repulsionRef.current = {};
+    setMapSettingsOpen(false);
+    setOverridesByKind((prev) => ({ ...prev, [kind]: {} }));
+    requestAnimationFrame(() => {
+      rf.fitView({ padding: 0.2, duration: 260 });
+    });
+  }, [kind, rf]);
+
   return (
     <div className="mindmap-canvas" ref={containerRef}>
       <ReactFlow
@@ -699,6 +1025,24 @@ function CanvasInner({
         <Background gap={24} size={1} />
         <Controls showInteractive={false} showZoom={false} />
       </ReactFlow>
+      <div className="mindmap-map-settings">
+        {mapSettingsOpen && (
+          <div className="mindmap-map-settings-menu">
+            <button type="button" onClick={handleResetLayout}>
+              Reset layout
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          className="mindmap-map-settings-trigger"
+          aria-label="Mind map settings"
+          aria-expanded={mapSettingsOpen}
+          onClick={() => setMapSettingsOpen((open) => !open)}
+        >
+          <GearIcon size={16} />
+        </button>
+      </div>
       <svg className="mindmap-modal-connectors" aria-hidden="true">
         {modalConnectors.map((connector) => (
           <path key={connector.id} d={connector.path} />

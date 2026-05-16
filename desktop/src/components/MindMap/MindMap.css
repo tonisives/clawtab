@@ -49,6 +49,64 @@
   border-bottom: 1px solid var(--border-color);
 }
 
+.mindmap-map-settings {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.mindmap-map-settings-trigger,
+.mindmap-map-settings-menu button {
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
+  color: var(--text-primary);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(8px);
+}
+
+.mindmap-map-settings-trigger {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mindmap-map-settings-trigger:hover,
+.mindmap-map-settings-menu button:hover {
+  background: color-mix(in srgb, var(--accent-color) 14%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--accent-color) 55%, var(--border-color));
+}
+
+.mindmap-map-settings-menu {
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-secondary) 94%, transparent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(10px);
+}
+
+.mindmap-map-settings-menu button {
+  width: 100%;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
 .mindmap-empty {
   flex: 1;
   display: flex;
