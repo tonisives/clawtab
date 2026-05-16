@@ -50,6 +50,10 @@ const MIN_H = 260;
 const GAP = 12;
 const REPULSION_MARGIN = 24;
 const SPRING = 0.2;
+const MAX_MODAL_NUDGE = 160;
+const MAX_MODAL_DEPTH = 180;
+const COLLISION_MARGIN = 18;
+const MAX_COLLISION_NUDGE = 260;
 
 function rectsOverlap(a: ModalRect, b: ModalRect): boolean {
   return !(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
@@ -92,6 +96,7 @@ function findPlacement(
 
 interface NodeBox {
   id: string;
+  type: Node["type"];
   baseX: number;
   baseY: number;
   width: number;
@@ -151,6 +156,11 @@ function CanvasInner({
   const manualRef = useRef<OverrideMap>({});
   manualRef.current = manualOverrides;
   const draggingRef = useRef<Set<string>>(new Set());
+  const groupDragRef = useRef<{
+    groupId: string;
+    childIds: string[];
+    lastPosition: LayoutPosition;
+  } | null>(null);
 
   // Group + button click: anchor popup to the button's screen position.
   const handleGroupAdd = useCallback((group: string, anchorScreen: { x: number; y: number }) => {
@@ -194,7 +204,7 @@ function CanvasInner({
         if (dragging.has(ln.id)) {
           return { ...existing, data: ln.data };
         }
-        return { ...ln, position: existing.position, selected: existing.selected };
+        return { ...ln, selected: existing.selected };
       });
     });
   }, [rf, layoutNodes]);
@@ -224,7 +234,7 @@ function CanvasInner({
         w = d.size;
         h = d.size;
       }
-      return { id: n.id, baseX: n.position.x, baseY: n.position.y, width: w, height: h };
+      return { id: n.id, type: n.type, baseX: n.position.x, baseY: n.position.y, width: w, height: h };
     });
   }, [baseNodes]);
   const nodeBoxesRef = useRef<NodeBox[]>([]);
@@ -274,6 +284,24 @@ function CanvasInner({
       const prev = repulsionRef.current;
       const next: Record<string, LayoutPosition> = {};
       let anyChange = false;
+      const liveNodesForRepulsion = inst.getNodes();
+      const livePositions = new Map(liveNodesForRepulsion.map((n) => [n.id, n.position]));
+      const draggedGroupRects = nodeBoxesRef.current
+        .filter((box) => box.type === "groupHub" && dragging.has(box.id))
+        .map((box) => {
+          const pos = livePositions.get(box.id);
+          if (!pos) return null;
+          return {
+            id: box.id,
+            cx: pos.x + box.width / 2,
+            cy: pos.y + box.height / 2,
+            x: pos.x,
+            y: pos.y,
+            w: box.width,
+            h: box.height,
+          };
+        })
+        .filter((it): it is { id: string; cx: number; cy: number; x: number; y: number; w: number; h: number } => Boolean(it));
 
       for (const box of nodeBoxesRef.current) {
         if (dragging.has(box.id)) continue;
@@ -297,10 +325,31 @@ function CanvasInner({
           const distTop = baseCy - m.y;
           const distBottom = m.y + m.h - baseCy;
           const minDist = Math.min(distLeft, distRight, distTop, distBottom);
-          if (minDist === distLeft) tx -= distLeft + box.width / 2;
-          else if (minDist === distRight) tx += distRight + box.width / 2;
-          else if (minDist === distTop) ty -= distTop + box.height / 2;
-          else ty += distBottom + box.height / 2;
+          if (minDist > MAX_MODAL_DEPTH) continue;
+          if (minDist === distLeft) tx -= Math.min(MAX_MODAL_NUDGE, distLeft + box.width / 2);
+          else if (minDist === distRight) tx += Math.min(MAX_MODAL_NUDGE, distRight + box.width / 2);
+          else if (minDist === distTop) ty -= Math.min(MAX_MODAL_NUDGE, distTop + box.height / 2);
+          else ty += Math.min(MAX_MODAL_NUDGE, distBottom + box.height / 2);
+        }
+
+        if (draggedGroupRects.length > 0) {
+          const rect = { x: baseX + tx, y: baseY + ty, w: box.width, h: box.height };
+          for (const blocker of draggedGroupRects) {
+            const overlapX = Math.min(rect.x + rect.w, blocker.x + blocker.w) - Math.max(rect.x, blocker.x);
+            const overlapY = Math.min(rect.y + rect.h, blocker.y + blocker.h) - Math.max(rect.y, blocker.y);
+            if (overlapX <= -COLLISION_MARGIN || overlapY <= -COLLISION_MARGIN) continue;
+            const dx = rect.x + rect.w / 2 - blocker.cx;
+            const dy = rect.y + rect.h / 2 - blocker.cy;
+            if (overlapX < overlapY) {
+              const dir = dx >= 0 ? 1 : -1;
+              tx += dir * Math.min(MAX_COLLISION_NUDGE, overlapX + COLLISION_MARGIN);
+              rect.x = baseX + tx;
+            } else {
+              const dir = dy >= 0 ? 1 : -1;
+              ty += dir * Math.min(MAX_COLLISION_NUDGE, overlapY + COLLISION_MARGIN);
+              rect.y = baseY + ty;
+            }
+          }
         }
 
         const p = prev[box.id] ?? { x: 0, y: 0 };
@@ -384,15 +433,33 @@ function CanvasInner({
       const openModals = modalsRef.current;
       const connectors: ModalConnector[] = [];
       for (const [id, modal] of Object.entries(openModals)) {
-        const center = centers.get(id);
+        const center = centers.get(`agent:${id}`);
         if (!center) continue;
-        const sourceScreen = inst.flowToScreenPosition({ x: center.cx, y: center.cy });
-        const sx = sourceScreen.x - containerRect.left;
-        const sy = sourceScreen.y - containerRect.top;
         const mx = modal.x + modal.width / 2;
         const my = modal.y + modal.height / 2;
-        const dx = mx - sx;
-        const dy = my - sy;
+        const centerScreen = inst.flowToScreenPosition({ x: center.cx, y: center.cy });
+        const cx = centerScreen.x - containerRect.left;
+        const cy = centerScreen.y - containerRect.top;
+        const flowHalfW = center.w / 2;
+        const flowHalfH = center.h / 2;
+        const rightScreen = inst.flowToScreenPosition({ x: center.cx + flowHalfW, y: center.cy });
+        const bottomScreen = inst.flowToScreenPosition({ x: center.cx, y: center.cy + flowHalfH });
+        const halfW = Math.abs(rightScreen.x - centerScreen.x);
+        const halfH = Math.abs(bottomScreen.y - centerScreen.y);
+        const dx = mx - cx;
+        const dy = my - cy;
+        let sx = cx;
+        let sy = cy;
+        if (halfW > 0 && halfH > 0) {
+          const scale = Math.min(
+            Math.abs(dx) > 0 ? halfW / Math.abs(dx) : Infinity,
+            Math.abs(dy) > 0 ? halfH / Math.abs(dy) : Infinity,
+          );
+          if (Number.isFinite(scale)) {
+            sx = cx + dx * scale;
+            sy = cy + dy * scale;
+          }
+        }
         let tx = modal.x + modal.width / 2;
         let ty = modal.y + modal.height / 2;
         if (Math.abs(dx) > Math.abs(dy)) {
@@ -487,39 +554,92 @@ function CanvasInner({
     const set = new Set<string>();
     for (const n of nodes) set.add(n.id);
     set.add(node.id);
+    if (node.type === "groupHub") {
+      const group = (node.data as GroupNodeData).group;
+      const childIds = rf.getNodes()
+        .filter((n) => n.type === "agent" && (n.data as AgentNodeData).item.group === group)
+        .map((n) => n.id);
+      for (const id of childIds) set.add(id);
+      groupDragRef.current = {
+        groupId: node.id,
+        childIds,
+        lastPosition: { x: node.position.x, y: node.position.y },
+      };
+    } else {
+      groupDragRef.current = null;
+    }
     draggingRef.current = set;
-  }, []);
+  }, [rf]);
 
   const handleNodeDrag: OnNodeDrag = useCallback((_event, _node, nodes) => {
     const set = new Set<string>();
     for (const n of nodes) set.add(n.id);
+    const groupDrag = groupDragRef.current;
+    if (groupDrag) {
+      const groupNode = nodes.find((n) => n.id === groupDrag.groupId) ?? rf.getNode(groupDrag.groupId);
+      if (groupNode) {
+        const dx = groupNode.position.x - groupDrag.lastPosition.x;
+        const dy = groupNode.position.y - groupDrag.lastPosition.y;
+        if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+          rf.setNodes((curr) => curr.map((n) => (
+            groupDrag.childIds.includes(n.id)
+              ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } }
+              : n
+          )));
+          groupDragRef.current = {
+            ...groupDrag,
+            lastPosition: { x: groupNode.position.x, y: groupNode.position.y },
+          };
+        }
+      }
+      set.add(groupDrag.groupId);
+      for (const id of groupDrag.childIds) set.add(id);
+    }
     draggingRef.current = set;
-  }, []);
+  }, [rf]);
 
   const handleNodeDragStop: OnNodeDrag = useCallback((_event, node, nodes) => {
     setOverridesByKind((prevAll) => {
       const prev = prevAll[kind] ?? {};
       const next = { ...prev };
+      const groupDrag = groupDragRef.current;
+      const liveById = new Map(rf.getNodes().map((n) => [n.id, n]));
       const all = nodes.length > 0 ? nodes : [node];
+      if (groupDrag) {
+        all.push(...groupDrag.childIds.map((id) => liveById.get(id)).filter((n): n is Node => Boolean(n)));
+      }
       for (const n of all) {
-        next[n.id] = { x: n.position.x, y: n.position.y };
+        const off = repulsionRef.current[n.id] ?? { x: 0, y: 0 };
+        next[n.id] = { x: n.position.x - off.x, y: n.position.y - off.y };
       }
       return { ...prevAll, [kind]: next };
     });
-    for (const n of nodes.length > 0 ? nodes : [node]) {
-      delete repulsionRef.current[n.id];
+    const groupDrag = groupDragRef.current;
+    const draggedIds = new Set((nodes.length > 0 ? nodes : [node]).map((n) => n.id));
+    if (groupDrag) {
+      draggedIds.add(groupDrag.groupId);
+      for (const id of groupDrag.childIds) draggedIds.add(id);
     }
+    for (const id of draggedIds) {
+      delete repulsionRef.current[id];
+    }
+    groupDragRef.current = null;
     draggingRef.current = new Set();
-  }, [kind]);
+  }, [kind, rf]);
 
   const handleSelectionDragStop = useCallback((_event: React.MouseEvent, nodes: Node[]) => {
     setOverridesByKind((prevAll) => {
       const prev = prevAll[kind] ?? {};
       const next = { ...prev };
-      for (const n of nodes) next[n.id] = { x: n.position.x, y: n.position.y };
+      for (const n of nodes) {
+        const off = repulsionRef.current[n.id] ?? { x: 0, y: 0 };
+        next[n.id] = { x: n.position.x - off.x, y: n.position.y - off.y };
+      }
       return { ...prevAll, [kind]: next };
     });
-    for (const n of nodes) delete repulsionRef.current[n.id];
+    for (const n of nodes) {
+      delete repulsionRef.current[n.id];
+    }
     draggingRef.current = new Set();
   }, [kind]);
 
