@@ -985,7 +985,10 @@ function CanvasInner({
   const preZoomRectsRef = useRef<Record<string, ModalRect>>({});
 
   const runEnterCopyMode = useCallback((paneId: string) => {
-    invoke("enter_copy_mode", { paneId }).catch(console.error);
+    console.log("[MindMap] runEnterCopyMode", { paneId });
+    invoke("enter_copy_mode", { paneId })
+      .then(() => console.log("[MindMap] enter_copy_mode OK", { paneId }))
+      .catch((e) => console.error("[MindMap] enter_copy_mode FAIL", { paneId, error: e }));
   }, []);
 
   const runToggleAutoYes = useCallback((paneId: string) => {
@@ -1114,6 +1117,7 @@ function CanvasInner({
         const completed = PANE_BINDING_IDS.find((id) => (
           shortcutCompletesSequence(shortcutSettings[id], [pending, stroke], prefix)
         ));
+        console.log("[MindMap] keydown second stroke", { pending, stroke, completed, paneId });
         if (completed) {
           mindMapPendingStrokeRef.current = null;
           consume(event);
@@ -1134,6 +1138,7 @@ function CanvasInner({
         shortcutStartsWith(shortcutSettings[id], stroke, prefix)
       ));
       if (startsSequence) {
+        console.log("[MindMap] keydown first stroke", { stroke, startsSequence, paneId });
         mindMapPendingStrokeRef.current = stroke;
         consume(event);
         return;

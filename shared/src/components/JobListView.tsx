@@ -1342,52 +1342,8 @@ export function JobListView({
           </TouchableOpacity>
         )}
       </View>
-      <View style={{ flex: 1, minWidth: spacing.xs }} />
-      {onSetAllGroupTabView && globalTabsView.anyHeader && (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 999,
-            padding: 2,
-            marginRight: spacing.xs,
-          }}
-        >
-          {(["tabs", "jobs"] as const).map((v) => {
-            const active = globalTabsView.activeView === v;
-            const count = v === "tabs" ? globalTabsView.totalTabs : globalTabsView.totalJobs;
-            const label = v === "tabs" ? "Tabs" : "Jobs";
-            return (
-              <TouchableOpacity
-                key={v}
-                onPress={() => onSetAllGroupTabView(globalTabsView.groups, v)}
-                activeOpacity={0.7}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 2,
-                  borderRadius: 999,
-                  backgroundColor: active ? colors.accent : "transparent",
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 11,
-                    fontWeight: "600",
-                    color: active ? "#ffffff" : colors.textSecondary,
-                  }}
-                >
-                  {label} ({count})
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
       {onSortChange && jobs.length > 1 && (
-        <View>
+        <View style={{ marginLeft: spacing.xs }}>
           <TouchableOpacity
             ref={sortTriggerRef}
             onPress={() => setSortOpen(!sortOpen)}
@@ -1410,6 +1366,51 @@ export function JobListView({
             />
           )}
         </View>
+      )}
+      {onSetAllGroupTabView && globalTabsView.anyHeader && (
+        <>
+          <View style={{ flexBasis: "100%", height: 0 }} />
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: colors.surface,
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 999,
+              padding: 2,
+            }}
+          >
+            {(["tabs", "jobs"] as const).map((v) => {
+              const active = globalTabsView.activeView === v;
+              const count = v === "tabs" ? globalTabsView.totalTabs : globalTabsView.totalJobs;
+              const label = v === "tabs" ? "Tabs" : "Jobs";
+              return (
+                <TouchableOpacity
+                  key={v}
+                  onPress={() => onSetAllGroupTabView(globalTabsView.groups, v)}
+                  activeOpacity={0.7}
+                  style={{
+                    paddingHorizontal: 10,
+                    paddingVertical: 2,
+                    borderRadius: 999,
+                    backgroundColor: active ? colors.accent : "transparent",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "600",
+                      color: active ? "#ffffff" : colors.textSecondary,
+                    }}
+                  >
+                    {label} ({count})
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
       )}
     </View>
   ) : null;

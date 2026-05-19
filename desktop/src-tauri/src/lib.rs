@@ -5,6 +5,8 @@
 
 mod aerospace;
 pub mod agent;
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+mod macos_window;
 pub mod agent_session;
 #[cfg(feature = "desktop")]
 mod browser;
@@ -581,12 +583,18 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 let hide_titlebar = state.settings.lock().unwrap().hide_titlebar;
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-                // Config defaults to Overlay; restore Visible if user disabled it
-                if !hide_titlebar {
+                // Config defaults to Visible (so tiling WMs like Aerospace can manage it);
+                // apply Overlay only if the user opted into hiding the titlebar
+                if hide_titlebar {
                     if let Some(window) = app.get_webview_window("settings") {
-                        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Visible);
+                        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
                     }
                 }
+
+                // Force the GUI window to be a standard tileable NSWindow so
+                // tiling WMs (Aerospace, yabai) manage it instead of treating
+                // it as a floating utility window.
+                macos_window::make_standard_tileable_window(&app.handle(), "settings");
             }
 
             // Set app handle for IPC
