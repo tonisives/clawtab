@@ -84,3 +84,6 @@ unused = "deny"
 
 [profile.release]
 panic = "abort"
+
+[profile.dev]
+debug = "line-tables-only"

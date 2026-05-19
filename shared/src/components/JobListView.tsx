@@ -181,10 +181,13 @@ export interface JobListViewProps {
    *  more than one RemoteJob. */
   groupTabView?: Record<string, "tabs" | "jobs">;
   onGroupTabViewChange?: (group: string, view: "tabs" | "jobs") => void;
+  /** Set the view ("tabs" | "jobs") for every group at once. Used by the
+   *  global top-of-sidebar toggle. */
+  onSetAllGroupTabView?: (view: "tabs" | "jobs") => void;
 }
 
 type ListItem =
-  | { kind: "header"; group: string; displayGroup: string; folderPath?: string; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean } }
+  | { kind: "header"; group: string; displayGroup: string; folderPath?: string; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean; tabCount: number; jobCount: number } }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: DetectedProcess; inGroup?: boolean }
   | { kind: "shell"; shell: ShellPane }
@@ -274,6 +277,7 @@ export function JobListView({
   openElsewhereContentKeys,
   groupTabView,
   onGroupTabViewChange,
+  onSetAllGroupTabView,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -648,15 +652,16 @@ export function JobListView({
     for (const entry of visibleGroups) {
       if (entry.type === "job") {
         const groupShells = matchedShellsByGroup.get(entry.group) ?? [];
-        const hasTabsContent = entry.procs.length > 0 || groupShells.length > 0;
-        const hasJobs = entry.jobs.length > 0;
+        const tabCount = entry.procs.length + groupShells.length;
+        const jobCount = entry.jobs.length;
+        const hasTabsContent = tabCount > 0;
+        const hasJobs = jobCount > 0;
         const persisted = groupTabView?.[entry.group];
         const defaultView: "tabs" | "jobs" = !hasTabsContent && hasJobs ? "jobs" : "tabs";
         let view: "tabs" | "jobs" = persisted ?? defaultView;
         if (view === "jobs" && !hasJobs) view = "tabs";
-        if (view === "tabs" && !hasTabsContent && hasJobs) view = "jobs";
         const expanded = !collapsedGroups.has(entry.displayGroup);
-        const tabsToggle = expanded ? { group: entry.group, view, hasTabs: hasTabsContent, hasJobs } : undefined;
+        const tabsToggle = expanded ? { group: entry.group, view, hasTabs: hasTabsContent, hasJobs, tabCount, jobCount } : undefined;
         if (hasMultipleGroups || result.length > 0 || query) {
           result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, tabsToggle });
         }
@@ -1115,7 +1120,7 @@ export function JobListView({
                           {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
                         </Text>
                       )}
-                      {item.tabsToggle && item.tabsToggle.hasTabs && item.tabsToggle.hasJobs && (
+                      {item.tabsToggle && (
                         <View
                           style={{
                             flexDirection: "row",
@@ -1130,6 +1135,8 @@ export function JobListView({
                         >
                           {(["tabs", "jobs"] as const).map((v) => {
                             const active = item.tabsToggle!.view === v;
+                            const count = v === "tabs" ? item.tabsToggle!.tabCount : item.tabsToggle!.jobCount;
+                            const label = v === "tabs" ? "Tabs" : "Jobs";
                             return (
                               <TouchableOpacity
                                 key={v}
@@ -1152,7 +1159,7 @@ export function JobListView({
                                     color: active ? "#ffffff" : colors.textSecondary,
                                   }}
                                 >
-                                  {v === "tabs" ? "Tabs" : "Jobs"}
+                                  {label} ({count})
                                 </Text>
                               </TouchableOpacity>
                             );
@@ -1276,6 +1283,28 @@ export function JobListView({
 
   const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Name";
 
+  const globalTabsView = useMemo(() => {
+    let totalTabs = 0;
+    let totalJobs = 0;
+    let allTabs = true;
+    let allJobs = true;
+    let anyHeader = false;
+    for (const it of items) {
+      if (it.kind !== "header" || !it.tabsToggle) continue;
+      anyHeader = true;
+      totalTabs += it.tabsToggle.tabCount;
+      totalJobs += it.tabsToggle.jobCount;
+      if (it.tabsToggle.view !== "tabs") allTabs = false;
+      if (it.tabsToggle.view !== "jobs") allJobs = false;
+    }
+    return {
+      anyHeader,
+      totalTabs,
+      totalJobs,
+      activeView: allTabs ? ("tabs" as const) : allJobs ? ("jobs" as const) : null,
+    };
+  }, [items]);
+
   const handleSelectSort = useCallback((mode: JobSortMode) => {
     onSortChange?.(mode);
     setSortOpen(false);
@@ -1286,7 +1315,7 @@ export function JobListView({
     (document.activeElement as HTMLElement)?.blur();
   }, []);
 
-  const toolbar = (onSortChange && jobs.length > 1) || jobs.length > 0 ? (
+  const toolbar = (onSortChange && jobs.length > 1) || jobs.length > 0 || (onSetAllGroupTabView && globalTabsView.anyHeader) ? (
     <View style={styles.sortRow}>
       <View style={styles.searchBar}>
         <Text style={styles.searchIcon}>{"\u2315"}</Text>
@@ -1312,6 +1341,49 @@ export function JobListView({
         )}
       </View>
       <View style={{ flex: 1 }} />
+      {onSetAllGroupTabView && globalTabsView.anyHeader && (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 999,
+            padding: 2,
+            marginRight: spacing.xs,
+          }}
+        >
+          {(["tabs", "jobs"] as const).map((v) => {
+            const active = globalTabsView.activeView === v;
+            const count = v === "tabs" ? globalTabsView.totalTabs : globalTabsView.totalJobs;
+            const label = v === "tabs" ? "Tabs" : "Jobs";
+            return (
+              <TouchableOpacity
+                key={v}
+                onPress={() => onSetAllGroupTabView(v)}
+                activeOpacity={0.7}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 2,
+                  borderRadius: 999,
+                  backgroundColor: active ? colors.accent : "transparent",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "600",
+                    color: active ? "#ffffff" : colors.textSecondary,
+                  }}
+                >
+                  {label} ({count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
       {onSortChange && jobs.length > 1 && (
         <View>
           <TouchableOpacity

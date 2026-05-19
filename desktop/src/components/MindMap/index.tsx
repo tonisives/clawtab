@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useJobsCore, shortenPath, type ClaudeQuestion, type DetectedProcess, type JobStatus, type RemoteJob } from "@clawtab/shared";
+import { useJobsCore, useJobActions, shortenPath, type ClaudeQuestion, type DetectedProcess, type JobStatus, type RemoteJob } from "@clawtab/shared";
 import { createTauriTransport } from "../../transport/tauriTransport";
 import { useQuestionPolling } from "../../hooks/useQuestionPolling";
 import { useAutoYes } from "../../hooks/useAutoYes";
@@ -109,6 +109,7 @@ function buildJobItems(
 export function MindMapPanel({ onRequestJobsTab }: MindMapPanelProps) {
   const transport = useMemo(() => createTauriTransport(), []);
   const core = useJobsCore(transport, 10000);
+  const actions = useJobActions(transport, core.reloadStatuses);
   const { questions, startFastQuestionPoll, dismissQuestion } = useQuestionPolling();
   const autoYes = useAutoYes(questions, core.processes, core.jobs as Job[], startFastQuestionPoll);
   const folderRunGroups = useFolderRunGroups(core);
@@ -174,6 +175,8 @@ export function MindMapPanel({ onRequestJobsTab }: MindMapPanelProps) {
         questions={questions}
         autoYes={autoYes}
         transport={transport}
+        core={core}
+        actions={actions}
         folderGroups={folderRunGroups}
         onDismissQuestion={dismissQuestion}
         onRequestJobsTab={onRequestJobsTab}

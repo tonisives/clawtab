@@ -124,6 +124,15 @@ export function useJobsTabSettings() {
     });
   }, []);
 
+  const setAllGroupTabView = useCallback((groups: string[], view: "tabs" | "jobs") => {
+    setGroupTabView((prev) => {
+      const next = { ...prev };
+      for (const g of groups) next[g] = view;
+      localStorage.setItem("desktop_group_tab_view", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const handleHideGroup = useCallback((group: string) => {
     setHiddenGroups((prev) => {
       const next = new Set(prev);

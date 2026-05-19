@@ -2,11 +2,15 @@
 # Wraps the dev binary in a .app bundle so macOS treats it as a real GUI
 # application (Dock icon, key window status, keyboard input). Without this,
 # the bare `cargo` binary runs as a background tool and cannot accept text input.
+#
+# The bundle lives on the internal disk (not on the external CARGO_TARGET_DIR)
+# so macOS does not prompt for "Removable Volumes" access every time `open`
+# launches it.
 set -e
 
 TARGET_DIR="${CARGO_TARGET_DIR:-/Volumes/sam/build/rust/targets}"
 BIN="$TARGET_DIR/debug/clawtab"
-APP="$TARGET_DIR/debug/ClawTab.app"
+APP="${CLAWTAB_DEV_APP:-$HOME/Library/Caches/ClawTab-dev/ClawTab.app}"
 VERSION=$(node -p "require('$(dirname "$0")/package.json').version")
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -29,5 +33,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-ln -sf "$BIN" "$APP/Contents/MacOS/clawtab"
+if [ -f "$BIN" ]; then
+  cp -f "$BIN" "$APP/Contents/MacOS/clawtab"
+fi
 echo "ClawTab.app ready at $APP"

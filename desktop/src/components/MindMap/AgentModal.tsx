@@ -3,8 +3,9 @@ import { emit } from "@tauri-apps/api/event";
 import { TmuxPaneDetail } from "../TmuxPaneDetail";
 import { useWorkspaceManager } from "../../workspace/WorkspaceManager";
 import type { useAutoYes } from "../../hooks/useAutoYes";
-import type { ClaudeQuestion, ShellPane } from "@clawtab/shared";
+import type { ClaudeQuestion, ShellPane, Transport, useJobActions, useJobsCore } from "@clawtab/shared";
 import type { MindItem } from "./useRecencyLayout";
+import { MindMapJobBody } from "./MindMapJobBody";
 
 export interface ModalRect {
   x: number;
@@ -21,6 +22,9 @@ interface AgentModalProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   questions: ClaudeQuestion[];
   autoYes: ReturnType<typeof useAutoYes>;
+  transport: Transport;
+  core: ReturnType<typeof useJobsCore>;
+  actions: ReturnType<typeof useJobActions>;
   onDismissQuestion: (questionId: string) => void;
   onClose: (id: string) => void;
   onChange: (id: string, rect: ModalRect) => void;
@@ -39,6 +43,9 @@ export function AgentModal({
   containerRef,
   questions,
   autoYes,
+  transport,
+  core,
+  actions,
   onDismissQuestion,
   onClose,
   onChange,
@@ -347,16 +354,22 @@ export function AgentModal({
               </button>
             )}
           />
+        ) : item.job ? (
+          <MindMapJobBody
+            item={item}
+            transport={transport}
+            core={core}
+            actions={actions}
+            autoYesActive={autoYesActive}
+            onToggleAutoYes={item.paneId ? handleToggleAutoYes : undefined}
+            dragHandleProps={dragHandleProps}
+            onClose={() => onClose(item.id)}
+            onRequestJobsTab={onRequestJobsTab}
+          />
         ) : (
           <div className="mindmap-modal-meta">
             <div className="row"><span className="k">Group</span><span className="v">{item.group}</span></div>
             <div className="row"><span className="k">State</span><span className="v">{item.state}</span></div>
-            {item.job?.work_dir && (
-              <div className="row"><span className="k">Work dir</span><span className="v">{item.job.work_dir}</span></div>
-            )}
-            {item.job?.cron && (
-              <div className="row"><span className="k">Cron</span><span className="v">{item.job.cron}</span></div>
-            )}
             <p className="hint">No live terminal for this item. Use the back arrow to open it in Jobs.</p>
             <div className="mindmap-popup-actions">
               <button className="btn btn-sm" onClick={handleBack}>Open in Jobs</button>

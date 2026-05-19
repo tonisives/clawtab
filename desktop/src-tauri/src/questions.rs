@@ -379,42 +379,35 @@ struct CachedQuestion {
 /// Find the best affirmative option from a list of question options.
 /// Prefers session/one-time approvals over persistent allowlist entries.
 fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
+    const AFFIRMATIVE_PREFIXES: &[&str] = &[
+        "yes", "allow", "approve", "proceed", "confirm", "ok", "okay",
+    ];
+
     let mut best: Option<(&QuestionOption, i32)> = None;
 
     for opt in options {
         let lower = opt.label.to_lowercase();
+        let trimmed = lower.trim_start_matches(|c: char| !c.is_alphanumeric());
 
-        if lower.starts_with("no")
-            || lower.contains(" cancel")
-            || lower.starts_with("cancel")
-            || lower.contains(" deny")
-            || lower.starts_with("deny")
-            || lower.contains(" reject")
-            || lower.starts_with("reject")
-            || lower.contains("tell codex what to do differently")
-        {
+        let has_affirmative_prefix = AFFIRMATIVE_PREFIXES.iter().any(|p| {
+            trimmed
+                .strip_prefix(p)
+                .map(|rest| rest.is_empty() || !rest.starts_with(|c: char| c.is_alphanumeric()))
+                .unwrap_or(false)
+        });
+
+        if !has_affirmative_prefix {
             continue;
         }
 
-        let mut score = 0;
+        let mut score = 100;
 
-        if lower.starts_with("yes") || lower.contains(" yes") {
-            score += 100;
-        }
         if lower.contains("during this session") || lower.contains("this session") {
             score += 80;
-        }
-        if lower.contains("proceed")
-            || lower.contains("approve")
-            || lower.contains("allow")
-            || lower.contains("run")
-        {
-            score += 60;
         }
         if lower.contains(" once")
             || lower.starts_with("once ")
             || lower.contains(" this time")
-            || lower.contains(" for now")
         {
             score += 40;
         }
@@ -1102,5 +1095,37 @@ Plan:
         let text = "Please select an item and confirm your choice.\n";
         let (options, _) = parse_opencode_buttons(text);
         assert!(options.is_empty());
+    }
+
+    #[test]
+    fn rejects_destructive_options_without_affirmative_prefix() {
+        let options = vec![
+            QuestionOption {
+                number: "1".to_string(),
+                label: "Revert and pin to the PR fork (Recommended)".to_string(),
+                selected: false,
+                col: 0,
+            },
+            QuestionOption {
+                number: "2".to_string(),
+                label: "Revert and re-apply via lazy config hook".to_string(),
+                selected: false,
+                col: 0,
+            },
+            QuestionOption {
+                number: "3".to_string(),
+                label: "Just discard local changes for now".to_string(),
+                selected: false,
+                col: 0,
+            },
+            QuestionOption {
+                number: "4".to_string(),
+                label: "Type something.".to_string(),
+                selected: false,
+                col: 0,
+            },
+        ];
+
+        assert_eq!(find_yes_option(&options), None);
     }
 }

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TARGET_DIR="${CARGO_TARGET_DIR:-/Volumes/sam/build/rust/targets}"
-APP="$TARGET_DIR/debug/ClawTab.app"
+APP="${CLAWTAB_DEV_APP:-$HOME/Library/Caches/ClawTab-dev/ClawTab.app}"
 APP_BIN="$APP/Contents/MacOS/clawtab"
 DEBUG_BIN="$TARGET_DIR/debug/clawtab"
 
