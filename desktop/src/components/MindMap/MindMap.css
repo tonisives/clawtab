@@ -64,10 +64,9 @@
 .mindmap-map-settings-trigger,
 .mindmap-map-settings-menu button {
   border: 1px solid var(--border-color);
-  background: color-mix(in srgb, var(--bg-secondary) 92%, transparent);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(8px);
 }
 
 .mindmap-map-settings-trigger {
@@ -92,9 +91,8 @@
   padding: 6px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-secondary) 94%, transparent);
+  background: var(--bg-secondary);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(10px);
 }
 
 .mindmap-map-settings-menu button {
@@ -117,7 +115,7 @@
 }
 
 .mindmap-group-node {
-  background: color-mix(in srgb, var(--bg-secondary) 80%, transparent);
+  background: var(--bg-secondary);
   border: 1.5px solid color-mix(in srgb, var(--accent-color) 60%, var(--border-color));
   border-radius: 50%;
   display: flex;
@@ -133,7 +131,6 @@
   text-align: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
   user-select: none;
-  backdrop-filter: blur(4px);
   cursor: grab;
 }
 
@@ -176,8 +173,7 @@
   transform: translateX(-50%);
   z-index: 30;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(8px);
-  background: color-mix(in srgb, var(--bg-tertiary) 85%, transparent);
+  background: var(--bg-tertiary);
 }
 
 .mindmap-pill-toggle {
@@ -317,52 +313,26 @@
   overflow: visible;
   border-color: rgb(48, 209, 88);
   box-shadow:
-    0 0 0 1px rgba(48, 209, 88, 0.6),
-    0 0 14px rgba(48, 209, 88, 0.45),
+    0 0 0 1px rgba(48, 209, 88, 0.7),
+    0 0 14px rgba(48, 209, 88, 0.5),
     0 2px 6px rgba(0, 0, 0, 0.28);
-  animation: mindmap-working-pulse 1.4s ease-in-out infinite;
 }
 
-.mindmap-working-ring {
+.mindmap-agent-node.is-working::after {
+  content: "";
   position: absolute;
-  inset: -3px;
-  border-radius: 17px;
+  inset: -2px;
+  border-radius: 16px;
   pointer-events: none;
-  border: 2px solid transparent;
-  box-sizing: border-box;
-  background:
-    linear-gradient(90deg,
-      rgba(48, 209, 88, 0) 0%,
-      rgba(48, 209, 88, 0.85) 30%,
-      rgba(180, 255, 200, 1) 50%,
-      rgba(48, 209, 88, 0.85) 70%,
-      rgba(48, 209, 88, 0) 100%) border-box;
-  background-size: 250% 100%;
-  -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  animation: mindmap-working-flow 1.8s linear infinite;
+  box-shadow: 0 0 16px 2px rgba(48, 209, 88, 0.55);
+  opacity: 0.55;
+  animation: mindmap-working-pulse 1.6s ease-in-out infinite;
+  will-change: opacity;
 }
 
 @keyframes mindmap-working-pulse {
-  0%, 100% {
-    box-shadow:
-      0 0 0 1px rgba(48, 209, 88, 0.6),
-      0 0 10px rgba(48, 209, 88, 0.35),
-      0 2px 6px rgba(0, 0, 0, 0.28);
-  }
-  50% {
-    box-shadow:
-      0 0 0 2px rgba(48, 209, 88, 0.85),
-      0 0 22px rgba(48, 209, 88, 0.6),
-      0 2px 6px rgba(0, 0, 0, 0.28);
-  }
-}
-
-@keyframes mindmap-working-flow {
-  0% { background-position: 250% 0; }
-  100% { background-position: -250% 0; }
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
 }
 
 .mindmap-agent-node.is-asking {

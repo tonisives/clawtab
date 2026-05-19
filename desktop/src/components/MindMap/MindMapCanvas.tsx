@@ -10,11 +10,14 @@ import {
   type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { GroupNode } from "./GroupNode";
 import { AgentNode } from "./AgentNode";
 import { AgentModal, type ModalRect } from "./AgentModal";
 import { GroupSpawnPopup } from "./GroupSpawnPopup";
 import { GearIcon } from "../icons";
+import { EditTextDialog } from "../EditTextDialog";
 import {
   useRecencyLayout,
   type AgentNodeData,
@@ -24,7 +27,18 @@ import {
   type LayoutPosition,
 } from "./useRecencyLayout";
 import type { useAutoYes } from "../../hooks/useAutoYes";
-import type { ClaudeQuestion, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore } from "@clawtab/shared";
+import type { ClaudeQuestion, DetectedProcess, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore } from "@clawtab/shared";
+import { shortenPath } from "@clawtab/shared";
+import {
+  DEFAULT_SHORTCUTS,
+  eventToShortcutBinding,
+  resolveShortcutSettings,
+  shortcutCompletesSequence,
+  shortcutMatches,
+  shortcutStartsWith,
+  type ShortcutSettings,
+} from "../../shortcuts";
+import type { AppSettings } from "../../types";
 
 interface FolderGroup {
   group: string;
@@ -209,6 +223,12 @@ function CanvasInner({
     folderPath?: string;
     anchor: { x: number; y: number };
   } | null>(null);
+  const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
+  const [renameDialog, setRenameDialog] = useState<{
+    paneId: string;
+    initialValue: string;
+    placeholder?: string;
+  } | null>(null);
 
   const modals = modalsByKind[kind] ?? EMPTY_MODALS;
   const order = orderByKind[kind] ?? EMPTY_ORDER;
@@ -273,9 +293,11 @@ function CanvasInner({
         return { ...ln, selected: existing.selected };
       });
     });
+    wakeRef.current();
   }, [rf, layoutNodes]);
   useEffect(() => {
     rf.setEdges(edges);
+    wakeRef.current();
   }, [rf, edges]);
 
   const nodeTypes = useMemo(() => ({ groupHub: GroupNode, agent: AgentNode }), []);
@@ -286,9 +308,11 @@ function CanvasInner({
     return m;
   }, [effectiveItems]);
 
-  const { nodes: baseNodes } = useRecencyLayout(effectiveItems, {});
+  // Derived from `layoutNodes` directly. baseX/baseY here is only consulted
+  // when there is no manual override (see the rAF loop), so reusing the
+  // overridden position is harmless: the loop reads `mo.x` instead.
   const nodeBoxes = useMemo<NodeBox[]>(() => {
-    return baseNodes.map((n) => {
+    return layoutNodes.map((n) => {
       let w = 0;
       let h = 0;
       if (n.type === "agent") {
@@ -302,7 +326,7 @@ function CanvasInner({
       }
       return { id: n.id, type: n.type, baseX: n.position.x, baseY: n.position.y, width: w, height: h };
     });
-  }, [baseNodes]);
+  }, [layoutNodes]);
   const nodeBoxesRef = useRef<NodeBox[]>([]);
   nodeBoxesRef.current = nodeBoxes;
 
@@ -312,16 +336,21 @@ function CanvasInner({
     a.length === b.length && a.every((it, idx) => it.id === b[idx]?.id && it.path === b[idx]?.path)
   );
 
-  // Animation loop. Computes target repulsion against *base* position (not
-  // current displaced position) so a node pushed out of a modal stays pushed
-  // - no oscillation as it crosses the boundary while springing.
+  // Gated animation loop. The tick runs only while something is in motion
+  // (a drag, an unsettled repulsion offset) or while modal connectors need to
+  // track node positions. When everything is settled and no modals are open,
+  // the loop suspends itself; `wake()` re-arms it on drag start / modal
+  // open / layout change.
+  const wakeRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     let raf = 0;
+    let running = false;
     const tick = () => {
+      running = false;
       const inst = rf;
       const container = containerRef.current;
       if (!container) {
-        raf = requestAnimationFrame(tick);
+        schedule();
         return;
       }
       const containerRect = container.getBoundingClientRect();
@@ -599,10 +628,30 @@ function CanvasInner({
       }
       setModalConnectors((prev) => sameConnectors(prev, connectors) ? prev : connectors);
 
+      // Reschedule only if there's still work for the next frame: an active
+      // drag or an unsettled repulsion offset. Modal connectors are only
+      // re-drawn when something explicitly wakes us (modal moved, viewport
+      // panned/zoomed, node positions changed) - they don't need a steady
+      // 60fps tick when nothing is moving.
+      const hasRepulsion = Object.keys(repulsionRef.current).length > 0;
+      const hasDrag = draggingRef.current.size > 0;
+      if (hasRepulsion || hasDrag) {
+        schedule();
+      }
+    };
+    const schedule = () => {
+      if (running) return;
+      running = true;
       raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    wakeRef.current = schedule;
+    // Initial pass: lays down edge handles + any startup connectors, then the
+    // tick suspends itself when there's nothing pending.
+    schedule();
+    return () => {
+      wakeRef.current = () => undefined;
+      cancelAnimationFrame(raf);
+    };
   }, [rf]);
 
   const placeModal = useCallback((id: string) => {
@@ -622,6 +671,7 @@ function CanvasInner({
       setOrderByKind((ordAll) => ({ ...ordAll, [kind]: [...(ordAll[kind] ?? []).filter((x) => x !== id), id] }));
       return { ...prevAll, [kind]: { ...prev, [id]: rect } };
     });
+    wakeRef.current();
   }, [kind]);
 
   const handleNodeClick: NodeMouseHandler = useCallback((event, node: Node) => {
@@ -647,6 +697,7 @@ function CanvasInner({
       delete next[id];
       return { ...prevAll, [kind]: next };
     });
+    wakeRef.current();
   }, [kind]);
 
   const handleChange = useCallback((id: string, rect: ModalRect) => {
@@ -655,6 +706,7 @@ function CanvasInner({
       if (!prev[id]) return prevAll;
       return { ...prevAll, [kind]: { ...prev, [id]: rect } };
     });
+    wakeRef.current();
   }, [kind]);
 
   const handleFocus = useCallback((id: string) => {
@@ -698,6 +750,7 @@ function CanvasInner({
       groupDragRef.current = null;
     }
     draggingRef.current = set;
+    wakeRef.current();
   }, [kind, rf]);
 
   const handleNodeDrag: OnNodeDrag = useCallback((_event, _node, nodes) => {
@@ -847,6 +900,258 @@ function CanvasInner({
     });
   }, [kind, rf]);
 
+  // Load shortcut settings to interpret APP_SHORTCUT_EVENT bindings sent from
+  // the focused xterm pane (paneShortcuts dispatches with the resolved binding).
+  useEffect(() => {
+    invoke<AppSettings>("get_settings")
+      .then((s) => setShortcutSettings(resolveShortcutSettings(s)))
+      .catch(() => setShortcutSettings(DEFAULT_SHORTCUTS));
+    const p = listen<AppSettings>("settings-updated", (event) => {
+      setShortcutSettings(resolveShortcutSettings(event.payload));
+    });
+    return () => {
+      p.then((fn) => fn());
+    };
+  }, []);
+
+  // Resolve the focused modal's paneId for dispatched shortcuts that don't
+  // carry a paneId (e.g. window-level keydown from outside the xterm).
+  const orderRef = useRef<string[]>([]);
+  orderRef.current = order;
+  const itemsByIdRef = useRef<Map<string, MindItem>>(new Map());
+  itemsByIdRef.current = itemsById;
+  const shellModalsRef = useRef<ShellModalMap>({});
+  shellModalsRef.current = shellModals;
+  const processesRef = useRef<DetectedProcess[]>([]);
+  processesRef.current = core.processes;
+
+  const resolveFocusedPaneId = useCallback((): string | null => {
+    const ord = orderRef.current;
+    for (let i = ord.length - 1; i >= 0; i--) {
+      const id = ord[i];
+      const shellEntry = shellModalsRef.current[id];
+      if (shellEntry) return shellEntry.shell.pane_id;
+      const item = itemsByIdRef.current.get(id);
+      if (item?.paneId) return item.paneId;
+    }
+    return null;
+  }, []);
+
+  const openRenameForPaneId = useCallback((paneId: string) => {
+    const process = processesRef.current.find((p) => p.pane_id === paneId);
+    if (!process) return;
+    setRenameDialog({
+      paneId,
+      initialValue: process.display_name ?? process.pane_title ?? "",
+      placeholder: shortenPath(process.cwd),
+    });
+  }, []);
+
+  const handleSaveRename = useCallback(async (value: string) => {
+    if (!renameDialog) return;
+    const paneId = renameDialog.paneId;
+    const displayName = value.trim() || null;
+    setRenameDialog(null);
+    try {
+      core.setProcesses((prev) => prev.map((p) => (
+        p.pane_id === paneId ? { ...p, display_name: displayName } : p
+      )));
+      await invoke("set_detected_process_display_name", { paneId, displayName });
+      await core.reloadProcesses();
+    } catch (e) {
+      console.error("Failed to save process name:", e);
+    }
+  }, [core, renameDialog]);
+
+  // Resolve which modal currently owns a paneId (for kill/zoom actions).
+  const modalIdForPaneId = useCallback((paneId: string): string | null => {
+    for (const id of orderRef.current) {
+      const shellEntry = shellModalsRef.current[id];
+      if (shellEntry?.shell.pane_id === paneId) return id;
+      const item = itemsByIdRef.current.get(id);
+      if (item?.paneId === paneId) return id;
+    }
+    return null;
+  }, []);
+
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
+  const handleChangeRef = useRef(handleChange);
+  handleChangeRef.current = handleChange;
+  const autoYesRef = useRef(autoYes);
+  autoYesRef.current = autoYes;
+
+  // Track per-modal pre-zoom rects so zoom-toggle can restore the original size.
+  const preZoomRectsRef = useRef<Record<string, ModalRect>>({});
+
+  const runEnterCopyMode = useCallback((paneId: string) => {
+    invoke("enter_copy_mode", { paneId }).catch(console.error);
+  }, []);
+
+  const runToggleAutoYes = useCallback((paneId: string) => {
+    const ay = autoYesRef.current;
+    const proc = processesRef.current.find((p) => p.pane_id === paneId);
+    const title = proc?.display_name
+      ?? proc?.matched_job
+      ?? (proc?.cwd ? shortenPath(proc.cwd) : paneId);
+    ay.handleToggleAutoYesByPaneId(paneId, title);
+  }, []);
+
+  const runKillPane = useCallback((paneId: string) => {
+    const modalId = modalIdForPaneId(paneId);
+    if (modalId) handleCloseRef.current(modalId);
+    invoke("stop_detected_process", { paneId }).catch(console.error);
+  }, [modalIdForPaneId]);
+
+  const runZoomPane = useCallback((paneId: string) => {
+    const modalId = modalIdForPaneId(paneId);
+    if (!modalId) return;
+    const current = modalsRef.current[modalId];
+    if (!current) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const bounds = container.getBoundingClientRect();
+    const stored = preZoomRectsRef.current[modalId];
+    if (stored) {
+      delete preZoomRectsRef.current[modalId];
+      handleChangeRef.current(modalId, { ...stored, z: current.z });
+      return;
+    }
+    preZoomRectsRef.current[modalId] = current;
+    const fullscreen: ModalRect = {
+      x: 0,
+      y: 0,
+      width: bounds.width,
+      height: bounds.height,
+      z: current.z,
+    };
+    handleChangeRef.current(modalId, fullscreen);
+  }, [modalIdForPaneId]);
+
+  // Window-level keydown handler in capture phase. Runs BEFORE JobsTab's
+  // listener and stops propagation for shortcuts that target a MindMap modal,
+  // so JobsTab does not also act on a stale pane.
+  const mindMapPendingStrokeRef = useRef<string | null>(null);
+  useEffect(() => {
+    const PANE_BINDING_IDS: Array<keyof ShortcutSettings> = [
+      "rename_active_pane",
+      "enter_copy_mode",
+      "toggle_auto_yes",
+      "kill_pane",
+      "zoom_active_pane",
+      "split_pane_vertical",
+      "split_pane_horizontal",
+      "move_pane_left",
+      "move_pane_right",
+      "move_pane_up",
+      "move_pane_down",
+      "resize_pane_left",
+      "resize_pane_right",
+      "resize_pane_up",
+      "resize_pane_down",
+      "reveal_in_sidebar",
+      "toggle_sidebar",
+      "next_sidebar_item",
+      "previous_sidebar_item",
+      "focus_agent_input",
+      "back_navigation",
+      "forward_navigation",
+    ];
+
+    const consume = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.stopPropagation();
+      (event as KeyboardEvent & { __clawtabShortcutHandled?: boolean }).__clawtabShortcutHandled = true;
+    };
+
+    const dispatchAction = (bindingId: keyof ShortcutSettings, paneId: string) => {
+      switch (bindingId) {
+        case "rename_active_pane":
+          openRenameForPaneId(paneId);
+          break;
+        case "enter_copy_mode":
+          runEnterCopyMode(paneId);
+          break;
+        case "toggle_auto_yes":
+          runToggleAutoYes(paneId);
+          break;
+        case "kill_pane":
+          runKillPane(paneId);
+          break;
+        case "zoom_active_pane":
+          runZoomPane(paneId);
+          break;
+        default:
+          // Intercepted but no-op so JobsTab doesn't act on a stale pane.
+          break;
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (!target.closest(".mindmap-modal-shell")) return;
+
+      const paneId = resolveFocusedPaneId();
+      if (!paneId) return;
+
+      if (mindMapPendingStrokeRef.current && event.key === "Escape") {
+        mindMapPendingStrokeRef.current = null;
+        consume(event);
+        return;
+      }
+
+      const stroke = eventToShortcutBinding(event);
+      const prefix = shortcutSettings.prefix_key;
+
+      if (mindMapPendingStrokeRef.current) {
+        if (!stroke) {
+          consume(event);
+          return;
+        }
+        const pending = mindMapPendingStrokeRef.current;
+        const completed = PANE_BINDING_IDS.find((id) => (
+          shortcutCompletesSequence(shortcutSettings[id], [pending, stroke], prefix)
+        ));
+        if (completed) {
+          mindMapPendingStrokeRef.current = null;
+          consume(event);
+          dispatchAction(completed, paneId);
+          return;
+        }
+        const nextStart = PANE_BINDING_IDS.find((id) => (
+          shortcutStartsWith(shortcutSettings[id], stroke, prefix)
+        ));
+        mindMapPendingStrokeRef.current = nextStart ? stroke : null;
+        consume(event);
+        return;
+      }
+
+      if (!stroke) return;
+
+      const startsSequence = PANE_BINDING_IDS.find((id) => (
+        shortcutStartsWith(shortcutSettings[id], stroke, prefix)
+      ));
+      if (startsSequence) {
+        mindMapPendingStrokeRef.current = stroke;
+        consume(event);
+        return;
+      }
+
+      const singleMatch = PANE_BINDING_IDS.find((id) => (
+        shortcutMatches(event, shortcutSettings[id], prefix)
+      ));
+      if (singleMatch) {
+        consume(event);
+        dispatchAction(singleMatch, paneId);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [shortcutSettings, resolveFocusedPaneId, openRenameForPaneId, runEnterCopyMode, runToggleAutoYes, runKillPane, runZoomPane]);
+
   return (
     <div className="mindmap-canvas" ref={containerRef}>
       <ReactFlow
@@ -858,6 +1163,7 @@ function CanvasInner({
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         onSelectionDragStop={handleSelectionDragStop}
+        onMove={() => wakeRef.current()}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
@@ -961,6 +1267,16 @@ function CanvasInner({
           transport={transport}
           onSpawn={handleSpawn}
           onClose={() => setSpawnPopup(null)}
+        />
+      )}
+      {renameDialog && (
+        <EditTextDialog
+          title="Edit pane title"
+          label="Title"
+          initialValue={renameDialog.initialValue}
+          placeholder={renameDialog.placeholder}
+          onSave={handleSaveRename}
+          onCancel={() => setRenameDialog(null)}
         />
       )}
     </div>

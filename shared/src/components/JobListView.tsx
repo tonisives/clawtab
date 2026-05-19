@@ -182,8 +182,9 @@ export interface JobListViewProps {
   groupTabView?: Record<string, "tabs" | "jobs">;
   onGroupTabViewChange?: (group: string, view: "tabs" | "jobs") => void;
   /** Set the view ("tabs" | "jobs") for every group at once. Used by the
-   *  global top-of-sidebar toggle. */
-  onSetAllGroupTabView?: (view: "tabs" | "jobs") => void;
+   *  global top-of-sidebar toggle. The caller receives the list of group
+   *  keys currently visible in the sidebar. */
+  onSetAllGroupTabView?: (groups: string[], view: "tabs" | "jobs") => void;
 }
 
 type ListItem =
@@ -1115,11 +1116,6 @@ export function JobListView({
                         </Text>
                       </TouchableOpacity>
                       <Text style={[styles.groupHeader, isActiveWorkspace ? styles.activeWorkspaceHeaderText : null, isInactiveWorkspace ? { opacity: 0.55 } : null]}>{item.displayGroup}</Text>
-                      {item.folderPath && (
-                        <Text style={styles.groupFolderPath} numberOfLines={1}>
-                          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
-                        </Text>
-                      )}
                       {item.tabsToggle && (
                         <View
                           style={{
@@ -1191,6 +1187,11 @@ export function JobListView({
                         >
                           <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
                         </TouchableOpacity>
+                      )}
+                      {item.folderPath && (
+                        <Text style={[styles.groupFolderPath, { textAlign: "right" }]} numberOfLines={1}>
+                          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
+                        </Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -1284,24 +1285,25 @@ export function JobListView({
   const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sortMode)?.label ?? "Name";
 
   const globalTabsView = useMemo(() => {
+    const groups: string[] = [];
     let totalTabs = 0;
     let totalJobs = 0;
     let allTabs = true;
     let allJobs = true;
-    let anyHeader = false;
     for (const it of items) {
       if (it.kind !== "header" || !it.tabsToggle) continue;
-      anyHeader = true;
+      groups.push(it.tabsToggle.group);
       totalTabs += it.tabsToggle.tabCount;
       totalJobs += it.tabsToggle.jobCount;
       if (it.tabsToggle.view !== "tabs") allTabs = false;
       if (it.tabsToggle.view !== "jobs") allJobs = false;
     }
     return {
-      anyHeader,
+      groups,
+      anyHeader: groups.length > 0,
       totalTabs,
       totalJobs,
-      activeView: allTabs ? ("tabs" as const) : allJobs ? ("jobs" as const) : null,
+      activeView: groups.length > 0 && allTabs ? ("tabs" as const) : groups.length > 0 && allJobs ? ("jobs" as const) : null,
     };
   }, [items]);
 
@@ -1340,7 +1342,7 @@ export function JobListView({
           </TouchableOpacity>
         )}
       </View>
-      <View style={{ flex: 1 }} />
+      <View style={{ flex: 1, minWidth: spacing.xs }} />
       {onSetAllGroupTabView && globalTabsView.anyHeader && (
         <View
           style={{
@@ -1361,7 +1363,7 @@ export function JobListView({
             return (
               <TouchableOpacity
                 key={v}
-                onPress={() => onSetAllGroupTabView(v)}
+                onPress={() => onSetAllGroupTabView(globalTabsView.groups, v)}
                 activeOpacity={0.7}
                 style={{
                   paddingHorizontal: 10,
@@ -1738,7 +1740,10 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 180,
+    minWidth: 140,
     maxWidth: 240,
     gap: 6,
     backgroundColor: colors.surface,
@@ -1764,6 +1769,8 @@ const styles = StyleSheet.create({
   sortRow: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
+    rowGap: spacing.xs,
     marginBottom: spacing.xs,
     zIndex: 10,
   },

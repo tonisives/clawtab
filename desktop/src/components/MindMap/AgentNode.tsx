@@ -32,7 +32,6 @@ function AgentNodeImpl({ data }: NodeProps) {
       <Handle id="b" type="target" position={Position.Bottom} style={{ opacity: 0, bottom: 0 }} />
       <Handle id="l" type="target" position={Position.Left} style={{ opacity: 0, left: 0 }} />
       <Handle id="r" type="target" position={Position.Right} style={{ opacity: 0, right: 0 }} />
-      {item.working && <span className="mindmap-working-ring" aria-hidden="true" />}
       {kind && (
         <span className="mindmap-agent-provider" aria-hidden="true">
           <JobKindIcon kind={kind} size={16} compact bare />

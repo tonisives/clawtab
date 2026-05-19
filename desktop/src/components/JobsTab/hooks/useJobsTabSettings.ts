@@ -175,5 +175,6 @@ export function useJobsTabSettings() {
     handleUnhideGroup,
     groupTabView,
     setGroupTabViewFor,
+    setAllGroupTabView,
   };
 }

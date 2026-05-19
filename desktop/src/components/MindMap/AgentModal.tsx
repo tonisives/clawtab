@@ -83,10 +83,12 @@ export function AgentModal({
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose(item.id);
-      }
+      if (e.key !== "Escape") return;
+      // A modal dialog (rename, confirm, etc.) is open and will handle Escape
+      // itself - don't also close the underlying modal window.
+      if (document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      onClose(item.id);
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);

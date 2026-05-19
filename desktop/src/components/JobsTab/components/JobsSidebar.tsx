@@ -462,6 +462,7 @@ export function JobsSidebar({
       openElsewhereContentKeys={openElsewhereContentKeys}
       groupTabView={settings.groupTabView}
       onGroupTabViewChange={settings.setGroupTabViewFor}
+      onSetAllGroupTabView={settings.setAllGroupTabView}
     />
   );
 }
