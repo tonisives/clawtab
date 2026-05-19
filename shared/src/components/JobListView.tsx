@@ -1116,7 +1116,47 @@ export function JobListView({
                         </Text>
                       </TouchableOpacity>
                       <Text style={[styles.groupHeader, isActiveWorkspace ? styles.activeWorkspaceHeaderText : null, isInactiveWorkspace ? { opacity: 0.55 } : null]}>{item.displayGroup}</Text>
-                      {item.tabsToggle && (
+                      {allowGroupMenu && (
+                        <TouchableOpacity
+                          ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
+                          onPress={(e: any) => {
+                            e.stopPropagation();
+                            if (groupMenu?.group === item.group) {
+                              setGroupMenu(null);
+                              return;
+                            }
+                            if (isWeb) {
+                              const node = e?.currentTarget ?? e?.target;
+                              groupMenuTriggerRef.current = node;
+                              if (node?.getBoundingClientRect) {
+                                const rect = node.getBoundingClientRect();
+                                setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
+                              }
+                            }
+                            setGroupMenu({ group: item.group, folderPath: item.folderPath });
+                          }}
+                          style={styles.addJobBtn}
+                          activeOpacity={0.6}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
+                        </TouchableOpacity>
+                      )}
+                      {item.folderPath && (
+                        <Text style={[styles.groupFolderPath, { textAlign: "right" }]} numberOfLines={1}>
+                          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                    {item.tabsToggle && (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          marginLeft: spacing.lg,
+                          marginBottom: spacing.xs,
+                        }}
+                      >
                         <View
                           style={{
                             flexDirection: "row",
@@ -1126,7 +1166,6 @@ export function JobListView({
                             borderColor: colors.border,
                             borderRadius: 999,
                             padding: 2,
-                            marginLeft: spacing.xs,
                           }}
                         >
                           {(["tabs", "jobs"] as const).map((v) => {
@@ -1161,39 +1200,8 @@ export function JobListView({
                             );
                           })}
                         </View>
-                      )}
-                      {allowGroupMenu && (
-                        <TouchableOpacity
-                          ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
-                          onPress={(e: any) => {
-                            e.stopPropagation();
-                            if (groupMenu?.group === item.group) {
-                              setGroupMenu(null);
-                              return;
-                            }
-                            if (isWeb) {
-                              const node = e?.currentTarget ?? e?.target;
-                              groupMenuTriggerRef.current = node;
-                              if (node?.getBoundingClientRect) {
-                                const rect = node.getBoundingClientRect();
-                                setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
-                              }
-                            }
-                            setGroupMenu({ group: item.group, folderPath: item.folderPath });
-                          }}
-                          style={styles.addJobBtn}
-                          activeOpacity={0.6}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        >
-                          <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
-                        </TouchableOpacity>
-                      )}
-                      {item.folderPath && (
-                        <Text style={[styles.groupFolderPath, { textAlign: "right" }]} numberOfLines={1}>
-                          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
                 );
               }

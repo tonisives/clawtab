@@ -1097,7 +1097,10 @@ function CanvasInner({
       if (!target.closest(".mindmap-modal-shell")) return;
 
       const paneId = resolveFocusedPaneId();
-      if (!paneId) return;
+      if (!paneId) {
+        console.log("[MindMap] keydown but no focused pane, key:", event.key);
+        return;
+      }
 
       if (mindMapPendingStrokeRef.current && event.key === "Escape") {
         mindMapPendingStrokeRef.current = null;
