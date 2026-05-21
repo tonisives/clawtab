@@ -122,10 +122,10 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
 pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<DetectedProcess>, String> {
     // Snapshot shared state under the lock, then release before spawning blocking work
     let live_viewer_panes: HashSet<String> =
-        { state.pty_manager.lock().unwrap().active_pane_ids() };
+        { state.pty_manager.lock().active_pane_ids() };
 
     let match_entries: Vec<(String, String, String)> = {
-        let config = state.jobs_config.lock().unwrap();
+        let config = state.jobs_config.lock();
         config
             .jobs
             .iter()
@@ -146,7 +146,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
     // resolved to (group, slug) directly without depending on job_status or
     // the history trust window.
     let slug_to_group: HashMap<String, String> = {
-        let config = state.jobs_config.lock().unwrap();
+        let config = state.jobs_config.lock();
         config
             .jobs
             .iter()
@@ -161,7 +161,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
             root: Option<String>,
         }
         let jobs_by_slug: HashMap<String, JobInfo> = {
-            let config = state.jobs_config.lock().unwrap();
+            let config = state.jobs_config.lock();
             config
                 .jobs
                 .iter()
@@ -179,7 +179,6 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
         let recent = state
             .history
             .lock()
-            .unwrap()
             .get_recent(500)
             .unwrap_or_default();
         let mut panes = HashMap::new();
@@ -211,7 +210,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
             _ => HashMap::new(),
         };
     let running_panes: HashMap<String, (String, String)> = {
-        let config = state.jobs_config.lock().unwrap();
+        let config = state.jobs_config.lock();
         statuses
             .iter()
             .filter_map(|(slug, status)| match status {
@@ -227,7 +226,7 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
             .collect()
     };
 
-    let overrides = state.process_overrides.lock().unwrap().clone();
+    let overrides = state.process_overrides.lock().clone();
 
     // Run all subprocess-heavy work off the async runtime
     let snapshot = tokio::task::spawn_blocking(move || {
@@ -434,7 +433,7 @@ pub fn set_detected_process_display_name(
     pane_id: String,
     display_name: Option<String>,
 ) -> Result<(), String> {
-    let mut overrides = state.process_overrides.lock().unwrap();
+    let mut overrides = state.process_overrides.lock();
     let entry = overrides.entry(pane_id).or_default();
     entry.display_name = display_name.and_then(normalize_optional_text);
     prune_empty_overrides(&mut overrides);
@@ -450,7 +449,7 @@ pub fn set_detected_process_queries(
     first_query: Option<String>,
     last_query: Option<String>,
 ) -> Result<(), String> {
-    let mut overrides = state.process_overrides.lock().unwrap();
+    let mut overrides = state.process_overrides.lock();
     let entry = overrides.entry(pane_id).or_default();
     entry.first_query = first_query.and_then(normalize_optional_text);
     entry.last_query = last_query.and_then(normalize_optional_text);
@@ -466,7 +465,7 @@ pub fn set_detected_process_group(
     pane_id: String,
     group: String,
 ) -> Result<(), String> {
-    let mut overrides = state.process_overrides.lock().unwrap();
+    let mut overrides = state.process_overrides.lock();
     let entry = overrides.entry(pane_id).or_default();
     // "" signals "independent" (no group); non-empty signals pinned to that group.
     entry.group_override = Some(group.trim().to_string());
@@ -480,7 +479,7 @@ fn prune_stale_process_overrides(
     state: &State<'_, AppState>,
     detected_pane_ids: &HashSet<String>,
 ) -> Result<(), String> {
-    let mut overrides = state.process_overrides.lock().unwrap();
+    let mut overrides = state.process_overrides.lock();
     let before_len = overrides.len();
     overrides.retain(|pane_id, _| detected_pane_ids.contains(pane_id));
     if overrides.len() == before_len {
@@ -513,7 +512,7 @@ fn persist_process_overrides(
     state: &State<'_, AppState>,
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<(), String> {
-    let mut settings = state.settings.lock().unwrap();
+    let mut settings = state.settings.lock();
     let on_disk = crate::config::settings::AppSettings::load();
     if settings.telegram.is_none() {
         settings.telegram = on_disk.telegram;
@@ -611,7 +610,7 @@ pub fn sigint_detected_process(pane_id: String) -> Result<(), String> {
 #[tauri::command]
 pub fn stop_detected_process(state: State<'_, AppState>, pane_id: String) -> Result<(), String> {
     crate::tmux::kill_pane(&pane_id)?;
-    let mut overrides = state.process_overrides.lock().unwrap();
+    let mut overrides = state.process_overrides.lock();
     if overrides.remove(&pane_id).is_none() {
         return Ok(());
     }
@@ -697,7 +696,7 @@ fn resolve_pane_group(
     cwd: &str,
     pane_slug_tag: Option<&str>,
 ) -> Option<String> {
-    if let Some(override_entry) = state.process_overrides.lock().unwrap().get(pane_id) {
+    if let Some(override_entry) = state.process_overrides.lock().get(pane_id) {
         if let Some(group_val) = override_entry.group_override.as_ref() {
             if group_val.is_empty() {
                 return None;
@@ -706,7 +705,7 @@ fn resolve_pane_group(
         }
     }
 
-    let config = state.jobs_config.lock().unwrap();
+    let config = state.jobs_config.lock();
 
     if let Some(tag) = pane_slug_tag {
         if let Some(job) = config.jobs.iter().find(|job| job.slug == tag) {

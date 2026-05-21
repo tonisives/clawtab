@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use crate::config::jobs::{Job, JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
@@ -10,14 +11,8 @@ use super::commands::{self, AgentCommand};
 use super::types::{TelegramResponse, Update};
 use super::{ActiveAgent, TelegramConfig};
 
-fn lock_or_log<'a, T>(mutex: &'a Mutex<T>, name: &str) -> Option<std::sync::MutexGuard<'a, T>> {
-    match mutex.lock() {
-        Ok(guard) => Some(guard),
-        Err(e) => {
-            log::error!("Mutex '{}' poisoned: {}", name, e);
-            None
-        }
-    }
+fn lock_or_log<'a, T>(mutex: &'a Mutex<T>, _name: &str) -> Option<parking_lot::MutexGuard<'a, T>> {
+    Some(mutex.lock())
 }
 
 pub struct AgentState {

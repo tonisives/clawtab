@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use chrono::Utc;
 use tokio::process::Command;
@@ -117,7 +118,7 @@ pub async fn execute_job(
             pane_id: None,
             tmux_session: None,
         };
-        let mut status = job_status.lock().unwrap();
+        let mut status = job_status.lock();
         status.insert(job.slug.clone(), new_status.clone());
         drop(status);
         crate::relay::push_status_update(relay, &job.slug, &new_status);
@@ -159,7 +160,7 @@ pub async fn execute_job(
     };
 
     {
-        let h = history.lock().unwrap();
+        let h = history.lock();
         if let Err(e) = h.insert(&record) {
             log::error!("Failed to insert run record: {}", e);
         }
@@ -183,7 +184,7 @@ pub async fn execute_job(
     if job.max_history > 0 {
         let keep = job.max_history.saturating_sub(1) as usize;
         let started_map = {
-            let h = history.lock().unwrap();
+            let h = history.lock();
             h.pane_started_at_for_job(&job.slug).unwrap_or_default()
         };
         match crate::tmux::list_panes_by_slug(&job.slug) {
@@ -230,7 +231,7 @@ pub async fn execute_job(
 
     // Get telegram config for notifications
     let telegram_config = {
-        let s = settings.lock().unwrap();
+        let s = settings.lock();
         s.telegram.clone()
     };
 
@@ -245,7 +246,7 @@ pub async fn execute_job(
                         pane_id: Some(handle.pane_id.clone()),
                         tmux_session: Some(handle.tmux_session.clone()),
                     };
-                    let mut status = job_status.lock().unwrap();
+                    let mut status = job_status.lock();
                     status.insert(job.slug.clone(), new_status.clone());
                     drop(status);
                     crate::relay::push_status_update(relay, &job.slug, &new_status);
@@ -256,13 +257,13 @@ pub async fn execute_job(
                 }
                 // Persist pane_id to history so reattach can find it after restart
                 {
-                    let h = history.lock().unwrap();
+                    let h = history.lock();
                     let _ = h.update_pane_id(&run_id, &handle.pane_id);
                 }
                 // If job has auto_yes enabled, add this pane to auto_yes_panes
                 if job.auto_yes {
                     if let Some(ay_panes) = auto_yes_panes {
-                        let mut panes = ay_panes.lock().unwrap();
+                        let mut panes = ay_panes.lock();
                         panes.insert(handle.pane_id.clone());
                         log::info!(
                             "Auto-yes enabled for job '{}' pane '{}'",
@@ -280,22 +281,21 @@ pub async fn execute_job(
                             .and_then(|c| c.chat_ids.first().copied())
                     });
                     if let Some(chat_id) = chat_id {
-                        if let Ok(mut map) = active_agents.lock() {
-                            log::info!(
-                                "Registering active agent for chat_id={} pane={}",
-                                chat_id,
-                                handle.pane_id,
-                            );
-                            map.insert(
-                                chat_id,
-                                ActiveAgent {
-                                    pane_id: handle.pane_id.clone(),
-                                    tmux_session: handle.tmux_session.clone(),
-                                    run_id: run_id.clone(),
-                                    job_id: job.name.clone(),
-                                },
-                            );
-                        }
+                        let mut map = active_agents.lock();
+                        log::info!(
+                            "Registering active agent for chat_id={} pane={}",
+                            chat_id,
+                            handle.pane_id,
+                        );
+                        map.insert(
+                            chat_id,
+                            ActiveAgent {
+                                pane_id: handle.pane_id.clone(),
+                                tmux_session: handle.tmux_session.clone(),
+                                run_id: run_id.clone(),
+                                job_id: job.name.clone(),
+                            },
+                        );
                     }
                 }
 
@@ -359,14 +359,14 @@ pub async fn execute_job(
                         exit_code: exit_code.unwrap_or(-1),
                     }
                 };
-                let mut status = job_status.lock().unwrap();
+                let mut status = job_status.lock();
                 status.insert(job.slug.clone(), new_status.clone());
                 drop(status);
                 crate::relay::push_status_update(relay, &job.slug, &new_status);
             }
 
             {
-                let h = history.lock().unwrap();
+                let h = history.lock();
                 if let Err(e) =
                     h.update_finished(&run_id, &finished_at, exit_code, &stdout, &stderr)
                 {
@@ -424,14 +424,14 @@ pub async fn execute_job(
                     last_run: finished_at.clone(),
                     exit_code: -1,
                 };
-                let mut status = job_status.lock().unwrap();
+                let mut status = job_status.lock();
                 status.insert(job.slug.clone(), new_status.clone());
                 drop(status);
                 crate::relay::push_status_update(relay, &job.slug, &new_status);
             }
 
             {
-                let h = history.lock().unwrap();
+                let h = history.lock();
                 if let Err(e2) =
                     h.update_finished(&run_id, &finished_at, Some(-1), "", &e.to_string())
                 {
@@ -502,7 +502,7 @@ async fn execute_binary_job(
     stream_log_path: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String), String> {
     let work_dir = job.work_dir.clone().unwrap_or_else(|| {
-        let s = settings.lock().unwrap();
+        let s = settings.lock();
         s.default_work_dir.clone()
     });
 
@@ -520,7 +520,7 @@ async fn execute_binary_job(
 
     // Inject secrets
     {
-        let sm = secrets.lock().unwrap();
+        let sm = secrets.lock();
         for key in &job.secret_keys {
             if let Some(value) = sm.get(key) {
                 cmd.env(key, value);
@@ -591,13 +591,13 @@ async fn execute_binary_job(
             let mut reader = tokio::io::BufReader::new(stdout_pipe).lines();
             while let Ok(Some(line)) = reader.next_line().await {
                 {
-                    let mut b = buf.lock().unwrap();
+                    let mut b = buf.lock();
                     b.push_str(&line);
                     b.push('\n');
                 }
                 if let Some(ref f) = file {
                     use std::io::Write;
-                    let mut g = f.lock().unwrap();
+                    let mut g = f.lock();
                     let _ = g.write_all(line.as_bytes());
                     let _ = g.write_all(b"\n");
                     let _ = g.flush();
@@ -613,13 +613,13 @@ async fn execute_binary_job(
             let mut reader = tokio::io::BufReader::new(stderr_pipe).lines();
             while let Ok(Some(line)) = reader.next_line().await {
                 {
-                    let mut b = buf.lock().unwrap();
+                    let mut b = buf.lock();
                     b.push_str(&line);
                     b.push('\n');
                 }
                 if let Some(ref f) = file {
                     use std::io::Write;
-                    let mut g = f.lock().unwrap();
+                    let mut g = f.lock();
                     let _ = g.write_all(line.as_bytes());
                     let _ = g.write_all(b"\n");
                     let _ = g.flush();
@@ -636,10 +636,10 @@ async fn execute_binary_job(
     let _ = stderr_task.await;
 
     let stdout = Arc::try_unwrap(stdout_buf)
-        .map(|m| m.into_inner().unwrap())
+        .map(|m| m.into_inner())
         .unwrap_or_default();
     let stderr = Arc::try_unwrap(stderr_buf)
-        .map(|m| m.into_inner().unwrap())
+        .map(|m| m.into_inner())
         .unwrap_or_default();
     let exit_code = status.code();
 
@@ -656,7 +656,7 @@ async fn execute_claude_job(
     use crate::tmux;
 
     let (provider, model, tmux_session, work_dir, agent_command) = {
-        let s = settings.lock().unwrap();
+        let s = settings.lock();
         let provider = job.agent_provider.unwrap_or(s.default_provider);
         let model = resolve_agent_model(job, &s, provider);
         let session = job
@@ -823,7 +823,7 @@ async fn execute_folder_job(
     let raw_prompt = apply_params(raw_prompt, params);
 
     let (provider, model, tmux_session, work_dir, agent_command) = {
-        let s = settings.lock().unwrap();
+        let s = settings.lock();
         let provider = job.agent_provider.unwrap_or(s.default_provider);
         let model = resolve_agent_model(job, &s, provider);
         let session = job
@@ -986,7 +986,7 @@ fn collect_env_vars(
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
 ) -> Vec<(String, String)> {
-    let sm = secrets.lock().unwrap();
+    let sm = secrets.lock();
     let mut vars = Vec::new();
 
     let is_agent = job.name == "agent";
@@ -1009,7 +1009,7 @@ fn collect_env_vars(
     // Auto-inject TELEGRAM_BOT_TOKEN from global settings when job uses Telegram
     if !vars.iter().any(|(k, _)| k == "TELEGRAM_BOT_TOKEN") {
         if job.notify_target == NotifyTarget::Telegram || is_agent {
-            let s = settings.lock().unwrap();
+            let s = settings.lock();
             if let Some(ref tg) = s.telegram {
                 if !tg.bot_token.is_empty() {
                     vars.push(("TELEGRAM_BOT_TOKEN".to_string(), tg.bot_token.clone()));

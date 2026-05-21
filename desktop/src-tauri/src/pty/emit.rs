@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -35,7 +36,7 @@ pub(super) fn emit_initial_snapshot(
     let started = Instant::now();
     // Clear the terminal before sending a fresh full-screen snapshot.
     let clear = b"\x1bc".to_vec();
-    recent.lock().unwrap().append(pane_id, &clear);
+    recent.lock().append(pane_id, &clear);
     emit_bytes(sink, pane_id, clear);
     log::debug!(
         "[pty {}] initial snapshot clear emitted after {}ms",
@@ -48,7 +49,7 @@ pub(super) fn emit_initial_snapshot(
             let bytes = content.into_bytes();
             let byte_len = bytes.len();
             if !bytes.is_empty() {
-                recent.lock().unwrap().append(pane_id, &bytes);
+                recent.lock().append(pane_id, &bytes);
                 emit_bytes(sink, pane_id, bytes);
             }
             log::info!(

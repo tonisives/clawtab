@@ -45,7 +45,7 @@ pub async fn get_running_job_logs(
         // we now record for the currently-running run.
         JobStatus::Running { run_id, .. } => {
             let log_path = {
-                let h = state.history.lock().unwrap();
+                let h = state.history.lock();
                 h.get_by_id(&run_id)?.and_then(|r| r.log_path)
             };
             let Some(path) = log_path else {

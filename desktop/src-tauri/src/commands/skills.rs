@@ -90,7 +90,7 @@ pub fn open_skill_in_editor(state: State<AppState>, name: String) -> Result<(), 
     }
 
     let preferred_editor = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock();
         s.preferred_editor.clone()
     };
 

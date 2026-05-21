@@ -114,7 +114,7 @@ impl EventSink for IpcBroadcastEventSink {
 #[cfg(feature = "desktop")]
 pub async fn run_daemon_event_subscription(
     app_handle: tauri::AppHandle,
-    jobs_config: std::sync::Arc<std::sync::Mutex<crate::config::jobs::JobsConfig>>,
+    jobs_config: std::sync::Arc<parking_lot::Mutex<crate::config::jobs::JobsConfig>>,
 ) {
     use tauri::Emitter;
     use tokio::io::AsyncBufReadExt;
@@ -136,7 +136,7 @@ pub async fn run_daemon_event_subscription(
                 Ok(Some(line)) => match serde_json::from_str::<IpcEvent>(&line) {
                     Ok(event) => match event {
                         IpcEvent::JobsChanged => {
-                            *jobs_config.lock().unwrap() =
+                            *jobs_config.lock() =
                                 crate::config::jobs::JobsConfig::load();
                             let _ = app_handle.emit("jobs-changed", ());
                         }

@@ -1,6 +1,7 @@
 use base64::Engine;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use clawtab_protocol::{
     ClientMessage, DesktopMessage, DetectedProcess as RemoteDetectedProcess,
@@ -43,8 +44,8 @@ pub async fn handle_incoming(
 
     let response = match msg {
         ClientMessage::ListJobs { id } => {
-            let jobs = jobs_config.lock().unwrap().jobs.clone();
-            let statuses = job_status.lock().unwrap().clone();
+            let jobs = jobs_config.lock().jobs.clone();
+            let statuses = job_status.lock().clone();
             let remote_jobs: Vec<RemoteJob> = jobs.iter().map(job_to_remote).collect();
             let remote_statuses: HashMap<String, RemoteJobStatus> = statuses
                 .into_iter()
@@ -127,7 +128,7 @@ pub async fn handle_incoming(
 
         ClientMessage::SubscribeLogs { id, name } => {
             // Send current pane content as initial log chunk so mobile gets existing logs
-            let statuses = job_status.lock().unwrap();
+            let statuses = job_status.lock();
             if let Some(JobStatus::Running {
                 pane_id: Some(pane_id),
                 tmux_session: Some(session),
@@ -200,7 +201,7 @@ pub async fn handle_incoming(
         }
 
         ClientMessage::GetSettings { id } => {
-            let s = settings.lock().unwrap();
+            let s = settings.lock();
             let enabled_models: HashMap<String, Vec<String>> = s.enabled_models.clone();
             let default_provider = s.default_provider.as_str().to_string();
             let default_model = s.default_model.clone();
@@ -264,11 +265,12 @@ pub async fn handle_incoming(
         ClientMessage::SetAutoYesPanes { pane_ids, .. } => {
             log::info!("[handler] SetAutoYesPanes received: {:?}", pane_ids);
             let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
-            *auto_yes_panes.lock().unwrap() = pane_set;
+            *auto_yes_panes.lock() = pane_set;
             event_sink.emit_auto_yes_changed();
             // Broadcast back to relay so it updates its cache and forwards to all mobiles
             let msg = DesktopMessage::AutoYesPanes { pane_ids };
-            if let Ok(guard) = relay.lock() {
+            {
+                let guard = relay.lock();
                 if let Some(handle) = guard.as_ref() {
                     handle.send_message(&msg);
                 }
@@ -285,7 +287,7 @@ pub async fn handle_incoming(
         } => {
             let relay_for_pty = Arc::clone(relay);
             let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
-            let result = pty_manager.lock().unwrap().spawn(
+            let result = pty_manager.lock().spawn(
                 &pane_id,
                 &tmux_session,
                 cols as u16,
@@ -304,7 +306,8 @@ pub async fn handle_incoming(
                             pane_id: pid,
                             data: encoded,
                         };
-                        if let Ok(guard) = relay_for_pty.lock() {
+                        {
+                            let guard = relay_for_pty.lock();
                             if let Some(handle) = guard.as_ref() {
                                 handle.send_message(&msg);
                             }
@@ -320,13 +323,13 @@ pub async fn handle_incoming(
         }
 
         ClientMessage::UnsubscribePty { pane_id } => {
-            let _ = pty_manager.lock().unwrap().destroy(&pane_id, None);
+            let _ = pty_manager.lock().destroy(&pane_id, None);
             None
         }
 
         ClientMessage::PtyInput { pane_id, data } => {
             if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(&data) {
-                let _ = pty_manager.lock().unwrap().write(&pane_id, &bytes);
+                let _ = pty_manager.lock().write(&pane_id, &bytes);
             }
             None
         }
@@ -338,7 +341,6 @@ pub async fn handle_incoming(
         } => {
             let _ = pty_manager
                 .lock()
-                .unwrap()
                 .resize(&pane_id, cols as u16, rows as u16);
             None
         }
@@ -372,7 +374,7 @@ fn run_job(
     ctx: &JobContext,
 ) -> Result<(), String> {
     let job = {
-        let config = jobs_config.lock().unwrap();
+        let config = jobs_config.lock();
         config
             .jobs
             .iter()
@@ -406,7 +408,7 @@ fn pause_job(
     name: &str,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) -> Result<(), String> {
-    let mut status = job_status.lock().unwrap();
+    let mut status = job_status.lock();
     match status.get(name) {
         Some(JobStatus::Running { .. }) => {
             status.insert(name.to_string(), JobStatus::Paused);
@@ -420,7 +422,7 @@ fn resume_job(
     name: &str,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) -> Result<(), String> {
-    let mut status = job_status.lock().unwrap();
+    let mut status = job_status.lock();
     match status.get(name) {
         Some(JobStatus::Paused) => {
             status.insert(name.to_string(), JobStatus::Idle);
@@ -435,7 +437,7 @@ fn stop_job(
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
 ) -> Result<(), String> {
-    let mut status = job_status.lock().unwrap();
+    let mut status = job_status.lock();
     match status.get(name).cloned() {
         Some(JobStatus::Running {
             pane_id: Some(pane_id),
@@ -464,7 +466,7 @@ fn send_input(
     text: &str,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) -> Result<(), String> {
-    let statuses = job_status.lock().unwrap();
+    let statuses = job_status.lock();
     match statuses.get(name) {
         Some(JobStatus::Running {
             pane_id: Some(pane_id),
@@ -481,7 +483,7 @@ fn send_input_freetext(
     freetext: &str,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) -> Result<(), String> {
-    let statuses = job_status.lock().unwrap();
+    let statuses = job_status.lock();
     match statuses.get(name) {
         Some(JobStatus::Running {
             pane_id: Some(pane_id),
@@ -497,7 +499,7 @@ fn get_run_history(
     limit: u32,
     history: &Arc<Mutex<HistoryStore>>,
 ) -> Vec<clawtab_protocol::RunRecord> {
-    let h = history.lock().unwrap();
+    let h = history.lock();
     match h.get_by_job_id(name, limit as usize) {
         Ok(runs) => runs
             .into_iter()
@@ -525,8 +527,8 @@ fn run_agent(
     ctx: &JobContext,
 ) -> Result<String, String> {
     let (s, jobs) = {
-        let s = ctx.settings.lock().unwrap().clone();
-        let j = jobs_config.lock().unwrap().jobs.clone();
+        let s = ctx.settings.lock().clone();
+        let j = jobs_config.lock().jobs.clone();
         (s, j)
     };
     let job = crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, None, None)?;
@@ -561,7 +563,7 @@ fn get_run_detail_full(
     run_id: &str,
     history: &Arc<Mutex<HistoryStore>>,
 ) -> Option<clawtab_protocol::RunDetail> {
-    let h = history.lock().unwrap();
+    let h = history.lock();
     match h.get_by_id(run_id) {
         Ok(Some(r)) => Some(clawtab_protocol::RunDetail {
             id: r.id,
@@ -635,8 +637,8 @@ fn detect_processes(
 
     // Running jobs: pane_id -> (group, slug)
     let running_panes: HashMap<String, (String, String)> = {
-        let config = jobs_config.lock().unwrap();
-        let statuses = job_status.lock().unwrap();
+        let config = jobs_config.lock();
+        let statuses = job_status.lock();
         statuses
             .iter()
             .filter_map(|(slug, status)| match status {
@@ -654,7 +656,7 @@ fn detect_processes(
 
     // Slug -> group, for @clawtab-slug tag resolution.
     let slug_to_group: HashMap<String, String> = {
-        let config = jobs_config.lock().unwrap();
+        let config = jobs_config.lock();
         config
             .jobs
             .iter()
@@ -663,7 +665,7 @@ fn detect_processes(
     };
 
     let match_entries: Vec<(String, String, String)> = {
-        let config = jobs_config.lock().unwrap();
+        let config = jobs_config.lock();
         config
             .jobs
             .iter()

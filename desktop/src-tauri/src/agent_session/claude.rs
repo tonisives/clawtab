@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,7 +130,8 @@ fn read_session_messages(path: &PathBuf) -> (Option<String>, Option<String>, Opt
     let modified = metadata.modified().ok();
     let len = metadata.len();
 
-    if let Ok(cache) = jsonl_cache().lock() {
+    {
+        let cache = jsonl_cache().lock();
         if let Some(cached) = cache.get(path) {
             if cached.len == len && cached.modified == modified {
                 return (
@@ -150,7 +152,8 @@ fn read_session_messages(path: &PathBuf) -> (Option<String>, Option<String>, Opt
         last
     };
 
-    if let Ok(mut cache) = jsonl_cache().lock() {
+    {
+        let mut cache = jsonl_cache().lock();
         cache.insert(
             path.clone(),
             CachedMessages {

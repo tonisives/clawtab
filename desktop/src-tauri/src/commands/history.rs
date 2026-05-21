@@ -5,13 +5,13 @@ use crate::AppState;
 
 #[tauri::command]
 pub fn get_history(state: State<AppState>) -> Result<Vec<RunRecord>, String> {
-    let history = state.history.lock().unwrap();
+    let history = state.history.lock();
     history.get_recent(100)
 }
 
 #[tauri::command]
 pub fn get_run_detail(state: State<AppState>, id: String) -> Result<Option<RunRecord>, String> {
-    let history = state.history.lock().unwrap();
+    let history = state.history.lock();
     let mut record = match history.get_by_id(&id)? {
         Some(r) => r,
         None => return Ok(None),
@@ -40,7 +40,7 @@ pub fn tail_run_log(
     offset: u64,
 ) -> Result<TailChunk, String> {
     let log_path = {
-        let h = state.history.lock().unwrap();
+        let h = state.history.lock();
         let rec = h
             .get_by_id(&run_id)?
             .ok_or_else(|| format!("Run '{}' not found", run_id))?;
@@ -89,14 +89,14 @@ pub struct TailChunk {
 
 #[tauri::command]
 pub fn get_job_runs(state: State<AppState>, job_id: String) -> Result<Vec<RunRecord>, String> {
-    let history = state.history.lock().unwrap();
+    let history = state.history.lock();
     history.get_by_job_id(&job_id, 10)
 }
 
 #[tauri::command]
 pub fn open_run_log(state: State<AppState>, run_id: String) -> Result<(), String> {
     let record = {
-        let history = state.history.lock().unwrap();
+        let history = state.history.lock();
         history
             .get_by_id(&run_id)?
             .ok_or_else(|| format!("Run '{}' not found", run_id))?
@@ -130,7 +130,7 @@ pub fn open_run_log(state: State<AppState>, run_id: String) -> Result<(), String
     std::fs::write(&file_path, &content).map_err(|e| format!("Failed to write log file: {}", e))?;
 
     let preferred_editor = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock();
         s.preferred_editor.clone()
     };
 
@@ -171,18 +171,18 @@ pub fn open_run_log(state: State<AppState>, run_id: String) -> Result<(), String
 
 #[tauri::command]
 pub fn delete_run(state: State<AppState>, run_id: String) -> Result<(), String> {
-    let history = state.history.lock().unwrap();
+    let history = state.history.lock();
     history.delete_by_id(&run_id)
 }
 
 #[tauri::command]
 pub fn delete_runs(state: State<AppState>, run_ids: Vec<String>) -> Result<(), String> {
-    let history = state.history.lock().unwrap();
+    let history = state.history.lock();
     history.delete_by_ids(&run_ids)
 }
 
 #[tauri::command]
 pub fn clear_history(state: State<AppState>) -> Result<(), String> {
-    let history = state.history.lock().unwrap();
+    let history = state.history.lock();
     history.clear()
 }

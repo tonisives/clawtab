@@ -2,7 +2,8 @@ pub mod executor;
 pub mod monitor;
 pub mod reattach;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use chrono::{Duration, Local};
 use cron::Schedule;
@@ -23,7 +24,7 @@ pub async fn start(
         let now = Local::now();
         let lookback_limit = now - Duration::hours(24);
         let jobs = {
-            let config = jobs_config.lock().unwrap();
+            let config = jobs_config.lock();
             config.jobs.clone()
         };
 
@@ -48,7 +49,7 @@ pub async fn start(
 
             // Determine the earliest point to look back from: last run or 24h ago
             let since = {
-                let h = ctx.history.lock().unwrap();
+                let h = ctx.history.lock();
                 h.get_by_job_id(&job.slug, 1)
                     .ok()
                     .and_then(|runs| runs.into_iter().next())
@@ -86,7 +87,7 @@ pub async fn start(
     // Log cron-enabled jobs and their next fire times at startup
     {
         let jobs = {
-            let config = jobs_config.lock().unwrap();
+            let config = jobs_config.lock();
             config.jobs.clone()
         };
         let cron_jobs: Vec<_> = jobs
@@ -113,7 +114,7 @@ pub async fn start(
 
         let now = Local::now();
         let jobs = {
-            let config = jobs_config.lock().unwrap();
+            let config = jobs_config.lock();
             config.jobs.clone()
         };
 
@@ -170,7 +171,7 @@ pub async fn start(
         // job stuck as Running in the UI.
         {
             let stale: Vec<(String, String)> = {
-                let statuses = ctx.job_status.lock().unwrap();
+                let statuses = ctx.job_status.lock();
                 statuses
                     .iter()
                     .filter_map(|(slug, status)| {
@@ -187,7 +188,7 @@ pub async fn start(
                     .collect()
             };
             if !stale.is_empty() {
-                let mut statuses = ctx.job_status.lock().unwrap();
+                let mut statuses = ctx.job_status.lock();
                 for (slug, pane_id) in &stale {
                     log::warn!(
                         "Stale running job '{}' (pane {} gone) - resetting to Idle",

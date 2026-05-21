@@ -22,14 +22,13 @@ pub struct RelayStatus {
 
 #[tauri::command]
 pub fn get_relay_settings(state: State<AppState>) -> Option<RelaySettings> {
-    let mut relay = state.settings.lock().unwrap().relay.clone();
+    let mut relay = state.settings.lock().relay.clone();
     // Populate device_token from keychain if yaml field is empty
     if let Some(ref mut rs) = relay {
         if rs.device_token.is_empty() {
             let token = state
                 .secrets
                 .lock()
-                .unwrap()
                 .get(KEYCHAIN_DEVICE_TOKEN_KEY)
                 .cloned();
             if let Some(token) = token {
@@ -51,12 +50,11 @@ pub async fn set_relay_settings(
         state
             .secrets
             .lock()
-            .unwrap()
             .set(KEYCHAIN_DEVICE_TOKEN_KEY, &device_token)?;
     }
 
     {
-        let mut s = state.settings.lock().unwrap();
+        let mut s = state.settings.lock();
         let on_disk = crate::config::settings::AppSettings::load();
         if s.telegram.is_none() {
             s.telegram = on_disk.telegram;
@@ -163,7 +161,7 @@ pub async fn relay_pair_device(
     let url = format!("{}/devices/pair", server_url);
 
     let (access_token, refresh_token) = {
-        let secrets = state.secrets.lock().unwrap();
+        let secrets = state.secrets.lock();
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -193,13 +191,13 @@ pub async fn relay_pair_device(
     .await
     {
         Ok(v) => {
-            *state.relay_auth_expired.lock().unwrap() = false;
+            *state.relay_auth_expired.lock() = false;
             v
         }
         Err(e) => {
             let lower = e.to_lowercase();
             if lower.contains("unauthorized") || lower.contains("token refresh failed") {
-                *state.relay_auth_expired.lock().unwrap() = true;
+                *state.relay_auth_expired.lock() = true;
                 return Err(format!("{} {}", ERR_UNAUTHORIZED_PREFIX, e));
             }
             return Err(format!("Pairing failed: {}", e));
@@ -219,11 +217,11 @@ pub async fn relay_pair_device(
 /// the frontend after an UNAUTHORIZED response from /devices/pair.
 #[tauri::command]
 pub fn relay_sign_out(state: State<AppState>) -> Result<(), String> {
-    let mut secrets = state.secrets.lock().unwrap();
+    let mut secrets = state.secrets.lock();
     let _ = secrets.delete(KEYCHAIN_ACCESS_TOKEN_KEY);
     let _ = secrets.delete(KEYCHAIN_REFRESH_TOKEN_KEY);
     drop(secrets);
-    *state.relay_auth_expired.lock().unwrap() = false;
+    *state.relay_auth_expired.lock() = false;
     Ok(())
 }
 
@@ -256,7 +254,7 @@ pub fn relay_save_tokens(
     access_token: String,
     refresh_token: String,
 ) -> Result<(), String> {
-    let mut secrets = state.secrets.lock().unwrap();
+    let mut secrets = state.secrets.lock();
     secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &access_token)?;
     secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &refresh_token)?;
     Ok(())
@@ -264,7 +262,7 @@ pub fn relay_save_tokens(
 
 #[tauri::command]
 pub fn relay_get_pending_token(state: State<AppState>) -> Result<Option<String>, String> {
-    let secrets = state.secrets.lock().unwrap();
+    let secrets = state.secrets.lock();
     Ok(secrets
         .get(KEYCHAIN_ACCESS_TOKEN_KEY)
         .cloned()
@@ -281,7 +279,7 @@ pub async fn relay_check_subscription(
     state: State<'_, AppState>,
 ) -> Result<SubscriptionCheckResult, String> {
     let server_url = {
-        let settings = state.settings.lock().unwrap();
+        let settings = state.settings.lock();
         settings
             .relay
             .as_ref()
@@ -293,7 +291,7 @@ pub async fn relay_check_subscription(
     }
 
     let (access_token, refresh_token_val) = {
-        let secrets = state.secrets.lock().unwrap();
+        let secrets = state.secrets.lock();
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -316,11 +314,11 @@ pub async fn relay_check_subscription(
         Ok((subscribed, new_access, new_refresh)) => {
             // Save refreshed tokens if we got new ones
             if let (Some(at), Some(rt)) = (new_access, new_refresh) {
-                let mut secrets = state.secrets.lock().unwrap();
+                let mut secrets = state.secrets.lock();
                 let _ = secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &at);
                 let _ = secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &rt);
             }
-            *state.relay_sub_required.lock().unwrap() = !subscribed;
+            *state.relay_sub_required.lock() = !subscribed;
             Ok(SubscriptionCheckResult { subscribed })
         }
         Err(e) => Err(e),
@@ -356,7 +354,7 @@ pub struct SharesResponse {
 /// Helper to get server_url and access_token from state.
 fn get_relay_auth(state: &AppState) -> Result<(String, String, String), String> {
     let server_url = {
-        let settings = state.settings.lock().unwrap();
+        let settings = state.settings.lock();
         settings
             .relay
             .as_ref()
@@ -367,7 +365,7 @@ fn get_relay_auth(state: &AppState) -> Result<(String, String, String), String> 
         return Err("No relay server configured".to_string());
     }
     let (access_token, refresh_token) = {
-        let secrets = state.secrets.lock().unwrap();
+        let secrets = state.secrets.lock();
         (
             secrets
                 .get(KEYCHAIN_ACCESS_TOKEN_KEY)
@@ -432,7 +430,7 @@ async fn relay_request(
 
         // Save refreshed tokens
         {
-            let mut secrets = state.secrets.lock().unwrap();
+            let mut secrets = state.secrets.lock();
             let _ = secrets.set(KEYCHAIN_ACCESS_TOKEN_KEY, &new_access);
             let _ = secrets.set(KEYCHAIN_REFRESH_TOKEN_KEY, &new_refresh);
         }
@@ -568,7 +566,7 @@ pub async fn relay_remove_share(
 
 #[tauri::command]
 pub fn relay_get_groups(state: State<AppState>) -> Vec<String> {
-    let config = state.jobs_config.lock().unwrap();
+    let config = state.jobs_config.lock();
     let mut groups: Vec<String> = config
         .jobs
         .iter()

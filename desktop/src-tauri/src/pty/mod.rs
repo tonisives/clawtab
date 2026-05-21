@@ -8,7 +8,8 @@ mod viewer;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -112,7 +113,7 @@ impl PtyManager {
     }
 
     pub fn get_cached_output(&self, pane_id: &str) -> Vec<u8> {
-        self.recent.lock().unwrap().get(pane_id)
+        self.recent.lock().get(pane_id)
     }
 
     /// Re-emit a fresh snapshot for a pane that already has an active viewer.
@@ -134,7 +135,6 @@ impl PtyManager {
         viewer
             .writer
             .lock()
-            .unwrap()
             .write_all(data)
             .map_err(|e| format!("pty write: {}", e))?;
         Ok(())
@@ -153,7 +153,6 @@ impl PtyManager {
         viewer
             .master
             .lock()
-            .unwrap()
             .resize(PtySize {
                 rows,
                 cols,

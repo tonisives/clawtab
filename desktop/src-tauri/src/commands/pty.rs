@@ -24,7 +24,7 @@ pub fn pty_spawn(
     rows: u16,
     group: String,
 ) -> Result<PtySpawnResult, String> {
-    let result = state.pty_manager.lock().unwrap().spawn(
+    let result = state.pty_manager.lock().spawn(
         &pane_id,
         &tmux_session,
         cols,
@@ -41,7 +41,7 @@ pub fn pty_spawn(
 
 #[tauri::command]
 pub fn pty_release(state: State<AppState>, pane_id: String) -> Result<(), String> {
-    state.pty_manager.lock().unwrap().release(&pane_id)
+    state.pty_manager.lock().release(&pane_id)
 }
 
 #[tauri::command]
@@ -49,7 +49,7 @@ pub fn pty_write(state: State<AppState>, pane_id: String, data: String) -> Resul
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&data)
         .map_err(|e| format!("Invalid base64: {}", e))?;
-    state.pty_manager.lock().unwrap().write(&pane_id, &bytes)
+    state.pty_manager.lock().write(&pane_id, &bytes)
 }
 
 #[tauri::command]
@@ -62,7 +62,6 @@ pub fn pty_resize(
     state
         .pty_manager
         .lock()
-        .unwrap()
         .resize(&pane_id, cols, rows)
 }
 
@@ -75,7 +74,6 @@ pub fn pty_destroy(
     state
         .pty_manager
         .lock()
-        .unwrap()
         .destroy(&pane_id, attach_generation)
 }
 
@@ -84,7 +82,6 @@ pub fn pty_get_cached_output(state: State<AppState>, pane_id: String) -> Result<
     Ok(state
         .pty_manager
         .lock()
-        .unwrap()
         .get_cached_output(&pane_id))
 }
 
@@ -98,7 +95,6 @@ pub fn pty_refresh_snapshot(
     state
         .pty_manager
         .lock()
-        .unwrap()
         .refresh_snapshot(&pane_id, &sink)
 }
 

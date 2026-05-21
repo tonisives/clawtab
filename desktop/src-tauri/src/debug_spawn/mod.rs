@@ -2,7 +2,8 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::ffi::OsStr;
 use std::process::{Command, Output};
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use parking_lot::Mutex;
 use std::time::Instant;
 
 const RETENTION_SECS: i64 = 600;
@@ -117,9 +118,7 @@ fn record(r: SpawnRecord) {
     };
     let head_len = r.stderr.len().min(STDERR_HEAD_BYTES);
     let stderr_head = String::from_utf8_lossy(&r.stderr[..head_len]).into_owned();
-    let Ok(conn) = store.lock() else {
-        return;
-    };
+    let conn = store.lock();
     let _ = conn.execute(
         "INSERT INTO spawn_events
            (ts_start_ms, duration_ms, program, args, callsite, exit_code, stderr_head, pid)
@@ -184,9 +183,7 @@ pub fn list_since(since_ms: Option<i64>, limit: i64) -> Result<Vec<SpawnEventRow
     let Some(store) = STORE.get() else {
         return Ok(Vec::new());
     };
-    let conn = store
-        .lock()
-        .map_err(|_| "spawn store poisoned".to_string())?;
+    let conn = store.lock();
     let cutoff = since_ms.unwrap_or(now_ms() - RETENTION_SECS * 1000);
     let mut stmt = conn
         .prepare(
@@ -223,9 +220,7 @@ pub fn summary() -> Result<SpawnSummary, String> {
     let Some(store) = STORE.get() else {
         return Ok(SpawnSummary::default());
     };
-    let conn = store
-        .lock()
-        .map_err(|_| "spawn store poisoned".to_string())?;
+    let conn = store.lock();
     let now = now_ms();
     let window_start = now - RETENTION_SECS * 1000;
 
@@ -312,9 +307,7 @@ pub fn clear() -> Result<(), String> {
     let Some(store) = STORE.get() else {
         return Ok(());
     };
-    let conn = store
-        .lock()
-        .map_err(|_| "spawn store poisoned".to_string())?;
+    let conn = store.lock();
     conn.execute("DELETE FROM spawn_events", [])
         .map_err(|e| format!("clear: {}", e))?;
     Ok(())

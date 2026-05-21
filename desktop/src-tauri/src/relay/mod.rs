@@ -1,7 +1,8 @@
 mod handler;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -39,8 +40,8 @@ pub fn push_full_state(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) {
-    let jobs = jobs_config.lock().unwrap().jobs.clone();
-    let statuses = job_status.lock().unwrap().clone();
+    let jobs = jobs_config.lock().jobs.clone();
+    let statuses = job_status.lock().clone();
 
     let remote_jobs: Vec<RemoteJob> = jobs.iter().map(job_to_remote).collect();
     let remote_statuses: HashMap<String, RemoteJobStatus> = statuses
@@ -60,7 +61,8 @@ pub fn push_full_state_if_connected(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
 ) {
-    if let Ok(guard) = relay.lock() {
+    {
+        let guard = relay.lock();
         if let Some(handle) = guard.as_ref() {
             push_full_state(handle, jobs_config, job_status);
         }
@@ -73,7 +75,8 @@ pub fn push_status_update(
     job_id: &str,
     status: &JobStatus,
 ) {
-    if let Ok(guard) = relay.lock() {
+    {
+        let guard = relay.lock();
         if let Some(handle) = guard.as_ref() {
             handle.send_message(&DesktopMessage::StatusUpdate {
                 name: job_id.to_string(),
@@ -90,7 +93,8 @@ pub fn push_job_notification(
     event: &str,
     run_id: &str,
 ) {
-    if let Ok(guard) = relay.lock() {
+    {
+        let guard = relay.lock();
         if let Some(handle) = guard.as_ref() {
             handle.send_message(&DesktopMessage::JobNotification {
                 name: job_id.to_string(),
@@ -106,7 +110,8 @@ pub fn push_log_chunk(relay: &Arc<Mutex<Option<RelayHandle>>>, job_id: &str, con
     if content.is_empty() {
         return;
     }
-    if let Ok(guard) = relay.lock() {
+    {
+        let guard = relay.lock();
         if let Some(handle) = guard.as_ref() {
             handle.send_message(&DesktopMessage::LogChunk {
                 name: job_id.to_string(),
@@ -126,7 +131,8 @@ pub fn push_trigger_result(
     result: Option<serde_json::Value>,
     error: Option<String>,
 ) {
-    if let Ok(guard) = relay.lock() {
+    {
+        let guard = relay.lock();
         if let Some(handle) = guard.as_ref() {
             handle.send_message(&DesktopMessage::TriggerResult {
                 trigger_id: trigger_id.to_string(),
@@ -254,7 +260,7 @@ pub async fn connect_loop(params: ConnectLoopParams) {
     loop {
         // Check subscription before attempting WS connect
         let (access_token, refresh_token_val) = {
-            let s = secrets.lock().unwrap();
+            let s = secrets.lock();
             (
                 s.get("relay_access_token").cloned().unwrap_or_default(),
                 s.get("relay_refresh_token").cloned().unwrap_or_default(),
@@ -266,17 +272,17 @@ pub async fn connect_loop(params: ConnectLoopParams) {
                 Ok((subscribed, new_access, new_refresh)) => {
                     // Save refreshed tokens
                     if let (Some(at), Some(rt)) = (new_access, new_refresh) {
-                        let mut s = secrets.lock().unwrap();
+                        let mut s = secrets.lock();
                         let _ = s.set("relay_access_token", &at);
                         let _ = s.set("relay_refresh_token", &rt);
                     }
                     if !subscribed {
                         log::info!("Relay: subscription required, not connecting");
-                        *relay_sub_required.lock().unwrap() = true;
+                        *relay_sub_required.lock() = true;
                         return;
                     }
                     // Subscribed - clear flag and proceed
-                    *relay_sub_required.lock().unwrap() = false;
+                    *relay_sub_required.lock() = false;
                 }
                 Err(e) => {
                     log::warn!(
@@ -294,7 +300,7 @@ pub async fn connect_loop(params: ConnectLoopParams) {
             Ok((ws_stream, _)) => {
                 log::info!("Relay: connected");
                 backoff = Duration::from_secs(1);
-                *relay_sub_required.lock().unwrap() = false;
+                *relay_sub_required.lock() = false;
 
                 let (ws_sink, ws_stream) = ws_stream.split();
                 let (tx, rx) = mpsc::unbounded_channel::<String>();
@@ -309,12 +315,12 @@ pub async fn connect_loop(params: ConnectLoopParams) {
                 // Push auto-yes pane state
                 {
                     let pane_ids: Vec<String> =
-                        auto_yes_panes.lock().unwrap().iter().cloned().collect();
+                        auto_yes_panes.lock().iter().cloned().collect();
                     handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
                 }
 
                 {
-                    let mut guard = relay.lock().unwrap();
+                    let mut guard = relay.lock();
                     *guard = Some(handle);
                 }
 
@@ -334,7 +340,7 @@ pub async fn connect_loop(params: ConnectLoopParams) {
                 .await;
 
                 {
-                    let mut guard = relay.lock().unwrap();
+                    let mut guard = relay.lock();
                     *guard = None;
                 }
 
@@ -350,7 +356,7 @@ pub async fn connect_loop(params: ConnectLoopParams) {
                 log::error!("Relay: connect failed: {}", err_str);
                 if err_str.contains("403") {
                     log::info!("Relay: subscription required (403 from server)");
-                    *relay_sub_required.lock().unwrap() = true;
+                    *relay_sub_required.lock() = true;
                     return;
                 }
             }

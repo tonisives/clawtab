@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
@@ -464,7 +465,7 @@ pub async fn question_detection_loop(
         // Keep panes that exist but don't have a Claude process yet (startup delay)
         // so that auto-yes isn't lost between pane creation and Claude launch.
         if !detection.all_pane_ids.is_empty() {
-            let mut yes_panes = auto_yes_panes.lock().unwrap();
+            let mut yes_panes = auto_yes_panes.lock();
             let before = yes_panes.len();
             yes_panes.retain(|id| detection.all_pane_ids.contains(id));
             if yes_panes.len() < before {
@@ -596,7 +597,7 @@ pub async fn question_detection_loop(
 
         // Auto-answer questions for panes with auto-yes enabled
         {
-            let yes_panes = auto_yes_panes.lock().unwrap().clone();
+            let yes_panes = auto_yes_panes.lock().clone();
             if !yes_panes.is_empty() {
                 log::debug!(
                     "[questions] auto-yes panes: {:?}, questions: {}",
@@ -680,7 +681,7 @@ pub async fn question_detection_loop(
 
         // Store for desktop frontend
         log::debug!("[questions] storing {} active questions", questions.len());
-        *active_questions.lock().unwrap() = questions.clone();
+        *active_questions.lock() = questions.clone();
 
         // Fire local macOS notifications for new questions
         crate::notifications::notify_new_questions(
@@ -693,7 +694,7 @@ pub async fn question_detection_loop(
         // Filter out auto-yes panes before sending to relay - no need to notify
         // mobile about questions that will be auto-answered locally
         let relay_questions: Vec<ClaudeQuestion> = {
-            let yes_panes = auto_yes_panes.lock().unwrap();
+            let yes_panes = auto_yes_panes.lock();
             questions
                 .into_iter()
                 .filter(|q| !yes_panes.contains(&q.pane_id))
@@ -715,7 +716,8 @@ pub async fn question_detection_loop(
             let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions {
                 questions: relay_questions,
             };
-            if let Ok(guard) = relay.lock() {
+            {
+                let guard = relay.lock();
                 if let Some(handle) = guard.as_ref() {
                     handle.send_message(&msg);
                 }
@@ -724,7 +726,7 @@ pub async fn question_detection_loop(
 
         // Question detection is one of the main steady-state CPU costs in the app.
         // Keep it responsive when we have active prompts, but back off when idle.
-        let has_auto_yes = !auto_yes_panes.lock().unwrap().is_empty();
+        let has_auto_yes = !auto_yes_panes.lock().is_empty();
         let sleep_ms = if has_auto_yes {
             750
         } else if !question_cache.is_empty() {
@@ -824,8 +826,8 @@ fn detect_question_processes(
 
     // Also include tracked running panes (jobs with pane_id) for question detection
     let running_panes: HashMap<String, (String, String)> = {
-        let statuses = job_status.lock().unwrap();
-        let config = jobs_config.lock().unwrap();
+        let statuses = job_status.lock();
+        let config = jobs_config.lock();
         statuses
             .iter()
             .filter_map(|(slug, s)| {
@@ -844,7 +846,7 @@ fn detect_question_processes(
     };
 
     let match_entries: Vec<(String, String, String)> = {
-        let config = jobs_config.lock().unwrap();
+        let config = jobs_config.lock();
         config
             .jobs
             .iter()

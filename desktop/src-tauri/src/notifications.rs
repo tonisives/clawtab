@@ -1,5 +1,6 @@
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use clawtab_protocol::ClaudeQuestion;
 
@@ -270,8 +271,8 @@ pub fn notify_new_questions(
     state: &Arc<Mutex<NotificationState>>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
 ) {
-    let mut notified = state.lock().unwrap();
-    let yes_panes = auto_yes_panes.lock().unwrap();
+    let mut notified = state.lock();
+    let yes_panes = auto_yes_panes.lock();
 
     for q in questions {
         if yes_panes.contains(&q.pane_id) {

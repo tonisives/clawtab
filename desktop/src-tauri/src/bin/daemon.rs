@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use clawtab_lib::config::jobs::{JobStatus, JobsConfig};
 use clawtab_lib::config::settings::AppSettings;
@@ -35,7 +36,7 @@ fn main() {
 
     // Run startup migrations
     {
-        let mut j = jobs_config.lock().unwrap();
+        let mut j = jobs_config.lock();
         clawtab_lib::config::jobs::migrate_job_md_to_central(&mut j.jobs);
         clawtab_lib::config::jobs::migrate_cwt_to_central(&j.jobs);
     }
@@ -176,12 +177,11 @@ fn main() {
 
         // Relay connection (if configured)
         {
-            let relay_settings = settings.lock().unwrap().relay.clone();
+            let relay_settings = settings.lock().relay.clone();
             if let Some(rs) = relay_settings {
                 let device_token = if rs.device_token.is_empty() {
                     secrets
                         .lock()
-                        .unwrap()
                         .get("relay_device_token")
                         .cloned()
                         .unwrap_or_default()
@@ -274,12 +274,12 @@ async fn handle_ipc_command(
     match cmd {
         IpcCommand::Ping => IpcResponse::Pong,
         IpcCommand::ListJobs => {
-            let jobs = jobs_config.lock().unwrap();
+            let jobs = jobs_config.lock();
             let names: Vec<String> = jobs.jobs.iter().map(|j| j.name.clone()).collect();
             IpcResponse::Jobs(names)
         }
         IpcCommand::RunJob { name } => {
-            let jobs = jobs_config.lock().unwrap();
+            let jobs = jobs_config.lock();
             let job = jobs.jobs.iter().find(|j| j.name == name);
             match job {
                 Some(job) => {
@@ -301,7 +301,7 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::PauseJob { name } => {
-            let mut status = job_status.lock().unwrap();
+            let mut status = job_status.lock();
             match status.get(&name) {
                 Some(JobStatus::Running { .. }) => {
                     status.insert(name, JobStatus::Paused);
@@ -311,7 +311,7 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::ResumeJob { name } => {
-            let mut status = job_status.lock().unwrap();
+            let mut status = job_status.lock();
             match status.get(&name) {
                 Some(JobStatus::Paused) => {
                     status.insert(name, JobStatus::Idle);
@@ -321,7 +321,7 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::RestartJob { name } => {
-            let jobs = jobs_config.lock().unwrap();
+            let jobs = jobs_config.lock();
             let job = jobs.jobs.iter().find(|j| j.name == name);
             match job {
                 Some(job) => {
@@ -343,19 +343,20 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::GetStatus => {
-            let status = job_status.lock().unwrap().clone();
+            let status = job_status.lock().clone();
             IpcResponse::Status(status)
         }
         IpcCommand::OpenSettings => IpcResponse::Error("requires desktop app".to_string()),
         IpcCommand::GetAutoYesPanes => {
-            let panes: Vec<String> = auto_yes_panes.lock().unwrap().iter().cloned().collect();
+            let panes: Vec<String> = auto_yes_panes.lock().iter().cloned().collect();
             IpcResponse::AutoYesPanes(panes)
         }
         IpcCommand::SetAutoYesPanes { pane_ids } => {
             let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
-            *auto_yes_panes.lock().unwrap() = pane_set;
+            *auto_yes_panes.lock() = pane_set;
 
-            if let Ok(guard) = relay.lock() {
+            {
+                let guard = relay.lock();
                 if let Some(handle) = guard.as_ref() {
                     handle
                         .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
@@ -366,7 +367,7 @@ async fn handle_ipc_command(
             IpcResponse::Ok
         }
         IpcCommand::ToggleAutoYes { pane_id } => {
-            let mut panes = auto_yes_panes.lock().unwrap();
+            let mut panes = auto_yes_panes.lock();
             if panes.contains(&pane_id) {
                 panes.remove(&pane_id);
             } else {
@@ -375,7 +376,8 @@ async fn handle_ipc_command(
             let pane_ids: Vec<String> = panes.iter().cloned().collect();
             drop(panes);
 
-            if let Ok(guard) = relay.lock() {
+            {
+                let guard = relay.lock();
                 if let Some(handle) = guard.as_ref() {
                     handle
                         .send_message(&clawtab_protocol::DesktopMessage::AutoYesPanes { pane_ids });
@@ -386,15 +388,15 @@ async fn handle_ipc_command(
             IpcResponse::Ok
         }
         IpcCommand::GetActiveQuestions => {
-            let qs = active_questions.lock().unwrap().clone();
+            let qs = active_questions.lock().clone();
             IpcResponse::ActiveQuestions(qs)
         }
         IpcCommand::ListSecretKeys => {
-            let s = secrets.lock().unwrap();
+            let s = secrets.lock();
             IpcResponse::SecretKeys(s.list_keys())
         }
         IpcCommand::GetSecretValues { keys } => {
-            let s = secrets.lock().unwrap();
+            let s = secrets.lock();
             let pairs: Vec<(String, String)> = keys
                 .iter()
                 .filter_map(|k| s.get(k).map(|v| (k.clone(), v.clone())))
@@ -402,7 +404,7 @@ async fn handle_ipc_command(
             IpcResponse::SecretValues(pairs)
         }
         IpcCommand::ReloadSecrets => {
-            secrets.lock().unwrap().reload();
+            secrets.lock().reload();
             IpcResponse::Ok
         }
         IpcCommand::GetPaneInfo { pane_id } => {
@@ -461,7 +463,8 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::RelayDisconnect => {
-            if let Ok(guard) = relay.lock() {
+            {
+                let guard = relay.lock();
                 if let Some(handle) = guard.as_ref() {
                     handle.disconnect();
                 }
@@ -469,11 +472,11 @@ async fn handle_ipc_command(
             IpcResponse::Ok
         }
         IpcCommand::ReloadSettings => {
-            *settings.lock().unwrap() = AppSettings::load();
+            *settings.lock() = AppSettings::load();
             IpcResponse::Ok
         }
         IpcCommand::StopJob { name } => {
-            let mut status = job_status.lock().unwrap();
+            let mut status = job_status.lock();
             match status.get(&name).cloned() {
                 Some(JobStatus::Running { .. }) | Some(JobStatus::Paused) => {
                     status.insert(name.clone(), JobStatus::Idle);
@@ -485,7 +488,7 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::ToggleJob { name } => {
-            let mut config = jobs_config.lock().unwrap();
+            let mut config = jobs_config.lock();
             if let Some(job) = config.jobs.iter_mut().find(|j| j.slug == name) {
                 job.enabled = !job.enabled;
                 let job = job.clone();
@@ -503,7 +506,7 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::DeleteJob { name } => {
-            let mut config = jobs_config.lock().unwrap();
+            let mut config = jobs_config.lock();
             let slug = match config.jobs.iter().find(|j| j.slug == name).map(|j| j.slug.clone()) {
                 Some(s) => s,
                 None => return IpcResponse::Error(format!("Job not found: {}", name)),
@@ -519,7 +522,7 @@ async fn handle_ipc_command(
         }
         IpcCommand::AnswerQuestion { pane_id, answer } => {
             // Remove question from active list, send answer via tmux send-keys
-            let mut qs = active_questions.lock().unwrap();
+            let mut qs = active_questions.lock();
             qs.retain(|q| q.pane_id != pane_id);
             drop(qs);
             let _ = std::process::Command::new("tmux")
@@ -530,7 +533,7 @@ async fn handle_ipc_command(
         }
         IpcCommand::SetProtectedPanes { pane_ids } => {
             let set: HashSet<String> = pane_ids.into_iter().collect();
-            *protected_panes.lock().unwrap() = set.clone();
+            *protected_panes.lock() = set.clone();
             let mut sorted: Vec<String> = set.into_iter().collect();
             sorted.sort();
             if let Err(e) = clawtab_lib::config::protected_panes::save(&sorted) {
@@ -539,7 +542,7 @@ async fn handle_ipc_command(
             IpcResponse::Ok
         }
         IpcCommand::DismissQuestion { pane_id } => {
-            let mut qs = active_questions.lock().unwrap();
+            let mut qs = active_questions.lock();
             qs.retain(|q| q.pane_id != pane_id);
             drop(qs);
             event_sink.emit_questions_changed();
@@ -547,7 +550,7 @@ async fn handle_ipc_command(
         }
         IpcCommand::RunJobNow { name, params } => {
             let job = {
-                let cfg = jobs_config.lock().unwrap();
+                let cfg = jobs_config.lock();
                 cfg.jobs
                     .iter()
                     .find(|j| j.slug == name || j.name == name)
@@ -614,7 +617,7 @@ async fn handle_ipc_command(
         }
         IpcCommand::SigintJob { name } => {
             let pane = {
-                let st = job_status.lock().unwrap();
+                let st = job_status.lock();
                 match st.get(&name).cloned() {
                     Some(JobStatus::Running {
                         pane_id: Some(pane_id),
@@ -642,8 +645,8 @@ async fn handle_ipc_command(
             model,
         } => {
             let (settings_snapshot, jobs_snapshot) = {
-                let s = settings.lock().unwrap().clone();
-                let j = jobs_config.lock().unwrap().jobs.clone();
+                let s = settings.lock().clone();
+                let j = jobs_config.lock().jobs.clone();
                 (s, j)
             };
             let job = match clawtab_lib::agent::build_agent_job(
@@ -710,7 +713,7 @@ async fn handle_ipc_command(
         },
         IpcCommand::OpenJobFolder { name } => {
             let dir = {
-                let jobs = jobs_config.lock().unwrap();
+                let jobs = jobs_config.lock();
                 jobs.jobs
                     .iter()
                     .find(|j| j.name == name)
@@ -743,17 +746,13 @@ fn compute_relay_status(
     relay_sub_required: &Arc<Mutex<bool>>,
     relay_auth_expired: &Arc<Mutex<bool>>,
 ) -> IpcRelayStatus {
-    let relay_settings = settings.lock().unwrap().relay.clone().unwrap_or_default();
-    let connected = relay.lock().map(|g| g.is_some()).unwrap_or(false);
-    let subscription_required = *relay_sub_required
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let auth_expired = *relay_auth_expired
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let relay_settings = settings.lock().relay.clone().unwrap_or_default();
+    let connected = relay.lock().is_some();
+    let subscription_required = *relay_sub_required.lock();
+    let auth_expired = *relay_auth_expired.lock();
 
     let device_token_stored = !relay_settings.device_token.is_empty() || {
-        let s = secrets.lock().unwrap();
+        let s = secrets.lock();
         s.get("relay_device_token")
             .map(|t| !t.is_empty())
             .unwrap_or(false)
@@ -778,7 +777,7 @@ fn spawn_relay_connect(
     pty_manager: &clawtab_lib::pty::SharedPtyManager,
     event_sink: &Arc<dyn clawtab_lib::events::EventSink>,
 ) -> Result<(), String> {
-    let settings_guard = ctx.settings.lock().unwrap();
+    let settings_guard = ctx.settings.lock();
     let rs = settings_guard
         .relay
         .as_ref()
@@ -798,7 +797,6 @@ fn spawn_relay_connect(
     let device_token = if yaml_token.is_empty() {
         ctx.secrets
             .lock()
-            .unwrap()
             .get("relay_device_token")
             .cloned()
             .unwrap_or_default()
@@ -809,7 +807,7 @@ fn spawn_relay_connect(
         return Err("Device token not configured".to_string());
     }
 
-    *relay_sub_required.lock().unwrap() = false;
+    *relay_sub_required.lock() = false;
 
     let relay_sub = Arc::clone(relay_sub_required);
     let jobs_config = Arc::clone(jobs_config);

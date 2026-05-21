@@ -7,7 +7,7 @@ use crate::AppState;
 #[tauri::command]
 pub async fn detect_tools(state: State<'_, AppState>) -> Result<Vec<tools::ToolInfo>, String> {
     let custom_paths = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock();
         s.tool_paths.clone()
     };
     tokio::task::spawn_blocking(move || tools::detect_tools(&custom_paths))
@@ -189,7 +189,7 @@ pub async fn set_tool_path(
     tool_name: String,
     path: String,
 ) -> Result<(), String> {
-    let mut s = state.settings.lock().unwrap();
+    let mut s = state.settings.lock();
     let on_disk = crate::config::settings::AppSettings::load();
     if s.telegram.is_none() {
         s.telegram = on_disk.telegram;

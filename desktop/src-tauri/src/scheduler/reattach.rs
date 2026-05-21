@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use crate::config::jobs::{JobStatus, JobType, JobsConfig, NotifyTarget};
 use crate::events::EventSink;
@@ -30,8 +31,8 @@ pub fn reattach_running_jobs(
     }
 
     let (jobs, default_session, telegram_config) = {
-        let jc = jobs_config.lock().unwrap();
-        let s = settings.lock().unwrap();
+        let jc = jobs_config.lock();
+        let s = settings.lock();
         (
             jc.jobs.clone(),
             s.default_tmux_session.clone(),
@@ -52,7 +53,7 @@ pub fn reattach_running_jobs(
 
     // Get all unfinished runs that have a pane_id stored
     let unfinished = {
-        let h = history.lock().unwrap();
+        let h = history.lock();
         match h.get_unfinished_with_pane() {
             Ok(runs) => runs,
             Err(e) => {
@@ -83,7 +84,7 @@ pub fn reattach_running_jobs(
         // Check if pane is still alive and busy
         if !tmux::pane_exists(&pane_id) {
             // Pane is gone - finalize the orphaned run
-            let h = history.lock().unwrap();
+            let h = history.lock();
             let finished_at = Utc::now().to_rfc3339();
             if let Err(e) = h.update_finished(&run.id, &finished_at, None, "", "") {
                 log::error!("Failed to finalize orphaned run {}: {}", run.id, e);
@@ -93,7 +94,7 @@ pub fn reattach_running_jobs(
 
         if !tmux::is_pane_busy(&session, &pane_id) {
             // Pane exists but process finished while we were down
-            let h = history.lock().unwrap();
+            let h = history.lock();
             let output = tmux::capture_pane_full(&pane_id)
                 .unwrap_or_default()
                 .trim()
@@ -117,7 +118,7 @@ pub fn reattach_running_jobs(
 
         // Clean up any previous incomplete reattach records for this job
         {
-            let h = history.lock().unwrap();
+            let h = history.lock();
             if let Ok(old_runs) = h.get_by_job_id(&job.slug, 20) {
                 let stale_ids: Vec<String> = old_runs
                     .into_iter()
@@ -147,7 +148,7 @@ pub fn reattach_running_jobs(
 
         // Set status to Running
         {
-            let mut status = job_status.lock().unwrap();
+            let mut status = job_status.lock();
             status.insert(
                 job.slug.clone(),
                 JobStatus::Running {
@@ -161,7 +162,7 @@ pub fn reattach_running_jobs(
 
         // Restore auto-yes for this pane if the job has it enabled
         if job.auto_yes {
-            let mut panes = auto_yes_panes.lock().unwrap();
+            let mut panes = auto_yes_panes.lock();
             panes.insert(pane_id.clone());
             log::info!(
                 "Auto-yes restored for reattached job '{}' pane '{}'",
@@ -172,7 +173,7 @@ pub fn reattach_running_jobs(
 
         // Create a history record for the reattached run
         {
-            let h = history.lock().unwrap();
+            let h = history.lock();
             let record = crate::history::RunRecord {
                 id: run_id.clone(),
                 job_id: job.slug.clone(),
@@ -208,17 +209,16 @@ pub fn reattach_running_jobs(
                     .and_then(|c| c.chat_ids.first().copied())
             });
             if let Some(chat_id) = chat_id {
-                if let Ok(mut map) = active_agents.lock() {
-                    map.insert(
-                        chat_id,
-                        telegram::ActiveAgent {
-                            pane_id: pane_id.clone(),
-                            tmux_session: session.clone(),
-                            run_id: run_id.clone(),
-                            job_id: job.name.clone(),
-                        },
-                    );
-                }
+                let mut map = active_agents.lock();
+                map.insert(
+                    chat_id,
+                    telegram::ActiveAgent {
+                        pane_id: pane_id.clone(),
+                        tmux_session: session.clone(),
+                        run_id: run_id.clone(),
+                        job_id: job.name.clone(),
+                    },
+                );
             }
         }
 

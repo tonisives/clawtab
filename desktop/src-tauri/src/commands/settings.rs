@@ -11,7 +11,7 @@ const LOG_DIR: &str = "/tmp/clawtab";
 
 #[tauri::command]
 pub fn get_settings(state: State<AppState>) -> AppSettings {
-    state.settings.lock().unwrap().clone()
+    state.settings.lock().clone()
 }
 
 #[tauri::command]
@@ -20,7 +20,7 @@ pub fn set_settings(
     state: State<AppState>,
     new_settings: AppSettings,
 ) -> Result<(), String> {
-    let mut settings = state.settings.lock().unwrap();
+    let mut settings = state.settings.lock();
     // Re-read from disk so fields the frontend doesn't manage (telegram, relay)
     // aren't clobbered when they were written by another process (CLI, daemon,
     // external edit) after this in-memory copy was loaded at startup.
@@ -35,13 +35,13 @@ pub fn set_settings(
         settings.relay = relay;
     }
     settings.save()?;
-    *state.process_overrides.lock().unwrap() = settings.process_overrides.clone();
+    *state.process_overrides.lock() = settings.process_overrides.clone();
 
     // Regenerate all cwt.md context files with updated settings
     let settings_clone = settings.clone();
     drop(settings);
     let _ = crate::refresh_shortcut_menu(&app, &settings_clone.shortcuts);
-    let jobs = state.jobs_config.lock().unwrap().jobs.clone();
+    let jobs = state.jobs_config.lock().jobs.clone();
     super::jobs::ensure_agent_dir(&settings_clone, &jobs);
     super::jobs::regenerate_all_cwt_contexts(&settings_clone, &jobs);
     let _ = app.emit("settings-updated", &settings_clone);

@@ -41,7 +41,8 @@ pub mod watcher;
 #[cfg(feature = "desktop")]
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "desktop")]
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 #[cfg(feature = "desktop")]
 use tauri::{
@@ -201,7 +202,7 @@ pub(crate) fn refresh_tray_usage_menu(
 
     let show_tray_icon = app
         .try_state::<AppState>()
-        .map(|state| state.settings.lock().unwrap().show_tray_icon)
+        .map(|state| state.settings.lock().show_tray_icon)
         .unwrap_or(true);
     tray.set_visible(show_tray_icon)?;
 
@@ -330,7 +331,7 @@ fn init_file_logger() {
 
     // Truncate on startup so the file doesn't grow forever
     let file = fs::File::create(&log_path).expect("failed to create engine.log");
-    let file = std::sync::Mutex::new(file);
+    let file = parking_lot::Mutex::new(file);
 
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_secs()
@@ -338,7 +339,7 @@ fn init_file_logger() {
             use std::io::Write as _;
             let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
             let line = format!("{} [{}] {}\n", ts, record.level(), record.args());
-            let mut f = file.lock().unwrap();
+            let mut f = file.lock();
             f.write_all(line.as_bytes()).ok();
             f.flush().ok();
             Ok(())
@@ -369,15 +370,15 @@ pub fn run() {
 
     // Run startup migrations
     {
-        let mut j = jobs_config.lock().unwrap();
+        let mut j = jobs_config.lock();
         config::jobs::migrate_job_md_to_central(&mut j.jobs);
         config::jobs::migrate_cwt_to_central(&j.jobs);
     }
 
     // Ensure agent + per-job cwt.md context files are fresh on startup
     {
-        let s = settings.lock().unwrap();
-        let j = jobs_config.lock().unwrap();
+        let s = settings.lock();
+        let j = jobs_config.lock();
         commands::jobs::ensure_agent_dir(&s, &j.jobs);
         commands::jobs::regenerate_all_cwt_contexts(&s, &j.jobs);
     }
@@ -392,7 +393,7 @@ pub fn run() {
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let process_overrides: Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>> = {
-        let loaded = settings.lock().unwrap().process_overrides.clone();
+        let loaded = settings.lock().process_overrides.clone();
         Arc::new(Mutex::new(loaded))
     };
     let notification_state: Arc<Mutex<notifications::NotificationState>> =
@@ -581,7 +582,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 let state = app.state::<AppState>();
-                let hide_titlebar = state.settings.lock().unwrap().hide_titlebar;
+                let hide_titlebar = state.settings.lock().hide_titlebar;
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
                 // Config defaults to Visible (so tiling WMs like Aerospace can manage it);
                 // apply Overlay only if the user opted into hiding the titlebar
@@ -598,7 +599,7 @@ pub fn run() {
             }
 
             // Set app handle for IPC
-            *ipc_app_handle.lock().unwrap() = Some(app.handle().clone());
+            *ipc_app_handle.lock() = Some(app.handle().clone());
 
             // Desktop IPC socket: UI-only commands (cwtctl pane focus, cwtctl open).
             // Lives on the desktop process, not the daemon, so the daemon stays
@@ -651,7 +652,6 @@ pub fn run() {
                         app.state::<AppState>()
                             .pty_manager
                             .lock()
-                            .unwrap()
                             .destroy_all();
                         app.exit(0);
                     }
@@ -749,7 +749,7 @@ pub fn run() {
             app.set_menu(app_menu)?;
             {
                 let state = app.state::<AppState>();
-                let shortcuts = state.settings.lock().unwrap().shortcuts.clone();
+                let shortcuts = state.settings.lock().shortcuts.clone();
                 let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
             }
             app.on_menu_event(|app, event| {
@@ -779,7 +779,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     let zai_token = {
-                        let secrets = secrets_for_usage.lock().unwrap();
+                        let secrets = secrets_for_usage.lock();
                         let explicit = usage::ZAI_TOKEN_KEYS
                             .iter()
                             .map(|key| secrets.get(key).cloned())
