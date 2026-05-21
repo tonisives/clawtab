@@ -8,12 +8,38 @@ This server runs in production with paying users; the code below ships from `mai
 
 A desktop process running on a developer's laptop pushes events (terminal output, agent questions, pane state) to the relay. Mobile and web clients subscribe over WebSocket and receive those events in real time. Mobile clients send back answers and commands which the relay forwards to the right desktop.
 
-```
-desktop (laptop)  --WS-->  relay (this)  --WS-->  mobile / web
-                  <--WS--             <--WS--
+```mermaid
+flowchart LR
+    subgraph Laptop["Developer laptop"]
+        Claude["Claude Code / agent"]
+        Desktop["clawtab desktop (Tauri)"]
+        Claude -- "pane output, questions" --> Desktop
+    end
+
+    subgraph Cloud["Cloud (this repo)"]
+        Relay["clawtab-relay<br/>axum + tokio"]
+        PG[("Postgres<br/>users, devices,<br/>billing, shares")]
+        Redis[("Redis<br/>rate limits,<br/>dedup")]
+        APNs[["Apple APNs"]]
+        Relay <--> PG
+        Relay <--> Redis
+        Relay -- "push when app<br/>backgrounded" --> APNs
+    end
+
+    subgraph User["User devices"]
+        Mobile["remote app<br/>(iOS / Android / Web)"]
+    end
+
+    Desktop <-- "WebSocket<br/>events / commands" --> Relay
+    Relay <-- "WebSocket<br/>events / answers" --> Mobile
+    APNs -. "wake up" .-> Mobile
 ```
 
 The relay is the only stateful hop. It holds the connection hub in memory, persists auth and notifications to Postgres, and pushes APNs notifications when the mobile app is backgrounded.
+
+### Why it is necessary
+
+The desktop sits on a residential network behind NAT; the phone is on cellular. Neither can reach the other directly. The relay is the always-on rendezvous point with a stable address that both sides dial out to, so the user can answer their agent's questions from anywhere without VPN, port forwarding, or polling.
 
 ## Architecture
 
@@ -28,6 +54,40 @@ src/
   billing/               Apple IAP subscription validation
   apns.rs                push notification dispatch
   push_limiter.rs        per-user rate limiter (governor)
+```
+
+```mermaid
+flowchart TB
+    subgraph Axum["axum app (main.rs)"]
+        REST["routes/<br/>auth, billing,<br/>device, share"]
+        WS["/ws upgrade"]
+    end
+
+    subgraph Session["ws/session.rs<br/>(one task per connection)"]
+        Select{{"tokio::select!"}}
+        InRx["ws_stream.next()<br/>frames from client"]
+        OutRx["rx.recv()<br/>from hub"]
+        Beat["heartbeat.tick()<br/>30s ping / 90s timeout"]
+        Select --- InRx
+        Select --- OutRx
+        Select --- Beat
+    end
+
+    subgraph Hub["ws/hub.rs"]
+        Map["RwLock&lt;HashMap&gt;<br/>user -> desktops, mobiles"]
+        Cache["last claude_questions<br/>+ auto_yes_panes per user"]
+        Shares["workspace_shares lookup"]
+    end
+
+    DesktopWS(["Desktop WS"]) --> WS
+    MobileWS(["Mobile WS"]) --> WS
+    WS --> Session
+    InRx -- "route to target user" --> Hub
+    Hub -- "mpsc Sender per conn" --> OutRx
+    Hub -- "replay on connect" --> Cache
+    Hub -- "resolve cross-user" --> Shares
+    Session -. "spawn(DB write)" .-> PG2[("Postgres")]
+    Session -. "trigger" .-> APNs2[["APNs"]]
 ```
 
 ### Hub
