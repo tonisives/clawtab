@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use parking_lot::Mutex;
 
+use tokio::sync::Notify;
+
 use crate::config::jobs::JobStatus;
 use crate::config::settings::AppSettings;
 use crate::history::HistoryStore;
@@ -18,6 +20,10 @@ pub struct JobContext {
     pub settings: Arc<Mutex<AppSettings>>,
     pub job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     pub active_agents: Arc<Mutex<HashMap<i64, ActiveAgent>>>,
+    /// Signalled whenever an entry is inserted into `active_agents`. Callers
+    /// that need to wait for a specific chat_id to appear should pin a
+    /// `notified()` future, call `enable()` on it, and then await with timeout.
+    pub active_agents_notify: Arc<Notify>,
     pub relay: Arc<Mutex<Option<RelayHandle>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     pub protected_panes: Arc<Mutex<HashSet<String>>>,

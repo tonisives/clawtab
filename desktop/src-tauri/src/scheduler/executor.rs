@@ -76,6 +76,7 @@ pub async fn execute_job(
     let settings = &ctx.settings;
     let job_status = &ctx.job_status;
     let active_agents = &ctx.active_agents;
+    let active_agents_notify = &ctx.active_agents_notify;
     let relay = &ctx.relay;
     let auto_yes_panes = if opts.use_auto_yes {
         Some(&ctx.auto_yes_panes)
@@ -296,6 +297,8 @@ pub async fn execute_job(
                                 job_id: job.name.clone(),
                             },
                         );
+                        drop(map);
+                        active_agents_notify.notify_waiters();
                     }
                 }
 
