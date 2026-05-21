@@ -809,8 +809,9 @@ pub fn run() {
             // Shared-state commands proxy to the daemon via IPC; the daemon
             // pushes state-change events back over a subscription socket.
             let event_app_handle = app.handle().clone();
+            let event_jobs_config = Arc::clone(&jobs_config);
             tauri::async_runtime::spawn(async move {
-                events::run_daemon_event_subscription(event_app_handle).await;
+                events::run_daemon_event_subscription(event_app_handle, event_jobs_config).await;
             });
 
             // Always start auto-update checker (desktop-only concern)
