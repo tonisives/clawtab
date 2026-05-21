@@ -56,6 +56,7 @@ fn main() {
     );
     let pty_manager: clawtab_lib::pty::SharedPtyManager =
         Arc::new(Mutex::new(clawtab_lib::pty::PtyManager::new()));
+    let active_agents_notify = Arc::new(tokio::sync::Notify::new());
 
     let event_subscribers = ipc::new_event_subscribers();
     let event_sink: Arc<dyn clawtab_lib::events::EventSink> =
@@ -68,6 +69,7 @@ fn main() {
         settings: Arc::clone(&settings),
         job_status: Arc::clone(&job_status),
         active_agents: Arc::clone(&active_agents),
+        active_agents_notify: Arc::clone(&active_agents_notify),
         relay: Arc::clone(&relay_handle),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
         protected_panes: Arc::clone(&protected_panes),

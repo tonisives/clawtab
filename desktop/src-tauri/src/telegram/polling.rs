@@ -374,28 +374,51 @@ async fn handle_agent_command(
     let active_agents = Arc::clone(&state.active_agents);
     let ctx = state.ctx.clone();
 
-    tokio::spawn(async move {
-        crate::scheduler::executor::execute_job(
-            &job,
-            &ctx,
-            "telegram",
-            &std::collections::HashMap::new(),
-            crate::scheduler::executor::ExecuteOpts::default(),
-        )
-        .await;
+    // Register a wait on the active_agents_notify BEFORE spawning the executor so
+    // we don't miss the signal if the insert happens immediately. `enable()`
+    // arms the future so any subsequent notify_waiters() is captured.
+    let notified = ctx.active_agents_notify.notified();
+    tokio::pin!(notified);
+    notified.as_mut().enable();
+
+    tokio::spawn({
+        let ctx = ctx.clone();
+        async move {
+            crate::scheduler::executor::execute_job(
+                &job,
+                &ctx,
+                "telegram",
+                &std::collections::HashMap::new(),
+                crate::scheduler::executor::ExecuteOpts::default(),
+            )
+            .await;
+        }
     });
 
-    // Wait for execute_job to populate active_agents
-    let mut found = false;
-    for _ in 0..20 {
-        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        if let Some(agents) = lock_or_log(&active_agents, "active_agents") {
-            if agents.contains_key(&chat_id) {
-                found = true;
-                break;
-            }
+    // Wait for the executor to publish into active_agents. The notify wakes us
+    // on every insert, so loop until the chat_id we care about appears or we
+    // hit the timeout.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
+    let found = loop {
+        let already_there = lock_or_log(&active_agents, "active_agents")
+            .map(|a| a.contains_key(&chat_id))
+            .unwrap_or(false);
+        if already_there {
+            break true;
         }
-    }
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            break false;
+        }
+        match tokio::time::timeout(remaining, notified.as_mut()).await {
+            Ok(()) => {
+                // Re-arm for the next insert (different chat_id may still arrive).
+                notified.set(ctx.active_agents_notify.notified());
+                notified.as_mut().enable();
+            }
+            Err(_) => break false,
+        }
+    };
 
     if !found {
         log::warn!("Agent pane not found in active_agents after 6s wait");

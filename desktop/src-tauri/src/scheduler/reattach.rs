@@ -22,6 +22,7 @@ pub fn reattach_running_jobs(
     let job_status = &ctx.job_status;
     let history = &ctx.history;
     let active_agents = &ctx.active_agents;
+    let active_agents_notify = &ctx.active_agents_notify;
     let relay = &ctx.relay;
     let auto_yes_panes = &ctx.auto_yes_panes;
     let protected_panes = &ctx.protected_panes;
@@ -219,6 +220,7 @@ pub fn reattach_running_jobs(
                         },
                     );
                 }
+                active_agents_notify.notify_waiters();
             }
         }
 
