@@ -1,4 +1,37 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct JobParam {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+impl JobParam {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self { name: name.into(), value: None }
+    }
+}
+
+pub fn deserialize_job_params<'de, D>(deserializer: D) -> Result<Vec<JobParam>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Either {
+        Name(String),
+        Full(JobParam),
+    }
+    let raw: Vec<Either> = Vec::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .map(|e| match e {
+            Either::Name(name) => JobParam { name, value: None },
+            Either::Full(p) => p,
+        })
+        .collect())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionOption {
@@ -41,8 +74,8 @@ pub struct RemoteJob {
     pub work_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    #[serde(default)]
-    pub params: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_job_params")]
+    pub params: Vec<JobParam>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub added_at: Option<String>,
 }

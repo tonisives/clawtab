@@ -1,4 +1,5 @@
 use crate::agent_session::ProcessProvider;
+use clawtab_protocol::{deserialize_job_params, JobParam};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -122,8 +123,8 @@ pub struct Job {
     pub slug: String,
     #[serde(default)]
     pub skill_paths: Vec<String>,
-    #[serde(default)]
-    pub params: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_job_params")]
+    pub params: Vec<JobParam>,
     #[serde(default = "default_true")]
     pub kill_on_end: bool,
     #[serde(default)]
@@ -807,4 +808,57 @@ fn slugify(input: &str, max_len: usize) -> String {
     }
 
     slug
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_job(yaml: &str) -> Job {
+        serde_yml::from_str::<Job>(yaml).expect("yaml should parse")
+    }
+
+    fn base_yaml(params_block: &str) -> String {
+        format!(
+            "name: t\njob_type: job\nenabled: false\npath: ''\ncron: '* * * * *'\nwork_dir: null\ntmux_session: null\naerospace_workspace: null\nfolder_path: null\njob_id: t\ntelegram_chat_id: null\n{}\n",
+            params_block
+        )
+    }
+
+    #[test]
+    fn params_accepts_empty() {
+        let job = parse_job(&base_yaml("params: []"));
+        assert_eq!(job.params.len(), 0);
+    }
+
+    #[test]
+    fn params_accepts_legacy_string_list() {
+        let job = parse_job(&base_yaml("params:\n  - foo\n  - bar"));
+        assert_eq!(job.params.len(), 2);
+        assert_eq!(job.params[0].name, "foo");
+        assert_eq!(job.params[0].value, None);
+        assert_eq!(job.params[1].name, "bar");
+    }
+
+    #[test]
+    fn params_accepts_new_object_list() {
+        let job = parse_job(&base_yaml(
+            "params:\n  - name: max_drafts_per_day\n    value: '1'",
+        ));
+        assert_eq!(job.params.len(), 1);
+        assert_eq!(job.params[0].name, "max_drafts_per_day");
+        assert_eq!(job.params[0].value.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn params_accepts_mixed_shapes() {
+        let job = parse_job(&base_yaml(
+            "params:\n  - foo\n  - name: bar\n    value: baz",
+        ));
+        assert_eq!(job.params.len(), 2);
+        assert_eq!(job.params[0].name, "foo");
+        assert_eq!(job.params[0].value, None);
+        assert_eq!(job.params[1].name, "bar");
+        assert_eq!(job.params[1].value.as_deref(), Some("baz"));
+    }
 }

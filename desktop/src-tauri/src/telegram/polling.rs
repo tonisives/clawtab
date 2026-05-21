@@ -249,12 +249,12 @@ async fn handle_message(
                     .and_then(|c| c.jobs.iter().find(|j| j.name == name).cloned());
                 match job {
                     Some(ref job) if !job.params.is_empty() => {
-                        // Validate all required params are provided
+                        // Validate: only required (no default) params that are missing are blockers
                         let missing: Vec<&str> = job
                             .params
                             .iter()
-                            .filter(|k| !params.contains_key(k.as_str()))
-                            .map(|k| k.as_str())
+                            .filter(|p| !params.contains_key(p.name.as_str()) && p.value.is_none())
+                            .map(|p| p.name.as_str())
                             .collect();
                         if !missing.is_empty() {
                             format!(
@@ -263,7 +263,7 @@ async fn handle_message(
                                 name,
                                 job.params
                                     .iter()
-                                    .map(|k| format!("{}=value", k))
+                                    .map(|p| format!("{}=value", p.name))
                                     .collect::<Vec<_>>()
                                     .join(" "),
                             )

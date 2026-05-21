@@ -19,8 +19,8 @@ export function ParamsFields({
 
   const addParam = (name: string) => {
     const key = name.trim().replace(/[^a-zA-Z0-9_-]/g, "");
-    if (!key || form.params.includes(key)) return;
-    setForm((prev) => ({ ...prev, params: [...prev.params, key] }));
+    if (!key || form.params.some((p) => p.name === key)) return;
+    setForm((prev) => ({ ...prev, params: [...prev.params, { name: key }] }));
     setParamInput("");
     if (editorRef.current && previewFile === "job.md") {
       const ta = editorRef.current;
@@ -37,40 +37,56 @@ export function ParamsFields({
   };
 
   const removeParam = (key: string) => {
-    setForm((prev) => ({ ...prev, params: prev.params.filter((p) => p !== key) }));
+    setForm((prev) => ({ ...prev, params: prev.params.filter((p) => p.name !== key) }));
+  };
+
+  const setParamValue = (key: string, value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      params: prev.params.map((p) =>
+        p.name === key ? { ...p, value: value === "" ? null : value } : p,
+      ),
+    }));
   };
 
   return (
     <div className="form-group">
       <label>Parameters</label>
       <span className="hint">
-        Named placeholders replaced at runtime. Jobs with parameters are manual-only.
+        Named placeholders replaced at runtime. Set an optional default value to prefill the run prompt.
       </span>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
         {form.params.map((p) => (
-          <span
-            key={p}
-            className="tag"
+          <div
+            key={p.name}
             style={{
-              display: "inline-flex",
+              display: "flex",
               alignItems: "center",
-              gap: 4,
+              gap: 6,
               background: "var(--surface)",
               border: "1px solid var(--border)",
               borderRadius: 4,
-              padding: "2px 8px",
+              padding: "4px 8px",
               fontSize: 12,
             }}
           >
-            <code>{`{${p}}`}</code>
+            <code style={{ minWidth: 80 }}>{`{${p.name}}`}</code>
+            <input
+              className="input"
+              type="text"
+              value={p.value ?? ""}
+              onChange={(e) => setParamValue(p.name, e.target.value)}
+              placeholder="default (optional)"
+              style={{ flex: 1, fontSize: 12, padding: "2px 6px" }}
+            />
             <span
               style={{ cursor: "pointer", opacity: 0.6, fontSize: 14, lineHeight: 1 }}
-              onClick={() => removeParam(p)}
+              onClick={() => removeParam(p.name)}
               title="Remove"
             >
               x
             </span>
-          </span>
+          </div>
         ))}
       </div>
       <div style={{ display: "flex", gap: 6 }}>

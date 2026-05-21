@@ -20,19 +20,19 @@ export function ParamsOverlay({
         <p className="text-secondary" style={{ fontSize: 12, marginBottom: 12 }}>
           Fill in all parameters before running.
         </p>
-        {job.params.map((key) => (
-          <div key={key} style={{ marginBottom: 10 }}>
+        {job.params.map((p, i) => (
+          <div key={p.name} style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 12, fontWeight: 500, marginBottom: 4, display: "block" }}>
-              {key}
+              {p.name}
             </label>
             <input
               className="input"
               type="text"
-              value={values[key] ?? ""}
-              onChange={(e) => onChange({ ...values, [key]: e.target.value })}
+              value={values[p.name] ?? p.value ?? ""}
+              onChange={(e) => onChange({ ...values, [p.name]: e.target.value })}
               onKeyDown={(e) => { if (e.key === "Enter") onRun(); }}
-              placeholder={`{${key}}`}
-              autoFocus={key === job.params[0]}
+              placeholder={p.value ?? `{${p.name}}`}
+              autoFocus={i === 0}
             />
           </div>
         ))}
@@ -41,7 +41,7 @@ export function ParamsOverlay({
           <button
             className="btn btn-primary btn-sm"
             onClick={onRun}
-            disabled={job.params.some((k) => !values[k]?.trim())}
+            disabled={job.params.some((p) => !(values[p.name] ?? p.value ?? "").trim())}
           >
             Run
           </button>

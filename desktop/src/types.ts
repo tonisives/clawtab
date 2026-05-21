@@ -11,6 +11,11 @@ export interface TelegramNotify {
   finish: boolean;
 }
 
+export interface JobParam {
+  name: string;
+  value?: string | null;
+}
+
 export interface Job {
   name: string;
   job_type: JobType;
@@ -32,7 +37,7 @@ export interface Job {
   group: string;
   slug: string;
   skill_paths: string[];
-  params: string[];
+  params: JobParam[];
   kill_on_end: boolean;
   auto_yes: boolean;
   agent_provider?: ProcessProvider | null;

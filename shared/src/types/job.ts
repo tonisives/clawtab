@@ -4,6 +4,11 @@ export type JobType = "binary" | "claude" | "job";
 
 export type JobSortMode = "name" | "recent" | "added";
 
+export interface JobParam {
+  name: string;
+  value?: string | null;
+}
+
 export interface RemoteJob {
   name: string;
   job_type: string;
@@ -14,7 +19,7 @@ export interface RemoteJob {
   work_dir?: string;
   path?: string;
   folder_path?: string;
-  params?: string[];
+  params?: JobParam[];
   agent_provider?: ProcessProvider | null;
   agent_model?: string | null;
   added_at?: string;

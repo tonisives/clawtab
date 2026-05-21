@@ -55,6 +55,21 @@ pub async fn execute_job(
     params: &HashMap<String, String>,
     opts: ExecuteOpts,
 ) {
+    // Fill any missing param entries from each JobParam's declared default value
+    // so cron-triggered runs (which pass an empty map) still get sensible values.
+    let merged_params: Option<HashMap<String, String>> = if job
+        .params
+        .iter()
+        .any(|p| p.value.is_some() && !params.contains_key(&p.name))
+    {
+        let mut m = params.clone();
+        apply_param_defaults(job, &mut m);
+        Some(m)
+    } else {
+        None
+    };
+    let params: &HashMap<String, String> = merged_params.as_ref().unwrap_or(params);
+
     let secrets = &ctx.secrets;
     let history = &ctx.history;
     let settings = &ctx.settings;
@@ -942,6 +957,17 @@ async fn execute_folder_job(
         pane_id,
     };
     Ok((Some(0), String::new(), String::new(), Some(handle)))
+}
+
+/// Fill missing entries in a runtime params HashMap from each JobParam's default value.
+/// Explicit values already in the map take precedence; only params with a `value` default
+/// are auto-filled when absent.
+pub fn apply_param_defaults(job: &Job, params: &mut HashMap<String, String>) {
+    for p in &job.params {
+        if let Some(default) = &p.value {
+            params.entry(p.name.clone()).or_insert_with(|| default.clone());
+        }
+    }
 }
 
 /// Replace `{key}` placeholders in a prompt string with the provided param values.

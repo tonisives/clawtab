@@ -2,6 +2,7 @@ import { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, Modal, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import type { JobParam } from "../types/job";
 
 export function ParamsDialog({
   jobName,
@@ -11,18 +12,18 @@ export function ParamsDialog({
   onCancel,
 }: {
   jobName: string;
-  params: string[];
+  params: JobParam[];
   visible: boolean;
   onRun: (values: Record<string, string>) => void;
   onCancel: () => void;
 }) {
   const [values, setValues] = useState<Record<string, string>>(() => {
     const v: Record<string, string> = {};
-    for (const p of params) v[p] = "";
+    for (const p of params) v[p.name] = p.value ?? "";
     return v;
   });
 
-  const allFilled = params.every((k) => values[k]?.trim());
+  const allFilled = params.every((p) => (values[p.name] ?? p.value ?? "").trim());
 
   const handleRun = () => {
     if (allFilled) onRun(values);
@@ -34,14 +35,14 @@ export function ParamsDialog({
         <View style={styles.content}>
           <Text style={styles.title}>Run: {jobName}</Text>
           <Text style={styles.hint}>Fill in all parameters before running.</Text>
-          {params.map((key) => (
-            <View key={key} style={styles.paramRow}>
-              <Text style={styles.paramLabel}>{key}</Text>
+          {params.map((p) => (
+            <View key={p.name} style={styles.paramRow}>
+              <Text style={styles.paramLabel}>{p.name}</Text>
               <TextInput
                 style={styles.paramInput}
-                value={values[key] ?? ""}
-                onChangeText={(text) => setValues((prev) => ({ ...prev, [key]: text }))}
-                placeholder={`{${key}}`}
+                value={values[p.name] ?? p.value ?? ""}
+                onChangeText={(text) => setValues((prev) => ({ ...prev, [p.name]: text }))}
+                placeholder={p.value ?? `{${p.name}}`}
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
