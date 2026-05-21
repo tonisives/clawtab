@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 
 use chrono::Utc;
 
@@ -365,11 +366,7 @@ pub async fn monitor_pane(params: MonitorParams) {
     // is not currently viewing this pane in ClawTab. A pane visible in the UI
     // must never disappear out from under the user, even when kill_on_end is set.
     if params.kill_on_end {
-        let is_protected = params
-            .protected_panes
-            .lock()
-            .map(|p| p.contains(&params.pane_id))
-            .unwrap_or(false);
+        let is_protected = params.protected_panes.lock().contains(&params.pane_id);
         if is_protected {
             log::warn!(
                 "[{}] Skipping kill_on_end for pane {} -- pane is open in ClawTab",
@@ -390,7 +387,7 @@ pub async fn monitor_pane(params: MonitorParams) {
 
     // Update history with captured output
     {
-        let h = params.history.lock().unwrap();
+        let h = params.history.lock();
         if let Err(e) = h.update_finished(&params.run_id, &finished_at, Some(0), &full_output, "") {
             log::error!("[{}] Failed to update history: {}", params.run_id, e);
         }
@@ -401,7 +398,7 @@ pub async fn monitor_pane(params: MonitorParams) {
         let new_status = JobStatus::Success {
             last_run: finished_at,
         };
-        let mut status = params.job_status.lock().unwrap();
+        let mut status = params.job_status.lock();
         status.insert(params.slug.clone(), new_status.clone());
         drop(status);
         crate::relay::push_status_update(&params.relay, &params.slug, &new_status);

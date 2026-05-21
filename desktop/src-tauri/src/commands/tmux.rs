@@ -247,13 +247,13 @@ pub fn move_tmux_windows_to_session(
 #[tauri::command]
 pub fn focus_job_window(state: State<AppState>, name: String) -> Result<(), String> {
     let (tmux_session, window_name) = {
-        let settings = state.settings.lock().unwrap();
+        let settings = state.settings.lock();
 
         if name == "agent" {
             let session = settings.default_tmux_session.clone();
             (session, "cwt-agent".to_string())
         } else {
-            let config = state.jobs_config.lock().unwrap();
+            let config = state.jobs_config.lock();
             let job = config
                 .jobs
                 .iter()
@@ -290,14 +290,14 @@ pub fn focus_job_window(state: State<AppState>, name: String) -> Result<(), Stri
 #[tauri::command]
 pub fn open_job_terminal(state: State<AppState>, name: String) -> Result<(), String> {
     let work_dir = {
-        let config = state.jobs_config.lock().unwrap();
+        let config = state.jobs_config.lock();
         let job = config
             .jobs
             .iter()
             .find(|j| j.name == name)
             .ok_or_else(|| format!("Job not found: {}", name))?;
 
-        let settings = state.settings.lock().unwrap();
+        let settings = state.settings.lock();
         job.work_dir
             .clone()
             .unwrap_or_else(|| settings.default_work_dir.clone())
@@ -332,7 +332,7 @@ pub async fn fork_pane(
         Vec::new()
     } else {
         let secrets = Arc::clone(&state.secrets);
-        let store = secrets.lock().unwrap();
+        let store = secrets.lock();
         let vars: Vec<(String, String)> = secret_keys
             .iter()
             .filter_map(|k| store.get(k).map(|v| (k.clone(), v.clone())))
@@ -348,7 +348,7 @@ pub async fn fork_pane(
 
     tmux::mark_pane_as_forking(&pane_id).await?;
 
-    let (new_pane, _window_name) = state.pty_manager.lock().unwrap().spawn_window(
+    let (new_pane, _window_name) = state.pty_manager.lock().spawn_window(
         &target_session,
         "ct-fork",
         Some(&pane_path),
@@ -393,7 +393,7 @@ pub async fn split_pane_with_command(
         .unwrap_or(source_path);
     let tmux_session = tmux::resolve_real_session_for_pane(&pane_id)?;
 
-    let (new_pane, window_name) = state.pty_manager.lock().unwrap().spawn_window(
+    let (new_pane, window_name) = state.pty_manager.lock().spawn_window(
         &tmux_session,
         "clawtab-shell",
         Some(&pane_path),
@@ -436,7 +436,7 @@ pub async fn split_pane_plain(
     let pane_path = tmux::get_pane_path(&pane_id)?;
     let tmux_session = tmux::resolve_real_session_for_pane(&pane_id)?;
 
-    let (new_pane, window_name) = state.pty_manager.lock().unwrap().spawn_window(
+    let (new_pane, window_name) = state.pty_manager.lock().spawn_window(
         &tmux_session,
         "clawtab-shell",
         Some(&pane_path),

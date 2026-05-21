@@ -36,7 +36,7 @@ fn write_cached_jobs_snapshot(snapshot: &CachedJobsSnapshot) -> Result<(), Strin
 
 #[tauri::command]
 pub fn get_jobs(state: State<AppState>) -> Vec<Job> {
-    state.jobs_config.lock().unwrap().jobs.clone()
+    state.jobs_config.lock().jobs.clone()
 }
 
 #[tauri::command]
@@ -56,7 +56,7 @@ pub fn save_cached_jobs_snapshot(
 
 #[tauri::command]
 pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Result<(), String> {
-    let mut config = state.jobs_config.lock().unwrap();
+    let mut config = state.jobs_config.lock();
 
     let mut job = job;
     if job.slug.is_empty() {
@@ -74,7 +74,7 @@ pub fn save_job(app: tauri::AppHandle, state: State<AppState>, job: Job) -> Resu
     config.save_job(&job)?;
     *config = crate::config::jobs::JobsConfig::load();
 
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock().clone();
     let jobs = config.jobs.clone();
     drop(config);
     ensure_agent_dir(&settings, &jobs);
@@ -92,7 +92,7 @@ pub fn rename_job(
     old_name: String,
     job: Job,
 ) -> Result<(), String> {
-    let mut config = state.jobs_config.lock().unwrap();
+    let mut config = state.jobs_config.lock();
 
     let old_job = config
         .jobs
@@ -136,7 +136,7 @@ pub fn rename_job(
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
 
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock().clone();
     let jobs = config.jobs.clone();
     drop(config);
     ensure_agent_dir(&settings, &jobs);
@@ -173,7 +173,7 @@ pub fn import_job_folder(
         .map(|n: &std::ffi::OsStr| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "default".to_string());
 
-    let mut config = state.jobs_config.lock().unwrap();
+    let mut config = state.jobs_config.lock();
 
     let job = Job {
         name: job_id.clone(),
@@ -218,7 +218,7 @@ pub fn import_job_folder(
 
     // Refresh
     *config = crate::config::jobs::JobsConfig::load();
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock().clone();
     let jobs = config.jobs.clone();
     drop(config);
     ensure_agent_dir(&settings, &jobs);
@@ -236,7 +236,7 @@ pub fn duplicate_job(
     source_slug: String,
     target_project_path: String,
 ) -> Result<Job, String> {
-    let mut config = state.jobs_config.lock().unwrap();
+    let mut config = state.jobs_config.lock();
 
     let source = config
         .jobs
@@ -329,7 +329,7 @@ pub fn duplicate_job(
 
     // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
-    let settings = state.settings.lock().unwrap().clone();
+    let settings = state.settings.lock().clone();
     let jobs = config.jobs.clone();
 
     // Find the saved job to return
@@ -397,7 +397,7 @@ pub async fn run_job_now(
     // The daemon's new-window dragged every grouped view session's active
     // window to the new pane. Restore each viewer's intended window so the
     // existing PTY readers stop streaming the new pane's output.
-    state.pty_manager.lock().unwrap().restore_view_session_windows();
+    state.pty_manager.lock().restore_view_session_windows();
     result
 }
 
@@ -466,7 +466,7 @@ pub fn open_job_editor(
     slug: Option<String>,
 ) -> Result<(), String> {
     let preferred_editor = editor.unwrap_or_else(|| {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock();
         s.preferred_editor.clone()
     });
 
@@ -538,7 +538,7 @@ pub fn open_job_editor(
 
 #[tauri::command]
 pub fn open_job_in_editor(state: State<AppState>, name: String) -> Result<(), String> {
-    let config = state.jobs_config.lock().unwrap();
+    let config = state.jobs_config.lock();
     let job = config
         .jobs
         .iter()
@@ -553,7 +553,7 @@ pub fn open_job_in_editor(state: State<AppState>, name: String) -> Result<(), St
         .ok_or_else(|| "Job has no folder path or working directory".to_string())?;
 
     let preferred_editor = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock();
         s.preferred_editor.clone()
     };
 
@@ -728,7 +728,7 @@ pub fn derive_job_slug(
     folder_path: String,
     job_id: Option<String>,
 ) -> String {
-    let config = state.jobs_config.lock().unwrap();
+    let config = state.jobs_config.lock();
     crate::config::jobs::derive_slug(&folder_path, job_id.as_deref(), &config.jobs)
 }
 
@@ -938,7 +938,7 @@ pub use crate::agent::agent_dir_path;
 #[tauri::command]
 pub fn open_agent_editor(state: State<AppState>, file_name: Option<String>) -> Result<(), String> {
     let preferred_editor = {
-        let s = state.settings.lock().unwrap();
+        let s = state.settings.lock();
         s.preferred_editor.clone()
     };
 
@@ -1066,6 +1066,6 @@ pub async fn run_agent(
     // The daemon's new-window dragged every grouped view session's active
     // window to the new pane. Restore each viewer's intended window so the
     // existing PTY readers stop streaming the new pane's output.
-    state.pty_manager.lock().unwrap().restore_view_session_windows();
+    state.pty_manager.lock().restore_view_session_windows();
     result
 }

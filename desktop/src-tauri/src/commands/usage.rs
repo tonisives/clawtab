@@ -9,7 +9,7 @@ pub async fn get_usage_snapshot(
     state: State<'_, AppState>,
 ) -> Result<usage::UsageSnapshot, String> {
     let zai_token = {
-        let secrets = state.secrets.lock().unwrap();
+        let secrets = state.secrets.lock();
         let explicit = usage::ZAI_TOKEN_KEYS
             .iter()
             .map(|key| secrets.get(key).cloned())

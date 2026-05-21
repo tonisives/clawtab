@@ -44,15 +44,12 @@ pub async fn check_and_install_update(app: &AppHandle) -> Result<Option<String>,
 }
 
 /// Start periodic update checker: 5s delay on startup, then every 24h.
-pub fn start_update_checker(app: AppHandle, settings: Arc<std::sync::Mutex<AppSettings>>) {
+pub fn start_update_checker(app: AppHandle, settings: Arc<parking_lot::Mutex<AppSettings>>) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(5)).await;
 
         loop {
-            let auto_update_enabled = settings
-                .lock()
-                .map(|s| s.auto_update_enabled)
-                .unwrap_or(true);
+            let auto_update_enabled = settings.lock().auto_update_enabled;
 
             if auto_update_enabled {
                 log::info!("Checking for updates...");

@@ -1,6 +1,7 @@
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
+use parking_lot::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -58,7 +59,7 @@ pub(super) fn spawn_reader_thread(
                 return;
             }
             let bytes = std::mem::take(pending);
-            recent.lock().unwrap().append(&pane_id_for_thread, &bytes);
+            recent.lock().append(&pane_id_for_thread, &bytes);
             match &sink {
                 #[cfg(feature = "desktop")]
                 OutputSink::Tauri(app_handle) => {

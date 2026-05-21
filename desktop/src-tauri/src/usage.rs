@@ -503,7 +503,7 @@ fn resolve_codex_binary_inner() -> PathBuf {
 
 #[cfg(target_os = "macos")]
 fn strip_quarantine(path: &Path) {
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
     use std::sync::OnceLock;
 
     static STRIPPED: OnceLock<Mutex<Vec<PathBuf>>> = OnceLock::new();
@@ -515,7 +515,7 @@ fn strip_quarantine(path: &Path) {
     };
 
     {
-        let guard = stripped.lock().unwrap();
+        let guard = stripped.lock();
         if guard.iter().any(|p| p == &canonical) {
             return;
         }
@@ -536,7 +536,7 @@ fn strip_quarantine(path: &Path) {
             .output();
     }
 
-    stripped.lock().unwrap().push(canonical);
+    stripped.lock().push(canonical);
 }
 
 fn is_executable_file(path: &Path) -> bool {

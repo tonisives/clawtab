@@ -1,6 +1,7 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 
@@ -71,7 +72,7 @@ pub async fn watch_jobs_dir(jobs_config: Arc<Mutex<JobsConfig>>, event_sink: Arc
         }
 
         let config = JobsConfig::load();
-        *jobs_config.lock().unwrap() = config;
+        *jobs_config.lock() = config;
         event_sink.emit_jobs_changed();
         log::info!("Reloaded jobs config (fs change)");
     }

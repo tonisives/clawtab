@@ -16,7 +16,7 @@ pub struct BotInfo {
 
 #[tauri::command]
 pub fn get_telegram_config(state: State<AppState>) -> Option<TelegramConfig> {
-    let settings = state.settings.lock().unwrap();
+    let settings = state.settings.lock();
     settings.telegram.clone()
 }
 
@@ -25,14 +25,14 @@ pub fn set_telegram_config(
     state: State<AppState>,
     config: Option<TelegramConfig>,
 ) -> Result<(), String> {
-    let mut settings = state.settings.lock().unwrap();
+    let mut settings = state.settings.lock();
     settings.telegram = config;
     settings.save()?;
 
     // Regenerate all cwt.md context files with updated telegram config
     let settings_clone = settings.clone();
     drop(settings);
-    let jobs = state.jobs_config.lock().unwrap().jobs.clone();
+    let jobs = state.jobs_config.lock().jobs.clone();
     super::jobs::ensure_agent_dir(&settings_clone, &jobs);
     super::jobs::regenerate_all_cwt_contexts(&settings_clone, &jobs);
 
