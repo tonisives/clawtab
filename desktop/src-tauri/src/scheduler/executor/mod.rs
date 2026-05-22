@@ -17,7 +17,7 @@ use crate::job_context::JobContext;
 
 use binary::execute_binary_job;
 use claude::execute_claude_job;
-use finalize::{attach_monitor, finalize_run, RunOutcome};
+use finalize::{attach_monitor, finalize_run, RunCtx, RunOutcome};
 use folder::execute_folder_job;
 use params::apply_param_defaults;
 
@@ -247,32 +247,26 @@ pub async fn execute_job(
         s.telegram.clone()
     };
 
+    let rc = RunCtx {
+        job,
+        ctx,
+        run_id: &run_id,
+        started_at: &started_at,
+        trigger_id: &trigger_id,
+        result_file: &result_file,
+        telegram_config: &telegram_config,
+    };
+
     match result {
         Ok((exit_code, stdout, stderr, Some(handle))) => {
-            attach_monitor(
-                job,
-                ctx,
-                handle,
-                &run_id,
-                &started_at,
-                &trigger_id,
-                &result_file,
-                &telegram_config,
-                &mut pane_tx,
-                opts.use_auto_yes,
-            );
+            attach_monitor(&rc, handle, &mut pane_tx, opts.use_auto_yes);
             // monitor owns finalization; ignore the unused outputs.
             let _ = (exit_code, stdout, stderr);
         }
         Ok((exit_code, stdout, stderr, None)) => {
             let success = matches!(exit_code, Some(0) | None);
             finalize_run(
-                job,
-                ctx,
-                &run_id,
-                &trigger_id,
-                &result_file,
-                &telegram_config,
+                &rc,
                 RunOutcome {
                     success,
                     exit_code,
@@ -285,12 +279,7 @@ pub async fn execute_job(
         }
         Err(e) => {
             finalize_run(
-                job,
-                ctx,
-                &run_id,
-                &trigger_id,
-                &result_file,
-                &telegram_config,
+                &rc,
                 RunOutcome {
                     success: false,
                     exit_code: Some(-1),

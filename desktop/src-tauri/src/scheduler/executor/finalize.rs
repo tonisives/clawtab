@@ -10,26 +10,35 @@ use super::super::monitor::MonitorParams;
 use super::notification::{build_telegram_stream, send_job_notification};
 use super::TmuxHandle;
 
+/// Per-run context computed once at the top of `execute_job` and passed to
+/// the post-result helpers. Borrowed for the duration of the call, so all
+/// fields are references / lightweight values.
+pub(super) struct RunCtx<'a> {
+    pub job: &'a Job,
+    pub ctx: &'a JobContext,
+    pub run_id: &'a str,
+    pub started_at: &'a str,
+    pub trigger_id: &'a Option<String>,
+    pub result_file: &'a Option<std::path::PathBuf>,
+    pub telegram_config: &'a Option<TelegramConfig>,
+}
+
 /// Wire up a freshly-spawned tmux pane: update Running status with pane info,
 /// persist pane_id, register auto_yes + active_agents, then spawn the monitor.
 /// Caller should return immediately after this; the monitor owns finalization.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn attach_monitor(
-    job: &Job,
-    ctx: &JobContext,
+    rc: &RunCtx<'_>,
     handle: TmuxHandle,
-    run_id: &str,
-    started_at: &str,
-    trigger_id: &Option<String>,
-    result_file: &Option<std::path::PathBuf>,
-    telegram_config: &Option<TelegramConfig>,
     pane_tx: &mut Option<tokio::sync::oneshot::Sender<(String, String)>>,
     use_auto_yes: bool,
 ) {
+    let job = rc.job;
+    let ctx = rc.ctx;
+
     {
         let new_status = JobStatus::Running {
-            run_id: run_id.to_string(),
-            started_at: started_at.to_string(),
+            run_id: rc.run_id.to_string(),
+            started_at: rc.started_at.to_string(),
             pane_id: Some(handle.pane_id.clone()),
             tmux_session: Some(handle.tmux_session.clone()),
         };
@@ -45,7 +54,7 @@ pub(super) fn attach_monitor(
 
     {
         let h = ctx.history.lock();
-        let _ = h.update_pane_id(run_id, &handle.pane_id);
+        let _ = h.update_pane_id(rc.run_id, &handle.pane_id);
     }
 
     if job.auto_yes && use_auto_yes {
@@ -60,7 +69,7 @@ pub(super) fn attach_monitor(
 
     if job.notify_target == NotifyTarget::Telegram {
         let chat_id = job.telegram_chat_id.or_else(|| {
-            telegram_config
+            rc.telegram_config
                 .as_ref()
                 .and_then(|c| c.chat_ids.first().copied())
         });
@@ -76,7 +85,7 @@ pub(super) fn attach_monitor(
                 ActiveAgent {
                     pane_id: handle.pane_id.clone(),
                     tmux_session: handle.tmux_session.clone(),
-                    run_id: run_id.to_string(),
+                    run_id: rc.run_id.to_string(),
                     job_id: job.name.clone(),
                 },
             );
@@ -85,11 +94,12 @@ pub(super) fn attach_monitor(
     }
 
     let telegram = if job.notify_target == NotifyTarget::Telegram {
-        build_telegram_stream(telegram_config, job.telegram_chat_id)
+        build_telegram_stream(rc.telegram_config, job.telegram_chat_id)
     } else {
         None
     };
-    let notify_on_success = telegram_config
+    let notify_on_success = rc
+        .telegram_config
         .as_ref()
         .map(|c| c.notify_on_success)
         .unwrap_or(true);
@@ -97,7 +107,7 @@ pub(super) fn attach_monitor(
     let params = MonitorParams {
         tmux_session: handle.tmux_session,
         pane_id: handle.pane_id,
-        run_id: run_id.to_string(),
+        run_id: rc.run_id.to_string(),
         job_id: job.name.clone(),
         slug: job.slug.clone(),
         kill_on_end: job.kill_on_end,
@@ -111,8 +121,8 @@ pub(super) fn attach_monitor(
         notifier: ctx.notifier.clone(),
         is_reattach: false,
         protected_panes: Arc::clone(&ctx.protected_panes),
-        trigger_id: trigger_id.clone(),
-        result_file: result_file.clone(),
+        trigger_id: rc.trigger_id.clone(),
+        result_file: rc.result_file.clone(),
     };
     tokio::spawn(super::super::monitor::monitor_pane(params));
 }
@@ -129,31 +139,24 @@ pub(super) struct RunOutcome<'a> {
 
 /// Finalize a non-tmux job: update status + history, send the notification,
 /// and (for trigger-initiated runs) push the trigger result.
-#[allow(clippy::too_many_arguments)]
-pub(super) async fn finalize_run(
-    job: &Job,
-    ctx: &JobContext,
-    run_id: &str,
-    trigger_id: &Option<String>,
-    result_file: &Option<std::path::PathBuf>,
-    telegram_config: &Option<TelegramConfig>,
-    outcome: RunOutcome<'_>,
-) {
+pub(super) async fn finalize_run(rc: &RunCtx<'_>, outcome: RunOutcome<'_>) {
+    let job = rc.job;
+    let ctx = rc.ctx;
     let finished_at = Utc::now().to_rfc3339();
 
     if outcome.success {
         log::info!(
             "[{}] Job '{}' finished with exit code {:?}",
-            run_id,
+            rc.run_id,
             job.name,
             outcome.exit_code
         );
     } else if let Some(err) = outcome.error {
-        log::error!("[{}] Job '{}' failed: {}", run_id, job.name, err);
+        log::error!("[{}] Job '{}' failed: {}", rc.run_id, job.name, err);
     } else {
         log::info!(
             "[{}] Job '{}' finished with exit code {:?}",
-            run_id,
+            rc.run_id,
             job.name,
             outcome.exit_code
         );
@@ -161,9 +164,7 @@ pub(super) async fn finalize_run(
 
     {
         let new_status = if outcome.success {
-            JobStatus::Success {
-                last_run: finished_at.clone(),
-            }
+            JobStatus::Success { last_run: finished_at.clone() }
         } else {
             JobStatus::Failed {
                 last_run: finished_at.clone(),
@@ -180,7 +181,7 @@ pub(super) async fn finalize_run(
         let h = ctx.history.lock();
         let stderr_for_db = outcome.error.unwrap_or(outcome.stderr);
         if let Err(e) =
-            h.update_finished(run_id, &finished_at, outcome.exit_code, outcome.stdout, stderr_for_db)
+            h.update_finished(rc.run_id, &finished_at, outcome.exit_code, outcome.stdout, stderr_for_db)
         {
             log::error!("Failed to update run record: {}", e);
         }
@@ -188,7 +189,7 @@ pub(super) async fn finalize_run(
 
     match job.notify_target {
         NotifyTarget::Telegram => {
-            if let Some(ref tg) = telegram_config {
+            if let Some(ref tg) = rc.telegram_config {
                 let stderr_for_msg = outcome.error.unwrap_or(outcome.stderr);
                 send_job_notification(
                     tg,
@@ -204,7 +205,7 @@ pub(super) async fn finalize_run(
         }
         NotifyTarget::App => {
             let event = if outcome.success { "completed" } else { "failed" };
-            crate::relay::push_job_notification(&ctx.relay, &job.slug, event, run_id);
+            crate::relay::push_job_notification(&ctx.relay, &job.slug, event, rc.run_id);
             if let Some(ref n) = ctx.notifier {
                 n.notify_job(&job.name, event);
             }
@@ -212,9 +213,10 @@ pub(super) async fn finalize_run(
         NotifyTarget::None => {}
     }
 
-    if let Some(tid) = trigger_id {
+    if let Some(tid) = rc.trigger_id {
         if outcome.success {
-            let parsed = result_file
+            let parsed = rc
+                .result_file
                 .as_ref()
                 .and_then(|p| std::fs::read_to_string(p).ok())
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
@@ -238,4 +240,3 @@ pub(super) async fn finalize_run(
         }
     }
 }
-
