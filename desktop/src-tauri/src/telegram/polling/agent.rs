@@ -16,18 +16,12 @@ pub(super) async fn handle_agent_command(
     state: &AgentState,
     chat_id: i64,
 ) -> String {
-    if let Some(agents) = lock_or_log(&state.active_agents, "active_agents") {
-        if agents.contains_key(&chat_id) {
-            return "An agent session is already active. Use /exit to end it first.".to_string();
-        }
+    if agent_already_active(state, chat_id) {
+        return "An agent session is already active. Use /exit to end it first.".to_string();
     }
 
-    let (settings, jobs) = match (
-        lock_or_log(&state.settings, "settings"),
-        lock_or_log(&state.jobs_config, "jobs_config"),
-    ) {
-        (Some(s), Some(j)) => (s.clone(), j.jobs.clone()),
-        _ => return "Internal error: failed to read config".to_string(),
+    let Some((settings, jobs)) = read_settings_and_jobs(state) else {
+        return "Internal error: failed to read config".to_string();
     };
 
     let job = match crate::agent::build_agent_job(
@@ -43,6 +37,41 @@ pub(super) async fn handle_agent_command(
         Err(e) => return format!("Failed to build agent job: {}", e),
     };
 
+    let found = spawn_and_wait_for_pane(state, job, chat_id).await;
+    if !found {
+        log::warn!("Agent pane not found in active_agents after 6s wait");
+        return "Agent started (could not track pane - session may not support follow-up messages).".to_string();
+    }
+
+    if group_privacy_blocks_followups(state).await {
+        return concat!(
+            "Agent session started, but the bot has Group Privacy mode enabled. ",
+            "Follow-up messages in group chats will NOT be delivered to the agent.\n\n",
+            "To fix: open @BotFather, send /mybots, select your bot, ",
+            "go to Bot Settings > Group Privacy > Turn Off."
+        )
+        .to_string();
+    }
+
+    "Agent session started. Send messages to interact, /exit to end.".to_string()
+}
+
+fn agent_already_active(state: &AgentState, chat_id: i64) -> bool {
+    lock_or_log(&state.active_agents, "active_agents")
+        .is_some_and(|agents| agents.contains_key(&chat_id))
+}
+
+fn read_settings_and_jobs(state: &AgentState) -> Option<(crate::config::settings::AppSettings, Vec<crate::config::jobs::Job>)> {
+    let settings = lock_or_log(&state.settings, "settings")?;
+    let jobs_config = lock_or_log(&state.jobs_config, "jobs_config")?;
+    Some((settings.clone(), jobs_config.jobs.clone()))
+}
+
+async fn spawn_and_wait_for_pane(
+    state: &AgentState,
+    job: crate::config::jobs::Job,
+    chat_id: i64,
+) -> bool {
     let active_agents = Arc::clone(&state.active_agents);
     let ctx = state.ctx.clone();
 
@@ -67,46 +96,33 @@ pub(super) async fn handle_agent_command(
     });
 
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
-    let found = loop {
+    loop {
         let already_there = lock_or_log(&active_agents, "active_agents")
-            .map(|a| a.contains_key(&chat_id))
-            .unwrap_or(false);
+            .is_some_and(|a| a.contains_key(&chat_id));
         if already_there {
-            break true;
+            return true;
         }
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
-            break false;
+            return false;
         }
         match tokio::time::timeout(remaining, notified.as_mut()).await {
             Ok(()) => {
                 notified.set(ctx.active_agents_notify.notified());
                 notified.as_mut().enable();
             }
-            Err(_) => break false,
+            Err(_) => return false,
         }
-    };
-
-    if !found {
-        log::warn!("Agent pane not found in active_agents after 6s wait");
-        return "Agent started (could not track pane -- session may not support follow-up messages).".to_string();
     }
+}
 
-    if let Some(token) = lock_or_log(&state.settings, "settings")
+async fn group_privacy_blocks_followups(state: &AgentState) -> bool {
+    let Some(token) = lock_or_log(&state.settings, "settings")
         .and_then(|s| s.telegram.as_ref().map(|t| t.bot_token.clone()))
-    {
-        if !telegram::can_read_group_messages(&token).await {
-            return concat!(
-                "Agent session started, but the bot has Group Privacy mode enabled. ",
-                "Follow-up messages in group chats will NOT be delivered to the agent.\n\n",
-                "To fix: open @BotFather, send /mybots, select your bot, ",
-                "go to Bot Settings > Group Privacy > Turn Off."
-            )
-            .to_string();
-        }
-    }
-
-    "Agent session started. Send messages to interact, /exit to end.".to_string()
+    else {
+        return false;
+    };
+    !telegram::can_read_group_messages(&token).await
 }
 
 /// /exit or /quit: gracefully tell Claude Code to exit, then kill the pane.
