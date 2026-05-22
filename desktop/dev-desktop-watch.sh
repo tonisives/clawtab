@@ -23,7 +23,7 @@ for script in setup-dev-app.sh restart-dev-app.sh stop-dev-app.sh; do
   fi
 done
 
-echo "dev-desktop-watch.sh: launching via .app bundle so Aerospace can tile it"
+# echo "dev-desktop-watch.sh: launching via .app bundle so Aerospace can tile it"
 ./setup-dev-app.sh
 
 did_cleanup=0
