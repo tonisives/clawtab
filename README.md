@@ -48,6 +48,22 @@ Think of it like [tmux](https://github.com/tmux/tmux) on steroids. Every Agent r
 
 Shells are running in a background tmux process, and they stay alive through app restarts. Never worry about losing your work again!
 
+## Mind Map
+
+A canvas view that lays out every running Claude Code, Codex, and OpenCode agent as a recency-weighted constellation around its group hub. Agents that just spoke sit close and large; idle ones drift to the edge. Click any node to pop a live terminal modal anchored to the node by a curved connector, without leaving the canvas.
+
+- **Recency layout** - card size, opacity, and edge weight all driven by how recently the agent was active
+- **Agents and Jobs modes** - one floating toggle switches between live agent processes and scheduled jobs
+- **State at a glance** - working agents pulse green, agents waiting on a permission prompt pulse on the border
+- **Multiple live terminals** - click a card to open a draggable, resizable terminal modal; open as many as you want
+- **Spawn from a hub** - hover any group hub and hit the plus button to launch a new agent into that group
+
+<p align="center">
+  <img src="https://cdn.clawtab.cc/assets/articles/mind-map/hero.png" alt="ClawTab Mind Map canvas showing multiple group hubs surrounded by orbiting agent cards, with two open agent terminal modals connected to their nodes by curved lines" width="1000" />
+</p>
+
+Read more in the [Mind Map article](https://clawtab.cc/articles/mind-map).
+
 ## Remote Control
 
 - **Auto-detect questions** - Detects when Claude Code agents are waiting for input across your panes.
