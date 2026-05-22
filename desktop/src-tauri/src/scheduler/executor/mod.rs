@@ -1,3 +1,8 @@
+// Catch over-long / over-complex functions early. Thresholds live in
+// clippy.toml. Scoped to this module so introducing the lints doesn't require
+// fixing every legacy function across the crate in this PR.
+#![warn(clippy::too_many_lines, clippy::cognitive_complexity)]
+
 mod binary;
 mod claude;
 mod finalize;
@@ -80,19 +85,7 @@ pub async fn execute_job(
     params: &HashMap<String, String>,
     opts: ExecuteOpts,
 ) {
-    // Fill any missing param entries from each JobParam's declared default value
-    // so cron-triggered runs (which pass an empty map) still get sensible values.
-    let merged_params: Option<HashMap<String, String>> = if job
-        .params
-        .iter()
-        .any(|p| p.value.is_some() && !params.contains_key(&p.name))
-    {
-        let mut m = params.clone();
-        apply_param_defaults(job, &mut m);
-        Some(m)
-    } else {
-        None
-    };
+    let merged_params = merge_param_defaults(job, params);
     let params: &HashMap<String, String> = merged_params.as_ref().unwrap_or(params);
 
     let mut pane_tx = opts.pane_tx;
@@ -103,144 +96,16 @@ pub async fn execute_job(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let started_at = Utc::now().to_rfc3339();
 
-    // Pre-compute the result file path so we can both inject it into the
-    // child process env and read it back on finish. trigger_id-only feature.
-    let result_file: Option<std::path::PathBuf> = trigger_id.as_ref().and_then(|_| {
-        crate::config::config_dir().map(|d| {
-            d.join("jobs")
-                .join(&job.slug)
-                .join("logs")
-                .join(format!("{}.json", run_id))
-        })
-    });
-    if let Some(ref p) = result_file {
-        if let Some(parent) = p.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                log::warn!("Failed to pre-create result dir {}: {}", parent.display(), e);
-            }
-        }
-    }
+    let result_file = prepare_result_file(job, &run_id, trigger_id.as_deref());
+    let stream_log_path = prepare_stream_log(job, &run_id);
 
-    // Mark as running (pane_id filled in later for tmux jobs)
-    {
-        let new_status = JobStatus::Running {
-            run_id: run_id.clone(),
-            started_at: started_at.clone(),
-            pane_id: None,
-            tmux_session: None,
-        };
-        let mut status = ctx.job_status.lock();
-        status.insert(job.slug.clone(), new_status.clone());
-        drop(status);
-        crate::relay::push_status_update(&ctx.relay, &job.slug, &new_status);
-    }
-
-    // Pre-compute the streaming log path for binary jobs so it's persisted
-    // on the row from the start. tmux jobs ignore this (their output lives
-    // in tmux's scrollback / capture).
-    let stream_log_path: Option<std::path::PathBuf> = if matches!(job.job_type, JobType::Binary) {
-        crate::config::jobs::JobsConfig::jobs_dir_public().map(|d| {
-            d.join(&job.slug)
-                .join("logs")
-                .join(format!("{}.log", run_id))
-        })
-    } else {
-        None
-    };
-    if let Some(ref p) = stream_log_path {
-        if let Some(parent) = p.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                log::warn!("Failed to pre-create log dir {}: {}", parent.display(), e);
-            }
-        }
-    }
-
-    let record = RunRecord {
-        id: run_id.clone(),
-        job_id: job.slug.clone(),
-        started_at: started_at.clone(),
-        finished_at: None,
-        exit_code: None,
-        trigger: trigger.to_string(),
-        stdout: String::new(),
-        stderr: String::new(),
-        pane_id: None,
-        log_path: stream_log_path
-            .as_ref()
-            .map(|p| p.to_string_lossy().into_owned()),
-    };
-
-    {
-        let h = ctx.history.lock();
-        if let Err(e) = h.insert(&record) {
-            log::error!("Failed to insert run record: {}", e);
-        }
-        match h.prune_job_to_limit(&job.slug, job.max_history) {
-            Ok(pruned_panes) => {
-                for pane_id in pruned_panes {
-                    if let Err(e) = crate::tmux::kill_pane(&pane_id) {
-                        log::warn!("Failed to kill pruned pane {}: {}", pane_id, e);
-                    }
-                }
-            }
-            Err(e) => log::error!("Failed to prune job history for {}: {}", job.slug, e),
-        }
-    }
-
-    // Also kill orphan tmux panes for this slug whose history rows were already
-    // pruned in earlier runs but the panes remained alive (kill_on_end=false).
-    // The new pane is about to spawn, so keep `max_history - 1` existing panes.
-    // Order by history.started_at (authoritative); panes without a history row
-    // are treated as oldest and killed first.
-    if job.max_history > 0 {
-        let keep = job.max_history.saturating_sub(1) as usize;
-        let started_map = {
-            let h = ctx.history.lock();
-            h.pane_started_at_for_job(&job.slug).unwrap_or_default()
-        };
-        match crate::tmux::list_panes_by_slug(&job.slug) {
-            Ok(panes) => {
-                let mut with_ts: Vec<(String, String)> = panes
-                    .into_iter()
-                    .map(|(pid, _)| {
-                        let ts = started_map.get(&pid).cloned().unwrap_or_default();
-                        (pid, ts)
-                    })
-                    .collect();
-                with_ts.sort_by(|a, b| b.1.cmp(&a.1));
-                for (pane_id, _) in with_ts.into_iter().skip(keep) {
-                    if let Err(e) = crate::tmux::kill_pane(&pane_id) {
-                        log::warn!("Failed to kill orphan pane {}: {}", pane_id, e);
-                    }
-                }
-            }
-            Err(e) => log::warn!("Failed to list panes for slug {}: {}", job.slug, e),
-        }
-    }
+    mark_running(job, ctx, &run_id, &started_at);
+    insert_history_and_prune(job, ctx, &run_id, &started_at, trigger, stream_log_path.as_deref());
+    kill_orphan_panes(job, ctx);
 
     log::info!("[{}] Starting job '{}' ({})", run_id, job.name, trigger);
 
-    let result: Result<(Option<i32>, String, String, Option<TmuxHandle>), String> =
-        match job.job_type {
-            JobType::Binary => execute_binary_job(
-                job,
-                &ctx.secrets,
-                &ctx.settings,
-                params,
-                result_file.as_deref(),
-                stream_log_path.as_deref(),
-            )
-            .await
-            .map(|(code, out, err)| (code, out, err, None)),
-            JobType::Claude => {
-                execute_claude_job(job, &ctx.secrets, &ctx.settings, params, result_file.as_deref())
-                    .await
-            }
-            JobType::Job => {
-                execute_folder_job(job, &ctx.secrets, &ctx.settings, params, result_file.as_deref())
-                    .await
-            }
-        };
+    let result = dispatch_job(job, ctx, params, result_file.as_deref(), stream_log_path.as_deref()).await;
 
     let telegram_config = {
         let s = ctx.settings.lock();
@@ -257,16 +122,206 @@ pub async fn execute_job(
         telegram_config: &telegram_config,
     };
 
+    handle_result(&rc, result, &mut pane_tx, opts.use_auto_yes).await;
+}
+
+/// Fill missing param entries from each JobParam's declared default. Returns
+/// None when nothing needed merging so the caller can avoid an allocation.
+fn merge_param_defaults(
+    job: &Job,
+    params: &HashMap<String, String>,
+) -> Option<HashMap<String, String>> {
+    let needs_merge = job
+        .params
+        .iter()
+        .any(|p| p.value.is_some() && !params.contains_key(&p.name));
+    if !needs_merge {
+        return None;
+    }
+    let mut m = params.clone();
+    apply_param_defaults(job, &mut m);
+    Some(m)
+}
+
+/// Compute the per-run result file path and create its parent dir. Only set
+/// when the run was started by an external trigger (so the child can write a
+/// structured result the monitor can push back to the relay).
+fn prepare_result_file(
+    job: &Job,
+    run_id: &str,
+    trigger_id: Option<&str>,
+) -> Option<std::path::PathBuf> {
+    let path = trigger_id.and_then(|_| {
+        crate::config::config_dir().map(|d| {
+            d.join("jobs")
+                .join(&job.slug)
+                .join("logs")
+                .join(format!("{}.json", run_id))
+        })
+    })?;
+    ensure_parent_dir(&path, "result");
+    Some(path)
+}
+
+/// Compute the streaming log path for binary jobs and create its parent dir.
+/// tmux jobs return None (their output lives in tmux's scrollback / capture).
+fn prepare_stream_log(job: &Job, run_id: &str) -> Option<std::path::PathBuf> {
+    if !matches!(job.job_type, JobType::Binary) {
+        return None;
+    }
+    let path = crate::config::jobs::JobsConfig::jobs_dir_public().map(|d| {
+        d.join(&job.slug)
+            .join("logs")
+            .join(format!("{}.log", run_id))
+    })?;
+    ensure_parent_dir(&path, "log");
+    Some(path)
+}
+
+fn ensure_parent_dir(path: &std::path::Path, kind: &str) {
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            log::warn!("Failed to pre-create {} dir {}: {}", kind, parent.display(), e);
+        }
+    }
+}
+
+/// Mark the job as Running and push the status update. pane_id stays None
+/// here; tmux jobs fill it in once the pane is created.
+fn mark_running(job: &Job, ctx: &JobContext, run_id: &str, started_at: &str) {
+    let new_status = JobStatus::Running {
+        run_id: run_id.to_string(),
+        started_at: started_at.to_string(),
+        pane_id: None,
+        tmux_session: None,
+    };
+    let mut status = ctx.job_status.lock();
+    status.insert(job.slug.clone(), new_status.clone());
+    drop(status);
+    crate::relay::push_status_update(&ctx.relay, &job.slug, &new_status);
+}
+
+/// Insert the new run record, then prune the per-job history to max_history,
+/// killing any tmux panes that the prune removed.
+fn insert_history_and_prune(
+    job: &Job,
+    ctx: &JobContext,
+    run_id: &str,
+    started_at: &str,
+    trigger: &str,
+    stream_log_path: Option<&std::path::Path>,
+) {
+    let record = RunRecord {
+        id: run_id.to_string(),
+        job_id: job.slug.clone(),
+        started_at: started_at.to_string(),
+        finished_at: None,
+        exit_code: None,
+        trigger: trigger.to_string(),
+        stdout: String::new(),
+        stderr: String::new(),
+        pane_id: None,
+        log_path: stream_log_path.map(|p| p.to_string_lossy().into_owned()),
+    };
+
+    let h = ctx.history.lock();
+    if let Err(e) = h.insert(&record) {
+        log::error!("Failed to insert run record: {}", e);
+    }
+    match h.prune_job_to_limit(&job.slug, job.max_history) {
+        Ok(pruned_panes) => {
+            for pane_id in pruned_panes {
+                if let Err(e) = crate::tmux::kill_pane(&pane_id) {
+                    log::warn!("Failed to kill pruned pane {}: {}", pane_id, e);
+                }
+            }
+        }
+        Err(e) => log::error!("Failed to prune job history for {}: {}", job.slug, e),
+    }
+}
+
+/// Kill orphan tmux panes for this slug whose history rows were already pruned
+/// in earlier runs but the panes remained alive (kill_on_end=false). The new
+/// pane is about to spawn, so keep `max_history - 1` existing panes. Order by
+/// history.started_at (authoritative); panes without a history row are treated
+/// as oldest and killed first.
+fn kill_orphan_panes(job: &Job, ctx: &JobContext) {
+    if job.max_history == 0 {
+        return;
+    }
+    let keep = job.max_history.saturating_sub(1) as usize;
+    let started_map = {
+        let h = ctx.history.lock();
+        h.pane_started_at_for_job(&job.slug).unwrap_or_default()
+    };
+    let panes = match crate::tmux::list_panes_by_slug(&job.slug) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("Failed to list panes for slug {}: {}", job.slug, e);
+            return;
+        }
+    };
+    let mut with_ts: Vec<(String, String)> = panes
+        .into_iter()
+        .map(|(pid, _)| {
+            let ts = started_map.get(&pid).cloned().unwrap_or_default();
+            (pid, ts)
+        })
+        .collect();
+    with_ts.sort_by(|a, b| b.1.cmp(&a.1));
+    for (pane_id, _) in with_ts.into_iter().skip(keep) {
+        if let Err(e) = crate::tmux::kill_pane(&pane_id) {
+            log::warn!("Failed to kill orphan pane {}: {}", pane_id, e);
+        }
+    }
+}
+
+/// Run the per-type executor and normalize its return shape so the caller can
+/// match on a single result type regardless of whether the job spawned a pane.
+async fn dispatch_job(
+    job: &Job,
+    ctx: &JobContext,
+    params: &HashMap<String, String>,
+    result_file: Option<&std::path::Path>,
+    stream_log_path: Option<&std::path::Path>,
+) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
+    match job.job_type {
+        JobType::Binary => execute_binary_job(
+            job,
+            &ctx.secrets,
+            &ctx.settings,
+            params,
+            result_file,
+            stream_log_path,
+        )
+        .await
+        .map(|(code, out, err)| (code, out, err, None)),
+        JobType::Claude => {
+            execute_claude_job(job, &ctx.secrets, &ctx.settings, params, result_file).await
+        }
+        JobType::Job => {
+            execute_folder_job(job, &ctx.secrets, &ctx.settings, params, result_file).await
+        }
+    }
+}
+
+/// Branch on the dispatcher's result: tmux jobs hand off to the monitor;
+/// non-tmux jobs (and spawn errors) go straight through finalize_run.
+async fn handle_result(
+    rc: &RunCtx<'_>,
+    result: Result<(Option<i32>, String, String, Option<TmuxHandle>), String>,
+    pane_tx: &mut Option<tokio::sync::oneshot::Sender<(String, String)>>,
+    use_auto_yes: bool,
+) {
     match result {
-        Ok((exit_code, stdout, stderr, Some(handle))) => {
-            attach_monitor(&rc, handle, &mut pane_tx, opts.use_auto_yes);
-            // monitor owns finalization; ignore the unused outputs.
-            let _ = (exit_code, stdout, stderr);
+        Ok((_, _, _, Some(handle))) => {
+            // monitor owns finalization for tmux jobs; drop the unused output.
+            attach_monitor(rc, handle, pane_tx, use_auto_yes);
         }
         Ok((exit_code, stdout, stderr, None)) => {
             let success = matches!(exit_code, Some(0) | None);
             finalize_run(
-                &rc,
+                rc,
                 RunOutcome {
                     success,
                     exit_code,
@@ -279,7 +334,7 @@ pub async fn execute_job(
         }
         Err(e) => {
             finalize_run(
-                &rc,
+                rc,
                 RunOutcome {
                     success: false,
                     exit_code: Some(-1),
