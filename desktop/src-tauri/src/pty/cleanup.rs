@@ -104,6 +104,13 @@ fn is_idle_shell_command(cmd: &str) -> bool {
 ///
 /// `protected_panes` names pane IDs currently open in ClawTab's UI -- any
 /// window containing such a pane is skipped even if it looks idle.
+struct WindowEntry {
+    session: String,
+    window_id: String,
+    window_name: String,
+    panes: Vec<(String, String)>,
+}
+
 pub(super) fn cleanup_orphaned_ct_windows(
     protected_panes: &std::collections::HashSet<String>,
 ) {
@@ -115,14 +122,29 @@ pub(super) fn cleanup_orphaned_ct_windows(
         }
     };
 
-    // Group panes by (session, window_id, window_name) so we can inspect all
-    // panes in a window before deciding to kill it.
-    struct WindowEntry {
-        session: String,
-        window_id: String,
-        window_name: String,
-        panes: Vec<(String, String)>,
+    let windows = group_ct_windows(&raw);
+
+    let mut killed = 0usize;
+    let mut kept = 0usize;
+    for (_, entry) in windows {
+        if try_kill_or_keep(&entry, protected_panes, &mut killed, &mut kept) {
+            // counted by callee
+        }
     }
+
+    if killed > 0 || kept > 0 {
+        log::info!(
+            "cleanup_orphaned_ct_windows: killed {} idle, kept {} live",
+            killed,
+            kept
+        );
+    }
+}
+
+/// Group ct- windows by window_id, skipping non-ct windows and view-session
+/// duplicates. list-panes -a reports the same window under every session-group
+/// member; we want each window once under its real (non-view) session.
+fn group_ct_windows(raw: &str) -> std::collections::HashMap<String, WindowEntry> {
     let mut windows: std::collections::HashMap<String, WindowEntry> =
         std::collections::HashMap::new();
     for line in raw.lines() {
@@ -136,13 +158,7 @@ pub(super) fn cleanup_orphaned_ct_windows(
         let pane_id = parts[3];
         let cmd = parts[4];
 
-        if !window_name.starts_with("ct-") {
-            continue;
-        }
-        // Skip group-member duplicates: list-panes -a reports the same window
-        // under every session group member, and we want to act on it under
-        // its real (non-view) session.
-        if is_view_session(session) {
+        if !window_name.starts_with("ct-") || is_view_session(session) {
             continue;
         }
 
@@ -154,65 +170,60 @@ pub(super) fn cleanup_orphaned_ct_windows(
         });
         entry.panes.push((pane_id.to_string(), cmd.to_string()));
     }
+    windows
+}
 
-    let mut killed = 0usize;
-    let mut kept = 0usize;
-    for (_, entry) in windows {
-        let WindowEntry {
-            session,
-            window_id,
-            window_name,
-            panes,
-        } = entry;
-        let all_idle = panes.iter().all(|(_, cmd)| is_idle_shell_command(cmd));
-        let has_protected = panes
-            .iter()
-            .any(|(pane_id, _)| protected_panes.contains(pane_id));
-
-        if has_protected {
-            log::info!(
-                "cleanup_orphaned_ct_windows: keeping {} ({}:{}) -- pane open in ClawTab",
-                window_name,
-                session,
-                window_id
-            );
-            kept += 1;
-            continue;
-        }
-
-        if all_idle {
-            match tmux_api::kill_window_by_id(&window_id) {
-                Ok(_) => {
-                    log::info!(
-                        "cleanup_orphaned_ct_windows: killed {} ({}:{}) idle",
-                        window_name,
-                        session,
-                        window_id,
-                    );
-                    killed += 1;
-                }
-                Err(e) => log::debug!(
-                    "cleanup_orphaned_ct_windows: kill {} failed: {}",
-                    window_id,
-                    e
-                ),
-            }
-        } else {
-            log::info!(
-                "cleanup_orphaned_ct_windows: keeping {} ({}:{}) running",
-                window_name,
-                session,
-                window_id,
-            );
-            kept += 1;
-        }
+fn try_kill_or_keep(
+    entry: &WindowEntry,
+    protected_panes: &std::collections::HashSet<String>,
+    killed: &mut usize,
+    kept: &mut usize,
+) -> bool {
+    let has_protected = entry
+        .panes
+        .iter()
+        .any(|(pane_id, _)| protected_panes.contains(pane_id));
+    if has_protected {
+        log::info!(
+            "cleanup_orphaned_ct_windows: keeping {} ({}:{}) - pane open in ClawTab",
+            entry.window_name,
+            entry.session,
+            entry.window_id
+        );
+        *kept += 1;
+        return false;
     }
 
-    if killed > 0 || kept > 0 {
+    let all_idle = entry.panes.iter().all(|(_, cmd)| is_idle_shell_command(cmd));
+    if !all_idle {
         log::info!(
-            "cleanup_orphaned_ct_windows: killed {} idle, kept {} live",
-            killed,
-            kept
+            "cleanup_orphaned_ct_windows: keeping {} ({}:{}) running",
+            entry.window_name,
+            entry.session,
+            entry.window_id,
         );
+        *kept += 1;
+        return false;
+    }
+
+    match tmux_api::kill_window_by_id(&entry.window_id) {
+        Ok(_) => {
+            log::info!(
+                "cleanup_orphaned_ct_windows: killed {} ({}:{}) idle",
+                entry.window_name,
+                entry.session,
+                entry.window_id,
+            );
+            *killed += 1;
+            true
+        }
+        Err(e) => {
+            log::debug!(
+                "cleanup_orphaned_ct_windows: kill {} failed: {}",
+                entry.window_id,
+                e
+            );
+            false
+        }
     }
 }
