@@ -120,115 +120,14 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
 
 #[tauri::command]
 pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<DetectedProcess>, String> {
-    // Snapshot shared state under the lock, then release before spawning blocking work
     let live_viewer_panes: HashSet<String> =
         { state.pty_manager.lock().active_pane_ids() };
-
-    let match_entries: Vec<(String, String, String)> = {
-        let config = state.jobs_config.lock();
-        config
-            .jobs
-            .iter()
-            .filter_map(|job| {
-                if let Some(ref fp) = job.folder_path {
-                    let root = fp.as_str();
-                    Some((root.to_string(), job.group.clone(), job.slug.clone()))
-                } else if let Some(ref wd) = job.work_dir {
-                    Some((wd.clone(), job.group.clone(), job.slug.clone()))
-                } else {
-                    None
-                }
-            })
-            .collect()
-    };
-
-    // Slug -> group lookup, so a pane_title tagged with a job slug can be
-    // resolved to (group, slug) directly without depending on job_status or
-    // the history trust window.
-    let slug_to_group: HashMap<String, String> = {
-        let config = state.jobs_config.lock();
-        config
-            .jobs
-            .iter()
-            .map(|job| (job.slug.clone(), job.group.clone()))
-            .collect()
-    };
-
-    let history_panes: HashMap<String, PaneJobMatch> = {
-        #[derive(Clone)]
-        struct JobInfo {
-            group: String,
-            root: Option<String>,
-        }
-        let jobs_by_slug: HashMap<String, JobInfo> = {
-            let config = state.jobs_config.lock();
-            config
-                .jobs
-                .iter()
-                .map(|job| {
-                    (
-                        job.slug.clone(),
-                        JobInfo {
-                            group: job.group.clone(),
-                            root: job.folder_path.clone().or_else(|| job.work_dir.clone()),
-                        },
-                    )
-                })
-                .collect()
-        };
-        let recent = state
-            .history
-            .lock()
-            .get_recent(500)
-            .unwrap_or_default();
-        let mut panes = HashMap::new();
-        for run in recent {
-            let Some(pane_id) = run.pane_id else {
-                continue;
-            };
-            if panes.contains_key(&pane_id) {
-                continue;
-            }
-            if let Some(info) = jobs_by_slug.get(&run.job_id) {
-                panes.insert(
-                    pane_id,
-                    PaneJobMatch {
-                        group: info.group.clone(),
-                        slug: run.job_id.clone(),
-                        root: info.root.clone(),
-                        started_at: run.started_at.clone(),
-                    },
-                );
-            }
-        }
-        panes
-    };
-
-    let statuses: HashMap<String, JobStatus> =
-        match crate::ipc::send_command(crate::ipc::IpcCommand::GetStatus).await {
-            Ok(crate::ipc::IpcResponse::Status(s)) => s,
-            _ => HashMap::new(),
-        };
-    let running_panes: HashMap<String, (String, String)> = {
-        let config = state.jobs_config.lock();
-        statuses
-            .iter()
-            .filter_map(|(slug, status)| match status {
-                JobStatus::Running {
-                    pane_id: Some(pid), ..
-                } => config
-                    .jobs
-                    .iter()
-                    .find(|job| job.slug == *slug)
-                    .map(|job| (pid.clone(), (job.group.clone(), job.slug.clone()))),
-                _ => None,
-            })
-            .collect()
-    };
-
+    let match_entries = collect_match_entries(&state);
+    let slug_to_group = collect_slug_to_group(&state);
+    let history_panes = collect_history_panes(&state);
+    let running_panes = collect_running_panes(&state).await;
     let overrides = state.process_overrides.lock().clone();
 
-    // Run all subprocess-heavy work off the async runtime
     let snapshot = tokio::task::spawn_blocking(move || {
         detect_processes_blocking(
             live_viewer_panes,
@@ -252,6 +151,124 @@ pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<Detected
     Ok(snapshot.processes)
 }
 
+fn collect_match_entries(state: &State<'_, AppState>) -> Vec<(String, String, String)> {
+    let config = state.jobs_config.lock();
+    config
+        .jobs
+        .iter()
+        .filter_map(|job| {
+            if let Some(ref fp) = job.folder_path {
+                Some((fp.clone(), job.group.clone(), job.slug.clone()))
+            } else {
+                job.work_dir
+                    .as_ref()
+                    .map(|wd| (wd.clone(), job.group.clone(), job.slug.clone()))
+            }
+        })
+        .collect()
+}
+
+fn collect_slug_to_group(state: &State<'_, AppState>) -> HashMap<String, String> {
+    let config = state.jobs_config.lock();
+    config
+        .jobs
+        .iter()
+        .map(|job| (job.slug.clone(), job.group.clone()))
+        .collect()
+}
+
+fn collect_history_panes(state: &State<'_, AppState>) -> HashMap<String, PaneJobMatch> {
+    #[derive(Clone)]
+    struct JobInfo {
+        group: String,
+        root: Option<String>,
+    }
+    let jobs_by_slug: HashMap<String, JobInfo> = {
+        let config = state.jobs_config.lock();
+        config
+            .jobs
+            .iter()
+            .map(|job| {
+                (
+                    job.slug.clone(),
+                    JobInfo {
+                        group: job.group.clone(),
+                        root: job.folder_path.clone().or_else(|| job.work_dir.clone()),
+                    },
+                )
+            })
+            .collect()
+    };
+    let recent = state.history.lock().get_recent(500).unwrap_or_default();
+    let mut panes = HashMap::new();
+    for run in recent {
+        let Some(pane_id) = run.pane_id else {
+            continue;
+        };
+        if panes.contains_key(&pane_id) {
+            continue;
+        }
+        if let Some(info) = jobs_by_slug.get(&run.job_id) {
+            panes.insert(
+                pane_id,
+                PaneJobMatch {
+                    group: info.group.clone(),
+                    slug: run.job_id.clone(),
+                    root: info.root.clone(),
+                    started_at: run.started_at.clone(),
+                },
+            );
+        }
+    }
+    panes
+}
+
+async fn collect_running_panes(
+    state: &State<'_, AppState>,
+) -> HashMap<String, (String, String)> {
+    let statuses: HashMap<String, JobStatus> =
+        match crate::ipc::send_command(crate::ipc::IpcCommand::GetStatus).await {
+            Ok(crate::ipc::IpcResponse::Status(s)) => s,
+            _ => HashMap::new(),
+        };
+    let config = state.jobs_config.lock();
+    statuses
+        .iter()
+        .filter_map(|(slug, status)| match status {
+            JobStatus::Running {
+                pane_id: Some(pid), ..
+            } => config
+                .jobs
+                .iter()
+                .find(|job| job.slug == *slug)
+                .map(|job| (pid.clone(), (job.group.clone(), job.slug.clone()))),
+            _ => None,
+        })
+        .collect()
+}
+
+struct PaneRow<'a> {
+    pane_id: &'a str,
+    command: &'a str,
+    cwd: &'a str,
+    session: &'a str,
+    window: &'a str,
+    pane_pid: &'a str,
+    window_id: &'a str,
+    pane_title: Option<String>,
+    pane_slug_tag: Option<String>,
+}
+
+struct DetectCtx<'a> {
+    live_viewer_panes: &'a HashSet<String>,
+    match_entries: &'a [(String, String, String)],
+    running_panes: &'a HashMap<String, (String, String)>,
+    history_panes: &'a HashMap<String, PaneJobMatch>,
+    slug_to_group: &'a HashMap<String, String>,
+    overrides: &'a HashMap<String, DetectedProcessOverride>,
+    process_snapshot: &'a crate::agent_session::ProcessSnapshot,
+}
+
 fn detect_processes_blocking(
     live_viewer_panes: HashSet<String>,
     match_entries: Vec<(String, String, String)>,
@@ -261,7 +278,44 @@ fn detect_processes_blocking(
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<DetectionSnapshot, String> {
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
+    let stdout = match list_tmux_panes()? {
+        Some(s) => s,
+        None => return Ok(DetectionSnapshot { processes: Vec::new() }),
+    };
 
+    let ctx = DetectCtx {
+        live_viewer_panes: &live_viewer_panes,
+        match_entries: &match_entries,
+        running_panes: &running_panes,
+        history_panes: &history_panes,
+        slug_to_group: &slug_to_group,
+        overrides: &overrides,
+        process_snapshot: &process_snapshot,
+    };
+
+    let mut seen_panes = HashSet::new();
+    let mut results = Vec::new();
+
+    for line in stdout.lines() {
+        let Some(row) = parse_pane_row(line) else {
+            continue;
+        };
+        if is_view_session(row.session) {
+            continue;
+        }
+        let Some(provider) = pick_provider(&row, &process_snapshot) else {
+            continue;
+        };
+        if !seen_panes.insert(row.pane_id.to_string()) {
+            continue;
+        }
+        results.push(build_detected_process(&row, provider, &ctx));
+    }
+
+    Ok(DetectionSnapshot { processes: results })
+}
+
+fn list_tmux_panes() -> Result<Option<String>, String> {
     let output = debug_spawn::run_logged(
         "tmux",
         &[
@@ -272,159 +326,165 @@ fn detect_processes_blocking(
         ],
         "processes::detect_processes::list-panes",
     );
-
-    let output = match output {
-        Ok(o) if o.status.success() => o,
+    match output {
+        Ok(o) if o.status.success() => Ok(Some(String::from_utf8_lossy(&o.stdout).to_string())),
         Ok(o) => {
             let stderr = String::from_utf8_lossy(&o.stderr);
             if stderr.contains("no server running") || stderr.contains("no sessions") {
-                return Ok(DetectionSnapshot {
-                    processes: Vec::new(),
-                });
-            }
-            return Err(format!("tmux error: {}", stderr.trim()));
-        }
-        Err(e) => return Err(format!("Failed to run tmux: {}", e)),
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    let mut seen_panes = HashSet::new();
-    let mut results = Vec::new();
-
-    for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(9, '\x1e').collect();
-        if parts.len() < 8 {
-            continue;
-        }
-
-        let pane_id = parts[0];
-        let command = parts[1];
-        let cwd = parts[2];
-        let session = parts[3];
-        let window = parts[4];
-        let pane_pid = parts[5];
-        let window_id = parts[6];
-        let pane_title = normalize_optional_text(parts[7].to_string());
-        let pane_slug_tag = parts
-            .get(8)
-            .and_then(|s| normalize_optional_text(s.to_string()));
-
-        if is_view_session(session) {
-            continue;
-        }
-
-        let provider = detect_process_provider(pane_pid, Some(&process_snapshot))
-            .or_else(|| is_semver(command).then_some(ProcessProvider::Claude));
-        let Some(provider) = provider else {
-            continue;
-        };
-
-        if !seen_panes.insert(pane_id.to_string()) {
-            continue;
-        }
-
-        let (matched_group, matched_job) = if let Some(group_val) =
-            overrides.get(pane_id).and_then(|o| o.group_override.as_ref())
-        {
-            let group = if group_val.is_empty() { None } else { Some(group_val.clone()) };
-            (group, None)
-        } else if let Some((group, slug)) = running_panes.get(pane_id) {
-            if pane_slug_tag.as_deref() != Some(slug.as_str()) {
-                let _ = crate::tmux::set_pane_slug(pane_id, slug);
-            }
-            (Some(group.clone()), Some(slug.clone()))
-        } else if let Some(group) = pane_slug_tag
-            .as_ref()
-            .and_then(|tag| slug_to_group.get(tag))
-        {
-            // Pane was tagged with a job slug at spawn time via tmux user
-            // option. Authoritative — unlike pane_title it can't be overwritten
-            // by the running process's terminal output.
-            (Some(group.clone()), pane_slug_tag.clone())
-        } else if let Some(job_match) = history_panes.get(pane_id).filter(|job_match| {
-            job_match
-                .root
-                .as_ref()
-                .is_none_or(|root| cwd == root || cwd.starts_with(&format!("{}/", root)))
-        }) {
-            // Tmux recycles pane IDs, so historical runs from days ago may
-            // point to a completely different session that reused the same ID.
-            // Only trust the job slug (which nests under that job's card) if
-            // the run started recently. Otherwise fall back to group-only.
-            if is_recent_history(&job_match.started_at) {
-                // Backfill the tag so future detections don't depend on the
-                // 12-hour trust window.
-                let _ = crate::tmux::set_pane_slug(pane_id, &job_match.slug);
-                (Some(job_match.group.clone()), Some(job_match.slug.clone()))
+                Ok(None)
             } else {
-                (Some(job_match.group.clone()), None)
+                Err(format!("tmux error: {}", stderr.trim()))
             }
-        } else {
-            let best = match_entries
-                .iter()
-                .filter(|(root, _, _)| cwd == root || cwd.starts_with(&format!("{}/", root)))
-                .max_by_key(|(root, _, _)| root.len());
-            match best {
-                Some((_, group, _)) => (Some(group.clone()), None),
-                None => (None, None),
-            }
-        };
-
-        let log_lines = if live_viewer_panes.contains(pane_id) {
-            String::new()
-        } else {
-            crate::tmux::capture_pane(session, pane_id, 5)
-                .unwrap_or_default()
-                .trim()
-                .to_string()
-        };
-
-        let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
-            pane_pid,
-            Some(provider),
-            Some(&process_snapshot),
-            Some(cwd),
-        );
-        let override_meta = overrides.get(pane_id);
-        let (can_fork_session, can_send_skills, can_inject_secrets) =
-            provider_capabilities(provider);
-        let version = if is_semver(command) {
-            command.to_string()
-        } else {
-            process_snapshot
-                .command_for_pid(pane_pid)
-                .and_then(detect_version_from_command)
-                .unwrap_or_default()
-        };
-
-        results.push(DetectedProcess {
-            pane_id: pane_id.to_string(),
-            cwd: cwd.to_string(),
-            version,
-            display_name: override_meta.and_then(|meta| meta.display_name.clone()),
-            pane_title,
-            provider: provider.as_str().to_string(),
-            can_fork_session,
-            can_send_skills,
-            can_inject_secrets,
-            tmux_session: resolve_non_view_session_for_window(window_id, session),
-            window_name: window.to_string(),
-            matched_group,
-            matched_job,
-            log_lines,
-            first_query: override_meta
-                .and_then(|meta| meta.first_query.clone())
-                .or(session_info.first_query),
-            last_query: override_meta
-                .and_then(|meta| meta.last_query.clone())
-                .or(session_info.last_query),
-            session_started_at: session_info.session_started_at,
-            token_count: session_info.token_count,
-        });
+        }
+        Err(e) => Err(format!("Failed to run tmux: {}", e)),
     }
+}
 
-    Ok(DetectionSnapshot { processes: results })
+fn parse_pane_row(line: &str) -> Option<PaneRow<'_>> {
+    let parts: Vec<&str> = line.splitn(9, '\x1e').collect();
+    if parts.len() < 8 {
+        return None;
+    }
+    Some(PaneRow {
+        pane_id: parts[0],
+        command: parts[1],
+        cwd: parts[2],
+        session: parts[3],
+        window: parts[4],
+        pane_pid: parts[5],
+        window_id: parts[6],
+        pane_title: normalize_optional_text(parts[7].to_string()),
+        pane_slug_tag: parts
+            .get(8)
+            .and_then(|s| normalize_optional_text((*s).to_string())),
+    })
+}
+
+fn pick_provider(
+    row: &PaneRow<'_>,
+    process_snapshot: &crate::agent_session::ProcessSnapshot,
+) -> Option<ProcessProvider> {
+    detect_process_provider(row.pane_pid, Some(process_snapshot))
+        .or_else(|| is_semver(row.command).then_some(ProcessProvider::Claude))
+}
+
+fn resolve_group_and_job(
+    row: &PaneRow<'_>,
+    ctx: &DetectCtx<'_>,
+) -> (Option<String>, Option<String>) {
+    if let Some(group_val) = ctx
+        .overrides
+        .get(row.pane_id)
+        .and_then(|o| o.group_override.as_ref())
+    {
+        let group = if group_val.is_empty() { None } else { Some(group_val.clone()) };
+        return (group, None);
+    }
+    if let Some((group, slug)) = ctx.running_panes.get(row.pane_id) {
+        if row.pane_slug_tag.as_deref() != Some(slug.as_str()) {
+            let _ = crate::tmux::set_pane_slug(row.pane_id, slug);
+        }
+        return (Some(group.clone()), Some(slug.clone()));
+    }
+    if let Some(group) = row
+        .pane_slug_tag
+        .as_ref()
+        .and_then(|tag| ctx.slug_to_group.get(tag))
+    {
+        // Pane was tagged with a job slug at spawn time via tmux user option.
+        // Authoritative - pane_title can be overwritten by terminal output.
+        return (Some(group.clone()), row.pane_slug_tag.clone());
+    }
+    if let Some(job_match) = ctx.history_panes.get(row.pane_id).filter(|job_match| {
+        job_match
+            .root
+            .as_ref()
+            .is_none_or(|root| row.cwd == root || row.cwd.starts_with(&format!("{}/", root)))
+    }) {
+        // Tmux recycles pane IDs, so historical runs from days ago may
+        // refer to a different session that reused the same ID. Only trust
+        // the job slug if the run started recently; otherwise group-only.
+        if is_recent_history(&job_match.started_at) {
+            let _ = crate::tmux::set_pane_slug(row.pane_id, &job_match.slug);
+            return (Some(job_match.group.clone()), Some(job_match.slug.clone()));
+        }
+        return (Some(job_match.group.clone()), None);
+    }
+    let best = ctx
+        .match_entries
+        .iter()
+        .filter(|(root, _, _)| row.cwd == root || row.cwd.starts_with(&format!("{}/", root)))
+        .max_by_key(|(root, _, _)| root.len());
+    match best {
+        Some((_, group, _)) => (Some(group.clone()), None),
+        None => (None, None),
+    }
+}
+
+fn capture_log_lines(row: &PaneRow<'_>, live_viewer_panes: &HashSet<String>) -> String {
+    if live_viewer_panes.contains(row.pane_id) {
+        return String::new();
+    }
+    crate::tmux::capture_pane(row.session, row.pane_id, 5)
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+fn resolve_version(
+    row: &PaneRow<'_>,
+    process_snapshot: &crate::agent_session::ProcessSnapshot,
+) -> String {
+    if is_semver(row.command) {
+        return row.command.to_string();
+    }
+    process_snapshot
+        .command_for_pid(row.pane_pid)
+        .and_then(detect_version_from_command)
+        .unwrap_or_default()
+}
+
+fn build_detected_process(
+    row: &PaneRow<'_>,
+    provider: ProcessProvider,
+    ctx: &DetectCtx<'_>,
+) -> DetectedProcess {
+    let (matched_group, matched_job) = resolve_group_and_job(row, ctx);
+    let log_lines = capture_log_lines(row, ctx.live_viewer_panes);
+    let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
+        row.pane_pid,
+        Some(provider),
+        Some(ctx.process_snapshot),
+        Some(row.cwd),
+    );
+    let override_meta = ctx.overrides.get(row.pane_id);
+    let (can_fork_session, can_send_skills, can_inject_secrets) = provider_capabilities(provider);
+    let version = resolve_version(row, ctx.process_snapshot);
+
+    DetectedProcess {
+        pane_id: row.pane_id.to_string(),
+        cwd: row.cwd.to_string(),
+        version,
+        display_name: override_meta.and_then(|meta| meta.display_name.clone()),
+        pane_title: row.pane_title.clone(),
+        provider: provider.as_str().to_string(),
+        can_fork_session,
+        can_send_skills,
+        can_inject_secrets,
+        tmux_session: resolve_non_view_session_for_window(row.window_id, row.session),
+        window_name: row.window.to_string(),
+        matched_group,
+        matched_job,
+        log_lines,
+        first_query: override_meta
+            .and_then(|meta| meta.first_query.clone())
+            .or(session_info.first_query),
+        last_query: override_meta
+            .and_then(|meta| meta.last_query.clone())
+            .or(session_info.last_query),
+        session_started_at: session_info.session_started_at,
+        token_count: session_info.token_count,
+    }
 }
 
 #[tauri::command]
