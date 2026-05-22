@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use parking_lot::Mutex;
 
+use tokio::io::{AsyncBufReadExt, AsyncRead};
 use tokio::process::Command;
+use tokio::task::JoinHandle;
 
 use crate::config::jobs::Job;
 use crate::config::settings::AppSettings;
@@ -16,6 +18,55 @@ pub(super) async fn execute_binary_job(
     result_file: Option<&std::path::Path>,
     stream_log_path: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String), String> {
+    let mut cmd = build_command(job, secrets, settings, params, result_file);
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn process: {}", e))?;
+
+    let stdout_pipe = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture stdout".to_string())?;
+    let stderr_pipe = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture stderr".to_string())?;
+
+    let log_file = open_stream_log(stream_log_path);
+    let stdout_buf = Arc::new(Mutex::new(String::new()));
+    let stderr_buf = Arc::new(Mutex::new(String::new()));
+
+    let stdout_task = stream_to_buf(stdout_pipe, Arc::clone(&stdout_buf), log_file.clone());
+    let stderr_task = stream_to_buf(stderr_pipe, Arc::clone(&stderr_buf), log_file.clone());
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Failed to wait for process: {}", e))?;
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+
+    let stdout = Arc::try_unwrap(stdout_buf)
+        .map(|m| m.into_inner())
+        .unwrap_or_default();
+    let stderr = Arc::try_unwrap(stderr_buf)
+        .map(|m| m.into_inner())
+        .unwrap_or_default();
+
+    Ok((status.code(), stdout, stderr))
+}
+
+/// Build the tokio Command with env_clear + minimal PATH/HOME passthrough,
+/// secrets, job env, trigger params (as CLAWTAB_PARAM_*), and the optional
+/// CLAWTAB_RESULT_FILE. Piped stdio is configured so callers can stream.
+fn build_command(
+    job: &Job,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    settings: &Arc<Mutex<AppSettings>>,
+    params: &HashMap<String, String>,
+    result_file: Option<&std::path::Path>,
+) -> Command {
     let work_dir = job.work_dir.clone().unwrap_or_else(|| {
         let s = settings.lock();
         s.default_work_dir.clone()
@@ -60,100 +111,60 @@ pub(super) async fn execute_binary_job(
     cmd.current_dir(&work_dir);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+    cmd
+}
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn process: {}", e))?;
-
-    let stdout_pipe = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture stdout".to_string())?;
-    let stderr_pipe = child
-        .stderr
-        .take()
-        .ok_or_else(|| "Failed to capture stderr".to_string())?;
-
-    // Open the streaming log file. Writers from both reader tasks share an
-    // Arc<Mutex<File>> so interleaving stays line-coherent; line-based reads
-    // mean a single lock per line and no torn writes between stdout/stderr.
-    let log_file: Option<Arc<Mutex<std::fs::File>>> = stream_log_path.and_then(|p| {
-        match std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(p)
-        {
-            Ok(f) => Some(Arc::new(Mutex::new(f))),
-            Err(e) => {
-                log::warn!("Failed to open stream log {}: {}", p.display(), e);
-                None
-            }
+/// Open the streaming log file in truncate+write mode. Returns None and logs
+/// a warning on failure so a missing log doesn't fail the whole run.
+/// Writers from the two reader tasks share an Arc<Mutex<File>> so interleaving
+/// stays line-coherent.
+fn open_stream_log(path: Option<&std::path::Path>) -> Option<Arc<Mutex<std::fs::File>>> {
+    let p = path?;
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(p)
+    {
+        Ok(f) => Some(Arc::new(Mutex::new(f))),
+        Err(e) => {
+            log::warn!("Failed to open stream log {}: {}", p.display(), e);
+            None
         }
-    });
+    }
+}
 
-    use tokio::io::AsyncBufReadExt;
-    let stdout_buf = Arc::new(Mutex::new(String::new()));
-    let stderr_buf = Arc::new(Mutex::new(String::new()));
+/// Read `pipe` line-by-line; append each line to `buf` (and to `file` if open)
+/// until EOF. Shared by the stdout and stderr readers.
+fn stream_to_buf<R>(
+    pipe: R,
+    buf: Arc<Mutex<String>>,
+    file: Option<Arc<Mutex<std::fs::File>>>,
+) -> JoinHandle<()>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut reader = tokio::io::BufReader::new(pipe).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            append_line(&buf, file.as_deref(), &line);
+        }
+    })
+}
 
-    let stdout_task = {
-        let buf = Arc::clone(&stdout_buf);
-        let file = log_file.clone();
-        tokio::spawn(async move {
-            let mut reader = tokio::io::BufReader::new(stdout_pipe).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                {
-                    let mut b = buf.lock();
-                    b.push_str(&line);
-                    b.push('\n');
-                }
-                if let Some(ref f) = file {
-                    use std::io::Write;
-                    let mut g = f.lock();
-                    let _ = g.write_all(line.as_bytes());
-                    let _ = g.write_all(b"\n");
-                    let _ = g.flush();
-                }
-            }
-        })
-    };
-
-    let stderr_task = {
-        let buf = Arc::clone(&stderr_buf);
-        let file = log_file.clone();
-        tokio::spawn(async move {
-            let mut reader = tokio::io::BufReader::new(stderr_pipe).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                {
-                    let mut b = buf.lock();
-                    b.push_str(&line);
-                    b.push('\n');
-                }
-                if let Some(ref f) = file {
-                    use std::io::Write;
-                    let mut g = f.lock();
-                    let _ = g.write_all(line.as_bytes());
-                    let _ = g.write_all(b"\n");
-                    let _ = g.flush();
-                }
-            }
-        })
-    };
-
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("Failed to wait for process: {}", e))?;
-    let _ = stdout_task.await;
-    let _ = stderr_task.await;
-
-    let stdout = Arc::try_unwrap(stdout_buf)
-        .map(|m| m.into_inner())
-        .unwrap_or_default();
-    let stderr = Arc::try_unwrap(stderr_buf)
-        .map(|m| m.into_inner())
-        .unwrap_or_default();
-    let exit_code = status.code();
-
-    Ok((exit_code, stdout, stderr))
+/// Append a line to the in-memory buffer and (if open) to the shared log file.
+/// One lock per line on each side keeps stdout/stderr writes from tearing.
+fn append_line(buf: &Mutex<String>, file: Option<&Mutex<std::fs::File>>, line: &str) {
+    {
+        let mut b = buf.lock();
+        b.push_str(line);
+        b.push('\n');
+    }
+    if let Some(f) = file {
+        use std::io::Write;
+        let mut g = f.lock();
+        let _ = g.write_all(line.as_bytes());
+        let _ = g.write_all(b"\n");
+        let _ = g.flush();
+    }
 }
