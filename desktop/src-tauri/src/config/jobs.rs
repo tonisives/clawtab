@@ -412,129 +412,122 @@ impl JobsConfig {
     /// Old format: jobs/myapp-deploy/job.yaml
     /// New format: jobs/myapp/deploy/job.yaml (with job_id set)
     fn migrate_flat_slugs() {
-        let jobs_dir = match Self::jobs_dir() {
-            Some(d) => d,
-            None => return,
-        };
-
+        let Some(jobs_dir) = Self::jobs_dir() else { return };
         if !jobs_dir.is_dir() {
             return;
         }
-
-        let entries = match std::fs::read_dir(&jobs_dir) {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
+        let Ok(entries) = std::fs::read_dir(&jobs_dir) else { return };
         for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-
-            let job_yaml = path.join("job.yaml");
-            if !job_yaml.exists() {
-                continue;
-            }
-
-            // This is a flat slug dir -- read the job to check if it needs migration
-            let contents = match std::fs::read_to_string(&job_yaml) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            let job: Job = match serde_yml::from_str(&contents) {
-                Ok(j) => j,
-                Err(_) => continue,
-            };
-
-            // Already has a job_id -- skip (or it's already nested)
-            if job.job_id.is_some() {
-                // If it has a job_id but is still flat, move it
-                // Actually, check if slug contains '/' -- if so, it's already nested
-                let dir_name = path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                if dir_name.contains('/') {
-                    continue;
-                }
-            }
-
-            // Derive project slug from folder_path
-            let project_slug = if let Some(ref fp) = job.folder_path {
-                let cleaned = fp.replace('\\', "/");
-                let parts: Vec<&str> = cleaned
-                    .trim_end_matches('/')
-                    .split('/')
-                    .filter(|s| !s.is_empty() && *s != ".cwt")
-                    .collect();
-                if !parts.is_empty() {
-                    slugify(parts[parts.len() - 1], 20)
-                } else {
-                    slugify(&job.name, 20)
-                }
-            } else {
-                slugify(&job.name, 20)
-            };
-
-            let job_id = job.job_id.clone().unwrap_or_else(|| "default".to_string());
-            let new_dir = jobs_dir.join(&project_slug).join(&job_id);
-
-            if new_dir.exists() {
-                continue;
-            }
-
-            log::info!(
-                "Migrating flat slug '{}' to '{}/{}'",
-                path.display(),
-                project_slug,
-                job_id
-            );
-
-            if let Err(e) = std::fs::create_dir_all(&new_dir) {
-                log::warn!("Failed to create migration dir: {}", e);
-                continue;
-            }
-
-            // Write updated job.yaml with job_id
-            let mut migrated_job = job;
-            if migrated_job.job_id.is_none() {
-                migrated_job.job_id = Some("default".to_string());
-            }
-            migrated_job.slug = format!("{}/{}", project_slug, job_id);
-
-            match serde_yml::to_string(&migrated_job) {
-                Ok(yaml) => {
-                    if let Err(e) = std::fs::write(new_dir.join("job.yaml"), yaml) {
-                        log::warn!("Failed to write migrated job.yaml: {}", e);
-                        continue;
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to serialize migrated job: {}", e);
-                    continue;
-                }
-            }
-
-            // Move logs directory if it exists
-            let old_logs = path.join("logs");
-            if old_logs.is_dir() {
-                let new_logs = new_dir.join("logs");
-                if let Err(e) = std::fs::rename(&old_logs, &new_logs) {
-                    log::warn!("Failed to move logs: {}", e);
-                }
-            }
-
-            // Remove old flat dir
-            if let Err(e) = std::fs::remove_dir_all(&path) {
-                log::warn!("Failed to remove old flat slug dir: {}", e);
-            }
-
-            // Migrate job.md to central location if applicable
-            // (handled by migrate_job_md_to_central at startup)
+            migrate_one_flat_slug_dir(&jobs_dir, &entry.path());
         }
+    }
+}
+
+/// Migrate a single flat-slug directory. No-op when the dir is not a flat slug
+/// or migration is unnecessary.
+fn migrate_one_flat_slug_dir(jobs_dir: &std::path::Path, path: &std::path::Path) {
+    if !path.is_dir() {
+        return;
+    }
+    let job_yaml = path.join("job.yaml");
+    if !job_yaml.exists() {
+        return;
+    }
+    let Some(job) = read_job_yaml(&job_yaml) else { return };
+    if is_already_nested(&job, path) {
+        return;
+    }
+
+    let project_slug = derive_project_slug_for_migration(&job);
+    let job_id = job.job_id.clone().unwrap_or_else(|| "default".to_string());
+    let new_dir = jobs_dir.join(&project_slug).join(&job_id);
+    if new_dir.exists() {
+        return;
+    }
+
+    log::info!(
+        "Migrating flat slug '{}' to '{}/{}'",
+        path.display(),
+        project_slug,
+        job_id
+    );
+
+    if let Err(e) = std::fs::create_dir_all(&new_dir) {
+        log::warn!("Failed to create migration dir: {}", e);
+        return;
+    }
+
+    if !write_migrated_job(&new_dir, job, &project_slug, &job_id) {
+        return;
+    }
+    move_logs_dir(path, &new_dir);
+    if let Err(e) = std::fs::remove_dir_all(path) {
+        log::warn!("Failed to remove old flat slug dir: {}", e);
+    }
+}
+
+fn read_job_yaml(path: &std::path::Path) -> Option<Job> {
+    let contents = std::fs::read_to_string(path).ok()?;
+    serde_yml::from_str(&contents).ok()
+}
+
+fn is_already_nested(job: &Job, path: &std::path::Path) -> bool {
+    if job.job_id.is_none() {
+        return false;
+    }
+    path.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .contains('/')
+}
+
+fn derive_project_slug_for_migration(job: &Job) -> String {
+    let Some(ref fp) = job.folder_path else {
+        return slugify(&job.name, 20);
+    };
+    let cleaned = fp.replace('\\', "/");
+    let parts: Vec<&str> = cleaned
+        .trim_end_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != ".cwt")
+        .collect();
+    if parts.is_empty() {
+        slugify(&job.name, 20)
+    } else {
+        slugify(parts[parts.len() - 1], 20)
+    }
+}
+
+fn write_migrated_job(new_dir: &std::path::Path, job: Job, project_slug: &str, job_id: &str) -> bool {
+    let mut migrated_job = job;
+    if migrated_job.job_id.is_none() {
+        migrated_job.job_id = Some("default".to_string());
+    }
+    migrated_job.slug = format!("{}/{}", project_slug, job_id);
+
+    match serde_yml::to_string(&migrated_job) {
+        Ok(yaml) => {
+            if let Err(e) = std::fs::write(new_dir.join("job.yaml"), yaml) {
+                log::warn!("Failed to write migrated job.yaml: {}", e);
+                return false;
+            }
+            true
+        }
+        Err(e) => {
+            log::warn!("Failed to serialize migrated job: {}", e);
+            false
+        }
+    }
+}
+
+fn move_logs_dir(old_path: &std::path::Path, new_dir: &std::path::Path) {
+    let old_logs = old_path.join("logs");
+    if !old_logs.is_dir() {
+        return;
+    }
+    let new_logs = new_dir.join("logs");
+    if let Err(e) = std::fs::rename(&old_logs, &new_logs) {
+        log::warn!("Failed to move logs: {}", e);
     }
 }
 
@@ -630,105 +623,95 @@ pub fn central_project_context_path(slug: &str) -> Option<std::path::PathBuf> {
 /// Copies user scripts and context files from {folder_path}/.cwt/ to ~/.config/clawtab/jobs/,
 /// then removes the .cwt/ directory.
 pub fn migrate_cwt_to_central(jobs: &[Job]) {
-    let jobs_dir = match JobsConfig::jobs_dir() {
-        Some(d) => d,
-        None => return,
-    };
-
-    // Collect unique folder_paths from project jobs
+    let Some(jobs_dir) = JobsConfig::jobs_dir() else { return };
     let mut seen_projects: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for job in jobs.iter().filter(|j| j.job_type == JobType::Job) {
-        let folder_path = match job.folder_path.as_ref() {
-            Some(fp) => fp.clone(),
-            None => continue,
-        };
+        migrate_one_job_cwt(&jobs_dir, job, &mut seen_projects);
+    }
+}
 
-        let project_root = std::path::Path::new(&folder_path);
-        let cwt_dir = project_root.join(".cwt");
-        if !cwt_dir.is_dir() {
+fn migrate_one_job_cwt(
+    jobs_dir: &std::path::Path,
+    job: &Job,
+    seen_projects: &mut std::collections::HashSet<String>,
+) {
+    let Some(folder_path) = job.folder_path.as_ref() else { return };
+    let project_root = std::path::Path::new(folder_path);
+    let cwt_dir = project_root.join(".cwt");
+    if !cwt_dir.is_dir() {
+        return;
+    }
+
+    let job_id = job.job_id.as_deref().unwrap_or("default");
+    let project_slug = job.slug.split('/').next().unwrap_or(&job.slug);
+    let central_project_dir = jobs_dir.join(project_slug);
+    let central_job_dir = jobs_dir.join(&job.slug);
+
+    migrate_per_job_files(&cwt_dir, job_id, &central_job_dir);
+
+    if seen_projects.insert(folder_path.clone()) {
+        migrate_project_files(&cwt_dir, &central_project_dir);
+        remove_cwt_dir(&cwt_dir);
+    }
+}
+
+fn migrate_per_job_files(cwt_dir: &std::path::Path, job_id: &str, central_job_dir: &std::path::Path) {
+    let cwt_job_dir = cwt_dir.join(job_id);
+    if !cwt_job_dir.is_dir() {
+        return;
+    }
+    let _ = std::fs::create_dir_all(central_job_dir);
+    let Ok(entries) = std::fs::read_dir(&cwt_job_dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
             continue;
         }
-
-        let job_id = job.job_id.as_deref().unwrap_or("default");
-        let project_slug = job.slug.split('/').next().unwrap_or(&job.slug);
-        let central_project_dir = jobs_dir.join(project_slug);
-        let central_job_dir = jobs_dir.join(&job.slug);
-
-        // Migrate per-job files from .cwt/{job_id}/
-        let cwt_job_dir = cwt_dir.join(job_id);
-        if cwt_job_dir.is_dir() {
-            let _ = std::fs::create_dir_all(&central_job_dir);
-            if let Ok(entries) = std::fs::read_dir(&cwt_job_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let name = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    // Skip auto-generated cwt.md and already-migrated job.md
-                    if name == "cwt.md" || name == "job.md" {
-                        continue;
-                    }
-                    let dest = central_job_dir.join(&name);
-                    if !dest.exists() {
-                        if let Err(e) = std::fs::copy(&path, &dest) {
-                            log::warn!("Failed to migrate {} to central: {}", path.display(), e);
-                        } else {
-                            log::info!("Migrated {} to {}", path.display(), dest.display());
-                        }
-                    }
-                }
-            }
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if name == "cwt.md" || name == "job.md" {
+            continue;
         }
-
-        // Migrate project-level files (only once per project)
-        if seen_projects.insert(folder_path.clone()) {
-            let _ = std::fs::create_dir_all(&central_project_dir);
-            if let Ok(entries) = std::fs::read_dir(&cwt_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let name = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    // Migrate shared cwt.md as context.md
-                    if name == "cwt.md" {
-                        let dest = central_project_dir.join("context.md");
-                        if !dest.exists() {
-                            let _ = std::fs::copy(&path, &dest);
-                            log::info!(
-                                "Migrated shared context {} to {}",
-                                path.display(),
-                                dest.display()
-                            );
-                        }
-                        continue;
-                    }
-                    // Migrate scripts and other files
-                    let dest = central_project_dir.join(&name);
-                    if !dest.exists() {
-                        let _ = std::fs::copy(&path, &dest);
-                        log::info!("Migrated {} to {}", path.display(), dest.display());
-                    }
-                }
-            }
-
-            // Remove the .cwt/ directory
-            if let Err(e) = std::fs::remove_dir_all(&cwt_dir) {
-                log::warn!("Failed to remove .cwt/ at {}: {}", cwt_dir.display(), e);
-            } else {
-                log::info!("Removed .cwt/ directory at {}", cwt_dir.display());
-            }
+        let dest = central_job_dir.join(&name);
+        if dest.exists() {
+            continue;
         }
+        match std::fs::copy(&path, &dest) {
+            Ok(_) => log::info!("Migrated {} to {}", path.display(), dest.display()),
+            Err(e) => log::warn!("Failed to migrate {} to central: {}", path.display(), e),
+        }
+    }
+}
+
+fn migrate_project_files(cwt_dir: &std::path::Path, central_project_dir: &std::path::Path) {
+    let _ = std::fs::create_dir_all(central_project_dir);
+    let Ok(entries) = std::fs::read_dir(cwt_dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if name == "cwt.md" {
+            let dest = central_project_dir.join("context.md");
+            if !dest.exists() {
+                let _ = std::fs::copy(&path, &dest);
+                log::info!("Migrated shared context {} to {}", path.display(), dest.display());
+            }
+            continue;
+        }
+        let dest = central_project_dir.join(&name);
+        if !dest.exists() {
+            let _ = std::fs::copy(&path, &dest);
+            log::info!("Migrated {} to {}", path.display(), dest.display());
+        }
+    }
+}
+
+fn remove_cwt_dir(cwt_dir: &std::path::Path) {
+    match std::fs::remove_dir_all(cwt_dir) {
+        Ok(_) => log::info!("Removed .cwt/ directory at {}", cwt_dir.display()),
+        Err(e) => log::warn!("Failed to remove .cwt/ at {}: {}", cwt_dir.display(), e),
     }
 }
 
