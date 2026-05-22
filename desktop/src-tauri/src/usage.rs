@@ -155,8 +155,24 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
         .take()
         .ok_or_else(|| "failed to open codex app-server stdout".to_string())?;
 
+    send_codex_rpc_requests(&mut stdin)?;
+    drop(stdin);
+
+    let (account, limits) = read_codex_rpc_responses(stdout)?;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let account =
+        account.ok_or_else(|| "codex account/read did not return a result".to_string())?;
+    let limits = limits
+        .ok_or_else(|| "codex account/rateLimits/read did not return a result".to_string())?;
+
+    Ok(build_codex_snapshot(account, limits))
+}
+
+fn send_codex_rpc_requests(stdin: &mut dyn Write) -> Result<(), String> {
     write_jsonrpc(
-        &mut stdin,
+        stdin,
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -170,7 +186,7 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
         }),
     )?;
     write_jsonrpc(
-        &mut stdin,
+        stdin,
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 2,
@@ -179,15 +195,18 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
         }),
     )?;
     write_jsonrpc(
-        &mut stdin,
+        stdin,
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 3,
             "method": "account/rateLimits/read"
         }),
-    )?;
-    drop(stdin);
+    )
+}
 
+fn read_codex_rpc_responses(
+    stdout: std::process::ChildStdout,
+) -> Result<(Option<CodexAccountReadResult>, Option<CodexRateLimitReadResult>), String> {
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
     let mut account: Option<CodexAccountReadResult> = None;
@@ -201,35 +220,35 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
         if bytes == 0 {
             break;
         }
-
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-
-        let value: serde_json::Value = match serde_json::from_str(trimmed) {
-            Ok(value) => value,
-            Err(_) => continue,
+        let Ok(value): Result<serde_json::Value, _> = serde_json::from_str(trimmed) else {
+            continue;
         };
 
-        if value.get("id").and_then(|v| v.as_i64()) == Some(2) {
-            if let Some(result) = value.get("result") {
-                account = serde_json::from_value(result.clone()).ok();
+        match value.get("id").and_then(|v| v.as_i64()) {
+            Some(2) => {
+                if let Some(result) = value.get("result") {
+                    account = serde_json::from_value(result.clone()).ok();
+                }
             }
-        } else if value.get("id").and_then(|v| v.as_i64()) == Some(3) {
-            if let Some(result) = value.get("result") {
-                limits = serde_json::from_value(result.clone()).ok();
+            Some(3) => {
+                if let Some(result) = value.get("result") {
+                    limits = serde_json::from_value(result.clone()).ok();
+                }
             }
+            _ => {}
         }
     }
+    Ok((account, limits))
+}
 
-    let _ = child.kill();
-    let _ = child.wait();
-
-    let account =
-        account.ok_or_else(|| "codex account/read did not return a result".to_string())?;
-    let limits = limits
-        .ok_or_else(|| "codex account/rateLimits/read did not return a result".to_string())?;
+fn build_codex_snapshot(
+    account: CodexAccountReadResult,
+    limits: CodexRateLimitReadResult,
+) -> ProviderUsageSnapshot {
     let snapshot = limits
         .rate_limits_by_limit_id
         .as_ref()
@@ -247,7 +266,7 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
         .or(snapshot.plan_type.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
-    Ok(ProviderUsageSnapshot {
+    ProviderUsageSnapshot {
         provider: "codex".to_string(),
         status: "available".to_string(),
         summary: format!(
@@ -270,7 +289,7 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
                 value: secondary_text,
             },
         ],
-    })
+    }
 }
 
 fn write_jsonrpc(stdin: &mut dyn Write, value: serde_json::Value) -> Result<(), String> {
@@ -568,7 +587,7 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
     })?;
     drop(pair.slave);
 
-    let mut reader = pair
+    let reader = pair
         .master
         .try_clone_reader()
         .map_err(|err| format!("clone reader: {}", err))?;
@@ -577,6 +596,21 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
         .take_writer()
         .map_err(|err| format!("take writer: {}", err))?;
 
+    let rx = spawn_pty_reader(reader);
+    let output = drive_codex_status(rx, &mut writer, timeout)?;
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let text = strip_ansi_codes(&String::from_utf8_lossy(&output));
+    if text.trim().is_empty() {
+        Err("Codex status probe returned no output".to_string())
+    } else {
+        Ok(text)
+    }
+}
+
+fn spawn_pty_reader(mut reader: Box<dyn Read + Send>) -> mpsc::Receiver<Vec<u8>> {
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
     thread::spawn(move || {
         let mut buf = [0_u8; 4096];
@@ -592,19 +626,27 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
             }
         }
     });
+    rx
+}
 
+fn drive_codex_status(
+    rx: mpsc::Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
     let deadline = Instant::now() + timeout;
     let command_deadline = Instant::now() + Duration::from_millis(1200);
     let mut output = Vec::new();
     let mut command_sent = false;
     let mut status_seen_at: Option<Instant> = None;
+
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(150)) {
             Ok(bytes) => {
                 output.extend(bytes);
                 let text = String::from_utf8_lossy(&output);
                 if !command_sent && (Instant::now() >= command_deadline || codex_tui_ready(&text)) {
-                    send_codex_status(&mut writer)?;
+                    send_codex_status(writer)?;
                     command_sent = true;
                 }
                 if text.contains("data not available yet") {
@@ -616,7 +658,7 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if !command_sent && Instant::now() >= command_deadline {
-                    send_codex_status(&mut writer)?;
+                    send_codex_status(writer)?;
                     command_sent = true;
                 }
                 if status_seen_at
@@ -629,16 +671,7 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
-
-    let _ = child.kill();
-    let _ = child.wait();
-
-    let text = strip_ansi_codes(&String::from_utf8_lossy(&output));
-    if text.trim().is_empty() {
-        Err("Codex status probe returned no output".to_string())
-    } else {
-        Ok(text)
-    }
+    Ok(output)
 }
 
 fn codex_tui_ready(text: &str) -> bool {
