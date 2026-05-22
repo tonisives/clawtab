@@ -33,6 +33,9 @@ flowchart LR
     Desktop <-- "WebSocket<br/>events / commands" --> Relay
     Relay <-- "WebSocket<br/>events / answers" --> Mobile
     APNs -. "wake up" .-> Mobile
+
+    classDef cluster fill:transparent,stroke:#888
+    class Laptop,Cloud,User cluster
 ```
 
 The relay is the only stateful hop. It holds the connection hub in memory, persists auth and notifications to Postgres, and pushes APNs notifications when the mobile app is backgrounded.
@@ -88,6 +91,9 @@ flowchart TB
     Hub -- "resolve cross-user" --> Shares
     Session -. "spawn(DB write)" .-> PG2[("Postgres")]
     Session -. "trigger" .-> APNs2[["APNs"]]
+
+    classDef cluster fill:transparent,stroke:#888
+    class Axum,Session,Hub cluster
 ```
 
 ### Hub
