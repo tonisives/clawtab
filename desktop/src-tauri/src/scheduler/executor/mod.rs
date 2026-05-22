@@ -1,27 +1,24 @@
 mod binary;
 mod claude;
+mod finalize;
 mod folder;
 mod notification;
 mod params;
+mod tmux_spawn;
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use parking_lot::Mutex;
+use std::collections::HashMap;
 
 use chrono::Utc;
 
-use crate::config::jobs::{Job, JobStatus, JobType, NotifyTarget};
+use crate::config::jobs::{Job, JobStatus, JobType};
 use crate::config::settings::AppSettings;
 use crate::history::RunRecord;
 use crate::job_context::JobContext;
-use crate::telegram::ActiveAgent;
-
-use super::monitor::MonitorParams;
 
 use binary::execute_binary_job;
 use claude::execute_claude_job;
+use finalize::{attach_monitor, finalize_run, RunOutcome};
 use folder::execute_folder_job;
-use notification::{build_telegram_stream, send_job_notification};
 use params::apply_param_defaults;
 
 /// Result from a tmux job: the tmux session and pane ID for monitoring.
@@ -98,19 +95,6 @@ pub async fn execute_job(
     };
     let params: &HashMap<String, String> = merged_params.as_ref().unwrap_or(params);
 
-    let secrets = &ctx.secrets;
-    let history = &ctx.history;
-    let settings = &ctx.settings;
-    let job_status = &ctx.job_status;
-    let active_agents = &ctx.active_agents;
-    let relay = &ctx.relay;
-    let auto_yes_panes = if opts.use_auto_yes {
-        Some(&ctx.auto_yes_panes)
-    } else {
-        None
-    };
-    let protected_panes = Some(&ctx.protected_panes);
-    let notifier = ctx.notifier.clone();
     let mut pane_tx = opts.pane_tx;
     let trigger_id = opts.trigger_id;
 
@@ -145,10 +129,10 @@ pub async fn execute_job(
             pane_id: None,
             tmux_session: None,
         };
-        let mut status = job_status.lock();
+        let mut status = ctx.job_status.lock();
         status.insert(job.slug.clone(), new_status.clone());
         drop(status);
-        crate::relay::push_status_update(relay, &job.slug, &new_status);
+        crate::relay::push_status_update(&ctx.relay, &job.slug, &new_status);
     }
 
     // Pre-compute the streaming log path for binary jobs so it's persisted
@@ -187,7 +171,7 @@ pub async fn execute_job(
     };
 
     {
-        let h = history.lock();
+        let h = ctx.history.lock();
         if let Err(e) = h.insert(&record) {
             log::error!("Failed to insert run record: {}", e);
         }
@@ -211,7 +195,7 @@ pub async fn execute_job(
     if job.max_history > 0 {
         let keep = job.max_history.saturating_sub(1) as usize;
         let started_map = {
-            let h = history.lock();
+            let h = ctx.history.lock();
             h.pane_started_at_for_job(&job.slug).unwrap_or_default()
         };
         match crate::tmux::list_panes_by_slug(&job.slug) {
@@ -240,8 +224,8 @@ pub async fn execute_job(
         match job.job_type {
             JobType::Binary => execute_binary_job(
                 job,
-                secrets,
-                settings,
+                &ctx.secrets,
+                &ctx.settings,
                 params,
                 result_file.as_deref(),
                 stream_log_path.as_deref(),
@@ -249,250 +233,73 @@ pub async fn execute_job(
             .await
             .map(|(code, out, err)| (code, out, err, None)),
             JobType::Claude => {
-                execute_claude_job(job, secrets, settings, params, result_file.as_deref()).await
+                execute_claude_job(job, &ctx.secrets, &ctx.settings, params, result_file.as_deref())
+                    .await
             }
             JobType::Job => {
-                execute_folder_job(job, secrets, settings, params, result_file.as_deref()).await
+                execute_folder_job(job, &ctx.secrets, &ctx.settings, params, result_file.as_deref())
+                    .await
             }
         };
 
     let telegram_config = {
-        let s = settings.lock();
+        let s = ctx.settings.lock();
         s.telegram.clone()
     };
 
     match result {
-        Ok((exit_code, stdout, stderr, tmux_handle)) => {
-            if let Some(handle) = tmux_handle {
-                {
-                    let new_status = JobStatus::Running {
-                        run_id: run_id.clone(),
-                        started_at: started_at.clone(),
-                        pane_id: Some(handle.pane_id.clone()),
-                        tmux_session: Some(handle.tmux_session.clone()),
-                    };
-                    let mut status = job_status.lock();
-                    status.insert(job.slug.clone(), new_status.clone());
-                    drop(status);
-                    crate::relay::push_status_update(relay, &job.slug, &new_status);
-                }
-                if let Some(tx) = pane_tx.take() {
-                    let _ = tx.send((handle.pane_id.clone(), handle.tmux_session.clone()));
-                }
-                {
-                    let h = history.lock();
-                    let _ = h.update_pane_id(&run_id, &handle.pane_id);
-                }
-                if job.auto_yes {
-                    if let Some(ay_panes) = auto_yes_panes {
-                        let mut panes = ay_panes.lock();
-                        panes.insert(handle.pane_id.clone());
-                        log::info!(
-                            "Auto-yes enabled for job '{}' pane '{}'",
-                            job.name,
-                            handle.pane_id
-                        );
-                    }
-                }
-                if job.notify_target == NotifyTarget::Telegram {
-                    let chat_id = job.telegram_chat_id.or_else(|| {
-                        telegram_config
-                            .as_ref()
-                            .and_then(|c| c.chat_ids.first().copied())
-                    });
-                    if let Some(chat_id) = chat_id {
-                        let mut map = active_agents.lock();
-                        log::info!(
-                            "Registering active agent for chat_id={} pane={}",
-                            chat_id,
-                            handle.pane_id,
-                        );
-                        map.insert(
-                            chat_id,
-                            ActiveAgent {
-                                pane_id: handle.pane_id.clone(),
-                                tmux_session: handle.tmux_session.clone(),
-                                run_id: run_id.clone(),
-                                job_id: job.name.clone(),
-                            },
-                        );
-                        ctx.active_agents_notify.notify_waiters();
-                    }
-                }
-
-                let telegram = if job.notify_target == NotifyTarget::Telegram {
-                    build_telegram_stream(&telegram_config, job.telegram_chat_id)
-                } else {
-                    None
-                };
-                let notify_on_success = telegram_config
-                    .as_ref()
-                    .map(|c| c.notify_on_success)
-                    .unwrap_or(true);
-
-                let params = MonitorParams {
-                    tmux_session: handle.tmux_session,
-                    pane_id: handle.pane_id,
-                    run_id: run_id.clone(),
-                    job_id: job.name.clone(),
-                    slug: job.slug.clone(),
-                    kill_on_end: job.kill_on_end,
-                    telegram,
-                    telegram_notify: job.telegram_notify.clone(),
-                    notify_target: job.notify_target.clone(),
-                    history: Arc::clone(history),
-                    job_status: Arc::clone(job_status),
-                    notify_on_success,
-                    relay: Arc::clone(relay),
-                    notifier: notifier.clone(),
-                    is_reattach: false,
-                    protected_panes: protected_panes
-                        .map(Arc::clone)
-                        .unwrap_or_else(|| Arc::new(Mutex::new(HashSet::new()))),
-                    trigger_id: trigger_id.clone(),
-                    result_file: result_file.clone(),
-                };
-                tokio::spawn(super::monitor::monitor_pane(params));
-                return;
-            }
-
-            // Non-tmux (binary) job: finalize immediately
-            let finished_at = Utc::now().to_rfc3339();
-
-            log::info!(
-                "[{}] Job '{}' finished with exit code {:?}",
-                run_id,
-                job.name,
-                exit_code
+        Ok((exit_code, stdout, stderr, Some(handle))) => {
+            attach_monitor(
+                job,
+                ctx,
+                handle,
+                &run_id,
+                &started_at,
+                &trigger_id,
+                &result_file,
+                &telegram_config,
+                &mut pane_tx,
+                opts.use_auto_yes,
             );
-
+            // monitor owns finalization; ignore the unused outputs.
+            let _ = (exit_code, stdout, stderr);
+        }
+        Ok((exit_code, stdout, stderr, None)) => {
             let success = matches!(exit_code, Some(0) | None);
-
-            {
-                let new_status = if success {
-                    JobStatus::Success {
-                        last_run: finished_at.clone(),
-                    }
-                } else {
-                    JobStatus::Failed {
-                        last_run: finished_at.clone(),
-                        exit_code: exit_code.unwrap_or(-1),
-                    }
-                };
-                let mut status = job_status.lock();
-                status.insert(job.slug.clone(), new_status.clone());
-                drop(status);
-                crate::relay::push_status_update(relay, &job.slug, &new_status);
-            }
-
-            {
-                let h = history.lock();
-                if let Err(e) =
-                    h.update_finished(&run_id, &finished_at, exit_code, &stdout, &stderr)
-                {
-                    log::error!("Failed to update run record: {}", e);
-                }
-            }
-
-            match job.notify_target {
-                NotifyTarget::Telegram => {
-                    if let Some(ref tg) = telegram_config {
-                        send_job_notification(
-                            tg,
-                            job.telegram_chat_id,
-                            &job.name,
-                            exit_code,
-                            success,
-                            &stdout,
-                            &stderr,
-                        )
-                        .await;
-                    }
-                }
-                NotifyTarget::App => {
-                    let event = if success { "completed" } else { "failed" };
-                    crate::relay::push_job_notification(relay, &job.slug, event, &run_id);
-                    if let Some(ref n) = notifier {
-                        n.notify_job(&job.name, event);
-                    }
-                }
-                NotifyTarget::None => {}
-            }
-
-            if let Some(ref tid) = trigger_id {
-                let parsed = result_file
-                    .as_ref()
-                    .and_then(|p| std::fs::read_to_string(p).ok())
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-                let status_str = if success { "succeeded" } else { "failed" };
-                crate::relay::push_trigger_result(
-                    relay,
-                    tid,
-                    status_str,
+            finalize_run(
+                job,
+                ctx,
+                &run_id,
+                &trigger_id,
+                &result_file,
+                &telegram_config,
+                RunOutcome {
+                    success,
                     exit_code,
-                    parsed,
-                    None,
-                );
-            }
+                    stdout: &stdout,
+                    stderr: &stderr,
+                    error: None,
+                },
+            )
+            .await;
         }
         Err(e) => {
-            let finished_at = Utc::now().to_rfc3339();
-            log::error!("[{}] Job '{}' failed: {}", run_id, job.name, e);
-
-            {
-                let new_status = JobStatus::Failed {
-                    last_run: finished_at.clone(),
-                    exit_code: -1,
-                };
-                let mut status = job_status.lock();
-                status.insert(job.slug.clone(), new_status.clone());
-                drop(status);
-                crate::relay::push_status_update(relay, &job.slug, &new_status);
-            }
-
-            {
-                let h = history.lock();
-                if let Err(e2) =
-                    h.update_finished(&run_id, &finished_at, Some(-1), "", &e.to_string())
-                {
-                    log::error!("Failed to update run record: {}", e2);
-                }
-            }
-
-            match job.notify_target {
-                NotifyTarget::Telegram => {
-                    if let Some(ref tg) = telegram_config {
-                        send_job_notification(
-                            tg,
-                            job.telegram_chat_id,
-                            &job.name,
-                            Some(-1),
-                            false,
-                            "",
-                            &e,
-                        )
-                        .await;
-                    }
-                }
-                NotifyTarget::App => {
-                    crate::relay::push_job_notification(relay, &job.slug, "failed", &run_id);
-                    if let Some(ref n) = notifier {
-                        n.notify_job(&job.name, "failed");
-                    }
-                }
-                NotifyTarget::None => {}
-            }
-
-            if let Some(ref tid) = trigger_id {
-                crate::relay::push_trigger_result(
-                    relay,
-                    tid,
-                    "failed",
-                    Some(-1),
-                    None,
-                    Some(e.clone()),
-                );
-            }
+            finalize_run(
+                job,
+                ctx,
+                &run_id,
+                &trigger_id,
+                &result_file,
+                &telegram_config,
+                RunOutcome {
+                    success: false,
+                    exit_code: Some(-1),
+                    stdout: "",
+                    stderr: "",
+                    error: Some(&e),
+                },
+            )
+            .await;
         }
     }
 }
