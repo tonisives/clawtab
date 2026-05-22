@@ -155,26 +155,58 @@ pub fn move_tmux_windows_to_session(
         return Err("tmux is not installed".to_string());
     }
     let target_session = target_session.trim().to_string();
-    if target_session.is_empty() {
-        return Err("target session is required".to_string());
-    }
-    if is_clawtab_view_session(&target_session) {
-        return Err("cannot move windows into a ClawTab view session".to_string());
-    }
+    validate_target_session(&target_session)?;
 
     let snapshot = list_tmux_debug_windows()?;
     if !snapshot.sessions.iter().any(|s| s == &target_session) {
         return Err(format!("tmux session not found: {}", target_session));
     }
-    let mut next_target_index = snapshot
-        .windows
+    let mut next_target_index = next_window_index(&snapshot.windows, &target_session);
+
+    let requested = normalize_requested_ids(window_ids)?;
+    let rows_by_id = group_windows_by_id(snapshot.windows, &requested);
+    let (candidates, skipped) = pick_candidates(requested, &rows_by_id, &target_session);
+
+    let mut touched_sessions: HashSet<String> = HashSet::new();
+    let mut moved = Vec::new();
+    for window in candidates {
+        let target = format!("{}:{}", target_session, next_target_index);
+        tmux_ok(
+            &["move-window", "-d", "-s", &window.window_id, "-t", &target],
+            "commands::tmux::move_tmux_windows_to_session::move",
+        )?;
+        next_target_index = next_target_index.saturating_add(1);
+        touched_sessions.insert(window.session);
+        touched_sessions.insert(target_session.clone());
+        moved.push(window.window_id);
+    }
+
+    renumber_sessions(&touched_sessions);
+
+    Ok(TmuxMoveResult { moved, skipped })
+}
+
+fn validate_target_session(target_session: &str) -> Result<(), String> {
+    if target_session.is_empty() {
+        return Err("target session is required".to_string());
+    }
+    if is_clawtab_view_session(target_session) {
+        return Err("cannot move windows into a ClawTab view session".to_string());
+    }
+    Ok(())
+}
+
+fn next_window_index(windows: &[TmuxDebugWindow], target_session: &str) -> u32 {
+    windows
         .iter()
         .filter(|w| w.session == target_session)
         .map(|w| w.index)
         .max()
         .unwrap_or(0)
-        .saturating_add(1);
+        .saturating_add(1)
+}
 
+fn normalize_requested_ids(window_ids: Vec<String>) -> Result<HashSet<String>, String> {
     let requested: HashSet<String> = window_ids
         .into_iter()
         .map(|id| id.trim().to_string())
@@ -183,9 +215,15 @@ pub fn move_tmux_windows_to_session(
     if requested.is_empty() {
         return Err("select at least one window".to_string());
     }
+    Ok(requested)
+}
 
+fn group_windows_by_id(
+    windows: Vec<TmuxDebugWindow>,
+    requested: &HashSet<String>,
+) -> HashMap<String, Vec<TmuxDebugWindow>> {
     let mut rows_by_id: HashMap<String, Vec<TmuxDebugWindow>> = HashMap::new();
-    for window in snapshot.windows {
+    for window in windows {
         if requested.contains(&window.window_id) {
             rows_by_id
                 .entry(window.window_id.clone())
@@ -193,7 +231,14 @@ pub fn move_tmux_windows_to_session(
                 .push(window);
         }
     }
+    rows_by_id
+}
 
+fn pick_candidates(
+    requested: HashSet<String>,
+    rows_by_id: &HashMap<String, Vec<TmuxDebugWindow>>,
+    target_session: &str,
+) -> (Vec<TmuxDebugWindow>, Vec<String>) {
     let mut candidates = Vec::new();
     let mut skipped = Vec::new();
     for window_id in requested {
@@ -212,36 +257,22 @@ pub fn move_tmux_windows_to_session(
             .unwrap();
         candidates.push(source);
     }
-
     candidates.sort_by(|a, b| {
         a.session
             .cmp(&b.session)
             .then(a.index.cmp(&b.index))
             .then(a.window_id.cmp(&b.window_id))
     });
+    (candidates, skipped)
+}
 
-    let mut touched_sessions: HashSet<String> = HashSet::new();
-    let mut moved = Vec::new();
-    for window in candidates {
-        let target = format!("{}:{}", target_session, next_target_index);
-        tmux_ok(
-            &["move-window", "-d", "-s", &window.window_id, "-t", &target],
-            "commands::tmux::move_tmux_windows_to_session::move",
-        )?;
-        next_target_index = next_target_index.saturating_add(1);
-        touched_sessions.insert(window.session);
-        touched_sessions.insert(target_session.clone());
-        moved.push(window.window_id);
-    }
-
-    for session in touched_sessions {
+fn renumber_sessions(sessions: &HashSet<String>) {
+    for session in sessions {
         let _ = tmux_ok(
-            &["move-window", "-r", "-t", &session],
+            &["move-window", "-r", "-t", session],
             "commands::tmux::move_tmux_windows_to_session::renumber",
         );
     }
-
-    Ok(TmuxMoveResult { moved, skipped })
 }
 
 #[tauri::command]
