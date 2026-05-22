@@ -245,94 +245,24 @@ pub fn duplicate_job(
         .cloned()
         .ok_or_else(|| format!("Job not found: {}", source_slug))?;
 
-    // Read source job.md from central location
-    let source_job_md = crate::config::jobs::central_job_md_path(&source_slug);
-    let job_md_content = source_job_md
-        .as_ref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .unwrap_or_default();
-
-    // Use the group from existing jobs in the target project, falling back to "default"
-    let group = config
-        .jobs
-        .iter()
-        .find(|j| j.folder_path.as_deref() == Some(&target_project_path))
-        .map(|j| j.group.clone())
-        .unwrap_or_else(|| "default".to_string());
-
-    // Generate unique name
-    let existing_names: std::collections::HashSet<&str> =
-        config.jobs.iter().map(|j| j.name.as_str()).collect();
-    let base_name = format!("{}-copy", source.name);
-    let copy_name = if !existing_names.contains(base_name.as_str()) {
-        base_name
-    } else {
-        let mut i = 2;
-        loop {
-            let candidate = format!("{}-copy-{}", source.name, i);
-            if !existing_names.contains(candidate.as_str()) {
-                break candidate;
-            }
-            i += 1;
-        }
-    };
-
+    let job_md_content = read_source_job_md(&source_slug);
+    let group = group_for_target(&config.jobs, &target_project_path);
+    let copy_name = unique_copy_name(&config.jobs, &source.name);
     let job_id = source
         .job_id
         .clone()
         .unwrap_or_else(|| "default".to_string());
 
-    // Create new Job cloning config from source
-    let mut new_job = Job {
-        name: copy_name,
-        job_type: source.job_type.clone(),
-        enabled: false,
-        path: source.path.clone(),
-        args: source.args.clone(),
-        cron: source.cron.clone(),
-        secret_keys: source.secret_keys.clone(),
-        env: source.env.clone(),
-        work_dir: None,
-        tmux_session: source.tmux_session.clone(),
-        aerospace_workspace: source.aerospace_workspace.clone(),
-        folder_path: Some(target_project_path.clone()),
-        job_id: Some(job_id.clone()),
-        telegram_chat_id: source.telegram_chat_id,
-        telegram_log_mode: source.telegram_log_mode.clone(),
-        telegram_notify: source.telegram_notify.clone(),
-        notify_target: source.notify_target.clone(),
-        group,
-        slug: String::new(),
-        skill_paths: source.skill_paths.clone(),
-        params: source.params.clone(),
-        kill_on_end: source.kill_on_end,
-        auto_yes: source.auto_yes,
-        agent_provider: source.agent_provider,
-        agent_model: source.agent_model.clone(),
-        added_at: Some(chrono::Utc::now().to_rfc3339()),
-        max_history: source.max_history,
-    };
-
-    // Derive slug and save
+    let mut new_job = clone_job_with_overrides(&source, copy_name, group, &target_project_path, &job_id);
     new_job.slug =
         crate::config::jobs::derive_slug(&target_project_path, Some(&job_id), &config.jobs);
     config.save_job(&new_job)?;
 
-    // Save job.md to central location
-    if !job_md_content.is_empty() {
-        if let Some(jobs_dir) = crate::config::config_dir().map(|p| p.join("jobs")) {
-            let central_dir = jobs_dir.join(&new_job.slug);
-            let _ = std::fs::create_dir_all(&central_dir);
-            let _ = std::fs::write(central_dir.join("job.md"), &job_md_content);
-        }
-    }
+    write_central_job_md(&new_job.slug, &job_md_content);
 
-    // Refresh in-memory list
     *config = crate::config::jobs::JobsConfig::load();
     let settings = state.settings.lock().clone();
     let jobs = config.jobs.clone();
-
-    // Find the saved job to return
     let result = config
         .jobs
         .iter()
@@ -347,6 +277,86 @@ pub fn duplicate_job(
     let _ = app.emit("jobs-changed", ());
 
     Ok(result)
+}
+
+fn read_source_job_md(source_slug: &str) -> String {
+    crate::config::jobs::central_job_md_path(source_slug)
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .unwrap_or_default()
+}
+
+fn group_for_target(jobs: &[Job], target_project_path: &str) -> String {
+    jobs.iter()
+        .find(|j| j.folder_path.as_deref() == Some(target_project_path))
+        .map(|j| j.group.clone())
+        .unwrap_or_else(|| "default".to_string())
+}
+
+fn unique_copy_name(jobs: &[Job], source_name: &str) -> String {
+    let existing: std::collections::HashSet<&str> =
+        jobs.iter().map(|j| j.name.as_str()).collect();
+    let base = format!("{}-copy", source_name);
+    if !existing.contains(base.as_str()) {
+        return base;
+    }
+    let mut i = 2;
+    loop {
+        let candidate = format!("{}-copy-{}", source_name, i);
+        if !existing.contains(candidate.as_str()) {
+            return candidate;
+        }
+        i += 1;
+    }
+}
+
+fn clone_job_with_overrides(
+    source: &Job,
+    copy_name: String,
+    group: String,
+    target_project_path: &str,
+    job_id: &str,
+) -> Job {
+    Job {
+        name: copy_name,
+        job_type: source.job_type.clone(),
+        enabled: false,
+        path: source.path.clone(),
+        args: source.args.clone(),
+        cron: source.cron.clone(),
+        secret_keys: source.secret_keys.clone(),
+        env: source.env.clone(),
+        work_dir: None,
+        tmux_session: source.tmux_session.clone(),
+        aerospace_workspace: source.aerospace_workspace.clone(),
+        folder_path: Some(target_project_path.to_string()),
+        job_id: Some(job_id.to_string()),
+        telegram_chat_id: source.telegram_chat_id,
+        telegram_log_mode: source.telegram_log_mode.clone(),
+        telegram_notify: source.telegram_notify.clone(),
+        notify_target: source.notify_target.clone(),
+        group,
+        slug: String::new(),
+        skill_paths: source.skill_paths.clone(),
+        params: source.params.clone(),
+        kill_on_end: source.kill_on_end,
+        auto_yes: source.auto_yes,
+        agent_provider: source.agent_provider,
+        agent_model: source.agent_model.clone(),
+        added_at: Some(chrono::Utc::now().to_rfc3339()),
+        max_history: source.max_history,
+    }
+}
+
+fn write_central_job_md(slug: &str, content: &str) {
+    if content.is_empty() {
+        return;
+    }
+    if let Some(jobs_dir) = crate::config::config_dir().map(|p| p.join("jobs")) {
+        let central_dir = jobs_dir.join(slug);
+        let _ = std::fs::create_dir_all(&central_dir);
+        let _ = std::fs::write(central_dir.join("job.md"), content);
+    }
 }
 
 #[tauri::command]
@@ -741,6 +751,81 @@ fn generate_agent_cwt_context(
     crate::agent::generate_agent_cwt_context(settings, jobs, chat_id)
 }
 
+/// Default Bash commands allowed for automated Claude Code jobs.
+const CLAUDE_ALLOWED_BASH: &[&str] = &[
+    "Bash(curl *)",
+    "Bash(cwtctl *)",
+    "Bash(cwtctl)",
+    "Bash(kill *)",
+    "Bash(cat *)",
+    "Bash(ls *)",
+    "Bash(find *)",
+    "Bash(grep *)",
+    "Bash(rg *)",
+    "Bash(git *)",
+    "Bash(mkdir *)",
+    "Bash(cp *)",
+    "Bash(mv *)",
+    "Bash(head *)",
+    "Bash(tail *)",
+    "Bash(wc *)",
+    "Bash(sort *)",
+    "Bash(uniq *)",
+    "Bash(jq *)",
+    "Bash(sed *)",
+    "Bash(awk *)",
+    "Bash(chmod *)",
+    "Bash(osascript *)",
+    "Bash(echo *)",
+    "Bash(printf *)",
+    "Bash(test *)",
+    "Bash(touch *)",
+    "Bash(date *)",
+    "Bash(env *)",
+    "Bash(which *)",
+    "Bash(pwd)",
+    "Bash(cd *)",
+    "Bash(npm *)",
+    "Bash(npx *)",
+    "Bash(node *)",
+    "Bash(bun *)",
+    "Bash(python *)",
+    "Bash(python3 *)",
+    "Bash(pip *)",
+    "Bash(pip3 *)",
+    "Bash(cargo *)",
+    "Bash(rustc *)",
+    "Bash(docker *)",
+    "Bash(psql *)",
+    "Bash(sqlite3 *)",
+    "Bash(tar *)",
+    "Bash(zip *)",
+    "Bash(unzip *)",
+    "Bash(wget *)",
+    "Bash(diff *)",
+    "Bash(xargs *)",
+    "Bash(tee *)",
+    "Bash(cut *)",
+    "Bash(tr *)",
+    "Bash(basename *)",
+    "Bash(dirname *)",
+    "Bash(realpath *)",
+    "Bash(readlink *)",
+    "Bash(stat *)",
+    "Bash(file *)",
+    "Bash(du *)",
+    "Bash(df *)",
+    "Bash(uname *)",
+    "Bash(whoami)",
+    "Bash(hostname)",
+    "Bash(brew *)",
+    "Read(**)",
+    "Edit(**)",
+    "Write(**)",
+    "WebSearch(*)",
+    "WebFetch(*)",
+];
+
 /// Write `.claude/settings.local.json` in the given directory with default
 /// permissions for automated Claude Code jobs (curl, cwtctl, kill, etc.).
 fn write_claude_settings(dir: &std::path::Path) {
@@ -751,81 +836,7 @@ fn write_claude_settings(dir: &std::path::Path) {
     }
 
     let settings = serde_json::json!({
-        "permissions": {
-            "allow": [
-                "Bash(curl *)",
-                "Bash(cwtctl *)",
-                "Bash(cwtctl)",
-                "Bash(kill *)",
-                "Bash(cat *)",
-                "Bash(ls *)",
-                "Bash(find *)",
-                "Bash(grep *)",
-                "Bash(rg *)",
-                "Bash(git *)",
-                "Bash(mkdir *)",
-                "Bash(cp *)",
-                "Bash(mv *)",
-                "Bash(head *)",
-                "Bash(tail *)",
-                "Bash(wc *)",
-                "Bash(sort *)",
-                "Bash(uniq *)",
-                "Bash(jq *)",
-                "Bash(sed *)",
-                "Bash(awk *)",
-                "Bash(chmod *)",
-                "Bash(osascript *)",
-                "Bash(echo *)",
-                "Bash(printf *)",
-                "Bash(test *)",
-                "Bash(touch *)",
-                "Bash(date *)",
-                "Bash(env *)",
-                "Bash(which *)",
-                "Bash(pwd)",
-                "Bash(cd *)",
-                "Bash(npm *)",
-                "Bash(npx *)",
-                "Bash(node *)",
-                "Bash(bun *)",
-                "Bash(python *)",
-                "Bash(python3 *)",
-                "Bash(pip *)",
-                "Bash(pip3 *)",
-                "Bash(cargo *)",
-                "Bash(rustc *)",
-                "Bash(docker *)",
-                "Bash(psql *)",
-                "Bash(sqlite3 *)",
-                "Bash(tar *)",
-                "Bash(zip *)",
-                "Bash(unzip *)",
-                "Bash(wget *)",
-                "Bash(diff *)",
-                "Bash(xargs *)",
-                "Bash(tee *)",
-                "Bash(cut *)",
-                "Bash(tr *)",
-                "Bash(basename *)",
-                "Bash(dirname *)",
-                "Bash(realpath *)",
-                "Bash(readlink *)",
-                "Bash(stat *)",
-                "Bash(file *)",
-                "Bash(du *)",
-                "Bash(df *)",
-                "Bash(uname *)",
-                "Bash(whoami)",
-                "Bash(hostname)",
-                "Bash(brew *)",
-                "Read(**)",
-                "Edit(**)",
-                "Write(**)",
-                "WebSearch(*)",
-                "WebFetch(*)",
-            ]
-        }
+        "permissions": { "allow": CLAUDE_ALLOWED_BASH }
     });
 
     let path = claude_dir.join("settings.local.json");
