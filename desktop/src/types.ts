@@ -151,6 +151,9 @@ export interface AppSettings {
   hide_titlebar: boolean;
   process_overrides: Record<string, DetectedProcessOverride>;
   shortcuts: ShortcutSettings;
+  notify_questions_local: boolean;
+  notify_questions_remote: boolean;
+  auto_release_on_blur: boolean;
 }
 
 export interface ToolInfo {

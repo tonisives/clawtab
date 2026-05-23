@@ -203,6 +203,21 @@ impl PtyManager {
             let _ = self.destroy(&pane_id, None);
         }
     }
+
+    /// Release every captured pane back to its origin tmux window.
+    /// Returns the pane IDs that were released so callers can log or report.
+    pub fn suspend_all(&mut self) -> Vec<String> {
+        let pane_ids: Vec<String> = self.sessions.keys().cloned().collect();
+        let mut released = Vec::new();
+        for pane_id in &pane_ids {
+            if let Err(e) = self.release(pane_id) {
+                log::warn!("suspend_all: release {} failed: {}", pane_id, e);
+                continue;
+            }
+            released.push(pane_id.clone());
+        }
+        released
+    }
 }
 
 pub type SharedPtyManager = Arc<Mutex<PtyManager>>;

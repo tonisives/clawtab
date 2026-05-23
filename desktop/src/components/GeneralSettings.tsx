@@ -216,6 +216,49 @@ function GeneralSettingsContent() {
       </div>
 
       <div className="field-group">
+        <span className="field-group-title">Behavior</span>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.auto_release_on_blur}
+              onChange={(e) => update({ auto_release_on_blur: e.target.checked })}
+            />
+            Release captured panes when ClawTab loses focus
+          </label>
+          <span className="hint">
+            Returns panes to their original tmux windows on blur, re-captures on focus. 3 second debounce.
+          </span>
+        </div>
+      </div>
+
+      <div className="field-group">
+        <span className="field-group-title">Notifications</span>
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.notify_questions_local}
+              onChange={(e) => update({ notify_questions_local: e.target.checked })}
+            />
+            Desktop question notifications
+          </label>
+          <span className="hint">Show local macOS notifications when an agent asks a question</span>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={settings.notify_questions_remote}
+              onChange={(e) => update({ notify_questions_remote: e.target.checked })}
+            />
+            Remote question notifications
+          </label>
+          <span className="hint">Send question notifications to connected remote clients</span>
+        </div>
+      </div>
+
+      <div className="field-group">
         <span className="field-group-title">About</span>
         <div className="form-group">
           <label>Version</label>

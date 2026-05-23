@@ -17,6 +17,42 @@ import { attachPaneShortcuts } from "./paneShortcuts";
 import { setupPaneInstance } from "./paneSetup";
 import { RELEASE_GRACE_MS, type PaneInstance } from "./types";
 
+type PtySpawnResult = {
+  native_cols: number;
+  native_rows: number;
+  attach_generation: number;
+};
+
+let resumeListenerInstalled = false;
+function ensureResumeListener() {
+  if (resumeListenerInstalled) return;
+  resumeListenerInstalled = true;
+  listen("panes-resume-requested", () => {
+    for (const inst of paneInstances.values()) {
+      if (inst.cancelled) continue;
+      const cols = inst.terminal.cols;
+      const rows = inst.terminal.rows;
+      if (!cols || !rows) continue;
+      invoke<PtySpawnResult>("pty_spawn", {
+        paneId: inst.paneId,
+        tmuxSession: inst.tmuxSession,
+        cols,
+        rows,
+        group: inst.resolvedGroup,
+      })
+        .then((res) => {
+          inst.attachGeneration = res.attach_generation;
+          debugXtermPane(inst.paneId, "resume pty_spawn ok", {
+            attachGeneration: res.attach_generation,
+          });
+        })
+        .catch((err) => {
+          debugXtermPane(inst.paneId, "resume pty_spawn failed", { error: String(err) });
+        });
+    }
+  }).catch(() => {});
+}
+
 function createContainer(): HTMLDivElement {
   const container = document.createElement("div");
   container.style.flex = "1";
@@ -143,6 +179,7 @@ function teardownPaneInstance(inst: PaneInstance) {
 }
 
 export function acquirePane(paneId: string, tmuxSession: string, resolvedGroup: string): PaneInstance {
+  ensureResumeListener();
   let inst = paneInstances.get(paneId);
   const created = !inst;
   if (!inst) {
