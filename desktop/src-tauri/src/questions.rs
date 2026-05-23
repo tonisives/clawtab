@@ -6,6 +6,7 @@ use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
 use crate::agent_session::{detect_process_provider, ProcessSnapshot};
 use crate::config::jobs::{JobStatus, JobsConfig};
+use crate::config::settings::AppSettings;
 use crate::relay::RelayHandle;
 
 /// Strip ANSI escape sequences from text.
@@ -439,6 +440,7 @@ fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
 /// question detection is expensive because it scans tmux panes and captures output,
 /// so we back off heavily when there are no active prompts to watch.
 pub async fn question_detection_loop(
+    settings: Arc<Mutex<AppSettings>>,
     jobs_config: Arc<Mutex<JobsConfig>>,
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     relay: Arc<Mutex<Option<RelayHandle>>>,
@@ -473,15 +475,32 @@ pub async fn question_detection_loop(
         log::debug!("[questions] storing {} active questions", questions.len());
         *active_questions.lock() = questions.clone();
 
-        crate::notifications::notify_new_questions(
-            notifier.as_ref(),
-            &questions,
-            &notification_state,
-            &auto_yes_panes,
-        );
+        let settings_snapshot = settings.lock().clone();
+        let notifiable_questions = filter_visible_questions(&questions);
 
+        if settings_snapshot.notify_questions_local {
+            crate::notifications::notify_new_questions(
+                notifier.as_ref(),
+                &notifiable_questions,
+                &notification_state,
+                &auto_yes_panes,
+            );
+        } else {
+            crate::notifications::notify_new_questions(
+                notifier.as_ref(),
+                &[],
+                &notification_state,
+                &auto_yes_panes,
+            );
+        }
+
+        let relay_questions = if settings_snapshot.notify_questions_remote {
+            notifiable_questions
+        } else {
+            Vec::new()
+        };
         send_relay_questions(
-            questions,
+            relay_questions,
             &auto_yes_panes,
             &relay,
             &mut last_sent_ids,
@@ -491,6 +510,106 @@ pub async fn question_detection_loop(
         let sleep_ms = pick_sleep_ms(&auto_yes_panes, &question_cache, &processes);
         tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
     }
+}
+
+fn filter_visible_questions(questions: &[ClaudeQuestion]) -> Vec<ClaudeQuestion> {
+    questions
+        .iter()
+        .filter(|q| !should_suppress_question_notification(q))
+        .cloned()
+        .collect()
+}
+
+fn should_suppress_question_notification(question: &ClaudeQuestion) -> bool {
+    if !is_user_active() {
+        return false;
+    }
+
+    if is_clawtab_frontmost() {
+        log::debug!(
+            "[questions] suppressing notification for {} because ClawTab is frontmost",
+            question.question_id
+        );
+        return true;
+    }
+
+    match crate::tmux::is_active_attached_pane(&question.pane_id) {
+        Ok(true) => {
+            log::debug!(
+                "[questions] suppressing notification for {} because pane {} is active in tmux",
+                question.question_id,
+                question.pane_id
+            );
+            true
+        }
+        Ok(false) => false,
+        Err(e) => {
+            log::debug!(
+                "[questions] tmux active-pane suppression check failed for {}: {}",
+                question.pane_id,
+                e
+            );
+            false
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn is_clawtab_frontmost() -> bool {
+    let output = std::process::Command::new("osascript")
+        .args([
+            "-e",
+            "tell application \"System Events\" to get bundle identifier of first application process whose frontmost is true",
+        ])
+        .output();
+    let Ok(output) = output else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    let bundle_id = String::from_utf8_lossy(&output.stdout);
+    matches!(
+        bundle_id.trim(),
+        "cc.clawtab" | "cc.clawtab.engine" | "com.tonisives.clawtab"
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_clawtab_frontmost() -> bool {
+    false
+}
+
+#[cfg(target_os = "macos")]
+fn is_user_active() -> bool {
+    const ACTIVE_IDLE_SECONDS: u64 = 60;
+    let output = std::process::Command::new("ioreg")
+        .args(["-c", "IOHIDSystem"])
+        .output();
+    let Ok(output) = output else {
+        return true;
+    };
+    if !output.status.success() {
+        return true;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let Some(raw) = stdout
+        .lines()
+        .find_map(|line| line.split("HIDIdleTime").nth(1))
+        .and_then(|tail| tail.split('=').nth(1))
+        .map(str::trim)
+    else {
+        return true;
+    };
+    let Ok(nanos) = raw.parse::<u64>() else {
+        return true;
+    };
+    nanos / 1_000_000_000 < ACTIVE_IDLE_SECONDS
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_user_active() -> bool {
+    false
 }
 
 fn prune_stale_auto_yes_panes(
