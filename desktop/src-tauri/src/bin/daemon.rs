@@ -7,7 +7,7 @@ use clawtab_lib::config::settings::AppSettings;
 use clawtab_lib::events::IpcBroadcastEventSink;
 use clawtab_lib::history::HistoryStore;
 use clawtab_lib::ipc::{self, IpcCommand, IpcRelayStatus, IpcResponse};
-use clawtab_lib::notifications::OsascriptNotifier;
+use clawtab_lib::notifications::IpcNotifier;
 use clawtab_lib::secrets::SecretsManager;
 use clawtab_lib::telegram;
 
@@ -62,7 +62,8 @@ fn main() {
     let event_subscribers = ipc::new_event_subscribers();
     let event_sink: Arc<dyn clawtab_lib::events::EventSink> =
         Arc::new(IpcBroadcastEventSink::new(event_subscribers.clone()));
-    let notifier: Arc<dyn clawtab_lib::notifications::Notifier> = Arc::new(OsascriptNotifier);
+    let notifier: Arc<dyn clawtab_lib::notifications::Notifier> =
+        Arc::new(IpcNotifier::new(event_subscribers.clone()));
 
     let ctx = clawtab_lib::job_context::JobContext {
         secrets: Arc::clone(&secrets),

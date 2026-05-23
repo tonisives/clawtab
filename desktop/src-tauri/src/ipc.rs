@@ -158,6 +158,10 @@ pub enum IpcEvent {
     },
     QuestionsChanged,
     RelayStatusChanged(IpcRelayStatus),
+    /// Daemon-originated notification request. The desktop client, when
+    /// subscribed, displays this via tauri-plugin-notification. The daemon
+    /// falls back to native engine notifications when no subscriber is present.
+    Notification { title: String, body: String },
 }
 
 /// Registry of connected event subscribers. Each entry is a write half of a
@@ -168,17 +172,19 @@ pub fn new_event_subscribers() -> EventSubscribers {
     Arc::new(AsyncMutex::new(Vec::new()))
 }
 
-/// Broadcasts an event to all subscribers. Dead subscribers are pruned.
-pub async fn broadcast_event(subs: &EventSubscribers, event: &IpcEvent) {
+/// Broadcasts an event to all subscribers and returns the number of
+/// subscribers that successfully received it. Dead subscribers are pruned.
+pub async fn broadcast_event(subs: &EventSubscribers, event: &IpcEvent) -> usize {
     let serialized = match serde_json::to_string(event) {
         Ok(s) => s,
         Err(e) => {
             log::error!("Failed to serialize IPC event: {}", e);
-            return;
+            return 0;
         }
     };
     let payload = format!("{}\n", serialized);
 
+    let mut delivered = 0;
     let mut guard = subs.lock().await;
     let mut i = 0;
     while i < guard.len() {
@@ -194,9 +200,11 @@ pub async fn broadcast_event(subs: &EventSubscribers, event: &IpcEvent) {
         if res.is_err() {
             guard.swap_remove(i);
         } else {
+            delivered += 1;
             i += 1;
         }
     }
+    delivered
 }
 
 /// Generic request/response Unix-socket server. Handler is parameterized over
