@@ -51,7 +51,7 @@ use parking_lot::Mutex;
 #[cfg(feature = "desktop")]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    Emitter, Manager,
+    Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
 };
 
 #[cfg(feature = "desktop")]
@@ -147,34 +147,66 @@ fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
     })
 }
 
+/// Show a debug window, creating it on first use. The debug windows are not
+/// declared in tauri.conf.json so they don't each spawn a WebContent renderer
+/// at startup; they're built lazily the first time the user opens them from the
+/// View menu, then reused (shown/focused) on subsequent opens.
 #[cfg(feature = "desktop")]
-fn open_debug_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("debug") {
+fn show_or_create_debug_window(
+    app: &tauri::AppHandle,
+    label: &str,
+    url: &str,
+    title: &str,
+    width: f64,
+    height: f64,
+) {
+    if let Some(window) = app.get_webview_window(label) {
         let _ = window.show();
         let _ = window.set_focus();
-    } else {
-        log::warn!("debug window not registered in tauri.conf.json");
+        return;
     }
+
+    match WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
+        .title(title)
+        .inner_size(width, height)
+        .center()
+        .build()
+    {
+        Ok(window) => {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        Err(e) => log::warn!("failed to create {label} window: {e}"),
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn open_debug_window(app: &tauri::AppHandle) {
+    show_or_create_debug_window(app, "debug", "/debug.html", "ClawTab Debug", 1000.0, 700.0);
 }
 
 #[cfg(feature = "desktop")]
 fn open_pty_debug_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("pty_debug") {
-        let _ = window.show();
-        let _ = window.set_focus();
-    } else {
-        log::warn!("pty_debug window not registered in tauri.conf.json");
-    }
+    show_or_create_debug_window(
+        app,
+        "pty_debug",
+        "/pty_debug.html",
+        "ClawTab PTY Debug",
+        1200.0,
+        800.0,
+    );
 }
 
 #[cfg(feature = "desktop")]
 fn open_tmux_debug_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("tmux_debug") {
-        let _ = window.show();
-        let _ = window.set_focus();
-    } else {
-        log::warn!("tmux_debug window not registered in tauri.conf.json");
-    }
+    show_or_create_debug_window(
+        app,
+        "tmux_debug",
+        "/tmux_debug.html",
+        "ClawTab Tmux Debug",
+        1100.0,
+        760.0,
+    );
 }
 
 #[cfg(feature = "desktop")]
