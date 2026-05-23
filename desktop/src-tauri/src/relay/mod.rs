@@ -258,112 +258,157 @@ pub async fn connect_loop(params: ConnectLoopParams) {
     let max_backoff = Duration::from_secs(60);
 
     loop {
-        // Check subscription before attempting WS connect
-        let (access_token, refresh_token_val) = {
-            let s = secrets.lock();
-            (
-                s.get("relay_access_token").cloned().unwrap_or_default(),
-                s.get("relay_refresh_token").cloned().unwrap_or_default(),
-            )
-        };
-
-        if !access_token.is_empty() {
-            match check_subscription_http(&server_url, &access_token, &refresh_token_val).await {
-                Ok((subscribed, new_access, new_refresh)) => {
-                    // Save refreshed tokens
-                    if let (Some(at), Some(rt)) = (new_access, new_refresh) {
-                        let mut s = secrets.lock();
-                        let _ = s.set("relay_access_token", &at);
-                        let _ = s.set("relay_refresh_token", &rt);
-                    }
-                    if !subscribed {
-                        log::info!("Relay: subscription required, not connecting");
-                        *relay_sub_required.lock() = true;
-                        return;
-                    }
-                    // Subscribed - clear flag and proceed
-                    *relay_sub_required.lock() = false;
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Relay: subscription check failed: {}, proceeding with WS",
-                        e
-                    );
-                }
-            }
+        match precheck_subscription(&secrets, &server_url, &relay_sub_required).await {
+            SubscriptionResult::Ok => {}
+            SubscriptionResult::Unsubscribed => return,
         }
 
         log::info!("Relay: connecting to {}", ws_url);
-
         let full_ws_url = format!("{}?device_token={}", ws_url, device_token);
-        match tokio_tungstenite::connect_async(&full_ws_url).await {
-            Ok((ws_stream, _)) => {
-                log::info!("Relay: connected");
-                backoff = Duration::from_secs(1);
-                *relay_sub_required.lock() = false;
-
-                let (ws_sink, ws_stream) = ws_stream.split();
-                let (tx, rx) = mpsc::unbounded_channel::<String>();
-                let cancel = tokio_util::sync::CancellationToken::new();
-
-                let handle = RelayHandle {
-                    tx: tx.clone(),
-                    cancel: cancel.clone(),
-                };
-
-                push_full_state(&handle, &jobs_config, &job_status);
-                // Push auto-yes pane state
-                {
-                    let pane_ids: Vec<String> =
-                        auto_yes_panes.lock().iter().cloned().collect();
-                    handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
-                }
-
-                {
-                    let mut guard = relay.lock();
-                    *guard = Some(handle);
-                }
-
-                run_session(
-                    SessionChannels {
-                        ws_sink,
-                        ws_stream,
-                        rx,
-                        tx,
-                        cancel: cancel.clone(),
-                    },
-                    &jobs_config,
-                    &ctx,
-                    &pty_manager,
-                    event_sink.as_ref(),
-                )
-                .await;
-
-                {
-                    let mut guard = relay.lock();
-                    *guard = None;
-                }
-
-                if cancel.is_cancelled() {
-                    log::info!("Relay: disconnected by user");
-                    return;
-                }
-
-                log::info!("Relay: connection lost, reconnecting in {:?}", backoff);
-            }
-            Err(e) => {
-                let err_str = e.to_string();
-                log::error!("Relay: connect failed: {}", err_str);
-                if err_str.contains("403") {
-                    log::info!("Relay: subscription required (403 from server)");
-                    *relay_sub_required.lock() = true;
-                    return;
-                }
-            }
+        let outcome = attempt_session(
+            &full_ws_url,
+            &relay_sub_required,
+            &relay,
+            &auto_yes_panes,
+            &jobs_config,
+            &job_status,
+            &ctx,
+            &pty_manager,
+            event_sink.as_ref(),
+            &mut backoff,
+        )
+        .await;
+        if matches!(outcome, SessionOutcome::Done) {
+            return;
         }
 
         tokio::time::sleep(backoff).await;
         backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+enum SubscriptionResult {
+    Ok,
+    Unsubscribed,
+}
+
+async fn precheck_subscription(
+    secrets: &Arc<Mutex<crate::secrets::SecretsManager>>,
+    server_url: &str,
+    relay_sub_required: &Arc<Mutex<bool>>,
+) -> SubscriptionResult {
+    let (access_token, refresh_token_val) = {
+        let s = secrets.lock();
+        (
+            s.get("relay_access_token").cloned().unwrap_or_default(),
+            s.get("relay_refresh_token").cloned().unwrap_or_default(),
+        )
+    };
+    if access_token.is_empty() {
+        return SubscriptionResult::Ok;
+    }
+    match check_subscription_http(server_url, &access_token, &refresh_token_val).await {
+        Ok((subscribed, new_access, new_refresh)) => {
+            if let (Some(at), Some(rt)) = (new_access, new_refresh) {
+                let mut s = secrets.lock();
+                let _ = s.set("relay_access_token", &at);
+                let _ = s.set("relay_refresh_token", &rt);
+            }
+            if !subscribed {
+                log::info!("Relay: subscription required, not connecting");
+                *relay_sub_required.lock() = true;
+                return SubscriptionResult::Unsubscribed;
+            }
+            *relay_sub_required.lock() = false;
+            SubscriptionResult::Ok
+        }
+        Err(e) => {
+            log::warn!(
+                "Relay: subscription check failed: {}, proceeding with WS",
+                e
+            );
+            SubscriptionResult::Ok
+        }
+    }
+}
+
+enum SessionOutcome {
+    Done,
+    Retry,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn attempt_session(
+    full_ws_url: &str,
+    relay_sub_required: &Arc<Mutex<bool>>,
+    relay: &Arc<Mutex<Option<RelayHandle>>>,
+    auto_yes_panes: &Arc<Mutex<std::collections::HashSet<String>>>,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    job_status: &Arc<Mutex<std::collections::HashMap<String, JobStatus>>>,
+    ctx: &crate::job_context::JobContext,
+    pty_manager: &SharedPtyManager,
+    event_sink: &dyn crate::events::EventSink,
+    backoff: &mut Duration,
+) -> SessionOutcome {
+    match tokio_tungstenite::connect_async(full_ws_url).await {
+        Ok((ws_stream, _)) => {
+            log::info!("Relay: connected");
+            *backoff = Duration::from_secs(1);
+            *relay_sub_required.lock() = false;
+
+            let (ws_sink, ws_stream) = ws_stream.split();
+            let (tx, rx) = mpsc::unbounded_channel::<String>();
+            let cancel = tokio_util::sync::CancellationToken::new();
+            let handle = RelayHandle {
+                tx: tx.clone(),
+                cancel: cancel.clone(),
+            };
+
+            push_full_state(&handle, jobs_config, job_status);
+            let pane_ids: Vec<String> = auto_yes_panes.lock().iter().cloned().collect();
+            handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
+            {
+                let mut guard = relay.lock();
+                *guard = Some(handle);
+            }
+
+            run_session(
+                SessionChannels {
+                    ws_sink,
+                    ws_stream,
+                    rx,
+                    tx,
+                    cancel: cancel.clone(),
+                },
+                jobs_config,
+                ctx,
+                pty_manager,
+                event_sink,
+            )
+            .await;
+
+            {
+                let mut guard = relay.lock();
+                *guard = None;
+            }
+
+            if cancel.is_cancelled() {
+                log::info!("Relay: disconnected by user");
+                return SessionOutcome::Done;
+            }
+            log::info!("Relay: connection lost, reconnecting in {:?}", backoff);
+            SessionOutcome::Retry
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            log::error!("Relay: connect failed: {}", err_str);
+            if err_str.contains("403") {
+                log::info!("Relay: subscription required (403 from server)");
+                *relay_sub_required.lock() = true;
+                return SessionOutcome::Done;
+            }
+            SessionOutcome::Retry
+        }
     }
 }
 
