@@ -13,9 +13,9 @@ SRC_TAURI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 CARGO_TARGET_DIR_RESOLVED="${CARGO_TARGET_DIR:-/Volumes/sam/build/rust/targets}"
 DAEMON_BIN="$CARGO_TARGET_DIR_RESOLVED/debug/clawtab-daemon"
-# Engine .app lives next to other dev build artifacts under the cargo target
-# dir, so no root-owned paths (/usr/local) are involved.
-ENGINE_APP="$CARGO_TARGET_DIR_RESOLVED/debug/Clawtab Engine.app"
+# Match the installed LaunchAgent path so launchd starts the bundled app
+# identity rather than a bare daemon binary or symlink.
+ENGINE_APP="${CLAWTAB_ENGINE_APP:-/usr/local/Clawtab Engine.app}"
 
 if [[ ! -f "$DAEMON_BIN" ]]; then
   echo "[dev-daemon] no debug binary at $DAEMON_BIN; skipping reload" >&2

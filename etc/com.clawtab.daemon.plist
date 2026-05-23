@@ -6,7 +6,9 @@
     <string>com.clawtab.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/clawtab-daemon</string>
+        <string>/usr/bin/open</string>
+        <string>-W</string>
+        <string>/usr/local/Clawtab Engine.app</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
