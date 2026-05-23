@@ -4,6 +4,8 @@ use parking_lot::Mutex;
 
 use clawtab_protocol::ClaudeQuestion;
 
+use crate::ipc::{self, EventSubscribers, IpcEvent};
+
 /// Trait for sending notifications. Abstracts over Tauri plugin notifications
 /// so that daemon mode can fall back to osascript.
 pub trait Notifier: Send + Sync {
@@ -86,30 +88,20 @@ pub struct OsascriptNotifier;
 
 impl OsascriptNotifier {
     fn send_notification(title: &str, body: &str) -> Result<(), String> {
-        // Try terminal-notifier first for proper app icon.
-        // Use spawn() not output() - terminal-notifier blocks until dismissed.
-        let tn_result = std::process::Command::new("terminal-notifier")
-            .args([
-                "-title",
-                title,
-                "-message",
-                body,
-                "-sender",
-                "cc.clawtab",
-                "-sound",
-                "default",
-            ])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-
-        match tn_result {
-            Ok(_) => return Ok(()),
-            _ => {}
+        // Preferred path: UNUserNotificationCenter via objc2-user-notifications.
+        // Works whenever the daemon is launched from inside Clawtab Engine.app
+        // (the launchd plist points at the .app's binary). No subprocess, no
+        // leak, native ClawTab icon from the bundle's Info.plist.
+        #[cfg(target_os = "macos")]
+        {
+            if crate::native_notifications::send(title, body).is_ok() {
+                return Ok(());
+            }
         }
 
-        // Fall back to osascript
+        // Fallback for non-bundled invocations (running the bare binary by
+        // hand, for example). osascript's "display notification" is a one-shot
+        // that exits as soon as the banner is queued, so no zombie process.
         let script = format!(
             "display notification \"{}\" with title \"{}\"",
             body.replace('\\', "\\\\")
@@ -148,6 +140,65 @@ impl Notifier for OsascriptNotifier {
             ),
             Err(e) => log::error!("[notifications] job notification failed: {}", e),
         }
+    }
+}
+
+/// Preferred daemon-side notifier. Routes notifications to the desktop app
+/// (which displays them natively via tauri-plugin-notification) when at least
+/// one IPC subscriber is connected. Falls back to terminal-notifier when the
+/// desktop app isn't running, so notifications still surface in headless use.
+///
+/// The IPC path is leak-free because the desktop app owns the notification.
+/// The fallback path also no longer leaks: OsascriptNotifier reaps its child.
+pub struct IpcNotifier {
+    subscribers: EventSubscribers,
+}
+
+impl IpcNotifier {
+    pub fn new(subscribers: EventSubscribers) -> Self {
+        Self { subscribers }
+    }
+
+    fn dispatch(&self, title: String, body: String) {
+        let subs = self.subscribers.clone();
+        let title_for_fallback = title.clone();
+        let body_for_fallback = body.clone();
+        tokio::spawn(async move {
+            let event = IpcEvent::Notification {
+                title: title.clone(),
+                body: body.clone(),
+            };
+            let delivered = ipc::broadcast_event(&subs, &event).await;
+            if delivered == 0 {
+                // Desktop not subscribed; emit locally so the user still sees it.
+                let _ = OsascriptNotifier::send_notification(
+                    &title_for_fallback,
+                    &body_for_fallback,
+                );
+            }
+        });
+    }
+}
+
+impl Notifier for IpcNotifier {
+    fn notify_question(&self, question: &ClaudeQuestion) {
+        let title = compact_cwd(&question.cwd);
+        let body = format_question_body(question);
+        log::info!(
+            "[notifications] dispatching question {} via IPC",
+            question.question_id
+        );
+        self.dispatch(title, body);
+    }
+
+    fn notify_job(&self, job_id: &str, event: &str) {
+        let body = format!("Job {} {}", job_id, event);
+        log::info!(
+            "[notifications] dispatching job notification: {} {} via IPC",
+            job_id,
+            event
+        );
+        self.dispatch("ClawTab".to_string(), body);
     }
 }
 

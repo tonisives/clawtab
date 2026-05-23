@@ -21,6 +21,8 @@ pub mod events;
 pub mod history;
 pub mod ipc;
 pub mod job_context;
+#[cfg(target_os = "macos")]
+pub mod native_notifications;
 pub mod notifications;
 pub mod pty;
 pub mod questions;
