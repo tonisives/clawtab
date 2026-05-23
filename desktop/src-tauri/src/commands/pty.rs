@@ -45,6 +45,11 @@ pub fn pty_release(state: State<AppState>, pane_id: String) -> Result<(), String
 }
 
 #[tauri::command]
+pub fn pty_suspend_all(state: State<AppState>) -> Result<Vec<String>, String> {
+    Ok(state.pty_manager.lock().suspend_all())
+}
+
+#[tauri::command]
 pub fn pty_write(state: State<AppState>, pane_id: String, data: String) -> Result<(), String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&data)

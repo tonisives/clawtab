@@ -18,6 +18,8 @@ mod cwt;
 pub mod daemon;
 mod debug_spawn;
 pub mod events;
+#[cfg(feature = "desktop")]
+mod focus;
 pub mod history;
 pub mod ipc;
 pub mod job_context;
@@ -419,6 +421,7 @@ fn setup_app(
     register_menu_events(app);
     start_usage_loop(app);
     register_settings_close_hide(app);
+    focus::register(app);
     spawn_daemon_event_subscription(app, jobs_config);
     updater::start_update_checker(app.handle().clone(), Arc::clone(settings_for_updater));
     log::info!("clawtab setup complete");
@@ -822,6 +825,7 @@ pub fn run() {
             commands::pty::pty_get_cached_output,
             commands::pty::pty_refresh_snapshot,
             commands::pty::pty_release,
+            commands::pty::pty_suspend_all,
             commands::pty::list_free_panes,
             commands::pty::list_captured_panes,
             commands::debug::debug_spawn_list,

@@ -159,6 +159,18 @@ pub struct AppSettings {
     pub process_overrides: HashMap<String, DetectedProcessOverride>,
     /// User-configurable desktop keyboard shortcuts.
     pub shortcuts: ShortcutSettings,
+    /// When false, suppresses local macOS notifications for Claude questions.
+    /// Auto-yes panes are silenced regardless of this flag.
+    #[serde(default = "default_true")]
+    pub notify_questions_local: bool,
+    /// When false, suppresses pushing Claude questions to the relay so
+    /// connected mobile clients don't receive notifications.
+    #[serde(default = "default_true")]
+    pub notify_questions_remote: bool,
+    /// Auto-release captured panes back to their original tmux windows when
+    /// the ClawTab app loses focus, and re-capture when it regains focus.
+    #[serde(default)]
+    pub auto_release_on_blur: bool,
 }
 
 fn default_true() -> bool {
@@ -193,6 +205,9 @@ impl Default for AppSettings {
             hide_titlebar: true,
             process_overrides: HashMap::new(),
             shortcuts: ShortcutSettings::default(),
+            notify_questions_local: true,
+            notify_questions_remote: true,
+            auto_release_on_blur: false,
         }
     }
 }
