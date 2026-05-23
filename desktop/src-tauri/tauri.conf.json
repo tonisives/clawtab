@@ -27,33 +27,6 @@
         "center": true,
         "title": "",
         "titleBarStyle": "Visible"
-      },
-      {
-        "label": "debug",
-        "url": "/debug.html",
-        "width": 1000,
-        "height": 700,
-        "visible": false,
-        "center": true,
-        "title": "ClawTab Debug"
-      },
-      {
-        "label": "pty_debug",
-        "url": "/pty_debug.html",
-        "width": 1200,
-        "height": 800,
-        "visible": false,
-        "center": true,
-        "title": "ClawTab PTY Debug"
-      },
-      {
-        "label": "tmux_debug",
-        "url": "/tmux_debug.html",
-        "width": 1100,
-        "height": 760,
-        "visible": false,
-        "center": true,
-        "title": "ClawTab Tmux Debug"
       }
     ],
     "security": {
