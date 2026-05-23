@@ -33,9 +33,6 @@ flowchart LR
     Desktop <-- "WebSocket<br/>events / commands" --> Relay
     Relay <-- "WebSocket<br/>events / answers" --> Mobile
     APNs -. "wake up" .-> Mobile
-
-    classDef cluster fill:transparent,stroke:#888
-    class Laptop,Cloud,User cluster
 ```
 
 The relay is the only stateful hop. It holds the connection hub in memory, persists auth and notifications to Postgres, and pushes APNs notifications when the mobile app is backgrounded.
@@ -61,39 +58,50 @@ src/
 
 ```mermaid
 flowchart TB
+    DesktopWS(["Desktop WS"])
+    MobileWS(["Mobile WS"])
+
     subgraph Axum["axum app (main.rs)"]
+        direction LR
         REST["routes/<br/>auth, billing,<br/>device, share"]
         WS["/ws upgrade"]
     end
 
-    subgraph Session["ws/session.rs<br/>(one task per connection)"]
+    subgraph Session["ws/session.rs (one task per connection)"]
+        direction TB
         Select{{"tokio::select!"}}
         InRx["ws_stream.next()<br/>frames from client"]
         OutRx["rx.recv()<br/>from hub"]
         Beat["heartbeat.tick()<br/>30s ping / 90s timeout"]
-        Select --- InRx
-        Select --- OutRx
-        Select --- Beat
+        Select --> InRx
+        Select --> OutRx
+        Select --> Beat
     end
 
     subgraph Hub["ws/hub.rs"]
+        direction TB
         Map["RwLock&lt;HashMap&gt;<br/>user -> desktops, mobiles"]
         Cache["last claude_questions<br/>+ auto_yes_panes per user"]
         Shares["workspace_shares lookup"]
     end
 
-    DesktopWS(["Desktop WS"]) --> WS
-    MobileWS(["Mobile WS"]) --> WS
-    WS --> Session
-    InRx -- "route to target user" --> Hub
-    Hub -- "mpsc Sender per conn" --> OutRx
-    Hub -- "replay on connect" --> Cache
-    Hub -- "resolve cross-user" --> Shares
-    Session -. "spawn(DB write)" .-> PG2[("Postgres")]
-    Session -. "trigger" .-> APNs2[["APNs"]]
+    subgraph External[" "]
+        direction LR
+        PG2[("Postgres")]
+        APNs2[["APNs"]]
+    end
 
-    classDef cluster fill:transparent,stroke:#888
-    class Axum,Session,Hub cluster
+    DesktopWS --> WS
+    MobileWS --> WS
+    WS --> Select
+    InRx -- "route to target user" --> Map
+    Map -- "mpsc Sender per conn" --> OutRx
+    Map -- "replay on connect" --> Cache
+    Map -- "resolve cross-user" --> Shares
+    InRx -. "spawn(DB write)" .-> PG2
+    InRx -. "trigger" .-> APNs2
+
+    style External fill:none,stroke:none
 ```
 
 ### Hub
