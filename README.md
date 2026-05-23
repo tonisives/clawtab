@@ -59,7 +59,7 @@ A canvas view that lays out every running Claude Code, Codex, and OpenCode agent
 - **Spawn from a hub** - hover any group hub and hit the plus button to launch a new agent into that group
 
 <p align="center">
-  <img src="https://cdn.clawtab.cc/assets/articles/mind-map/hero.png" alt="ClawTab Mind Map canvas showing multiple group hubs surrounded by orbiting agent cards, with two open agent terminal modals connected to their nodes by curved lines" width="1000" />
+  <img src="https://cdn.clawtab.cc/assets/articles/mind-map/mindmap-claude-and-codex.png" alt="ClawTab Mind Map canvas showing multiple group hubs surrounded by orbiting agent cards, with two open agent terminal modals connected to their nodes by curved lines" width="1000" />
 </p>
 
 Read more in the [Mind Map article](https://clawtab.cc/articles/mind-map).
