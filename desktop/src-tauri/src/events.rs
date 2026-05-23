@@ -155,22 +155,6 @@ pub async fn run_daemon_event_subscription(
                         IpcEvent::RelayStatusChanged(status) => {
                             let _ = app_handle.emit("relay-status-changed", status);
                         }
-                        IpcEvent::Notification { title, body } => {
-                            use tauri_plugin_notification::NotificationExt;
-                            if let Err(e) = app_handle
-                                .notification()
-                                .builder()
-                                .title(&title)
-                                .body(&body)
-                                .sound("default")
-                                .show()
-                            {
-                                log::error!(
-                                    "[notifications] failed to show forwarded notification: {}",
-                                    e
-                                );
-                            }
-                        }
                     },
                     Err(e) => {
                         log::warn!("Failed to parse IPC event: {} ({:?})", e, line);
