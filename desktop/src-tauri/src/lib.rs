@@ -21,6 +21,8 @@ pub mod events;
 pub mod history;
 pub mod ipc;
 pub mod job_context;
+#[cfg(target_os = "macos")]
+pub mod native_notifications;
 pub mod notifications;
 pub mod pty;
 pub mod questions;
@@ -348,15 +350,316 @@ fn init_file_logger() {
 }
 
 #[cfg(feature = "desktop")]
+fn run_startup_migrations(jobs_config: &Arc<Mutex<JobsConfig>>) {
+    let mut j = jobs_config.lock();
+    config::jobs::migrate_job_md_to_central(&mut j.jobs);
+    config::jobs::migrate_cwt_to_central(&j.jobs);
+}
+
+#[cfg(feature = "desktop")]
+fn refresh_agent_contexts(
+    settings: &Arc<Mutex<AppSettings>>,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+) {
+    let s = settings.lock();
+    let j = jobs_config.lock();
+    commands::jobs::ensure_agent_dir(&s, &j.jobs);
+    commands::jobs::regenerate_all_cwt_contexts(&s, &j.jobs);
+}
+
+#[cfg(feature = "desktop")]
+fn build_app_state(
+    settings: &Arc<Mutex<AppSettings>>,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    secrets: &Arc<Mutex<SecretsManager>>,
+    history: &Arc<Mutex<HistoryStore>>,
+    ipc_app_handle: &Arc<Mutex<Option<tauri::AppHandle>>>,
+    pty_manager: &pty::SharedPtyManager,
+) -> AppState {
+    let process_overrides = Arc::new(Mutex::new(settings.lock().process_overrides.clone()));
+    AppState {
+        settings: Arc::clone(settings),
+        jobs_config: Arc::clone(jobs_config),
+        secrets: Arc::clone(secrets),
+        history: Arc::clone(history),
+        scheduler: Arc::new(Mutex::new(None)),
+        job_status: Arc::new(Mutex::new(HashMap::new())),
+        active_agents: Arc::new(Mutex::new(HashMap::new())),
+        relay: Arc::new(Mutex::new(None)),
+        relay_sub_required: Arc::new(Mutex::new(false)),
+        relay_auth_expired: Arc::new(Mutex::new(false)),
+        active_questions: Arc::new(Mutex::new(Vec::new())),
+        auto_yes_panes: Arc::new(Mutex::new(HashSet::new())),
+        protected_panes: Arc::new(Mutex::new(HashSet::new())),
+        process_overrides,
+        notification_state: Arc::new(Mutex::new(notifications::NotificationState::new())),
+        app_handle: Arc::clone(ipc_app_handle),
+        pty_manager: Arc::clone(pty_manager),
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn setup_app(
+    app: &mut tauri::App,
+    ipc_app_handle: &Arc<Mutex<Option<tauri::AppHandle>>>,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    settings_for_updater: &Arc<Mutex<AppSettings>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    setup_macos_window(app);
+    *ipc_app_handle.lock() = Some(app.handle().clone());
+    spawn_desktop_ipc(app);
+    register_tray(app)?;
+    let app_menu = build_app_menu(app)?;
+    app.set_menu(app_menu)?;
+    {
+        let state = app.state::<AppState>();
+        let shortcuts = state.settings.lock().shortcuts.clone();
+        let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
+    }
+    register_menu_events(app);
+    start_usage_loop(app);
+    register_settings_close_hide(app);
+    spawn_daemon_event_subscription(app, jobs_config);
+    updater::start_update_checker(app.handle().clone(), Arc::clone(settings_for_updater));
+    log::info!("clawtab setup complete");
+    Ok(())
+}
+
+#[cfg(feature = "desktop")]
+fn setup_macos_window(app: &mut tauri::App) {
+    #[cfg(target_os = "macos")]
+    {
+        let state = app.state::<AppState>();
+        let hide_titlebar = state.settings.lock().hide_titlebar;
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        if hide_titlebar {
+            if let Some(window) = app.get_webview_window("settings") {
+                let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
+            }
+        }
+        macos_window::make_standard_tileable_window(&app.handle(), "settings");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn spawn_desktop_ipc(app: &tauri::App) {
+    let app_handle_for_desktop_ipc = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        let result = ipc::start_desktop_ipc_server(move |cmd| {
+            let app_handle = app_handle_for_desktop_ipc.clone();
+            async move { dispatch_desktop_ipc(&app_handle, cmd) }
+        })
+        .await;
+        if let Err(e) = result {
+            log::error!("Desktop IPC server failed: {}", e);
+        }
+    });
+}
+
+#[cfg(feature = "desktop")]
+fn dispatch_desktop_ipc(app_handle: &tauri::AppHandle, cmd: ipc::DesktopIpcCommand) -> ipc::IpcResponse {
+    match cmd {
+        ipc::DesktopIpcCommand::FocusPane { direction } => {
+            let action = match direction {
+                ipc::PaneDirection::Left => "move_pane_left",
+                ipc::PaneDirection::Right => "move_pane_right",
+                ipc::PaneDirection::Up => "move_pane_up",
+                ipc::PaneDirection::Down => "move_pane_down",
+            };
+            let _ = app_handle.emit("shortcut-action", action);
+            ipc::IpcResponse::Ok
+        }
+        ipc::DesktopIpcCommand::OpenPane { pane_id } => {
+            let _ = app_handle.emit("open-pane", pane_id);
+            ipc::IpcResponse::Ok
+        }
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn register_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let Some(tray) = app.tray_by_id("main") else {
+        return Ok(());
+    };
+    refresh_tray_usage_menu(app.handle(), None)?;
+    tray.on_menu_event(|app, event| match event.id.as_ref() {
+        "settings" => {
+            if let Some(window) = app.get_webview_window("settings") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+        "quit" => {
+            app.state::<AppState>().pty_manager.lock().destroy_all();
+            app.exit(0);
+        }
+        _ => {}
+    });
+    Ok(())
+}
+
+#[cfg(feature = "desktop")]
+fn build_app_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
+    let pkg_info = app.package_info();
+    let config = app.config();
+    let about_metadata = tauri::menu::AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config.bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+    let import_item = MenuItem::with_id(app, "import_cwt", "Import Job...", true, None::<&str>)?;
+    let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
+    let pty_debug_item = MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
+    let tmux_debug_item = MenuItem::with_id(app, "view_tmux_debug", "Tmux Debug", true, None::<&str>)?;
+    Menu::with_items(
+        app,
+        &[
+            &Submenu::with_items(
+                app,
+                pkg_info.name.clone(),
+                true,
+                &[
+                    &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::services(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::hide(app, None)?,
+                    &PredefinedMenuItem::hide_others(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::quit(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                "File",
+                true,
+                &[
+                    &PredefinedMenuItem::close_window(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &import_item,
+                ],
+            )?,
+            &Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(app, "View", true, &[&PredefinedMenuItem::fullscreen(app, None)?])?,
+            &Submenu::with_items(
+                app,
+                "Debug",
+                true,
+                &[&debug_item, &pty_debug_item, &tmux_debug_item],
+            )?,
+            &Submenu::with_items(
+                app,
+                "Window",
+                true,
+                &[
+                    &PredefinedMenuItem::minimize(app, None)?,
+                    &PredefinedMenuItem::maximize(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::close_window(app, None)?,
+                ],
+            )?,
+            &Submenu::with_items(app, "Help", true, &[])?,
+        ],
+    )
+}
+
+#[cfg(feature = "desktop")]
+fn register_menu_events(app: &tauri::App) {
+    app.on_menu_event(|app, event| {
+        log::info!("menu_event: id={:?}", event.id.as_ref());
+        let id = event.id.as_ref();
+        if id == "import_cwt" {
+            if let Some(window) = app.get_webview_window("settings") {
+                let _ = window.emit("import-cwt", ());
+            }
+        } else if id == "view_debug" {
+            open_debug_window(app);
+        } else if id == "view_pty_debug" {
+            open_pty_debug_window(app);
+        } else if id == "view_tmux_debug" {
+            open_tmux_debug_window(app);
+        } else if id == MENU_SHORTCUT_RENAME_ACTIVE_PANE {
+            let _ = app.emit("shortcut-action", "rename_active_pane");
+        } else if id == MENU_SHORTCUT_FOCUS_AGENT_INPUT {
+            let _ = app.emit("shortcut-action", "focus_agent_input");
+        } else if id == MENU_SHORTCUT_ZOOM_ACTIVE_PANE {
+            let _ = app.emit("shortcut-action", "zoom_active_pane");
+        } else if id == MENU_SHORTCUT_TOGGLE_AUTO_YES {
+            let _ = app.emit("shortcut-action", "toggle_auto_yes");
+        }
+    });
+}
+
+#[cfg(feature = "desktop")]
+fn start_usage_loop(app: &tauri::App) {
+    let secrets_for_usage = app.state::<AppState>().secrets.clone();
+    let app_for_usage = app.handle().clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let zai_token = {
+                let secrets = secrets_for_usage.lock();
+                let explicit = usage::ZAI_TOKEN_KEYS
+                    .iter()
+                    .map(|key| secrets.get(key).cloned())
+                    .collect();
+                usage::resolve_zai_token_from_sources(explicit)
+            };
+            let usage = usage::fetch_usage_snapshot(zai_token).await;
+            let _ = refresh_tray_usage_menu(&app_for_usage, Some(&usage));
+            tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
+        }
+    });
+}
+
+#[cfg(feature = "desktop")]
+fn register_settings_close_hide(app: &tauri::App) {
+    if let Some(settings_window) = app.get_webview_window("settings") {
+        let window = settings_window.clone();
+        settings_window.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        });
+    }
+}
+
+#[cfg(feature = "desktop")]
+fn spawn_daemon_event_subscription(app: &tauri::App, jobs_config: &Arc<Mutex<JobsConfig>>) {
+    let event_app_handle = app.handle().clone();
+    let event_jobs_config = Arc::clone(jobs_config);
+    tauri::async_runtime::spawn(async move {
+        events::run_daemon_event_subscription(event_app_handle, event_jobs_config).await;
+    });
+}
+
+#[cfg(feature = "desktop")]
+#[allow(clippy::too_many_lines)]
 pub fn run() {
     // Unset TMUX so child tmux commands connect to the default server,
     // not the overmind/nested server this process may have been launched from.
     std::env::remove_var("TMUX");
 
     init_file_logger();
-
     log::info!("clawtab starting");
-
     if let Err(e) = debug_spawn::init() {
         log::warn!("debug_spawn init failed: {}", e);
     }
@@ -367,62 +670,14 @@ pub fn run() {
     let history = Arc::new(Mutex::new(
         HistoryStore::new().expect("failed to initialize history database"),
     ));
-
-    // Run startup migrations
-    {
-        let mut j = jobs_config.lock();
-        config::jobs::migrate_job_md_to_central(&mut j.jobs);
-        config::jobs::migrate_cwt_to_central(&j.jobs);
-    }
-
-    // Ensure agent + per-job cwt.md context files are fresh on startup
-    {
-        let s = settings.lock();
-        let j = jobs_config.lock();
-        commands::jobs::ensure_agent_dir(&s, &j.jobs);
-        commands::jobs::regenerate_all_cwt_contexts(&s, &j.jobs);
-    }
-
-    let job_status: Arc<Mutex<HashMap<String, JobStatus>>> = Arc::new(Mutex::new(HashMap::new()));
-    let active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>> =
-        Arc::new(Mutex::new(HashMap::new()));
-    let relay_handle: Arc<Mutex<Option<relay::RelayHandle>>> = Arc::new(Mutex::new(None));
-    let relay_sub_required: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-    let relay_auth_expired: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-    let active_questions: Arc<Mutex<Vec<ClaudeQuestion>>> = Arc::new(Mutex::new(Vec::new()));
-    let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-    let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-    let process_overrides: Arc<Mutex<HashMap<String, config::settings::DetectedProcessOverride>>> = {
-        let loaded = settings.lock().process_overrides.clone();
-        Arc::new(Mutex::new(loaded))
-    };
-    let notification_state: Arc<Mutex<notifications::NotificationState>> =
-        Arc::new(Mutex::new(notifications::NotificationState::new()));
+    run_startup_migrations(&jobs_config);
+    refresh_agent_contexts(&settings, &jobs_config);
 
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
     let pty_manager: pty::SharedPtyManager = Arc::new(Mutex::new(pty::PtyManager::new()));
-
-    let app_state = AppState {
-        settings: Arc::clone(&settings),
-        jobs_config: Arc::clone(&jobs_config),
-        secrets: Arc::clone(&secrets),
-        history: Arc::clone(&history),
-        scheduler: Arc::new(Mutex::new(None)),
-        job_status: Arc::clone(&job_status),
-        active_agents: Arc::clone(&active_agents),
-        relay: Arc::clone(&relay_handle),
-        relay_sub_required: Arc::clone(&relay_sub_required),
-        relay_auth_expired: Arc::clone(&relay_auth_expired),
-        active_questions: Arc::clone(&active_questions),
-        auto_yes_panes: Arc::clone(&auto_yes_panes),
-        protected_panes: Arc::clone(&protected_panes),
-        process_overrides: Arc::clone(&process_overrides),
-        notification_state: Arc::clone(&notification_state),
-        app_handle: Arc::clone(&ipc_app_handle),
-        pty_manager: Arc::clone(&pty_manager),
-    };
-
+    let app_state = build_app_state(&settings, &jobs_config, &secrets, &history, &ipc_app_handle, &pty_manager);
     let settings_for_updater = Arc::clone(&settings);
+    let jobs_config_for_setup = Arc::clone(&jobs_config);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -578,248 +833,7 @@ pub fn run() {
             commands::daemon::daemon_restart,
             commands::daemon::get_daemon_logs,
         ])
-        .setup(move |app| {
-            #[cfg(target_os = "macos")]
-            {
-                let state = app.state::<AppState>();
-                let hide_titlebar = state.settings.lock().hide_titlebar;
-                let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-                // Config defaults to Visible (so tiling WMs like Aerospace can manage it);
-                // apply Overlay only if the user opted into hiding the titlebar
-                if hide_titlebar {
-                    if let Some(window) = app.get_webview_window("settings") {
-                        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Overlay);
-                    }
-                }
-
-                // Force the GUI window to be a standard tileable NSWindow so
-                // tiling WMs (Aerospace, yabai) manage it instead of treating
-                // it as a floating utility window.
-                macos_window::make_standard_tileable_window(&app.handle(), "settings");
-            }
-
-            // Set app handle for IPC
-            *ipc_app_handle.lock() = Some(app.handle().clone());
-
-            // Desktop IPC socket: UI-only commands (cwtctl pane focus, cwtctl open).
-            // Lives on the desktop process, not the daemon, so the daemon stays
-            // UI-agnostic. See ipc.rs DesktopIpcCommand and docs/architecture.md.
-            {
-                let app_handle_for_desktop_ipc = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    let result = ipc::start_desktop_ipc_server(move |cmd| {
-                        let app_handle = app_handle_for_desktop_ipc.clone();
-                        async move {
-                            match cmd {
-                                ipc::DesktopIpcCommand::FocusPane { direction } => {
-                                    let action = match direction {
-                                        ipc::PaneDirection::Left => "move_pane_left",
-                                        ipc::PaneDirection::Right => "move_pane_right",
-                                        ipc::PaneDirection::Up => "move_pane_up",
-                                        ipc::PaneDirection::Down => "move_pane_down",
-                                    };
-                                    let _ = app_handle.emit("shortcut-action", action);
-                                    ipc::IpcResponse::Ok
-                                }
-                                ipc::DesktopIpcCommand::OpenPane { pane_id } => {
-                                    let _ = app_handle.emit("open-pane", pane_id);
-                                    ipc::IpcResponse::Ok
-                                }
-                            }
-                        }
-                    })
-                    .await;
-                    if let Err(e) = result {
-                        log::error!("Desktop IPC server failed: {}", e);
-                    }
-                });
-            }
-
-            // Tray menu
-            let secrets_for_usage = app.state::<AppState>().secrets.clone();
-            let app_for_usage = app.handle().clone();
-
-            if let Some(tray) = app.tray_by_id("main") {
-                refresh_tray_usage_menu(app.handle(), None)?;
-                tray.on_menu_event(|app, event| match event.id.as_ref() {
-                    "settings" => {
-                        if let Some(window) = app.get_webview_window("settings") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "quit" => {
-                        app.state::<AppState>()
-                            .pty_manager
-                            .lock()
-                            .destroy_all();
-                        app.exit(0);
-                    }
-                    _ => {}
-                });
-            }
-
-            // Build app menu manually so we can omit Redo (Cmd+Y) which would
-            // otherwise shadow our custom Toggle Auto-yes shortcut.
-            let pkg_info = app.package_info();
-            let config = app.config();
-            let about_metadata = tauri::menu::AboutMetadata {
-                name: Some(pkg_info.name.clone()),
-                version: Some(pkg_info.version.to_string()),
-                copyright: config.bundle.copyright.clone(),
-                authors: config.bundle.publisher.clone().map(|p| vec![p]),
-                ..Default::default()
-            };
-            let import_item =
-                MenuItem::with_id(app, "import_cwt", "Import Job...", true, None::<&str>)?;
-            let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
-            let pty_debug_item =
-                MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
-            let tmux_debug_item =
-                MenuItem::with_id(app, "view_tmux_debug", "Tmux Debug", true, None::<&str>)?;
-            let app_menu = Menu::with_items(
-                app,
-                &[
-                    &Submenu::with_items(
-                        app,
-                        pkg_info.name.clone(),
-                        true,
-                        &[
-                            &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
-                            &PredefinedMenuItem::separator(app)?,
-                            &PredefinedMenuItem::services(app, None)?,
-                            &PredefinedMenuItem::separator(app)?,
-                            &PredefinedMenuItem::hide(app, None)?,
-                            &PredefinedMenuItem::hide_others(app, None)?,
-                            &PredefinedMenuItem::separator(app)?,
-                            &PredefinedMenuItem::quit(app, None)?,
-                        ],
-                    )?,
-                    &Submenu::with_items(
-                        app,
-                        "File",
-                        true,
-                        &[
-                            &PredefinedMenuItem::close_window(app, None)?,
-                            &PredefinedMenuItem::separator(app)?,
-                            &import_item,
-                        ],
-                    )?,
-                    &Submenu::with_items(
-                        app,
-                        "Edit",
-                        true,
-                        &[
-                            &PredefinedMenuItem::undo(app, None)?,
-                            // Redo omitted — Cmd+Y is used for Toggle Auto-yes
-                            &PredefinedMenuItem::separator(app)?,
-                            &PredefinedMenuItem::cut(app, None)?,
-                            &PredefinedMenuItem::copy(app, None)?,
-                            &PredefinedMenuItem::paste(app, None)?,
-                            &PredefinedMenuItem::select_all(app, None)?,
-                        ],
-                    )?,
-                    &Submenu::with_items(
-                        app,
-                        "View",
-                        true,
-                        &[&PredefinedMenuItem::fullscreen(app, None)?],
-                    )?,
-                    &Submenu::with_items(
-                        app,
-                        "Debug",
-                        true,
-                        &[&debug_item, &pty_debug_item, &tmux_debug_item],
-                    )?,
-                    &Submenu::with_items(
-                        app,
-                        "Window",
-                        true,
-                        &[
-                            &PredefinedMenuItem::minimize(app, None)?,
-                            &PredefinedMenuItem::maximize(app, None)?,
-                            &PredefinedMenuItem::separator(app)?,
-                            &PredefinedMenuItem::close_window(app, None)?,
-                        ],
-                    )?,
-                    &Submenu::with_items(app, "Help", true, &[])?,
-                ],
-            )?;
-
-            app.set_menu(app_menu)?;
-            {
-                let state = app.state::<AppState>();
-                let shortcuts = state.settings.lock().shortcuts.clone();
-                let _ = refresh_shortcut_menu(&app.handle().clone(), &shortcuts);
-            }
-            app.on_menu_event(|app, event| {
-                log::info!("menu_event: id={:?}", event.id.as_ref());
-                if event.id.as_ref() == "import_cwt" {
-                    if let Some(window) = app.get_webview_window("settings") {
-                        let _ = window.emit("import-cwt", ());
-                    }
-                } else if event.id.as_ref() == "view_debug" {
-                    open_debug_window(app);
-                } else if event.id.as_ref() == "view_pty_debug" {
-                    open_pty_debug_window(app);
-                } else if event.id.as_ref() == "view_tmux_debug" {
-                    open_tmux_debug_window(app);
-                } else if event.id.as_ref() == MENU_SHORTCUT_RENAME_ACTIVE_PANE {
-                    let _ = app.emit("shortcut-action", "rename_active_pane");
-                } else if event.id.as_ref() == MENU_SHORTCUT_FOCUS_AGENT_INPUT {
-                    let _ = app.emit("shortcut-action", "focus_agent_input");
-                } else if event.id.as_ref() == MENU_SHORTCUT_ZOOM_ACTIVE_PANE {
-                    let _ = app.emit("shortcut-action", "zoom_active_pane");
-                } else if event.id.as_ref() == MENU_SHORTCUT_TOGGLE_AUTO_YES {
-                    let _ = app.emit("shortcut-action", "toggle_auto_yes");
-                }
-            });
-
-            // Background task: refresh provider usage stats every 5 minutes
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    let zai_token = {
-                        let secrets = secrets_for_usage.lock();
-                        let explicit = usage::ZAI_TOKEN_KEYS
-                            .iter()
-                            .map(|key| secrets.get(key).cloned())
-                            .collect();
-                        usage::resolve_zai_token_from_sources(explicit)
-                    };
-                    let usage = usage::fetch_usage_snapshot(zai_token).await;
-                    let _ = refresh_tray_usage_menu(&app_for_usage, Some(&usage));
-                    tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
-                }
-            });
-
-            // Hide settings window on close instead of quitting
-            if let Some(settings_window) = app.get_webview_window("settings") {
-                let window = settings_window.clone();
-                settings_window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    }
-                });
-            }
-
-            // Desktop is always a UI-only client. The clawtab-daemon owns
-            // scheduler, relay, question detection, telegram polling, watcher,
-            // and shared state (job_status, auto_yes_panes, relay handle, etc.).
-            // Shared-state commands proxy to the daemon via IPC; the daemon
-            // pushes state-change events back over a subscription socket.
-            let event_app_handle = app.handle().clone();
-            let event_jobs_config = Arc::clone(&jobs_config);
-            tauri::async_runtime::spawn(async move {
-                events::run_daemon_event_subscription(event_app_handle, event_jobs_config).await;
-            });
-
-            // Always start auto-update checker (desktop-only concern)
-            updater::start_update_checker(app.handle().clone(), settings_for_updater);
-
-            log::info!("clawtab setup complete");
-            Ok(())
-        })
+        .setup(move |app| setup_app(app, &ipc_app_handle, &jobs_config_for_setup, &settings_for_updater))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
