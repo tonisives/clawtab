@@ -137,8 +137,10 @@ fn main() {
             let auto_yes_panes = Arc::clone(&auto_yes_panes);
             let notifier = Arc::clone(&notifier);
             let notification_state = Arc::clone(&notification_state);
+            let settings = Arc::clone(&settings);
             tokio::spawn(async move {
                 clawtab_lib::questions::question_detection_loop(
+                    settings,
                     jobs_config,
                     job_status,
                     relay,

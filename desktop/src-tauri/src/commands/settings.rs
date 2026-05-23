@@ -45,6 +45,9 @@ pub fn set_settings(
     super::jobs::ensure_agent_dir(&settings_clone, &jobs);
     super::jobs::regenerate_all_cwt_contexts(&settings_clone, &jobs);
     let _ = app.emit("settings-updated", &settings_clone);
+    tauri::async_runtime::spawn(async {
+        let _ = crate::ipc::send_command(crate::ipc::IpcCommand::ReloadSettings).await;
+    });
 
     Ok(())
 }

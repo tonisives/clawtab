@@ -83,7 +83,6 @@ impl Notifier for TauriNotifier {
 }
 
 /// Fallback notifier for daemon mode.
-/// Uses terminal-notifier (with ClawTab icon) if available, falls back to osascript.
 pub struct OsascriptNotifier;
 
 impl OsascriptNotifier {
@@ -145,11 +144,9 @@ impl Notifier for OsascriptNotifier {
 
 /// Preferred daemon-side notifier. Routes notifications to the desktop app
 /// (which displays them natively via tauri-plugin-notification) when at least
-/// one IPC subscriber is connected. Falls back to terminal-notifier when the
-/// desktop app isn't running, so notifications still surface in headless use.
-///
-/// The IPC path is leak-free because the desktop app owns the notification.
-/// The fallback path also no longer leaks: OsascriptNotifier reaps its child.
+/// one IPC subscriber is connected. Falls back to native engine notifications
+/// when the desktop app isn't running, so notifications still surface in
+/// headless use.
 pub struct IpcNotifier {
     subscribers: EventSubscribers,
 }
@@ -170,7 +167,6 @@ impl IpcNotifier {
             };
             let delivered = ipc::broadcast_event(&subs, &event).await;
             if delivered == 0 {
-                // Desktop not subscribed; emit locally so the user still sees it.
                 let _ = OsascriptNotifier::send_notification(
                     &title_for_fallback,
                     &body_for_fallback,

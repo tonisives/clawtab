@@ -1157,3 +1157,31 @@ pub fn list_panes_all_with_commands() -> Result<String, String> {
         "tmux::list_panes_all_with_commands",
     )
 }
+
+/// Returns true when `pane_id` is the active pane in an active window of an
+/// attached tmux session.
+pub fn is_active_attached_pane(pane_id: &str) -> Result<bool, String> {
+    let raw = run_capture(
+        &[
+            "list-panes",
+            "-a",
+            "-F",
+            "#{session_attached}\x1e#{window_active}\x1e#{pane_active}\x1e#{pane_id}",
+        ],
+        "tmux::is_active_attached_pane",
+    )?;
+    for line in raw.lines() {
+        let mut parts = line.split('\x1e');
+        let attached = parts
+            .next()
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(0);
+        let window_active = parts.next().unwrap_or("") == "1";
+        let pane_active = parts.next().unwrap_or("") == "1";
+        let current_pane = parts.next().unwrap_or("");
+        if attached > 0 && window_active && pane_active && current_pane == pane_id {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}

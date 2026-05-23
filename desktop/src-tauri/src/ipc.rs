@@ -160,8 +160,7 @@ pub enum IpcEvent {
     RelayStatusChanged(IpcRelayStatus),
     /// Daemon-originated notification request. The desktop client, when
     /// subscribed, displays this via tauri-plugin-notification. The daemon
-    /// itself can't deliver native macOS notifications because it isn't a
-    /// bundled .app, hence the round trip.
+    /// falls back to native engine notifications when no subscriber is present.
     Notification { title: String, body: String },
 }
 
