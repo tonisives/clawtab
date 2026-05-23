@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 pub const PLIST_LABEL: &str = "com.clawtab.daemon";
 pub const ENGINE_EXECUTABLE_PATH: &str =
-    "/usr/local/Clawtab Engine.app/Contents/MacOS/clawtab-daemon";
+    "/usr/local/Clawtab Engine.app/Contents/MacOS/ClawTab Daemon";
 
 pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

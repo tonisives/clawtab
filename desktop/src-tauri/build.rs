@@ -29,7 +29,7 @@ fn ensure_engine_app_placeholder() -> std::io::Result<()> {
 
     let contents = app_path.join("Contents").join("MacOS");
     fs::create_dir_all(&contents)?;
-    fs::write(contents.join("clawtab-daemon"), b"")?;
+    fs::write(contents.join("ClawTab Daemon"), b"")?;
     fs::write(
         app_path.join("Contents").join("Info.plist"),
         b"<?xml version=\"1.0\"?><plist version=\"1.0\"><dict/></plist>",

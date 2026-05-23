@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Assembles "Clawtab Engine.app" from the engine-app template and the
-# clawtab-daemon binary. Used by:
+# clawtab-daemon binary (placed inside the bundle as "ClawTab Daemon"). Used by:
 #   - `make build-daemon` for local dev installs
 #   - the Tauri build hook so the .app gets nested inside ClawTab.app
 #
@@ -32,8 +32,20 @@ mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 
 cp "$TEMPLATE_DIR/Info.plist" "$APP_PATH/Contents/Info.plist"
-cp "$DAEMON_BIN" "$APP_PATH/Contents/MacOS/clawtab-daemon"
-chmod +x "$APP_PATH/Contents/MacOS/clawtab-daemon"
+# The in-bundle executable is named "ClawTab Daemon" (not the bare cargo bin
+# name) so Activity Monitor / launchd show that as the process name, the same
+# way Keyboard Maestro ships "Keyboard Maestro Engine". CFBundleExecutable in
+# the template Info.plist must match this filename.
+cp "$DAEMON_BIN" "$APP_PATH/Contents/MacOS/ClawTab Daemon"
+chmod +x "$APP_PATH/Contents/MacOS/ClawTab Daemon"
+
+# Bundle the app icon so Activity Monitor and System Settings show it. The
+# icon lives next to the desktop app's icons; CFBundleIconFile in the template
+# Info.plist points at this filename.
+ICON_SRC="$SCRIPT_DIR/../icons/icon.icns"
+if [[ -f "$ICON_SRC" ]]; then
+  cp "$ICON_SRC" "$APP_PATH/Contents/Resources/icon.icns"
+fi
 
 # Ad-hoc sign the bundle so macOS treats it as a real .app and grants it a
 # stable code-identity for NotificationCenter and TCC. Without this, the

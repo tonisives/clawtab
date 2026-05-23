@@ -9,7 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>cc.clawtab.engine</string>
     <key>CFBundleExecutable</key>
-    <string>clawtab-daemon</string>
+    <string>ClawTab Daemon</string>
+    <key>CFBundleIconFile</key>
+    <string>icon.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key>
