@@ -1,7 +1,7 @@
+use parking_lot::Mutex;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use portable_pty::MasterPty;
 #[cfg(feature = "desktop")]

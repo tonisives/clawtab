@@ -26,11 +26,7 @@ pub fn get_relay_settings(state: State<AppState>) -> Option<RelaySettings> {
     // Populate device_token from keychain if yaml field is empty
     if let Some(ref mut rs) = relay {
         if rs.device_token.is_empty() {
-            let token = state
-                .secrets
-                .lock()
-                .get(KEYCHAIN_DEVICE_TOKEN_KEY)
-                .cloned();
+            let token = state.secrets.lock().get(KEYCHAIN_DEVICE_TOKEN_KEY).cloned();
             if let Some(token) = token {
                 rs.device_token = token;
             }
@@ -174,7 +170,10 @@ pub async fn relay_pair_device(
         )
     };
     if access_token.is_empty() {
-        return Err(format!("{} No access token stored", ERR_UNAUTHORIZED_PREFIX));
+        return Err(format!(
+            "{} No access token stored",
+            ERR_UNAUTHORIZED_PREFIX
+        ));
     }
 
     let body = serde_json::json!({ "device_name": req.device_name });
@@ -206,10 +205,7 @@ pub async fn relay_pair_device(
 
     Ok(PairDeviceResponse {
         device_id: val["device_id"].as_str().unwrap_or_default().to_string(),
-        device_token: val["device_token"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string(),
+        device_token: val["device_token"].as_str().unwrap_or_default().to_string(),
     })
 }
 

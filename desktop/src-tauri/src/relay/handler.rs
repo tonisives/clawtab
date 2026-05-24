@@ -1,7 +1,7 @@
 use base64::Engine;
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use clawtab_protocol::{
     ClientMessage, DesktopMessage, DetectedProcess as RemoteDetectedProcess,
@@ -66,9 +66,21 @@ async fn dispatch_message(
         ClientMessage::DetectProcesses { id } => {
             Some(handle_detect_processes(id, jobs_config, &ctx.job_status).await)
         }
-        ClientMessage::SubscribePty { id, pane_id, tmux_session, cols, rows } => Some(
-            handle_subscribe_pty(id, pane_id, tmux_session, cols, rows, pty_manager, &ctx.relay),
-        ),
+        ClientMessage::SubscribePty {
+            id,
+            pane_id,
+            tmux_session,
+            cols,
+            rows,
+        } => Some(handle_subscribe_pty(
+            id,
+            pane_id,
+            tmux_session,
+            cols,
+            rows,
+            pty_manager,
+            &ctx.relay,
+        )),
         other => dispatch_sync(other, jobs_config, ctx, pty_manager, event_sink),
     }
 }
@@ -98,48 +110,98 @@ fn dispatch_job_msg(
     let job_status = &ctx.job_status;
     let relay = &ctx.relay;
     match msg {
-        ClientMessage::ListJobs { id } => Some(handle_list_jobs(id.clone(), jobs_config, job_status)),
-        ClientMessage::RunJob { id, name, params, trigger_id } => {
+        ClientMessage::ListJobs { id } => {
+            Some(handle_list_jobs(id.clone(), jobs_config, job_status))
+        }
+        ClientMessage::RunJob {
+            id,
+            name,
+            params,
+            trigger_id,
+        } => {
             let result = run_job(name, params, trigger_id.clone(), jobs_config, ctx);
             event_sink.emit_jobs_changed();
-            Some(DesktopMessage::RunJobAck { id: id.clone(), success: result.is_ok(), error: result.err() })
+            Some(DesktopMessage::RunJobAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
         }
         ClientMessage::PauseJob { id, name } => {
             let result = pause_job(name, job_status);
             event_sink.emit_jobs_changed();
-            Some(DesktopMessage::PauseJobAck { id: id.clone(), success: result.is_ok(), error: result.err() })
+            Some(DesktopMessage::PauseJobAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
         }
         ClientMessage::ResumeJob { id, name } => {
             let result = resume_job(name, job_status);
             event_sink.emit_jobs_changed();
-            Some(DesktopMessage::ResumeJobAck { id: id.clone(), success: result.is_ok(), error: result.err() })
+            Some(DesktopMessage::ResumeJobAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
         }
         ClientMessage::StopJob { id, name } => {
             let result = stop_job(name, job_status, relay);
             event_sink.emit_jobs_changed();
-            Some(DesktopMessage::StopJobAck { id: id.clone(), success: result.is_ok(), error: result.err() })
+            Some(DesktopMessage::StopJobAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
         }
-        ClientMessage::SendInput { id, name, text, freetext } => {
+        ClientMessage::SendInput {
+            id,
+            name,
+            text,
+            freetext,
+        } => {
             let result = if let Some(ft) = freetext {
                 send_input_freetext(name, text, ft, job_status)
             } else {
                 send_input(name, text, job_status)
             };
-            Some(DesktopMessage::SendInputAck { id: id.clone(), success: result.is_ok() })
+            Some(DesktopMessage::SendInputAck {
+                id: id.clone(),
+                success: result.is_ok(),
+            })
         }
         ClientMessage::SubscribeLogs { id, name } => {
             Some(handle_subscribe_logs(id.clone(), name, job_status, relay))
         }
-        ClientMessage::RunAgent { id, prompt, work_dir, trigger_id } => {
-            let result = run_agent(prompt, work_dir.as_deref(), trigger_id.clone(), jobs_config, ctx);
-            Some(DesktopMessage::RunAgentAck { id: id.clone(), success: result.is_ok(), job_id: result.ok() })
+        ClientMessage::RunAgent {
+            id,
+            prompt,
+            work_dir,
+            trigger_id,
+        } => {
+            let result = run_agent(
+                prompt,
+                work_dir.as_deref(),
+                trigger_id.clone(),
+                jobs_config,
+                ctx,
+            );
+            Some(DesktopMessage::RunAgentAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                job_id: result.ok(),
+            })
         }
         ClientMessage::CreateJob { id, .. } => {
             let result = create_job();
             if result.is_ok() {
                 event_sink.emit_jobs_changed();
             }
-            Some(DesktopMessage::CreateJobAck { id: id.clone(), success: result.is_ok(), error: result.err() })
+            Some(DesktopMessage::CreateJobAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
         }
         _ => None,
     }
@@ -152,31 +214,60 @@ fn dispatch_process_msg(
     match msg {
         ClientMessage::GetRunHistory { id, name, limit } => {
             let runs = get_run_history(name, *limit, history);
-            Some(DesktopMessage::RunHistory { id: id.clone(), runs })
+            Some(DesktopMessage::RunHistory {
+                id: id.clone(),
+                runs,
+            })
         }
         ClientMessage::GetRunDetail { id, run_id } => {
             let detail = get_run_detail_full(run_id, history);
-            Some(DesktopMessage::RunDetailResponse { id: id.clone(), detail })
+            Some(DesktopMessage::RunDetailResponse {
+                id: id.clone(),
+                detail,
+            })
         }
-        ClientMessage::GetDetectedProcessLogs { id, tmux_session, pane_id } => {
+        ClientMessage::GetDetectedProcessLogs {
+            id,
+            tmux_session,
+            pane_id,
+        } => {
             let logs = crate::tmux::capture_pane(tmux_session, pane_id, 200).unwrap_or_default();
-            Some(DesktopMessage::DetectedProcessLogs { id: id.clone(), logs })
+            Some(DesktopMessage::DetectedProcessLogs {
+                id: id.clone(),
+                logs,
+            })
         }
         ClientMessage::SendDetectedProcessInput { id, pane_id, text } => {
             let result = crate::tmux::send_keys_to_tui_pane(pane_id, text);
-            Some(DesktopMessage::SendDetectedProcessInputAck { id: id.clone(), success: result.is_ok() })
+            Some(DesktopMessage::SendDetectedProcessInputAck {
+                id: id.clone(),
+                success: result.is_ok(),
+            })
         }
         ClientMessage::StopDetectedProcess { id, pane_id } => {
             let result = crate::tmux::kill_pane(pane_id);
-            Some(DesktopMessage::StopDetectedProcessAck { id: id.clone(), success: result.is_ok(), error: result.err() })
+            Some(DesktopMessage::StopDetectedProcessAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
         }
-        ClientMessage::AnswerQuestion { id, pane_id, answer, freetext, .. } => {
+        ClientMessage::AnswerQuestion {
+            id,
+            pane_id,
+            answer,
+            freetext,
+            ..
+        } => {
             let result = if let Some(text) = freetext {
                 crate::tmux::send_keys_to_tui_pane_freetext(pane_id, answer, text)
             } else {
                 crate::tmux::send_keys_to_tui_pane(pane_id, answer)
             };
-            Some(DesktopMessage::SendDetectedProcessInputAck { id: id.clone(), success: result.is_ok() })
+            Some(DesktopMessage::SendDetectedProcessInputAck {
+                id: id.clone(),
+                success: result.is_ok(),
+            })
         }
         _ => None,
     }
@@ -204,8 +295,14 @@ fn dispatch_pty_msg(
             }
             None
         }
-        ClientMessage::PtyResize { pane_id, cols, rows } => {
-            let _ = pty_manager.lock().resize(&pane_id, cols as u16, rows as u16);
+        ClientMessage::PtyResize {
+            pane_id,
+            cols,
+            rows,
+        } => {
+            let _ = pty_manager
+                .lock()
+                .resize(&pane_id, cols as u16, rows as u16);
             None
         }
         _ => None,
@@ -230,7 +327,11 @@ fn handle_list_jobs(
         remote_statuses.len(),
         id
     );
-    DesktopMessage::JobsList { id, jobs: remote_jobs, statuses: remote_statuses }
+    DesktopMessage::JobsList {
+        id,
+        jobs: remote_jobs,
+        statuses: remote_statuses,
+    }
 }
 
 fn handle_subscribe_logs(
@@ -335,7 +436,10 @@ fn handle_subscribe_pty(
         std::thread::spawn(move || {
             while let Ok((pid, data)) = rx.recv() {
                 let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
-                let msg = DesktopMessage::PtyOutput { pane_id: pid, data: encoded };
+                let msg = DesktopMessage::PtyOutput {
+                    pane_id: pid,
+                    data: encoded,
+                };
                 let guard = relay_for_pty.lock();
                 if let Some(handle) = guard.as_ref() {
                     handle.send_message(&msg);
@@ -344,7 +448,10 @@ fn handle_subscribe_pty(
             log::debug!("PTY relay forwarder exited for {}", pane_id_clone);
         });
     }
-    DesktopMessage::SubscribePtyAck { id, success: result.is_ok() }
+    DesktopMessage::SubscribePtyAck {
+        id,
+        success: result.is_ok(),
+    }
 }
 
 fn run_job(
@@ -366,7 +473,11 @@ fn run_job(
 
     let ctx = ctx.clone();
     let params = params.clone();
-    let trigger = if trigger_id.is_some() { "trigger" } else { "remote" };
+    let trigger = if trigger_id.is_some() {
+        "trigger"
+    } else {
+        "remote"
+    };
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
@@ -516,7 +627,11 @@ fn run_agent(
     let job_id = job.name.clone();
 
     let ctx = ctx.clone();
-    let trigger = if trigger_id.is_some() { "trigger" } else { "remote" };
+    let trigger = if trigger_id.is_some() {
+        "trigger"
+    } else {
+        "remote"
+    };
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
@@ -637,9 +752,7 @@ fn dp_collect_slug_to_group(jobs_config: &Arc<Mutex<JobsConfig>>) -> HashMap<Str
         .collect()
 }
 
-fn dp_collect_match_entries(
-    jobs_config: &Arc<Mutex<JobsConfig>>,
-) -> Vec<(String, String, String)> {
+fn dp_collect_match_entries(jobs_config: &Arc<Mutex<JobsConfig>>) -> Vec<(String, String, String)> {
     let config = jobs_config.lock();
     config
         .jobs
@@ -693,15 +806,13 @@ fn dp_parse_row(line: &str) -> Option<DpRow<'_>> {
     })
 }
 
-fn dp_resolve_provider(
-    row: &DpRow<'_>,
-) -> Option<crate::agent_session::ProcessProvider> {
-    let agent_provider = crate::agent_session::detect_process_provider(row.pane_pid, None)
-        .or_else(|| {
+fn dp_resolve_provider(row: &DpRow<'_>) -> Option<crate::agent_session::ProcessProvider> {
+    let agent_provider =
+        crate::agent_session::detect_process_provider(row.pane_pid, None).or_else(|| {
             dp_is_semver(row.command).then_some(crate::agent_session::ProcessProvider::Claude)
         });
-    let is_clawtab_shell_window = row.window.starts_with("ct-clawtab-shell-")
-        || row.window.starts_with("clawtab-shell-");
+    let is_clawtab_shell_window =
+        row.window.starts_with("ct-clawtab-shell-") || row.window.starts_with("clawtab-shell-");
     match (agent_provider, is_clawtab_shell_window) {
         (Some(p), _) => Some(p),
         (None, true) => Some(crate::agent_session::ProcessProvider::Shell),
@@ -796,10 +907,15 @@ fn detect_processes(
     let pane_lines = stdout.lines().count();
     if pane_lines > 0 {
         let first = stdout.lines().next().unwrap_or("");
-        let hex: String = first.bytes().take(80).map(|b| format!("{:02x} ", b)).collect();
+        let hex: String = first
+            .bytes()
+            .take(80)
+            .map(|b| format!("{:02x} ", b))
+            .collect();
         log::info!(
             "detect_processes: tmux returned {} pane lines. first_line_hex(80)={}",
-            pane_lines, hex
+            pane_lines,
+            hex
         );
     } else {
         log::info!("detect_processes: tmux returned 0 pane lines");

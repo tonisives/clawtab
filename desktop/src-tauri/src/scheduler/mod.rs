@@ -2,8 +2,8 @@ pub mod executor;
 pub mod monitor;
 pub mod reattach;
 
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 use chrono::{Duration, Local};
 use cron::Schedule;
@@ -45,7 +45,11 @@ fn emit_missed_cron_jobs(
             continue;
         }
         let Some(schedules) = parse_cron(&job.cron) else {
-            log::warn!("Invalid cron expression for job '{}': {}", job.name, job.cron);
+            log::warn!(
+                "Invalid cron expression for job '{}': {}",
+                job.name,
+                job.cron
+            );
             continue;
         };
         let since = last_run_since(&ctx.history, &job.slug, lookback_limit);
@@ -56,7 +60,10 @@ fn emit_missed_cron_jobs(
     }
 
     if !missed_jobs.is_empty() {
-        log::info!("Emitting missed-cron-jobs event with {} jobs", missed_jobs.len());
+        log::info!(
+            "Emitting missed-cron-jobs event with {} jobs",
+            missed_jobs.len()
+        );
         event_sink.emit_missed_cron_jobs(missed_jobs);
     }
 }
@@ -88,7 +95,10 @@ fn has_missed_run(
 
 fn log_startup_cron(jobs_config: &Arc<Mutex<JobsConfig>>) {
     let jobs = jobs_config.lock().jobs.clone();
-    let cron_jobs: Vec<_> = jobs.iter().filter(|j| j.enabled && !j.cron.is_empty()).collect();
+    let cron_jobs: Vec<_> = jobs
+        .iter()
+        .filter(|j| j.enabled && !j.cron.is_empty())
+        .collect();
     log::info!("Scheduler tracking {} cron-enabled job(s)", cron_jobs.len());
     for job in &cron_jobs {
         if let Some(schedules) = parse_cron(&job.cron) {
@@ -116,7 +126,11 @@ fn run_due_jobs(
             continue;
         }
         let Some(schedules) = parse_cron(&job.cron) else {
-            log::warn!("Invalid cron expression for job '{}': {}", job.name, job.cron);
+            log::warn!(
+                "Invalid cron expression for job '{}': {}",
+                job.name,
+                job.cron
+            );
             continue;
         };
         if has_missed_run(&schedules, last_check, now) {
@@ -149,7 +163,10 @@ fn cleanup_stale_running(ctx: &JobContext, event_sink: &dyn crate::events::Event
         statuses
             .iter()
             .filter_map(|(slug, status)| {
-                if let JobStatus::Running { pane_id: Some(pid), .. } = status {
+                if let JobStatus::Running {
+                    pane_id: Some(pid), ..
+                } = status
+                {
                     if !crate::tmux::pane_exists(pid) {
                         return Some((slug.clone(), pid.clone()));
                     }

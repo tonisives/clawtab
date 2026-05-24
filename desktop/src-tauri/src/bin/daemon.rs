@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use clawtab_lib::config::jobs::{JobStatus, JobsConfig};
 use clawtab_lib::config::settings::AppSettings;
@@ -207,18 +207,16 @@ fn main() {
                     let pty_manager = Arc::clone(&pty_manager);
                     let event_sink = Arc::clone(&event_sink);
                     tokio::spawn(async move {
-                        clawtab_lib::relay::connect_loop(
-                            clawtab_lib::relay::ConnectLoopParams {
-                                ws_url,
-                                device_token,
-                                server_url,
-                                relay_sub_required: relay_sub,
-                                jobs_config,
-                                ctx,
-                                pty_manager,
-                                event_sink,
-                            },
-                        )
+                        clawtab_lib::relay::connect_loop(clawtab_lib::relay::ConnectLoopParams {
+                            ws_url,
+                            device_token,
+                            server_url,
+                            relay_sub_required: relay_sub,
+                            jobs_config,
+                            ctx,
+                            pty_manager,
+                            event_sink,
+                        })
                         .await;
                     });
                 }
@@ -446,15 +444,13 @@ async fn handle_ipc_command(
                 }
             }
         }
-        IpcCommand::GetRelayStatus => {
-            IpcResponse::RelayStatus(compute_relay_status(
-                settings,
-                secrets,
-                relay,
-                relay_sub_required,
-                relay_auth_expired,
-            ))
-        }
+        IpcCommand::GetRelayStatus => IpcResponse::RelayStatus(compute_relay_status(
+            settings,
+            secrets,
+            relay,
+            relay_sub_required,
+            relay_auth_expired,
+        )),
         IpcCommand::RelayConnect => {
             match spawn_relay_connect(
                 relay_sub_required,
@@ -512,7 +508,12 @@ async fn handle_ipc_command(
         }
         IpcCommand::DeleteJob { name } => {
             let mut config = jobs_config.lock();
-            let slug = match config.jobs.iter().find(|j| j.slug == name).map(|j| j.slug.clone()) {
+            let slug = match config
+                .jobs
+                .iter()
+                .find(|j| j.slug == name)
+                .map(|j| j.slug.clone())
+            {
                 Some(s) => s,
                 None => return IpcResponse::Error(format!("Job not found: {}", name)),
             };
@@ -719,16 +720,13 @@ async fn handle_ipc_command(
         IpcCommand::OpenJobFolder { name } => {
             let dir = {
                 let jobs = jobs_config.lock();
-                jobs.jobs
-                    .iter()
-                    .find(|j| j.name == name)
-                    .and_then(|j| {
-                        j.folder_path.clone().or_else(|| {
-                            std::path::Path::new(&j.path)
-                                .parent()
-                                .map(|p| p.to_string_lossy().into_owned())
-                        })
+                jobs.jobs.iter().find(|j| j.name == name).and_then(|j| {
+                    j.folder_path.clone().or_else(|| {
+                        std::path::Path::new(&j.path)
+                            .parent()
+                            .map(|p| p.to_string_lossy().into_owned())
                     })
+                })
             };
             match dir {
                 Some(d) => {

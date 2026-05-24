@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { shortenPath, type DetectedProcess, type ShellPane, type useJobsCore } from "@clawtab/shared";
+import { processDisplayTitle, shortenPath, type DetectedProcess, type ShellPane, type useJobsCore } from "@clawtab/shared";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useViewingState } from "./useViewingState";
 
@@ -34,7 +34,7 @@ export function useProcessEditing({ core, viewing, lifecycle }: UseProcessEditin
       const trimmed = draft.trim();
       return trimmed || shortenPath(process.cwd);
     }
-    return process.display_name ?? process.pane_title ?? shortenPath(process.cwd);
+    return processDisplayTitle(process);
   }, [processRenameDrafts]);
 
   const openRenameProcessDialog = useCallback((process: DetectedProcess) => {

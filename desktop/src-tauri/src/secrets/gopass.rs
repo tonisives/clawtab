@@ -26,8 +26,16 @@ impl GopassBackend {
             let detail = if !stderr.is_empty() { stderr } else { stdout };
             return Err(format!(
                 "gopass ls --flat failed (exit {}): {}",
-                output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "?".into()),
-                if detail.is_empty() { "<no output>".into() } else { detail }
+                output
+                    .status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".into()),
+                if detail.is_empty() {
+                    "<no output>".into()
+                } else {
+                    detail
+                }
             ));
         }
 

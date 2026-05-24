@@ -55,10 +55,7 @@ async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
         Ok(usage) => {
             let session_pct = usage_bucket_percent(usage.five_hour.as_ref());
             let week_pct = usage_bucket_percent(usage.seven_day.as_ref());
-            let session_reset = usage
-                .five_hour
-                .as_ref()
-                .and_then(|b| b.resets_in_human());
+            let session_reset = usage.five_hour.as_ref().and_then(|b| b.resets_in_human());
             let summary = match session_reset {
                 Some(reset) => format!(
                     "Session {} (resets {}), Week {}",
@@ -206,7 +203,13 @@ fn send_codex_rpc_requests(stdin: &mut dyn Write) -> Result<(), String> {
 
 fn read_codex_rpc_responses(
     stdout: std::process::ChildStdout,
-) -> Result<(Option<CodexAccountReadResult>, Option<CodexRateLimitReadResult>), String> {
+) -> Result<
+    (
+        Option<CodexAccountReadResult>,
+        Option<CodexRateLimitReadResult>,
+    ),
+    String,
+> {
     let mut reader = BufReader::new(stdout);
     let mut line = String::new();
     let mut account: Option<CodexAccountReadResult> = None;

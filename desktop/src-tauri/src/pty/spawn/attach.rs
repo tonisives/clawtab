@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::io::Read;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::time::Instant;
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};

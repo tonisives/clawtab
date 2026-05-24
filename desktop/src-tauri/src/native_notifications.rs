@@ -36,17 +36,10 @@ pub fn send(title: &str, body: &str) -> Result<(), String> {
     }
 
     // Unique identifier so consecutive notifications don't replace each other.
-    let identifier = NSString::from_str(&format!(
-        "cc.clawtab.engine.{}",
-        uuid::Uuid::new_v4()
-    ));
+    let identifier = NSString::from_str(&format!("cc.clawtab.engine.{}", uuid::Uuid::new_v4()));
 
     let request = unsafe {
-        UNNotificationRequest::requestWithIdentifier_content_trigger(
-            &identifier,
-            &content,
-            None,
-        )
+        UNNotificationRequest::requestWithIdentifier_content_trigger(&identifier, &content, None)
     };
 
     let handler = block2::RcBlock::new(move |error: *mut NSError| {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { DetectedProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
-import { shortenPath } from "../util/format";
+import { compactProcessQuery, processDisplayTitle, shortenPath } from "../util/format";
 import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -43,13 +43,11 @@ export function ProcessCard({
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
 }) {
-  const displayName = inGroup
-    ? (process.display_name ?? process.pane_title ?? process.first_query ?? shortenPath(process.cwd))
-    : (process.display_name ?? process.pane_title ?? shortenPath(process.cwd));
-
+  const displayName = processDisplayTitle(process);
+  const firstQueryTitle = compactProcessQuery(process.first_query);
   const subtitle = inGroup
     ? (process.last_query && process.last_query !== process.first_query ? process.last_query : null)
-    : (process.first_query ?? null);
+    : (displayName !== firstQueryTitle ? process.first_query ?? null : null);
 
   const transient = process._transient_state;
   const TEN_MINUTES = 10 * 60 * 1000;

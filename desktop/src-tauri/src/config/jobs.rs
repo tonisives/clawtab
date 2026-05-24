@@ -412,11 +412,15 @@ impl JobsConfig {
     /// Old format: jobs/myapp-deploy/job.yaml
     /// New format: jobs/myapp/deploy/job.yaml (with job_id set)
     fn migrate_flat_slugs() {
-        let Some(jobs_dir) = Self::jobs_dir() else { return };
+        let Some(jobs_dir) = Self::jobs_dir() else {
+            return;
+        };
         if !jobs_dir.is_dir() {
             return;
         }
-        let Ok(entries) = std::fs::read_dir(&jobs_dir) else { return };
+        let Ok(entries) = std::fs::read_dir(&jobs_dir) else {
+            return;
+        };
         for entry in entries.flatten() {
             migrate_one_flat_slug_dir(&jobs_dir, &entry.path());
         }
@@ -433,7 +437,9 @@ fn migrate_one_flat_slug_dir(jobs_dir: &std::path::Path, path: &std::path::Path)
     if !job_yaml.exists() {
         return;
     }
-    let Some(job) = read_job_yaml(&job_yaml) else { return };
+    let Some(job) = read_job_yaml(&job_yaml) else {
+        return;
+    };
     if is_already_nested(&job, path) {
         return;
     }
@@ -498,7 +504,12 @@ fn derive_project_slug_for_migration(job: &Job) -> String {
     }
 }
 
-fn write_migrated_job(new_dir: &std::path::Path, job: Job, project_slug: &str, job_id: &str) -> bool {
+fn write_migrated_job(
+    new_dir: &std::path::Path,
+    job: Job,
+    project_slug: &str,
+    job_id: &str,
+) -> bool {
     let mut migrated_job = job;
     if migrated_job.job_id.is_none() {
         migrated_job.job_id = Some("default".to_string());
@@ -623,7 +634,9 @@ pub fn central_project_context_path(slug: &str) -> Option<std::path::PathBuf> {
 /// Copies user scripts and context files from {folder_path}/.cwt/ to ~/.config/clawtab/jobs/,
 /// then removes the .cwt/ directory.
 pub fn migrate_cwt_to_central(jobs: &[Job]) {
-    let Some(jobs_dir) = JobsConfig::jobs_dir() else { return };
+    let Some(jobs_dir) = JobsConfig::jobs_dir() else {
+        return;
+    };
     let mut seen_projects: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for job in jobs.iter().filter(|j| j.job_type == JobType::Job) {
@@ -636,7 +649,9 @@ fn migrate_one_job_cwt(
     job: &Job,
     seen_projects: &mut std::collections::HashSet<String>,
 ) {
-    let Some(folder_path) = job.folder_path.as_ref() else { return };
+    let Some(folder_path) = job.folder_path.as_ref() else {
+        return;
+    };
     let project_root = std::path::Path::new(folder_path);
     let cwt_dir = project_root.join(".cwt");
     if !cwt_dir.is_dir() {
@@ -656,19 +671,29 @@ fn migrate_one_job_cwt(
     }
 }
 
-fn migrate_per_job_files(cwt_dir: &std::path::Path, job_id: &str, central_job_dir: &std::path::Path) {
+fn migrate_per_job_files(
+    cwt_dir: &std::path::Path,
+    job_id: &str,
+    central_job_dir: &std::path::Path,
+) {
     let cwt_job_dir = cwt_dir.join(job_id);
     if !cwt_job_dir.is_dir() {
         return;
     }
     let _ = std::fs::create_dir_all(central_job_dir);
-    let Ok(entries) = std::fs::read_dir(&cwt_job_dir) else { return };
+    let Ok(entries) = std::fs::read_dir(&cwt_job_dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_file() {
             continue;
         }
-        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if name == "cwt.md" || name == "job.md" {
             continue;
         }
@@ -685,18 +710,28 @@ fn migrate_per_job_files(cwt_dir: &std::path::Path, job_id: &str, central_job_di
 
 fn migrate_project_files(cwt_dir: &std::path::Path, central_project_dir: &std::path::Path) {
     let _ = std::fs::create_dir_all(central_project_dir);
-    let Ok(entries) = std::fs::read_dir(cwt_dir) else { return };
+    let Ok(entries) = std::fs::read_dir(cwt_dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_file() {
             continue;
         }
-        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if name == "cwt.md" {
             let dest = central_project_dir.join("context.md");
             if !dest.exists() {
                 let _ = std::fs::copy(&path, &dest);
-                log::info!("Migrated shared context {} to {}", path.display(), dest.display());
+                log::info!(
+                    "Migrated shared context {} to {}",
+                    path.display(),
+                    dest.display()
+                );
             }
             continue;
         }

@@ -1,7 +1,7 @@
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use parking_lot::Mutex;
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 

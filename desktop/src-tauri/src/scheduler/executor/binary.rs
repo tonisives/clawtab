@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use tokio::io::{AsyncBufReadExt, AsyncRead};
 use tokio::process::Command;

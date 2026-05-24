@@ -2,15 +2,16 @@
 //! into an outgoing reply.
 
 use crate::config::jobs::{Job, JobStatus};
-use crate::telegram::{self, commands::{self, AgentCommand}, types::Update, TelegramConfig};
+use crate::telegram::{
+    self,
+    commands::{self, AgentCommand},
+    types::Update,
+    TelegramConfig,
+};
 
 use super::{agent, lock_or_log, AgentState};
 
-pub(super) async fn handle_update(
-    update: &Update,
-    config: &TelegramConfig,
-    state: &AgentState,
-) {
+pub(super) async fn handle_update(update: &Update, config: &TelegramConfig, state: &AgentState) {
     if let Some(ref message) = update.message {
         if !config.chat_ids.contains(&message.chat.id) {
             log::debug!(

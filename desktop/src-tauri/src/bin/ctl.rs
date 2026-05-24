@@ -32,7 +32,9 @@ fn print_usage() {
     eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
     eprintln!();
     eprintln!("Pane (require desktop app):");
-    eprintln!("  open [pane_id]              Open tmux pane in ClawTab (uses $TMUX_PANE if omitted)");
+    eprintln!(
+        "  open [pane_id]              Open tmux pane in ClawTab (uses $TMUX_PANE if omitted)"
+    );
     eprintln!("  pane focus <left|right|up|down>  Move focus between ClawTab panes");
     eprintln!();
     eprintln!("Daemon:");
@@ -98,11 +100,16 @@ async fn main() {
                         "up" => PaneDirection::Up,
                         "down" => PaneDirection::Down,
                         "" => {
-                            eprintln!("Error: 'pane focus' requires a direction (left|right|up|down)");
+                            eprintln!(
+                                "Error: 'pane focus' requires a direction (left|right|up|down)"
+                            );
                             std::process::exit(1);
                         }
                         other => {
-                            eprintln!("Error: unknown direction '{}'. Expected left|right|up|down", other);
+                            eprintln!(
+                                "Error: unknown direction '{}'. Expected left|right|up|down",
+                                other
+                            );
                             std::process::exit(1);
                         }
                     };
@@ -368,7 +375,10 @@ async fn main() {
                 }
             }
             IpcResponse::RelayStatus(status) => {
-                println!("{}", serde_json::to_string_pretty(&status).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&status).unwrap_or_default()
+                );
             }
             IpcResponse::PaneCreated {
                 pane_id,
@@ -381,7 +391,10 @@ async fn main() {
                 );
             }
             IpcResponse::AllPanes(panes) => {
-                println!("{}", serde_json::to_string_pretty(&panes).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&panes).unwrap_or_default()
+                );
             }
             IpcResponse::Error(msg) => {
                 eprintln!("Error: {}", msg);

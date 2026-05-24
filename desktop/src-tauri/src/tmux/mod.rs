@@ -108,10 +108,17 @@ pub fn resolve_real_session_for_pane(pane_id: &str) -> Result<String, String> {
             String::from_utf8_lossy(&window_id.stderr).trim()
         ));
     }
-    let window_id = String::from_utf8_lossy(&window_id.stdout).trim().to_string();
+    let window_id = String::from_utf8_lossy(&window_id.stdout)
+        .trim()
+        .to_string();
 
     let output = run(
-        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
+        &[
+            "list-windows",
+            "-a",
+            "-F",
+            "#{session_name}\x1e#{window_id}",
+        ],
         "tmux::resolve_real_session_for_pane::list_windows",
     )
     .map_err(|e| format!("Failed to list windows: {}", e))?;
@@ -225,7 +232,12 @@ pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
     // real owning session rather than the ephemeral view session (or whatever
     // session tmux happens to report for the group member).
     let all_windows = run(
-        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
+        &[
+            "list-windows",
+            "-a",
+            "-F",
+            "#{session_name}\x1e#{window_id}",
+        ],
         "tmux::resolve_fork_session::list_windows",
     )
     .map_err(|e| format!("Failed to list windows: {}", e))?;
@@ -383,11 +395,8 @@ pub fn send_keys_to_pane(_session: &str, pane_id: &str, keys: &str) -> Result<()
 
 /// Enter tmux copy-mode for a specific pane.
 pub fn enter_copy_mode(pane_id: &str) -> Result<(), String> {
-    let output = run(
-        &["copy-mode", "-t", pane_id],
-        "tmux::enter_copy_mode",
-    )
-    .map_err(|e| format!("Failed to enter copy mode: {}", e))?;
+    let output = run(&["copy-mode", "-t", pane_id], "tmux::enter_copy_mode")
+        .map_err(|e| format!("Failed to enter copy mode: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -954,10 +963,7 @@ pub fn kill_session(session: &str) -> Result<(), String> {
 /// `kill-window -t <window_id>` (as opposed to [`kill_window`] which takes
 /// `session:name`).
 pub fn kill_window_by_id(window_id: &str) -> Result<(), String> {
-    run_ok(
-        &["kill-window", "-t", window_id],
-        "tmux::kill_window_by_id",
-    )
+    run_ok(&["kill-window", "-t", window_id], "tmux::kill_window_by_id")
 }
 
 /// `rename-window -t <target> <new_name>`.
@@ -1011,14 +1017,7 @@ pub fn join_pane(src_pane_id: &str, dst_window_id: &str) -> Result<(), String> {
 /// `set-option -w -t <window_id> @clawtab-origin <meta>`.
 pub fn set_window_origin(window_id: &str, meta: &str) -> Result<(), String> {
     run_ok(
-        &[
-            "set-option",
-            "-w",
-            "-t",
-            window_id,
-            "@clawtab-origin",
-            meta,
-        ],
+        &["set-option", "-w", "-t", window_id, "@clawtab-origin", meta],
         "tmux::set_window_origin",
     )
 }
@@ -1062,14 +1061,7 @@ pub fn new_session_with_placeholder(session: &str) -> Result<(), String> {
 /// grouped view session sharing windows with `base_session`.
 pub fn new_grouped_view_session(view_name: &str, base_session: &str) -> Result<(), String> {
     run_ok(
-        &[
-            "new-session",
-            "-d",
-            "-s",
-            view_name,
-            "-t",
-            base_session,
-        ],
+        &["new-session", "-d", "-s", view_name, "-t", base_session],
         "tmux::new_grouped_view_session",
     )
 }
@@ -1119,7 +1111,12 @@ pub fn list_window_names_in_session(session: &str) -> Result<Vec<String>, String
 /// helper to resolve the real (non-view) session owning a window.
 pub fn list_all_windows_with_session() -> Result<Vec<(String, String)>, String> {
     let raw = run_capture(
-        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
+        &[
+            "list-windows",
+            "-a",
+            "-F",
+            "#{session_name}\x1e#{window_id}",
+        ],
         "tmux::list_all_windows_with_session",
     )?;
     let mut out = Vec::new();

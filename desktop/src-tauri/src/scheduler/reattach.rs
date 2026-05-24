@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use crate::config::jobs::{JobStatus, JobType, JobsConfig, NotifyTarget};
 use crate::events::EventSink;
@@ -37,7 +37,11 @@ pub fn reattach_running_jobs(
 
     let mut reattached = 0;
     for run in &unfinished {
-        let Some(job) = slug_to_job.get(run.job_id.as_str()).copied().filter(|j| j.enabled) else {
+        let Some(job) = slug_to_job
+            .get(run.job_id.as_str())
+            .copied()
+            .filter(|j| j.enabled)
+        else {
             continue;
         };
         let Some(pane_id) = run.pane_id.clone() else {
@@ -56,7 +60,10 @@ pub fn reattach_running_jobs(
     }
 
     if reattached > 0 {
-        log::info!("Reattached {} running job(s) from previous session", reattached);
+        log::info!(
+            "Reattached {} running job(s) from previous session",
+            reattached
+        );
         event_sink.emit_jobs_changed();
     }
 }
@@ -64,10 +71,18 @@ pub fn reattach_running_jobs(
 fn load_reattach_inputs(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     settings: &Arc<Mutex<crate::config::settings::AppSettings>>,
-) -> (Vec<crate::config::jobs::Job>, String, Option<crate::telegram::TelegramConfig>) {
+) -> (
+    Vec<crate::config::jobs::Job>,
+    String,
+    Option<crate::telegram::TelegramConfig>,
+) {
     let jc = jobs_config.lock();
     let s = settings.lock();
-    (jc.jobs.clone(), s.default_tmux_session.clone(), s.telegram.clone())
+    (
+        jc.jobs.clone(),
+        s.default_tmux_session.clone(),
+        s.telegram.clone(),
+    )
 }
 
 fn load_unfinished_runs(
@@ -114,14 +129,19 @@ fn finalize_idle_pane(
     history: &Arc<Mutex<crate::history::HistoryStore>>,
 ) {
     let h = history.lock();
-    let output = tmux::capture_pane_full(pane_id).unwrap_or_default().trim().to_string();
+    let output = tmux::capture_pane_full(pane_id)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let finished_at = Utc::now().to_rfc3339();
     if let Err(e) = h.update_finished(&run.id, &finished_at, None, &output, "") {
         log::error!("Failed to finalize orphaned run {}: {}", run.id, e);
     } else {
         log::info!(
             "Finalized orphaned run '{}' for job '{}' ({} bytes captured)",
-            run.id, job.name, output.len(),
+            run.id,
+            job.name,
+            output.len(),
         );
         super::monitor::save_log_file(&job.slug, &run.id, &output);
     }
@@ -141,10 +161,19 @@ fn reattach_one_run(
     let started_at = Utc::now().to_rfc3339();
     log::info!(
         "Reattaching job '{}' to pane {} in session '{}'",
-        job.name, pane_id, session,
+        job.name,
+        pane_id,
+        session,
     );
 
-    mark_running(&job.slug, &run_id, &started_at, pane_id, session, &ctx.job_status);
+    mark_running(
+        &job.slug,
+        &run_id,
+        &started_at,
+        pane_id,
+        session,
+        &ctx.job_status,
+    );
     restore_auto_yes(job, pane_id, &ctx.auto_yes_panes);
     insert_reattach_history(job, &run_id, &started_at, pane_id, &ctx.history);
     register_active_agent(job, &run_id, pane_id, session, ctx, telegram_config);
@@ -152,12 +181,11 @@ fn reattach_one_run(
     let _ = run;
 }
 
-fn cleanup_stale_reattach_records(
-    slug: &str,
-    history: &Arc<Mutex<crate::history::HistoryStore>>,
-) {
+fn cleanup_stale_reattach_records(slug: &str, history: &Arc<Mutex<crate::history::HistoryStore>>) {
     let h = history.lock();
-    let Ok(old_runs) = h.get_by_job_id(slug, 20) else { return };
+    let Ok(old_runs) = h.get_by_job_id(slug, 20) else {
+        return;
+    };
     let stale_ids: Vec<String> = old_runs
         .into_iter()
         .filter(|r| {
@@ -205,7 +233,8 @@ fn restore_auto_yes(
     panes.insert(pane_id.to_string());
     log::info!(
         "Auto-yes restored for reattached job '{}' pane '{}'",
-        job.name, pane_id,
+        job.name,
+        pane_id,
     );
 }
 
@@ -314,7 +343,9 @@ fn build_telegram_stream(
     if !config.is_configured() {
         return None;
     }
-    let chat_id = job.telegram_chat_id.or_else(|| config.chat_ids.first().copied())?;
+    let chat_id = job
+        .telegram_chat_id
+        .or_else(|| config.chat_ids.first().copied())?;
     Some(TelegramStream {
         bot_token: config.bot_token.clone(),
         chat_id,

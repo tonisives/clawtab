@@ -5,8 +5,6 @@
 
 mod aerospace;
 pub mod agent;
-#[cfg(all(feature = "desktop", target_os = "macos"))]
-mod macos_window;
 pub mod agent_session;
 #[cfg(feature = "desktop")]
 mod browser;
@@ -23,6 +21,8 @@ mod focus;
 pub mod history;
 pub mod ipc;
 pub mod job_context;
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+mod macos_window;
 #[cfg(target_os = "macos")]
 pub mod native_notifications;
 pub mod notifications;
@@ -42,11 +42,11 @@ pub mod watcher;
 
 // Everything below this point is desktop-only (Tauri GUI app).
 // The daemon binary uses individual modules directly.
+use parking_lot::Mutex;
 #[cfg(feature = "desktop")]
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "desktop")]
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 #[cfg(feature = "desktop")]
 use tauri::{
@@ -496,7 +496,10 @@ fn spawn_desktop_ipc(app: &tauri::App) {
 }
 
 #[cfg(feature = "desktop")]
-fn dispatch_desktop_ipc(app_handle: &tauri::AppHandle, cmd: ipc::DesktopIpcCommand) -> ipc::IpcResponse {
+fn dispatch_desktop_ipc(
+    app_handle: &tauri::AppHandle,
+    cmd: ipc::DesktopIpcCommand,
+) -> ipc::IpcResponse {
     match cmd {
         ipc::DesktopIpcCommand::FocusPane { direction } => {
             let action = match direction {
@@ -551,7 +554,8 @@ fn build_app_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
     let import_item = MenuItem::with_id(app, "import_cwt", "Import Job...", true, None::<&str>)?;
     let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
     let pty_debug_item = MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
-    let tmux_debug_item = MenuItem::with_id(app, "view_tmux_debug", "Tmux Debug", true, None::<&str>)?;
+    let tmux_debug_item =
+        MenuItem::with_id(app, "view_tmux_debug", "Tmux Debug", true, None::<&str>)?;
     Menu::with_items(
         app,
         &[
@@ -593,7 +597,12 @@ fn build_app_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
                     &PredefinedMenuItem::select_all(app, None)?,
                 ],
             )?,
-            &Submenu::with_items(app, "View", true, &[&PredefinedMenuItem::fullscreen(app, None)?])?,
+            &Submenu::with_items(
+                app,
+                "View",
+                true,
+                &[&PredefinedMenuItem::fullscreen(app, None)?],
+            )?,
             &Submenu::with_items(
                 app,
                 "Debug",
@@ -710,7 +719,14 @@ pub fn run() {
 
     let ipc_app_handle: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
     let pty_manager: pty::SharedPtyManager = Arc::new(Mutex::new(pty::PtyManager::new()));
-    let app_state = build_app_state(&settings, &jobs_config, &secrets, &history, &ipc_app_handle, &pty_manager);
+    let app_state = build_app_state(
+        &settings,
+        &jobs_config,
+        &secrets,
+        &history,
+        &ipc_app_handle,
+        &pty_manager,
+    );
     let settings_for_updater = Arc::clone(&settings);
     let jobs_config_for_setup = Arc::clone(&jobs_config);
 
@@ -869,7 +885,14 @@ pub fn run() {
             commands::daemon::daemon_restart,
             commands::daemon::get_daemon_logs,
         ])
-        .setup(move |app| setup_app(app, &ipc_app_handle, &jobs_config_for_setup, &settings_for_updater))
+        .setup(move |app| {
+            setup_app(
+                app,
+                &ipc_app_handle,
+                &jobs_config_for_setup,
+                &settings_for_updater,
+            )
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
