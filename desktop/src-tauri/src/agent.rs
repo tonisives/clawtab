@@ -190,11 +190,7 @@ pub fn build_agent_job(
             .unwrap_or("agent");
         let name = format!("agent-{}", folder);
         let slug = format!("agent-{}-{}", folder, unique_suffix);
-        (
-            name,
-            slug,
-            project_dir.to_string_lossy().to_string(),
-        )
+        (name, slug, project_dir.to_string_lossy().to_string())
     } else {
         (
             "agent".to_string(),

@@ -111,9 +111,7 @@ struct WindowEntry {
     panes: Vec<(String, String)>,
 }
 
-pub(super) fn cleanup_orphaned_ct_windows(
-    protected_panes: &std::collections::HashSet<String>,
-) {
+pub(super) fn cleanup_orphaned_ct_windows(protected_panes: &std::collections::HashSet<String>) {
     let raw = match tmux_api::list_panes_all_with_commands() {
         Ok(v) => v,
         Err(e) => {
@@ -162,12 +160,14 @@ fn group_ct_windows(raw: &str) -> std::collections::HashMap<String, WindowEntry>
             continue;
         }
 
-        let entry = windows.entry(window_id.to_string()).or_insert_with(|| WindowEntry {
-            session: session.to_string(),
-            window_id: window_id.to_string(),
-            window_name: window_name.to_string(),
-            panes: Vec::new(),
-        });
+        let entry = windows
+            .entry(window_id.to_string())
+            .or_insert_with(|| WindowEntry {
+                session: session.to_string(),
+                window_id: window_id.to_string(),
+                window_name: window_name.to_string(),
+                panes: Vec::new(),
+            });
         entry.panes.push((pane_id.to_string(), cmd.to_string()));
     }
     windows
@@ -194,7 +194,10 @@ fn try_kill_or_keep(
         return false;
     }
 
-    let all_idle = entry.panes.iter().all(|(_, cmd)| is_idle_shell_command(cmd));
+    let all_idle = entry
+        .panes
+        .iter()
+        .all(|(_, cmd)| is_idle_shell_command(cmd));
     if !all_idle {
         log::info!(
             "cleanup_orphaned_ct_windows: keeping {} ({}:{}) running",

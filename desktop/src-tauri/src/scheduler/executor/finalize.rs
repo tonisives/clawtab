@@ -186,7 +186,9 @@ fn log_outcome(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
 
 fn publish_terminal_status(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>, finished_at: &str) {
     let new_status = if outcome.success {
-        JobStatus::Success { last_run: finished_at.to_string() }
+        JobStatus::Success {
+            last_run: finished_at.to_string(),
+        }
     } else {
         JobStatus::Failed {
             last_run: finished_at.to_string(),
@@ -234,7 +236,11 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
             }
         }
         NotifyTarget::App => {
-            let event = if outcome.success { "completed" } else { "failed" };
+            let event = if outcome.success {
+                "completed"
+            } else {
+                "failed"
+            };
             crate::relay::push_job_notification(&ctx.relay, &job.slug, event, rc.run_id);
             if let Some(ref n) = ctx.notifier {
                 n.notify_job(&job.name, event);
@@ -252,7 +258,14 @@ fn push_trigger_result(rc: &RunCtx<'_>, trigger_id: &str, outcome: &RunOutcome<'
             .as_ref()
             .and_then(|p| std::fs::read_to_string(p).ok())
             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-        crate::relay::push_trigger_result(relay, trigger_id, "succeeded", outcome.exit_code, parsed, None);
+        crate::relay::push_trigger_result(
+            relay,
+            trigger_id,
+            "succeeded",
+            outcome.exit_code,
+            parsed,
+            None,
+        );
     } else {
         crate::relay::push_trigger_result(
             relay,

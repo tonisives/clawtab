@@ -14,18 +14,28 @@ fn file_path() -> Option<PathBuf> {
 }
 
 pub fn load_set() -> HashSet<String> {
-    let Some(path) = file_path() else { return HashSet::new() };
+    let Some(path) = file_path() else {
+        return HashSet::new();
+    };
     let contents = match std::fs::read_to_string(&path) {
         Ok(s) => s,
         Err(e) => {
-            log::debug!("protected_panes::load_set: read {} failed: {}", path.display(), e);
+            log::debug!(
+                "protected_panes::load_set: read {} failed: {}",
+                path.display(),
+                e
+            );
             return HashSet::new();
         }
     };
     match serde_json::from_str::<ProtectedPanes>(&contents) {
         Ok(p) => p.protected_pane_ids.into_iter().collect(),
         Err(e) => {
-            log::debug!("protected_panes::load_set: parse {} failed: {}", path.display(), e);
+            log::debug!(
+                "protected_panes::load_set: parse {} failed: {}",
+                path.display(),
+                e
+            );
             HashSet::new()
         }
     }
@@ -40,11 +50,17 @@ pub fn save(ids: &[String]) -> Result<(), String> {
     let payload = ProtectedPanes {
         protected_pane_ids: ids.to_vec(),
     };
-    let contents = serde_json::to_string(&payload)
-        .map_err(|e| format!("Failed to serialize: {}", e))?;
+    let contents =
+        serde_json::to_string(&payload).map_err(|e| format!("Failed to serialize: {}", e))?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, contents)
         .map_err(|e| format!("Failed to write {}: {}", tmp.display(), e))?;
-    std::fs::rename(&tmp, &path)
-        .map_err(|e| format!("Failed to rename {} -> {}: {}", tmp.display(), path.display(), e))
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        format!(
+            "Failed to rename {} -> {}: {}",
+            tmp.display(),
+            path.display(),
+            e
+        )
+    })
 }

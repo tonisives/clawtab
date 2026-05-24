@@ -10,7 +10,11 @@ pub fn list_secrets(state: State<AppState>) -> Vec<SecretEntry> {
 }
 
 #[tauri::command]
-pub async fn set_secret(state: State<'_, AppState>, key: String, value: String) -> Result<(), String> {
+pub async fn set_secret(
+    state: State<'_, AppState>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
     {
         let mut secrets = state.secrets.lock();
         secrets.set(&key, &value)?;

@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use clawtab_protocol::ClaudeQuestion;
 
@@ -167,10 +167,8 @@ impl IpcNotifier {
             };
             let delivered = ipc::broadcast_event(&subs, &event).await;
             if delivered == 0 {
-                let _ = OsascriptNotifier::send_notification(
-                    &title_for_fallback,
-                    &body_for_fallback,
-                );
+                let _ =
+                    OsascriptNotifier::send_notification(&title_for_fallback, &body_for_fallback);
             }
         });
     }
@@ -209,6 +207,21 @@ impl NotificationState {
             notified_question_ids: HashSet::new(),
         }
     }
+}
+
+/// Record currently active questions as already seen without showing banners.
+///
+/// This is used when local notifications are disabled, and for the initial
+/// detection pass after daemon startup. In both cases an already-waiting prompt
+/// should not become a "new" notification later just because delivery became
+/// possible.
+pub fn mark_questions_seen(questions: &[ClaudeQuestion], state: &Arc<Mutex<NotificationState>>) {
+    let current_ids: HashSet<String> = questions.iter().map(|q| q.question_id.clone()).collect();
+    let mut notified = state.lock();
+    notified
+        .notified_question_ids
+        .retain(|id| current_ids.contains(id));
+    notified.notified_question_ids.extend(current_ids);
 }
 
 /// Compact a cwd path for use as a notification title.
@@ -315,6 +328,7 @@ fn format_question_body(question: &ClaudeQuestion) -> String {
 pub fn notify_new_questions(
     notifier: &dyn Notifier,
     questions: &[ClaudeQuestion],
+    active_questions: &[ClaudeQuestion],
     state: &Arc<Mutex<NotificationState>>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
 ) {
@@ -333,7 +347,10 @@ pub fn notify_new_questions(
     }
 
     // Clean up IDs for questions that are no longer active
-    let current_ids: HashSet<String> = questions.iter().map(|q| q.question_id.clone()).collect();
+    let current_ids: HashSet<String> = active_questions
+        .iter()
+        .map(|q| q.question_id.clone())
+        .collect();
     notified
         .notified_question_ids
         .retain(|id| current_ids.contains(id));

@@ -64,10 +64,7 @@ pub fn pty_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    state
-        .pty_manager
-        .lock()
-        .resize(&pane_id, cols, rows)
+    state.pty_manager.lock().resize(&pane_id, cols, rows)
 }
 
 #[tauri::command]
@@ -84,10 +81,7 @@ pub fn pty_destroy(
 
 #[tauri::command]
 pub fn pty_get_cached_output(state: State<AppState>, pane_id: String) -> Result<Vec<u8>, String> {
-    Ok(state
-        .pty_manager
-        .lock()
-        .get_cached_output(&pane_id))
+    Ok(state.pty_manager.lock().get_cached_output(&pane_id))
 }
 
 #[tauri::command]
@@ -97,10 +91,7 @@ pub fn pty_refresh_snapshot(
     pane_id: String,
 ) -> Result<(), String> {
     let sink = crate::pty::OutputSink::Tauri(app);
-    state
-        .pty_manager
-        .lock()
-        .refresh_snapshot(&pane_id, &sink)
+    state.pty_manager.lock().refresh_snapshot(&pane_id, &sink)
 }
 
 #[derive(Serialize)]

@@ -1,7 +1,7 @@
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use chrono::Utc;
 
@@ -101,7 +101,11 @@ pub async fn monitor_pane(params: MonitorParams) {
     notify_finish(&params, use_telegram, use_app).await;
     push_trigger_result_if_any(&params);
 
-    log::info!("[{}] Monitor finished for job '{}'", params.run_id, params.job_id);
+    log::info!(
+        "[{}] Monitor finished for job '{}'",
+        params.run_id,
+        params.job_id
+    );
 }
 
 async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool) {
@@ -112,7 +116,11 @@ async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool)
         if let Some(ref tg) = params.telegram {
             let text = format!("<b>ClawTab</b>: Job <code>{}</code> started", params.job_id);
             if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await {
-                log::error!("[{}] Failed to send start notification: {}", params.run_id, e);
+                log::error!(
+                    "[{}] Failed to send start notification: {}",
+                    params.run_id,
+                    e
+                );
             }
         }
     }
@@ -129,7 +137,9 @@ async fn init_working_message(params: &MonitorParams, use_telegram: bool) -> Opt
         return None;
     }
     let tg = params.telegram.as_ref()?;
-    match crate::telegram::send_message_returning_id(&tg.bot_token, tg.chat_id, "Working... 0:00").await {
+    match crate::telegram::send_message_returning_id(&tg.bot_token, tg.chat_id, "Working... 0:00")
+        .await
+    {
         Ok(mid) => Some(mid),
         Err(e) => {
             log::error!("[{}] Failed to send working message: {}", params.run_id, e);
@@ -181,7 +191,14 @@ async fn run_poll_loop(
             break;
         };
 
-        maybe_update_working_message(params, use_telegram, working_message_id, started_at, state.tick_counter).await;
+        maybe_update_working_message(
+            params,
+            use_telegram,
+            working_message_id,
+            started_at,
+            state.tick_counter,
+        )
+        .await;
         handle_capture_diff(params, use_telegram, process_exited, state, trimmed).await;
         maybe_flush_idle_logs(params, use_telegram, state).await;
 
@@ -195,7 +212,12 @@ fn capture_or_break(params: &MonitorParams) -> Option<String> {
     match tmux::capture_pane(&params.tmux_session, &params.pane_id, CAPTURE_LINES) {
         Ok(c) => Some(c.lines().collect::<Vec<_>>().join("\n").trim().to_string()),
         Err(e) => {
-            log::warn!("[{}] Failed to capture pane {}: {}", params.run_id, params.pane_id, e);
+            log::warn!(
+                "[{}] Failed to capture pane {}: {}",
+                params.run_id,
+                params.pane_id,
+                e
+            );
             None
         }
     }
@@ -211,12 +233,20 @@ async fn maybe_update_working_message(
     if !params.telegram_notify.working || !use_telegram || !tick_counter.is_multiple_of(4) {
         return;
     }
-    let Some(tg) = params.telegram.as_ref() else { return };
+    let Some(tg) = params.telegram.as_ref() else {
+        return;
+    };
     let elapsed = started_at.elapsed().as_secs();
     let working_text = format!("Working... {}", format_elapsed(elapsed));
     if let Some(mid) = working_message_id {
-        if let Err(e) = crate::telegram::edit_message_text(&tg.bot_token, tg.chat_id, mid, &working_text).await {
-            log::warn!("[{}] Failed to update working message: {}", params.run_id, e);
+        if let Err(e) =
+            crate::telegram::edit_message_text(&tg.bot_token, tg.chat_id, mid, &working_text).await
+        {
+            log::warn!(
+                "[{}] Failed to update working message: {}",
+                params.run_id,
+                e
+            );
         }
     }
     let _ = crate::telegram::send_chat_action(&tg.bot_token, tg.chat_id, "typing").await;
@@ -309,7 +339,11 @@ async fn maybe_flush_idle_logs(params: &MonitorParams, use_telegram: bool, state
         if !snippet.trim().is_empty() {
             let msg = format!("<pre>{}</pre>", html_escape(&snippet));
             if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg).await {
-                log::error!("[{}] Failed to send idle log snapshot: {}", params.run_id, e);
+                log::error!(
+                    "[{}] Failed to send idle log snapshot: {}",
+                    params.run_id,
+                    e
+                );
             }
         }
     }
@@ -328,7 +362,11 @@ async fn finalize_telegram(
     }
     if let (Some(tg), Some(mid)) = (params.telegram.as_ref(), working_message_id) {
         if let Err(e) = crate::telegram::delete_message(&tg.bot_token, tg.chat_id, mid).await {
-            log::warn!("[{}] Failed to delete working message: {}", params.run_id, e);
+            log::warn!(
+                "[{}] Failed to delete working message: {}",
+                params.run_id,
+                e
+            );
         }
     }
     if params.telegram_notify.finish {
@@ -337,7 +375,9 @@ async fn finalize_telegram(
 }
 
 async fn send_final_snapshot(params: &MonitorParams) {
-    let Some(tg) = params.telegram.as_ref() else { return };
+    let Some(tg) = params.telegram.as_ref() else {
+        return;
+    };
     let final_trimmed = capture_trimmed(&params.tmux_session, &params.pane_id);
     if final_trimmed.is_empty() {
         return;
@@ -350,7 +390,11 @@ async fn send_final_snapshot(params: &MonitorParams) {
     }
     let msg = format!("<pre>{}</pre>", html_escape(&snippet));
     if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg).await {
-        log::error!("[{}] Failed to send final log snapshot: {}", params.run_id, e);
+        log::error!(
+            "[{}] Failed to send final log snapshot: {}",
+            params.run_id,
+            e
+        );
     }
 }
 
@@ -362,7 +406,8 @@ fn compute_full_output(params: &MonitorParams, accumulated_log: String) -> Strin
     if full_output.is_empty() && !accumulated_log.is_empty() {
         log::info!(
             "[{}] Full pane capture was empty, using accumulated log ({} bytes)",
-            params.run_id, accumulated_log.len(),
+            params.run_id,
+            accumulated_log.len(),
         );
         accumulated_log
     } else {
@@ -378,10 +423,16 @@ fn maybe_kill_pane(params: &MonitorParams) {
     if is_protected {
         log::warn!(
             "[{}] Skipping kill_on_end for pane {} - pane is open in ClawTab",
-            params.run_id, params.pane_id,
+            params.run_id,
+            params.pane_id,
         );
     } else if let Err(e) = tmux::kill_pane(&params.pane_id) {
-        log::warn!("[{}] Failed to kill pane {}: {}", params.run_id, params.pane_id, e);
+        log::warn!(
+            "[{}] Failed to kill pane {}: {}",
+            params.run_id,
+            params.pane_id,
+            e
+        );
     }
 }
 
@@ -393,7 +444,9 @@ fn persist_finish(params: &MonitorParams, full_output: &str) {
             log::error!("[{}] Failed to update history: {}", params.run_id, e);
         }
     }
-    let new_status = JobStatus::Success { last_run: finished_at };
+    let new_status = JobStatus::Success {
+        last_run: finished_at,
+    };
     let mut status = params.job_status.lock();
     status.insert(params.slug.clone(), new_status.clone());
     drop(status);
@@ -407,15 +460,29 @@ async fn notify_finish(params: &MonitorParams, use_telegram: bool, use_app: bool
     if use_telegram {
         if let Some(ref tg) = params.telegram {
             if params.notify_on_success {
-                let text = format!("<b>ClawTab</b>: Job <code>{}</code> completed", params.job_id);
-                if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await {
-                    log::error!("[{}] Failed to send completion notification: {}", params.run_id, e);
+                let text = format!(
+                    "<b>ClawTab</b>: Job <code>{}</code> completed",
+                    params.job_id
+                );
+                if let Err(e) =
+                    crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await
+                {
+                    log::error!(
+                        "[{}] Failed to send completion notification: {}",
+                        params.run_id,
+                        e
+                    );
                 }
             }
         }
     }
     if use_app {
-        crate::relay::push_job_notification(&params.relay, &params.slug, "completed", &params.run_id);
+        crate::relay::push_job_notification(
+            &params.relay,
+            &params.slug,
+            "completed",
+            &params.run_id,
+        );
         if let Some(ref n) = params.notifier {
             n.notify_job(&params.job_id, "completed");
         }
@@ -423,7 +490,9 @@ async fn notify_finish(params: &MonitorParams, use_telegram: bool, use_app: bool
 }
 
 fn push_trigger_result_if_any(params: &MonitorParams) {
-    let Some(tid) = params.trigger_id.as_ref() else { return };
+    let Some(tid) = params.trigger_id.as_ref() else {
+        return;
+    };
     let parsed = params
         .result_file
         .as_ref()

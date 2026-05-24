@@ -44,7 +44,12 @@ pub async fn detect_claude_models() -> Result<Vec<(String, String)>, String> {
     use std::process::Command;
 
     let output = Command::new("security")
-        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ])
         .output()
         .map_err(|e| format!("failed to run security: {}", e))?;
 
@@ -52,8 +57,7 @@ pub async fn detect_claude_models() -> Result<Vec<(String, String)>, String> {
         return Err("no Claude Code credentials found in keychain".to_string());
     }
 
-    let json_str = String::from_utf8(output.stdout)
-        .map_err(|e| format!("invalid utf8: {}", e))?;
+    let json_str = String::from_utf8(output.stdout).map_err(|e| format!("invalid utf8: {}", e))?;
     let parsed: serde_json::Value = serde_json::from_str(json_str.trim())
         .map_err(|e| format!("failed to parse credentials: {}", e))?;
     let token = parsed["claudeAiOauth"]["accessToken"]
@@ -75,7 +79,10 @@ pub async fn detect_claude_models() -> Result<Vec<(String, String)>, String> {
         return Err(format!("API returned {}", resp.status()));
     }
 
-    let body: serde_json::Value = resp.json().await.map_err(|e| format!("parse error: {}", e))?;
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("parse error: {}", e))?;
     // The /v1/models endpoint returns the full Anthropic API catalog, but Claude Code's
     // /model command only allows the current latest of each family (opus, sonnet, haiku).
     // Older revisions like opus-4-6, opus-4-1, sonnet-4-5 are listed by the API but cannot
@@ -97,7 +104,11 @@ pub async fn detect_claude_models() -> Result<Vec<(String, String)>, String> {
     let models: Vec<(String, String)> = entries
         .into_iter()
         .filter_map(|(id, name, family, _, _)| {
-            if seen.insert(family) { Some((id, name)) } else { None }
+            if seen.insert(family) {
+                Some((id, name))
+            } else {
+                None
+            }
         })
         .collect();
 

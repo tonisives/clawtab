@@ -61,7 +61,12 @@ fn agent_already_active(state: &AgentState, chat_id: i64) -> bool {
         .is_some_and(|agents| agents.contains_key(&chat_id))
 }
 
-fn read_settings_and_jobs(state: &AgentState) -> Option<(crate::config::settings::AppSettings, Vec<crate::config::jobs::Job>)> {
+fn read_settings_and_jobs(
+    state: &AgentState,
+) -> Option<(
+    crate::config::settings::AppSettings,
+    Vec<crate::config::jobs::Job>,
+)> {
     let settings = lock_or_log(&state.settings, "settings")?;
     let jobs_config = lock_or_log(&state.jobs_config, "jobs_config")?;
     Some((settings.clone(), jobs_config.jobs.clone()))
@@ -97,8 +102,8 @@ async fn spawn_and_wait_for_pane(
 
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(6);
     loop {
-        let already_there = lock_or_log(&active_agents, "active_agents")
-            .is_some_and(|a| a.contains_key(&chat_id));
+        let already_there =
+            lock_or_log(&active_agents, "active_agents").is_some_and(|a| a.contains_key(&chat_id));
         if already_there {
             return true;
         }
@@ -151,11 +156,7 @@ pub(super) async fn handle_exit_command(state: &AgentState, chat_id: i64) -> Str
 /// Free-text message: forward it as keystrokes to the agent's tmux pane.
 /// Returns None on success (monitor will relay Claude's response), or an
 /// error message on failure.
-pub(super) async fn relay_to_agent(
-    text: &str,
-    state: &AgentState,
-    chat_id: i64,
-) -> Option<String> {
+pub(super) async fn relay_to_agent(text: &str, state: &AgentState, chat_id: i64) -> Option<String> {
     let agent = lock_or_log(&state.active_agents, "active_agents")?
         .get(&chat_id)
         .map(|a| (a.pane_id.clone(), a.tmux_session.clone()));

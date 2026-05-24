@@ -100,12 +100,26 @@ pub async fn execute_job(
     let stream_log_path = prepare_stream_log(job, &run_id);
 
     mark_running(job, ctx, &run_id, &started_at);
-    insert_history_and_prune(job, ctx, &run_id, &started_at, trigger, stream_log_path.as_deref());
+    insert_history_and_prune(
+        job,
+        ctx,
+        &run_id,
+        &started_at,
+        trigger,
+        stream_log_path.as_deref(),
+    );
     kill_orphan_panes(job, ctx);
 
     log::info!("[{}] Starting job '{}' ({})", run_id, job.name, trigger);
 
-    let result = dispatch_job(job, ctx, params, result_file.as_deref(), stream_log_path.as_deref()).await;
+    let result = dispatch_job(
+        job,
+        ctx,
+        params,
+        result_file.as_deref(),
+        stream_log_path.as_deref(),
+    )
+    .await;
 
     let telegram_config = {
         let s = ctx.settings.lock();
@@ -181,7 +195,12 @@ fn prepare_stream_log(job: &Job, run_id: &str) -> Option<std::path::PathBuf> {
 fn ensure_parent_dir(path: &std::path::Path, kind: &str) {
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            log::warn!("Failed to pre-create {} dir {}: {}", kind, parent.display(), e);
+            log::warn!(
+                "Failed to pre-create {} dir {}: {}",
+                kind,
+                parent.display(),
+                e
+            );
         }
     }
 }

@@ -344,11 +344,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     let job_title = format!(
         " Jobs ({}){} ",
         jobs.len(),
-        if app.focus == Section::Jobs {
-            " <"
-        } else {
-            ""
-        }
+        if app.focus == Section::Jobs { " <" } else { "" }
     );
     let job_list = List::new(job_items)
         .block(Block::default().borders(Borders::ALL).title(job_title))

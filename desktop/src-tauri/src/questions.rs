@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
@@ -407,10 +407,7 @@ fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
         if lower.contains("during this session") || lower.contains("this session") {
             score += 80;
         }
-        if lower.contains(" once")
-            || lower.starts_with("once ")
-            || lower.contains(" this time")
-        {
+        if lower.contains(" once") || lower.starts_with("once ") || lower.contains(" this time") {
             score += 40;
         }
         if lower.contains("don't ask again")
@@ -453,6 +450,7 @@ pub async fn question_detection_loop(
     let mut last_sent_ids: HashSet<String> = HashSet::new();
     let mut ticks_since_send: u32 = 0;
     let mut auto_answered_ids: HashMap<String, u32> = HashMap::new();
+    let mut local_notifications_initialized = false;
 
     loop {
         let detection = detect_question_processes(&jobs_config, &job_status);
@@ -478,20 +476,19 @@ pub async fn question_detection_loop(
         let settings_snapshot = settings.lock().clone();
         let notifiable_questions = filter_visible_questions(&questions);
 
-        if settings_snapshot.notify_questions_local {
+        if !local_notifications_initialized {
+            crate::notifications::mark_questions_seen(&questions, &notification_state);
+            local_notifications_initialized = true;
+        } else if settings_snapshot.notify_questions_local {
             crate::notifications::notify_new_questions(
                 notifier.as_ref(),
                 &notifiable_questions,
+                &questions,
                 &notification_state,
                 &auto_yes_panes,
             );
         } else {
-            crate::notifications::notify_new_questions(
-                notifier.as_ref(),
-                &[],
-                &notification_state,
-                &auto_yes_panes,
-            );
+            crate::notifications::mark_questions_seen(&questions, &notification_state);
         }
 
         let relay_questions = if settings_snapshot.notify_questions_remote {
@@ -813,20 +810,25 @@ fn auto_answer_questions(
     );
     for q in questions {
         if !yes_panes.contains(&q.pane_id) {
-            log::debug!("[questions] pane {} not in auto-yes set, skipping", q.pane_id);
+            log::debug!(
+                "[questions] pane {} not in auto-yes set, skipping",
+                q.pane_id
+            );
             continue;
         }
         if let Some(ticks) = auto_answered_ids.get(&q.question_id) {
             if *ticks < 6 {
                 log::debug!(
                     "[questions] question {} already auto-answered ({} ticks ago), skipping",
-                    q.question_id, ticks
+                    q.question_id,
+                    ticks
                 );
                 continue;
             }
             log::debug!(
                 "[questions] question {} still present after {} ticks, retrying auto-answer",
-                q.question_id, ticks
+                q.question_id,
+                ticks
             );
         }
         try_send_auto_answer(q, auto_answered_ids);
@@ -841,18 +843,24 @@ fn try_send_auto_answer(q: &ClaudeQuestion, auto_answered_ids: &mut HashMap<Stri
         .collect();
     log::debug!(
         "[questions] checking auto-yes for pane {} question {} options: {:?}",
-        q.pane_id, q.question_id, options_summary
+        q.pane_id,
+        q.question_id,
+        options_summary
     );
     let Some(opt) = find_yes_option(&q.options) else {
         log::warn!(
             "[questions] no yes option found for pane {} question {}, options: {:?}",
-            q.pane_id, q.question_id, options_summary
+            q.pane_id,
+            q.question_id,
+            options_summary
         );
         return;
     };
     log::info!(
         "[questions] auto-answering pane {} question {} with option {}",
-        q.pane_id, q.question_id, opt
+        q.pane_id,
+        q.question_id,
+        opt
     );
     let send_result = if q.input_mode == "select" {
         if let Some(target_opt) = q.options.iter().find(|o| o.number == opt) {
@@ -1042,9 +1050,7 @@ fn collect_q_running_panes(
         .collect()
 }
 
-fn collect_q_match_entries(
-    jobs_config: &Arc<Mutex<JobsConfig>>,
-) -> Vec<(String, String, String)> {
+fn collect_q_match_entries(jobs_config: &Arc<Mutex<JobsConfig>>) -> Vec<(String, String, String)> {
     let config = jobs_config.lock();
     config
         .jobs
@@ -1117,7 +1123,9 @@ fn detect_question_processes(
         }
         log::debug!(
             "[questions] pane {} pid {} detected as {:?}",
-            pane_id, pane_pid, provider
+            pane_id,
+            pane_pid,
+            provider
         );
 
         if !seen.insert(pane_id.to_string()) {

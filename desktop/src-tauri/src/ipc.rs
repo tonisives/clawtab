@@ -20,19 +20,35 @@ pub fn desktop_socket_path() -> PathBuf {
 pub enum IpcCommand {
     Ping,
     ListJobs,
-    RunJob { name: String },
-    PauseJob { name: String },
-    ResumeJob { name: String },
-    RestartJob { name: String },
+    RunJob {
+        name: String,
+    },
+    PauseJob {
+        name: String,
+    },
+    ResumeJob {
+        name: String,
+    },
+    RestartJob {
+        name: String,
+    },
     GetStatus,
     OpenSettings,
     GetAutoYesPanes,
-    SetAutoYesPanes { pane_ids: Vec<String> },
-    ToggleAutoYes { pane_id: String },
+    SetAutoYesPanes {
+        pane_ids: Vec<String>,
+    },
+    ToggleAutoYes {
+        pane_id: String,
+    },
     GetActiveQuestions,
     ListSecretKeys,
-    GetSecretValues { keys: Vec<String> },
-    GetPaneInfo { pane_id: String },
+    GetSecretValues {
+        keys: Vec<String>,
+    },
+    GetPaneInfo {
+        pane_id: String,
+    },
 
     // Relay state + control
     GetRelayStatus,
@@ -47,13 +63,24 @@ pub enum IpcCommand {
     ReloadSecrets,
 
     // Job lifecycle (state-touching)
-    StopJob { name: String },
-    ToggleJob { name: String },
-    DeleteJob { name: String },
+    StopJob {
+        name: String,
+    },
+    ToggleJob {
+        name: String,
+    },
+    DeleteJob {
+        name: String,
+    },
 
     // Answer questions from UI (cross-process)
-    AnswerQuestion { pane_id: String, answer: String },
-    DismissQuestion { pane_id: String },
+    AnswerQuestion {
+        pane_id: String,
+        answer: String,
+    },
+    DismissQuestion {
+        pane_id: String,
+    },
 
     // Manual run from UI, expects pane info back
     RunJobNow {
@@ -75,7 +102,9 @@ pub enum IpcCommand {
 
     // tmux popup sidebar (cwttui-sidebar) helpers
     ListAllPanes,
-    OpenJobFolder { name: String },
+    OpenJobFolder {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -161,7 +190,10 @@ pub enum IpcEvent {
     /// Daemon-originated notification request. The desktop client, when
     /// subscribed, displays this via tauri-plugin-notification. The daemon
     /// falls back to native engine notifications when no subscriber is present.
-    Notification { title: String, body: String },
+    Notification {
+        title: String,
+        body: String,
+    },
 }
 
 /// Registry of connected event subscribers. Each entry is a write half of a

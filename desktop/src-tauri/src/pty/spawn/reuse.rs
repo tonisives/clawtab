@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use super::super::emit::refresh_attached_pane;
-use super::super::viewer::{ATTACH_COUNTER, OutputSink, SpawnResult};
+use super::super::viewer::{OutputSink, SpawnResult, ATTACH_COUNTER};
 use super::super::PtyManager;
 
 /// If a dead viewer is parked on `pane_id` (reader thread has exited), tear it

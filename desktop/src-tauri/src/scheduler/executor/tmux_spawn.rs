@@ -49,7 +49,13 @@ pub(super) async fn spawn_agent_pane(
     let pane_id =
         tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)?;
 
-    let send_cmd = build_send_cmd(provider, &work_dir, &agent_command, model.as_deref(), &prompt_content);
+    let send_cmd = build_send_cmd(
+        provider,
+        &work_dir,
+        &agent_command,
+        model.as_deref(),
+        &prompt_content,
+    );
     tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
 
     tag_pane(&pane_id, slug);

@@ -1,9 +1,9 @@
+use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::ffi::OsStr;
 use std::process::{Command, Output};
 use std::sync::OnceLock;
-use parking_lot::Mutex;
 use std::time::Instant;
 
 const RETENTION_SECS: i64 = 600;

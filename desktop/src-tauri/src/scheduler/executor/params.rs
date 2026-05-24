@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::Mutex;
 
 use crate::config::jobs::{Job, NotifyTarget};
 use crate::config::settings::AppSettings;
@@ -12,7 +12,9 @@ use crate::secrets::SecretsManager;
 pub(super) fn apply_param_defaults(job: &Job, params: &mut HashMap<String, String>) {
     for p in &job.params {
         if let Some(default) = &p.value {
-            params.entry(p.name.clone()).or_insert_with(|| default.clone());
+            params
+                .entry(p.name.clone())
+                .or_insert_with(|| default.clone());
         }
     }
 }

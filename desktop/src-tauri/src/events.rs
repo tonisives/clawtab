@@ -48,9 +48,7 @@ impl EventSink for TauriEventSink {
 
     fn emit_job_status_changed(&self, name: String, status: crate::config::jobs::JobStatus) {
         use tauri::Emitter;
-        let _ = self
-            .app_handle
-            .emit("job-status-changed", (name, status));
+        let _ = self.app_handle.emit("job-status-changed", (name, status));
     }
 
     fn emit_questions_changed(&self) {
@@ -136,8 +134,7 @@ pub async fn run_daemon_event_subscription(
                 Ok(Some(line)) => match serde_json::from_str::<IpcEvent>(&line) {
                     Ok(event) => match event {
                         IpcEvent::JobsChanged => {
-                            *jobs_config.lock() =
-                                crate::config::jobs::JobsConfig::load();
+                            *jobs_config.lock() = crate::config::jobs::JobsConfig::load();
                             let _ = app_handle.emit("jobs-changed", ());
                         }
                         IpcEvent::AutoYesChanged => {

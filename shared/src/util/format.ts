@@ -40,6 +40,26 @@ export function shortenPath(path: string | null | undefined): string {
   return path.replace(/^\/Users\/[^/]+/, "~");
 }
 
+export function compactProcessQuery(query: string | null | undefined, maxLength = 96): string | null {
+  const compact = query?.replace(/\s+/g, " ").trim();
+  if (!compact) return null;
+  if (compact.length <= maxLength) return compact;
+  return `${compact.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+export function processDisplayTitle(process: {
+  cwd: string;
+  display_name?: string | null;
+  pane_title?: string | null;
+  provider?: string | null;
+  first_query?: string | null;
+}): string {
+  if (process.display_name) return process.display_name;
+  const queryTitle = compactProcessQuery(process.first_query);
+  if (process.provider === "codex" && queryTitle) return queryTitle;
+  return process.pane_title ?? queryTitle ?? shortenPath(process.cwd);
+}
+
 /**
  * Compact multi-schedule cron expressions that share the same day fields.
  * e.g. "0 18 * * 5,1,6,0,4,2,3 | 0 12 * * 5,1,6,0,4,2,3" -> "12:00, 18:00 * * 5,1,6,0,4,2,3"

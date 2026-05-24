@@ -7,8 +7,7 @@ use super::super::viewer::is_view_session;
 /// pane's size, so this reads the "original" dimensions the user expected
 /// before clawtab touched it.
 pub(super) fn read_native_size(pane_id: &str, spawn_started: Instant) -> (u16, u16) {
-    let (native_cols, native_rows) =
-        crate::tmux::display_pane_size(pane_id).unwrap_or((80, 24));
+    let (native_cols, native_rows) = crate::tmux::display_pane_size(pane_id).unwrap_or((80, 24));
     log::debug!(
         "[pty {}] native size {}x{} read after {}ms",
         pane_id,

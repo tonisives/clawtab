@@ -5,11 +5,11 @@ mod emit;
 mod spawn;
 mod viewer;
 
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
 

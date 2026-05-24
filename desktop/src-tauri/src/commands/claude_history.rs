@@ -296,8 +296,10 @@ pub async fn search_claude_history(
         (files, map)
     };
 
-    let mut entries: Vec<(PathBuf, i64)> =
-        files.into_iter().map(|p| (p.clone(), mtime_ms(&p))).collect();
+    let mut entries: Vec<(PathBuf, i64)> = files
+        .into_iter()
+        .map(|p| (p.clone(), mtime_ms(&p)))
+        .collect();
     entries.sort_by(|a, b| b.1.cmp(&a.1));
 
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();

@@ -61,7 +61,12 @@ fn is_view_session(name: &str) -> bool {
 fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> String {
     let output = debug_spawn::run_logged(
         "tmux",
-        &["list-windows", "-a", "-F", "#{session_name}\x1e#{window_id}"],
+        &[
+            "list-windows",
+            "-a",
+            "-F",
+            "#{session_name}\x1e#{window_id}",
+        ],
         "processes::resolve_non_view_session_for_window",
     );
     let Ok(output) = output else {
@@ -120,8 +125,7 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
 
 #[tauri::command]
 pub async fn detect_processes(state: State<'_, AppState>) -> Result<Vec<DetectedProcess>, String> {
-    let live_viewer_panes: HashSet<String> =
-        { state.pty_manager.lock().active_pane_ids() };
+    let live_viewer_panes: HashSet<String> = { state.pty_manager.lock().active_pane_ids() };
     let match_entries = collect_match_entries(&state);
     let slug_to_group = collect_slug_to_group(&state);
     let history_panes = collect_history_panes(&state);
@@ -223,9 +227,7 @@ fn collect_history_panes(state: &State<'_, AppState>) -> HashMap<String, PaneJob
     panes
 }
 
-async fn collect_running_panes(
-    state: &State<'_, AppState>,
-) -> HashMap<String, (String, String)> {
+async fn collect_running_panes(state: &State<'_, AppState>) -> HashMap<String, (String, String)> {
     let statuses: HashMap<String, JobStatus> =
         match crate::ipc::send_command(crate::ipc::IpcCommand::GetStatus).await {
             Ok(crate::ipc::IpcResponse::Status(s)) => s,
@@ -280,7 +282,11 @@ fn detect_processes_blocking(
     let process_snapshot = crate::agent_session::ProcessSnapshot::capture();
     let stdout = match list_tmux_panes()? {
         Some(s) => s,
-        None => return Ok(DetectionSnapshot { processes: Vec::new() }),
+        None => {
+            return Ok(DetectionSnapshot {
+                processes: Vec::new(),
+            })
+        }
     };
 
     let ctx = DetectCtx {
@@ -377,7 +383,11 @@ fn resolve_group_and_job(
         .get(row.pane_id)
         .and_then(|o| o.group_override.as_ref())
     {
-        let group = if group_val.is_empty() { None } else { Some(group_val.clone()) };
+        let group = if group_val.is_empty() {
+            None
+        } else {
+            Some(group_val.clone())
+        };
         return (group, None);
     }
     if let Some((group, slug)) = ctx.running_panes.get(row.pane_id) {
@@ -726,7 +736,10 @@ pub fn get_existing_pane_info(
     let Some(window_id) = parts.next() else {
         return Ok(None);
     };
-    let pane_title = parts.next().map(|value| normalize_optional_text(value.to_string())).flatten();
+    let pane_title = parts
+        .next()
+        .map(|value| normalize_optional_text(value.to_string()))
+        .flatten();
     let pane_slug_tag = parts
         .next()
         .and_then(|value| normalize_optional_text(value.to_string()));
