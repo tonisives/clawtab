@@ -2,16 +2,58 @@ use super::common::{
     find_child_process, format_local_timestamp, normalize_optional_owned, normalize_optional_str,
 };
 use super::{ProcessSnapshot, SessionInfo};
+use parking_lot::Mutex;
 use rusqlite::{Connection, OptionalExtension};
+use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
 use std::path::PathBuf;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant, SystemTime};
 
 struct CodexThreadInfo {
     id: String,
     created_at: i64,
     first_user_message: String,
     rollout_path: Option<String>,
+}
+
+#[derive(Clone)]
+struct CachedHistory {
+    modified: Option<SystemTime>,
+    len: u64,
+    last_by_thread_id: HashMap<String, Option<String>>,
+}
+
+#[derive(Clone)]
+struct CachedRollout {
+    modified: Option<SystemTime>,
+    len: u64,
+    messages_loaded: bool,
+    first: Option<String>,
+    last: Option<String>,
+    token_count: Option<u64>,
+}
+
+#[derive(Clone)]
+struct CachedSqlitePath {
+    checked_at: Instant,
+    path: Option<PathBuf>,
+}
+
+fn history_cache() -> &'static Mutex<HashMap<PathBuf, CachedHistory>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedHistory>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn sqlite_path_cache() -> &'static Mutex<HashMap<String, CachedSqlitePath>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, CachedSqlitePath>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn rollout_cache() -> &'static Mutex<HashMap<PathBuf, CachedRollout>> {
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedRollout>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 pub(super) fn resolve_session_info(
@@ -45,19 +87,14 @@ pub(super) fn resolve_session_info(
     info.session_started_at = format_local_timestamp(started_secs);
 
     if let Some(rollout_path) = thread.rollout_path.as_deref() {
-        info.token_count = read_codex_rollout_token_count(&PathBuf::from(rollout_path));
-    }
-
-    if info.first_query.is_none() || info.last_query.is_none() {
-        if let Some(rollout_path) = thread.rollout_path.as_deref() {
-            let rollout = PathBuf::from(rollout_path);
-            let (first, last) = read_codex_rollout_messages(&rollout);
-            if info.first_query.is_none() {
-                info.first_query = first;
-            }
-            if info.last_query.is_none() {
-                info.last_query = last;
-            }
+        let needs_messages = info.first_query.is_none() || info.last_query.is_none();
+        let rollout = read_codex_rollout(&PathBuf::from(rollout_path), needs_messages);
+        info.token_count = rollout.token_count;
+        if info.first_query.is_none() {
+            info.first_query = rollout.first;
+        }
+        if info.last_query.is_none() {
+            info.last_query = rollout.last;
         }
     }
 
@@ -90,9 +127,19 @@ fn codex_dir() -> PathBuf {
 }
 
 fn latest_codex_sqlite(prefix: &str) -> Option<PathBuf> {
+    const SQLITE_PATH_CACHE_TTL: Duration = Duration::from_secs(2);
+    {
+        let cache = sqlite_path_cache().lock();
+        if let Some(cached) = cache.get(prefix) {
+            if cached.checked_at.elapsed() < SQLITE_PATH_CACHE_TTL {
+                return cached.path.clone();
+            }
+        }
+    }
+
     let dir = codex_dir();
     let entries = fs::read_dir(dir).ok()?;
-    entries
+    let path = entries
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| {
@@ -106,7 +153,19 @@ fn latest_codex_sqlite(prefix: &str) -> Option<PathBuf> {
             Some((modified, path))
         })
         .max_by_key(|(modified, _)| *modified)
-        .map(|(_, path)| path)
+        .map(|(_, path)| path);
+
+    {
+        let mut cache = sqlite_path_cache().lock();
+        cache.insert(
+            prefix.to_string(),
+            CachedSqlitePath {
+                checked_at: Instant::now(),
+                path: path.clone(),
+            },
+        );
+    }
+    path
 }
 
 fn find_codex_thread_id_by_pid(pid: &str) -> Option<String> {
@@ -148,23 +207,116 @@ fn read_codex_thread(thread_id: &str) -> Option<CodexThreadInfo> {
 
 fn read_codex_last_query(thread_id: &str) -> Option<String> {
     let path = codex_dir().join("history.jsonl");
+    let metadata = fs::metadata(&path).ok()?;
+    let modified = metadata.modified().ok();
+    let len = metadata.len();
+
+    {
+        let cache = history_cache().lock();
+        if let Some(cached) = cache.get(&path) {
+            if cached.len == len && cached.modified == modified {
+                return cached.last_by_thread_id.get(thread_id).cloned().flatten();
+            }
+        }
+    }
+
     let file = fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
-    let mut last = None;
+    let mut last_by_thread_id: HashMap<String, Option<String>> = HashMap::new();
 
     for line in reader.lines() {
-        let line = line.ok()?;
-        let value: serde_json::Value = serde_json::from_str(&line).ok()?;
-        if value.get("session_id")?.as_str()? != thread_id {
+        let Ok(line) = line else {
             continue;
-        }
-        last = value
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let Some(session_id) = value.get("session_id").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let text = value
             .get("text")
             .and_then(|v| v.as_str())
             .and_then(normalize_optional_str);
+        last_by_thread_id.insert(session_id.to_string(), text);
     }
 
-    last
+    let result = last_by_thread_id.get(thread_id).cloned().flatten();
+    {
+        let mut cache = history_cache().lock();
+        cache.insert(
+            codex_dir().join("history.jsonl"),
+            CachedHistory {
+                modified,
+                len,
+                last_by_thread_id,
+            },
+        );
+    }
+    result
+}
+
+fn read_codex_rollout(path: &PathBuf, include_messages: bool) -> CachedRollout {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            return CachedRollout {
+                modified: None,
+                len: 0,
+                messages_loaded: include_messages,
+                first: None,
+                last: None,
+                token_count: None,
+            }
+        }
+    };
+    let modified = metadata.modified().ok();
+    let len = metadata.len();
+    let existing = {
+        let cache = rollout_cache().lock();
+        cache
+            .get(path)
+            .filter(|cached| cached.len == len && cached.modified == modified)
+            .cloned()
+    };
+
+    if let Some(cached) = existing.as_ref() {
+        if cached.messages_loaded || !include_messages {
+            return cached.clone();
+        }
+    }
+
+    let token_count = if let Some(cached) = existing.as_ref() {
+        cached.token_count
+    } else {
+        read_codex_rollout_token_count(path)
+    };
+
+    let (first, last) = if include_messages {
+        read_codex_rollout_messages(path)
+    } else if let Some(cached) = existing.as_ref() {
+        (cached.first.clone(), cached.last.clone())
+    } else {
+        (None, None)
+    };
+
+    let messages_loaded = include_messages
+        || existing
+            .as_ref()
+            .is_some_and(|cached| cached.messages_loaded);
+    let cached = CachedRollout {
+        modified,
+        len,
+        messages_loaded,
+        first,
+        last,
+        token_count,
+    };
+    {
+        let mut cache = rollout_cache().lock();
+        cache.insert(path.clone(), cached.clone());
+    }
+    cached
 }
 
 fn read_codex_rollout_token_count(path: &PathBuf) -> Option<u64> {

@@ -542,7 +542,22 @@ fn stop_job(
             crate::relay::push_status_update(relay, name, &next_status);
             Ok(())
         }
-        Some(JobStatus::Running { .. }) | Some(JobStatus::Paused) => {
+        Some(JobStatus::Running { .. }) => {
+            drop(status);
+            match crate::scheduler::executor::binary_runtime::stop(name) {
+                Ok(true) => {
+                    let next_status = JobStatus::Idle;
+                    job_status
+                        .lock()
+                        .insert(name.to_string(), next_status.clone());
+                    crate::relay::push_status_update(relay, name, &next_status);
+                    Ok(())
+                }
+                Ok(false) => Err("job has no tracked process".to_string()),
+                Err(e) => Err(e),
+            }
+        }
+        Some(JobStatus::Paused) => {
             let next_status = JobStatus::Idle;
             status.insert(name.to_string(), next_status.clone());
             drop(status);

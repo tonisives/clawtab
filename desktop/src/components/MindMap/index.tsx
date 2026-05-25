@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useJobsCore, useJobActions, shortenPath, type ClaudeQuestion, type DetectedProcess, type JobStatus, type RemoteJob } from "@clawtab/shared";
+import { processDisplayTitle, useJobsCore, useJobActions, shortenPath, type ClaudeQuestion, type DetectedProcess, type JobStatus, type RemoteJob } from "@clawtab/shared";
 import { createTauriTransport } from "../../transport/tauriTransport";
 import { useQuestionPolling } from "../../hooks/useQuestionPolling";
 import { useAutoYes } from "../../hooks/useAutoYes";
@@ -32,7 +32,7 @@ function buildAgentItems(processes: DetectedProcess[], questions: ClaudeQuestion
       const lastLog = p._last_log_change ?? 0;
       const score = Math.max(lastLog, sessionTs);
       const group = p.matched_group || "ungrouped";
-      const label = p.display_name || p.matched_job || p.pane_title || `${p.provider} %${p.pane_id}`;
+      const label = processDisplayTitle(p);
       const sublabel = p.cwd ? shortenPath(p.cwd) : undefined;
       const running = p._transient_state !== "stopping";
       const asking = askingByPane.has(p.pane_id);

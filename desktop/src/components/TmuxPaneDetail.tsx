@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ClaudeQuestion, DetectedProcess, RemoteJob, ShellPane, Transport, JobStatus } from "@clawtab/shared";
-import { JobDetailView, shortenPath } from "@clawtab/shared";
+import { JobDetailView, processDisplayTitle, shortenPath } from "@clawtab/shared";
 import { XtermPane } from "./XtermPane";
 
 type TmuxPaneTarget =
@@ -108,7 +108,7 @@ export function TmuxPaneDetail({
   );
 
   const displayName = target.kind === "process"
-    ? displayNameOverride?.trim() || (target.process.display_name ?? target.process.pane_title ?? shortenPath(target.process.cwd))
+    ? displayNameOverride?.trim() || processDisplayTitle(target.process)
     : target.shell.display_name ?? target.shell.pane_title ?? shortenPath(target.shell.cwd);
   const jobType = target.kind === "process" ? target.process.provider : "shell";
 

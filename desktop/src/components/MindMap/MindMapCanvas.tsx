@@ -18,6 +18,7 @@ import { AgentModal, type ModalRect } from "./AgentModal";
 import { GroupSpawnPopup } from "./GroupSpawnPopup";
 import { GearIcon } from "../icons";
 import { EditTextDialog } from "../EditTextDialog";
+import { requestXtermPaneFocus } from "../XtermPane";
 import {
   useRecencyLayout,
   type AgentNodeData,
@@ -169,6 +170,20 @@ function findPlacement(
   return { x, y };
 }
 
+function clampModalRect(rect: ModalRect, bounds: { width: number; height: number }): ModalRect {
+  if (bounds.width <= 0 || bounds.height <= 0) return rect;
+  const width = Math.min(rect.width, Math.max(1, bounds.width));
+  const height = Math.min(rect.height, Math.max(1, bounds.height));
+  const x = Math.max(0, Math.min(Math.max(0, bounds.width - width), rect.x));
+  const y = Math.max(0, Math.min(Math.max(0, bounds.height - height), rect.y));
+  if (x === rect.x && y === rect.y && width === rect.width && height === rect.height) return rect;
+  return { ...rect, x, y, width, height };
+}
+
+function sameModalRect(a: ModalRect, b: ModalRect): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height && a.z === b.z;
+}
+
 interface NodeBox {
   id: string;
   type: Node["type"];
@@ -197,6 +212,12 @@ const EMPTY_MODALS: Record<string, ModalRect> = {};
 const EMPTY_ORDER: string[] = [];
 const EMPTY_OVERRIDES: OverrideMap = {};
 const EMPTY_SHELL_MODALS: ShellModalMap = {};
+
+function focusPaneForWriting(paneId: string) {
+  requestXtermPaneFocus(paneId);
+  window.requestAnimationFrame(() => requestXtermPaneFocus(paneId));
+  window.setTimeout(() => requestXtermPaneFocus(paneId), 100);
+}
 
 function CanvasInner({
   kind,
@@ -350,10 +371,11 @@ function CanvasInner({
       const inst = rf;
       const container = containerRef.current;
       if (!container) {
-        schedule();
         return;
       }
+      if (document.visibilityState === "hidden") return;
       const containerRect = container.getBoundingClientRect();
+      if (containerRect.width <= 0 || containerRect.height <= 0) return;
       const modalsArr = ENABLE_MODAL_NODE_NUDGE ? Object.values(modalsRef.current) : [];
 
       // When modals cover 50%+ of the viewport, there's nowhere to nudge nodes
@@ -679,6 +701,7 @@ function CanvasInner({
     if (node.type !== "agent") return;
     const data = node.data as AgentNodeData;
     placeModal(data.item.id);
+    if (data.item.paneId) focusPaneForWriting(data.item.paneId);
   }, [placeModal]);
 
   const handleClose = useCallback((id: string) => {
@@ -704,10 +727,48 @@ function CanvasInner({
     setModalsByKind((prevAll) => {
       const prev = prevAll[kind] ?? {};
       if (!prev[id]) return prevAll;
-      return { ...prevAll, [kind]: { ...prev, [id]: rect } };
+      const bounds = containerRef.current?.getBoundingClientRect();
+      const nextRect = bounds ? clampModalRect(rect, { width: bounds.width, height: bounds.height }) : rect;
+      return { ...prevAll, [kind]: { ...prev, [id]: nextRect } };
     });
     wakeRef.current();
   }, [kind]);
+
+  const clampOpenModals = useCallback(() => {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) return;
+    setModalsByKind((prevAll) => {
+      const prev = prevAll[kind] ?? {};
+      let changed = false;
+      const next: Record<string, ModalRect> = {};
+      for (const [id, rect] of Object.entries(prev)) {
+        const clamped = clampModalRect(rect, { width: bounds.width, height: bounds.height });
+        next[id] = clamped;
+        if (!sameModalRect(rect, clamped)) changed = true;
+      }
+      if (!changed) return prevAll;
+      return { ...prevAll, [kind]: next };
+    });
+    wakeRef.current();
+  }, [kind]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(clampOpenModals);
+    resizeObserver.observe(container);
+    window.addEventListener("focus", clampOpenModals);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") clampOpenModals();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    clampOpenModals();
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("focus", clampOpenModals);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [clampOpenModals]);
 
   const handleFocus = useCallback((id: string) => {
     setModalsByKind((prevAll) => {
@@ -887,6 +948,7 @@ function CanvasInner({
       };
     });
     placeModal(modalId);
+    focusPaneForWriting(paneId);
   }, [kind, transport, placeModal]);
 
   const handleResetLayout = useCallback(() => {

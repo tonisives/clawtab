@@ -1,5 +1,8 @@
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
+use std::fs::{File, OpenOptions};
+use std::io::Write;
+use std::os::fd::AsRawFd;
 use std::sync::Arc;
 
 use clawtab_lib::config::jobs::{JobStatus, JobsConfig};
@@ -10,6 +13,39 @@ use clawtab_lib::ipc::{self, IpcCommand, IpcRelayStatus, IpcResponse};
 use clawtab_lib::notifications::IpcNotifier;
 use clawtab_lib::secrets::SecretsManager;
 use clawtab_lib::telegram;
+
+struct DaemonInstanceGuard {
+    _file: File,
+}
+
+fn acquire_daemon_instance_guard() -> Result<Option<DaemonInstanceGuard>, String> {
+    std::fs::create_dir_all("/tmp/clawtab")
+        .map_err(|e| format!("failed to create daemon runtime directory: {}", e))?;
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open("/tmp/clawtab/daemon.lock")
+        .map_err(|e| format!("failed to open daemon lock: {}", e))?;
+
+    let lock_result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if lock_result == 0 {
+        file.set_len(0)
+            .map_err(|e| format!("failed to clear daemon lock: {}", e))?;
+        writeln!(file, "{}", std::process::id())
+            .map_err(|e| format!("failed to write daemon lock pid: {}", e))?;
+        return Ok(Some(DaemonInstanceGuard { _file: file }));
+    }
+
+    let err = std::io::Error::last_os_error();
+    if err.raw_os_error() == Some(libc::EWOULDBLOCK) || err.raw_os_error() == Some(libc::EAGAIN) {
+        Ok(None)
+    } else {
+        Err(format!("failed to lock daemon instance: {}", err))
+    }
+}
 
 fn main() {
     // Unset TMUX so child tmux commands connect to the default server,
@@ -24,6 +60,18 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
+
+    let _instance_guard = match acquire_daemon_instance_guard() {
+        Ok(Some(guard)) => guard,
+        Ok(None) => {
+            log::warn!("another clawtab-daemon instance is already running; exiting");
+            return;
+        }
+        Err(e) => {
+            log::error!("{}", e);
+            std::process::exit(1);
+        }
+    };
 
     log::info!("clawtab-daemon starting");
 
@@ -42,6 +90,19 @@ fn main() {
     }
 
     let job_status: Arc<Mutex<HashMap<String, JobStatus>>> = Arc::new(Mutex::new(HashMap::new()));
+    {
+        let restored =
+            clawtab_lib::scheduler::executor::binary_runtime::reattach_running_binary_jobs(
+                &jobs_config.lock(),
+            );
+        if !restored.is_empty() {
+            log::info!(
+                "Reattached {} running binary job(s) from runtime state",
+                restored.len()
+            );
+            job_status.lock().extend(restored);
+        }
+    }
     let active_agents: Arc<Mutex<HashMap<i64, telegram::ActiveAgent>>> =
         Arc::new(Mutex::new(HashMap::new()));
     let relay_handle: Arc<Mutex<Option<clawtab_lib::relay::RelayHandle>>> =
@@ -479,7 +540,33 @@ async fn handle_ipc_command(
         IpcCommand::StopJob { name } => {
             let mut status = job_status.lock();
             match status.get(&name).cloned() {
-                Some(JobStatus::Running { .. }) | Some(JobStatus::Paused) => {
+                Some(JobStatus::Running {
+                    pane_id: Some(pane_id),
+                    ..
+                }) => {
+                    if let Err(e) = clawtab_lib::tmux::kill_pane(&pane_id) {
+                        log::warn!("Failed to kill pane {} for {}: {}", pane_id, name, e);
+                    }
+                    status.insert(name.clone(), JobStatus::Idle);
+                    drop(status);
+                    event_sink.emit_job_status_changed(name, JobStatus::Idle);
+                    IpcResponse::Ok
+                }
+                Some(JobStatus::Running { .. }) => {
+                    drop(status);
+                    match clawtab_lib::scheduler::executor::binary_runtime::stop(&name) {
+                        Ok(true) => {
+                            job_status.lock().insert(name.clone(), JobStatus::Idle);
+                            event_sink.emit_job_status_changed(name, JobStatus::Idle);
+                            IpcResponse::Ok
+                        }
+                        Ok(false) => IpcResponse::Error(
+                            "Job is running but has no tracked process".to_string(),
+                        ),
+                        Err(e) => IpcResponse::Error(e),
+                    }
+                }
+                Some(JobStatus::Paused) => {
                     status.insert(name.clone(), JobStatus::Idle);
                     drop(status);
                     event_sink.emit_job_status_changed(name, JobStatus::Idle);
