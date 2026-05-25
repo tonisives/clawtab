@@ -4,6 +4,7 @@
 #![warn(clippy::too_many_lines, clippy::cognitive_complexity)]
 
 mod binary;
+pub mod binary_runtime;
 mod claude;
 mod finalize;
 mod folder;
@@ -115,6 +116,8 @@ pub async fn execute_job(
     let result = dispatch_job(
         job,
         ctx,
+        &run_id,
+        &started_at,
         params,
         result_file.as_deref(),
         stream_log_path.as_deref(),
@@ -300,6 +303,8 @@ fn kill_orphan_panes(job: &Job, ctx: &JobContext) {
 async fn dispatch_job(
     job: &Job,
     ctx: &JobContext,
+    run_id: &str,
+    started_at: &str,
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
     stream_log_path: Option<&std::path::Path>,
@@ -307,6 +312,8 @@ async fn dispatch_job(
     match job.job_type {
         JobType::Binary => execute_binary_job(
             job,
+            run_id,
+            started_at,
             &ctx.secrets,
             &ctx.settings,
             params,
@@ -338,7 +345,7 @@ async fn handle_result(
             attach_monitor(rc, handle, pane_tx, use_auto_yes);
         }
         Ok((exit_code, stdout, stderr, None)) => {
-            let success = matches!(exit_code, Some(0) | None);
+            let success = exit_code == Some(0);
             finalize_run(
                 rc,
                 RunOutcome {

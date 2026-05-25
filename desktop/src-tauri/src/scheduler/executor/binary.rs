@@ -12,17 +12,39 @@ use crate::secrets::SecretsManager;
 
 pub(super) async fn execute_binary_job(
     job: &Job,
+    run_id: &str,
+    started_at: &str,
     secrets: &Arc<Mutex<SecretsManager>>,
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
     stream_log_path: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String), String> {
-    let mut cmd = build_command(job, secrets, settings, params, result_file);
+    let mut cmd = build_command(
+        job,
+        secrets,
+        settings,
+        params,
+        result_file,
+        stream_log_path,
+        run_id,
+    );
 
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn process: {}", e))?;
+    if let Some(pid) = child.id() {
+        super::binary_runtime::register(job, run_id, started_at, pid);
+        log::info!(
+            "[{}] Started binary job '{}' pid={} pgid={}",
+            run_id,
+            job.name,
+            pid,
+            pid
+        );
+    } else {
+        log::warn!("[{}] Binary job '{}' has no child pid", run_id, job.name);
+    }
 
     let stdout_pipe = child
         .stdout
@@ -44,6 +66,7 @@ pub(super) async fn execute_binary_job(
         .wait()
         .await
         .map_err(|e| format!("Failed to wait for process: {}", e))?;
+    super::binary_runtime::unregister(&job.slug);
     let _ = stdout_task.await;
     let _ = stderr_task.await;
 
@@ -66,6 +89,8 @@ fn build_command(
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
+    stream_log_path: Option<&std::path::Path>,
+    run_id: &str,
 ) -> Command {
     let work_dir = job.work_dir.clone().unwrap_or_else(|| {
         let s = settings.lock();
@@ -99,6 +124,14 @@ fn build_command(
     if let Some(p) = result_file {
         cmd.env("CLAWTAB_RESULT_FILE", p);
     }
+    cmd.env("CLAWTAB_JOB_SLUG", &job.slug);
+    cmd.env("CLAWTAB_RUN_ID", run_id);
+    if let Some(path) = stream_log_path {
+        cmd.env("CLAWTAB_LOG_FILE", path.as_os_str());
+    }
+    if let Some(job_id) = &job.job_id {
+        cmd.env("CLAWTAB_JOB_ID", job_id);
+    }
 
     // Trigger params -> CLAWTAB_PARAM_<UPPER_KEY>. Lets binary jobs accept
     // per-invocation inputs from /v1/triggers/run without needing a Claude
@@ -111,6 +144,17 @@ fn build_command(
     cmd.current_dir(&work_dir);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
+    #[cfg(unix)]
+    {
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setpgid(0, 0) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
     cmd
 }
 

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use chrono::{Duration, Local};
 use cron::Schedule;
 
-use crate::config::jobs::{JobStatus, JobsConfig};
+use crate::config::jobs::{JobStatus, JobType, JobsConfig};
 use crate::job_context::JobContext;
 
 pub async fn start(
@@ -25,7 +25,7 @@ pub async fn start(
         tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         let now = Local::now();
         run_due_jobs(&jobs_config, &ctx, last_check, now);
-        cleanup_stale_running(&ctx, event_sink.as_ref());
+        cleanup_stale_running(&jobs_config, &ctx, event_sink.as_ref());
         last_check = now;
     }
 }
@@ -157,7 +157,18 @@ fn spawn_cron_job(job: crate::config::jobs::Job, ctx: JobContext) {
     });
 }
 
-fn cleanup_stale_running(ctx: &JobContext, event_sink: &dyn crate::events::EventSink) {
+fn cleanup_stale_running(
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+    ctx: &JobContext,
+    event_sink: &dyn crate::events::EventSink,
+) {
+    let binary_slugs: std::collections::HashSet<String> = jobs_config
+        .lock()
+        .jobs
+        .iter()
+        .filter(|job| matches!(job.job_type, JobType::Binary))
+        .map(|job| job.slug.clone())
+        .collect();
     let stale: Vec<(String, String)> = {
         let statuses = ctx.job_status.lock();
         statuses
@@ -170,6 +181,11 @@ fn cleanup_stale_running(ctx: &JobContext, event_sink: &dyn crate::events::Event
                     if !crate::tmux::pane_exists(pid) {
                         return Some((slug.clone(), pid.clone()));
                     }
+                } else if matches!(status, JobStatus::Running { .. })
+                    && binary_slugs.contains(slug)
+                    && !executor::binary_runtime::is_running(slug)
+                {
+                    return Some((slug.clone(), "binary process".to_string()));
                 }
                 None
             })

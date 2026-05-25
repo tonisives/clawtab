@@ -25,4 +25,5 @@ fi
 bash "$SCRIPT_DIR/build-engine-app.sh" "$DAEMON_BIN" "$ENGINE_APP"
 
 launchctl unload ~/Library/LaunchAgents/com.clawtab.daemon.plist 2>/dev/null || true
+pkill -f "$ENGINE_APP/Contents/MacOS/ClawTab Daemon" >/dev/null 2>&1 || true
 launchctl load ~/Library/LaunchAgents/com.clawtab.daemon.plist

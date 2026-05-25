@@ -4,6 +4,7 @@ import type { FitAddon } from "@xterm/addon-fit";
 import type { PaneInstance } from "./types";
 
 const RESIZE_DEBOUNCE_MS = 30;
+const VIEWPORT_READY_RETRY_MS = 250;
 
 export async function waitForViewportReady(
   el: HTMLDivElement,
@@ -24,15 +25,23 @@ export async function waitForViewportReady(
 
   return await new Promise((resolve) => {
     let settled = false;
-    let rafId = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
     const finish = (value: { cols: number; rows: number } | null) => {
       if (settled) return;
       settled = true;
-      if (rafId) cancelAnimationFrame(rafId);
+      if (retryTimer) clearTimeout(retryTimer);
       resizeObserver?.disconnect();
       resolve(value);
+    };
+
+    const scheduleCheck = () => {
+      if (settled || retryTimer) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        check();
+      }, VIEWPORT_READY_RETRY_MS);
     };
 
     const check = () => {
@@ -45,7 +54,7 @@ export async function waitForViewportReady(
         finish(size);
         return;
       }
-      rafId = requestAnimationFrame(check);
+      scheduleCheck();
     };
 
     resizeObserver = new ResizeObserver(() => {
@@ -53,7 +62,7 @@ export async function waitForViewportReady(
       if (size) finish(size);
     });
     resizeObserver.observe(el);
-    rafId = requestAnimationFrame(check);
+    scheduleCheck();
   });
 }
 
