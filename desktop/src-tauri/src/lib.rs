@@ -532,6 +532,7 @@ fn register_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         "quit" => {
+            focus::suspend_if_enabled(app, "app quit");
             app.state::<AppState>().pty_manager.lock().destroy_all();
             app.exit(0);
         }
@@ -680,6 +681,7 @@ fn register_settings_close_hide(app: &tauri::App) {
         settings_window.on_window_event(move |event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                focus::suspend_if_enabled(&window.app_handle(), "window close");
                 let _ = window.hide();
             }
         });

@@ -116,6 +116,8 @@ export interface JobDetailViewProps {
   onRevealInSidebar?: () => void;
   // Notify parent that a stop was requested (for sidebar "Stopping..." state)
   onStopping?: () => void;
+  // Notify parent that a stop request failed so optimistic UI can roll back
+  onStopFailed?: () => void;
   // Desktop-only drag handle for split panes
   dragHandleProps?: {
     ref?: (node: HTMLElement | null) => void;
@@ -178,6 +180,7 @@ export function JobDetailView({
   onRelease,
   onRevealInSidebar,
   onStopping,
+  onStopFailed,
   dragHandleProps,
   headerActionsBeforeClose,
   renderRunTerminal,
@@ -292,10 +295,15 @@ export function JobDetailView({
         }
       } catch (e) {
         setRunPending(false);
+        if (action === "stop") {
+          setSigintPending(false);
+          setSigintPendingLabel("Stopping...");
+          onStopFailed?.();
+        }
         console.error(`Failed to ${action} job:`, e);
       }
     },
-    [transport, job.slug, job.params],
+    [transport, job.slug, job.params, onStopping, onStopFailed],
   );
 
   const handleRunWithParams = useCallback(

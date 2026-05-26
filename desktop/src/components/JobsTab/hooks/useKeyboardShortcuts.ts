@@ -403,7 +403,14 @@ export function useKeyboardShortcuts({
       } else if (content.kind === "job") {
         setStoppingJobSlugs((prev) => new Set(prev).add(content.slug));
         core.requestFastPoll(`job:${content.slug}`);
-        transport.stopJob(content.slug);
+        transport.stopJob(content.slug).catch((err) => {
+          setStoppingJobSlugs((prev) => {
+            const next = new Set(prev);
+            next.delete(content.slug);
+            return next;
+          });
+          console.error(`Failed to stop job ${content.slug}:`, err);
+        });
       }
 
       if (focusedLeaf) {

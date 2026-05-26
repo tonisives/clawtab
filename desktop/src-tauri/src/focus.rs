@@ -89,6 +89,10 @@ fn on_focus_change(app: &AppHandle, focused: bool) {
 }
 
 fn trigger_suspend(app: &AppHandle) {
+    suspend_if_enabled(app, "app blur");
+}
+
+pub fn suspend_if_enabled(app: &AppHandle, reason: &str) {
     let state = app.state::<AppState>();
     if !state.settings.lock().auto_release_on_blur {
         return;
@@ -96,8 +100,9 @@ fn trigger_suspend(app: &AppHandle) {
     let released = state.pty_manager.lock().suspend_all();
     if !released.is_empty() {
         log::info!(
-            "auto-release: suspended {} pane(s) on app blur",
-            released.len()
+            "auto-release: suspended {} pane(s) on {}",
+            released.len(),
+            reason
         );
     }
     let _ = app.emit("panes-suspended", &released);

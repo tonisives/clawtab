@@ -87,6 +87,14 @@ export function JobPane({ content, ctx }: Props) {
     core.requestFastPoll(`job:${job.slug}`);
   };
 
+  const onStopFailed = () => {
+    lifecycle.setStoppingJobSlugs((prev) => {
+      const next = new Set(prev);
+      next.delete(job.slug);
+      return next;
+    });
+  };
+
   const onRevealInSidebar = () => {
     viewing.setScrollToSlug(job.slug);
     sidebarFocusRef.current?.focus();
@@ -116,6 +124,7 @@ export function JobPane({ content, ctx }: Props) {
       onSplitRunPane={(paneId: string, direction: "right" | "down") => callbacks.handleSplitPane(paneId, direction)}
       autoYesShortcut={autoYesShortcut}
       onStopping={onStopping}
+      onStopFailed={onStopFailed}
       onRevealInSidebar={onRevealInSidebar}
       headerLeftInset={headerLeftInset}
       titlePath={callbacks.buildJobTitlePath(job, jobQuestion)}
