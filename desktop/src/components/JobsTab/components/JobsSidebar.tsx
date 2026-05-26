@@ -290,7 +290,14 @@ export function JobsSidebar({
           ? () => {
               setStoppingJobSlugs((prev) => new Set(prev).add(id));
               core.requestFastPoll(`job:${id}`);
-              transport.stopJob(id);
+              transport.stopJob(id).catch((err) => {
+                setStoppingJobSlugs((prev) => {
+                  const next = new Set(prev);
+                  next.delete(id);
+                  return next;
+                });
+                console.error(`Failed to stop job ${id}:`, err);
+              });
             }
           : undefined;
         rendered.push(
@@ -417,7 +424,14 @@ export function JobsSidebar({
       onStopJob={(slug) => {
         setStoppingJobSlugs((prev) => new Set(prev).add(slug));
         core.requestFastPoll(`job:${slug}`);
-        transport.stopJob(slug);
+        transport.stopJob(slug).catch((err) => {
+          setStoppingJobSlugs((prev) => {
+            const next = new Set(prev);
+            next.delete(slug);
+            return next;
+          });
+          console.error(`Failed to stop job ${slug}:`, err);
+        });
       }}
       onStopProcess={(paneId) => {
         const proc = core.processes.find((p) => p.pane_id === paneId);

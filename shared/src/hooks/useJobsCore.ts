@@ -60,6 +60,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const processesSigRef = useRef("[]");
   const fastPollTargetsRef = useRef<Map<string, number>>(new Map());
   const fastPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadProcessesInFlightRef = useRef(false);
 
   const signatureForJobs = (items: RemoteJob[]) => JSON.stringify(items);
   const signatureForStatuses = (items: Record<string, JobStatus>) => JSON.stringify(items);
@@ -132,6 +133,8 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
   const prevLastLogChangeRef = useRef<Map<string, number>>(new Map());
 
   const loadProcesses = useCallback(async () => {
+    if (loadProcessesInFlightRef.current) return;
+    loadProcessesInFlightRef.current = true;
     try {
       const p = await transportRef.current.detectProcesses();
       const now = Date.now();
@@ -158,6 +161,8 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       setProcesses(p);
     } catch (e) {
       console.error("Failed to detect processes:", e);
+    } finally {
+      loadProcessesInFlightRef.current = false;
     }
   }, []);
 

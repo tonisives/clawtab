@@ -41,6 +41,12 @@ struct CachedSqlitePath {
     path: Option<PathBuf>,
 }
 
+#[derive(Clone)]
+struct CachedThreadId {
+    checked_at: Instant,
+    thread_id: Option<String>,
+}
+
 fn history_cache() -> &'static Mutex<HashMap<PathBuf, CachedHistory>> {
     static CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedHistory>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -53,6 +59,11 @@ fn sqlite_path_cache() -> &'static Mutex<HashMap<String, CachedSqlitePath>> {
 
 fn rollout_cache() -> &'static Mutex<HashMap<PathBuf, CachedRollout>> {
     static CACHE: OnceLock<Mutex<HashMap<PathBuf, CachedRollout>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn thread_id_cache() -> &'static Mutex<HashMap<String, CachedThreadId>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, CachedThreadId>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -71,7 +82,7 @@ pub(super) fn resolve_session_info(
         }
     };
 
-    let Some(thread_id) = find_codex_thread_id_by_pid(&codex_pid) else {
+    let Some(thread_id) = cached_codex_thread_id_by_pid(&codex_pid) else {
         return info;
     };
 
@@ -182,6 +193,33 @@ fn find_codex_thread_id_by_pid(pid: &str) -> Option<String> {
     .optional()
     .ok()
     .flatten()
+}
+
+fn cached_codex_thread_id_by_pid(pid: &str) -> Option<String> {
+    const THREAD_ID_HIT_CACHE_TTL: Duration = Duration::from_secs(300);
+    const THREAD_ID_MISS_CACHE_TTL: Duration = Duration::from_secs(30);
+
+    let mut cache = thread_id_cache().lock();
+    if let Some(cached) = cache.get(pid) {
+        let ttl = if cached.thread_id.is_some() {
+            THREAD_ID_HIT_CACHE_TTL
+        } else {
+            THREAD_ID_MISS_CACHE_TTL
+        };
+        if cached.checked_at.elapsed() < ttl {
+            return cached.thread_id.clone();
+        }
+    }
+
+    let thread_id = find_codex_thread_id_by_pid(pid);
+    cache.insert(
+        pid.to_string(),
+        CachedThreadId {
+            checked_at: Instant::now(),
+            thread_id: thread_id.clone(),
+        },
+    );
+    thread_id
 }
 
 fn read_codex_thread(thread_id: &str) -> Option<CodexThreadInfo> {
