@@ -64,6 +64,14 @@ function syncUrlParams() {
   window.history.replaceState(window.history.state, "", url.toString())
 }
 
+function persistSelection(job: string | null, process: string | null) {
+  if (Platform.OS !== "web") return
+  if (job) sessionStorage.setItem("sel_job", job)
+  else sessionStorage.removeItem("sel_job")
+  if (process) sessionStorage.setItem("sel_process", process)
+  else sessionStorage.removeItem("sel_process")
+}
+
 export default function JobsScreen() {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
@@ -130,11 +138,6 @@ export default function JobsScreen() {
         }
       })
     }
-    // Trigger a fresh process detection so the new agent appears quickly
-    setTimeout(() => {
-      const s = getWsSend()
-      if (s) s({ type: "detect_processes", id: nextId() })
-    }, 1500)
   }, [router, isWide])
 
   const handleSelectJob = useCallback((job: RemoteJob) => {
@@ -161,6 +164,7 @@ export default function JobsScreen() {
   useEffect(() => {
     if (Platform.OS !== "web") return
     if (!selectedJob && !selectedProcess) return
+    persistSelection(selectedJob, selectedProcess)
     // Delay to run after expo-router's init replaceState
     const t = setTimeout(syncUrlParams, 0)
     return () => clearTimeout(t)
@@ -198,6 +202,17 @@ export default function JobsScreen() {
     }, [jobs, detectedProcesses, handleSelectJob, handleSelectProcess]),
     currentContent,
   })
+  const initialUrlSelectionPendingRef = useRef(
+    Platform.OS === "web" && !!(_initParams?.get("job") || _initParams?.get("process")),
+  )
+
+  useEffect(() => {
+    if (!initialUrlSelectionPendingRef.current) return
+    if (!currentContent || !split.tree) return
+    if (split.handleSelectInTree(currentContent)) {
+      initialUrlSelectionPendingRef.current = false
+    }
+  }, [currentContent, split.tree, split.handleSelectInTree])
 
   // Wrap select handlers to check tree first
   const handleSelectJobWithTree = useCallback((job: RemoteJob) => {

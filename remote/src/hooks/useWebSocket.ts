@@ -76,7 +76,6 @@ export function useWebSocket() {
       backoffRef.current = 1000;
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
-      ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
       ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
 
       // Flush any answers queued while offline
@@ -155,7 +154,6 @@ export function useWebSocket() {
           setDesktopStatus(msg.device_id, msg.device_name, msg.online);
           if (msg.online && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
-            ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
             ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
           }
           break;
@@ -263,15 +261,14 @@ export function useWebSocket() {
       }
     });
 
-    // Poll live desktop state. Jobs are retried until the first authoritative
-    // list arrives because desktop status can be replayed before request
-    // forwarding is fully ready on reconnect.
+    // Retry jobs until the first authoritative list arrives because desktop
+    // status can be replayed before request forwarding is fully ready on
+    // reconnect. Detected processes are daemon-pushed via relay cache.
     const processInterval = setInterval(() => {
       if (globalSend) {
         if (!useJobsStore.getState().loaded) {
           globalSend({ type: "list_jobs", id: nextId() });
         }
-        globalSend({ type: "detect_processes", id: nextId() });
       }
     }, 10000);
 

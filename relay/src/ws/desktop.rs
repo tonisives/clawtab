@@ -8,7 +8,9 @@ use clawtab_protocol::{DesktopMessage, JobStatus, RemoteJob, ServerMessage};
 
 use crate::ws::handler::{run_session_loop, LoopExit};
 use crate::ws::hub::DesktopConnection;
-use crate::ws::push::{handle_claude_questions_push, handle_job_notification_push, handle_trigger_result};
+use crate::ws::push::{
+    handle_claude_questions_push, handle_job_notification_push, handle_trigger_result,
+};
 use crate::ws::shared::{filter_questions_for_groups, get_shared_guests, SharedGuest};
 use crate::AppState;
 
@@ -24,7 +26,15 @@ pub(super) async fn run(
     let guests = get_shared_guests(&state.pool, user_id).await;
     let guest_ids: Vec<Uuid> = guests.iter().map(|g| g.guest_id).collect();
 
-    register(&state, user_id, device_id, &device_name, tx.clone(), &guest_ids).await;
+    register(
+        &state,
+        user_id,
+        device_id,
+        &device_name,
+        tx.clone(),
+        &guest_ids,
+    )
+    .await;
     send_welcome(&tx, device_id);
     tracing::info!(%user_id, %device_id, %device_name, "desktop connected");
 
@@ -75,17 +85,23 @@ async fn register(
     guest_ids: &[Uuid],
 ) {
     let mut hub = state.hub.write().await;
-    hub.add_desktop(user_id, DesktopConnection {
-        device_id,
-        device_name: device_name.to_string(),
-        tx,
-    });
-    for &gid in guest_ids {
-        hub.broadcast_to_mobiles(gid, &ServerMessage::DesktopStatus {
-            device_id: device_id.to_string(),
+    hub.add_desktop(
+        user_id,
+        DesktopConnection {
+            device_id,
             device_name: device_name.to_string(),
-            online: true,
-        });
+            tx,
+        },
+    );
+    for &gid in guest_ids {
+        hub.broadcast_to_mobiles(
+            gid,
+            &ServerMessage::DesktopStatus {
+                device_id: device_id.to_string(),
+                device_name: device_name.to_string(),
+                online: true,
+            },
+        );
     }
 }
 
@@ -99,11 +115,14 @@ async fn unregister(
     let mut hub = state.hub.write().await;
     hub.remove_desktop(user_id, device_id);
     for &gid in guest_ids {
-        hub.broadcast_to_mobiles(gid, &ServerMessage::DesktopStatus {
-            device_id: device_id.to_string(),
-            device_name: device_name.to_string(),
-            online: false,
-        });
+        hub.broadcast_to_mobiles(
+            gid,
+            &ServerMessage::DesktopStatus {
+                device_id: device_id.to_string(),
+                device_name: device_name.to_string(),
+                online: false,
+            },
+        );
     }
 }
 
@@ -138,41 +157,61 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
             let hub = state.hub.read().await;
             hub.send_raw_to_mobiles(user_id, text);
             for guest in &guests {
-                let Some((filtered_jobs, filtered_statuses)) = filter_jobs_by_group(guest, jobs, statuses) else {
+                let Some((filtered_jobs, filtered_statuses)) =
+                    filter_jobs_by_group(guest, jobs, statuses)
+                else {
                     hub.send_raw_to_mobiles(guest.guest_id, text);
                     continue;
                 };
-                hub.broadcast_to_mobiles(guest.guest_id, &DesktopMessage::JobsList {
-                    id: id.clone(),
-                    jobs: filtered_jobs,
-                    statuses: filtered_statuses,
-                });
+                hub.broadcast_to_mobiles(
+                    guest.guest_id,
+                    &DesktopMessage::JobsList {
+                        id: id.clone(),
+                        jobs: filtered_jobs,
+                        statuses: filtered_statuses,
+                    },
+                );
             }
         }
         DesktopMessage::JobsChanged { jobs, statuses } => {
             let hub = state.hub.read().await;
             hub.send_raw_to_mobiles(user_id, text);
             for guest in &guests {
-                let Some((filtered_jobs, filtered_statuses)) = filter_jobs_by_group(guest, jobs, statuses) else {
+                let Some((filtered_jobs, filtered_statuses)) =
+                    filter_jobs_by_group(guest, jobs, statuses)
+                else {
                     hub.send_raw_to_mobiles(guest.guest_id, text);
                     continue;
                 };
-                hub.broadcast_to_mobiles(guest.guest_id, &DesktopMessage::JobsChanged {
-                    jobs: filtered_jobs,
-                    statuses: filtered_statuses,
-                });
+                hub.broadcast_to_mobiles(
+                    guest.guest_id,
+                    &DesktopMessage::JobsChanged {
+                        jobs: filtered_jobs,
+                        statuses: filtered_statuses,
+                    },
+                );
             }
         }
         DesktopMessage::DetectedProcesses { id, processes } => {
-            let hub = state.hub.read().await;
+            let mut hub = state.hub.write().await;
+            hub.set_cached_detected_processes(user_id, processes.clone());
             hub.send_raw_to_mobiles(user_id, text);
             for guest in &guests {
                 forward_detected_processes(&hub, guest, text, id, processes);
             }
         }
-        DesktopMessage::TriggerResult { trigger_id, status, exit_code, result, error } => {
+        DesktopMessage::TriggerResult {
+            trigger_id,
+            status,
+            exit_code,
+            result,
+            error,
+        } => {
             // Internal-only channel for the triggers service. Do NOT fan out to mobiles.
-            handle_trigger_result(state, user_id, trigger_id, status, *exit_code, result, error).await;
+            handle_trigger_result(
+                state, user_id, trigger_id, status, *exit_code, result, error,
+            )
+            .await;
         }
         _ => {
             let hub = state.hub.read().await;
@@ -183,8 +222,19 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
         }
     }
 
-    if let DesktopMessage::JobNotification { name, event, run_id } = &msg {
-        spawn_job_notification(state.clone(), user_id, name.clone(), event.clone(), run_id.clone());
+    if let DesktopMessage::JobNotification {
+        name,
+        event,
+        run_id,
+    } = &msg
+    {
+        spawn_job_notification(
+            state.clone(),
+            user_id,
+            name.clone(),
+            event.clone(),
+            run_id.clone(),
+        );
     }
 }
 
@@ -204,7 +254,9 @@ async fn fanout_claude_questions(
             Some(filtered) => {
                 hub.broadcast_to_mobiles(
                     guest.guest_id,
-                    &DesktopMessage::ClaudeQuestions { questions: filtered },
+                    &DesktopMessage::ClaudeQuestions {
+                        questions: filtered,
+                    },
                 );
             }
         }

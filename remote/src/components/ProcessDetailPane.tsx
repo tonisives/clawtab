@@ -98,11 +98,16 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
     : paneId
 
   const [logs, setLogs] = useState(process?.log_lines ?? "")
-  const [logsLoaded, setLogsLoaded] = useState(!!process?.log_lines)
+  const [logsLoaded, setLogsLoaded] = useState(!!process)
 
   // Poll logs
   useEffect(() => {
     if (!activeProcess) return
+    if (process) {
+      setLogs(process.log_lines ?? "")
+      setLogsLoaded(true)
+      return
+    }
     let active = true
     let polling = false
     const poll = async () => {
@@ -136,7 +141,7 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
       active = false
       clearInterval(interval)
     }
-  }, [activeProcess?.pane_id, activeProcess?.tmux_session])
+  }, [activeProcess?.pane_id, activeProcess?.tmux_session, process])
 
   const questions = useNotificationStore((s) => s.questions)
   const paneQuestion = questions.find((q) => q.pane_id === paneId)
@@ -188,12 +193,14 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
   const renderTerminal = useCallback(
     () => (
       <View style={{ flex: 1, minHeight: 0 }}>
-        {ptyConnecting && (
-          <View style={styles.ptyConnecting}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
-          </View>
-        )}
+        <View style={[styles.ptyConnecting, !ptyConnecting && styles.ptyConnectingHidden]}>
+          {ptyConnecting ? (
+            <>
+              <ActivityIndicator size="small" color={colors.accent} />
+              <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
+            </>
+          ) : null}
+        </View>
         <XtermLog
           ref={termRef}
           onData={sendInput}
@@ -229,7 +236,8 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
 
   const syntheticJob: RemoteJob = {
     name: displayName,
-    job_type: "claude",
+    job_type: activeProcess.provider,
+    agent_provider: activeProcess.provider,
     enabled: true,
     cron: "",
     group: "detected",
@@ -316,6 +324,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  ptyConnectingHidden: {
+    height: 0,
+    paddingVertical: 0,
+    borderBottomWidth: 0,
+    overflow: "hidden",
   },
   ptyConnectingText: {
     color: colors.textMuted,

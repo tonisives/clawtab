@@ -35,6 +35,17 @@ export function usePty(
   const subscribedRef = useRef(false);
   const [connecting, setConnecting] = useState(false);
   const gotDataRef = useRef(false);
+  const pendingOutputRef = useRef<string[]>([]);
+  const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const flushPendingOutput = useCallback(() => {
+    const term = termRef.current;
+    if (!term || pendingOutputRef.current.length === 0) return false;
+    for (const data of pendingOutputRef.current) term.write(data);
+    pendingOutputRef.current = [];
+    return true;
+  }, [termRef]);
 
   // Subscribe to PTY stream
   useEffect(() => {
@@ -42,6 +53,7 @@ export function usePty(
     if (!send || !paneId || !tmuxSession) return;
 
     gotDataRef.current = false;
+    pendingOutputRef.current = [];
     setConnecting(true);
 
     const onOutput = (data: string) => {
@@ -49,7 +61,12 @@ export function usePty(
         gotDataRef.current = true;
         setConnecting(false);
       }
-      termRef.current?.write(data);
+      if (termRef.current) {
+        flushPendingOutput();
+        termRef.current.write(data);
+      } else {
+        pendingOutputRef.current.push(data);
+      }
     };
 
     const onExit = () => {
@@ -75,7 +92,10 @@ export function usePty(
     });
     subscribedRef.current = true;
 
+    const flushInterval = setInterval(flushPendingOutput, 50);
+
     return () => {
+      clearInterval(flushInterval);
       ptyListeners.get(paneId)?.delete(onOutput);
       ptyExitListeners.get(paneId)?.delete(onExit);
       if (subscribedRef.current) {
@@ -83,9 +103,13 @@ export function usePty(
         if (s) s({ type: "unsubscribe_pty", pane_id: paneId });
         subscribedRef.current = false;
       }
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = undefined;
+      lastResizeRef.current = null;
+      pendingOutputRef.current = [];
       setConnecting(false);
     };
-  }, [paneId, tmuxSession]);
+  }, [paneId, tmuxSession, flushPendingOutput]);
 
   const sendInput = useCallback(
     (b64: string) => {
@@ -97,8 +121,25 @@ export function usePty(
 
   const sendResize = useCallback(
     (cols: number, rows: number) => {
-      const send = getWsSend();
-      if (send) send({ type: "pty_resize", pane_id: paneId, cols, rows });
+      if (cols <= 0 || rows <= 0) return;
+      const last = lastResizeRef.current;
+      if (last?.cols === cols && last?.rows === rows) return;
+      lastResizeRef.current = { cols, rows };
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = setTimeout(() => {
+        resizeTimerRef.current = undefined;
+        const latest = lastResizeRef.current;
+        if (!latest) return;
+        const send = getWsSend();
+        if (send) {
+          send({
+            type: "pty_resize",
+            pane_id: paneId,
+            cols: latest.cols,
+            rows: latest.rows,
+          });
+        }
+      }, 120);
     },
     [paneId],
   );

@@ -284,6 +284,44 @@ fn main() {
             }
         }
 
+        // Publish daemon-owned process snapshots for remote clients. Remote
+        // clients should read this state rather than triggering tmux scans.
+        {
+            let jobs_config = Arc::clone(&jobs_config);
+            let job_status = Arc::clone(&job_status);
+            let pty_manager = Arc::clone(&pty_manager);
+            let relay = Arc::clone(&relay_handle);
+            tokio::spawn(async move {
+                let mut last_snapshot_json = String::new();
+                loop {
+                    if relay.lock().is_none() {
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                        continue;
+                    }
+                    let processes = clawtab_lib::relay::detect_processes_snapshot(
+                        &jobs_config,
+                        &job_status,
+                        &pty_manager,
+                    )
+                    .await;
+                    let snapshot_json = serde_json::to_string(&processes).unwrap_or_default();
+                    if snapshot_json != last_snapshot_json {
+                        last_snapshot_json = snapshot_json;
+                        let guard = relay.lock();
+                        if let Some(handle) = guard.as_ref() {
+                            handle.send_message(
+                                &clawtab_protocol::DesktopMessage::DetectedProcesses {
+                                    id: "daemon_process_snapshot".to_string(),
+                                    processes,
+                                },
+                            );
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                }
+            });
+        }
+
         // Telegram agent polling
         {
             let telegram_state = telegram::polling::AgentState {

@@ -64,7 +64,9 @@ async fn dispatch_message(
 ) -> Option<DesktopMessage> {
     match msg {
         ClientMessage::DetectProcesses { id } => {
-            Some(handle_detect_processes(id, jobs_config, &ctx.job_status).await)
+            let processes =
+                detect_processes_snapshot(jobs_config, &ctx.job_status, pty_manager).await;
+            Some(DesktopMessage::DetectedProcesses { id, processes })
         }
         ClientMessage::SubscribePty {
             id,
@@ -358,16 +360,18 @@ fn handle_subscribe_logs(
     DesktopMessage::SubscribeLogsAck { id, success: true }
 }
 
-async fn handle_detect_processes(
-    id: String,
+pub async fn detect_processes_snapshot(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
-) -> DesktopMessage {
+    pty_manager: &SharedPtyManager,
+) -> Vec<RemoteDetectedProcess> {
     let jc = Arc::clone(jobs_config);
     let js = Arc::clone(job_status);
-    let processes = tokio::task::spawn_blocking(move || detect_processes(&jc, &js))
-        .await
-        .unwrap_or_default();
+    let live_viewer_panes = pty_manager.lock().active_pane_ids();
+    let processes =
+        tokio::task::spawn_blocking(move || detect_processes(&jc, &js, live_viewer_panes))
+            .await
+            .unwrap_or_default();
     log::info!("DetectProcesses: returning {} processes", processes.len());
     for p in &processes {
         log::info!(
@@ -376,7 +380,7 @@ async fn handle_detect_processes(
             p.matched_group, p.matched_job, p.cwd
         );
     }
-    DesktopMessage::DetectedProcesses { id, processes }
+    processes
 }
 
 fn handle_get_settings(
@@ -866,11 +870,16 @@ fn dp_build_remote(
     provider: crate::agent_session::ProcessProvider,
     matched_group: Option<String>,
     matched_job: Option<String>,
+    live_viewer_panes: &std::collections::HashSet<String>,
 ) -> RemoteDetectedProcess {
-    let log_lines = crate::tmux::capture_pane(row.session, row.pane_id, 5)
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let log_lines = if live_viewer_panes.contains(row.pane_id) {
+        String::new()
+    } else {
+        crate::tmux::capture_pane(row.session, row.pane_id, 5)
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
     let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
         row.pane_pid,
         Some(provider),
@@ -913,6 +922,7 @@ fn dp_build_remote(
 fn detect_processes(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    live_viewer_panes: std::collections::HashSet<String>,
 ) -> Vec<RemoteDetectedProcess> {
     use std::collections::HashSet;
 
@@ -965,7 +975,13 @@ fn detect_processes(
         }
         let (matched_group, matched_job) =
             dp_resolve_group_job(&row, &running_panes, &slug_to_group, &match_entries);
-        results.push(dp_build_remote(&row, provider, matched_group, matched_job));
+        results.push(dp_build_remote(
+            &row,
+            provider,
+            matched_group,
+            matched_job,
+            &live_viewer_panes,
+        ));
     }
 
     log::info!(
