@@ -9,6 +9,7 @@ use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SessionInfo {
+    pub session_id: Option<String>,
     pub first_query: Option<String>,
     pub last_query: Option<String>,
     pub session_started_at: Option<String>,

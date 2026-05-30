@@ -50,8 +50,19 @@ pub(super) fn collect_env_vars(
         for key in &job.secret_keys {
             if let Some(value) = sm.get(key) {
                 vars.push((key.clone(), value.clone()));
+            } else {
+                log::warn!(
+                    "Secret key '{}' is configured for '{}' but was not found",
+                    key,
+                    job.slug
+                );
             }
         }
+    }
+    drop(sm);
+
+    for (key, value) in &job.env {
+        vars.push((key.clone(), value.clone()));
     }
 
     if !vars.iter().any(|(k, _)| k == "TELEGRAM_BOT_TOKEN") {

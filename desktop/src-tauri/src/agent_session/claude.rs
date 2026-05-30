@@ -78,6 +78,8 @@ pub(super) fn resolve_session_info(
         None => return info,
     };
 
+    info.session_id = Some(session.session_id.clone());
+
     let started_secs = session.started_at / 1000;
     info.started_epoch = Some(started_secs);
     if let Some(dt) = chrono::DateTime::from_timestamp(started_secs as i64, 0) {

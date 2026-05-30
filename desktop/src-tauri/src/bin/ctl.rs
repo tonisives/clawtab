@@ -26,7 +26,8 @@ fn print_usage() {
     eprintln!("  auto-yes          Show auto-yes panes");
     eprintln!("  auto-yes toggle [pane_id]  Toggle auto-yes for pane (uses $TMUX_PANE if omitted)");
     eprintln!("  auto-yes check [pane_id]   Check if pane has auto-yes (exit 0=on, 1=off)");
-    eprintln!("  pane-info [pane_id]        Show first query and session date for a Claude pane");
+    eprintln!("  pane-info [pane_id]        Show first query and session date for an agent pane");
+    eprintln!("  pane-info restore-command [pane_id]  Print a restore command for an agent pane");
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret value (single key) or KEY=VALUE lines (multiple keys)");
     eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
@@ -154,8 +155,10 @@ async fn main() {
             }
         }
         "pane-info" => {
-            let pane_id = if args.len() >= 3 {
-                args[2].clone()
+            let restore_command = args.get(2).is_some_and(|arg| arg == "restore-command");
+            let pane_arg_index = if restore_command { 3 } else { 2 };
+            let pane_id = if args.len() > pane_arg_index {
+                args[pane_arg_index].clone()
             } else {
                 env::var("TMUX_PANE").unwrap_or_else(|_| {
                     eprintln!(
@@ -165,30 +168,40 @@ async fn main() {
                 })
             };
             // Resolve locally - no IPC needed
-            let pane_pid = std::process::Command::new("tmux")
-                .args(["list-panes", "-t", &pane_id, "-F", "#{pane_id} #{pane_pid}"])
-                .output()
-                .ok()
-                .and_then(|o| {
-                    if o.status.success() {
-                        let stdout = String::from_utf8_lossy(&o.stdout).to_string();
-                        stdout
-                            .lines()
-                            .find(|l| l.starts_with(&format!("{} ", pane_id)))
-                            .and_then(|l| l.split_whitespace().nth(1))
-                            .map(|s| s.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or_default();
+            let pane_pid = resolve_tmux_pane_format(&pane_id, "#{pane_pid}");
+            let pane_cwd = resolve_tmux_pane_format(&pane_id, "#{pane_current_path}");
 
             if pane_pid.is_empty() {
                 eprintln!("Could not resolve pane PID");
                 std::process::exit(1);
             }
 
-            let info = clawtab_lib::agent_session::resolve_session_info(&pane_pid);
+            let snapshot = clawtab_lib::agent_session::ProcessSnapshot::capture();
+            let provider =
+                clawtab_lib::agent_session::detect_process_provider(&pane_pid, Some(&snapshot));
+            let info = clawtab_lib::agent_session::resolve_session_info_for_provider_with_cwd(
+                &pane_pid,
+                provider,
+                Some(&snapshot),
+                if pane_cwd.is_empty() {
+                    None
+                } else {
+                    Some(pane_cwd.as_str())
+                },
+            );
+            if restore_command {
+                match restore_command_for_provider(provider, info.session_id.as_deref()) {
+                    Some(command) => println!("{}", command),
+                    None => {
+                        eprintln!("No restore command found");
+                        std::process::exit(1);
+                    }
+                }
+                return;
+            }
+            if let Some(ref session_id) = info.session_id {
+                println!("session_id={}", session_id);
+            }
             if let Some(ref date) = info.session_started_at {
                 println!("started_at={}", date);
             }
@@ -405,6 +418,35 @@ async fn main() {
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {
+    std::process::Command::new("tmux")
+        .args(["display-message", "-p", "-t", pane_id, format])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+fn restore_command_for_provider(
+    provider: Option<clawtab_lib::agent_session::ProcessProvider>,
+    session_id: Option<&str>,
+) -> Option<String> {
+    let session_id = session_id?;
+    match provider? {
+        clawtab_lib::agent_session::ProcessProvider::Claude => {
+            Some(format!("claude -r {}", session_id))
+        }
+        clawtab_lib::agent_session::ProcessProvider::Codex => {
+            Some(format!("codex resume {}", session_id))
+        }
+        clawtab_lib::agent_session::ProcessProvider::Opencode => {
+            Some(format!("opencode -s {}", session_id))
+        }
+        clawtab_lib::agent_session::ProcessProvider::Shell => None,
     }
 }
 
