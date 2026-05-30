@@ -46,6 +46,8 @@ pub(super) fn resolve_session_info(
         return info;
     };
 
+    info.session_id = Some(session.id.clone());
+
     let started_secs = session.time_created / 1000;
     info.started_epoch = Some(started_secs as u64);
     info.session_started_at = format_local_timestamp(started_secs);

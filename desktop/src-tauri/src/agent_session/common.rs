@@ -29,6 +29,14 @@ pub(super) fn format_local_timestamp(epoch_secs: i64) -> Option<String> {
     })
 }
 
+pub(super) fn normalize_unix_timestamp_secs(value: i64) -> i64 {
+    if value.abs() >= 100_000_000_000 {
+        value / 1000
+    } else {
+        value
+    }
+}
+
 pub(super) fn find_child_process(
     parent_pid: &str,
     snapshot: Option<&ProcessSnapshot>,
@@ -68,4 +76,18 @@ pub(super) fn is_semver(s: &str) -> bool {
         && parts
             .iter()
             .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_unix_timestamp_secs;
+
+    #[test]
+    fn normalizes_seconds_and_milliseconds() {
+        assert_eq!(normalize_unix_timestamp_secs(1_779_857_239), 1_779_857_239);
+        assert_eq!(
+            normalize_unix_timestamp_secs(1_779_857_239_000),
+            1_779_857_239
+        );
+    }
 }

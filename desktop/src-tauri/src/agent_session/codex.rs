@@ -1,5 +1,6 @@
 use super::common::{
     find_child_process, format_local_timestamp, normalize_optional_owned, normalize_optional_str,
+    normalize_unix_timestamp_secs,
 };
 use super::{ProcessSnapshot, SessionInfo};
 use parking_lot::Mutex;
@@ -90,10 +91,11 @@ pub(super) fn resolve_session_info(
         return info;
     };
 
+    info.session_id = Some(thread.id.clone());
     info.first_query = normalize_optional_owned(thread.first_user_message);
     info.last_query = read_codex_last_query(&thread.id);
 
-    let started_secs = thread.created_at / 1000;
+    let started_secs = normalize_unix_timestamp_secs(thread.created_at);
     info.started_epoch = Some(started_secs as u64);
     info.session_started_at = format_local_timestamp(started_secs);
 
