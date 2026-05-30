@@ -175,7 +175,7 @@ export async function setupPaneInstance(inst: PaneInstance) {
   });
 
   if (inst.cancelled) {
-    invoke("pty_destroy", { paneId, attachGeneration: result.attach_generation }).catch(() => {});
+    invoke("pty_release", { paneId }).catch(() => {});
     return;
   }
 

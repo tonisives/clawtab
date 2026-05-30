@@ -173,8 +173,8 @@ function teardownPaneInstance(inst: PaneInstance) {
   const attachGeneration = inst.attachGeneration;
   inst.attachGeneration = null;
   if (attachGeneration != null) {
-    debugXtermPane(paneId, "destroy", { attachGeneration });
-    invoke("pty_destroy", { paneId, attachGeneration }).catch(() => {});
+    debugXtermPane(paneId, "release", { attachGeneration });
+    invoke("pty_release", { paneId }).catch(() => {});
   }
 }
 

@@ -1,9 +1,10 @@
 import { memo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { JobStatus, RemoteJob } from "../types/job";
+import type { ProcessProvider } from "../types/process";
 import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
-import { JobKindIcon, kindForJob, providerKindForJob, type JobKind } from "./JobKindIcon";
+import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
 import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
@@ -29,7 +30,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   onStop?: () => void;
   autoYesActive?: boolean;
   stopping?: boolean;
-  defaultAgentProvider?: JobKind;
+  defaultAgentProvider?: ProcessProvider;
 }) {
   const startedAt = status.state === "running" ? status.started_at : null;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -47,7 +48,7 @@ export const RunningJobCard = memo(function RunningJobCard({
         {job.cron ? (
           <View style={styles.iconWrap}>
             <JobKindIcon kind="cron" />
-            {(() => { const pk = providerKindForJob(job) ?? defaultAgentProvider ?? null; return pk ? <View style={styles.providerBadge}><JobKindIcon kind={pk} size={14} compact bare /></View> : null; })()}
+            {(() => { const pk = scheduledProviderKindForJob(job, defaultAgentProvider); return pk ? <View style={styles.providerBadge}><JobKindIcon kind={pk} size={14} compact bare /></View> : null; })()}
           </View>
         ) : (
           <View style={styles.iconWrap}>

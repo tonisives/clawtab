@@ -422,6 +422,26 @@ async fn main() {
 }
 
 fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {
+    let list_format = format!("#{{pane_id}}\x1e{}", format);
+    let from_list_panes = std::process::Command::new("tmux")
+        .args(["list-panes", "-a", "-F", &list_format])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .find_map(|line| {
+                    let (id, value) = line.split_once('\x1e')?;
+                    (id == pane_id).then(|| value.trim().to_string())
+                })
+        })
+        .unwrap_or_default();
+
+    if !from_list_panes.is_empty() {
+        return from_list_panes;
+    }
+
     std::process::Command::new("tmux")
         .args(["display-message", "-p", "-t", pane_id, format])
         .output()

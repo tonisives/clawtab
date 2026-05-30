@@ -3,11 +3,12 @@ import { TouchableOpacity, View, Text, StyleSheet } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { Tooltip } from "./Tooltip";
+import type { ProcessProvider } from "../types/process";
 import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
-import { JobKindIcon, kindForJob, providerKindForJob, type JobKind } from "./JobKindIcon";
+import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
 
 export const JobCard = memo(function JobCard({
   job,
@@ -22,7 +23,7 @@ export const JobCard = memo(function JobCard({
   onPress?: () => void;
   selected?: boolean | string;
   softBorder?: boolean;
-  defaultAgentProvider?: JobKind;
+  defaultAgentProvider?: ProcessProvider;
 }) {
   const lastRun =
     status.state === "success"
@@ -34,7 +35,7 @@ export const JobCard = memo(function JobCard({
           : null;
 
   const kind = job.cron ? "cron" : kindForJob(job);
-  const providerKind = job.cron ? (providerKindForJob(job) ?? defaultAgentProvider ?? null) : null;
+  const providerKind = job.cron ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
 
   return (
     <TouchableOpacity

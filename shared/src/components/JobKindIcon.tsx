@@ -36,6 +36,13 @@ export function providerKindForJob(job: RemoteJob): ProcessProvider | null {
   return null;
 }
 
+export function scheduledProviderKindForJob(job: RemoteJob, defaultAgentProvider?: ProcessProvider): ProcessProvider | null {
+  const explicitProvider = providerKindForJob(job);
+  if (explicitProvider) return explicitProvider;
+  if (job.job_type === "job") return defaultAgentProvider ?? null;
+  return null;
+}
+
 export function kindForProcess(process: DetectedProcess): JobKind {
   switch (process.provider) {
     case "codex":
