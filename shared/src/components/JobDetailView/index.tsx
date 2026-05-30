@@ -21,7 +21,7 @@ import { formatTime, compactCron, shortenPath } from "../../util/format";
 import { nextCronDate, formatNextRun, cronTooltip } from "../../util/cron";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
-import { JobKindIcon, kindForJob, providerKindForJob } from "../JobKindIcon";
+import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "../JobKindIcon";
 import { ActionButton } from "./ActionButton";
 import { OptionButtons } from "./Options";
 import { RunRow } from "./RunRow";
@@ -343,7 +343,7 @@ export function JobDetailView({
   const leadingIconSize = compactLeadingPills ? 22 : 28;
   const providerBadgeSize = compactLeadingPills ? 12 : 14;
   const jobTypeIcon = job.cron ? "cron" : kindForJob(job);
-  const providerIcon = job.cron ? (providerKindForJob(job) ?? defaultAgentProvider) : null;
+  const providerIcon = job.cron ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
   const showModePill = !(isManual && expandOutput);
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";

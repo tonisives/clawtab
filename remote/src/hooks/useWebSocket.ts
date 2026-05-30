@@ -128,6 +128,9 @@ export function useWebSocket() {
         case "detected_processes":
           useJobsStore.getState().setDetectedProcesses(msg.processes);
           useWsStore.getState().desktopOnline || useWsStore.setState({ desktopOnline: true });
+          if (!useJobsStore.getState().loaded && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
+          }
           break;
         case "settings_response":
           useJobsStore.getState().setDesktopSettings(msg.enabled_models, msg.default_provider, msg.default_model);
@@ -150,6 +153,11 @@ export function useWebSocket() {
           break;
         case "desktop_status":
           setDesktopStatus(msg.device_id, msg.device_name, msg.online);
+          if (msg.online && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
+            ws.send(JSON.stringify({ type: "detect_processes", id: nextId() }));
+            ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
+          }
           break;
         case "run_history":
           resolveRequest(msg.id, msg.runs);
@@ -255,9 +263,14 @@ export function useWebSocket() {
       }
     });
 
-    // Poll detected processes every 10s
+    // Poll live desktop state. Jobs are retried until the first authoritative
+    // list arrives because desktop status can be replayed before request
+    // forwarding is fully ready on reconnect.
     const processInterval = setInterval(() => {
       if (globalSend) {
+        if (!useJobsStore.getState().loaded) {
+          globalSend({ type: "list_jobs", id: nextId() });
+        }
         globalSend({ type: "detect_processes", id: nextId() });
       }
     }, 10000);

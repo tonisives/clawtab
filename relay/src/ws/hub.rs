@@ -49,13 +49,18 @@ impl Hub {
         let device_id = conn.device_id;
         let device_name = conn.device_name.clone();
 
-        self.desktops.entry(user_id).or_default().push(conn);
+        let conns = self.desktops.entry(user_id).or_default();
+        conns.retain(|existing| existing.device_id != device_id);
+        conns.push(conn);
 
-        self.broadcast_to_mobiles(user_id, &ServerMessage::DesktopStatus {
-            device_id: device_id.to_string(),
-            device_name,
-            online: true,
-        });
+        self.broadcast_to_mobiles(
+            user_id,
+            &ServerMessage::DesktopStatus {
+                device_id: device_id.to_string(),
+                device_name,
+                online: true,
+            },
+        );
     }
 
     pub fn remove_desktop(&mut self, user_id: Uuid, device_id: Uuid) {
@@ -73,33 +78,43 @@ impl Hub {
         if no_desktops {
             self.desktops.remove(&user_id);
             self.last_questions.remove(&user_id);
-            self.broadcast_to_mobiles(user_id, &DesktopMessage::ClaudeQuestions {
-                questions: vec![],
-            });
+            self.broadcast_to_mobiles(
+                user_id,
+                &DesktopMessage::ClaudeQuestions { questions: vec![] },
+            );
         }
 
-        self.broadcast_to_mobiles(user_id, &ServerMessage::DesktopStatus {
-            device_id: device_id.to_string(),
-            device_name: removed.device_name,
-            online: false,
-        });
+        self.broadcast_to_mobiles(
+            user_id,
+            &ServerMessage::DesktopStatus {
+                device_id: device_id.to_string(),
+                device_name: removed.device_name,
+                online: false,
+            },
+        );
     }
 
     pub fn add_mobile(&mut self, user_id: Uuid, conn: MobileConnection) {
         if let Some(desktops) = self.desktops.get(&user_id) {
             for desktop in desktops {
-                send_serialized(&conn.tx, &ServerMessage::DesktopStatus {
-                    device_id: desktop.device_id.to_string(),
-                    device_name: desktop.device_name.clone(),
-                    online: true,
-                });
+                send_serialized(
+                    &conn.tx,
+                    &ServerMessage::DesktopStatus {
+                        device_id: desktop.device_id.to_string(),
+                        device_name: desktop.device_name.clone(),
+                        online: true,
+                    },
+                );
             }
         }
 
         if let Some(questions) = self.last_questions.get(&user_id) {
-            send_serialized(&conn.tx, &DesktopMessage::ClaudeQuestions {
-                questions: questions.clone(),
-            });
+            send_serialized(
+                &conn.tx,
+                &DesktopMessage::ClaudeQuestions {
+                    questions: questions.clone(),
+                },
+            );
         }
 
         if let Some(json) = self.last_auto_yes_panes.get(&user_id) {
@@ -130,7 +145,11 @@ impl Hub {
             return false;
         };
 
-        conns.iter().any(|c| c.tx.send(json.clone()).is_ok())
+        let mut sent = false;
+        for conn in conns {
+            sent |= conn.tx.send(json.clone()).is_ok();
+        }
+        sent
     }
 
     /// Send any serializable message to all mobile clients for a user.
@@ -190,17 +209,23 @@ impl Hub {
     pub fn replay_desktop_state_to(&self, owner_id: Uuid, tx: &mpsc::UnboundedSender<String>) {
         if let Some(desktops) = self.desktops.get(&owner_id) {
             for desktop in desktops {
-                send_serialized(tx, &ServerMessage::DesktopStatus {
-                    device_id: desktop.device_id.to_string(),
-                    device_name: desktop.device_name.clone(),
-                    online: true,
-                });
+                send_serialized(
+                    tx,
+                    &ServerMessage::DesktopStatus {
+                        device_id: desktop.device_id.to_string(),
+                        device_name: desktop.device_name.clone(),
+                        online: true,
+                    },
+                );
             }
         }
         if let Some(questions) = self.last_questions.get(&owner_id) {
-            send_serialized(tx, &DesktopMessage::ClaudeQuestions {
-                questions: questions.clone(),
-            });
+            send_serialized(
+                tx,
+                &DesktopMessage::ClaudeQuestions {
+                    questions: questions.clone(),
+                },
+            );
         }
         if let Some(json) = self.last_auto_yes_panes.get(&owner_id) {
             let _ = tx.send(json.clone());
@@ -219,7 +244,10 @@ mod tests {
     use super::*;
     use clawtab_protocol::QuestionOption;
 
-    fn mk_channel() -> (mpsc::UnboundedSender<String>, mpsc::UnboundedReceiver<String>) {
+    fn mk_channel() -> (
+        mpsc::UnboundedSender<String>,
+        mpsc::UnboundedReceiver<String>,
+    ) {
         mpsc::unbounded_channel()
     }
 
@@ -252,11 +280,14 @@ mod tests {
         let (tx, _rx) = mk_channel();
 
         assert!(!hub.has_desktop(user));
-        hub.add_desktop(user, DesktopConnection {
-            device_id: device,
-            device_name: "laptop".into(),
-            tx,
-        });
+        hub.add_desktop(
+            user,
+            DesktopConnection {
+                device_id: device,
+                device_name: "laptop".into(),
+                tx,
+            },
+        );
         assert!(hub.has_desktop(user));
 
         hub.remove_desktop(user, device);
@@ -271,18 +302,24 @@ mod tests {
         let conn_id = Uuid::new_v4();
 
         let (desktop_tx, _desktop_rx) = mk_channel();
-        hub.add_desktop(user, DesktopConnection {
-            device_id: device,
-            device_name: "laptop".into(),
-            tx: desktop_tx,
-        });
+        hub.add_desktop(
+            user,
+            DesktopConnection {
+                device_id: device,
+                device_name: "laptop".into(),
+                tx: desktop_tx,
+            },
+        );
         hub.set_cached_questions(user, vec![mk_question("pane-1")]);
 
         let (mobile_tx, mut mobile_rx) = mk_channel();
-        hub.add_mobile(user, MobileConnection {
-            connection_id: conn_id,
-            tx: mobile_tx,
-        });
+        hub.add_mobile(
+            user,
+            MobileConnection {
+                connection_id: conn_id,
+                tx: mobile_tx,
+            },
+        );
 
         let first = mobile_rx.try_recv().unwrap_or_default();
         assert!(first.contains("desktop_status"), "got {first}");
@@ -303,16 +340,81 @@ mod tests {
         let mut hub = Hub::new();
         let user = Uuid::new_v4();
         let (tx, mut rx) = mk_channel();
-        hub.add_desktop(user, DesktopConnection {
-            device_id: Uuid::new_v4(),
-            device_name: "laptop".into(),
-            tx,
-        });
+        hub.add_desktop(
+            user,
+            DesktopConnection {
+                device_id: Uuid::new_v4(),
+                device_name: "laptop".into(),
+                tx,
+            },
+        );
 
         let msg = ClientMessage::ListJobs { id: "x".into() };
         assert!(hub.forward_to_desktop(user, &msg));
         let delivered = rx.try_recv().unwrap_or_default();
         assert!(delivered.contains("list_jobs"), "got {delivered}");
+    }
+
+    #[test]
+    fn add_desktop_replaces_same_device_connection() {
+        let mut hub = Hub::new();
+        let user = Uuid::new_v4();
+        let device = Uuid::new_v4();
+        let (old_tx, mut old_rx) = mk_channel();
+        let (new_tx, mut new_rx) = mk_channel();
+
+        hub.add_desktop(
+            user,
+            DesktopConnection {
+                device_id: device,
+                device_name: "laptop".into(),
+                tx: old_tx,
+            },
+        );
+        hub.add_desktop(
+            user,
+            DesktopConnection {
+                device_id: device,
+                device_name: "laptop".into(),
+                tx: new_tx,
+            },
+        );
+
+        let msg = ClientMessage::ListJobs { id: "x".into() };
+        assert!(hub.forward_to_desktop(user, &msg));
+        assert!(old_rx.try_recv().is_err());
+        let delivered = new_rx.try_recv().unwrap_or_default();
+        assert!(delivered.contains("list_jobs"), "got {delivered}");
+    }
+
+    #[test]
+    fn forward_to_desktop_sends_to_all_connections() {
+        let mut hub = Hub::new();
+        let user = Uuid::new_v4();
+        let (tx1, mut rx1) = mk_channel();
+        let (tx2, mut rx2) = mk_channel();
+
+        hub.add_desktop(
+            user,
+            DesktopConnection {
+                device_id: Uuid::new_v4(),
+                device_name: "laptop-1".into(),
+                tx: tx1,
+            },
+        );
+        hub.add_desktop(
+            user,
+            DesktopConnection {
+                device_id: Uuid::new_v4(),
+                device_name: "laptop-2".into(),
+                tx: tx2,
+            },
+        );
+
+        let msg = ClientMessage::ListJobs { id: "x".into() };
+        assert!(hub.forward_to_desktop(user, &msg));
+        assert!(rx1.try_recv().unwrap_or_default().contains("list_jobs"));
+        assert!(rx2.try_recv().unwrap_or_default().contains("list_jobs"));
     }
 
     #[test]
