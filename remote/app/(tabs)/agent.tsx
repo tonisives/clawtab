@@ -59,6 +59,7 @@ export default function AgentScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<AgentModelOption>(getStoredModel);
+  const selectedModelRef = useRef(selectedModel);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
@@ -106,6 +107,7 @@ export default function AgentScreen() {
   const modelOptions = buildModelOptions(DEFAULT_PROVIDERS, resolvedModels);
 
   const handleSelectModel = (opt: AgentModelOption) => {
+    selectedModelRef.current = opt;
     setSelectedModel(opt);
     storeModel(opt);
     setMenuOpen(false);
@@ -122,8 +124,9 @@ export default function AgentScreen() {
     setSending(true);
     setError(null);
     const promptText = prompt.trim();
-    const provider = selectedModel.provider;
-    const model = selectedModel.modelId ?? undefined;
+    const launchModel = selectedModelRef.current;
+    const provider = launchModel.provider;
+    const model = launchModel.modelId ?? undefined;
 
     const msgId = nextId();
     send({

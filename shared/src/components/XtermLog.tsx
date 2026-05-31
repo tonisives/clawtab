@@ -74,11 +74,36 @@ ro.observe(document.getElementById('terminal'));
 
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
-window.setVisualOffset = function(px) {
+var visualOffsetMax = 0;
+window.applyVisualOffset = function() {
   var el = document.getElementById('terminal');
   if (!el) return;
-  el.style.transform = px ? 'translate3d(0,' + (-px) + 'px,0)' : '';
+  var maxPx = Math.max(0, Math.round(visualOffsetMax || 0));
+  var rows = term.rows || 1;
+  var rowHeight = el.clientHeight / rows;
+  var lastContentY = -1;
+  try {
+    var buffer = term.buffer && term.buffer.active;
+    if (buffer) {
+      for (var y = rows - 1; y >= 0; y--) {
+        var line = buffer.getLine(buffer.viewportY + y);
+        if (line && line.translateToString(true).trim().length > 0) {
+          lastContentY = y;
+          break;
+        }
+      }
+    }
+  } catch (e) {}
+  if (lastContentY < 0) lastContentY = 0;
+  var contentBottom = (lastContentY + 1) * rowHeight;
+  var visibleHeight = Math.max(0, el.clientHeight - maxPx);
+  var offset = Math.max(0, Math.min(maxPx, Math.ceil(contentBottom - visibleHeight)));
+  el.style.transform = offset ? 'translate3d(0,' + (-offset) + 'px,0)' : '';
   el.style.transition = 'transform 180ms ease-out';
+};
+window.setVisualOffset = function(px) {
+  visualOffsetMax = px || 0;
+  window.applyVisualOffset();
 };
 window.blurTerminal = function() {
   try { term.blur(); } catch (e) {}
@@ -105,13 +130,13 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         // Escape the base64 string for injection
         const escaped = b64.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
         webViewRef.current?.injectJavaScript(
-          `(function(){var b='${escaped}';var a=Uint8Array.from(atob(b),function(c){return c.charCodeAt(0)});term.write(a)})();true;`
+          `(function(){var b='${escaped}';var a=Uint8Array.from(atob(b),function(c){return c.charCodeAt(0)});term.write(a,function(){window.applyVisualOffset&&window.applyVisualOffset()})})();true;`
         );
       },
       writeText(text: string) {
         const normalised = text.replace(/\r?\n/g, "\r\n");
         const escaped = normalised.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\r/g, "\\r").replace(/\n/g, "\\n");
-        webViewRef.current?.injectJavaScript(`term.write('${escaped}');true;`);
+        webViewRef.current?.injectJavaScript(`term.write('${escaped}',function(){window.applyVisualOffset&&window.applyVisualOffset()});true;`);
       },
       clear() {
         webViewRef.current?.injectJavaScript(`term.reset();true;`);

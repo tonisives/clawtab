@@ -2,6 +2,8 @@ import { create } from "zustand";
 import type { DetectedProcess, JobStatus, RemoteJob } from "../types/job";
 
 const IDLE_STATUS: JobStatus = { state: "idle" };
+const STOPPED_PANE_IGNORE_MS = 20000;
+const stoppedPaneIgnoreUntil = new Map<string, number>();
 
 interface JobsState {
   jobs: RemoteJob[];
@@ -42,30 +44,43 @@ export const useJobsStore = create<JobsState>((set) => ({
     })),
 
   setDetectedProcesses: (processes) => set((state) => {
-    const incomingIds = new Set(processes.map((process) => process.pane_id));
     const now = Date.now();
+    for (const [paneId, ignoreUntil] of stoppedPaneIgnoreUntil) {
+      if (ignoreUntil <= now) stoppedPaneIgnoreUntil.delete(paneId);
+    }
+    const visibleProcesses = processes.filter((process) => {
+      const ignoreUntil = stoppedPaneIgnoreUntil.get(process.pane_id) ?? 0;
+      return ignoreUntil <= now;
+    });
+    const incomingIds = new Set(visibleProcesses.map((process) => process.pane_id));
     const pending = state.detectedProcesses.filter((process) => {
       if (process._transient_state !== "starting") return false;
       if (incomingIds.has(process.pane_id)) return false;
       const startedAt = process.session_started_at ? Date.parse(process.session_started_at) : NaN;
       return Number.isFinite(startedAt) && now - startedAt < 30000;
     });
-    return { detectedProcesses: [...processes, ...pending], processesLoaded: true };
+    return { detectedProcesses: [...visibleProcesses, ...pending], processesLoaded: true };
   }),
 
   upsertDetectedProcess: (process) =>
-    set((state) => ({
-      detectedProcesses: state.detectedProcesses.some((item) => item.pane_id === process.pane_id)
-        ? state.detectedProcesses.map((item) => item.pane_id === process.pane_id ? { ...item, ...process } : item)
-        : [...state.detectedProcesses, process],
-      processesLoaded: true,
-    })),
+    set((state) => {
+      stoppedPaneIgnoreUntil.delete(process.pane_id);
+      return {
+        detectedProcesses: state.detectedProcesses.some((item) => item.pane_id === process.pane_id)
+          ? state.detectedProcesses.map((item) => item.pane_id === process.pane_id ? { ...item, ...process } : item)
+          : [...state.detectedProcesses, process],
+        processesLoaded: true,
+      };
+    }),
 
   removeDetectedProcess: (paneId) =>
-    set((state) => ({
-      detectedProcesses: state.detectedProcesses.filter((process) => process.pane_id !== paneId),
-      processesLoaded: true,
-    })),
+    set((state) => {
+      stoppedPaneIgnoreUntil.set(paneId, Date.now() + STOPPED_PANE_IGNORE_MS);
+      return {
+        detectedProcesses: state.detectedProcesses.filter((process) => process.pane_id !== paneId),
+        processesLoaded: true,
+      };
+    }),
 
   hydrateFromCache: (jobs, statuses) =>
     set((state) => {

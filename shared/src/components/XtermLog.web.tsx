@@ -34,6 +34,29 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const onDataRef = useRef(onData);
     const onResizeRef = useRef(onResize);
     const interactiveRef = useRef(interactive);
+    const visualOffsetMaxRef = useRef(0);
+
+    const applyVisualOffset = () => {
+      const t = termRef.current;
+      const el = containerRef.current;
+      if (!t || !el) return;
+      const maxPx = Math.max(0, Math.round(visualOffsetMaxRef.current));
+      const rowHeight = el.clientHeight / Math.max(1, t.rows);
+      let lastContentY = -1;
+      for (let y = t.rows - 1; y >= 0; y--) {
+        const line = t.buffer.active.getLine(t.buffer.active.viewportY + y);
+        if (line?.translateToString(true).trim()) {
+          lastContentY = y;
+          break;
+        }
+      }
+      if (lastContentY < 0) lastContentY = 0;
+      const contentBottom = (lastContentY + 1) * rowHeight;
+      const visibleHeight = Math.max(0, el.clientHeight - maxPx);
+      const offset = Math.max(0, Math.min(maxPx, Math.ceil(contentBottom - visibleHeight)));
+      el.style.transform = offset ? `translate3d(0, ${-offset}px, 0)` : "";
+      el.style.transition = "transform 180ms ease-out";
+    };
 
     useEffect(() => {
       onDataRef.current = onData;
@@ -46,11 +69,11 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       write(b64: string) {
         if (termRef.current) {
           const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-          termRef.current.write(bytes);
+          termRef.current.write(bytes, applyVisualOffset);
         }
       },
       writeText(text: string) {
-        termRef.current?.write(text.replace(/\r?\n/g, "\r\n"));
+        termRef.current?.write(text.replace(/\r?\n/g, "\r\n"), applyVisualOffset);
       },
       clear() {
         termRef.current?.reset();
@@ -60,10 +83,8 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         return { cols: t?.cols ?? 80, rows: t?.rows ?? 24 };
       },
       setVisualOffset(px: number) {
-        if (!containerRef.current) return;
-        const value = Math.max(0, Math.round(px));
-        containerRef.current.style.transform = value ? `translate3d(0, ${-value}px, 0)` : "";
-        containerRef.current.style.transition = "transform 180ms ease-out";
+        visualOffsetMaxRef.current = Math.max(0, Math.round(px));
+        applyVisualOffset();
       },
       blur() {
         termRef.current?.blur();

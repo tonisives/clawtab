@@ -58,6 +58,7 @@ interface PopupMenuProps {
   /** Ref to the trigger button - clicks on it are ignored so the button's own toggle works */
   triggerRef?: React.RefObject<any>;
   autoFocus?: boolean;
+  initialHighlight?: boolean;
 }
 
 function HoverableItem({ item, onPress, highlighted = false, onHover }: {
@@ -114,7 +115,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
   );
 }
 
-export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false }: PopupMenuProps) {
+export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true }: PopupMenuProps) {
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
   const [submenu, setSubmenu] = useState<{ label: string; items: PopupMenuItem[] } | null>(null);
@@ -128,8 +129,8 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
     .filter((index) => index >= 0);
 
   useEffect(() => {
-    setHighlightedIndex(actionableIndexes[0] ?? -1);
-  }, [submenu, items.length, actionableIndexes.join(",")]);
+    setHighlightedIndex(initialHighlight ? actionableIndexes[0] ?? -1 : -1);
+  }, [submenu, items.length, actionableIndexes.join(","), initialHighlight]);
 
   useEffect(() => {
     if (!isWeb || !autoFocus) return;

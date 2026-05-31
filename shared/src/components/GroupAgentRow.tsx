@@ -89,7 +89,7 @@ export function GroupAgentRow({
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           triggerRef={buttonRef}
-          autoFocus
+          initialHighlight={false}
         />
       )}
     </View>
