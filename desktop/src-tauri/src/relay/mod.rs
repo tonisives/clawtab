@@ -14,6 +14,8 @@ use clawtab_protocol::{DesktopMessage, JobStatus as RemoteJobStatus, RemoteJob};
 use crate::config::jobs::{Job, JobStatus, JobsConfig};
 use crate::pty::SharedPtyManager;
 
+pub use crate::process_snapshot::detect_processes_snapshot;
+
 /// Relay connection state, shared via Arc<Mutex<..>> in AppState.
 pub struct RelayHandle {
     tx: mpsc::UnboundedSender<String>,
@@ -365,6 +367,16 @@ async fn attempt_session(
             };
 
             push_full_state(&handle, jobs_config, job_status);
+            let processes = crate::process_snapshot::detect_processes_snapshot(
+                jobs_config,
+                &ctx.job_status,
+                pty_manager,
+            )
+            .await;
+            handle.send_message(&DesktopMessage::DetectedProcesses {
+                id: "desktop_process_snapshot".to_string(),
+                processes,
+            });
             let pane_ids: Vec<String> = auto_yes_panes.lock().iter().cloned().collect();
             handle.send_message(&DesktopMessage::AutoYesPanes { pane_ids });
             {

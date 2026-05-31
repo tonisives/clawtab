@@ -4,7 +4,9 @@ use serde::Serialize;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use clawtab_protocol::{ClaudeQuestion, ClientMessage, DesktopMessage, ServerMessage};
+use clawtab_protocol::{
+    ClaudeQuestion, ClientMessage, DesktopMessage, DetectedProcess, ServerMessage,
+};
 
 pub struct DesktopConnection {
     pub device_id: Uuid,
@@ -32,6 +34,8 @@ pub struct Hub {
     auto_yes_panes: HashMap<Uuid, HashSet<String>>,
     /// Raw JSON of the last AutoYesPanes message, replayed verbatim to mobiles.
     last_auto_yes_panes: HashMap<Uuid, String>,
+    /// Last daemon/Desktop process snapshot per user, replayed to mobiles.
+    last_detected_processes: HashMap<Uuid, Vec<DetectedProcess>>,
 }
 
 impl Hub {
@@ -42,6 +46,7 @@ impl Hub {
             last_questions: HashMap::new(),
             auto_yes_panes: HashMap::new(),
             last_auto_yes_panes: HashMap::new(),
+            last_detected_processes: HashMap::new(),
         }
     }
 
@@ -78,9 +83,17 @@ impl Hub {
         if no_desktops {
             self.desktops.remove(&user_id);
             self.last_questions.remove(&user_id);
+            self.last_detected_processes.remove(&user_id);
             self.broadcast_to_mobiles(
                 user_id,
                 &DesktopMessage::ClaudeQuestions { questions: vec![] },
+            );
+            self.broadcast_to_mobiles(
+                user_id,
+                &DesktopMessage::DetectedProcesses {
+                    id: "desktop_offline".to_string(),
+                    processes: vec![],
+                },
             );
         }
 
@@ -119,6 +132,16 @@ impl Hub {
 
         if let Some(json) = self.last_auto_yes_panes.get(&user_id) {
             let _ = conn.tx.send(json.clone());
+        }
+
+        if let Some(processes) = self.last_detected_processes.get(&user_id) {
+            send_serialized(
+                &conn.tx,
+                &DesktopMessage::DetectedProcesses {
+                    id: "cached_processes".to_string(),
+                    processes: processes.clone(),
+                },
+            );
         }
 
         self.mobiles.entry(user_id).or_default().push(conn);
@@ -188,6 +211,21 @@ impl Hub {
 
     pub fn set_cached_auto_yes_panes_json(&mut self, user_id: Uuid, json: &str) {
         self.last_auto_yes_panes.insert(user_id, json.to_string());
+    }
+
+    pub fn set_cached_detected_processes(
+        &mut self,
+        user_id: Uuid,
+        processes: Vec<DetectedProcess>,
+    ) {
+        self.last_detected_processes.insert(user_id, processes);
+    }
+
+    pub fn cached_detected_processes(&self, user_id: Uuid) -> Vec<DetectedProcess> {
+        self.last_detected_processes
+            .get(&user_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn set_auto_yes_panes(&mut self, user_id: Uuid, pane_ids: HashSet<String>) {

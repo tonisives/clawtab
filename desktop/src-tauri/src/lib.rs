@@ -26,6 +26,7 @@ mod macos_window;
 #[cfg(target_os = "macos")]
 pub mod native_notifications;
 pub mod notifications;
+pub mod process_snapshot;
 pub mod pty;
 pub mod questions;
 pub mod relay;

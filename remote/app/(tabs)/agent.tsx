@@ -125,11 +125,6 @@ export default function AgentScreen() {
       provider: selectedModel.provider,
       model: selectedModel.modelId ?? undefined,
     });
-    // Immediately request process detection so the new agent appears in the sidebar
-    setTimeout(() => {
-      const s = getWsSend();
-      if (s) s({ type: "detect_processes", id: nextId() });
-    }, 1500);
     setPrompt("");
     setInputHeight(undefined);
     setSending(false);

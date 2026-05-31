@@ -27,6 +27,16 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
   function XtermLog({ onData, onResize, interactive = true }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
+    const onDataRef = useRef(onData);
+    const onResizeRef = useRef(onResize);
+    const interactiveRef = useRef(interactive);
+
+    useEffect(() => {
+      onDataRef.current = onData;
+      onResizeRef.current = onResize;
+      interactiveRef.current = interactive;
+      if (termRef.current) termRef.current.options.disableStdin = !interactive;
+    }, [interactive, onData, onResize]);
 
     useImperativeHandle(ref, () => ({
       write(b64: string) {
@@ -108,20 +118,19 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         if (t.cols !== prevCols || t.rows !== prevRows) {
           prevCols = t.cols;
           prevRows = t.rows;
-          onResize?.(t.cols, t.rows);
+          onResizeRef.current?.(t.cols, t.rows);
         }
       });
       observer.observe(el);
 
       // Report initial size
-      onResize?.(t.cols, t.rows);
+      onResizeRef.current?.(t.cols, t.rows);
 
       let dataDisposable: { dispose(): void } | null = null;
-      if (interactive && onData) {
-        dataDisposable = t.onData((data) => {
-          onData(btoa(data));
-        });
-      }
+      dataDisposable = t.onData((data) => {
+        if (!interactiveRef.current) return;
+        onDataRef.current?.(btoa(data));
+      });
 
       return () => {
         observer.disconnect();

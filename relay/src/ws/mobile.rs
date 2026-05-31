@@ -2,7 +2,9 @@ use axum::extract::ws::WebSocket;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use clawtab_protocol::{error_codes, ClientMessage, ServerMessage};
+use clawtab_protocol::{
+    error_codes, ClientMessage, DesktopMessage, DetectedProcess, ServerMessage,
+};
 
 use crate::ws::handler::{run_session_loop, LoopExit};
 use crate::ws::hub::MobileConnection;
@@ -56,11 +58,40 @@ async fn register(
     connection_id: Uuid,
     tx: mpsc::UnboundedSender<String>,
 ) {
-    let shared_owner_ids = get_shared_owner_ids(&state.pool, user_id).await;
+    let shared_owners = sqlx::query_as::<_, (Uuid, Option<Vec<String>>)>(
+        "SELECT owner_id, allowed_groups FROM workspace_shares WHERE guest_id = $1",
+    )
+    .bind(user_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
     let mut hub = state.hub.write().await;
-    hub.add_mobile(user_id, MobileConnection { connection_id, tx: tx.clone() });
-    for &owner_id in &shared_owner_ids {
-        hub.replay_desktop_state_to(owner_id, &tx);
+    hub.add_mobile(
+        user_id,
+        MobileConnection {
+            connection_id,
+            tx: tx.clone(),
+        },
+    );
+    for (owner_id, allowed_groups) in &shared_owners {
+        hub.replay_desktop_state_to(*owner_id, &tx);
+        let processes = filter_detected_processes_by_groups(
+            hub.cached_detected_processes(*owner_id),
+            allowed_groups.as_deref(),
+        );
+        send_desktop_message(
+            &tx,
+            &DesktopMessage::DetectedProcesses {
+                id: "cached_processes".to_string(),
+                processes,
+            },
+        );
+    }
+}
+
+fn send_desktop_message(tx: &mpsc::UnboundedSender<String>, msg: &DesktopMessage) {
+    if let Ok(json) = serde_json::to_string(msg) {
+        let _ = tx.send(json);
     }
 }
 
@@ -81,7 +112,11 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
 
     // Relay-intercepted messages (not forwarded to desktop)
     match &msg {
-        ClientMessage::RegisterPushToken { id, push_token, platform } => {
+        ClientMessage::RegisterPushToken {
+            id,
+            push_token,
+            platform,
+        } => {
             handle_register_push_token(state, user_id, id, push_token, platform).await;
             return;
         }
@@ -99,7 +134,6 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
 
     let target = resolve_target_user(state, user_id).await;
 
-    let hub = state.hub.read().await;
     let Some(target) = target else {
         let preview = &text[..text.len().min(80)];
         tracing::warn!(%user_id, msg_preview = %preview, "no desktop online");
@@ -108,16 +142,95 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
             code: error_codes::DESKTOP_OFFLINE.into(),
             message: "no desktop app is connected".into(),
         };
+        let hub = state.hub.read().await;
         hub.broadcast_to_mobiles(user_id, &error);
         return;
     };
 
-    if let ClientMessage::AnswerQuestion { question_id, pane_id, answer, .. } = &msg {
-        forward_answer(&hub, &state.pool, target, &msg, question_id, pane_id, answer);
+    if let ClientMessage::DetectProcesses { id } = &msg {
+        let cached = {
+            let hub = state.hub.read().await;
+            hub.cached_detected_processes(target)
+        };
+        let processes = filter_detected_processes_for_mobile(state, user_id, target, cached).await;
+        let hub = state.hub.read().await;
+        hub.broadcast_to_mobiles(
+            user_id,
+            &DesktopMessage::DetectedProcesses {
+                id: id.clone(),
+                processes,
+            },
+        );
+        return;
+    }
+
+    let hub = state.hub.read().await;
+    if let ClientMessage::AnswerQuestion {
+        question_id,
+        pane_id,
+        answer,
+        ..
+    } = &msg
+    {
+        forward_answer(
+            &hub,
+            &state.pool,
+            target,
+            &msg,
+            question_id,
+            pane_id,
+            answer,
+        );
         return;
     }
 
     hub.forward_to_desktop(target, &msg);
+}
+
+async fn filter_detected_processes_for_mobile(
+    state: &AppState,
+    user_id: Uuid,
+    owner_id: Uuid,
+    processes: Vec<DetectedProcess>,
+) -> Vec<DetectedProcess> {
+    if user_id == owner_id {
+        return processes;
+    }
+
+    let allowed_groups = sqlx::query_scalar::<_, Option<Vec<String>>>(
+        "SELECT allowed_groups FROM workspace_shares WHERE owner_id = $1 AND guest_id = $2 LIMIT 1",
+    )
+    .bind(owner_id)
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None)
+    .flatten();
+
+    let Some(groups) = allowed_groups else {
+        return processes;
+    };
+
+    filter_detected_processes_by_groups(processes, Some(&groups))
+}
+
+fn filter_detected_processes_by_groups(
+    processes: Vec<DetectedProcess>,
+    allowed_groups: Option<&[String]>,
+) -> Vec<DetectedProcess> {
+    let Some(groups) = allowed_groups else {
+        return processes;
+    };
+
+    processes
+        .into_iter()
+        .filter(|process| {
+            process
+                .matched_group
+                .as_ref()
+                .is_some_and(|group| groups.iter().any(|allowed| allowed == group))
+        })
+        .collect()
 }
 
 fn forward_answer(
@@ -199,7 +312,16 @@ async fn handle_register_push_token(
 
 async fn handle_get_notification_history(state: &AppState, user_id: Uuid, id: &str, limit: u32) {
     let limit = limit.min(50) as i64;
-    type Row = (String, String, String, String, serde_json::Value, bool, Option<String>, chrono::DateTime<chrono::Utc>);
+    type Row = (
+        String,
+        String,
+        String,
+        String,
+        serde_json::Value,
+        bool,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+    );
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT question_id, pane_id, cwd, context_lines, options, answered, answered_with, created_at
          FROM notification_history
@@ -215,18 +337,29 @@ async fn handle_get_notification_history(state: &AppState, user_id: Uuid, id: &s
 
     let notifications: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(question_id, pane_id, cwd, context_lines, options, answered, answered_with, created_at)| {
-            serde_json::json!({
-                "question_id": question_id,
-                "pane_id": pane_id,
-                "cwd": cwd,
-                "context_lines": context_lines,
-                "options": options,
-                "answered": answered,
-                "answered_with": answered_with,
-                "created_at": created_at.to_rfc3339(),
-            })
-        })
+        .map(
+            |(
+                question_id,
+                pane_id,
+                cwd,
+                context_lines,
+                options,
+                answered,
+                answered_with,
+                created_at,
+            )| {
+                serde_json::json!({
+                    "question_id": question_id,
+                    "pane_id": pane_id,
+                    "cwd": cwd,
+                    "context_lines": context_lines,
+                    "options": options,
+                    "answered": answered,
+                    "answered_with": answered_with,
+                    "created_at": created_at.to_rfc3339(),
+                })
+            },
+        )
         .collect();
 
     let resp = serde_json::json!({

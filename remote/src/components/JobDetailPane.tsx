@@ -153,12 +153,14 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   const renderTerminal = useCallback(
     () => (
       <View style={{ flex: 1, minHeight: 0 }}>
-        {ptyConnecting && (
-          <View style={styles.ptyConnecting}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
-          </View>
-        )}
+        <View style={[styles.ptyConnecting, !ptyConnecting && styles.ptyConnectingHidden]}>
+          {ptyConnecting ? (
+            <>
+              <ActivityIndicator size="small" color={colors.accent} />
+              <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
+            </>
+          ) : null}
+        </View>
         <XtermLog
           ref={termRef}
           onData={sendInput}
@@ -259,6 +261,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  ptyConnectingHidden: {
+    height: 0,
+    paddingVertical: 0,
+    borderBottomWidth: 0,
+    overflow: "hidden",
   },
   ptyConnectingText: {
     color: colors.textMuted,
