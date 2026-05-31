@@ -141,6 +141,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           originWhitelist={["*"]}
           scrollEnabled={false}
           bounces={false}
+          hideKeyboardAccessoryView
         />
       </View>
     );

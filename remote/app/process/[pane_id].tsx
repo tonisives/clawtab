@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, KeyboardAvoidingView, Keyboard, Alert } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { XtermLog, MessageInput, findYesOption, isFreetextOption, colors, radius, spacing } from "@clawtab/shared";
+import { XtermLog, PopupMenu, findYesOption, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { confirm } from "../../src/lib/platform";
+
+const KEYBOARD_EXTRA_LIFT = 72;
 
 export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();
@@ -67,6 +70,22 @@ export default function ProcessDetailScreen() {
   if (process) lastProcessRef.current = process;
   const lastProcess = lastProcessRef.current;
   const [stopping, setStopping] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const contextMenuRef = useRef<View>(null);
+  const contextDropdownRef = useRef<View>(null);
+  const contextButtonRef = useRef<any>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [keyboardBuffer, setKeyboardBuffer] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const show = Keyboard.addListener("keyboardDidShow", () => setKeyboardBuffer(KEYBOARD_EXTRA_LIFT));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardBuffer(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
@@ -83,15 +102,6 @@ export default function ProcessDetailScreen() {
   const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
 
   const options = paneQuestion?.options ?? [];
-
-  // "Type something" mode: when a freetext option is selected, the next
-  // MessageInput submission sends keystroke + freetext instead of literal text.
-  const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
-
-  // Reset freetext mode when the question changes
-  useEffect(() => {
-    setFreetextOptionNumber(null);
-  }, [paneQuestion?.question_id]);
 
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
@@ -137,31 +147,35 @@ export default function ProcessDetailScreen() {
       const send = getWsSend();
       if (!send || !text.trim()) return;
 
-      if (freetextOptionNumber) {
-        // In freetext mode: send keystroke for option number + typed text via answer_question
-        send({
-          type: "answer_question",
-          id: nextId(),
-          question_id: paneQuestion?.question_id ?? "",
-          pane_id,
-          answer: freetextOptionNumber,
-          freetext: text.trim(),
-        });
-        setFreetextOptionNumber(null);
-      } else {
-        send({
-          type: "send_detected_process_input",
-          id: nextId(),
-          pane_id,
-          text: text.trim(),
-        });
-      }
+      send({
+        type: "send_detected_process_input",
+        id: nextId(),
+        pane_id,
+        text: text.trim(),
+      });
       // Dismiss notification card if we just answered a question
       if (paneQuestion) {
         answerQuestion(paneQuestion.question_id);
       }
     },
-    [pane_id, paneQuestion, answerQuestion, freetextOptionNumber],
+    [pane_id, paneQuestion, answerQuestion],
+  );
+
+  const sendTmuxPaneKey = useCallback(
+    (key: string) => {
+      const send = getWsSend();
+      if (!send) return;
+      send({ type: "tmux_pane_key", pane_id, key });
+    },
+    [pane_id],
+  );
+
+  const scrollTerminal = useCallback(
+    (direction: "up" | "down") => {
+      sendTmuxPaneKey("copy-mode");
+      setTimeout(() => sendTmuxPaneKey(direction === "up" ? "C-u" : "C-d"), 30);
+    },
+    [sendTmuxPaneKey],
   );
 
   const doStop = async () => {
@@ -191,6 +205,36 @@ export default function ProcessDetailScreen() {
   };
 
   const isAlive = !!process || !!paneQuestion;
+  const openContextMenu = useCallback(
+    (e?: any) => {
+      Keyboard.dismiss();
+
+      if (Platform.OS !== "web") {
+        Alert.alert(
+          displayName,
+          undefined,
+          [
+            { text: "Hide Keyboard", onPress: () => Keyboard.dismiss() },
+            isAlive
+              ? { text: stopping ? "Stopping..." : "Stop", onPress: handleStop, style: "destructive" }
+              : { text: starting ? "Starting..." : "Start", onPress: handleStart },
+            { text: "Cancel", style: "cancel" },
+          ],
+        );
+        return;
+      }
+
+      const node = contextButtonRef.current?.getBoundingClientRect
+        ? contextButtonRef.current
+        : (e?.currentTarget ?? e?.target);
+      if (node?.getBoundingClientRect) {
+        const rect = node.getBoundingClientRect();
+        setMenuPos({ top: rect.bottom + 4, left: rect.right });
+      }
+      setShowContextMenu((v) => !v);
+    },
+    [displayName, handleStart, handleStop, isAlive, starting, stopping],
+  );
 
   if (waitingForData) {
     return (
@@ -210,33 +254,56 @@ export default function ProcessDetailScreen() {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={-KEYBOARD_EXTRA_LIFT}
     >
       <Stack.Screen
         options={{
           title: displayName,
           headerRight: () => (
-            <View style={isAlive ? styles.runningBadge : styles.endedBadge}>
-              <Text style={isAlive ? styles.runningText : styles.endedText}>
-                {isAlive ? "running" : "ended"}
-              </Text>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.stateDotHitbox}
+                onPress={() => Keyboard.dismiss()}
+                activeOpacity={0.6}
+                hitSlop={8}
+              >
+                <View style={[styles.stateDot, isAlive ? styles.runningDot : styles.endedDot]} />
+              </TouchableOpacity>
+              <View ref={contextMenuRef} style={styles.contextWrap}>
+                <TouchableOpacity
+                  ref={contextButtonRef}
+                  style={styles.contextBtn}
+                  onPress={openContextMenu}
+                  activeOpacity={0.6}
+                  hitSlop={8}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+                </TouchableOpacity>
+                {Platform.OS === "web" && showContextMenu && (
+                  <PopupMenu
+                    dropdownRef={contextDropdownRef}
+                    triggerRef={contextButtonRef}
+                    position={menuPos}
+                    onClose={() => setShowContextMenu(false)}
+                    items={isAlive ? [
+                      { type: "item", label: "Hide Keyboard", onPress: () => Keyboard.dismiss() },
+                      { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
+                    ] : [
+                      { type: "item", label: "Hide Keyboard", onPress: () => Keyboard.dismiss() },
+                      { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
+                    ]}
+                  />
+                )}
+              </View>
             </View>
           ),
         }}
       />
 
-      {(process ?? lastProcess) && (
-        <View style={styles.pathRow}>
-          <Text style={styles.pathText} numberOfLines={1}>
-            {displayName}
-          </Text>
-          <Text style={styles.versionText}>v{(process ?? lastProcess)!.version}</Text>
-        </View>
-      )}
-
       {activeProcess?.first_query && (
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Query</Text>
-          <Text style={styles.queryText} numberOfLines={3}>
+          <Text style={styles.queryText} numberOfLines={1}>
             {activeProcess.first_query}
           </Text>
         </View>
@@ -244,33 +311,11 @@ export default function ProcessDetailScreen() {
       {activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Latest</Text>
-          <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={3}>
+          <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={1}>
             {activeProcess.last_query}
           </Text>
         </View>
       )}
-
-      <View style={styles.actions}>
-        {isAlive ? (
-          <TouchableOpacity
-            style={[styles.stopBtn, stopping && { opacity: 0.5 }]}
-            onPress={handleStop}
-            disabled={stopping}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.stopBtnText}>{stopping ? "Stopping..." : "Stop"}</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={[styles.startBtn, starting && { opacity: 0.5 }]}
-            onPress={handleStart}
-            disabled={starting}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.startBtnText}>{starting ? "Starting..." : "Start"}</Text>
-          </TouchableOpacity>
-        )}
-      </View>
 
       <View style={styles.terminalContainer}>
         {ptyConnecting && (
@@ -279,6 +324,10 @@ export default function ProcessDetailScreen() {
             <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
           </View>
         )}
+        <TerminalScrollButtons
+          onScrollUp={() => scrollTerminal("up")}
+          onScrollDown={() => scrollTerminal("down")}
+        />
         <XtermLog
           ref={termRef}
           onData={ptySendInput}
@@ -287,28 +336,39 @@ export default function ProcessDetailScreen() {
         />
       </View>
 
-      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
-      {(isAlive || paneQuestion) && (
-        <MessageInput
-          onSend={handleSend}
-          placeholder={freetextOptionNumber ? "Type your answer..." : "Send input..."}
-          avoidKeyboard={false}
-        />
-      )}
+      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
+      {keyboardBuffer > 0 ? <View style={{ height: keyboardBuffer }} /> : null}
     </KeyboardAvoidingView>
+  );
+}
+
+function TerminalScrollButtons({
+  onScrollUp,
+  onScrollDown,
+}: {
+  onScrollUp: () => void;
+  onScrollDown: () => void;
+}) {
+  return (
+    <View style={styles.scrollControls} pointerEvents="box-none">
+      <TouchableOpacity style={styles.scrollBtn} onPress={onScrollUp} activeOpacity={0.7}>
+        <Ionicons name="chevron-up" size={18} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.scrollBtn} onPress={onScrollDown} activeOpacity={0.7}>
+        <Ionicons name="chevron-down" size={18} color={colors.text} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
 function OptionButtons({
   options,
   onSend,
-  onFreetextOption,
   autoYesActive,
   onToggleAutoYes,
 }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
-  onFreetextOption?: (optionNumber: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
 }) {
@@ -325,11 +385,7 @@ function OptionButtons({
           key={opt.number}
           style={styles.optionBtn}
           onPress={() => {
-            if (isFreetextOption(opt.label) && onFreetextOption) {
-              onFreetextOption(opt.number);
-            } else {
-              onSend(opt.number);
-            }
+            onSend(opt.number);
           }}
           activeOpacity={0.6}
         >
@@ -360,69 +416,69 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   notFound: { color: colors.textMuted, fontSize: 16 },
-  runningBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: colors.accentBg,
-  },
-  runningText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.accent },
-  endedBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 10,
-    backgroundColor: "rgba(152, 152, 157, 0.12)",
-  },
-  endedText: { fontSize: 11, fontWeight: "500", letterSpacing: 0.3, color: colors.textMuted },
-  pathRow: {
+  headerActions: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 4,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
-  pathText: { flex: 1, color: colors.textMuted, fontSize: 11, fontFamily: "monospace" },
-  versionText: { color: colors.textSecondary, fontSize: 11 },
-  actions: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
+  stateDotHitbox: {
+    width: 24,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  stopBtn: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+  stateDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  runningDot: {
+    backgroundColor: colors.accent,
+  },
+  endedDot: {
+    backgroundColor: colors.textMuted,
+  },
+  contextWrap: {
+    position: "relative",
+    zIndex: 9999,
+  },
+  contextBtn: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
     borderRadius: radius.sm,
-    backgroundColor: colors.dangerBg,
-    borderWidth: 1,
-    borderColor: colors.danger,
   },
-  stopBtnText: { color: colors.danger, fontSize: 14, fontWeight: "600" },
-  startBtn: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: colors.accentBg,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  startBtnText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
   queryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 5,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  queryLabel: { color: colors.textMuted, fontSize: 11, fontWeight: "600", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 },
-  queryText: { color: colors.text, fontSize: 13, fontFamily: "monospace" },
-  terminalContainer: { flex: 1, minHeight: 0 },
+  queryLabel: { color: colors.textMuted, fontSize: 11, fontWeight: "600", width: 42 },
+  queryText: { flex: 1, minWidth: 0, color: colors.text, fontSize: 12, fontFamily: "monospace" },
+  terminalContainer: { flex: 1, minHeight: 0, position: "relative" },
+  scrollControls: {
+    position: "absolute",
+    top: spacing.sm,
+    right: spacing.sm,
+    zIndex: 20,
+    gap: 6,
+  },
+  scrollBtn: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "rgba(28, 28, 30, 0.82)",
+  },
   ptyConnecting: {
     flexDirection: "row" as const,
     alignItems: "center" as const,

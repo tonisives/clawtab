@@ -298,6 +298,30 @@ fn dispatch_pty_msg(
             }
             None
         }
+        ClientMessage::TmuxPaneKey { pane_id, key } => {
+            let result = if key == "copy-halfpage-up" || key == "copy-halfpage-down" {
+                let command = if key == "copy-halfpage-up" {
+                    "halfpage-up"
+                } else {
+                    "halfpage-down"
+                };
+                crate::tmux::enter_copy_mode(&pane_id)
+                    .and_then(|_| crate::tmux::send_copy_mode_command_to_pane(&pane_id, command))
+            } else if key == "copy-mode" {
+                crate::tmux::enter_copy_mode(&pane_id)
+            } else {
+                crate::tmux::send_key_to_pane(&pane_id, &key)
+            };
+            if let Err(e) = result {
+                log::warn!(
+                    "Relay: failed to send tmux pane key {} to {}: {}",
+                    key,
+                    pane_id,
+                    e
+                );
+            }
+            None
+        }
         ClientMessage::PtyResize {
             pane_id,
             cols,

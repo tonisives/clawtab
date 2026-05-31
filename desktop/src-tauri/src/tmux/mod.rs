@@ -405,6 +405,33 @@ pub fn enter_copy_mode(pane_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Send one tmux key to a pane. Intended for non-text keys such as C-u.
+pub fn send_key_to_pane(pane_id: &str, key: &str) -> Result<(), String> {
+    let output = run(&["send-keys", "-t", pane_id, key], "tmux::send_key_to_pane")
+        .map_err(|e| format!("Failed to send key to pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
+/// Send one tmux copy-mode command to a pane.
+pub fn send_copy_mode_command_to_pane(pane_id: &str, command: &str) -> Result<(), String> {
+    let output = run(
+        &["send-keys", "-t", pane_id, "-X", command],
+        "tmux::send_copy_mode_command_to_pane",
+    )
+    .map_err(|e| format!("Failed to send copy-mode command to pane: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 /// Send text to a TUI pane (like Claude Code) that uses vim-style input.
 /// Types the text literally, then presses Enter to submit.
 pub fn send_keys_to_tui_pane(pane_id: &str, text: &str) -> Result<(), String> {

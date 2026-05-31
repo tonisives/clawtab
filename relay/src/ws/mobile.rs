@@ -399,6 +399,7 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         ClientMessage::UnsubscribeLogs { .. }
         | ClientMessage::UnsubscribePty { .. }
         | ClientMessage::PtyInput { .. }
+        | ClientMessage::TmuxPaneKey { .. }
         | ClientMessage::PtyResize { .. } => None,
     }
 }

@@ -35,6 +35,7 @@ export type ClientMessage =
   | { type: "subscribe_pty"; id: string; pane_id: string; tmux_session: string; cols: number; rows: number }
   | { type: "unsubscribe_pty"; pane_id: string }
   | { type: "pty_input"; pane_id: string; data: string }
+  | { type: "tmux_pane_key"; pane_id: string; key: string }
   | { type: "pty_resize"; pane_id: string; cols: number; rows: number };
 
 // Messages received from the relay (desktop responses forwarded through)

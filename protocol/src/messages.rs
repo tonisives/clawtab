@@ -143,6 +143,11 @@ pub enum ClientMessage {
         pane_id: String,
         data: String,
     },
+    /// Send a tmux key or command to a pane without relying on the attached PTY prefix.
+    TmuxPaneKey {
+        pane_id: String,
+        key: String,
+    },
     /// Resize a PTY-subscribed pane
     PtyResize {
         pane_id: String,

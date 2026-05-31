@@ -136,6 +136,7 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   }, [fetchShares]);
 
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [dangerExpanded, setDangerExpanded] = useState(false);
   const router = useRouter();
   const handleLogout = () => {
     confirm("Log out", "Are you sure you want to log out?", async () => {
@@ -284,16 +285,24 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
           <View style={styles.divider} />
 
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Danger Zone</Text>
             <Pressable
-              style={[styles.deleteBtn, isWide && styles.btnConstrained, deleteLoading && styles.btnDisabled]}
-              onPress={handleDeleteAccount}
-              disabled={deleteLoading}
+              style={styles.dangerHeader}
+              onPress={() => setDangerExpanded((value) => !value)}
             >
-              <Text style={styles.deleteBtnText}>
-                {deleteLoading ? "Deleting..." : "Delete Account"}
-              </Text>
+              <Text style={styles.sectionTitle}>Danger Zone</Text>
+              <Text style={styles.dangerToggleText}>{dangerExpanded ? "Hide" : "Show"}</Text>
             </Pressable>
+            {dangerExpanded && (
+              <Pressable
+                style={[styles.deleteBtn, isWide && styles.btnConstrained, deleteLoading && styles.btnDisabled]}
+                onPress={handleDeleteAccount}
+                disabled={deleteLoading}
+              >
+                <Text style={styles.deleteBtnText}>
+                  {deleteLoading ? "Deleting..." : "Delete Account"}
+                </Text>
+              </Pressable>
+            )}
           </View>
         </View>
       </ContentContainer>
@@ -415,6 +424,17 @@ offlineCard: {
     color: colors.danger,
     fontSize: 16,
     fontWeight: "600",
+  },
+  dangerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  dangerToggleText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
   },
   deleteBtn: {
     height: 44,

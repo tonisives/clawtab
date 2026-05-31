@@ -145,9 +145,8 @@ function TabsContent({ isWide }: { isWide: boolean }) {
         headerTitleStyle: { fontWeight: "600" },
         headerLeft: isWide ? () => <HeaderBrand /> : undefined,
         headerRight: isWide ? () => <HeaderRight /> : () => (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginRight: 12 }}>
+          <View style={{ marginRight: 12 }}>
             <NotificationsMenuButton />
-            <HeaderBrand />
           </View>
         ),
         tabBarStyle: isWide
@@ -163,7 +162,9 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       <Tabs.Screen
         name="index"
         options={{
-          title: isWide ? "" : "Jobs",
+          title: "",
+          tabBarLabel: "Jobs",
+          headerLeft: isWide ? undefined : () => <HeaderBrand />,
           tabBarIcon: ({ focused }) => (
             <TabIcon label="Jobs" focused={focused} />
           ),
