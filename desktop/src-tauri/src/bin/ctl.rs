@@ -429,12 +429,10 @@ fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .find_map(|line| {
-                    let (id, value) = line.split_once('\x1e')?;
-                    (id == pane_id).then(|| value.trim().to_string())
-                })
+            String::from_utf8_lossy(&o.stdout).lines().find_map(|line| {
+                let (id, value) = line.split_once('\x1e')?;
+                (id == pane_id).then(|| value.trim().to_string())
+            })
         })
         .unwrap_or_default();
 

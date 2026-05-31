@@ -36,6 +36,10 @@ type GroupTabView = Record<string, "tabs" | "jobs">
 
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
 
+function isProcessProvider(value: string | undefined): value is ProcessProvider {
+  return value === "claude" || value === "codex" || value === "opencode" || value === "shell"
+}
+
 // Capture URL params before expo-router rewrites them on init
 const _initParams = Platform.OS === "web"
   ? new URLSearchParams(window.location.search)
@@ -159,31 +163,6 @@ export default function JobsScreen() {
     })
   }, [])
 
-  const handleRunAgent = useCallback((prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => {
-    const send = getWsSend()
-    if (!send) return
-    const id = nextId()
-    send({
-      type: "run_agent",
-      id,
-      prompt,
-      work_dir: workDir,
-      ...(provider ? { provider } : {}),
-      ...(model ? { model } : {}),
-    })
-    if (workDir) {
-      registerRequest<{ job_id?: string }>(id).then((ack) => {
-        if (ack.job_id) {
-          if (isWide) {
-            setSelectedJob(ack.job_id)
-          } else {
-            router.push(`/job/${ack.job_id}`)
-          }
-        }
-      })
-    }
-  }, [router, isWide])
-
   const handleSelectJob = useCallback((job: RemoteJob) => {
     if (isWide) {
       setSelectedJob(job.slug)
@@ -278,6 +257,64 @@ export default function JobsScreen() {
     if (split.tree && split.handleSelectInTree(content)) return
     handleSelectProcess(process)
   }, [isWide, router, split.tree, split.handleSelectInTree, handleSelectProcess])
+
+  const handleRunAgent = useCallback((prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => {
+    const send = getWsSend()
+    if (!send) return
+    const id = nextId()
+    send({
+      type: "run_agent",
+      id,
+      prompt,
+      work_dir: workDir,
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+    })
+    registerRequest<{
+      job_id?: string;
+      pane_id?: string;
+      tmux_session?: string;
+      work_dir?: string;
+      provider?: string;
+    }>(id).then((ack) => {
+      if (ack.pane_id && ack.tmux_session) {
+        const existing = useJobsStore.getState().detectedProcesses
+        const existingProcess = existing.find((process) => process.pane_id === ack.pane_id)
+        const pendingProcess: DetectedProcess = {
+          ...existingProcess,
+          pane_id: ack.pane_id,
+          cwd: ack.work_dir ?? workDir ?? existingProcess?.cwd ?? "",
+          version: existingProcess?.version ?? "",
+          provider: isProcessProvider(ack.provider) ? ack.provider : provider ?? existingProcess?.provider ?? "claude",
+          can_fork_session: existingProcess?.can_fork_session ?? false,
+          can_send_skills: existingProcess?.can_send_skills ?? false,
+          can_inject_secrets: existingProcess?.can_inject_secrets ?? false,
+          tmux_session: ack.tmux_session,
+          window_name: existingProcess?.window_name ?? "",
+          matched_group: existingProcess?.matched_group ?? null,
+          matched_job: ack.job_id ?? existingProcess?.matched_job ?? null,
+          log_lines: existingProcess?.log_lines ?? "",
+          first_query: (prompt || existingProcess?.first_query) ?? null,
+          last_query: existingProcess?.last_query ?? null,
+          session_started_at: existingProcess?.session_started_at ?? new Date().toISOString(),
+          token_count: existingProcess?.token_count ?? null,
+          _transient_state: "starting",
+        }
+        useJobsStore.getState().upsertDetectedProcess(pendingProcess)
+        if (isWide) {
+          handleSelectProcessWithTree(pendingProcess)
+        } else {
+          router.push(`/process/${ack.pane_id.replace(/%/g, "_pct_")}`)
+        }
+      } else if (ack.job_id) {
+        if (isWide) {
+          setSelectedJob(ack.job_id)
+        } else {
+          router.push(`/job/${ack.job_id}`)
+        }
+      }
+    })
+  }, [handleSelectProcessWithTree, isWide, router])
 
   const renderDraggableJobCard = useCallback(
     (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; softBorder?: boolean }) => (

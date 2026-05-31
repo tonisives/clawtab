@@ -19,10 +19,11 @@ import type { RemoteJob, RunRecord } from "@clawtab/shared"
 const wsTransport = createWsTransport()
 
 const noop = async () => {}
+const noopRunJob = async () => null
 const demoTransport: Transport = {
   listJobs: async () => ({ jobs: [], statuses: {} }),
   getStatuses: async () => ({}),
-  runJob: noop,
+  runJob: noopRunJob,
   stopJob: noop,
   pauseJob: noop,
   resumeJob: noop,

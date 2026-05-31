@@ -59,6 +59,10 @@ pub enum ClientMessage {
         prompt: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         work_dir: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
         /// When set, this run was started by a remote trigger (webhook).
         /// The desktop should use this as the run_id and produce a structured
         /// result file at logs/<trigger_id>.json.
@@ -233,6 +237,14 @@ pub enum DesktopMessage {
         success: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
         job_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pane_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tmux_session: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        work_dir: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
     },
     /// Ack for create_job
     CreateJobAck {

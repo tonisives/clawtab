@@ -60,7 +60,16 @@ export type DesktopMessage =
   | { type: "stop_job_ack"; id: string; success: boolean; error?: string }
   | { type: "send_input_ack"; id: string; success: boolean }
   | { type: "subscribe_logs_ack"; id: string; success: boolean }
-  | { type: "run_agent_ack"; id: string; success: boolean; job_id?: string }
+  | {
+      type: "run_agent_ack";
+      id: string;
+      success: boolean;
+      job_id?: string;
+      pane_id?: string;
+      tmux_session?: string;
+      work_dir?: string;
+      provider?: string;
+    }
   | { type: "create_job_ack"; id: string; success: boolean; error?: string }
   | { type: "detected_processes"; id: string; processes: DetectedProcess[] }
   | { type: "settings_response"; id: string; enabled_models: Record<string, string[]>; default_provider: string; default_model?: string }

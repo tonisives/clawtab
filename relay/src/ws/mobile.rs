@@ -1,4 +1,6 @@
 use axum::extract::ws::WebSocket;
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
@@ -14,12 +16,22 @@ use crate::AppState;
 pub(super) async fn run(state: AppState, socket: WebSocket, user_id: Uuid) {
     let connection_id = Uuid::new_v4();
     let (tx, rx) = mpsc::unbounded_channel::<String>();
+    let pty_subscriptions = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
     register(&state, user_id, connection_id, tx.clone()).await;
     send_welcome(&tx, connection_id);
     tracing::info!(%user_id, %connection_id, "mobile connected");
 
-    let exit = drive_session(state.clone(), socket, rx, user_id).await;
+    let exit = drive_session(
+        state.clone(),
+        socket,
+        rx,
+        user_id,
+        Arc::clone(&pty_subscriptions),
+    )
+    .await;
+
+    release_pty_subscriptions(&state, Arc::clone(&pty_subscriptions)).await;
 
     {
         let mut hub = state.hub.write().await;
@@ -34,14 +46,33 @@ async fn drive_session(
     socket: WebSocket,
     rx: mpsc::UnboundedReceiver<String>,
     user_id: Uuid,
+    pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
 ) -> LoopExit {
     run_session_loop(socket, rx, move |text| {
         let state = state.clone();
+        let pty_subscriptions = Arc::clone(&pty_subscriptions);
         async move {
-            handle_message(&state, user_id, &text).await;
+            handle_message(&state, user_id, &text, pty_subscriptions).await;
         }
     })
     .await
+}
+
+async fn release_pty_subscriptions(
+    state: &AppState,
+    pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
+) {
+    let subscriptions = {
+        let mut guard = pty_subscriptions.lock().await;
+        std::mem::take(&mut *guard)
+    };
+    if subscriptions.is_empty() {
+        return;
+    }
+    let hub = state.hub.read().await;
+    for (pane_id, target) in subscriptions {
+        hub.forward_to_desktop(target, &ClientMessage::UnsubscribePty { pane_id });
+    }
 }
 
 fn log_exit(exit: LoopExit, connection_id: Uuid) {
@@ -104,7 +135,12 @@ fn send_welcome(tx: &mpsc::UnboundedSender<String>, connection_id: Uuid) {
     }
 }
 
-async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
+async fn handle_message(
+    state: &AppState,
+    user_id: Uuid,
+    text: &str,
+    pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
+) {
     let Ok(msg) = serde_json::from_str::<ClientMessage>(text) else {
         tracing::warn!(%user_id, "invalid message from mobile: {text}");
         return;
@@ -162,6 +198,19 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
             },
         );
         return;
+    }
+
+    match &msg {
+        ClientMessage::SubscribePty { pane_id, .. } => {
+            pty_subscriptions
+                .lock()
+                .await
+                .insert(pane_id.clone(), target);
+        }
+        ClientMessage::UnsubscribePty { pane_id } => {
+            pty_subscriptions.lock().await.remove(pane_id);
+        }
+        _ => {}
     }
 
     let hub = state.hub.read().await;

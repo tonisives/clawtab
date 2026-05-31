@@ -15,11 +15,12 @@ import { useWsStore } from "../../src/store/ws";
 import { useJobsStore } from "../../src/store/jobs";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { useResponsive } from "../../src/hooks/useResponsive";
+import { registerRequest } from "../../src/lib/useRequestMap";
 import { openUrl } from "../../src/lib/platform";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
 import { JobKindIcon, PopupMenu } from "@clawtab/shared";
-import type { ProcessProvider, AgentModelOption } from "@clawtab/shared";
+import type { ProcessProvider, AgentModelOption, DetectedProcess } from "@clawtab/shared";
 import { BARE_PROVIDER_OPTIONS, buildModelOptions, labelForProviderModel } from "../../src/lib/agentModels";
 
 const STORAGE_KEY = "clawtab_agent_model_v2";
@@ -28,6 +29,10 @@ const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode"];
 // Bare claude entry; the actual model gets resolved from server-pushed enabled_models.
 const DEFAULT_MODEL: AgentModelOption =
   BARE_PROVIDER_OPTIONS.find((m) => m.provider === "claude") ?? BARE_PROVIDER_OPTIONS[0];
+
+function isProcessProvider(value: string | undefined): value is ProcessProvider {
+  return value === "claude" || value === "codex" || value === "opencode" || value === "shell";
+}
 
 function getStoredModel(): AgentModelOption {
   if (Platform.OS !== "web" || typeof localStorage === "undefined") return DEFAULT_MODEL;
@@ -106,7 +111,7 @@ export default function AgentScreen() {
     setMenuOpen(false);
   };
 
-  const handleRun = () => {
+  const handleRun = async () => {
     if (!prompt.trim()) return;
     const send = getWsSend();
     if (!send) {
@@ -116,19 +121,74 @@ export default function AgentScreen() {
 
     setSending(true);
     setError(null);
+    const promptText = prompt.trim();
+    const provider = selectedModel.provider;
+    const model = selectedModel.modelId ?? undefined;
 
     const msgId = nextId();
     send({
       type: "run_agent",
       id: msgId,
-      prompt: prompt.trim(),
-      provider: selectedModel.provider,
-      model: selectedModel.modelId ?? undefined,
+      prompt: promptText,
+      provider,
+      model,
     });
-    setPrompt("");
-    setInputHeight(undefined);
-    setSending(false);
-    router.push("/(tabs)");
+
+    try {
+      const ack = await registerRequest<{
+        success?: boolean;
+        job_id?: string;
+        pane_id?: string;
+        tmux_session?: string;
+        work_dir?: string;
+        provider?: string;
+      }>(msgId);
+      if (ack.success === false) {
+        setError("Failed to start agent");
+        return;
+      }
+
+      if (ack.pane_id && ack.tmux_session) {
+        const resolvedProvider = isProcessProvider(ack.provider) ? ack.provider : provider;
+        const process: DetectedProcess = {
+          pane_id: ack.pane_id,
+          cwd: ack.work_dir ?? "",
+          version: "",
+          provider: resolvedProvider,
+          can_fork_session: false,
+          can_send_skills: false,
+          can_inject_secrets: false,
+          tmux_session: ack.tmux_session,
+          window_name: "",
+          matched_group: null,
+          matched_job: ack.job_id ?? null,
+          log_lines: "",
+          first_query: promptText,
+          last_query: null,
+          session_started_at: new Date().toISOString(),
+          token_count: null,
+          _transient_state: "starting",
+        };
+        useJobsStore.getState().upsertDetectedProcess(process);
+        setPrompt("");
+        setInputHeight(undefined);
+        router.replace(`/process/${ack.pane_id.replace(/%/g, "_pct_")}`);
+        return;
+      }
+
+      if (ack.job_id) {
+        setPrompt("");
+        setInputHeight(undefined);
+        router.replace(`/job/${ack.job_id}`);
+        return;
+      }
+
+      setError("Agent started, but no terminal pane was returned");
+    } catch {
+      setError("Failed to start agent");
+    } finally {
+      setSending(false);
+    }
   };
 
   const modelLabel = labelForProviderModel(selectedModel.provider, selectedModel.modelId);

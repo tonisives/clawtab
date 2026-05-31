@@ -17,6 +17,8 @@ interface JobsState {
   setJobs: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   updateStatus: (name: string, status: JobStatus) => void;
   setDetectedProcesses: (processes: DetectedProcess[]) => void;
+  upsertDetectedProcess: (process: DetectedProcess) => void;
+  removeDetectedProcess: (paneId: string) => void;
   hydrateFromCache: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   setDesktopSettings: (enabledModels: Record<string, string[]>, defaultProvider: string, defaultModel?: string) => void;
 }
@@ -39,7 +41,31 @@ export const useJobsStore = create<JobsState>((set) => ({
       statuses: { ...state.statuses, [name]: status },
     })),
 
-  setDetectedProcesses: (processes) => set({ detectedProcesses: processes, processesLoaded: true }),
+  setDetectedProcesses: (processes) => set((state) => {
+    const incomingIds = new Set(processes.map((process) => process.pane_id));
+    const now = Date.now();
+    const pending = state.detectedProcesses.filter((process) => {
+      if (process._transient_state !== "starting") return false;
+      if (incomingIds.has(process.pane_id)) return false;
+      const startedAt = process.session_started_at ? Date.parse(process.session_started_at) : NaN;
+      return Number.isFinite(startedAt) && now - startedAt < 30000;
+    });
+    return { detectedProcesses: [...processes, ...pending], processesLoaded: true };
+  }),
+
+  upsertDetectedProcess: (process) =>
+    set((state) => ({
+      detectedProcesses: state.detectedProcesses.some((item) => item.pane_id === process.pane_id)
+        ? state.detectedProcesses.map((item) => item.pane_id === process.pane_id ? { ...item, ...process } : item)
+        : [...state.detectedProcesses, process],
+      processesLoaded: true,
+    })),
+
+  removeDetectedProcess: (paneId) =>
+    set((state) => ({
+      detectedProcesses: state.detectedProcesses.filter((process) => process.pane_id !== paneId),
+      processesLoaded: true,
+    })),
 
   hydrateFromCache: (jobs, statuses) =>
     set((state) => {

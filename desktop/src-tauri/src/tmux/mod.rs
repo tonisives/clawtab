@@ -1033,10 +1033,10 @@ pub fn break_pane_detached(
     )
 }
 
-/// `join-pane -s <src_pane_id> -t <dst_window_id>`.
+/// `join-pane -d -s <src_pane_id> -t <dst_window_id>`.
 pub fn join_pane(src_pane_id: &str, dst_window_id: &str) -> Result<(), String> {
     run_ok(
-        &["join-pane", "-s", src_pane_id, "-t", dst_window_id],
+        &["join-pane", "-d", "-s", src_pane_id, "-t", dst_window_id],
         "tmux::join_pane",
     )
 }

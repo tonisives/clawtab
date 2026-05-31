@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity } from "react-native";
+import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -47,10 +47,11 @@ function encodeTerminalInput(text: string): string {
 const wsTransport = createWsTransport();
 
 const noop = async () => {};
+const noopRunJob = async () => null;
 const demoTransport: Transport = {
   listJobs: async () => ({ jobs: [], statuses: {} }),
   getStatuses: async () => ({}),
-  runJob: noop,
+  runJob: noopRunJob,
   stopJob: noop,
   pauseJob: noop,
   resumeJob: noop,
@@ -171,6 +172,7 @@ export default function JobDetailScreen() {
   const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : "";
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : "";
   const termRef = useRef<XtermLogHandle | null>(null);
+  const keyboardDismissRef = useRef<TextInput | null>(null);
   const { sendInput, sendResize, connecting: ptyConnecting } = usePty(statusPaneId, statusTmuxSession, termRef);
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo;
   const [copyModeActive, setCopyModeActive] = useState(false);
@@ -227,7 +229,11 @@ export default function JobDetailScreen() {
 
   const dismissTerminalKeyboard = useCallback(() => {
     termRef.current?.blur();
-    Keyboard.dismiss();
+    keyboardDismissRef.current?.focus();
+    setTimeout(() => {
+      keyboardDismissRef.current?.blur();
+      Keyboard.dismiss();
+    }, 30);
   }, []);
 
   const renderTerminal = useCallback(
@@ -326,6 +332,14 @@ export default function JobDetailScreen() {
           onCtrlC={() => sendTerminalText("\x03")}
         />
       ) : null}
+      <TextInput
+        ref={keyboardDismissRef}
+        style={styles.keyboardDismissSink}
+        showSoftInputOnFocus={false}
+        caretHidden
+        autoCorrect={false}
+        autoCapitalize="none"
+      />
     </View>
   );
 }
@@ -500,6 +514,14 @@ const styles = StyleSheet.create({
   },
   keyboardToolSpacer: {
     flex: 1,
+  },
+  keyboardDismissSink: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0,
+    left: -10,
+    bottom: 0,
   },
   scrollControls: {
     position: "absolute",

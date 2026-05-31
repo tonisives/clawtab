@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -112,6 +112,7 @@ export default function ProcessDetailScreen() {
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
+  const keyboardDismissRef = useRef<TextInput | null>(null);
   const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
 
   useEffect(() => {
@@ -224,7 +225,11 @@ export default function ProcessDetailScreen() {
 
   const dismissTerminalKeyboard = useCallback(() => {
     termRef.current?.blur();
-    Keyboard.dismiss();
+    keyboardDismissRef.current?.focus();
+    setTimeout(() => {
+      keyboardDismissRef.current?.blur();
+      Keyboard.dismiss();
+    }, 30);
   }, []);
 
   const doStop = async () => {
@@ -234,7 +239,15 @@ export default function ProcessDetailScreen() {
     const id = nextId();
     send({ type: "stop_detected_process", id, pane_id });
     const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000));
-    await Promise.race([registerRequest(id), timeout]);
+    const ack = await Promise.race([
+      registerRequest<{ success?: boolean; error?: string }>(id),
+      timeout.then(() => null),
+    ]);
+    if (ack?.success !== false) {
+      useJobsStore.getState().removeDetectedProcess(pane_id);
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)");
+    }
     setStopping(false);
   };
 
@@ -413,6 +426,14 @@ export default function ProcessDetailScreen() {
           onCtrlC={() => sendTerminalText("\x03")}
         />
       ) : null}
+      <TextInput
+        ref={keyboardDismissRef}
+        style={styles.keyboardDismissSink}
+        showSoftInputOnFocus={false}
+        caretHidden
+        autoCorrect={false}
+        autoCapitalize="none"
+      />
 
       {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
     </View>
@@ -671,6 +692,14 @@ const styles = StyleSheet.create({
   },
   keyboardToolSpacer: {
     flex: 1,
+  },
+  keyboardDismissSink: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    opacity: 0,
+    left: -10,
+    bottom: 0,
   },
   scrollControls: {
     position: "absolute",

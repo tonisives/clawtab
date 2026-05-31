@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use clawtab_protocol::{ClientMessage, DesktopMessage, JobStatus as RemoteJobStatus, RemoteJob};
 
+use crate::agent_session::ProcessProvider;
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::events::EventSink;
 use crate::history::HistoryStore;
@@ -84,18 +85,18 @@ async fn dispatch_message(
             pty_manager,
             &ctx.relay,
         )),
-        other => dispatch_sync(other, jobs_config, ctx, pty_manager, event_sink),
+        other => dispatch_sync(other, jobs_config, ctx, pty_manager, event_sink).await,
     }
 }
 
-fn dispatch_sync(
+async fn dispatch_sync(
     msg: ClientMessage,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
     pty_manager: &SharedPtyManager,
     event_sink: &dyn EventSink,
 ) -> Option<DesktopMessage> {
-    if let Some(resp) = dispatch_job_msg(&msg, jobs_config, ctx, event_sink) {
+    if let Some(resp) = dispatch_job_msg(&msg, jobs_config, ctx, event_sink).await {
         return Some(resp);
     }
     if let Some(resp) = dispatch_process_msg(&msg, &ctx.history) {
@@ -104,7 +105,7 @@ fn dispatch_sync(
     dispatch_pty_msg(msg, ctx, pty_manager, event_sink)
 }
 
-fn dispatch_job_msg(
+async fn dispatch_job_msg(
     msg: &ClientMessage,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
@@ -180,19 +181,28 @@ fn dispatch_job_msg(
             id,
             prompt,
             work_dir,
+            provider,
+            model,
             trigger_id,
         } => {
             let result = run_agent(
                 prompt,
                 work_dir.as_deref(),
+                provider.as_deref(),
+                model.clone(),
                 trigger_id.clone(),
                 jobs_config,
                 ctx,
-            );
+            )
+            .await;
             Some(DesktopMessage::RunAgentAck {
                 id: id.clone(),
                 success: result.is_ok(),
-                job_id: result.ok(),
+                job_id: result.as_ref().ok().map(|r| r.job_id.clone()),
+                pane_id: result.as_ref().ok().and_then(|r| r.pane_id.clone()),
+                tmux_session: result.as_ref().ok().and_then(|r| r.tmux_session.clone()),
+                work_dir: result.as_ref().ok().map(|r| r.work_dir.clone()),
+                provider: result.as_ref().ok().map(|r| r.provider.clone()),
             })
         }
         ClientMessage::CreateJob { id, .. } => {
@@ -289,7 +299,13 @@ fn dispatch_pty_msg(
             None
         }
         ClientMessage::UnsubscribePty { pane_id } => {
-            let _ = pty_manager.lock().destroy(&pane_id, None);
+            if let Err(e) = pty_manager.lock().release(&pane_id) {
+                log::warn!(
+                    "Relay: failed to release unsubscribed PTY {}: {}",
+                    pane_id,
+                    e
+                );
+            }
             None
         }
         ClientMessage::PtyInput { pane_id, data } => {
@@ -635,20 +651,37 @@ fn get_run_history(
     }
 }
 
-fn run_agent(
+struct RunAgentRelayResult {
+    job_id: String,
+    pane_id: Option<String>,
+    tmux_session: Option<String>,
+    work_dir: String,
+    provider: String,
+}
+
+async fn run_agent(
     prompt: &str,
     work_dir: Option<&str>,
+    provider: Option<&str>,
+    model: Option<String>,
     trigger_id: Option<String>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
-) -> Result<String, String> {
+) -> Result<RunAgentRelayResult, String> {
     let (s, jobs) = {
         let s = ctx.settings.lock().clone();
         let j = jobs_config.lock().jobs.clone();
         (s, j)
     };
-    let job = crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, None, None)?;
+    let provider = parse_process_provider(provider)?;
+    let job = crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, provider, model)?;
     let job_id = job.name.clone();
+    let work_dir = job
+        .work_dir
+        .clone()
+        .unwrap_or_else(|| s.default_work_dir.clone());
+    let provider = job.agent_provider.unwrap_or(s.default_provider);
+    let provider_name = provider.as_str().to_string();
 
     let ctx = ctx.clone();
     let trigger = if trigger_id.is_some() {
@@ -656,6 +689,7 @@ fn run_agent(
     } else {
         "remote"
     };
+    let (pane_tx, pane_rx) = tokio::sync::oneshot::channel();
 
     tokio::spawn(async move {
         crate::scheduler::executor::execute_job(
@@ -665,13 +699,37 @@ fn run_agent(
             &HashMap::new(),
             crate::scheduler::executor::ExecuteOpts {
                 trigger_id,
+                pane_tx: Some(pane_tx),
                 ..Default::default()
             },
         )
         .await;
     });
 
-    Ok(job_id)
+    let (pane_id, tmux_session) =
+        match tokio::time::timeout(std::time::Duration::from_secs(10), pane_rx).await {
+            Ok(Ok((pane_id, tmux_session))) => (Some(pane_id), Some(tmux_session)),
+            _ => (None, None),
+        };
+
+    Ok(RunAgentRelayResult {
+        job_id,
+        pane_id,
+        tmux_session,
+        work_dir,
+        provider: provider_name,
+    })
+}
+
+fn parse_process_provider(provider: Option<&str>) -> Result<Option<ProcessProvider>, String> {
+    match provider {
+        None => Ok(None),
+        Some("claude") => Ok(Some(ProcessProvider::Claude)),
+        Some("codex") => Ok(Some(ProcessProvider::Codex)),
+        Some("opencode") => Ok(Some(ProcessProvider::Opencode)),
+        Some("shell") => Ok(Some(ProcessProvider::Shell)),
+        Some(other) => Err(format!("unsupported agent provider '{}'", other)),
+    }
 }
 
 fn create_job() -> Result<(), String> {

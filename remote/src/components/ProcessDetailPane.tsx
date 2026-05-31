@@ -11,19 +11,24 @@ import { registerRequest } from "../lib/useRequestMap"
 import { confirm } from "../lib/platform"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
 
-function createProcessTransport(paneId: string): Transport {
+function createProcessTransport(paneId: string, onStopped?: () => void): Transport {
   const noop = async () => {}
+  const noopRunJob = async () => null
   return {
     listJobs: async () => ({ jobs: [], statuses: {} }),
     getStatuses: async () => ({}),
-    runJob: noop,
+    runJob: noopRunJob,
     stopJob: async () => {
       const send = getWsSend()
       if (!send) return
       const id = nextId()
       send({ type: "stop_detected_process", id, pane_id: paneId })
       const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
-      await Promise.race([registerRequest(id), timeout])
+      const ack = await Promise.race([
+        registerRequest<{ success?: boolean; error?: string }>(id),
+        timeout.then(() => null),
+      ])
+      if (ack?.success !== false) onStopped?.()
     },
     pauseJob: noop,
     resumeJob: noop,
@@ -68,7 +73,11 @@ function createProcessTransport(paneId: string): Transport {
       const id = nextId()
       send({ type: "stop_detected_process", id, pane_id: paneId })
       const timeout = new Promise<void>((resolve) => setTimeout(resolve, 5000))
-      await Promise.race([registerRequest(id), timeout])
+      const ack = await Promise.race([
+        registerRequest<{ success?: boolean; error?: string }>(id),
+        timeout.then(() => null),
+      ])
+      if (ack?.success !== false) onStopped?.()
     },
   }
 }
@@ -183,7 +192,12 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
     })
   }, [paneId, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion])
 
-  const transport = useMemo(() => createProcessTransport(paneId), [paneId])
+  const handleStopped = useCallback(() => {
+    useJobsStore.getState().removeDetectedProcess(paneId)
+    onClose()
+  }, [paneId, onClose])
+
+  const transport = useMemo(() => createProcessTransport(paneId, handleStopped), [paneId, handleStopped])
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)

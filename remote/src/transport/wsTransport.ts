@@ -31,6 +31,7 @@ export function createWsTransport(): Transport {
     async runJob(name: string, params?: Record<string, string>) {
       const id = nextId();
       send({ type: "run_job", id, name, params });
+      return null;
     },
 
     async stopJob(name: string) {
@@ -105,10 +106,23 @@ export function createWsTransport(): Transport {
       };
     },
 
-    async runAgent(prompt: string, workDir?: string, _provider?: ProcessProvider, _model?: string) {
+    async runAgent(prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) {
       const id = nextId();
-      send({ type: "run_agent", id, prompt, work_dir: workDir });
-      return null;
+      send({
+        type: "run_agent",
+        id,
+        prompt,
+        work_dir: workDir,
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
+      });
+      const ack = await registerRequest<{
+        pane_id?: string;
+        tmux_session?: string;
+      }>(id);
+      return ack.pane_id && ack.tmux_session
+        ? { pane_id: ack.pane_id, tmux_session: ack.tmux_session }
+        : null;
     },
   };
 }
