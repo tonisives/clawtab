@@ -113,7 +113,7 @@ export default function ProcessDetailScreen() {
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
   const keyboardDismissRef = useRef<TextInput | null>(null);
-  const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
+  const { sendInput: ptySendInput, sendResize } = usePty(pane_id, tmuxSession, termRef);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -393,26 +393,18 @@ export default function ProcessDetailScreen() {
       )}
 
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
-        {ptyConnecting && (
-          <View style={styles.ptyConnecting}>
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
-          </View>
-        )}
         <XtermLog
           ref={termRef}
           onData={ptySendInput}
           onResize={sendResize}
           interactive
         />
-        {!ptyConnecting ? (
-          <TerminalScrollButtons
-            onScrollUp={() => scrollTerminal("up")}
-            onScrollDown={() => scrollTerminal("down")}
-            onExitCopyMode={exitCopyMode}
-            copyModeActive={copyModeActive}
-          />
-        ) : null}
+        <TerminalScrollButtons
+          onScrollUp={() => scrollTerminal("up")}
+          onScrollDown={() => scrollTerminal("down")}
+          onExitCopyMode={exitCopyMode}
+          copyModeActive={copyModeActive}
+        />
       </View>
       {keyboardVisible ? (
         <TerminalKeyboardToolbar

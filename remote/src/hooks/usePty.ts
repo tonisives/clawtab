@@ -43,6 +43,7 @@ export function usePty(
   const pendingOutputRef = useRef<string[]>([]);
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const connectingTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const flushPendingOutput = useCallback(() => {
     const term = termRef.current;
@@ -94,6 +95,7 @@ export function usePty(
     } else {
       if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
       setConnecting(true);
+      connectingTimerRef.current = setTimeout(() => setConnecting(false), 900);
       subscribeStartTimer = setTimeout(() => {
         const currentSend = getWsSend();
         if (!currentSend) return;
@@ -138,6 +140,8 @@ export function usePty(
       }
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       resizeTimerRef.current = undefined;
+      if (connectingTimerRef.current) clearTimeout(connectingTimerRef.current);
+      connectingTimerRef.current = undefined;
       lastResizeRef.current = null;
       pendingOutputRef.current = [];
       setConnecting(false);

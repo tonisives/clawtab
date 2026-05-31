@@ -29,8 +29,6 @@ export default function JobLayout() {
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerBackVisible: false,
-        headerLeftContainerStyle: { paddingLeft: 8 },
-        headerRightContainerStyle: { paddingRight: 16 },
       }}
     />
   );

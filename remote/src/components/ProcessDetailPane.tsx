@@ -202,19 +202,11 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
   const tmuxSession = activeProcess?.tmux_session ?? ""
-  const { sendInput, sendResize, connecting: ptyConnecting } = usePty(paneId, tmuxSession, termRef)
+  const { sendInput, sendResize } = usePty(paneId, tmuxSession, termRef)
 
   const renderTerminal = useCallback(
     () => (
       <View style={{ flex: 1, minHeight: 0 }}>
-        <View style={[styles.ptyConnecting, !ptyConnecting && styles.ptyConnectingHidden]}>
-          {ptyConnecting ? (
-            <>
-              <ActivityIndicator size="small" color={colors.accent} />
-              <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
-            </>
-          ) : null}
-        </View>
         <XtermLog
           ref={termRef}
           onData={sendInput}
@@ -223,7 +215,7 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
         />
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting],
+    [sendInput, sendResize],
   )
 
   const isAlive = !!process

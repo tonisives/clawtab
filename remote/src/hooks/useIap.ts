@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Platform } from "react-native";
+import type { Purchase, PurchaseIOS } from "react-native-iap";
 import * as api from "../api/client";
 
 // Product ID must match what's configured in App Store Connect
@@ -10,6 +11,21 @@ type IapModule = typeof import("react-native-iap");
 let RNIap: IapModule | null = null;
 if (Platform.OS === "ios") {
   RNIap = require("react-native-iap");
+}
+
+function getIosReceiptFields(purchase: Purchase): {
+  originalTransactionId: string;
+  expiresDateMs?: number;
+} {
+  if (purchase.platform !== "ios") {
+    return { originalTransactionId: purchase.transactionId ?? "" };
+  }
+
+  const iosPurchase = purchase as PurchaseIOS;
+  return {
+    originalTransactionId: iosPurchase.originalTransactionIdentifierIOS ?? iosPurchase.transactionId,
+    expiresDateMs: iosPurchase.expirationDateIOS ?? undefined,
+  };
 }
 
 export function useIap() {
@@ -31,7 +47,7 @@ export function useIap() {
         connected = true;
         const products = await iap.fetchProducts({ skus: [IAP_PRODUCT_ID], type: "subs" });
         if (!mounted) return;
-        if (products.length > 0) {
+        if (products && products.length > 0) {
           setAvailable(true);
           const product = products[0];
           setPrice(product.displayPrice ?? product.price ?? null);
@@ -77,10 +93,11 @@ export function useIap() {
           }
 
           try {
+            const receiptFields = getIosReceiptFields(purchase);
             await api.verifyIapReceipt({
-              original_transaction_id: purchase.originalTransactionIdentifierIOS ?? purchase.transactionId ?? "",
+              original_transaction_id: receiptFields.originalTransactionId,
               product_id: purchase.productId,
-              expires_date_ms: purchase.expirationDateIOS ?? undefined,
+              expires_date_ms: receiptFields.expiresDateMs,
             });
 
             await iap.finishTransaction({ purchase, isConsumable: false });
@@ -109,7 +126,7 @@ export function useIap() {
           errorListener.remove();
         };
 
-        iap.requestPurchase({ request: { sku: IAP_PRODUCT_ID } }).catch((e) => {
+        iap.requestPurchase({ request: { apple: { sku: IAP_PRODUCT_ID } }, type: "subs" }).catch((e) => {
           if (resolved) return;
           console.log("[iap] request error:", e);
           resolved = true;
@@ -135,10 +152,11 @@ export function useIap() {
       const sub = purchases.find((p) => p.productId === IAP_PRODUCT_ID);
       if (!sub) return false;
 
+      const receiptFields = getIosReceiptFields(sub);
       await api.verifyIapReceipt({
-        original_transaction_id: sub.originalTransactionIdentifierIOS ?? sub.transactionId ?? "",
+        original_transaction_id: receiptFields.originalTransactionId,
         product_id: sub.productId,
-        expires_date_ms: sub.expirationDateIOS ?? undefined,
+        expires_date_ms: receiptFields.expiresDateMs,
       });
 
       return true;

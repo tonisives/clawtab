@@ -285,7 +285,7 @@ export default function JobsScreen() {
           pane_id: ack.pane_id,
           cwd: ack.work_dir ?? workDir ?? existingProcess?.cwd ?? "",
           version: existingProcess?.version ?? "",
-          provider: isProcessProvider(ack.provider) ? ack.provider : provider ?? existingProcess?.provider ?? "claude",
+          provider: provider ?? (isProcessProvider(ack.provider) ? ack.provider : existingProcess?.provider ?? "claude"),
           can_fork_session: existingProcess?.can_fork_session ?? false,
           can_send_skills: existingProcess?.can_send_skills ?? false,
           can_inject_secrets: existingProcess?.can_inject_secrets ?? false,
