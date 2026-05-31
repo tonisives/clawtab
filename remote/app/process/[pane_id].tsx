@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, KeyboardAvoidingView, Keyboard, Alert } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
 import { XtermLog, PopupMenu, findYesOption, colors, radius, spacing } from "@clawtab/shared";
@@ -12,11 +13,31 @@ import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { confirm } from "../../src/lib/platform";
 
-const KEYBOARD_EXTRA_LIFT = 72;
+const KEYBOARD_TOOLBAR_HEIGHT = 48;
+const KEYBOARD_EXTRA_CLEARANCE = 10;
+const TERMINAL_BG = "#1c1c1e";
+
+function encodeTerminalInput(text: string): string {
+  if (typeof btoa === "function") return btoa(text);
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let output = "";
+  for (let i = 0; i < text.length; i += 3) {
+    const a = text.charCodeAt(i) & 0xff;
+    const b = i + 1 < text.length ? text.charCodeAt(i + 1) & 0xff : 0;
+    const c = i + 2 < text.length ? text.charCodeAt(i + 2) & 0xff : 0;
+    const triplet = (a << 16) | (b << 8) | c;
+    output += chars[(triplet >> 18) & 63];
+    output += chars[(triplet >> 12) & 63];
+    output += i + 1 < text.length ? chars[(triplet >> 6) & 63] : "=";
+    output += i + 2 < text.length ? chars[triplet & 63] : "=";
+  }
+  return output;
+}
 
 export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
   // We encode % as _pct_ in URLs and decode it back here.
@@ -75,17 +96,9 @@ export default function ProcessDetailScreen() {
   const contextDropdownRef = useRef<View>(null);
   const contextButtonRef = useRef<any>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const [keyboardBuffer, setKeyboardBuffer] = useState(0);
-
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    const show = Keyboard.addListener("keyboardDidShow", () => setKeyboardBuffer(KEYBOARD_EXTRA_LIFT));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardBuffer(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
+  const [copyModeActive, setCopyModeActive] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
@@ -100,6 +113,25 @@ export default function ProcessDetailScreen() {
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
   const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const show = Keyboard.addListener("keyboardWillShow", (event) => {
+      const keyboardHeight = event.endCoordinates?.height ?? 0;
+      setKeyboardVisible(true);
+      setKeyboardHeight(keyboardHeight);
+      termRef.current?.setVisualOffset(Math.max(0, keyboardHeight + KEYBOARD_TOOLBAR_HEIGHT + KEYBOARD_EXTRA_CLEARANCE));
+    });
+    const hide = Keyboard.addListener("keyboardWillHide", () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+      termRef.current?.setVisualOffset(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const options = paneQuestion?.options ?? [];
 
@@ -172,11 +204,28 @@ export default function ProcessDetailScreen() {
 
   const scrollTerminal = useCallback(
     (direction: "up" | "down") => {
-      sendTmuxPaneKey("copy-mode");
-      setTimeout(() => sendTmuxPaneKey(direction === "up" ? "C-u" : "C-d"), 30);
+      setCopyModeActive(true);
+      sendTmuxPaneKey(direction === "up" ? "copy-halfpage-up" : "copy-halfpage-down");
     },
     [sendTmuxPaneKey],
   );
+
+  const exitCopyMode = useCallback(() => {
+    setCopyModeActive(false);
+    sendTmuxPaneKey("copy-cancel");
+  }, [sendTmuxPaneKey]);
+
+  const sendTerminalText = useCallback(
+    (text: string) => {
+      ptySendInput(encodeTerminalInput(text));
+    },
+    [ptySendInput],
+  );
+
+  const dismissTerminalKeyboard = useCallback(() => {
+    termRef.current?.blur();
+    Keyboard.dismiss();
+  }, []);
 
   const doStop = async () => {
     const send = getWsSend();
@@ -207,20 +256,8 @@ export default function ProcessDetailScreen() {
   const isAlive = !!process || !!paneQuestion;
   const openContextMenu = useCallback(
     (e?: any) => {
-      Keyboard.dismiss();
-
       if (Platform.OS !== "web") {
-        Alert.alert(
-          displayName,
-          undefined,
-          [
-            { text: "Hide Keyboard", onPress: () => Keyboard.dismiss() },
-            isAlive
-              ? { text: stopping ? "Stopping..." : "Stop", onPress: handleStop, style: "destructive" }
-              : { text: starting ? "Starting..." : "Start", onPress: handleStart },
-            { text: "Cancel", style: "cancel" },
-          ],
-        );
+        setShowContextMenu((v) => !v);
         return;
       }
 
@@ -233,7 +270,7 @@ export default function ProcessDetailScreen() {
       }
       setShowContextMenu((v) => !v);
     },
-    [displayName, handleStart, handleStop, isAlive, starting, stopping],
+    [],
   );
 
   if (waitingForData) {
@@ -251,11 +288,7 @@ export default function ProcessDetailScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={-KEYBOARD_EXTRA_LIFT}
-    >
+    <View style={styles.container}>
       <Stack.Screen
         options={{
           title: displayName,
@@ -286,10 +319,8 @@ export default function ProcessDetailScreen() {
                     position={menuPos}
                     onClose={() => setShowContextMenu(false)}
                     items={isAlive ? [
-                      { type: "item", label: "Hide Keyboard", onPress: () => Keyboard.dismiss() },
                       { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
                     ] : [
-                      { type: "item", label: "Hide Keyboard", onPress: () => Keyboard.dismiss() },
                       { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
                     ]}
                   />
@@ -299,6 +330,37 @@ export default function ProcessDetailScreen() {
           ),
         }}
       />
+      {Platform.OS !== "web" && showContextMenu ? (
+        <View style={styles.mobileContextMenu}>
+          {isAlive ? (
+            <TouchableOpacity
+              style={styles.mobileContextItem}
+              onPress={() => {
+                setShowContextMenu(false);
+                handleStop();
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.mobileContextText, { color: colors.danger }]}>
+                {stopping ? "Stopping..." : "Stop"}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.mobileContextItem}
+              onPress={() => {
+                setShowContextMenu(false);
+                handleStart();
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.mobileContextText, { color: colors.accent }]}>
+                {starting ? "Starting..." : "Start"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : null}
 
       {activeProcess?.first_query && (
         <View style={styles.queryRow}>
@@ -317,46 +379,123 @@ export default function ProcessDetailScreen() {
         </View>
       )}
 
-      <View style={styles.terminalContainer}>
+      <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
         {ptyConnecting && (
           <View style={styles.ptyConnecting}>
             <ActivityIndicator size="small" color={colors.accent} />
             <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
           </View>
         )}
-        <TerminalScrollButtons
-          onScrollUp={() => scrollTerminal("up")}
-          onScrollDown={() => scrollTerminal("down")}
-        />
         <XtermLog
           ref={termRef}
           onData={ptySendInput}
           onResize={sendResize}
           interactive
         />
+        {!ptyConnecting ? (
+          <TerminalScrollButtons
+            onScrollUp={() => scrollTerminal("up")}
+            onScrollDown={() => scrollTerminal("down")}
+            onExitCopyMode={exitCopyMode}
+            copyModeActive={copyModeActive}
+          />
+        ) : null}
       </View>
+      {keyboardVisible ? (
+        <TerminalKeyboardToolbar
+          bottom={keyboardHeight}
+          onDismiss={dismissTerminalKeyboard}
+          onEscape={() => sendTerminalText("\x1b")}
+          onArrowUp={() => sendTerminalText("\x1b[A")}
+          onArrowDown={() => sendTerminalText("\x1b[B")}
+          onArrowLeft={() => sendTerminalText("\x1b[D")}
+          onArrowRight={() => sendTerminalText("\x1b[C")}
+          onCtrlC={() => sendTerminalText("\x03")}
+        />
+      ) : null}
 
       {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
-      {keyboardBuffer > 0 ? <View style={{ height: keyboardBuffer }} /> : null}
-    </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+function TerminalKeyboardToolbar({
+  bottom,
+  onDismiss,
+  onEscape,
+  onArrowUp,
+  onArrowDown,
+  onArrowLeft,
+  onArrowRight,
+  onCtrlC,
+}: {
+  bottom: number;
+  onDismiss: () => void;
+  onEscape: () => void;
+  onArrowUp: () => void;
+  onArrowDown: () => void;
+  onArrowLeft: () => void;
+  onArrowRight: () => void;
+  onCtrlC: () => void;
+}) {
+  return (
+    <View style={[styles.keyboardToolbar, { bottom }]}>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
+        <Ionicons name="close" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtnWide} onPress={onEscape} activeOpacity={0.7}>
+        <Text style={styles.keyboardToolText}>Esc</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtnWide} onPress={onCtrlC} activeOpacity={0.7}>
+        <Text style={styles.keyboardToolText}>C-c</Text>
+      </TouchableOpacity>
+      <View style={styles.keyboardToolSpacer} />
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowLeft} activeOpacity={0.7}>
+        <Ionicons name="chevron-back" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowDown} activeOpacity={0.7}>
+        <Ionicons name="chevron-down" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowUp} activeOpacity={0.7}>
+        <Ionicons name="chevron-up" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowRight} activeOpacity={0.7}>
+        <Ionicons name="chevron-forward" size={20} color={colors.text} />
+      </TouchableOpacity>
+    </View>
   );
 }
 
 function TerminalScrollButtons({
   onScrollUp,
   onScrollDown,
+  onExitCopyMode,
+  copyModeActive,
 }: {
   onScrollUp: () => void;
   onScrollDown: () => void;
+  onExitCopyMode: () => void;
+  copyModeActive: boolean;
 }) {
   return (
     <View style={styles.scrollControls} pointerEvents="box-none">
       <TouchableOpacity style={styles.scrollBtn} onPress={onScrollUp} activeOpacity={0.7}>
-        <Ionicons name="chevron-up" size={18} color={colors.text} />
+        <View style={styles.scrollBtnVisible}>
+          <Ionicons name="chevron-up" size={24} color={colors.text} />
+        </View>
       </TouchableOpacity>
       <TouchableOpacity style={styles.scrollBtn} onPress={onScrollDown} activeOpacity={0.7}>
-        <Ionicons name="chevron-down" size={18} color={colors.text} />
+        <View style={styles.scrollBtnVisible}>
+          <Ionicons name="chevron-down" size={24} color={colors.text} />
+        </View>
       </TouchableOpacity>
+      {copyModeActive ? (
+        <TouchableOpacity style={styles.exitCopyBtn} onPress={onExitCopyMode} activeOpacity={0.7}>
+          <View style={styles.scrollBtnVisible}>
+            <Ionicons name="close" size={24} color={colors.text} />
+          </View>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -449,6 +588,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: radius.sm,
   },
+  mobileContextMenu: {
+    position: "absolute",
+    top: 8,
+    right: spacing.md,
+    zIndex: 300,
+    elevation: 300,
+    minWidth: 160,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingVertical: 4,
+  },
+  mobileContextItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  mobileContextText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
   queryRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -461,17 +621,84 @@ const styles = StyleSheet.create({
   },
   queryLabel: { color: colors.textMuted, fontSize: 11, fontWeight: "600", width: 42 },
   queryText: { flex: 1, minWidth: 0, color: colors.text, fontSize: 12, fontFamily: "monospace" },
-  terminalContainer: { flex: 1, minHeight: 0, position: "relative" },
+  terminalContainer: {
+    flex: 1,
+    minHeight: 0,
+    position: "relative",
+    backgroundColor: TERMINAL_BG,
+  },
+  keyboardToolbar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: KEYBOARD_TOOLBAR_HEIGHT,
+    zIndex: 200,
+    elevation: 200,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  keyboardToolBtn: {
+    width: 38,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  keyboardToolBtnWide: {
+    minWidth: 48,
+    height: 34,
+    paddingHorizontal: spacing.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  keyboardToolText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  keyboardToolSpacer: {
+    flex: 1,
+  },
   scrollControls: {
     position: "absolute",
     top: spacing.sm,
     right: spacing.sm,
-    zIndex: 20,
-    gap: 6,
+    zIndex: 100,
+    elevation: 100,
+    gap: 4,
   },
   scrollBtn: {
-    width: 34,
-    height: 34,
+    width: 64,
+    height: 64,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exitCopyBtn: {
+    position: "absolute",
+    left: -8,
+    top: "50%",
+    transform: [{ translateX: -64 }, { translateY: -32 }],
+    width: 64,
+    height: 64,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scrollBtnVisible: {
+    width: 46,
+    height: 46,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,

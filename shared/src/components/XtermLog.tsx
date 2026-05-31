@@ -10,6 +10,10 @@ export interface XtermLogHandle {
   clear(): void;
   /** Get current terminal dimensions */
   dimensions(): { cols: number; rows: number };
+  /** Visually offset terminal contents without resizing the WebView */
+  setVisualOffset(px: number): void;
+  /** Blur the terminal input so native keyboards close */
+  blur(): void;
 }
 
 interface XtermLogProps {
@@ -70,6 +74,19 @@ ro.observe(document.getElementById('terminal'));
 
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
+window.setVisualOffset = function(px) {
+  var el = document.getElementById('terminal');
+  if (!el) return;
+  el.style.transform = px ? 'translate3d(0,' + (-px) + 'px,0)' : '';
+  el.style.transition = 'transform 180ms ease-out';
+};
+window.blurTerminal = function() {
+  try { term.blur(); } catch (e) {}
+  try {
+    var active = document.activeElement;
+    if (active && active.blur) active.blur();
+  } catch (e) {}
+};
 </script>
 </body>
 </html>`;
@@ -101,6 +118,13 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       },
       dimensions() {
         return dimsRef.current;
+      },
+      setVisualOffset(px: number) {
+        const value = Math.max(0, Math.round(px));
+        webViewRef.current?.injectJavaScript(`window.setVisualOffset && window.setVisualOffset(${value});true;`);
+      },
+      blur() {
+        webViewRef.current?.injectJavaScript(`window.blurTerminal && window.blurTerminal();true;`);
       },
     }));
 

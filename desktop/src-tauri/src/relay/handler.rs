@@ -299,11 +299,14 @@ fn dispatch_pty_msg(
             None
         }
         ClientMessage::TmuxPaneKey { pane_id, key } => {
-            let result = if key == "copy-halfpage-up" || key == "copy-halfpage-down" {
-                let command = if key == "copy-halfpage-up" {
-                    "halfpage-up"
-                } else {
-                    "halfpage-down"
+            let result = if key == "copy-halfpage-up"
+                || key == "copy-halfpage-down"
+                || key == "copy-cancel"
+            {
+                let command = match key.as_str() {
+                    "copy-halfpage-up" => "halfpage-up",
+                    "copy-halfpage-down" => "halfpage-down",
+                    _ => "cancel",
                 };
                 crate::tmux::enter_copy_mode(&pane_id)
                     .and_then(|_| crate::tmux::send_copy_mode_command_to_pane(&pane_id, command))

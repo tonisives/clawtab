@@ -12,6 +12,10 @@ export interface XtermLogHandle {
   clear(): void;
   /** Get current terminal dimensions */
   dimensions(): { cols: number; rows: number };
+  /** Visually offset terminal contents without resizing the container */
+  setVisualOffset(px: number): void;
+  /** Blur the terminal input so native keyboards close */
+  blur(): void;
 }
 
 interface XtermLogProps {
@@ -54,6 +58,15 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       dimensions() {
         const t = termRef.current;
         return { cols: t?.cols ?? 80, rows: t?.rows ?? 24 };
+      },
+      setVisualOffset(px: number) {
+        if (!containerRef.current) return;
+        const value = Math.max(0, Math.round(px));
+        containerRef.current.style.transform = value ? `translate3d(0, ${-value}px, 0)` : "";
+        containerRef.current.style.transition = "transform 180ms ease-out";
+      },
+      blur() {
+        termRef.current?.blur();
       },
     }));
 

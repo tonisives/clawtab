@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, View, Text, StyleSheet, KeyboardAvoidingView, Platform, Keyboard, TouchableOpacity } from "react-native";
+import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BackTitle } from "./_layout";
 import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
@@ -22,7 +23,26 @@ import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 
-const KEYBOARD_EXTRA_LIFT = 72;
+const KEYBOARD_EXTRA_CLEARANCE = 18;
+const KEYBOARD_TOOLBAR_HEIGHT = 48;
+const TERMINAL_BG = "#1c1c1e";
+
+function encodeTerminalInput(text: string): string {
+  if (typeof btoa === "function") return btoa(text);
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let output = "";
+  for (let i = 0; i < text.length; i += 3) {
+    const a = text.charCodeAt(i) & 0xff;
+    const b = i + 1 < text.length ? text.charCodeAt(i + 1) & 0xff : 0;
+    const c = i + 2 < text.length ? text.charCodeAt(i + 2) & 0xff : 0;
+    const triplet = (a << 16) | (b << 8) | c;
+    output += chars[(triplet >> 18) & 63];
+    output += chars[(triplet >> 12) & 63];
+    output += i + 1 < text.length ? chars[(triplet >> 6) & 63] : "=";
+    output += i + 2 < text.length ? chars[triplet & 63] : "=";
+  }
+  return output;
+}
 
 const wsTransport = createWsTransport();
 
@@ -59,6 +79,7 @@ function agentJobFromSlug(slug: string): RemoteJob {
 
 export default function JobDetailScreen() {
   const { name, run_id, demo } = useLocalSearchParams<{ name: string; run_id?: string; demo?: string }>();
+  const insets = useSafeAreaInsets();
   const storeJob = useJob(name);
   const isAgent = !storeJob && name.startsWith("agent-");
   const isDemo = demo === "1" || (!storeJob && !isAgent && isDemoJob(name));
@@ -72,17 +93,6 @@ export default function JobDetailScreen() {
   const router = useRouter();
   const [runsLoading, setRunsLoading] = useState(false);
   const connected = useWsStore((s) => s.connected);
-  const [keyboardBuffer, setKeyboardBuffer] = useState(0);
-
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    const show = Keyboard.addListener("keyboardDidShow", () => setKeyboardBuffer(KEYBOARD_EXTRA_LIFT));
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardBuffer(0));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
@@ -163,6 +173,28 @@ export default function JobDetailScreen() {
   const termRef = useRef<XtermLogHandle | null>(null);
   const { sendInput, sendResize, connecting: ptyConnecting } = usePty(statusPaneId, statusTmuxSession, termRef);
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo;
+  const [copyModeActive, setCopyModeActive] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    const show = Keyboard.addListener("keyboardWillShow", (event) => {
+      const keyboardHeight = event.endCoordinates?.height ?? 0;
+      setKeyboardVisible(true);
+      setKeyboardHeight(keyboardHeight);
+      termRef.current?.setVisualOffset(Math.max(0, keyboardHeight + KEYBOARD_TOOLBAR_HEIGHT + KEYBOARD_EXTRA_CLEARANCE));
+    });
+    const hide = Keyboard.addListener("keyboardWillHide", () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+      termRef.current?.setVisualOffset(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   const sendTmuxPaneKey = useCallback(
     (key: string) => {
@@ -175,19 +207,32 @@ export default function JobDetailScreen() {
 
   const scrollTerminal = useCallback(
     (direction: "up" | "down") => {
-      sendTmuxPaneKey("copy-mode");
-      setTimeout(() => sendTmuxPaneKey(direction === "up" ? "C-u" : "C-d"), 30);
+      setCopyModeActive(true);
+      sendTmuxPaneKey(direction === "up" ? "copy-halfpage-up" : "copy-halfpage-down");
     },
     [sendTmuxPaneKey],
   );
 
+  const exitCopyMode = useCallback(() => {
+    setCopyModeActive(false);
+    sendTmuxPaneKey("copy-cancel");
+  }, [sendTmuxPaneKey]);
+
+  const sendTerminalText = useCallback(
+    (text: string) => {
+      sendInput(encodeTerminalInput(text));
+    },
+    [sendInput],
+  );
+
+  const dismissTerminalKeyboard = useCallback(() => {
+    termRef.current?.blur();
+    Keyboard.dismiss();
+  }, []);
+
   const renderTerminal = useCallback(
     () => (
-      <KeyboardAvoidingView
-        style={{ flex: 1, minHeight: 0 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={-KEYBOARD_EXTRA_LIFT}
-      >
+      <View style={{ flex: 1, minHeight: 0 }}>
         <View style={[styles.ptyConnecting, !ptyConnecting && styles.ptyConnectingHidden]}>
           {ptyConnecting ? (
             <>
@@ -196,22 +241,25 @@ export default function JobDetailScreen() {
             </>
           ) : null}
         </View>
-        <View style={styles.terminalFrame}>
-          <TerminalScrollButtons
-            onScrollUp={() => scrollTerminal("up")}
-            onScrollDown={() => scrollTerminal("down")}
-          />
+        <View style={[styles.terminalFrame, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
           <XtermLog
             ref={termRef}
             onData={sendInput}
             onResize={sendResize}
             interactive
           />
+          {!ptyConnecting ? (
+            <TerminalScrollButtons
+              onScrollUp={() => scrollTerminal("up")}
+              onScrollDown={() => scrollTerminal("down")}
+              onExitCopyMode={exitCopyMode}
+              copyModeActive={copyModeActive}
+            />
+          ) : null}
         </View>
-        {keyboardBuffer > 0 ? <View style={{ height: keyboardBuffer }} /> : null}
-      </KeyboardAvoidingView>
+      </View>
     ),
-    [sendInput, sendResize, ptyConnecting, keyboardBuffer, scrollTerminal],
+    [sendInput, sendResize, ptyConnecting, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom],
   );
 
   if (!job) {
@@ -266,6 +314,65 @@ export default function JobDetailScreen() {
           hideMessageInput={isRunningWithPty}
         />
       </ContentContainer>
+      {keyboardVisible && isRunningWithPty ? (
+        <TerminalKeyboardToolbar
+          bottom={keyboardHeight}
+          onDismiss={dismissTerminalKeyboard}
+          onEscape={() => sendTerminalText("\x1b")}
+          onArrowUp={() => sendTerminalText("\x1b[A")}
+          onArrowDown={() => sendTerminalText("\x1b[B")}
+          onArrowLeft={() => sendTerminalText("\x1b[D")}
+          onArrowRight={() => sendTerminalText("\x1b[C")}
+          onCtrlC={() => sendTerminalText("\x03")}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function TerminalKeyboardToolbar({
+  bottom,
+  onDismiss,
+  onEscape,
+  onArrowUp,
+  onArrowDown,
+  onArrowLeft,
+  onArrowRight,
+  onCtrlC,
+}: {
+  bottom: number;
+  onDismiss: () => void;
+  onEscape: () => void;
+  onArrowUp: () => void;
+  onArrowDown: () => void;
+  onArrowLeft: () => void;
+  onArrowRight: () => void;
+  onCtrlC: () => void;
+}) {
+  return (
+    <View style={[styles.keyboardToolbar, { bottom }]}>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
+        <Ionicons name="close" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtnWide} onPress={onEscape} activeOpacity={0.7}>
+        <Text style={styles.keyboardToolText}>Esc</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtnWide} onPress={onCtrlC} activeOpacity={0.7}>
+        <Text style={styles.keyboardToolText}>C-c</Text>
+      </TouchableOpacity>
+      <View style={styles.keyboardToolSpacer} />
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowLeft} activeOpacity={0.7}>
+        <Ionicons name="chevron-back" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowDown} activeOpacity={0.7}>
+        <Ionicons name="chevron-down" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowUp} activeOpacity={0.7}>
+        <Ionicons name="chevron-up" size={20} color={colors.text} />
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowRight} activeOpacity={0.7}>
+        <Ionicons name="chevron-forward" size={20} color={colors.text} />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -273,18 +380,33 @@ export default function JobDetailScreen() {
 function TerminalScrollButtons({
   onScrollUp,
   onScrollDown,
+  onExitCopyMode,
+  copyModeActive,
 }: {
   onScrollUp: () => void;
   onScrollDown: () => void;
+  onExitCopyMode: () => void;
+  copyModeActive: boolean;
 }) {
   return (
     <View style={styles.scrollControls} pointerEvents="box-none">
       <TouchableOpacity style={styles.scrollBtn} onPress={onScrollUp} activeOpacity={0.7}>
-        <Ionicons name="chevron-up" size={18} color={colors.text} />
+        <View style={styles.scrollBtnVisible}>
+          <Ionicons name="chevron-up" size={24} color={colors.text} />
+        </View>
       </TouchableOpacity>
       <TouchableOpacity style={styles.scrollBtn} onPress={onScrollDown} activeOpacity={0.7}>
-        <Ionicons name="chevron-down" size={18} color={colors.text} />
+        <View style={styles.scrollBtnVisible}>
+          <Ionicons name="chevron-down" size={24} color={colors.text} />
+        </View>
       </TouchableOpacity>
+      {copyModeActive ? (
+        <TouchableOpacity style={styles.exitCopyBtn} onPress={onExitCopyMode} activeOpacity={0.7}>
+          <View style={styles.scrollBtnVisible}>
+            <Ionicons name="close" size={24} color={colors.text} />
+          </View>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -332,17 +454,80 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
     position: "relative",
+    backgroundColor: TERMINAL_BG,
+  },
+  keyboardToolbar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: KEYBOARD_TOOLBAR_HEIGHT,
+    zIndex: 200,
+    elevation: 200,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  keyboardToolBtn: {
+    width: 38,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  keyboardToolBtnWide: {
+    minWidth: 48,
+    height: 34,
+    paddingHorizontal: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  keyboardToolText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  keyboardToolSpacer: {
+    flex: 1,
   },
   scrollControls: {
     position: "absolute",
     top: 8,
     right: 8,
-    zIndex: 20,
-    gap: 6,
+    zIndex: 100,
+    elevation: 100,
+    gap: 4,
   },
   scrollBtn: {
-    width: 34,
-    height: 34,
+    width: 64,
+    height: 64,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  exitCopyBtn: {
+    position: "absolute",
+    left: -8,
+    top: "50%",
+    transform: [{ translateX: -64 }, { translateY: -32 }],
+    width: 64,
+    height: 64,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scrollBtnVisible: {
+    width: 46,
+    height: 46,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 6,

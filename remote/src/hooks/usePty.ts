@@ -5,6 +5,11 @@ import type { XtermLogHandle } from "@clawtab/shared";
 // Global PTY event listeners keyed by pane_id
 const ptyListeners = new Map<string, Set<(data: string) => void>>();
 const ptyExitListeners = new Map<string, Set<() => void>>();
+const ptySubscriptions = new Map<string, {
+  count: number;
+  tmuxSession: string;
+  unsubscribeTimer?: ReturnType<typeof setTimeout>;
+}>();
 
 /** Called from useWebSocket when a pty_output message arrives */
 export function dispatchPtyOutput(paneId: string, data: string) {
@@ -51,10 +56,10 @@ export function usePty(
   useEffect(() => {
     const send = getWsSend();
     if (!send || !paneId || !tmuxSession) return;
+    let subscribeStartTimer: ReturnType<typeof setTimeout> | undefined;
 
     gotDataRef.current = false;
     pendingOutputRef.current = [];
-    setConnecting(true);
 
     const onOutput = (data: string) => {
       if (!gotDataRef.current) {
@@ -79,28 +84,56 @@ export function usePty(
     if (!ptyExitListeners.has(paneId)) ptyExitListeners.set(paneId, new Set());
     ptyExitListeners.get(paneId)!.add(onExit);
 
-    // Get initial dimensions from terminal
-    const dims = termRef.current?.dimensions() ?? { cols: 80, rows: 24 };
+    const existing = ptySubscriptions.get(paneId);
+    if (existing && existing.tmuxSession === tmuxSession) {
+      if (existing.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
+      existing.unsubscribeTimer = undefined;
+      existing.count += 1;
+      subscribedRef.current = true;
+      setConnecting(false);
+    } else {
+      if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
+      setConnecting(true);
+      subscribeStartTimer = setTimeout(() => {
+        const currentSend = getWsSend();
+        if (!currentSend) return;
+        // Get initial dimensions from terminal
+        const dims = termRef.current?.dimensions() ?? { cols: 80, rows: 24 };
 
-    send({
-      type: "subscribe_pty",
-      id: nextId(),
-      pane_id: paneId,
-      tmux_session: tmuxSession,
-      cols: dims.cols,
-      rows: dims.rows,
-    });
-    subscribedRef.current = true;
+        currentSend({
+          type: "subscribe_pty",
+          id: nextId(),
+          pane_id: paneId,
+          tmux_session: tmuxSession,
+          cols: dims.cols,
+          rows: dims.rows,
+        });
+        ptySubscriptions.set(paneId, { count: 1, tmuxSession });
+        subscribedRef.current = true;
+      }, 120);
+    }
 
     const flushInterval = setInterval(flushPendingOutput, 50);
 
     return () => {
+      if (subscribeStartTimer) clearTimeout(subscribeStartTimer);
       clearInterval(flushInterval);
       ptyListeners.get(paneId)?.delete(onOutput);
       ptyExitListeners.get(paneId)?.delete(onExit);
       if (subscribedRef.current) {
-        const s = getWsSend();
-        if (s) s({ type: "unsubscribe_pty", pane_id: paneId });
+        const subscription = ptySubscriptions.get(paneId);
+        if (subscription) {
+          subscription.count -= 1;
+          if (subscription.count <= 0) {
+            subscription.unsubscribeTimer = setTimeout(() => {
+              const current = ptySubscriptions.get(paneId);
+              if (!current || current.count > 0) return;
+              const s = getWsSend();
+              if (s) s({ type: "unsubscribe_pty", pane_id: paneId });
+              ptySubscriptions.delete(paneId);
+            }, 1200);
+          }
+        }
         subscribedRef.current = false;
       }
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
