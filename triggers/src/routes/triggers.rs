@@ -145,6 +145,8 @@ pub async fn run(
             id: trigger_id.to_string(),
             prompt: agent_prompt.clone().unwrap_or_default(),
             work_dir: work_dir.clone(),
+            provider: None,
+            model: None,
             trigger_id: Some(trigger_id.to_string()),
         },
     };
