@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -22,16 +22,21 @@ const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
 let GoogleSignin: any = null;
 let isSuccessResponse: any = null;
 if (Platform.OS !== "web") {
-  const mod = require("@react-native-google-signin/google-signin");
-  GoogleSignin = mod.GoogleSignin;
-  isSuccessResponse = mod.isSuccessResponse;
-  if (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS) {
-    GoogleSignin.configure({
-      iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
-      ...(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
-        ? { webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB, offlineAccess: true }
-        : {}),
-    });
+  try {
+    const mod = require("@react-native-google-signin/google-signin");
+    GoogleSignin = mod.GoogleSignin;
+    isSuccessResponse = mod.isSuccessResponse;
+    if (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS) {
+      GoogleSignin.configure({
+        iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
+        ...(process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB
+          ? { webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB, offlineAccess: true }
+          : {}),
+      });
+    }
+  } catch {
+    GoogleSignin = null;
+    isSuccessResponse = null;
   }
 }
 
@@ -55,22 +60,51 @@ export default function LoginScreen() {
   const [tempServerUrl, setTempServerUrl] = useState("");
 
   // Web: Google auth via expo-auth-session provider
-  const [, , promptAsync] = Google.useIdTokenAuthRequest({
+  const [, googleAuthSessionResult, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
     iosClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
   });
 
+  const completeGoogleLogin = useCallback(async (idToken: string) => {
+    await googleLogin(idToken);
+    router.replace("/(tabs)");
+  }, [googleLogin, router]);
+
+  useEffect(() => {
+    if (!loading || !googleAuthSessionResult) return;
+    if (Platform.OS !== "web" && GoogleSignin && isSuccessResponse) return;
+    const idToken = googleAuthSessionResult.type === "success"
+      ? googleAuthSessionResult.params.id_token
+      : null;
+    if (!idToken) return;
+
+    let cancelled = false;
+    completeGoogleLogin(idToken)
+      .catch((e: any) => {
+        if (!cancelled) setError(e.message || "Google sign-in failed");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [completeGoogleLogin, googleAuthSessionResult, loading]);
+
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
+    let keepLoading = false;
     try {
-      if (Platform.OS === "web") {
+      if (Platform.OS === "web" || !GoogleSignin || !isSuccessResponse) {
         const result = await promptAsync();
         if (result?.type === "success") {
           const idToken = result.params.id_token;
           if (idToken) {
-            await googleLogin(idToken);
-            router.replace("/(tabs)");
+            await completeGoogleLogin(idToken);
+          } else if (Platform.OS !== "web" && result.params.code) {
+            keepLoading = true;
           } else {
             setError("No ID token received from Google");
           }
@@ -82,13 +116,11 @@ export default function LoginScreen() {
         if (isSuccessResponse(response)) {
           const idToken = response.data.idToken;
           if (idToken) {
-            await googleLogin(idToken);
-            router.replace("/(tabs)");
+            await completeGoogleLogin(idToken);
           } else {
             const tokens = await GoogleSignin.getTokens();
             if (tokens.idToken) {
-              await googleLogin(tokens.idToken);
-              router.replace("/(tabs)");
+              await completeGoogleLogin(tokens.idToken);
             } else {
               setError("No ID token received from Google");
             }
@@ -99,7 +131,7 @@ export default function LoginScreen() {
       console.log("[google] error:", e.message, e.code);
       setError(e.message || "Google sign-in failed");
     } finally {
-      setLoading(false);
+      if (!keepLoading) setLoading(false);
     }
   };
 

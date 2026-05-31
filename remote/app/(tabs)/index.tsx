@@ -32,6 +32,10 @@ import type { RemoteJob, JobSortMode, JobStatus, AgentModelOption } from "@clawt
 import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 import { buildModelOptions } from "../../src/lib/agentModels"
 
+type GroupTabView = Record<string, "tabs" | "jobs">
+
+const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
+
 // Capture URL params before expo-router rewrites them on init
 const _initParams = Platform.OS === "web"
   ? new URLSearchParams(window.location.search)
@@ -72,6 +76,28 @@ function persistSelection(job: string | null, process: string | null) {
   else sessionStorage.removeItem("sel_process")
 }
 
+function readGroupTabView(): GroupTabView {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return {}
+  const raw = localStorage.getItem(GROUP_TAB_VIEW_STORAGE_KEY)
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== "object") return {}
+    const next: GroupTabView = {}
+    for (const [group, view] of Object.entries(parsed)) {
+      if (view === "tabs" || view === "jobs") next[group] = view
+    }
+    return next
+  } catch {
+    return {}
+  }
+}
+
+function saveGroupTabView(value: GroupTabView) {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return
+  localStorage.setItem(GROUP_TAB_VIEW_STORAGE_KEY, JSON.stringify(value))
+}
+
 export default function JobsScreen() {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
@@ -82,6 +108,7 @@ export default function JobsScreen() {
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
+  const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() => readSelection("process"))
   const { isWide } = useResponsive()
@@ -113,6 +140,23 @@ export default function JobsScreen() {
     if (send) {
       send({ type: "list_jobs", id: nextId() })
     }
+  }, [])
+
+  const handleGroupTabViewChange = useCallback((group: string, view: "tabs" | "jobs") => {
+    setGroupTabView((prev) => {
+      const next = { ...prev, [group]: view }
+      saveGroupTabView(next)
+      return next
+    })
+  }, [])
+
+  const handleSetAllGroupTabView = useCallback((groups: string[], view: "tabs" | "jobs") => {
+    setGroupTabView((prev) => {
+      const next = { ...prev }
+      for (const group of groups) next[group] = view
+      saveGroupTabView(next)
+      return next
+    })
   }, [])
 
   const handleRunAgent = useCallback((prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => {
@@ -313,6 +357,9 @@ export default function JobsScreen() {
         onSelectProcess={handleSelectProcess}
         onRunAgent={desktopOnline ? handleRunAgent : undefined}
         agentModelOptions={agentModelOptions}
+        groupTabView={groupTabView}
+        onGroupTabViewChange={handleGroupTabViewChange}
+        onSetAllGroupTabView={handleSetAllGroupTabView}
         headerContent={bannerContent}
         showEmpty={loaded || isDemo}
         emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
@@ -472,6 +519,9 @@ export default function JobsScreen() {
             focusedItemKey={split.focusedItemKey}
             onRunAgent={desktopOnline ? handleRunAgent : undefined}
             agentModelOptions={agentModelOptions}
+            groupTabView={groupTabView}
+            onGroupTabViewChange={handleGroupTabViewChange}
+            onSetAllGroupTabView={handleSetAllGroupTabView}
             headerContent={bannerContent}
             showEmpty={loaded || isDemo}
             emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
