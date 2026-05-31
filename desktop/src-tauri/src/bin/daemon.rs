@@ -298,7 +298,7 @@ fn main() {
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                         continue;
                     }
-                    let processes = clawtab_lib::relay::detect_processes_snapshot(
+                    let processes = clawtab_lib::process_snapshot::detect_processes_snapshot(
                         &jobs_config,
                         &job_status,
                         &pty_manager,

@@ -14,7 +14,7 @@ use clawtab_protocol::{DesktopMessage, JobStatus as RemoteJobStatus, RemoteJob};
 use crate::config::jobs::{Job, JobStatus, JobsConfig};
 use crate::pty::SharedPtyManager;
 
-pub use handler::detect_processes_snapshot;
+pub use crate::process_snapshot::detect_processes_snapshot;
 
 /// Relay connection state, shared via Arc<Mutex<..>> in AppState.
 pub struct RelayHandle {
@@ -367,8 +367,12 @@ async fn attempt_session(
             };
 
             push_full_state(&handle, jobs_config, job_status);
-            let processes =
-                handler::detect_processes_snapshot(jobs_config, &ctx.job_status, pty_manager).await;
+            let processes = crate::process_snapshot::detect_processes_snapshot(
+                jobs_config,
+                &ctx.job_status,
+                pty_manager,
+            )
+            .await;
             handle.send_message(&DesktopMessage::DetectedProcesses {
                 id: "desktop_process_snapshot".to_string(),
                 processes,
