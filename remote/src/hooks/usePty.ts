@@ -11,6 +11,8 @@ const ptySubscriptions = new Map<string, {
   unsubscribeTimer?: ReturnType<typeof setTimeout>;
 }>();
 
+const CONNECTING_FALLBACK_MS = 15000;
+
 /** Called from useWebSocket when a pty_output message arrives */
 export function dispatchPtyOutput(paneId: string, data: string) {
   const listeners = ptyListeners.get(paneId);
@@ -65,6 +67,8 @@ export function usePty(
     const onOutput = (data: string) => {
       if (!gotDataRef.current) {
         gotDataRef.current = true;
+        if (connectingTimerRef.current) clearTimeout(connectingTimerRef.current);
+        connectingTimerRef.current = undefined;
         setConnecting(false);
       }
       if (termRef.current) {
@@ -95,7 +99,10 @@ export function usePty(
     } else {
       if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
       setConnecting(true);
-      connectingTimerRef.current = setTimeout(() => setConnecting(false), 900);
+      connectingTimerRef.current = setTimeout(() => {
+        connectingTimerRef.current = undefined;
+        setConnecting(false);
+      }, CONNECTING_FALLBACK_MS);
       subscribeStartTimer = setTimeout(() => {
         const currentSend = getWsSend();
         if (!currentSend) return;

@@ -256,16 +256,9 @@ fn build_remote(
     provider: crate::agent_session::ProcessProvider,
     matched_group: Option<String>,
     matched_job: Option<String>,
-    live_viewer_panes: &HashSet<String>,
+    _live_viewer_panes: &HashSet<String>,
 ) -> DetectedProcess {
-    let log_lines = if live_viewer_panes.contains(row.pane_id) {
-        String::new()
-    } else {
-        crate::tmux::capture_pane(row.session, row.pane_id, 5)
-            .unwrap_or_default()
-            .trim()
-            .to_string()
-    };
+    let log_lines = String::new();
     let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
         row.pane_pid,
         Some(provider),

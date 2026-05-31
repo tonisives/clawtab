@@ -89,6 +89,30 @@ fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> Strin
     fallback.to_string()
 }
 
+fn non_view_sessions_by_window() -> HashMap<String, String> {
+    let Ok(rows) = crate::tmux::list_all_windows_with_session() else {
+        return HashMap::new();
+    };
+    let mut out = HashMap::new();
+    for (session, window_id) in rows {
+        if !is_view_session(&session) {
+            out.entry(window_id).or_insert(session);
+        }
+    }
+    out
+}
+
+fn resolve_non_view_session_from_map(
+    by_window: &HashMap<String, String>,
+    window_id: &str,
+    fallback: &str,
+) -> String {
+    by_window
+        .get(window_id)
+        .cloned()
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 fn is_semver(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
     if parts.len() != 3 {
@@ -269,6 +293,7 @@ struct DetectCtx<'a> {
     slug_to_group: &'a HashMap<String, String>,
     overrides: &'a HashMap<String, DetectedProcessOverride>,
     process_snapshot: &'a crate::agent_session::ProcessSnapshot,
+    non_view_sessions_by_window: &'a HashMap<String, String>,
 }
 
 fn detect_processes_blocking(
@@ -288,6 +313,7 @@ fn detect_processes_blocking(
             })
         }
     };
+    let non_view_sessions = non_view_sessions_by_window();
 
     let ctx = DetectCtx {
         live_viewer_panes: &live_viewer_panes,
@@ -297,6 +323,7 @@ fn detect_processes_blocking(
         slug_to_group: &slug_to_group,
         overrides: &overrides,
         process_snapshot: &process_snapshot,
+        non_view_sessions_by_window: &non_view_sessions,
     };
 
     let mut seen_panes = HashSet::new();
@@ -431,14 +458,8 @@ fn resolve_group_and_job(
     }
 }
 
-fn capture_log_lines(row: &PaneRow<'_>, live_viewer_panes: &HashSet<String>) -> String {
-    if live_viewer_panes.contains(row.pane_id) {
-        return String::new();
-    }
-    crate::tmux::capture_pane(row.session, row.pane_id, 5)
-        .unwrap_or_default()
-        .trim()
-        .to_string()
+fn capture_log_lines(_row: &PaneRow<'_>, _live_viewer_panes: &HashSet<String>) -> String {
+    String::new()
 }
 
 fn resolve_version(
@@ -481,7 +502,11 @@ fn build_detected_process(
         can_fork_session,
         can_send_skills,
         can_inject_secrets,
-        tmux_session: resolve_non_view_session_for_window(row.window_id, row.session),
+        tmux_session: resolve_non_view_session_from_map(
+            ctx.non_view_sessions_by_window,
+            row.window_id,
+            row.session,
+        ),
         window_name: row.window.to_string(),
         matched_group,
         matched_job,

@@ -74,6 +74,16 @@ export function GroupAgentRow({
               const rect = node.getBoundingClientRect();
               setMenuPos({ top: rect.bottom + 6, left: rect.left });
             }
+          } else if (buttonRef.current?.measureInWindow) {
+            if (menuOpen) {
+              setMenuOpen(false);
+              return;
+            }
+            buttonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+              setMenuPos({ top: y + height + 6, left: x });
+              setMenuOpen(true);
+            });
+            return;
           }
           setMenuOpen((open) => !open);
         }}

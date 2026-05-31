@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
 import { spacing, radius } from "../theme/spacing";
 
@@ -196,19 +196,24 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
   }, [onClose, ref, triggerRef]);
 
   const resolvedPos = clampedPos;
-  const menuStyle = isWeb && position ? {
-    position: "fixed" as any,
-    top: resolvedPos?.top ?? position.top,
-    left: resolvedPos?.left ?? (position.left - 160),
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    borderRadius: radius.sm,
-    minWidth: 160,
-    zIndex: 2147483647,
-    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04)",
-    paddingVertical: 4,
-  } as any : styles.menu;
+  const menuStyle = isWeb
+    ? (position ? {
+        position: "fixed" as any,
+        top: resolvedPos?.top ?? position.top,
+        left: resolvedPos?.left ?? (position.left - 160),
+        backgroundColor: colors.surface,
+        borderWidth: 1,
+        borderColor: colors.borderLight,
+        borderRadius: radius.sm,
+        minWidth: 160,
+        zIndex: 2147483647,
+        boxShadow: "0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04)",
+        paddingVertical: 4,
+      } as any : [styles.menu, styles.webInlineMenu])
+    : [
+        styles.menu,
+        { top: position?.top ?? 44, left: position?.left ?? 12 },
+      ];
 
   const stepHighlight = (direction: 1 | -1) => {
     if (actionableIndexes.length === 0) return;
@@ -281,54 +286,69 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
     }
   };
 
+  const menu = (
+    <View
+      ref={ref}
+      style={menuStyle}
+      {...(isWeb ? {
+        tabIndex: -1,
+        onKeyDown: handleKeyDown,
+      } : {})}
+    >
+      {submenu && (
+        <TouchableOpacity
+          style={styles.backItem}
+          onPress={() => {
+            setSubmenu(null);
+            setHighlightedIndex(actionableIndexes[0] ?? -1);
+          }}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.backText}>{"\u2039"} {submenu.label}</Text>
+        </TouchableOpacity>
+      )}
+      {activeItems.map((item, i) => {
+        if (item.type === "separator") {
+          return <View key={`sep-${i}`} style={styles.separator} />;
+        }
+        if (item.type === "submenu") {
+          return (
+            <HoverableItem
+              key={`${item.label}-${i}`}
+              item={item}
+              highlighted={i === highlightedIndex}
+              onHover={() => setHighlightedIndex(i)}
+              onPress={() => setSubmenu({ label: item.label, items: item.items })}
+            />
+          );
+        }
+        return (
+          <HoverableItem
+            key={`${item.label}-${i}`}
+            item={item}
+            highlighted={i === highlightedIndex}
+            onHover={() => setHighlightedIndex(i)}
+            onPress={() => { onClose(); item.onPress(); }}
+          />
+        );
+      })}
+    </View>
+  );
+
+  if (!isWeb) {
+    return (
+      <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+        <View style={styles.nativeBackdrop}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+          {menu}
+        </View>
+      </Modal>
+    );
+  }
+
   return (
     <PortalWeb>
-      <View
-        ref={ref}
-        style={menuStyle}
-        {...(isWeb ? {
-          tabIndex: -1,
-          onKeyDown: handleKeyDown,
-        } : {})}
-      >
-        {submenu && (
-          <TouchableOpacity
-            style={styles.backItem}
-            onPress={() => {
-              setSubmenu(null);
-              setHighlightedIndex(actionableIndexes[0] ?? -1);
-            }}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.backText}>{"\u2039"} {submenu.label}</Text>
-          </TouchableOpacity>
-        )}
-        {activeItems.map((item, i) => {
-          if (item.type === "separator") {
-            return <View key={`sep-${i}`} style={styles.separator} />;
-          }
-          if (item.type === "submenu") {
-            return (
-              <HoverableItem
-                key={`${item.label}-${i}`}
-                item={item}
-                highlighted={i === highlightedIndex}
-                onHover={() => setHighlightedIndex(i)}
-                onPress={() => setSubmenu({ label: item.label, items: item.items })}
-              />
-            );
-          }
-          return (
-              <HoverableItem
-                key={`${item.label}-${i}`}
-                item={item}
-                highlighted={i === highlightedIndex}
-                onHover={() => setHighlightedIndex(i)}
-                onPress={() => { onClose(); item.onPress(); }}
-              />
-            );
-        })}
-      </View>
+      {menu}
     </PortalWeb>
   );
 }
@@ -336,8 +356,6 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
 const styles = StyleSheet.create({
   menu: {
     position: "absolute",
-    top: "100%",
-    right: 0,
     marginTop: 4,
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -347,6 +365,13 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     paddingVertical: 4,
     ...(isWeb ? { boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } : {}),
+  },
+  webInlineMenu: {
+    top: "100%",
+    right: 0,
+  },
+  nativeBackdrop: {
+    flex: 1,
   },
   separator: {
     height: 1,

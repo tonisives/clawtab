@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { XtermLog, PopupMenu, findYesOption, colors, radius, spacing } from "@clawtab/shared";
+import { XtermLog, PopupMenu, JobKindIcon, compactPath, findYesOption, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
@@ -107,13 +107,18 @@ export default function ProcessDetailScreen() {
   const displayName = (process ?? lastProcess)
     ? (process ?? lastProcess)!.cwd.replace(/^\/Users\/[^/]+/, "~")
     : paneQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? pane_id;
+  const headerTitle = (process ?? lastProcess)
+    ? compactPath((process ?? lastProcess)!.cwd)
+    : paneQuestion?.cwd
+      ? compactPath(paneQuestion.cwd)
+      : pane_id;
 
   const activeProcess = process ?? lastProcess;
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
   const keyboardDismissRef = useRef<TextInput | null>(null);
-  const { sendInput: ptySendInput, sendResize } = usePty(pane_id, tmuxSession, termRef);
+  const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -305,39 +310,54 @@ export default function ProcessDetailScreen() {
       <Stack.Screen
         options={{
           title: displayName,
-          headerRight: () => (
-            <View style={styles.headerActions}>
+          header: () => (
+            <View style={[styles.navHeader, { height: insets.top + 44 }]}>
               <TouchableOpacity
-                style={styles.stateDotHitbox}
-                onPress={() => Keyboard.dismiss()}
+                style={[styles.navSide, styles.navLeft, { top: insets.top }]}
+                onPress={() => {
+                  if (router.canGoBack()) router.back();
+                  else router.replace("/");
+                }}
                 activeOpacity={0.6}
                 hitSlop={8}
               >
-                <View style={[styles.stateDot, isAlive ? styles.runningDot : styles.endedDot]} />
+                <Ionicons name="chevron-back" size={24} color={colors.text} />
               </TouchableOpacity>
-              <View ref={contextMenuRef} style={styles.contextWrap}>
-                <TouchableOpacity
-                  ref={contextButtonRef}
-                  style={styles.contextBtn}
-                  onPress={openContextMenu}
-                  activeOpacity={0.6}
-                  hitSlop={8}
-                >
-                  <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
-                </TouchableOpacity>
-                {Platform.OS === "web" && showContextMenu && (
-                  <PopupMenu
-                    dropdownRef={contextDropdownRef}
-                    triggerRef={contextButtonRef}
-                    position={menuPos}
-                    onClose={() => setShowContextMenu(false)}
-                    items={isAlive ? [
-                      { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
-                    ] : [
-                      { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
-                    ]}
-                  />
-                )}
+              <View style={[styles.headerTitleSlot, { top: insets.top }]} pointerEvents="none">
+                <View style={styles.headerTitle}>
+                  {activeProcess?.provider ? (
+                    <JobKindIcon kind={activeProcess.provider} size={20} compact bare />
+                  ) : null}
+                  <Text style={styles.headerTitleText} numberOfLines={1}>
+                    {headerTitle}
+                  </Text>
+                </View>
+              </View>
+              <View style={[styles.navSide, styles.navRight, { top: insets.top }]}>
+                <View ref={contextMenuRef} style={styles.contextWrap}>
+                  <TouchableOpacity
+                    ref={contextButtonRef}
+                    style={styles.contextBtn}
+                    onPress={openContextMenu}
+                    activeOpacity={0.6}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+                  </TouchableOpacity>
+                  {Platform.OS === "web" && showContextMenu && (
+                    <PopupMenu
+                      dropdownRef={contextDropdownRef}
+                      triggerRef={contextButtonRef}
+                      position={menuPos}
+                      onClose={() => setShowContextMenu(false)}
+                      items={isAlive ? [
+                        { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
+                      ] : [
+                        { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
+                      ]}
+                    />
+                  )}
+                </View>
               </View>
             </View>
           ),
@@ -405,6 +425,12 @@ export default function ProcessDetailScreen() {
           onExitCopyMode={exitCopyMode}
           copyModeActive={copyModeActive}
         />
+        {ptyConnecting ? (
+          <View style={styles.ptyConnectingOverlay} pointerEvents="none">
+            <ActivityIndicator size="small" color={colors.accent} />
+            <Text style={styles.ptyConnectingText}>Connecting to agent...</Text>
+          </View>
+        ) : null}
       </View>
       {keyboardVisible ? (
         <TerminalKeyboardToolbar
@@ -573,30 +599,59 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
   },
-  stateDotHitbox: {
-    width: 24,
-    height: 32,
+  navHeader: {
+    height: 44,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  navSide: {
+    position: "absolute",
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
-  stateDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
+  navLeft: {
+    left: 4,
   },
-  runningDot: {
-    backgroundColor: colors.accent,
+  navRight: {
+    position: "absolute",
+    right: 4,
   },
-  endedDot: {
-    backgroundColor: colors.textMuted,
+  headerTitleSlot: {
+    position: "absolute",
+    left: 64,
+    right: 64,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    maxWidth: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+  },
+  headerTitleText: {
+    flexShrink: 1,
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
   },
   contextWrap: {
     position: "relative",
     zIndex: 9999,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   contextBtn: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,
@@ -736,6 +791,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  ptyConnectingOverlay: {
+    position: "absolute",
+    top: spacing.sm,
+    left: spacing.sm,
+    zIndex: 90,
+    elevation: 90,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: "rgba(28, 28, 30, 0.88)",
   },
   ptyConnectingText: { color: colors.textMuted, fontSize: 12 },
   loadingText: { color: colors.textMuted, fontSize: 13 },
