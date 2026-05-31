@@ -164,7 +164,7 @@ function TabsContent({ isWide }: { isWide: boolean }) {
         options={{
           title: "",
           tabBarLabel: "Jobs",
-          headerLeft: isWide ? undefined : () => <HeaderBrand />,
+          ...(!isWide ? { headerLeft: () => <HeaderBrand /> } : {}),
           tabBarIcon: ({ focused }) => (
             <TabIcon label="Jobs" focused={focused} />
           ),
