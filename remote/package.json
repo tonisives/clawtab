@@ -6,7 +6,10 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web --port 1942"
+    "web": "expo start --web --port 1942",
+    "ota:publish": "eoas publish --branch production --channel production --nonInteractive --packageRunner pnpm",
+    "ota:publish:android": "eoas publish --branch production --channel production --nonInteractive --platform android --packageRunner pnpm",
+    "ota:publish:ios": "eoas publish --branch production --channel production --nonInteractive --platform ios --packageRunner pnpm"
   },
   "dependencies": {
     "@clawtab/shared": "workspace:*",
@@ -26,6 +29,7 @@
     "expo-router": "^6.0.23",
     "expo-secure-store": "^15.0.8",
     "expo-status-bar": "~3.0.9",
+    "expo-updates": "~29.0.18",
     "expo-web-browser": "~15.0.10",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -40,6 +44,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
+    "eoas": "^2.3.19",
     "typescript": "~5.9.2",
     "zod": "^3.25.76"
   },

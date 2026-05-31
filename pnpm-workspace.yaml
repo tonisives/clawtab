@@ -3,4 +3,5 @@ packages:
   - remote
   - shared
 allowBuilds:
+  dtrace-provider: false
   esbuild: true

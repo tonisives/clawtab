@@ -10,7 +10,10 @@
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 30000,
-      "url": "https://ota.clawtab.cc/manifest"
+      "url": "https://ota.clawtab.cc/manifest",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
