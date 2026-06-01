@@ -33,6 +33,7 @@ export interface NotificationSectionProps {
   answerResetMs?: number;
   /** Optional wrapper for active question cards (for drag handles, etc.) */
   wrapQuestionCard?: (question: ClaudeQuestion, card: React.ReactNode) => React.ReactNode;
+  cardMinHeight?: number;
 }
 
 interface DepartingQuestion {
@@ -53,6 +54,7 @@ export function NotificationSection({
   autoAnsweredIds,
   answerResetMs,
   wrapQuestionCard,
+  cardMinHeight,
 }: NotificationSectionProps) {
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -316,6 +318,7 @@ export function NotificationSection({
         onToggleAutoYes={onToggleAutoYes}
         autoAnswered={autoAnsweredIds?.has(d.question.question_id)}
         answerResetMs={answerResetMs}
+        cardMinHeight={cardMinHeight}
       />
     );
 
@@ -373,6 +376,7 @@ export function NotificationSection({
         onFlyStart={handleCardFlyStart}
         isLast={count === 1}
         answerResetMs={answerResetMs}
+        cardMinHeight={cardMinHeight}
       />
     );
     const wrapped = wrapQuestionCard ? wrapQuestionCard(q, inner) : inner;

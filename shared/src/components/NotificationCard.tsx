@@ -33,6 +33,7 @@ export interface NotificationCardProps {
   isLast?: boolean;
   /** Override the auto-reset delay (ms) for the "Sent" indicator. Default: 10000 */
   answerResetMs?: number;
+  cardMinHeight?: number;
 }
 
 export function NotificationCard({
@@ -46,6 +47,7 @@ export function NotificationCard({
   onFlyStart,
   isLast,
   answerResetMs = 10000,
+  cardMinHeight,
 }: NotificationCardProps) {
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
@@ -193,7 +195,7 @@ export function NotificationCard({
   if (isWeb) {
     // For the last card, no fly-away - the section wrapper handles the collapse
     if (isLast) {
-      return <View style={styles.card}>{cardContent}</View>;
+      return <View style={[styles.card, cardMinHeight ? { minHeight: cardMinHeight } : null]}>{cardContent}</View>;
     }
     return (
       <div
@@ -210,19 +212,20 @@ export function NotificationCard({
           overflow: answered ? "hidden" : undefined,
         }}
       >
-        <View style={styles.card}>{cardContent}</View>
+        <View style={[styles.card, cardMinHeight ? { minHeight: cardMinHeight } : null]}>{cardContent}</View>
       </div>
     );
   }
 
   if (isLast) {
-    return <View style={styles.card}>{cardContent}</View>;
+    return <View style={[styles.card, cardMinHeight ? { minHeight: cardMinHeight } : null]}>{cardContent}</View>;
   }
 
   return (
     <Animated.View
       style={[
         styles.card,
+        cardMinHeight ? { minHeight: cardMinHeight } : null,
         answered && {
           opacity: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
           transform: [

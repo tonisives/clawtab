@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Platform,
   Modal,
+  Image,
 } from "react-native";
 import { useRouter } from "expo-router";
 import * as Google from "expo-auth-session/providers/google";
@@ -17,6 +18,7 @@ import { colors } from "../src/theme/colors";
 import { radius, spacing } from "../src/theme/spacing";
 
 const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
+const clawTabIcon = require("../assets/clawtab-icon.png");
 
 // Native-only: conditionally import Google Sign-In
 let GoogleSignin: any = null;
@@ -215,6 +217,7 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <View style={styles.card}>
         <View style={styles.header}>
+          <Image source={clawTabIcon} style={styles.logo} resizeMode="contain" />
           <Text style={styles.title}>ClawTab</Text>
           <Text style={styles.subtitle}>Remote job control</Text>
         </View>
@@ -303,6 +306,11 @@ const styles = StyleSheet.create({
   header: {
     alignItems: "center",
     marginBottom: spacing.xxl,
+  },
+  logo: {
+    width: 116,
+    height: 116,
+    marginBottom: spacing.lg,
   },
   title: {
     fontSize: 32,

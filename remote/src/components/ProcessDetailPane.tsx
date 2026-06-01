@@ -5,8 +5,9 @@ import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
 import { JobDetailView, StatusBadge, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
-import { getWsSend, nextId } from "../hooks/useWebSocket"
+import { getWsSend, nextId } from "../lib/wsRuntime"
 import { usePty } from "../hooks/usePty"
+import { useDemoPty } from "../hooks/useDemoPty"
 import { registerRequest } from "../lib/useRequestMap"
 import { confirm } from "../lib/platform"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
@@ -85,12 +86,14 @@ function createProcessTransport(paneId: string, onStopped?: () => void): Transpo
 interface ProcessDetailPaneProps {
   paneId: string
   onClose: () => void
+  demoProcess?: import("@clawtab/shared").DetectedProcess
 }
 
-export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
-  const process = useJobsStore((s) =>
+export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetailPaneProps) {
+  const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === paneId),
   )
+  const process = storeProcess ?? demoProcess
 
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
@@ -203,6 +206,7 @@ export function ProcessDetailPane({ paneId, onClose }: ProcessDetailPaneProps) {
   const termRef = useRef<XtermLogHandle | null>(null)
   const tmuxSession = activeProcess?.tmux_session ?? ""
   const { sendInput, sendResize } = usePty(paneId, tmuxSession, termRef)
+  useDemoPty(paneId, !!demoProcess)
 
   const renderTerminal = useCallback(
     () => (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from "react";
-import { getWsSend, nextId } from "./useWebSocket";
+import { getWsSend, nextId } from "../lib/wsRuntime";
 import type { XtermLogHandle } from "@clawtab/shared";
 
 // Global PTY event listeners keyed by pane_id
@@ -58,7 +58,7 @@ export function usePty(
   // Subscribe to PTY stream
   useEffect(() => {
     const send = getWsSend();
-    if (!send || !paneId || !tmuxSession) return;
+    if (!paneId || !tmuxSession) return;
     let subscribeStartTimer: ReturnType<typeof setTimeout> | undefined;
 
     gotDataRef.current = false;
@@ -98,28 +98,30 @@ export function usePty(
       setConnecting(false);
     } else {
       if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
-      setConnecting(true);
-      connectingTimerRef.current = setTimeout(() => {
-        connectingTimerRef.current = undefined;
-        setConnecting(false);
-      }, CONNECTING_FALLBACK_MS);
-      subscribeStartTimer = setTimeout(() => {
-        const currentSend = getWsSend();
-        if (!currentSend) return;
-        // Get initial dimensions from terminal
-        const dims = termRef.current?.dimensions() ?? { cols: 80, rows: 24 };
+      if (send) {
+        setConnecting(true);
+        connectingTimerRef.current = setTimeout(() => {
+          connectingTimerRef.current = undefined;
+          setConnecting(false);
+        }, CONNECTING_FALLBACK_MS);
+        subscribeStartTimer = setTimeout(() => {
+          const currentSend = getWsSend();
+          if (!currentSend) return;
+          // Get initial dimensions from terminal
+          const dims = termRef.current?.dimensions() ?? { cols: 80, rows: 24 };
 
-        currentSend({
-          type: "subscribe_pty",
-          id: nextId(),
-          pane_id: paneId,
-          tmux_session: tmuxSession,
-          cols: dims.cols,
-          rows: dims.rows,
-        });
-        ptySubscriptions.set(paneId, { count: 1, tmuxSession });
-        subscribedRef.current = true;
-      }, 120);
+          currentSend({
+            type: "subscribe_pty",
+            id: nextId(),
+            pane_id: paneId,
+            tmux_session: tmuxSession,
+            cols: dims.cols,
+            rows: dims.rows,
+          });
+          ptySubscriptions.set(paneId, { count: 1, tmuxSession });
+          subscribedRef.current = true;
+        }, 120);
+      }
     }
 
     const flushInterval = setInterval(flushPendingOutput, 50);

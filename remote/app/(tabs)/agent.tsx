@@ -10,7 +10,7 @@ import {
   Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
+import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { useWsStore } from "../../src/store/ws";
 import { useJobsStore } from "../../src/store/jobs";
 import { ContentContainer } from "../../src/components/ContentContainer";

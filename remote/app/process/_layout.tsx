@@ -1,34 +1,33 @@
+import { Platform } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { TouchableOpacity } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../src/theme/colors";
 
-function BackButton() {
-  const router = useRouter();
-  return (
-    <TouchableOpacity
-      onPress={() => {
-        if (router.canGoBack()) router.back();
-        else router.replace("/");
-      }}
-      hitSlop={8}
-      style={{ width: 32, height: 32, alignItems: "center", justifyContent: "center" }}
-    >
-      <Ionicons name="chevron-back" size={24} color={colors.text} />
-    </TouchableOpacity>
-  );
-}
-
 export default function ProcessLayout() {
+  const router = useRouter();
+  const handleBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  };
+
   return (
     <Stack
       screenOptions={{
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: "600" },
-        headerBackVisible: true,
+        headerBackVisible: Platform.OS !== "ios",
         headerBackTitle: "",
-        headerLeft: () => <BackButton />,
+        unstable_headerLeftItems: () => [
+          {
+            type: "button",
+            label: "",
+            icon: { type: "sfSymbol", name: "chevron.left" },
+            onPress: handleBack,
+            width: 36,
+            identifier: "back",
+            accessibilityLabel: "Back",
+          },
+        ],
       }}
     />
   );

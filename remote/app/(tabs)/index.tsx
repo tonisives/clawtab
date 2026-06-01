@@ -20,12 +20,12 @@ import {
 } from "@clawtab/shared"
 import type { PaneContent, SplitDragData } from "@clawtab/shared"
 import { DraggableJobCard, DraggableProcessCard, type DragData } from "../../src/components/DraggableCards"
-import { getWsSend, nextId } from "../../src/hooks/useWebSocket"
+import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { DemoBanner } from "../../src/components/DemoOverlay"
 import { openUrl } from "../../src/lib/platform"
-import { DEMO_JOBS, DEMO_STATUSES } from "../../src/demo/data"
+import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
 import type { RemoteJob, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
@@ -115,12 +115,14 @@ export default function JobsScreen() {
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() => readSelection("process"))
+  const [demoToastVisible, setDemoToastVisible] = useState(false)
   const { isWide } = useResponsive()
   const router = useRouter()
 
   const isDemo = connected && !desktopOnline && realJobs.length === 0
   const jobs = isDemo ? DEMO_JOBS : realJobs
   const statuses = isDemo ? DEMO_STATUSES : realStatuses
+  const visibleDetectedProcesses = isDemo ? DEMO_PROCESSES : detectedProcesses
 
   const DEFAULT_ENABLED = {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
@@ -219,10 +221,10 @@ export default function JobsScreen() {
         const job = jobs.find(j => j.slug === data.slug)
         if (job) handleSelectJob(job)
       } else if (data.kind === "process") {
-        const proc = detectedProcesses.find(p => p.pane_id === data.paneId)
+        const proc = visibleDetectedProcesses.find(p => p.pane_id === data.paneId)
         if (proc) handleSelectProcess(proc)
       }
-    }, [jobs, detectedProcesses, handleSelectJob, handleSelectProcess]),
+    }, [jobs, visibleDetectedProcesses, handleSelectJob, handleSelectProcess]),
     currentContent,
   })
   const initialUrlSelectionPendingRef = useRef(
@@ -316,6 +318,18 @@ export default function JobsScreen() {
     })
   }, [handleSelectProcessWithTree, isWide, router])
 
+  const handleDemoRunAgent = useCallback(() => {
+    setDemoToastVisible(true)
+  }, [])
+
+  useEffect(() => {
+    if (!demoToastVisible) return
+    const timer = setTimeout(() => setDemoToastVisible(false), 2400)
+    return () => clearTimeout(timer)
+  }, [demoToastVisible])
+
+  const runAgentHandler = isDemo ? handleDemoRunAgent : desktopOnline ? handleRunAgent : undefined
+
   const renderDraggableJobCard = useCallback(
     (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; softBorder?: boolean }) => (
       <DraggableJobCard {...props} />
@@ -335,17 +349,17 @@ export default function JobsScreen() {
   // Clear stale selections when processes disappear
   useEffect(() => {
     if (!processesLoaded) return
-    if (selectedProcess && !detectedProcesses.find((p) => p.pane_id === selectedProcess)) {
+    if (selectedProcess && !visibleDetectedProcesses.find((p) => p.pane_id === selectedProcess)) {
       setSelectedProcess(null)
       setSelection("process", null)
     }
     split.cleanStaleLeaves((content) => {
       if (content.kind === "process") {
-        return !detectedProcesses.find((p) => p.pane_id === content.paneId)
+        return !visibleDetectedProcesses.find((p) => p.pane_id === content.paneId)
       }
       return false
     })
-  }, [detectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
+  }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
   const bannerContent = (
     <>
@@ -384,7 +398,7 @@ export default function JobsScreen() {
       <JobListView
         jobs={jobs}
         statuses={statuses}
-        detectedProcesses={detectedProcesses}
+        detectedProcesses={visibleDetectedProcesses}
         collapsedGroups={collapsedGroups}
         onToggleGroup={toggleGroup}
         onRefresh={handleRefresh}
@@ -392,7 +406,7 @@ export default function JobsScreen() {
         onSortChange={setSortMode}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
-        onRunAgent={desktopOnline ? handleRunAgent : undefined}
+        onRunAgent={runAgentHandler}
         agentModelOptions={agentModelOptions}
         groupTabView={groupTabView}
         onGroupTabViewChange={handleGroupTabViewChange}
@@ -442,7 +456,16 @@ export default function JobsScreen() {
   }, [isWide, listWidth])
 
   if (!isWide) {
-    return <View style={styles.container}>{jobList}</View>
+    return (
+      <View style={styles.container}>
+        {jobList}
+        {demoToastVisible ? (
+          <View style={styles.toast} pointerEvents="none">
+            <Text style={styles.toastText}>Demo mode: cannot launch agents. Please connect desktop.</Text>
+          </View>
+        ) : null}
+      </View>
+    )
   }
 
   // Render leaf content
@@ -462,12 +485,13 @@ export default function JobsScreen() {
         <ProcessDetailPane
           key={`leaf-${leafId}-${content.paneId}`}
           paneId={content.paneId}
+          demoProcess={isDemo ? visibleDetectedProcesses.find((p) => p.pane_id === content.paneId) : undefined}
           onClose={() => split.handleClosePane(leafId)}
         />
       )
     }
     return null
-  }, [isDemo, split.handleClosePane])
+  }, [isDemo, split.handleClosePane, visibleDetectedProcesses])
 
   // Non-tree primary content (when no split tree)
   const primaryContent = selectedJob ? (
@@ -484,6 +508,7 @@ export default function JobsScreen() {
     <ProcessDetailPane
       key={selectedProcess}
       paneId={selectedProcess}
+      demoProcess={isDemo ? visibleDetectedProcesses.find((p) => p.pane_id === selectedProcess) : undefined}
       onClose={() => {
         setSelectedProcess(null)
         setSelection("process", null)
@@ -544,7 +569,7 @@ export default function JobsScreen() {
           <JobListView
             jobs={jobs}
             statuses={statuses}
-            detectedProcesses={detectedProcesses}
+            detectedProcesses={visibleDetectedProcesses}
             collapsedGroups={collapsedGroups}
             onToggleGroup={toggleGroup}
             onRefresh={handleRefresh}
@@ -554,7 +579,7 @@ export default function JobsScreen() {
             onSelectProcess={handleSelectProcessWithTree}
             selectedItems={split.selectedItems}
             focusedItemKey={split.focusedItemKey}
-            onRunAgent={desktopOnline ? handleRunAgent : undefined}
+            onRunAgent={runAgentHandler}
             agentModelOptions={agentModelOptions}
             groupTabView={groupTabView}
             onGroupTabViewChange={handleGroupTabViewChange}
@@ -584,6 +609,11 @@ export default function JobsScreen() {
       <DragOverlay dropAnimation={null}>
         {dragOverlayContent}
       </DragOverlay>
+      {demoToastVisible ? (
+        <View style={styles.toast} pointerEvents="none">
+          <Text style={styles.toastText}>Demo mode: cannot launch agents. Please connect desktop.</Text>
+        </View>
+      ) : null}
     </DndContext>
   )
 }
@@ -640,4 +670,27 @@ const styles = StyleSheet.create({
   },
   bannerWarn: { backgroundColor: "#332800" },
   bannerText: { color: colors.textSecondary, fontSize: 12 },
+  toast: {
+    position: "absolute",
+    left: 24,
+    right: 24,
+    bottom: 24,
+    alignItems: "center",
+    zIndex: 1000,
+    elevation: 1000,
+  },
+  toastText: {
+    maxWidth: 520,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600" as const,
+    textAlign: "center" as const,
+  },
 })

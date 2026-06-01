@@ -35,6 +35,7 @@ export function DemoNotificationStack({ embedded = false }: DemoNotificationStac
         onToggleAutoYes={() => {}}
         autoAnsweredIds={new Set()}
         answerResetMs={1000}
+        cardMinHeight={260}
       />
     </View>
   );
@@ -46,11 +47,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     marginBottom: spacing.md,
-    opacity: 0.6,
   },
   embeddedContainer: {
     paddingBottom: 0,
     borderBottomWidth: 0,
     marginBottom: 0,
+    minHeight: 260,
   },
 });

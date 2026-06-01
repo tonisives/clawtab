@@ -13,18 +13,7 @@ import { resolveRequest } from "../lib/useRequestMap";
 import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
 import { flushPendingAnswers, clearRegisteredSend } from "../lib/pendingAnswers";
 import type { ClientMessage, IncomingMessage } from "../types/messages";
-
-let globalWs: WebSocket | null = null;
-let globalSend: ((msg: ClientMessage) => void) | null = null;
-
-export function getWsSend() {
-  return globalSend;
-}
-
-let msgIdCounter = 0;
-export function nextId(): string {
-  return `m_${++msgIdCounter}_${Date.now()}`;
-}
+import { getWs, getWsSend, nextId, setWs, setWsSend } from "../lib/wsRuntime";
 
 export function useWebSocket() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -55,7 +44,8 @@ export function useWebSocket() {
   }, []);
 
   const doConnect = useCallback(async () => {
-    if (globalWs && globalWs.readyState <= WebSocket.OPEN) return;
+    const existingWs = getWs();
+    if (existingWs && existingWs.readyState <= WebSocket.OPEN) return;
 
     let url: string;
     try {
@@ -67,7 +57,7 @@ export function useWebSocket() {
 
     console.log("[ws] connecting to:", url.replace(/token=.*/, "token=***"));
     const ws = new WebSocket(url);
-    globalWs = ws;
+    setWs(ws);
 
     ws.onopen = () => {
       console.log("[ws] connected");
@@ -178,8 +168,8 @@ export function useWebSocket() {
 
     ws.onclose = (e) => {
       console.log("[ws] closed, code:", e.code, "reason:", e.reason);
-      globalWs = null;
-      globalSend = null;
+      setWs(null);
+      setWsSend(null);
       clearRegisteredSend();
       if (!mountedRef.current) return;
       setConnected(false);
@@ -233,14 +223,17 @@ export function useWebSocket() {
     };
 
     ws.onerror = (e) => {
-      console.log("[ws] error:", e);
+      console.log("[ws] error:", {
+        type: (e as { type?: string }).type ?? "error",
+        readyState: ws.readyState,
+      });
     };
 
-    globalSend = (msg: ClientMessage) => {
+    setWsSend((msg: ClientMessage) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
       }
-    };
+    });
   }, [setConnected, setDesktopStatus, setJobs, updateStatus, refreshToken, scheduleReconnect]);
 
   // Keep ref in sync
@@ -254,7 +247,8 @@ export function useWebSocket() {
 
     const sub = RNAppState.addEventListener("change", (state) => {
       if (state === "active" && isAuthenticatedRef.current) {
-        if (!globalWs || globalWs.readyState !== WebSocket.OPEN) {
+        const ws = getWs();
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
           backoffRef.current = 1000;
           connectRef.current();
         }
@@ -265,9 +259,10 @@ export function useWebSocket() {
     // status can be replayed before request forwarding is fully ready on
     // reconnect. Detected processes are daemon-pushed via relay cache.
     const processInterval = setInterval(() => {
-      if (globalSend) {
+      const send = getWsSend();
+      if (send) {
         if (!useJobsStore.getState().loaded) {
-          globalSend({ type: "list_jobs", id: nextId() });
+          send({ type: "list_jobs", id: nextId() });
         }
       }
     }, 10000);
@@ -277,17 +272,19 @@ export function useWebSocket() {
       sub.remove();
       clearInterval(processInterval);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      if (globalWs) {
-        globalWs.close();
-        globalWs = null;
-        globalSend = null;
+      const ws = getWs();
+      if (ws) {
+        ws.close();
+        setWs(null);
+        setWsSend(null);
       }
       resetWs();
     };
   }, [isAuthenticated, doConnect, resetWs]);
 
   const send = useCallback((msg: ClientMessage) => {
-    if (globalSend) globalSend(msg);
+    const wsSend = getWsSend();
+    if (wsSend) wsSend(msg);
   }, []);
 
   return { send };

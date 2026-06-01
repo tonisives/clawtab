@@ -3,12 +3,11 @@ import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, T
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BackTitle } from "./_layout";
 import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
 import { useNotificationStore } from "../../src/store/notifications";
 import { useWsStore } from "../../src/store/ws";
-import { StatusBadge, XtermLog } from "@clawtab/shared";
+import { StatusBadge, XtermLog, statusColor, statusLabel } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
@@ -16,7 +15,7 @@ import { DemoBanner } from "../../src/components/DemoOverlay";
 import { useLogs } from "../../src/hooks/useLogs";
 import { usePty } from "../../src/hooks/usePty";
 import { createWsTransport } from "../../src/transport/wsTransport";
-import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
+import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
 import { colors } from "@clawtab/shared";
@@ -273,7 +272,7 @@ export default function JobDetailScreen() {
     const waiting = !loaded || !connected;
     return (
       <View style={styles.container}>
-        <Stack.Screen options={{ title: "", headerLeft: () => <BackTitle title={name} /> }} />
+        <Stack.Screen options={{ title: name }} />
         <View style={styles.center}>
           {waiting ? (
             <>
@@ -294,9 +293,31 @@ export default function JobDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: "",
-          headerLeft: () => <BackTitle title={job.name} />,
-          headerRight: () => <StatusBadge status={status} />,
+          title: job.name,
+          ...(Platform.OS === "ios"
+            ? {
+                unstable_headerRightItems: () => [
+                  {
+                    type: "button",
+                    label: "",
+                    icon: { type: "sfSymbol", name: "circle.fill" },
+                    tintColor: statusColor(status),
+                    onPress: () => {},
+                    width: 36,
+                    disabled: true,
+                    hidesSharedBackground: true,
+                    identifier: "job-status",
+                    accessibilityLabel: statusLabel(status),
+                  },
+                ],
+              }
+            : {
+                headerRight: () => (
+                  <View style={styles.headerRightSlot}>
+                    <StatusBadge status={status} />
+                  </View>
+                ),
+              }),
         }}
       />
       {isDemo && <DemoBanner />}
@@ -443,6 +464,12 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     marginTop: 8,
+  },
+  headerRightSlot: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   ptyConnecting: {
     flexDirection: "row",

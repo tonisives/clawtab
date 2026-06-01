@@ -4,7 +4,7 @@ import { useRouter } from "expo-router";
 
 import { useNotificationStore } from "../store/notifications";
 import { useJobsStore } from "../store/jobs";
-import { getWsSend, nextId } from "../hooks/useWebSocket";
+import { getWsSend, nextId } from "../lib/wsRuntime";
 import { dismissQuestionNotification } from "../lib/notifications";
 import { NotificationSection, AutoYesBanner, findYesOption } from "@clawtab/shared";
 import { colors } from "@clawtab/shared";

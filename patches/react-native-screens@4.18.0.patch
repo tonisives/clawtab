@@ -1,0 +1,119 @@
+diff --git a/lib/commonjs/components/ScreenStackItem.js b/lib/commonjs/components/ScreenStackItem.js
+index dfbd66ce327bc2e4ad0483b4c3b9571ff7a88285..6c612d53955d95e62f304b96aefcfcce1fd96479 100644
+--- a/lib/commonjs/components/ScreenStackItem.js
++++ b/lib/commonjs/components/ScreenStackItem.js
+@@ -13,7 +13,6 @@ var _Screen = _interopRequireDefault(require("./Screen"));
+ var _ScreenStack = _interopRequireDefault(require("./ScreenStack"));
+ var _contexts = require("../contexts");
+ var _ScreenFooter = require("./ScreenFooter");
+-var _SafeAreaView = _interopRequireDefault(require("./safe-area/SafeAreaView"));
+ function _interopRequireDefault(e) { return e && e.__esModule ? e : { default: e }; }
+ function _getRequireWildcardCache(e) { if ("function" != typeof WeakMap) return null; var r = new WeakMap(), t = new WeakMap(); return (_getRequireWildcardCache = function (e) { return e ? t : r; })(e); }
+ function _interopRequireWildcard(e, r) { if (!r && e && e.__esModule) return e; if (null === e || "object" != typeof e && "function" != typeof e) return { default: e }; var t = _getRequireWildcardCache(r); if (t && t.has(e)) return t.get(e); var n = { __proto__: null }, a = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var u in e) if ("default" !== u && {}.hasOwnProperty.call(e, u)) { var i = a ? Object.getOwnPropertyDescriptor(e, u) : null; i && (i.get || i.set) ? Object.defineProperty(n, u, i) : n[u] = e[u]; } return n.default = e, t && t.set(e, n), n; }
+@@ -54,14 +53,11 @@ function ScreenStackItem({
+     internalScreenStyle = screenStyles;
+     contentStyle = contentWrapperStyles;
+   }
+-  const shouldUseSafeAreaView = _reactNative.Platform.OS === 'ios' && parseInt(_reactNative.Platform.Version, 10) >= 26;
+   const content = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(_DebugContainer.default, {
+     contentStyle: contentStyle,
+     style: debugContainerStyle,
+     stackPresentation: stackPresentation ?? 'push'
+-  }, shouldUseSafeAreaView ? /*#__PURE__*/React.createElement(_SafeAreaView.default, {
+-    edges: getSafeAreaEdges(headerConfig)
+-  }, children) : children), /*#__PURE__*/React.createElement(_ScreenStackHeaderConfig.ScreenStackHeaderConfig, headerConfig), stackPresentation === 'formSheet' && unstable_sheetFooter && /*#__PURE__*/React.createElement(_ScreenFooter.FooterComponent, null, unstable_sheetFooter()));
++  }, children), /*#__PURE__*/React.createElement(_ScreenStackHeaderConfig.ScreenStackHeaderConfig, headerConfig), stackPresentation === 'formSheet' && unstable_sheetFooter && /*#__PURE__*/React.createElement(_ScreenFooter.FooterComponent, null, unstable_sheetFooter()));
+   return /*#__PURE__*/React.createElement(_Screen.default, _extends({
+     ref: node => {
+       currentScreenRef.current = node;
+diff --git a/lib/module/components/ScreenStackItem.js b/lib/module/components/ScreenStackItem.js
+index 1cea0962511ac8046e2c95260c71a0fb094c1362..af163dc417cfec6b5d958ac316647ed1eff3d7af 100644
+--- a/lib/module/components/ScreenStackItem.js
++++ b/lib/module/components/ScreenStackItem.js
+@@ -8,7 +8,6 @@ import Screen from './Screen';
+ import ScreenStack from './ScreenStack';
+ import { RNSScreensRefContext } from '../contexts';
+ import { FooterComponent } from './ScreenFooter';
+-import SafeAreaView from './safe-area/SafeAreaView';
+ function ScreenStackItem({
+   children,
+   headerConfig,
+@@ -45,14 +44,11 @@ function ScreenStackItem({
+     internalScreenStyle = screenStyles;
+     contentStyle = contentWrapperStyles;
+   }
+-  const shouldUseSafeAreaView = Platform.OS === 'ios' && parseInt(Platform.Version, 10) >= 26;
+   const content = /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(DebugContainer, {
+     contentStyle: contentStyle,
+     style: debugContainerStyle,
+     stackPresentation: stackPresentation ?? 'push'
+-  }, shouldUseSafeAreaView ? /*#__PURE__*/React.createElement(SafeAreaView, {
+-    edges: getSafeAreaEdges(headerConfig)
+-  }, children) : children), /*#__PURE__*/React.createElement(ScreenStackHeaderConfig, headerConfig), stackPresentation === 'formSheet' && unstable_sheetFooter && /*#__PURE__*/React.createElement(FooterComponent, null, unstable_sheetFooter()));
++  }, children), /*#__PURE__*/React.createElement(ScreenStackHeaderConfig, headerConfig), stackPresentation === 'formSheet' && unstable_sheetFooter && /*#__PURE__*/React.createElement(FooterComponent, null, unstable_sheetFooter()));
+   return /*#__PURE__*/React.createElement(Screen, _extends({
+     ref: node => {
+       currentScreenRef.current = node;
+diff --git a/src/components/ScreenStackItem.tsx b/src/components/ScreenStackItem.tsx
+index 879c78c6ef6b08f3caebc331b4cb308d44a1a228..0f8ba9ed0183a2fda00818303c65ec4fc0344684 100644
+--- a/src/components/ScreenStackItem.tsx
++++ b/src/components/ScreenStackItem.tsx
+@@ -19,8 +19,6 @@ import Screen from './Screen';
+ import ScreenStack from './ScreenStack';
+ import { RNSScreensRefContext } from '../contexts';
+ import { FooterComponent } from './ScreenFooter';
+-import { SafeAreaViewProps } from './safe-area/SafeAreaView.types';
+-import SafeAreaView from './safe-area/SafeAreaView';
+ 
+ type Props = Omit<
+   ScreenProps,
+@@ -91,22 +89,13 @@ function ScreenStackItem(
+     contentStyle = contentWrapperStyles;
+   }
+ 
+-  const shouldUseSafeAreaView =
+-    Platform.OS === 'ios' && parseInt(Platform.Version, 10) >= 26;
+-
+   const content = (
+     <>
+       <DebugContainer
+         contentStyle={contentStyle}
+         style={debugContainerStyle}
+         stackPresentation={stackPresentation ?? 'push'}>
+-        {shouldUseSafeAreaView ? (
+-          <SafeAreaView edges={getSafeAreaEdges(headerConfig)}>
+-            {children}
+-          </SafeAreaView>
+-        ) : (
+-          children
+-        )}
++        {children}
+       </DebugContainer>
+       {/**
+        * `HeaderConfig` needs to be the direct child of `Screen` without any intermediate `View`
+@@ -229,25 +218,6 @@ function extractScreenStyles(style: StyleProp<ViewStyle>): SplitStyleResult {
+   };
+ }
+ 
+-function getSafeAreaEdges(
+-  headerConfig?: ScreenStackHeaderConfigProps,
+-): SafeAreaViewProps['edges'] {
+-  if (Platform.OS !== 'ios' || parseInt(Platform.Version, 10) < 26) {
+-    return {};
+-  }
+-
+-  let defaultEdges: SafeAreaViewProps['edges'];
+-  if (headerConfig?.translucent || headerConfig?.hidden) {
+-    defaultEdges = {};
+-  } else {
+-    defaultEdges = {
+-      top: true,
+-    };
+-  }
+-
+-  return defaultEdges;
+-}
+-
+ const styles = StyleSheet.create({
+   container: {
+     flex: 1,

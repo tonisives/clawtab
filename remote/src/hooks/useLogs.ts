@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { getWsSend, nextId } from "./useWebSocket";
+import { getWsSend, nextId } from "../lib/wsRuntime";
 import { useWsStore } from "../store/ws";
 
 // Global log buffer per job - survives component remounts

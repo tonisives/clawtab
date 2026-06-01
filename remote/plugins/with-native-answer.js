@@ -12,12 +12,15 @@ function withNativeAnswer(config) {
         "import Expo",
         "import Expo\nimport UserNotifications\nimport EXNotifications",
       );
+    } else if (!contents.includes("import EXNotifications")) {
+      contents = contents.replace("import UserNotifications", "import UserNotifications\nimport EXNotifications");
     }
 
     // Add registration call in didFinishLaunchingWithOptions
-    contents = contents.replace(
-      "return super.application(application, didFinishLaunchingWithOptions: launchOptions)",
-      `// Register native answer handler with expo-notifications
+    if (!contents.includes('objc_setAssociatedObject(self, "nativeAnswerHandler"')) {
+      contents = contents.replace(
+        "return super.application(application, didFinishLaunchingWithOptions: launchOptions)",
+        `// Register native answer handler with expo-notifications
     let handler = NativeAnswerHandler()
     objc_setAssociatedObject(self, "nativeAnswerHandler", handler, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     NotificationCenterManager.shared.addDelegate(handler)
@@ -28,10 +31,12 @@ function withNativeAnswer(config) {
       handler.hasKey("clawtab_server_url") ? "YES" : "NO")
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)`,
-    );
+      );
+    }
 
     // Append the NativeAnswerHandler class at the end
-    contents += `
+    if (!contents.includes("class NativeAnswerHandler: NSObject, NotificationDelegate")) {
+      contents += `
 
 class NativeAnswerHandler: NSObject, NotificationDelegate {
 
@@ -198,6 +203,7 @@ class NativeAnswerHandler: NSObject, NotificationDelegate {
   }
 }
 `;
+    }
 
     config.modResults.contents = contents;
     return config;

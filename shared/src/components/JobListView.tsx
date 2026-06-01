@@ -825,6 +825,12 @@ export function JobListView({
             for (const job of entry.jobs) {
               result.push({ kind: "job", job, idx: jobIdx++ });
             }
+            if (onRunAgent) {
+              const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
+              if (groupWorkDir) {
+                result.push({ kind: "group-agent", workDir: groupWorkDir });
+              }
+            }
           } else {
             for (const proc of entry.procs) {
               result.push({ kind: "process", process: proc, inGroup: true });
@@ -1150,6 +1156,12 @@ export function JobListView({
         rendered.push(node);
       }
     };
+    const keyCounts = new Map<string, number>();
+    const uniqueKey = (base: string) => {
+      const count = keyCounts.get(base) ?? 0;
+      keyCounts.set(base, count + 1);
+      return count === 0 ? base : `${base}_${count}`;
+    };
     while (index < items.length) {
       const item = items[index];
       if (item.kind === "job") {
@@ -1194,7 +1206,7 @@ export function JobListView({
           : item.kind === "shell"
               ? `s_${item.shell.pane_id}`
             : item.kind === "group-agent"
-              ? `ga_${item.workDir}`
+              ? uniqueKey(`ga_${item.workDir}`)
               : item.kind === "hidden-section"
                 ? "hidden_section"
                 : `hh_${item.group}`;

@@ -5,13 +5,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { XtermLog, PopupMenu, JobKindIcon, compactPath, findYesOption, colors, radius, spacing } from "@clawtab/shared";
+import { XtermLog, PopupMenu, compactPath, findYesOption, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
-import { getWsSend, nextId } from "../../src/hooks/useWebSocket";
+import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
+import { useDemoPty } from "../../src/hooks/useDemoPty";
 import { confirm } from "../../src/lib/platform";
+import { DEMO_PROCESSES } from "../../src/demo/data";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const KEYBOARD_EXTRA_CLEARANCE = 10;
@@ -43,9 +45,11 @@ export default function ProcessDetailScreen() {
   // We encode % as _pct_ in URLs and decode it back here.
   const pane_id = (rawPaneId ?? "").replace(/_pct_/g, "%");
 
-  const process = useJobsStore((s) =>
+  const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === pane_id),
   );
+  const demoProcess = DEMO_PROCESSES.find((p) => p.pane_id === pane_id);
+  const process = storeProcess ?? demoProcess;
 
   // If this pane belongs to a tracked job (not in detectedProcesses), redirect
   // to the job detail page instead.
@@ -119,6 +123,7 @@ export default function ProcessDetailScreen() {
   const termRef = useRef<XtermLogHandle | null>(null);
   const keyboardDismissRef = useRef<TextInput | null>(null);
   const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
+  useDemoPty(pane_id, !!demoProcess);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -309,58 +314,68 @@ export default function ProcessDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: displayName,
-          header: () => (
-            <View style={[styles.navHeader, { height: insets.top + 44 }]}>
-              <TouchableOpacity
-                style={[styles.navSide, styles.navLeft, { top: insets.top }]}
-                onPress={() => {
-                  if (router.canGoBack()) router.back();
-                  else router.replace("/");
-                }}
-                activeOpacity={0.6}
-                hitSlop={8}
-              >
-                <Ionicons name="chevron-back" size={24} color={colors.text} />
-              </TouchableOpacity>
-              <View style={[styles.headerTitleSlot, { top: insets.top }]} pointerEvents="none">
-                <View style={styles.headerTitle}>
-                  {activeProcess?.provider ? (
-                    <JobKindIcon kind={activeProcess.provider} size={20} compact bare />
-                  ) : null}
-                  <Text style={styles.headerTitleText} numberOfLines={1}>
-                    {headerTitle}
-                  </Text>
-                </View>
-              </View>
-              <View style={[styles.navSide, styles.navRight, { top: insets.top }]}>
-                <View ref={contextMenuRef} style={styles.contextWrap}>
-                  <TouchableOpacity
-                    ref={contextButtonRef}
-                    style={styles.contextBtn}
-                    onPress={openContextMenu}
-                    activeOpacity={0.6}
-                    hitSlop={8}
-                  >
-                    <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
-                  </TouchableOpacity>
-                  {Platform.OS === "web" && showContextMenu && (
-                    <PopupMenu
-                      dropdownRef={contextDropdownRef}
-                      triggerRef={contextButtonRef}
-                      position={menuPos}
-                      onClose={() => setShowContextMenu(false)}
-                      items={isAlive ? [
-                        { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
-                      ] : [
-                        { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
-                      ]}
-                    />
-                  )}
-                </View>
-              </View>
-            </View>
-          ),
+          title: headerTitle,
+          ...(Platform.OS === "ios"
+            ? {
+                unstable_headerRightItems: () => [
+                  {
+                    type: "menu",
+                    label: "",
+                    icon: { type: "sfSymbol", name: "ellipsis" },
+                    width: 36,
+                    identifier: "process-menu",
+                    accessibilityLabel: "Process actions",
+                    menu: {
+                      items: isAlive
+                        ? [
+                            {
+                              type: "action",
+                              label: stopping ? "Stopping..." : "Stop",
+                              onPress: handleStop,
+                              destructive: true,
+                              disabled: stopping,
+                            },
+                          ]
+                        : [
+                            {
+                              type: "action",
+                              label: starting ? "Starting..." : "Start",
+                              onPress: handleStart,
+                              disabled: starting,
+                            },
+                          ],
+                    },
+                  },
+                ],
+              }
+            : {
+                headerRight: () => (
+                  <View ref={contextMenuRef} style={styles.headerRightSlot}>
+                    <TouchableOpacity
+                      ref={contextButtonRef}
+                      style={styles.contextBtn}
+                      onPress={openContextMenu}
+                      activeOpacity={0.6}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+                    </TouchableOpacity>
+                    {Platform.OS === "web" && showContextMenu && (
+                      <PopupMenu
+                        dropdownRef={contextDropdownRef}
+                        triggerRef={contextButtonRef}
+                        position={menuPos}
+                        onClose={() => setShowContextMenu(false)}
+                        items={isAlive ? [
+                          { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
+                        ] : [
+                          { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
+                        ]}
+                      />
+                    )}
+                  </View>
+                ),
+              }),
         }}
       />
       {Platform.OS !== "web" && showContextMenu ? (
@@ -594,54 +609,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   notFound: { color: colors.textMuted, fontSize: 16 },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  navHeader: {
-    height: 44,
-    backgroundColor: colors.bg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  navSide: {
-    position: "absolute",
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navLeft: {
-    left: 4,
-  },
-  navRight: {
-    position: "absolute",
-    right: 4,
-  },
-  headerTitleSlot: {
-    position: "absolute",
-    left: 64,
-    right: 64,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerTitle: {
-    maxWidth: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-  },
-  headerTitleText: {
-    flexShrink: 1,
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  contextWrap: {
+  headerRightSlot: {
     position: "relative",
     zIndex: 9999,
     width: 44,

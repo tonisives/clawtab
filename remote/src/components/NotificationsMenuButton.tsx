@@ -77,9 +77,9 @@ export function NotificationsMenuButton() {
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={styles.modalRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-          <View style={[styles.popup, { top: position.top, right: position.right }]}>
+          <View style={[styles.popup, isDemo && styles.demoPopup, { top: position.top, right: position.right }]}>
             <Text style={styles.title}>Notifications</Text>
-            <ScrollView>
+            <ScrollView contentContainerStyle={isDemo ? styles.demoNotificationContent : undefined}>
               {hasContent ? (
                 isDemo ? <DemoNotificationStack embedded /> : <NotificationStack embedded />
               ) : (
@@ -140,6 +140,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     overflow: "hidden",
     ...(Platform.OS === "web" ? { boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)" as any } : { elevation: 12 }),
+  },
+  demoPopup: {
+    width: Math.min(520, Dimensions.get("window").width - 20),
+    maxHeight: Math.min(720, Dimensions.get("window").height * 0.82),
+  },
+  demoNotificationContent: {
+    minHeight: 280,
   },
   title: {
     marginBottom: 8,

@@ -142,7 +142,6 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       screenOptions={{
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
-        headerTitleStyle: { fontWeight: "600" },
         headerLeft: isWide ? () => <HeaderBrand /> : undefined,
         headerRight: isWide ? () => <HeaderRight /> : () => (
           <View style={{ marginRight: 12 }}>

@@ -4,7 +4,7 @@ import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 
 import { useNotificationStore } from "../store/notifications";
-import { getWsSend, nextId } from "./useWebSocket";
+import { getWsSend, nextId } from "../lib/wsRuntime";
 import { enqueueAnswer } from "../lib/pendingAnswers";
 import { postAnswer, refreshToken } from "../api/client";
 
