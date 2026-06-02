@@ -7,7 +7,7 @@ import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
 import { useRunsStore } from "../../src/store/runs";
 import { useNotificationStore } from "../../src/store/notifications";
 import { useWsStore } from "../../src/store/ws";
-import { StatusBadge, XtermLog, statusColor, statusLabel } from "@clawtab/shared";
+import { JobKindIcon, XtermLog, kindForJob, statusColor } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
@@ -18,6 +18,7 @@ import { createWsTransport } from "../../src/transport/wsTransport";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
+import { HeaderBackButton, HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
@@ -93,6 +94,10 @@ export default function JobDetailScreen() {
   const router = useRouter();
   const [runsLoading, setRunsLoading] = useState(false);
   const connected = useWsStore((s) => s.connected);
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  }, [router]);
 
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
@@ -293,31 +298,14 @@ export default function JobDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: job.name,
-          ...(Platform.OS === "ios"
-            ? {
-                unstable_headerRightItems: () => [
-                  {
-                    type: "button",
-                    label: "",
-                    icon: { type: "sfSymbol", name: "circle.fill" },
-                    tintColor: statusColor(status),
-                    onPress: () => {},
-                    width: 36,
-                    disabled: true,
-                    hidesSharedBackground: true,
-                    identifier: "job-status",
-                    accessibilityLabel: statusLabel(status),
-                  },
-                ],
-              }
-            : {
-                headerRight: () => (
-                  <View style={styles.headerRightSlot}>
-                    <StatusBadge status={status} />
-                  </View>
-                ),
-              }),
+          headerLeft: () => <HeaderBackButton onPress={handleBack} />,
+          headerTitle: () => (
+            <HeaderTitleWithIcon
+              title={job.name}
+              icon={<JobKindIcon kind={kindForJob(job)} size={26} bare />}
+            />
+          ),
+          headerRight: () => <HeaderStatusDot color={statusColor(status)} />,
         }}
       />
       {isDemo && <DemoBanner />}
@@ -464,12 +452,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 14,
     marginTop: 8,
-  },
-  headerRightSlot: {
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
   },
   ptyConnecting: {
     flexDirection: "row",

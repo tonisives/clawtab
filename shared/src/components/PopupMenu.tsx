@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
+import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { spacing, radius } from "../theme/spacing";
 
@@ -59,6 +59,7 @@ interface PopupMenuProps {
   triggerRef?: React.RefObject<any>;
   autoFocus?: boolean;
   initialHighlight?: boolean;
+  nativeBottomInset?: number;
 }
 
 function HoverableItem({ item, onPress, highlighted = false, onHover }: {
@@ -115,12 +116,15 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
   );
 }
 
-export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true }: PopupMenuProps) {
+export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8 }: PopupMenuProps) {
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
+  const windowSize = useWindowDimensions();
   const [submenu, setSubmenu] = useState<{ label: string; items: PopupMenuItem[] } | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const [clampedPos, setClampedPos] = useState<{ top: number; left: number } | null>(null);
+  const [nativeMenuHeight, setNativeMenuHeight] = useState(0);
+  const [nativeTriggerRect, setNativeTriggerRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const prevPositionRef = useRef(position);
 
   const activeItems = submenu ? submenu.items : items;
@@ -195,6 +199,45 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
     return () => document.removeEventListener("mousedown", handler);
   }, [onClose, ref, triggerRef]);
 
+  useEffect(() => {
+    if (isWeb || !position || !triggerRef?.current?.measureInWindow) {
+      setNativeTriggerRect(null);
+      return;
+    }
+    triggerRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+      setNativeTriggerRect({ x, y, width, height });
+    });
+  }, [position, triggerRef]);
+
+  const estimateNativeMenuHeight = () => {
+    const contentHeight = activeItems.reduce((total, item) => total + (item.type === "separator" ? 1 : 36), 8);
+    return contentHeight + (submenu ? 34 : 0);
+  };
+
+  const nativeResolvedPos = (() => {
+    if (isWeb) return null;
+    const margin = 8;
+    const menuWidth = 160;
+    const menuHeight = nativeMenuHeight || estimateNativeMenuHeight();
+    const bottomLimit = windowSize.height - nativeBottomInset - margin;
+    const triggerTop = nativeTriggerRect?.y ?? (position?.top ?? 44);
+    const triggerLeft = nativeTriggerRect?.x ?? (position?.left ?? 12);
+    const triggerHeight = nativeTriggerRect?.height ?? 22;
+    const belowTop = position?.top ?? (triggerTop + triggerHeight + 6);
+    const aboveTop = triggerTop - menuHeight - 6;
+
+    let top = belowTop;
+    if (top + menuHeight > bottomLimit) {
+      top = aboveTop >= margin ? aboveTop : Math.max(margin, bottomLimit - menuHeight);
+    }
+
+    let left = position?.left ?? triggerLeft;
+    if (left + menuWidth > windowSize.width - margin) left = windowSize.width - menuWidth - margin;
+    if (left < margin) left = margin;
+
+    return { top, left };
+  })();
+
   const resolvedPos = clampedPos;
   const menuStyle = isWeb
     ? (position ? {
@@ -212,7 +255,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
       } as any : [styles.menu, styles.webInlineMenu])
     : [
         styles.menu,
-        { top: position?.top ?? 44, left: position?.left ?? 12 },
+        { top: nativeResolvedPos?.top ?? position?.top ?? 44, left: nativeResolvedPos?.left ?? position?.left ?? 12 },
       ];
 
   const stepHighlight = (direction: 1 | -1) => {
@@ -290,6 +333,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
     <View
       ref={ref}
       style={menuStyle}
+      onLayout={isWeb ? undefined : (event) => setNativeMenuHeight(event.nativeEvent.layout.height)}
       {...(isWeb ? {
         tabIndex: -1,
         onKeyDown: handleKeyDown,

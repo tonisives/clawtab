@@ -5,13 +5,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { XtermLog, PopupMenu, compactPath, findYesOption, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
+import { HeaderBackButton, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -40,6 +41,10 @@ export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  }, [router]);
 
   // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
   // We encode % as _pct_ in URLs and decode it back here.
@@ -118,6 +123,7 @@ export default function ProcessDetailScreen() {
       : pane_id;
 
   const activeProcess = process ?? lastProcess;
+  const headerKind = activeProcess ? kindForProcess(activeProcess) : "claude";
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
@@ -314,68 +320,39 @@ export default function ProcessDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          title: headerTitle,
-          ...(Platform.OS === "ios"
-            ? {
-                unstable_headerRightItems: () => [
-                  {
-                    type: "menu",
-                    label: "",
-                    icon: { type: "sfSymbol", name: "ellipsis" },
-                    width: 36,
-                    identifier: "process-menu",
-                    accessibilityLabel: "Process actions",
-                    menu: {
-                      items: isAlive
-                        ? [
-                            {
-                              type: "action",
-                              label: stopping ? "Stopping..." : "Stop",
-                              onPress: handleStop,
-                              destructive: true,
-                              disabled: stopping,
-                            },
-                          ]
-                        : [
-                            {
-                              type: "action",
-                              label: starting ? "Starting..." : "Start",
-                              onPress: handleStart,
-                              disabled: starting,
-                            },
-                          ],
-                    },
-                  },
-                ],
-              }
-            : {
-                headerRight: () => (
-                  <View ref={contextMenuRef} style={styles.headerRightSlot}>
-                    <TouchableOpacity
-                      ref={contextButtonRef}
-                      style={styles.contextBtn}
-                      onPress={openContextMenu}
-                      activeOpacity={0.6}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
-                    </TouchableOpacity>
-                    {Platform.OS === "web" && showContextMenu && (
-                      <PopupMenu
-                        dropdownRef={contextDropdownRef}
-                        triggerRef={contextButtonRef}
-                        position={menuPos}
-                        onClose={() => setShowContextMenu(false)}
-                        items={isAlive ? [
-                          { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
-                        ] : [
-                          { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
-                        ]}
-                      />
-                    )}
-                  </View>
-                ),
-              }),
+          headerLeft: () => <HeaderBackButton onPress={handleBack} />,
+          headerTitle: () => (
+            <HeaderTitleWithIcon
+              title={headerTitle}
+              icon={<JobKindIcon kind={headerKind} size={26} bare />}
+            />
+          ),
+          headerRight: () => (
+            <View ref={contextMenuRef} style={styles.headerRightSlot}>
+              <TouchableOpacity
+                ref={contextButtonRef}
+                style={styles.contextBtn}
+                onPress={openContextMenu}
+                activeOpacity={0.6}
+                hitSlop={8}
+              >
+                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+              </TouchableOpacity>
+              {Platform.OS === "web" && showContextMenu && (
+                <PopupMenu
+                  dropdownRef={contextDropdownRef}
+                  triggerRef={contextButtonRef}
+                  position={menuPos}
+                  onClose={() => setShowContextMenu(false)}
+                  items={isAlive ? [
+                    { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
+                  ] : [
+                    { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
+                  ]}
+                />
+              )}
+            </View>
+          ),
         }}
       />
       {Platform.OS !== "web" && showContextMenu ? (

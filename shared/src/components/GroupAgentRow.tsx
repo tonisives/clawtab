@@ -100,6 +100,7 @@ export function GroupAgentRow({
           onClose={() => setMenuOpen(false)}
           triggerRef={buttonRef}
           initialHighlight={false}
+          nativeBottomInset={88}
         />
       )}
     </View>

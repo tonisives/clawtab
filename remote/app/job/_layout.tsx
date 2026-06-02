@@ -1,6 +1,6 @@
-import { Platform } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { colors } from "../../src/theme/colors";
+import { HeaderBackButton } from "../../src/components/HeaderButtons";
 
 export default function JobLayout() {
   const router = useRouter();
@@ -15,19 +15,9 @@ export default function JobLayout() {
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: "600" },
-        headerBackVisible: Platform.OS !== "ios",
+        headerBackVisible: false,
         headerBackTitle: "",
-        unstable_headerLeftItems: () => [
-          {
-            type: "button",
-            label: "",
-            icon: { type: "sfSymbol", name: "chevron.left" },
-            onPress: handleBack,
-            width: 36,
-            identifier: "back",
-            accessibilityLabel: "Back",
-          },
-        ],
+        headerLeft: () => <HeaderBackButton onPress={handleBack} />,
       }}
     />
   );
