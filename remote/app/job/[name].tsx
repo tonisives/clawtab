@@ -327,6 +327,7 @@ export default function JobDetailScreen() {
           onToggleAutoYes={isDemo ? undefined : (jobQuestion ? handleToggleAutoYes : undefined)}
           renderTerminal={isRunningWithPty ? renderTerminal : undefined}
           hideMessageInput={isRunningWithPty}
+          optionBarBottomInset={insets.bottom}
         />
       </ContentContainer>
       {keyboardVisible && isRunningWithPty ? (

@@ -20,9 +20,10 @@ export function NotificationsMenuButton({
   const updatePopupPosition = () => {
     const rect = rootRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const popupWidth = Math.min(380, window.innerWidth - 20);
+    const popupWidth = Math.min(640, window.innerWidth - 20);
+    const popupHeight = Math.min(window.innerHeight * 0.82, 760);
     setPopupPosition({
-      top: rect.bottom + 6,
+      top: Math.min(Math.max(10, rect.bottom + 6), window.innerHeight - popupHeight - 10),
       left: Math.min(Math.max(10, rect.right + 6), window.innerWidth - popupWidth - 10),
     });
   };

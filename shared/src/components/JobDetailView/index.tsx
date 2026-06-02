@@ -99,6 +99,8 @@ export interface JobDetailViewProps {
   renderTerminal?: () => ReactNode;
   // Hide the message input (when terminal handles input directly)
   hideMessageInput?: boolean;
+  // Extra bottom breathing room for bottom-mounted answer buttons on mobile
+  optionBarBottomInset?: number;
   // Runtime query info (from detected processes)
   firstQuery?: string;
   lastQuery?: string;
@@ -168,6 +170,7 @@ export function JobDetailView({
   onLogColumnsChange,
   renderTerminal,
   hideMessageInput,
+  optionBarBottomInset,
   firstQuery,
   lastQuery,
   tokenCount,
@@ -684,7 +687,7 @@ export function JobDetailView({
               )}
             </>
           )}
-          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} />
+          <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} bottomInset={optionBarBottomInset} />
         </View>
       )}
 
@@ -761,7 +764,7 @@ export function JobDetailView({
           )}
         </View>
 
-        <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} />
+        <OptionButtons options={optionsProp ?? []} onSend={handleSendInput} onFreetextOption={setFreetextOptionNumber} autoYesActive={autoYesActive} onToggleAutoYes={onToggleAutoYes} autoYesShortcut={autoYesShortcut} bottomInset={optionBarBottomInset} />
         {!hideMessageInput && <MessageInput onSend={handleSendInput} placeholder={freetextOptionNumber ? "Type your answer..." : "Send input to job..."} />}
 
         {liveZoom && (

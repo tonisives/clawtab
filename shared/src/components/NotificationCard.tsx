@@ -53,6 +53,7 @@ export function NotificationCard({
   const prevQuestionId = useRef(question.question_id);
   const flyAnim = useRef(new Animated.Value(0)).current;
   const webCardHeight = useRef(0);
+  const logScrollRef = useRef<ScrollView>(null);
 
   // Reset answered state when question changes
   useEffect(() => {
@@ -120,6 +121,93 @@ export function NotificationCard({
     : question.cwd.replace(/^\/Users\/[^/]+/, "~");
 
   const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160);
+  const cardSizeStyle = cardMinHeight
+    ? { minHeight: cardMinHeight, maxHeight: cardMinHeight }
+    : null;
+  const logPreviewExpanded = cardMinHeight && !isWeb
+    ? { maxHeight: Math.max(240, cardMinHeight - 150) }
+    : null;
+
+  const optionControls = (
+    <>
+      {question.options.map((opt) => (
+        <TouchableOpacity
+          key={opt.number}
+          style={styles.optionBtn}
+          onPress={() => handleOptionPress(opt.number, opt.label)}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.optionBtnText} numberOfLines={2}>
+            {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
+          </Text>
+        </TouchableOpacity>
+      ))}
+      {onToggleAutoYes && (
+        <>
+          <View style={styles.separator} />
+          <TouchableOpacity
+            style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
+            onPress={() => onToggleAutoYes(question)}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.autoYesBtnText} numberOfLines={2}>
+              {autoYesActive ? "! Auto ON" : "! Yes all"}
+            </Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </>
+  );
+  const answerOptionControls = question.options.map((opt) => (
+    <TouchableOpacity
+      key={opt.number}
+      style={[styles.optionBtn, !isWeb && styles.optionBtnNative]}
+      onPress={() => handleOptionPress(opt.number, opt.label)}
+      activeOpacity={0.6}
+    >
+      <Text style={styles.optionBtnText} numberOfLines={isWeb ? 2 : 1}>
+        {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
+      </Text>
+    </TouchableOpacity>
+  ));
+  const optionArea = isWeb ? (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.optionRow}
+      contentContainerStyle={styles.optionRowContent}
+    >
+      {optionControls}
+    </ScrollView>
+  ) : (
+    <View style={[styles.optionRow, styles.optionRowNative]}>
+      <View style={styles.answerOptionsNative}>
+        {answerOptionControls}
+      </View>
+      {onToggleAutoYes && (
+        <TouchableOpacity
+          style={[styles.autoYesBtn, styles.autoYesBtnNative, autoYesActive && styles.autoYesBtnActive]}
+          onPress={() => onToggleAutoYes(question)}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.autoYesBtnText} numberOfLines={1}>
+            {autoYesActive ? "Auto-yes on" : "Yes all"}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+  const previewContent = hasAnsi(preview) ? (
+    <AnsiText content={preview} style={styles.logText} />
+  ) : (
+    <Text style={styles.logText}>{preview}</Text>
+  );
+  const scrollLogToEnd = () => {
+    if (isWeb) return;
+    requestAnimationFrame(() => {
+      logScrollRef.current?.scrollToEnd({ animated: false });
+    });
+  };
 
   const cardContent = (
     <>
@@ -137,13 +225,20 @@ export function NotificationCard({
         </View>
 
         {preview ? (
-          <View style={styles.logPreview}>
-            {hasAnsi(preview) ? (
-              <AnsiText content={preview} style={styles.logText} />
-            ) : (
-              <Text style={styles.logText}>{preview}</Text>
-            )}
-          </View>
+          isWeb ? (
+            <View style={[styles.logPreview, logPreviewExpanded]}>{previewContent}</View>
+          ) : (
+            <ScrollView
+              ref={logScrollRef}
+              style={[styles.logPreview, logPreviewExpanded]}
+              contentContainerStyle={styles.logPreviewContent}
+              showsVerticalScrollIndicator
+              onContentSizeChange={scrollLogToEnd}
+              onLayout={scrollLogToEnd}
+            >
+              {previewContent}
+            </ScrollView>
+          )
         ) : null}
       </TouchableOpacity>
 
@@ -154,39 +249,7 @@ export function NotificationCard({
             <Text style={styles.sentText}>{autoAnswered ? "Auto-accepted" : "Sent"}</Text>
           </View>
         ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.optionRow}
-            contentContainerStyle={styles.optionRowContent}
-          >
-            {question.options.map((opt) => (
-              <TouchableOpacity
-                key={opt.number}
-                style={styles.optionBtn}
-                onPress={() => handleOptionPress(opt.number, opt.label)}
-                activeOpacity={0.6}
-              >
-                <Text style={styles.optionBtnText} numberOfLines={2}>
-                  {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            {onToggleAutoYes && (
-              <>
-                <View style={styles.separator} />
-                <TouchableOpacity
-                  style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
-                  onPress={() => onToggleAutoYes(question)}
-                  activeOpacity={0.6}
-                >
-                  <Text style={styles.autoYesBtnText} numberOfLines={2}>
-                    {autoYesActive ? "! Auto ON" : "! Yes all"}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </ScrollView>
+          optionArea
         )
       )}
     </>
@@ -195,7 +258,7 @@ export function NotificationCard({
   if (isWeb) {
     // For the last card, no fly-away - the section wrapper handles the collapse
     if (isLast) {
-      return <View style={[styles.card, cardMinHeight ? { minHeight: cardMinHeight } : null]}>{cardContent}</View>;
+      return <View style={[styles.card, cardSizeStyle]}>{cardContent}</View>;
     }
     return (
       <div
@@ -212,20 +275,20 @@ export function NotificationCard({
           overflow: answered ? "hidden" : undefined,
         }}
       >
-        <View style={[styles.card, cardMinHeight ? { minHeight: cardMinHeight } : null]}>{cardContent}</View>
+        <View style={[styles.card, cardSizeStyle]}>{cardContent}</View>
       </div>
     );
   }
 
   if (isLast) {
-    return <View style={[styles.card, cardMinHeight ? { minHeight: cardMinHeight } : null]}>{cardContent}</View>;
+    return <View style={[styles.card, cardSizeStyle]}>{cardContent}</View>;
   }
 
   return (
     <Animated.View
       style={[
         styles.card,
-        cardMinHeight ? { minHeight: cardMinHeight } : null,
+        cardSizeStyle,
         answered && {
           opacity: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
           transform: [
@@ -293,10 +356,21 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     lineHeight: 16,
   },
+  logPreviewContent: {
+    paddingBottom: spacing.sm,
+  },
   optionRow: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    maxHeight: 84,
+  },
+  optionRowNative: {
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+  },
+  answerOptionsNative: {
+    flexDirection: "row",
+    gap: 6,
   },
   optionRowContent: {
     gap: 6,
@@ -311,6 +385,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.accent,
     maxWidth: 280,
+  },
+  optionBtnNative: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: undefined,
   },
   optionBtnText: {
     color: colors.accent,
@@ -328,6 +407,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.warning,
+  },
+  autoYesBtnNative: {
+    alignSelf: "flex-start",
   },
   autoYesBtnActive: {
     backgroundColor: colors.warningBg,

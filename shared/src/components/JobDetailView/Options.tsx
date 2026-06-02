@@ -16,22 +16,26 @@ export function QuestionContextBlock({ context }: { context?: string }) {
   );
 }
 
-export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onToggleAutoYes, autoYesShortcut }: {
+export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive, onToggleAutoYes, autoYesShortcut, bottomInset = 0 }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
   onFreetextOption?: (optionNumber: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
   autoYesShortcut?: string;
+  bottomInset?: number;
 }) {
   if (options.length === 0) return null;
+
+  const bottomPadding = Math.max(6, bottomInset + 10);
+  const barHeight = bottomPadding + 34;
 
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={styles.optionBar}
-      contentContainerStyle={styles.optionBarContent}
+      style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }]}
+      contentContainerStyle={[styles.optionBarContent, { paddingBottom: bottomPadding }]}
     >
       {options.map((opt) => (
         <TouchableOpacity

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import { Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, spacing } from "@clawtab/shared";
 import { DEMO_QUESTIONS } from "../demo/data";
@@ -13,6 +14,8 @@ import { NotificationStack } from "./NotificationStack";
 export function NotificationsMenuButton() {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; right: number }>({ top: 48, right: 12 });
+  const windowSize = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const buttonRef = useRef<View | null>(null);
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
@@ -28,6 +31,23 @@ export function NotificationsMenuButton() {
   }, [isDemo, questions]);
 
   const hasContent = activeQuestionCount > 0 || (!isDemo && autoYesPaneIds.size > 0);
+  const nativeTop = insets.top + 58;
+  const nativeBottom = insets.bottom + 58;
+  const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
+  const nativeCardMinHeight = Math.max(240, nativeAvailableHeight - 120);
+  const popupFrame = Platform.OS === "web"
+    ? {
+        top: position.top,
+        right: position.right,
+        width: Math.min(560, windowSize.width - 20),
+        maxHeight: Math.min(720, windowSize.height * 0.82),
+      }
+    : {
+        top: nativeTop,
+        right: 10,
+        bottom: nativeBottom,
+        left: 10,
+      };
 
   const openMenu = () => {
     const screen = Dimensions.get("window");
@@ -75,11 +95,20 @@ export function NotificationsMenuButton() {
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={styles.modalRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-          <View style={[styles.popup, isDemo && styles.demoPopup, { top: position.top, right: position.right }]}>
+          <View style={[styles.popup, Platform.OS !== "web" && styles.nativePopup, isDemo && styles.demoPopup, popupFrame]}>
             <Text style={styles.title}>Notifications</Text>
-            <ScrollView contentContainerStyle={isDemo ? styles.demoNotificationContent : undefined}>
+            <ScrollView
+              style={styles.popupScroll}
+              contentContainerStyle={[styles.popupScrollContent, isDemo && styles.demoNotificationContent]}
+            >
               {hasContent ? (
-                isDemo ? <DemoNotificationStack embedded /> : <NotificationStack embedded />
+                isDemo ? <DemoNotificationStack embedded /> : (
+                  <NotificationStack
+                    embedded
+                    cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
+                    onNavigateAway={() => setOpen(false)}
+                  />
+                )
               ) : (
                 <Text style={styles.empty}>No pending questions.</Text>
               )}
@@ -129,8 +158,6 @@ const styles = StyleSheet.create({
   },
   popup: {
     position: "absolute",
-    width: Math.min(560, Dimensions.get("window").width - 20),
-    maxHeight: Math.min(720, Dimensions.get("window").height * 0.82),
     padding: 10,
     borderWidth: 1,
     borderColor: colors.border,
@@ -139,9 +166,22 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     ...(Platform.OS === "web" ? { boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)" as any } : { elevation: 12 }),
   },
+  nativePopup: {
+    padding: 12,
+  },
+  popupScroll: {
+    flex: 1,
+  },
+  popupScrollContent: {
+    flexGrow: 1,
+  },
   demoPopup: {
-    width: Math.min(520, Dimensions.get("window").width - 20),
-    maxHeight: Math.min(720, Dimensions.get("window").height * 0.82),
+    ...(Platform.OS === "web"
+      ? {
+          width: Math.min(520, Dimensions.get("window").width - 20),
+          maxHeight: Math.min(720, Dimensions.get("window").height * 0.82),
+        }
+      : null),
   },
   demoNotificationContent: {
     minHeight: 280,

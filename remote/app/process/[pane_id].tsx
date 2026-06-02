@@ -455,7 +455,15 @@ export default function ProcessDetailScreen() {
         autoCapitalize="none"
       />
 
-      {(isAlive || paneQuestion) && <OptionButtons options={options} onSend={handleSend} autoYesActive={autoYesActive} onToggleAutoYes={handleToggleAutoYes} />}
+      {(isAlive || paneQuestion) && (
+        <OptionButtons
+          options={options}
+          onSend={handleSend}
+          autoYesActive={autoYesActive}
+          onToggleAutoYes={handleToggleAutoYes}
+          bottomInset={insets.bottom}
+        />
+      )}
     </View>
   );
 }
@@ -546,19 +554,24 @@ function OptionButtons({
   onSend,
   autoYesActive,
   onToggleAutoYes,
+  bottomInset = 0,
 }: {
   options: { number: string; label: string }[];
   onSend: (text: string) => void;
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
+  bottomInset?: number;
 }) {
   if (options.length === 0) return null;
+  const bottomPadding = Math.max(6, bottomInset + 10);
+  const barHeight = bottomPadding + 34;
+
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={styles.optionBar}
-      contentContainerStyle={styles.optionBarContent}
+      style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }]}
+      contentContainerStyle={[styles.optionBarContent, { paddingBottom: bottomPadding }]}
     >
       {options.map((opt) => (
         <TouchableOpacity
@@ -772,15 +785,22 @@ const styles = StyleSheet.create({
   ptyConnectingText: { color: colors.textMuted, fontSize: 12 },
   loadingText: { color: colors.textMuted, fontSize: 13 },
   optionBar: {
+    flexGrow: 0,
+    flexShrink: 0,
     borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.bg,
-    maxHeight: 44,
+    borderTopColor: "#303033",
+    backgroundColor: TERMINAL_BG,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.32,
+    shadowRadius: 16,
+    elevation: 12,
   },
   optionBarContent: {
     gap: 6,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingTop: 8,
+    paddingBottom: 6,
     alignItems: "center",
   },
   optionBtn: {

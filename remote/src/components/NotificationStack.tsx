@@ -19,9 +19,11 @@ function syncAutoYesToRelay(paneIds: Set<string>) {
 
 interface NotificationStackProps {
   embedded?: boolean;
+  cardMinHeight?: number;
+  onNavigateAway?: () => void;
 }
 
-export function NotificationStack({ embedded = false }: NotificationStackProps) {
+export function NotificationStack({ embedded = false, cardMinHeight, onNavigateAway }: NotificationStackProps) {
   const router = useRouter();
   const questions = useNotificationStore((s) => s.questions);
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses);
@@ -51,13 +53,14 @@ export function NotificationStack({ embedded = false }: NotificationStackProps) 
 
   const navigateToQuestion = useCallback(
     (_q: ClaudeQuestion, jobName: string | null) => {
+      onNavigateAway?.();
       if (jobName) {
         router.push(`/job/${jobName}`);
       } else {
         router.push(`/process/${_q.pane_id.replace(/%/g, "_pct_")}`);
       }
     },
-    [router],
+    [onNavigateAway, router],
   );
 
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
@@ -235,6 +238,7 @@ export function NotificationStack({ embedded = false }: NotificationStackProps) 
           autoYesPaneIds={autoYesPaneIds}
           onToggleAutoYes={handleToggleAutoYes}
           autoAnsweredIds={autoAnsweredIds}
+          cardMinHeight={cardMinHeight}
         />
       )}
     </View>
