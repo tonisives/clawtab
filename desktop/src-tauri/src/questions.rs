@@ -967,7 +967,8 @@ fn pick_sleep_ms(
 
 /// Extract the last visible lines from terminal output for the notification card.
 /// Includes numbered options and their descriptions so the card mirrors the terminal.
-/// Only strips interactive instruction lines (e.g. "Enter to select").
+/// Strips terminal instruction lines but preserves bottom padding so the last
+/// option is not visually flush against the edge.
 fn last_context_lines(text: &str) -> String {
     let clean = strip_ansi(text);
     let lines: Vec<&str> = clean.lines().collect();
@@ -979,15 +980,11 @@ fn last_context_lines(text: &str) -> String {
     let mut context = Vec::new();
     for line in tail {
         let lower = line.trim().to_lowercase();
-        // Skip interactive prompt instruction lines
         if lower.contains("enter to select")
             || lower.contains("to navigate")
             || lower.contains("esc to cancel")
+            || lower.contains("enter confirm")
         {
-            continue;
-        }
-        // Skip opencode button/hint lines
-        if lower.contains("enter confirm") {
             continue;
         }
         context.push(*line);
@@ -998,6 +995,9 @@ fn last_context_lines(text: &str) -> String {
     }
     while context.last().map_or(false, |l| l.trim().is_empty()) {
         context.pop();
+    }
+    if !context.is_empty() {
+        context.push("");
     }
     context.join("\n")
 }

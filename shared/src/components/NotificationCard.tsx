@@ -53,7 +53,6 @@ export function NotificationCard({
   const prevQuestionId = useRef(question.question_id);
   const flyAnim = useRef(new Animated.Value(0)).current;
   const webCardHeight = useRef(0);
-  const logScrollRef = useRef<ScrollView>(null);
 
   // Reset answered state when question changes
   useEffect(() => {
@@ -122,10 +121,7 @@ export function NotificationCard({
 
   const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160);
   const cardSizeStyle = cardMinHeight
-    ? { minHeight: cardMinHeight, maxHeight: cardMinHeight }
-    : null;
-  const logPreviewExpanded = cardMinHeight && !isWeb
-    ? { maxHeight: Math.max(240, cardMinHeight - 150) }
+    ? (isWeb ? { minHeight: cardMinHeight, maxHeight: cardMinHeight } : { minHeight: cardMinHeight })
     : null;
 
   const optionControls = (
@@ -202,12 +198,6 @@ export function NotificationCard({
   ) : (
     <Text style={styles.logText}>{preview}</Text>
   );
-  const scrollLogToEnd = () => {
-    if (isWeb) return;
-    requestAnimationFrame(() => {
-      logScrollRef.current?.scrollToEnd({ animated: false });
-    });
-  };
 
   const cardContent = (
     <>
@@ -225,20 +215,7 @@ export function NotificationCard({
         </View>
 
         {preview ? (
-          isWeb ? (
-            <View style={[styles.logPreview, logPreviewExpanded]}>{previewContent}</View>
-          ) : (
-            <ScrollView
-              ref={logScrollRef}
-              style={[styles.logPreview, logPreviewExpanded]}
-              contentContainerStyle={styles.logPreviewContent}
-              showsVerticalScrollIndicator
-              onContentSizeChange={scrollLogToEnd}
-              onLayout={scrollLogToEnd}
-            >
-              {previewContent}
-            </ScrollView>
-          )
+          <View style={[styles.logPreview, !isWeb && styles.logPreviewNative]}>{previewContent}</View>
         ) : null}
       </TouchableOpacity>
 
@@ -350,14 +327,15 @@ const styles = StyleSheet.create({
     maxHeight: 360,
     overflow: "hidden",
   },
+  logPreviewNative: {
+    flex: 0,
+    maxHeight: undefined,
+  },
   logText: {
     color: colors.textSecondary,
     fontSize: 11,
     fontFamily: "monospace",
     lineHeight: 16,
-  },
-  logPreviewContent: {
-    paddingBottom: spacing.sm,
   },
   optionRow: {
     borderTopWidth: 1,
