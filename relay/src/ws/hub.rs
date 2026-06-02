@@ -86,7 +86,10 @@ impl Hub {
             self.last_detected_processes.remove(&user_id);
             self.broadcast_to_mobiles(
                 user_id,
-                &DesktopMessage::ClaudeQuestions { questions: vec![] },
+                &DesktopMessage::ClaudeQuestions {
+                    questions: vec![],
+                    apns_questions: None,
+                },
             );
             self.broadcast_to_mobiles(
                 user_id,
@@ -126,6 +129,7 @@ impl Hub {
                 &conn.tx,
                 &DesktopMessage::ClaudeQuestions {
                     questions: questions.clone(),
+                    apns_questions: None,
                 },
             );
         }
@@ -275,7 +279,13 @@ impl Hub {
                     .collect(),
                 None => questions.clone(),
             };
-            send_serialized(tx, &DesktopMessage::ClaudeQuestions { questions });
+            send_serialized(
+                tx,
+                &DesktopMessage::ClaudeQuestions {
+                    questions,
+                    apns_questions: None,
+                },
+            );
         }
         if let Some(json) = self.last_auto_yes_panes.get(&owner_id) {
             let _ = tx.send(json.clone());

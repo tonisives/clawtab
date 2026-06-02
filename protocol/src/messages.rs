@@ -291,6 +291,8 @@ pub enum DesktopMessage {
     /// Desktop proactively pushes when Claude questions change
     ClaudeQuestions {
         questions: Vec<ClaudeQuestion>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        apns_questions: Option<Vec<ClaudeQuestion>>,
     },
     /// Desktop pushes job status events for APNs push notifications
     JobNotification {

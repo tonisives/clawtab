@@ -144,10 +144,20 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
     let guests = get_shared_guests(&state.pool, user_id).await;
 
     match &msg {
-        DesktopMessage::ClaudeQuestions { questions } => {
+        DesktopMessage::ClaudeQuestions {
+            questions,
+            apns_questions,
+        } => {
+            tracing::info!(
+                %user_id,
+                questions = questions.len(),
+                apns_questions = apns_questions.as_ref().map_or(questions.len(), Vec::len),
+                "claude questions from desktop"
+            );
             fanout_claude_questions(state, user_id, questions, text, &guests).await;
-            if !questions.is_empty() {
-                spawn_push(state.clone(), user_id, questions.clone());
+            let push_questions = apns_questions.as_ref().unwrap_or(questions);
+            if !push_questions.is_empty() {
+                spawn_push(state.clone(), user_id, push_questions.clone());
             }
         }
         DesktopMessage::AutoYesPanes { pane_ids } => {
@@ -256,6 +266,7 @@ async fn fanout_claude_questions(
                     guest.guest_id,
                     &DesktopMessage::ClaudeQuestions {
                         questions: filtered,
+                        apns_questions: None,
                     },
                 );
             }

@@ -491,13 +491,14 @@ pub async fn question_detection_loop(
             crate::notifications::mark_questions_seen(&questions, &notification_state);
         }
 
-        let relay_questions = if settings_snapshot.notify_questions_remote {
+        let apns_questions = if settings_snapshot.notify_questions_remote {
             notifiable_questions
         } else {
             Vec::new()
         };
         send_relay_questions(
-            relay_questions,
+            questions.clone(),
+            apns_questions,
             &auto_yes_panes,
             &relay,
             &mut last_sent_ids,
@@ -897,6 +898,7 @@ fn retain_auto_answered_for_present(
 
 fn send_relay_questions(
     questions: Vec<ClaudeQuestion>,
+    apns_questions: Vec<ClaudeQuestion>,
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
     relay: &Arc<Mutex<Option<RelayHandle>>>,
     last_sent_ids: &mut HashSet<String>,
@@ -905,6 +907,13 @@ fn send_relay_questions(
     let relay_questions: Vec<ClaudeQuestion> = {
         let yes_panes = auto_yes_panes.lock();
         questions
+            .into_iter()
+            .filter(|q| !yes_panes.contains(&q.pane_id))
+            .collect()
+    };
+    let apns_questions: Vec<ClaudeQuestion> = {
+        let yes_panes = auto_yes_panes.lock();
+        apns_questions
             .into_iter()
             .filter(|q| !yes_panes.contains(&q.pane_id))
             .collect()
@@ -923,6 +932,7 @@ fn send_relay_questions(
     *ticks_since_send = 0;
     let msg = clawtab_protocol::DesktopMessage::ClaudeQuestions {
         questions: relay_questions,
+        apns_questions: Some(apns_questions),
     };
     let guard = relay.lock();
     if let Some(handle) = guard.as_ref() {
