@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClawTab",
     "slug": "clawtab",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -28,6 +28,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "cc.clawtab",
+      "buildNumber": "2",
       "usesAppleSignIn": true,
       "entitlements": {
         "keychain-access-groups": ["$(AppIdentifierPrefix)cc.clawtab"],
@@ -35,6 +36,7 @@
       }
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0a"
