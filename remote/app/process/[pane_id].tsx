@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -283,6 +283,9 @@ export default function ProcessDetailScreen() {
   };
 
   const isAlive = !!process || !!paneQuestion;
+  const closeContextMenu = useCallback(() => {
+    setShowContextMenu(false);
+  }, []);
   const openContextMenu = useCallback(
     (e?: any) => {
       if (Platform.OS !== "web") {
@@ -325,6 +328,7 @@ export default function ProcessDetailScreen() {
             <HeaderTitleWithIcon
               title={headerTitle}
               icon={<JobKindIcon kind={headerKind} size={26} bare />}
+              onPress={showContextMenu ? closeContextMenu : undefined}
             />
           ),
           headerRight: () => (
@@ -355,6 +359,12 @@ export default function ProcessDetailScreen() {
           ),
         }}
       />
+      {Platform.OS !== "web" && showContextMenu ? (
+        <Pressable
+          style={styles.mobileContextBackdrop}
+          onPress={closeContextMenu}
+        />
+      ) : null}
       {Platform.OS !== "web" && showContextMenu ? (
         <View style={styles.mobileContextMenu}>
           {isAlive ? (
@@ -613,6 +623,12 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
     paddingVertical: 4,
+  },
+  mobileContextBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 250,
+    elevation: 250,
+    backgroundColor: "transparent",
   },
   mobileContextItem: {
     paddingHorizontal: spacing.md,

@@ -32,6 +32,8 @@ export function providerKindForJob(job: RemoteJob): ProcessProvider | null {
     return job.agent_provider;
   }
   if (job.job_type === "claude") return "claude";
+  if (job.job_type === "codex") return "codex";
+  if (job.job_type === "opencode") return "opencode";
   if (job.job_type === "shell") return "shell";
   return null;
 }

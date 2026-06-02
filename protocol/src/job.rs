@@ -77,6 +77,10 @@ pub struct RemoteJob {
     #[serde(default, deserialize_with = "deserialize_job_params")]
     pub params: Vec<JobParam>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub added_at: Option<String>,
 }
 

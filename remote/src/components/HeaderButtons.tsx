@@ -31,17 +31,29 @@ export function HeaderStatusDot({ color }: { color: string }) {
 export function HeaderTitleWithIcon({
   title,
   icon,
+  onPress,
 }: {
   title: string;
   icon: ReactNode;
+  onPress?: () => void;
 }) {
-  return (
-    <View style={styles.titleGroup}>
+  const content = (
+    <>
       <View style={styles.iconSlot}>{icon}</View>
       <Text style={styles.titleText} numberOfLines={1}>
         {title}
       </Text>
-    </View>
+    </>
+  );
+  return (
+    <Pressable
+      accessibilityRole={onPress ? "button" : undefined}
+      disabled={!onPress}
+      onPress={onPress}
+      style={styles.titleGroup}
+    >
+      {content}
+    </Pressable>
   );
 }
 

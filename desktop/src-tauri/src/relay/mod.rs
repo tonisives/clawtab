@@ -518,6 +518,8 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         work_dir,
         path: Some(job.path.clone()),
         params: job.params.clone(),
+        agent_provider: job.agent_provider.map(|provider| provider.as_str().to_string()),
+        agent_model: job.agent_model.clone(),
         added_at: job.added_at.clone(),
     }
 }
