@@ -16,7 +16,6 @@ export function NotificationsMenuButton() {
   const buttonRef = useRef<View | null>(null);
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
-  const detectedProcesses = useJobsStore((s) => s.detectedProcesses);
   const realJobs = useJobsStore((s) => s.jobs);
   const connected = useWsStore((s) => s.connected);
   const desktopOnline = useWsStore((s) => s.desktopOnline);
@@ -25,9 +24,8 @@ export function NotificationsMenuButton() {
   const activeQuestionCount = useMemo(() => {
     if (isDemo) return DEMO_QUESTIONS.length;
 
-    const processIds = new Set(detectedProcesses.map((proc) => proc.pane_id));
-    return questions.filter((question) => processIds.has(question.pane_id) || question.matched_job != null).length;
-  }, [detectedProcesses, isDemo, questions]);
+    return questions.length;
+  }, [isDemo, questions]);
 
   const hasContent = activeQuestionCount > 0 || (!isDemo && autoYesPaneIds.size > 0);
 
@@ -131,8 +129,8 @@ const styles = StyleSheet.create({
   },
   popup: {
     position: "absolute",
-    width: Math.min(380, Dimensions.get("window").width - 20),
-    maxHeight: Math.min(620, Dimensions.get("window").height * 0.7),
+    width: Math.min(560, Dimensions.get("window").width - 20),
+    maxHeight: Math.min(720, Dimensions.get("window").height * 0.82),
     padding: 10,
     borderWidth: 1,
     borderColor: colors.border,

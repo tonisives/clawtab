@@ -47,9 +47,7 @@ export function NotificationStack({ embedded = false }: NotificationStackProps) 
     [],
   );
 
-  const activeQuestions = questions.filter(
-    (q) => processMap.has(q.pane_id) || resolveJob(q) != null,
-  );
+  const activeQuestions = questions;
 
   const navigateToQuestion = useCallback(
     (_q: ClaudeQuestion, jobName: string | null) => {

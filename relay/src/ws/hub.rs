@@ -244,7 +244,12 @@ impl Hub {
 
     /// Replay desktop status and cached state for `owner_id` to a single sender.
     /// Used when a mobile guest connects to a workspace shared by `owner_id`.
-    pub fn replay_desktop_state_to(&self, owner_id: Uuid, tx: &mpsc::UnboundedSender<String>) {
+    pub fn replay_desktop_state_to(
+        &self,
+        owner_id: Uuid,
+        tx: &mpsc::UnboundedSender<String>,
+        allowed_groups: Option<&[String]>,
+    ) {
         if let Some(desktops) = self.desktops.get(&owner_id) {
             for desktop in desktops {
                 send_serialized(
@@ -258,12 +263,19 @@ impl Hub {
             }
         }
         if let Some(questions) = self.last_questions.get(&owner_id) {
-            send_serialized(
-                tx,
-                &DesktopMessage::ClaudeQuestions {
-                    questions: questions.clone(),
-                },
-            );
+            let questions = match allowed_groups {
+                Some(groups) => questions
+                    .iter()
+                    .filter(|q| {
+                        q.matched_group
+                            .as_ref()
+                            .is_some_and(|group| groups.iter().any(|allowed| allowed == group))
+                    })
+                    .cloned()
+                    .collect(),
+                None => questions.clone(),
+            };
+            send_serialized(tx, &DesktopMessage::ClaudeQuestions { questions });
         }
         if let Some(json) = self.last_auto_yes_panes.get(&owner_id) {
             let _ = tx.send(json.clone());
@@ -363,6 +375,36 @@ mod tests {
         assert!(first.contains("desktop_status"), "got {first}");
         let second = mobile_rx.try_recv().unwrap_or_default();
         assert!(second.contains("claude_questions"), "got {second}");
+    }
+
+    #[test]
+    fn replay_desktop_state_filters_questions_by_group() {
+        let mut hub = Hub::new();
+        let owner = Uuid::new_v4();
+        let device = Uuid::new_v4();
+        let (desktop_tx, _desktop_rx) = mk_channel();
+        hub.add_desktop(
+            owner,
+            DesktopConnection {
+                device_id: device,
+                device_name: "laptop".into(),
+                tx: desktop_tx,
+            },
+        );
+
+        let mut allowed = mk_question("allowed");
+        allowed.matched_group = Some("work".into());
+        let mut denied = mk_question("denied");
+        denied.matched_group = Some("private".into());
+        hub.set_cached_questions(owner, vec![allowed, denied]);
+
+        let (tx, mut rx) = mk_channel();
+        hub.replay_desktop_state_to(owner, &tx, Some(&["work".into()]));
+
+        let _status = rx.try_recv().unwrap_or_default();
+        let questions = rx.try_recv().unwrap_or_default();
+        assert!(questions.contains("q-allowed"), "got {questions}");
+        assert!(!questions.contains("q-denied"), "got {questions}");
     }
 
     #[test]

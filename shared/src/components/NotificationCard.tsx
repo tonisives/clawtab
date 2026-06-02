@@ -119,7 +119,7 @@ export function NotificationCard({
     ? resolvedJob
     : question.cwd.replace(/^\/Users\/[^/]+/, "~");
 
-  const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 80);
+  const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160);
 
   const cardContent = (
     <>
@@ -167,7 +167,7 @@ export function NotificationCard({
                 onPress={() => handleOptionPress(opt.number, opt.label)}
                 activeOpacity={0.6}
               >
-                <Text style={styles.optionBtnText} numberOfLines={1}>
+                <Text style={styles.optionBtnText} numberOfLines={2}>
                   {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
                 </Text>
               </TouchableOpacity>
@@ -180,7 +180,7 @@ export function NotificationCard({
                   onPress={() => onToggleAutoYes(question)}
                   activeOpacity={0.6}
                 >
-                  <Text style={styles.autoYesBtnText} numberOfLines={1}>
+                  <Text style={styles.autoYesBtnText} numberOfLines={2}>
                     {autoYesActive ? "! Auto ON" : "! Yes all"}
                   </Text>
                 </TouchableOpacity>
@@ -246,8 +246,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.warning,
-    minHeight: 120,
-    maxHeight: 360,
+    minHeight: 180,
+    maxHeight: 520,
     overflow: "hidden",
   },
   cardBody: {
@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     padding: spacing.sm,
     marginTop: 2,
-    maxHeight: 240,
+    maxHeight: 360,
     overflow: "hidden",
   },
   logText: {
@@ -296,7 +296,7 @@ const styles = StyleSheet.create({
   optionRow: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    maxHeight: 44,
+    maxHeight: 84,
   },
   optionRowContent: {
     gap: 6,
@@ -310,6 +310,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.accent,
+    maxWidth: 280,
   },
   optionBtnText: {
     color: colors.accent,

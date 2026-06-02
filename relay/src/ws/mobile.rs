@@ -105,7 +105,7 @@ async fn register(
         },
     );
     for (owner_id, allowed_groups) in &shared_owners {
-        hub.replay_desktop_state_to(*owner_id, &tx);
+        hub.replay_desktop_state_to(*owner_id, &tx, allowed_groups.as_deref());
         let processes = filter_detected_processes_by_groups(
             hub.cached_detected_processes(*owner_id),
             allowed_groups.as_deref(),
