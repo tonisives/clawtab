@@ -6,7 +6,7 @@
 # bundle.resources in tauri.conf.json. Tauri then copies that into
 # ClawTab.app/Contents/Resources/ during bundling.
 #
-# Runs from the src-tauri/ directory (Tauri's CWD for build hooks).
+# Invoked from the desktop package root by tauri.conf.json.
 
 set -euo pipefail
 
