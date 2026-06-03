@@ -230,7 +230,20 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           echo "Signing app at: ${{ steps.find-app.outputs.app_path }}"
+          NESTED_DAEMON_APP="${{ steps.find-app.outputs.app_path }}/Contents/Resources/ClawTab Daemon.app"
+          if [ -d "$NESTED_DAEMON_APP" ]; then
+            echo "Signing nested daemon app at: $NESTED_DAEMON_APP"
+            chmod +x "$NESTED_DAEMON_APP/Contents/MacOS/"*
+            codesign --force --options runtime --timestamp \
+              --sign "$APPLE_SIGNING_IDENTITY" \
+              "$NESTED_DAEMON_APP/Contents/MacOS/ClawTab Daemon"
+            codesign --force --options runtime --timestamp \
+              --sign "$APPLE_SIGNING_IDENTITY" \
+              "$NESTED_DAEMON_APP"
+          fi
+
           codesign --deep --force --options runtime \
+            --timestamp \
             --sign "$APPLE_SIGNING_IDENTITY" \
             "${{ steps.find-app.outputs.app_path }}"
 
