@@ -245,11 +245,25 @@ jobs:
         run: |
           ditto -c -k --keepParent "${{ steps.find-app.outputs.app_path }}" app.zip
 
+          set +e
           xcrun notarytool submit app.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait 2>&1 | tee notary-submit.log
+          submit_status=${PIPESTATUS[0]}
+          set -e
+
+          submission_id=$(sed -n 's/^[[:space:]]*id: //p' notary-submit.log | head -1)
+          if [ "$submit_status" -ne 0 ] || grep -q "status: Invalid" notary-submit.log; then
+            if [ -n "$submission_id" ]; then
+              xcrun notarytool log "$submission_id" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" || true
+            fi
+            exit 1
+          fi
 
           xcrun stapler staple "${{ steps.find-app.outputs.app_path }}"
 
