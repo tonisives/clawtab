@@ -24,7 +24,7 @@ import type { useJobsTabSettings } from "./useJobsTabSettings";
 import { requestXtermPaneFocus } from "../../XtermPane";
 
 interface Transport {
-  stopJob: (slug: string) => void;
+  stopJob: (slug: string) => Promise<void>;
 }
 
 type PaneMoveDirection = "left" | "right" | "up" | "down";

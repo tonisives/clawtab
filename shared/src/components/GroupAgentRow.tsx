@@ -79,7 +79,7 @@ export function GroupAgentRow({
               setMenuOpen(false);
               return;
             }
-            buttonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+            buttonRef.current.measureInWindow((x: number, y: number, _width: number, height: number) => {
               setMenuPos({ top: y + height + 6, left: x });
               setMenuOpen(true);
             });

@@ -428,6 +428,7 @@ export function DesktopJobDetail({
   onInjectSecrets,
   onSearchSkills,
   onStopping,
+  onStopFailed,
   onRevealInSidebar,
   contentStyle,
   headerLeftInset,
@@ -464,6 +465,7 @@ export function DesktopJobDetail({
   onInjectSecrets?: () => void;
   onSearchSkills?: () => void;
   onStopping?: () => void;
+  onStopFailed?: () => void;
   onRevealInSidebar?: () => void;
   contentStyle?: unknown;
   headerLeftInset?: number;
@@ -571,6 +573,7 @@ export function DesktopJobDetail({
         onRelease={paneId ? handleRelease : undefined}
         onRevealInSidebar={onRevealInSidebar}
         onStopping={onStopping}
+        onStopFailed={onStopFailed}
         dragHandleProps={dragHandleProps}
         renderRunTerminal={renderRunTerminal}
         defaultAgentProvider={defaultAgentProvider}
