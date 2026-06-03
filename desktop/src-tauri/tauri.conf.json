@@ -48,7 +48,7 @@
       "minimumSystemVersion": "10.15"
     },
     "resources": {
-      "../target/engine-bundle/Clawtab Engine.app": "Clawtab Engine.app"
+      "../target/engine-bundle/ClawTab Daemon.app": "ClawTab Daemon.app"
     }
   },
   "plugins": {

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 pub const PLIST_LABEL: &str = "com.clawtab.daemon";
 pub const ENGINE_EXECUTABLE_PATH: &str =
-    "/usr/local/Clawtab Engine.app/Contents/MacOS/ClawTab Daemon";
+    "/usr/local/ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon";
 
 pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -14,7 +14,7 @@ pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <array>
         <string>/usr/bin/open</string>
         <string>-W</string>
-        <string>/usr/local/Clawtab Engine.app</string>
+        <string>/usr/local/ClawTab Daemon.app</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -87,7 +87,7 @@ pub fn install() -> Result<String, String> {
     let _ = std::fs::create_dir_all("/tmp/clawtab");
 
     if !std::path::Path::new(ENGINE_EXECUTABLE_PATH).exists() {
-        return Err("Clawtab Engine.app not found. Run 'make build-daemon' first.".into());
+        return Err("ClawTab Daemon.app not found. Run 'make build-daemon' first.".into());
     }
 
     std::fs::write(&dest, PLIST_CONTENT).map_err(|e| format!("Failed to write plist: {}", e))?;

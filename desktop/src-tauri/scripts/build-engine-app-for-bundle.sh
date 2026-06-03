@@ -2,7 +2,7 @@
 # Hook for tauri.conf.json:build.beforeBundleCommand.
 #
 # Builds clawtab-daemon (release, no default features) and assembles it into
-# a Clawtab Engine.app skeleton at the location referenced by
+# a ClawTab Daemon.app skeleton at the location referenced by
 # bundle.resources in tauri.conf.json. Tauri then copies that into
 # ClawTab.app/Contents/Resources/ during bundling.
 #
@@ -36,7 +36,7 @@ if [[ -z "$DAEMON_BIN" ]] || [[ ! -f "$DAEMON_BIN" ]]; then
 fi
 
 OUT_DIR="$SRC_TAURI_DIR/../target/engine-bundle"
-APP_PATH="$OUT_DIR/Clawtab Engine.app"
+APP_PATH="$OUT_DIR/ClawTab Daemon.app"
 
 mkdir -p "$OUT_DIR"
 bash "$SCRIPT_DIR/build-engine-app.sh" "$DAEMON_BIN" "$APP_PATH"

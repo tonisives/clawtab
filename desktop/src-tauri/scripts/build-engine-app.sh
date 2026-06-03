@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assembles "Clawtab Engine.app" from the engine-app template and the
+# Assembles "ClawTab Daemon.app" from the engine-app template and the
 # clawtab-daemon binary (placed inside the bundle as "ClawTab Daemon"). Used by:
 #   - `make build-daemon` for local dev installs
 #   - the Tauri build hook so the .app gets nested inside ClawTab.app

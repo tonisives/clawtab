@@ -48,4 +48,12 @@ cargo watch \
   -x "build --bin clawtab --no-default-features --features desktop" \
   -s "$SCRIPT_DIR/restart-dev-app.sh" &
 cargo_watch_pid=$!
-wait "$cargo_watch_pid"
+wait "$cargo_watch_pid" || true
+
+# launchd can start dev before the login session is fully settled. In that
+# case cargo-watch may finish after its initial command even though the dev app
+# should remain open. Keep this wrapper alive until launchd or overmind stops it
+# so cleanup does not immediately close ClawTab.app.
+while true; do
+  sleep 3600
+done

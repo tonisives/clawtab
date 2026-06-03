@@ -2,7 +2,7 @@
 //!
 //! Works only when the calling process is a code-signed .app bundle with a
 //! registered CFBundleIdentifier - that's why the daemon is shipped inside
-//! "Clawtab Engine.app". A bare CLI cannot deliver these notifications;
+//! "ClawTab Daemon.app". A bare CLI cannot deliver these notifications;
 //! UNUserNotificationCenter silently no-ops.
 
 use std::sync::Once;

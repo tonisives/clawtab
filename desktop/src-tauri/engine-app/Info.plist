@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Clawtab Engine</string>
+    <string>ClawTab Daemon</string>
     <key>CFBundleDisplayName</key>
-    <string>Clawtab Engine</string>
+    <string>ClawTab Daemon</string>
     <key>CFBundleIdentifier</key>
     <string>cc.clawtab.engine</string>
     <key>CFBundleExecutable</key>

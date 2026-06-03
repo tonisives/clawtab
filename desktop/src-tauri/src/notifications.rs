@@ -88,7 +88,7 @@ pub struct OsascriptNotifier;
 impl OsascriptNotifier {
     fn send_notification(title: &str, body: &str) -> Result<(), String> {
         // Preferred path: UNUserNotificationCenter via objc2-user-notifications.
-        // Works whenever the daemon is launched from inside Clawtab Engine.app
+        // Works whenever the daemon is launched from inside ClawTab Daemon.app
         // (the launchd plist points at the .app's binary). No subprocess, no
         // leak, native ClawTab icon from the bundle's Info.plist.
         #[cfg(target_os = "macos")]

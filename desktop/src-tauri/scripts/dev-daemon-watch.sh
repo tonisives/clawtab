@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Wrapper for the `daemon:` Procfile entry under `make dev`.
 #
-# The engine (clawtab-daemon, wrapped in Clawtab Engine.app) is started by
+# The daemon (clawtab-daemon, wrapped in ClawTab Daemon.app) is started by
 # launchd via dev-daemon-reload.sh after each build. launchd's KeepAlive keeps
 # it alive independently of overmind, so a bare `cargo watch` here would leak
 # the engine when you C-c `make dev`. This wrapper mirrors dev-desktop-watch.sh:
@@ -13,11 +13,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_TAURI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLIST="$HOME/Library/LaunchAgents/com.clawtab.daemon.plist"
 
-# In dev the launchd plist launches the engine app from the cargo target dir,
-# not /usr/local (which needs root). Point the reload hook at the same path so
-# the app launchd runs is the one we actually rebuild.
-TARGET_DIR="${CARGO_TARGET_DIR:-/Volumes/sam/build/rust/targets}"
-export CLAWTAB_ENGINE_APP="$TARGET_DIR/debug/Clawtab Engine.app"
+# Keep the launched .app bundle on the internal disk. Cargo can still build
+# into an external target dir, but launching a dev .app from that volume can
+# trigger macOS removable-volume prompts on login.
+export CLAWTAB_ENGINE_APP="${CLAWTAB_ENGINE_APP:-$HOME/Library/Caches/ClawTab-dev/ClawTab Daemon.app}"
 
 did_cleanup=0
 cleanup() {
@@ -28,7 +27,7 @@ cleanup() {
 
   # Stop the launchd-owned engine so it doesn't outlive `make dev`.
   launchctl unload "$PLIST" >/dev/null 2>&1 || true
-  pkill -f "Clawtab Engine.app/Contents/MacOS/ClawTab Daemon" >/dev/null 2>&1 || true
+  pkill -f "ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon" >/dev/null 2>&1 || true
 
   if [ -n "${cargo_watch_pid:-}" ]; then
     kill -TERM "$cargo_watch_pid" >/dev/null 2>&1 || true
@@ -44,8 +43,15 @@ cargo watch \
   -s "bash $SCRIPT_DIR/dev-daemon-reload.sh" &
 cargo_watch_pid=$!
 
-# Wait in a loop so the INT/TERM trap runs promptly instead of being deferred
-# until a single blocking `wait` returns.
+# launchd may start this before the login session is fully settled. In that
+# case cargo-watch can finish after the initial command even though overmind
+# should stay up. Keep this wrapper alive until launchd or overmind stops it.
 while kill -0 "$cargo_watch_pid" 2>/dev/null; do
-  wait "$cargo_watch_pid"
+  wait "$cargo_watch_pid" || true
+  if ! kill -0 "$cargo_watch_pid" 2>/dev/null; then
+    while true; do
+      sleep 3600
+    done
+  fi
+  sleep 1
 done

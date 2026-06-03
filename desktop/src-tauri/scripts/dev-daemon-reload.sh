@@ -2,7 +2,7 @@
 # Post-build hook for the `daemon:` Procfile entry under `make dev`.
 #
 # After cargo-watch produces a fresh debug build of clawtab-daemon, refresh
-# the Clawtab Engine.app bundle (so notifications keep working via
+# the ClawTab Daemon.app bundle (so notifications keep working via
 # UNUserNotificationCenter) and reload the LaunchAgent so launchd picks up
 # the new binary.
 
@@ -15,7 +15,7 @@ CARGO_TARGET_DIR_RESOLVED="${CARGO_TARGET_DIR:-/Volumes/sam/build/rust/targets}"
 DAEMON_BIN="$CARGO_TARGET_DIR_RESOLVED/debug/clawtab-daemon"
 # Match the installed LaunchAgent path so launchd starts the bundled app
 # identity rather than a bare daemon binary or symlink.
-ENGINE_APP="${CLAWTAB_ENGINE_APP:-/usr/local/Clawtab Engine.app}"
+ENGINE_APP="${CLAWTAB_ENGINE_APP:-/usr/local/ClawTab Daemon.app}"
 
 if [[ ! -f "$DAEMON_BIN" ]]; then
   echo "[dev-daemon] no debug binary at $DAEMON_BIN; skipping reload" >&2

@@ -2,7 +2,7 @@ fn main() {
     #[cfg(feature = "desktop")]
     {
         // Tauri validates that every path in bundle.resources exists at compile
-        // time, even during `cargo check`. The real Clawtab Engine.app is
+        // time, even during `cargo check`. The real ClawTab Daemon.app is
         // assembled by the beforeBundleCommand right before bundling, but
         // that doesn't run for plain checks. Create a minimal placeholder so
         // the validation passes; it gets overwritten by the real build hook.
@@ -21,7 +21,7 @@ fn ensure_engine_app_placeholder() -> std::io::Result<()> {
         .join("..")
         .join("target")
         .join("engine-bundle")
-        .join("Clawtab Engine.app");
+        .join("ClawTab Daemon.app");
 
     if app_path.exists() {
         return Ok(());
