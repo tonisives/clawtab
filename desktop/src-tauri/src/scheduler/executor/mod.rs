@@ -12,7 +12,7 @@ mod notification;
 mod params;
 mod tmux_spawn;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 
@@ -109,7 +109,8 @@ pub async fn execute_job(
         trigger,
         stream_log_path.as_deref(),
     );
-    kill_orphan_panes(job, ctx);
+    let keep_existing = job.max_history.saturating_sub(1) as usize;
+    enforce_live_pane_retention(job, ctx, keep_existing);
 
     log::info!("[{}] Starting job '{}' ({})", run_id, job.name, trigger);
 
@@ -253,25 +254,14 @@ fn insert_history_and_prune(
     match h.prune_job_to_limit(&job.slug, job.max_history) {
         Ok(pruned_panes) => {
             for pane_id in pruned_panes {
-                if let Err(e) = crate::tmux::kill_pane(&pane_id) {
-                    log::warn!("Failed to kill pruned pane {}: {}", pane_id, e);
-                }
+                close_pane_for_retention(pane_id);
             }
         }
         Err(e) => log::error!("Failed to prune job history for {}: {}", job.slug, e),
     }
 }
 
-/// Kill orphan tmux panes for this slug whose history rows were already pruned
-/// in earlier runs but the panes remained alive (kill_on_end=false). The new
-/// pane is about to spawn, so keep `max_history - 1` existing panes. Order by
-/// history.started_at (authoritative); panes without a history row are treated
-/// as oldest and killed first.
-fn kill_orphan_panes(job: &Job, ctx: &JobContext) {
-    if job.max_history == 0 {
-        return;
-    }
-    let keep = job.max_history.saturating_sub(1) as usize;
+pub(super) fn enforce_live_pane_retention(job: &Job, ctx: &JobContext, keep: usize) {
     let started_map = {
         let h = ctx.history.lock();
         h.pane_started_at_for_job(&job.slug).unwrap_or_default()
@@ -283,19 +273,29 @@ fn kill_orphan_panes(job: &Job, ctx: &JobContext) {
             return;
         }
     };
-    let mut with_ts: Vec<(String, String)> = panes
+    let mut seen = HashSet::new();
+    let mut entries: Vec<(String, String, u64)> = panes
         .into_iter()
-        .map(|(pid, _)| {
-            let ts = started_map.get(&pid).cloned().unwrap_or_default();
-            (pid, ts)
+        .filter_map(|(pane_id, pane_pid)| {
+            if !seen.insert(pane_id.clone()) {
+                return None;
+            }
+            let started_at = started_map.get(&pane_id).cloned().unwrap_or_default();
+            Some((pane_id, started_at, pane_pid))
         })
         .collect();
-    with_ts.sort_by(|a, b| b.1.cmp(&a.1));
-    for (pane_id, _) in with_ts.into_iter().skip(keep) {
-        if let Err(e) = crate::tmux::kill_pane(&pane_id) {
-            log::warn!("Failed to kill orphan pane {}: {}", pane_id, e);
-        }
+    entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| b.2.cmp(&a.2)));
+    for (pane_id, _, _) in entries.into_iter().skip(keep) {
+        close_pane_for_retention(pane_id);
     }
+}
+
+fn close_pane_for_retention(pane_id: String) {
+    tokio::spawn(async move {
+        if let Err(e) = crate::tmux::close_pane_gracefully(&pane_id).await {
+            log::warn!("Failed to close retained pane {}: {}", pane_id, e);
+        }
+    });
 }
 
 /// Run the per-type executor and normalize its return shape so the caller can

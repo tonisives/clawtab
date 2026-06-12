@@ -152,10 +152,13 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
         .take()
         .ok_or_else(|| "failed to open codex app-server stdout".to_string())?;
 
-    send_codex_rpc_requests(&mut stdin)?;
-    drop(stdin);
+    let mut reader = BufReader::new(stdout);
+    send_codex_rpc_initialize(&mut stdin)?;
+    read_codex_rpc_initialize_response(&mut reader)?;
+    send_codex_rpc_usage_requests(&mut stdin)?;
 
-    let (account, limits) = read_codex_rpc_responses(stdout)?;
+    let (account, limits) = read_codex_rpc_responses(&mut reader)?;
+    drop(stdin);
     let _ = child.kill();
     let _ = child.wait();
 
@@ -167,7 +170,7 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
     Ok(build_codex_snapshot(account, limits))
 }
 
-fn send_codex_rpc_requests(stdin: &mut dyn Write) -> Result<(), String> {
+fn send_codex_rpc_initialize(stdin: &mut dyn Write) -> Result<(), String> {
     write_jsonrpc(
         stdin,
         serde_json::json!({
@@ -181,6 +184,16 @@ fn send_codex_rpc_requests(stdin: &mut dyn Write) -> Result<(), String> {
                 }
             }
         }),
+    )
+}
+
+fn send_codex_rpc_usage_requests(stdin: &mut dyn Write) -> Result<(), String> {
+    write_jsonrpc(
+        stdin,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "initialized"
+        }),
     )?;
     write_jsonrpc(
         stdin,
@@ -188,7 +201,9 @@ fn send_codex_rpc_requests(stdin: &mut dyn Write) -> Result<(), String> {
             "jsonrpc": "2.0",
             "id": 2,
             "method": "account/read",
-            "params": {}
+            "params": {
+                "refreshToken": false
+            }
         }),
     )?;
     write_jsonrpc(
@@ -201,8 +216,22 @@ fn send_codex_rpc_requests(stdin: &mut dyn Write) -> Result<(), String> {
     )
 }
 
+fn read_codex_rpc_initialize_response(reader: &mut dyn BufRead) -> Result<(), String> {
+    loop {
+        let value = read_codex_rpc_message(reader)?;
+        match value.get("id").and_then(|v| v.as_i64()) {
+            Some(1) if value.get("result").is_some() => return Ok(()),
+            Some(1) => {
+                return Err(codex_rpc_error_text(&value)
+                    .unwrap_or_else(|| "codex initialize returned no result".to_string()));
+            }
+            _ => {}
+        }
+    }
+}
+
 fn read_codex_rpc_responses(
-    stdout: std::process::ChildStdout,
+    reader: &mut dyn BufRead,
 ) -> Result<
     (
         Option<CodexAccountReadResult>,
@@ -210,18 +239,49 @@ fn read_codex_rpc_responses(
     ),
     String,
 > {
-    let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
     let mut account: Option<CodexAccountReadResult> = None;
     let mut limits: Option<CodexRateLimitReadResult> = None;
 
     while account.is_none() || limits.is_none() {
+        let value = read_codex_rpc_message(reader)?;
+
+        match value.get("id").and_then(|v| v.as_i64()) {
+            Some(2) => {
+                if let Some(result) = value.get("result") {
+                    account = Some(serde_json::from_value(result.clone()).map_err(|err| {
+                        format!("failed to parse codex account/read response: {}", err)
+                    })?);
+                } else if let Some(error) = codex_rpc_error_text(&value) {
+                    return Err(format!("codex account/read failed: {}", error));
+                }
+            }
+            Some(3) => {
+                if let Some(result) = value.get("result") {
+                    limits = Some(serde_json::from_value(result.clone()).map_err(|err| {
+                        format!(
+                            "failed to parse codex account/rateLimits/read response: {}",
+                            err
+                        )
+                    })?);
+                } else if let Some(error) = codex_rpc_error_text(&value) {
+                    return Err(format!("codex account/rateLimits/read failed: {}", error));
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok((account, limits))
+}
+
+fn read_codex_rpc_message(reader: &mut dyn BufRead) -> Result<serde_json::Value, String> {
+    let mut line = String::new();
+    loop {
         line.clear();
         let bytes = reader
             .read_line(&mut line)
             .map_err(|err| format!("failed reading codex app-server output: {}", err))?;
         if bytes == 0 {
-            break;
+            return Err("codex app-server closed stdout".to_string());
         }
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -230,22 +290,17 @@ fn read_codex_rpc_responses(
         let Ok(value): Result<serde_json::Value, _> = serde_json::from_str(trimmed) else {
             continue;
         };
-
-        match value.get("id").and_then(|v| v.as_i64()) {
-            Some(2) => {
-                if let Some(result) = value.get("result") {
-                    account = serde_json::from_value(result.clone()).ok();
-                }
-            }
-            Some(3) => {
-                if let Some(result) = value.get("result") {
-                    limits = serde_json::from_value(result.clone()).ok();
-                }
-            }
-            _ => {}
-        }
+        return Ok(value);
     }
-    Ok((account, limits))
+}
+
+fn codex_rpc_error_text(value: &serde_json::Value) -> Option<String> {
+    let error = value.get("error")?;
+    error
+        .get("message")
+        .and_then(|message| message.as_str())
+        .map(|message| message.to_string())
+        .or_else(|| Some(error.to_string()))
 }
 
 fn build_codex_snapshot(
@@ -1078,14 +1133,20 @@ enum CodexAccount {
     #[serde(rename = "apiKey")]
     ApiKey,
     #[serde(rename = "chatgpt")]
-    Chatgpt { email: String, plan_type: String },
+    Chatgpt {
+        email: String,
+        #[serde(alias = "planType")]
+        plan_type: String,
+    },
+    #[serde(other)]
+    Other,
 }
 
 impl CodexAccount {
     fn email(self) -> Option<String> {
         match self {
             Self::Chatgpt { email, .. } => Some(email),
-            Self::ApiKey => None,
+            Self::ApiKey | Self::Other => None,
         }
     }
 
@@ -1093,6 +1154,7 @@ impl CodexAccount {
         match self {
             Self::Chatgpt { plan_type, .. } => Some(plan_type.clone()),
             Self::ApiKey => Some("api key".to_string()),
+            Self::Other => None,
         }
     }
 }
@@ -1118,6 +1180,7 @@ struct CodexRateLimitWindow {
     used_percent: i64,
     resets_at: Option<i64>,
     limit_window_seconds: Option<i64>,
+    window_duration_mins: Option<i64>,
 }
 
 enum CodexWindowRole {
@@ -1128,7 +1191,10 @@ enum CodexWindowRole {
 
 impl CodexRateLimitWindow {
     fn window_role(&self) -> CodexWindowRole {
-        match self.limit_window_seconds.map(|seconds| seconds / 60) {
+        let window_minutes = self
+            .window_duration_mins
+            .or_else(|| self.limit_window_seconds.map(|seconds| seconds / 60));
+        match window_minutes {
             Some(300) => CodexWindowRole::Session,
             Some(10080) => CodexWindowRole::Week,
             _ => CodexWindowRole::Unknown,
@@ -1324,5 +1390,80 @@ Weekly limit:
             .expect("week entry");
         assert_eq!(week.value, "49% left (resets 06:14 on 17 Apr)");
         assert_eq!(snapshot.summary, "Session 38% left, Week 49% left");
+    }
+
+    #[test]
+    fn builds_codex_snapshot_from_current_rate_limit_schema() {
+        let account = serde_json::from_value::<CodexAccountReadResult>(serde_json::json!({
+            "account": {
+                "type": "chatgpt",
+                "email": "user@example.com",
+                "planType": "plus"
+            },
+            "requiresOpenaiAuth": false
+        }))
+        .expect("account response should parse");
+        let limits = serde_json::from_value::<CodexRateLimitReadResult>(serde_json::json!({
+            "rateLimits": {
+                "limitId": "codex",
+                "limitName": "Codex",
+                "primary": {
+                    "usedPercent": 62,
+                    "windowDurationMins": 300,
+                    "resetsAt": null
+                },
+                "secondary": {
+                    "usedPercent": 41,
+                    "windowDurationMins": 10080,
+                    "resetsAt": null
+                },
+                "credits": null,
+                "individualLimit": null,
+                "planType": "plus",
+                "rateLimitReachedType": null
+            },
+            "rateLimitsByLimitId": null
+        }))
+        .expect("rate limit response should parse");
+
+        let snapshot = build_codex_snapshot(account, limits);
+
+        assert_eq!(snapshot.status, "available");
+        assert_eq!(snapshot.summary, "Session 62%, Week 41%");
+        assert_eq!(snapshot.entries[0].value, "Plus");
+        assert_eq!(snapshot.entries[1].value, "62%");
+        assert_eq!(snapshot.entries[2].value, "41%");
+    }
+
+    #[test]
+    fn reads_codex_rpc_usage_responses_after_notifications() {
+        let text = r#"
+{"method":"remoteControl/status/changed","params":{"status":"disabled"}}
+{"id":2,"result":{"account":{"type":"apiKey"},"requiresOpenaiAuth":false}}
+{"method":"account/rateLimits/updated","params":{"rateLimits":{"primary":null,"secondary":null}}}
+{"id":3,"result":{"rateLimits":{"limitId":"codex","limitName":"Codex","primary":{"usedPercent":12,"windowDurationMins":300,"resetsAt":null},"secondary":{"usedPercent":34,"windowDurationMins":10080,"resetsAt":null},"credits":null,"individualLimit":null,"planType":"pro","rateLimitReachedType":null},"rateLimitsByLimitId":null}}
+"#;
+        let mut reader = BufReader::new(text.as_bytes());
+
+        let (account, limits) =
+            read_codex_rpc_responses(&mut reader).expect("responses should parse");
+
+        assert!(matches!(
+            account.expect("account").account,
+            Some(CodexAccount::ApiKey)
+        ));
+        let limits = limits.expect("limits");
+        assert_eq!(
+            limits.rate_limits.primary.expect("primary").used_percent,
+            12
+        );
+        assert_eq!(
+            limits
+                .rate_limits
+                .secondary
+                .expect("secondary")
+                .used_percent,
+            34
+        );
     }
 }

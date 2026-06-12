@@ -106,7 +106,7 @@ fn list_panes() -> Option<String> {
         "tmux",
         &[
             "list-panes", "-a", "-F",
-            "#{pane_id}\x1e#{pane_current_command}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{pane_pid}\x1e#{window_id}\x1e#{pane_title}\x1e#{@clawtab-slug}",
+            "#{pane_id}|CT|#{pane_current_command}|CT|#{pane_current_path}|CT|#{session_name}|CT|#{window_name}|CT|#{pane_pid}|CT|#{window_id}|CT|#{pane_title}|CT|#{@clawtab-slug}",
         ],
         "process_snapshot::list_panes",
     );
@@ -193,7 +193,7 @@ struct SkipCounters {
 }
 
 fn parse_row(line: &str) -> Option<ProcessRow<'_>> {
-    let parts: Vec<&str> = line.splitn(9, '\x1e').collect();
+    let parts: Vec<&str> = line.splitn(9, "|CT|").collect();
     if parts.len() < 8 {
         return None;
     }
@@ -214,7 +214,9 @@ fn parse_row(line: &str) -> Option<ProcessRow<'_>> {
 fn resolve_provider(row: &ProcessRow<'_>) -> Option<crate::agent_session::ProcessProvider> {
     let agent_provider =
         crate::agent_session::detect_process_provider(row.pane_pid, None).or_else(|| {
-            is_semver(row.command).then_some(crate::agent_session::ProcessProvider::Claude)
+            provider_from_tmux_command(row.command).or_else(|| {
+                is_semver(row.command).then_some(crate::agent_session::ProcessProvider::Claude)
+            })
         });
     let is_clawtab_shell_window =
         row.window.starts_with("ct-clawtab-shell-") || row.window.starts_with("clawtab-shell-");
@@ -222,6 +224,19 @@ fn resolve_provider(row: &ProcessRow<'_>) -> Option<crate::agent_session::Proces
         (Some(p), _) => Some(p),
         (None, true) => Some(crate::agent_session::ProcessProvider::Shell),
         (None, false) => None,
+    }
+}
+
+fn provider_from_tmux_command(command: &str) -> Option<crate::agent_session::ProcessProvider> {
+    let lower = command.to_ascii_lowercase();
+    if lower.contains("codex") {
+        Some(crate::agent_session::ProcessProvider::Codex)
+    } else if lower.contains("opencode") {
+        Some(crate::agent_session::ProcessProvider::Opencode)
+    } else if lower.contains("claude") {
+        Some(crate::agent_session::ProcessProvider::Claude)
+    } else {
+        None
     }
 }
 

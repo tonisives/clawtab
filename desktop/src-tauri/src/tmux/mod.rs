@@ -724,6 +724,20 @@ pub fn kill_pane(pane_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub async fn close_pane_gracefully(pane_id: &str) -> Result<(), String> {
+    if pane_exists(pane_id) {
+        let _ = run(
+            &["send-keys", "-t", pane_id, "C-d"],
+            "tmux::close_pane_gracefully::send_eof",
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+    }
+    if pane_exists(pane_id) {
+        kill_pane(pane_id)?;
+    }
+    Ok(())
+}
+
 /// Kill a tmux window by session and window name.
 pub fn kill_window(session: &str, window: &str) -> Result<(), String> {
     let target = format!("{}:{}", session, window);
@@ -1134,21 +1148,16 @@ pub fn list_window_names_in_session(session: &str) -> Result<Vec<String>, String
     Ok(raw.lines().map(|l| l.trim().to_string()).collect())
 }
 
-/// `list-windows -a -F '#{session_name}\x1e#{window_id}'`. Used by the capture
+/// `list-windows -a -F '#{session_name}|CT|#{window_id}'`. Used by the capture
 /// helper to resolve the real (non-view) session owning a window.
 pub fn list_all_windows_with_session() -> Result<Vec<(String, String)>, String> {
     let raw = run_capture(
-        &[
-            "list-windows",
-            "-a",
-            "-F",
-            "#{session_name}\x1e#{window_id}",
-        ],
+        &["list-windows", "-a", "-F", "#{session_name}|CT|#{window_id}"],
         "tmux::list_all_windows_with_session",
     )?;
     let mut out = Vec::new();
     for line in raw.lines() {
-        let mut parts = line.splitn(2, '\x1e');
+        let mut parts = line.splitn(2, "|CT|");
         let s = parts.next().unwrap_or("").to_string();
         let w = parts.next().unwrap_or("").to_string();
         if !s.is_empty() && !w.is_empty() {

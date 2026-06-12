@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import type { ProcessProvider } from "@clawtab/shared"
 import type { AppSettings } from "../types"
@@ -84,6 +84,8 @@ export function ModelsPanel() {
   const [opencodeError, setOpencodeError] = useState<string | null>(null)
   const [expandedNamespaces, setExpandedNamespaces] = useState<Set<string>>(new Set())
   const [refreshKey, setRefreshKey] = useState(0)
+  const enableDetectedCodexOnRefreshRef = useRef(false)
+  const disabledCodexOnRefreshRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -122,6 +124,26 @@ export function ModelsPanel() {
       .catch((e) => console.error("Failed to seed enabled_models:", e))
   }, [settings, claudeApiModels, codexApiModels])
 
+  useEffect(() => {
+    if (!settings || !enableDetectedCodexOnRefreshRef.current || codexApiModels.length === 0) return
+    const enabled = settings.enabled_models ?? {}
+    const current = enabled.codex ?? []
+    const detected = codexApiModels.map(([id]) => id)
+    const disabledBeforeRefresh = disabledCodexOnRefreshRef.current
+    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id))
+    if (missing.length === 0) {
+      enableDetectedCodexOnRefreshRef.current = false
+      disabledCodexOnRefreshRef.current = new Set()
+      return
+    }
+    enableDetectedCodexOnRefreshRef.current = false
+    disabledCodexOnRefreshRef.current = new Set()
+    const next = { ...enabled, codex: [...current, ...missing] }
+    invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
+      .then(() => setSettings({ ...settings, enabled_models: next }))
+      .catch((e) => console.error("Failed to enable refreshed Codex models:", e))
+  }, [settings, codexApiModels])
+
   // Detect OpenCode models on mount and refresh
   useEffect(() => {
     setOpencodeLoading(true)
@@ -137,7 +159,14 @@ export function ModelsPanel() {
       .finally(() => setOpencodeLoading(false))
   }, [refreshKey])
 
-  const refresh = () => setRefreshKey((k) => k + 1)
+  const refresh = () => {
+    const enabledCodex = new Set(settings?.enabled_models?.codex ?? [])
+    disabledCodexOnRefreshRef.current = new Set(
+      codexApiModels.map(([id]) => id).filter((id) => !enabledCodex.has(id)),
+    )
+    enableDetectedCodexOnRefreshRef.current = true
+    setRefreshKey((k) => k + 1)
+  }
 
   const update = async (updates: Partial<AppSettings>) => {
     if (!settings) return

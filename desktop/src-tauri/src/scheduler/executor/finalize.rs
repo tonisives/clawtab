@@ -35,6 +35,7 @@ pub(super) fn attach_monitor(
     publish_running_status(rc, &handle);
     notify_pane_listener(pane_tx, &handle);
     persist_pane_id(rc, &handle);
+    super::enforce_live_pane_retention(rc.job, rc.ctx, rc.job.max_history as usize);
 
     if rc.job.auto_yes && use_auto_yes {
         register_auto_yes(rc, &handle);

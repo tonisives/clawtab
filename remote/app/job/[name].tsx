@@ -18,7 +18,7 @@ import { createWsTransport } from "../../src/transport/wsTransport";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
-import { HeaderBackButton, HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
@@ -94,11 +94,6 @@ export default function JobDetailScreen() {
   const router = useRouter();
   const [runsLoading, setRunsLoading] = useState(false);
   const connected = useWsStore((s) => s.connected);
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/(tabs)");
-  }, [router]);
-
   const questions = useNotificationStore((s) => s.questions);
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds);
   const enableAutoYes = useNotificationStore((s) => s.enableAutoYes);
@@ -298,7 +293,6 @@ export default function JobDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          headerLeft: () => <HeaderBackButton onPress={handleBack} />,
           headerTitle: () => (
             <HeaderTitleWithIcon
               title={job.name}

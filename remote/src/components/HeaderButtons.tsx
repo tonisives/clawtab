@@ -1,21 +1,6 @@
-import { Ionicons } from "@expo/vector-icons";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
-
-export function HeaderBackButton({ onPress }: { onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel="Back"
-      hitSlop={8}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
-    >
-      <Ionicons name="chevron-back" size={24} color={colors.text} />
-    </Pressable>
-  );
-}
 
 export function HeaderStatusDot({ color }: { color: string }) {
   return (
@@ -58,16 +43,6 @@ export function HeaderTitleWithIcon({
 }
 
 const styles = StyleSheet.create({
-  button: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  pressed: {
-    opacity: 0.55,
-  },
   statusButton: {
     width: 36,
     height: 36,

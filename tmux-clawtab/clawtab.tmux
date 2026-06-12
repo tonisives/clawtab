@@ -43,7 +43,7 @@ tmux bind-key "$menu_key" run-shell "$CURRENT_DIR/scripts/popup-menu-launcher.sh
 tmux bind-key "$auto_yes_key" run-shell "$CURRENT_DIR/scripts/toggle-auto-yes.sh"
 tmux bind-key "$open_key" run-shell "$CURRENT_DIR/scripts/open-clawtab.sh"
 tmux bind-key "$skills_key" display-popup -E -w 60 -h 80% "$CURRENT_DIR/scripts/search-skills.sh '#{pane_id}'"
-tmux bind-key "$fork_key" run-shell "$CURRENT_DIR/scripts/fork-session.sh"
+tmux bind-key "$fork_key" run-shell "$CURRENT_DIR/scripts/fork-session.sh '#{pane_id}'"
 tmux bind-key "$sidebar_key" run-shell "$CURRENT_DIR/scripts/sidebar-launcher.sh '#{pane_id}'"
 
 # Append auto-yes indicator to pane-border-format (right-aligned)

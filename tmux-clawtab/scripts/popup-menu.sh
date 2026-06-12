@@ -22,12 +22,16 @@ if [ -z "$PANE_ID" ]; then
     exit 1
 fi
 
-# Verify it's a supported agent pane.
-cmd=$(tmux list-panes -t "$PANE_ID" -F '#{pane_id} #{pane_current_command}' 2>/dev/null | grep "^${PANE_ID} " | cut -d' ' -f2)
-if ! echo "$cmd" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' && ! echo "$cmd" | grep -qiE 'claude|codex'; then
-    echo "Not a supported agent pane (got: $cmd)"
-    sleep 2
-    exit 0
+PANE_COMMAND=$(tmux display-message -t "$PANE_ID" -p '#{pane_current_command}' 2>/dev/null || true)
+AGENT_LABEL="Unsupported"
+if echo "$PANE_COMMAND" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    AGENT_LABEL="Claude Code"
+elif echo "$PANE_COMMAND" | grep -qi 'claude'; then
+    AGENT_LABEL="Claude Code"
+elif echo "$PANE_COMMAND" | grep -qi 'codex'; then
+    AGENT_LABEL="Codex"
+elif echo "$PANE_COMMAND" | grep -qi 'opencode'; then
+    AGENT_LABEL="OpenCode"
 fi
 
 META_FILE=$(mktemp /tmp/clawtab-meta-XXXXXX)
@@ -185,7 +189,14 @@ draw_tabs() {
         label_len=$((label_len + ${#TABS[$i]} + 2))
     done
     label_len=$((label_len + 1))  # trailing space before fill
-    local fill=$((TERM_COLS - 2 - label_len))
+    local top_meta="${AGENT_LABEL} ${PANE_ID}"
+    local meta_len=$((${#top_meta} + 2))
+    local fill=$((TERM_COLS - 2 - label_len - meta_len))
+    if [ $fill -lt 0 ]; then
+        top_meta=""
+        meta_len=0
+        fill=$((TERM_COLS - 2 - label_len))
+    fi
     [ $fill -lt 0 ] && fill=0
 
     move_to 1 1
@@ -201,7 +212,11 @@ draw_tabs() {
             printf "${C_TAB_INACTIVE} %s ${C_RESET}" "${TABS[$i]}" >&3
         fi
     done
-    printf "${C_BORDER} %s%s${C_RESET}" "$(hfill $fill)" "$BOX_TR" >&3
+    printf "${C_BORDER} %s" "$(hfill $fill)" >&3
+    if [ -n "$top_meta" ]; then
+        printf "${C_DIM} %s ${C_RESET}" "$top_meta" >&3
+    fi
+    printf "${C_BORDER}%s${C_RESET}" "$BOX_TR" >&3
 }
 
 # --- Status bar (bottom border) ---
@@ -262,6 +277,8 @@ SHORTCUT_CURSOR=0
 SHORTCUT_ITEMS=("Toggle auto-yes" "Fork session")
 
 # Session info (loaded once)
+SESSION_ID=""
+SESSION_RESTORE_COMMAND=""
 SESSION_FIRST_QUERY=""
 SESSION_LAST_QUERY=""
 SESSION_STARTED_AT=""
@@ -296,9 +313,16 @@ load_session_info() {
         local raw
         raw=$(cwtctl pane-info "$PANE_ID" 2>/dev/null)
         if [ -n "$raw" ]; then
+            SESSION_ID=$(echo "$raw" | grep '^session_id=' | cut -d= -f2-)
             SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
             SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
             SESSION_LAST_QUERY=$(echo "$raw" | grep '^last_query=' | cut -d= -f2-)
+            SESSION_RESTORE_COMMAND=$(cwtctl pane-info restore-command "$PANE_ID" 2>/dev/null || true)
+            case "$SESSION_RESTORE_COMMAND" in
+                codex\ *) AGENT_LABEL="Codex" ;;
+                opencode\ *) AGENT_LABEL="OpenCode" ;;
+                claude\ *) AGENT_LABEL="Claude Code" ;;
+            esac
             local epoch
             epoch=$(echo "$raw" | grep '^started_epoch=' | cut -d= -f2-)
             if [ -n "$epoch" ]; then
@@ -334,6 +358,27 @@ wrap_query_lines() {
     done
 }
 load_session_info
+
+trim_for_row() {
+    local text="$1"
+    local max_len=$((TERM_COLS - 16))
+    [ $max_len -lt 10 ] && max_len=10
+    if [ ${#text} -gt $max_len ]; then
+        printf "%s..." "${text:0:$((max_len - 3))}"
+    else
+        printf "%s" "$text"
+    fi
+}
+
+draw_section_header() {
+    local row=$1
+    local label="$2"
+    local fill=$((TERM_COLS - 2 - 1 - ${#label} - 2))
+    [ $fill -lt 0 ] && fill=0
+    move_to $row 1
+    clear_line
+    printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} %s ${C_BORDER}%s${BOX_MR}${C_RESET}" "$label" "$(hfill $fill)" >&3
+}
 
 # Draw shortcuts (Home) tab
 draw_shortcuts() {
@@ -379,11 +424,8 @@ draw_shortcuts() {
     ((row++))
 
     # Session info
-    if [ -n "$SESSION_STARTED_AT" ] || [ -n "$SESSION_FIRST_QUERY" ]; then
-        local fill=$((TERM_COLS - 2 - 1 - 9 - 1))
-        [ $fill -lt 0 ] && fill=0
-        move_to $row 1; clear_line
-        printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} Session ${C_BORDER} %s${BOX_MR}${C_RESET}" "$(hfill $fill)" >&3
+    if [ -n "$SESSION_ID" ] || [ -n "$SESSION_STARTED_AT" ] || [ -n "$SESSION_FIRST_QUERY" ]; then
+        draw_section_header $row "Session"
         ((row++))
 
         draw_empty_row $row
@@ -395,7 +437,6 @@ draw_shortcuts() {
             if [ -n "$SESSION_RELATIVE_TIME" ]; then
                 printf "  ${C_DIM}(%s)${C_RESET}" "$SESSION_RELATIVE_TIME" >&3
             fi
-            printf "  ${C_DIM}%s${C_RESET}" "$PANE_ID" >&3
             draw_row_end $row
             ((row++))
         fi
@@ -407,8 +448,10 @@ draw_shortcuts() {
             ((row++))
 
             wrap_query_lines "$SESSION_FIRST_QUERY"
+            local first_query_limit=$((TERM_ROWS - 1))
+            [ -n "$SESSION_ID" ] && first_query_limit=$((TERM_ROWS - 3))
             for ((qi=0; qi<${#QUERY_LINES[@]}; qi++)); do
-                if [ $row -ge $((TERM_ROWS - 1)) ]; then break; fi
+                if [ $row -ge $first_query_limit ]; then break; fi
                 draw_row_start $row
                 printf "${C_NORMAL}  %s${C_RESET}" "${QUERY_LINES[$qi]}" >&3
                 draw_row_end $row
@@ -427,7 +470,9 @@ draw_shortcuts() {
 
             wrap_query_lines "$SESSION_LAST_QUERY"
             local total_lines=${#QUERY_LINES[@]}
-            local avail=$((TERM_ROWS - row - 1))
+            local session_id_reserve=0
+            [ -n "$SESSION_ID" ] && session_id_reserve=2
+            local avail=$((TERM_ROWS - row - 1 - session_id_reserve))
             [ $avail -lt 1 ] && avail=1
 
             if [ $QUERY_SCROLL -gt $((total_lines - avail)) ]; then
@@ -453,6 +498,18 @@ draw_shortcuts() {
             if [ $((QUERY_SCROLL + shown)) -lt $total_lines ]; then
                 draw_row_start $row
                 printf "${C_DIM}  ... scroll down for more ...${C_RESET}" >&3
+                draw_row_end $row
+                ((row++))
+            fi
+        fi
+
+        if [ -n "$SESSION_ID" ] && [ $row -lt $((TERM_ROWS - 1)) ]; then
+            draw_empty_row $row
+            ((row++))
+
+            if [ $row -lt $((TERM_ROWS - 1)) ]; then
+                draw_row_start $row
+                printf "${C_DIM}Session ID:${C_RESET} ${C_NORMAL}%s${C_RESET}" "$(trim_for_row "$SESSION_ID")" >&3
                 draw_row_end $row
                 ((row++))
             fi
@@ -602,11 +659,7 @@ do_enter() {
                     return 0
                     ;;
                 1)
-                    # Fork session
-                    tmux send-keys -t "$PANE_ID" "forking" Enter Escape Escape
-                    sleep 0.3
-                    resolve_pane_path
-                    tmux split-window -v -t "$PANE_ID" -c "$pane_path" "claude --continue --fork-session"
+                    "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
                     return 1
                     ;;
             esac
@@ -991,10 +1044,7 @@ while true; do
             if [ $TAB -eq 0 ]; then draw_shortcuts; draw_status_bar; fi
             ;;
         shortcut_f)
-            tmux send-keys -t "$PANE_ID" "forking" Enter Escape Escape
-            sleep 0.3
-            resolve_pane_path
-            tmux split-window -v -t "$PANE_ID" -c "$pane_path" "claude --continue --fork-session"
+            "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
             break
             ;;
         char:*)

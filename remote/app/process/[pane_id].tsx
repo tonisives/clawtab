@@ -12,7 +12,7 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
-import { HeaderBackButton, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -41,11 +41,6 @@ export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/(tabs)");
-  }, [router]);
-
   // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
   // We encode % as _pct_ in URLs and decode it back here.
   const pane_id = (rawPaneId ?? "").replace(/_pct_/g, "%");
@@ -323,7 +318,6 @@ export default function ProcessDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          headerLeft: () => <HeaderBackButton onPress={handleBack} />,
           headerTitle: () => (
             <HeaderTitleWithIcon
               title={headerTitle}

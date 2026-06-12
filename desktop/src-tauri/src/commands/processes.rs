@@ -65,7 +65,7 @@ fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> Strin
             "list-windows",
             "-a",
             "-F",
-            "#{session_name}\x1e#{window_id}",
+            "#{session_name}|CT|#{window_id}",
         ],
         "processes::resolve_non_view_session_for_window",
     );
@@ -78,7 +78,7 @@ fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> Strin
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     for line in stdout.lines() {
-        let mut parts = line.splitn(2, '\x1e');
+        let mut parts = line.splitn(2, "|CT|");
         let session = parts.next().unwrap_or("");
         let current_window_id = parts.next().unwrap_or("");
         if current_window_id == window_id && !is_view_session(session) {
@@ -328,7 +328,6 @@ fn detect_processes_blocking(
 
     let mut seen_panes = HashSet::new();
     let mut results = Vec::new();
-
     for line in stdout.lines() {
         let Some(row) = parse_pane_row(line) else {
             continue;
@@ -355,7 +354,7 @@ fn list_tmux_panes() -> Result<Option<String>, String> {
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id}\x1e#{pane_current_command}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{pane_pid}\x1e#{window_id}\x1e#{pane_title}\x1e#{@clawtab-slug}",
+            "#{pane_id}|CT|#{pane_current_command}|CT|#{pane_current_path}|CT|#{session_name}|CT|#{window_name}|CT|#{pane_pid}|CT|#{window_id}|CT|#{pane_title}|CT|#{@clawtab-slug}",
         ],
         "processes::detect_processes::list-panes",
     );
@@ -374,7 +373,7 @@ fn list_tmux_panes() -> Result<Option<String>, String> {
 }
 
 fn parse_pane_row(line: &str) -> Option<PaneRow<'_>> {
-    let parts: Vec<&str> = line.splitn(9, '\x1e').collect();
+    let parts: Vec<&str> = line.splitn(9, "|CT|").collect();
     if parts.len() < 8 {
         return None;
     }
@@ -398,7 +397,21 @@ fn pick_provider(
     process_snapshot: &crate::agent_session::ProcessSnapshot,
 ) -> Option<ProcessProvider> {
     detect_process_provider(row.pane_pid, Some(process_snapshot))
+        .or_else(|| provider_from_tmux_command(row.command))
         .or_else(|| is_semver(row.command).then_some(ProcessProvider::Claude))
+}
+
+fn provider_from_tmux_command(command: &str) -> Option<ProcessProvider> {
+    let lower = command.to_ascii_lowercase();
+    if lower.contains("codex") {
+        Some(ProcessProvider::Codex)
+    } else if lower.contains("opencode") {
+        Some(ProcessProvider::Opencode)
+    } else if lower.contains("claude") {
+        Some(ProcessProvider::Claude)
+    } else {
+        None
+    }
 }
 
 fn resolve_group_and_job(
@@ -730,7 +743,7 @@ pub fn get_existing_pane_info(
             "-t",
             &pane_id,
             "-p",
-            "#{pane_id}\x1e#{pane_current_path}\x1e#{session_name}\x1e#{window_name}\x1e#{window_id}\x1e#{pane_title}\x1e#{@clawtab-slug}",
+            "#{pane_id}|CT|#{pane_current_path}|CT|#{session_name}|CT|#{window_name}|CT|#{window_id}|CT|#{pane_title}|CT|#{@clawtab-slug}",
         ],
         "processes::get_existing_pane_info::display-message",
     )
@@ -745,7 +758,7 @@ pub fn get_existing_pane_info(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut parts = stdout.trim_end().splitn(7, '\x1e');
+    let mut parts = stdout.trim_end().splitn(7, "|CT|");
     let Some(found_pane_id) = parts.next() else {
         return Ok(None);
     };

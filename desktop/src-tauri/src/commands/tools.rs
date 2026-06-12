@@ -136,7 +136,7 @@ fn parse_claude_family(id: &str) -> Option<(&'static str, u32, u32)> {
 }
 
 /// Runs `codex debug models` and returns (slug, display_name) for models that are
-/// listable and supported in the API (drops hidden entries like codex-auto-review).
+/// listable in the CLI picker.
 #[tauri::command]
 pub async fn detect_codex_models() -> Result<Vec<(String, String)>, String> {
     tokio::task::spawn_blocking(|| {
@@ -154,10 +154,7 @@ pub async fn detect_codex_models() -> Result<Vec<(String, String)>, String> {
             .as_array()
             .ok_or_else(|| "unexpected response shape: missing models array".to_string())?
             .iter()
-            .filter(|m| {
-                m["visibility"].as_str() == Some("list")
-                    && m["supported_in_api"].as_bool().unwrap_or(false)
-            })
+            .filter(|m| m["visibility"].as_str() == Some("list"))
             .filter_map(|m| {
                 let slug = m["slug"].as_str()?.to_string();
                 let name = m["display_name"].as_str().unwrap_or(&slug).to_string();
