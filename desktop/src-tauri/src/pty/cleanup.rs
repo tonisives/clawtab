@@ -146,7 +146,7 @@ fn group_ct_windows(raw: &str) -> std::collections::HashMap<String, WindowEntry>
     let mut windows: std::collections::HashMap<String, WindowEntry> =
         std::collections::HashMap::new();
     for line in raw.lines() {
-        let parts: Vec<&str> = line.split('\x1e').collect();
+        let parts: Vec<&str> = line.split("|CT|").collect();
         if parts.len() < 5 {
             continue;
         }

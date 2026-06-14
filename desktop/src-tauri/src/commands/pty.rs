@@ -125,7 +125,7 @@ fn list_panes_raw(callsite: &'static str) -> Result<String, String> {
             "list-panes",
             "-a",
             "-F",
-            "#{pane_id}\x1e#{session_name}\x1e#{window_index}\x1e#{window_name}\x1e#{pane_width}\x1e#{pane_height}\x1e#{pane_current_command}\x1e#{window_id}",
+            "#{pane_id}|CT|#{session_name}|CT|#{window_index}|CT|#{window_name}|CT|#{pane_width}|CT|#{pane_height}|CT|#{pane_current_command}|CT|#{window_id}",
         ],
         callsite,
     )
@@ -146,7 +146,7 @@ pub fn list_free_panes() -> Result<Vec<FreePaneInfo>, String> {
     let mut panes = Vec::new();
     let mut seen = HashSet::new();
     for line in raw.lines() {
-        let p: Vec<&str> = line.split('\x1e').collect();
+        let p: Vec<&str> = line.split("|CT|").collect();
         if p.len() < 7 {
             continue;
         }
@@ -180,7 +180,7 @@ pub fn list_captured_panes() -> Result<Vec<CapturedPaneInfo>, String> {
     let mut panes = Vec::new();
     let mut seen = HashSet::new();
     for line in raw.lines() {
-        let p: Vec<&str> = line.split('\x1e').collect();
+        let p: Vec<&str> = line.split("|CT|").collect();
         if p.len() < 8 {
             continue;
         }

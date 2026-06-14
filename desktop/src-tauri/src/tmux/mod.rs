@@ -185,7 +185,7 @@ pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
             "-t",
             pane_id,
             "-p",
-            "#{session_name}\x1e#{window_id}\x1e#{window_name}",
+            "#{session_name}|CT|#{window_id}|CT|#{window_name}",
         ],
         "tmux::resolve_fork_session::info",
     )
@@ -197,7 +197,7 @@ pub fn resolve_fork_session(pane_id: &str) -> Result<String, String> {
         ));
     }
     let raw = String::from_utf8_lossy(&info.stdout).trim().to_string();
-    let parts: Vec<&str> = raw.split('\x1e').collect();
+    let parts: Vec<&str> = raw.split("|CT|").collect();
     if parts.len() < 3 {
         return Err(format!("malformed display-message output: {}", raw));
     }
@@ -350,7 +350,7 @@ pub fn list_panes_by_slug(slug: &str) -> Result<Vec<(String, u64)>, String> {
             "list-panes",
             "-a",
             "-F",
-            "#{@clawtab-slug}\x1e#{pane_id}\x1e#{pane_pid}",
+            "#{@clawtab-slug}|CT|#{pane_id}|CT|#{pane_pid}",
         ],
         "tmux::list_panes_by_slug",
     )
@@ -364,7 +364,7 @@ pub fn list_panes_by_slug(slug: &str) -> Result<Vec<(String, u64)>, String> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut panes = Vec::new();
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.split('\x1e').collect();
+        let parts: Vec<&str> = line.split("|CT|").collect();
         if parts.len() < 3 {
             continue;
         }
@@ -925,7 +925,7 @@ pub struct PaneOrigin {
     pub window_name: String,
 }
 
-/// `display-message -t <pane_id> -p '#{session_name}\x1e#{window_id}\x1e#{window_name}'`.
+/// `display-message -t <pane_id> -p '#{session_name}|CT|#{window_id}|CT|#{window_name}'`.
 pub fn display_pane_origin(pane_id: &str) -> Result<PaneOrigin, String> {
     let raw = run_capture(
         &[
@@ -933,11 +933,11 @@ pub fn display_pane_origin(pane_id: &str) -> Result<PaneOrigin, String> {
             "-t",
             pane_id,
             "-p",
-            "#{session_name}\x1e#{window_id}\x1e#{window_name}",
+            "#{session_name}|CT|#{window_id}|CT|#{window_name}",
         ],
         "tmux::display_pane_origin",
     )?;
-    let parts: Vec<&str> = raw.split('\x1e').collect();
+    let parts: Vec<&str> = raw.split("|CT|").collect();
     if parts.len() != 3 {
         return Err(format!("malformed pane origin: {}", raw));
     }
@@ -955,7 +955,7 @@ pub struct PaneOriginFull {
     pub window_panes: u32,
 }
 
-/// `display-message -t <pane_id> -p '#{window_id}\x1e#{pane_index}\x1e#{window_name}\x1e#{window_panes}'`.
+/// `display-message -t <pane_id> -p '#{window_id}|CT|#{pane_index}|CT|#{window_name}|CT|#{window_panes}'`.
 pub fn display_pane_origin_full(pane_id: &str) -> Result<PaneOriginFull, String> {
     let raw = run_capture(
         &[
@@ -963,11 +963,11 @@ pub fn display_pane_origin_full(pane_id: &str) -> Result<PaneOriginFull, String>
             "-t",
             pane_id,
             "-p",
-            "#{window_id}\x1e#{pane_index}\x1e#{window_name}\x1e#{window_panes}",
+            "#{window_id}|CT|#{pane_index}|CT|#{window_name}|CT|#{window_panes}",
         ],
         "tmux::display_pane_origin_full",
     )?;
-    let parts: Vec<&str> = raw.split('\x1e').collect();
+    let parts: Vec<&str> = raw.split("|CT|").collect();
     if parts.len() < 4 {
         return Err(format!("malformed origin: {}", raw));
     }
@@ -1177,7 +1177,7 @@ pub fn list_sessions_with_groups() -> Result<String, String> {
     )
 }
 
-/// `list-panes -a -F '#{session_name}\x1e#{window_id}\x1e#{window_name}\x1e#{pane_id}\x1e#{pane_current_command}'`.
+/// `list-panes -a -F '#{session_name}|CT|#{window_id}|CT|#{window_name}|CT|#{pane_id}|CT|#{pane_current_command}'`.
 /// Used by the orphaned-ct-windows sweep to find idle ct-* windows.
 pub fn list_panes_all_with_commands() -> Result<String, String> {
     run_capture(
@@ -1185,7 +1185,7 @@ pub fn list_panes_all_with_commands() -> Result<String, String> {
             "list-panes",
             "-a",
             "-F",
-            "#{session_name}\x1e#{window_id}\x1e#{window_name}\x1e#{pane_id}\x1e#{pane_current_command}",
+            "#{session_name}|CT|#{window_id}|CT|#{window_name}|CT|#{pane_id}|CT|#{pane_current_command}",
         ],
         "tmux::list_panes_all_with_commands",
     )
@@ -1199,12 +1199,12 @@ pub fn is_active_attached_pane(pane_id: &str) -> Result<bool, String> {
             "list-panes",
             "-a",
             "-F",
-            "#{session_attached}\x1e#{window_active}\x1e#{pane_active}\x1e#{pane_id}",
+            "#{session_attached}|CT|#{window_active}|CT|#{pane_active}|CT|#{pane_id}",
         ],
         "tmux::is_active_attached_pane",
     )?;
     for line in raw.lines() {
-        let mut parts = line.split('\x1e');
+        let mut parts = line.split("|CT|");
         let attached = parts
             .next()
             .and_then(|v| v.parse::<u32>().ok())
