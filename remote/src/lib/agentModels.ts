@@ -5,6 +5,7 @@ function labelForProvider(provider: ProcessProvider): string {
     case "claude": return "Claude Code";
     case "codex": return "Codex";
     case "opencode": return "OpenCode";
+    case "antigravity": return "Antigravity";
     case "shell": return "Shell";
   }
 }
@@ -19,6 +20,7 @@ export const BARE_PROVIDER_OPTIONS: AgentModelOption[] = [
   { provider: "claude", modelId: null, label: "Claude Code" },
   { provider: "codex", modelId: null, label: "Codex" },
   { provider: "opencode", modelId: null, label: "OpenCode" },
+  { provider: "antigravity", modelId: null, label: "Antigravity" },
 ];
 
 export function buildModelOptions(

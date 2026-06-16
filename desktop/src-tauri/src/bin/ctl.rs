@@ -464,6 +464,9 @@ fn restore_command_for_provider(
         clawtab_lib::agent_session::ProcessProvider::Opencode => {
             Some(format!("opencode -s {}", session_id))
         }
+        clawtab_lib::agent_session::ProcessProvider::Antigravity => {
+            Some(format!("agy --conversation {}", session_id))
+        }
         clawtab_lib::agent_session::ProcessProvider::Shell => None,
     }
 }

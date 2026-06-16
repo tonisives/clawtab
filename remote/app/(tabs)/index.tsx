@@ -37,7 +37,7 @@ type GroupTabView = Record<string, "tabs" | "jobs">
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
-  return value === "claude" || value === "codex" || value === "opencode" || value === "shell"
+  return value === "claude" || value === "codex" || value === "opencode" || value === "antigravity" || value === "shell"
 }
 
 // Capture URL params before expo-router rewrites them on init
@@ -128,9 +128,10 @@ export default function JobsScreen() {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
     codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
     opencode: [] as string[],
+    antigravity: [] as string[],
   }
   const resolvedModels = (!enabledModels || Object.keys(enabledModels).length === 0) ? DEFAULT_ENABLED : enabledModels
-  const agentModelOptions: AgentModelOption[] = buildModelOptions(["claude", "codex", "opencode"], resolvedModels)
+  const agentModelOptions: AgentModelOption[] = buildModelOptions(["claude", "codex", "opencode", "antigravity"], resolvedModels)
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {

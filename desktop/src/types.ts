@@ -193,7 +193,7 @@ export interface DetectedProcess {
   version: string;
   display_name?: string | null;
   pane_title?: string | null;
-  provider: "claude" | "codex" | "opencode";
+  provider: "claude" | "codex" | "opencode" | "antigravity";
   can_fork_session: boolean;
   can_send_skills: boolean;
   can_inject_secrets: boolean;

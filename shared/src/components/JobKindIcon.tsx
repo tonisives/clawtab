@@ -9,10 +9,12 @@ import manualIcon from "../assets/manual-icon.png";
 import shellIcon from "../assets/shell-icon.png";
 import codexIcon from "../assets/codex-icon.png";
 import opencodeIcon from "../assets/opencode-icon.png";
+import antigravityIcon from "../assets/antigravity-icon.png";
 
-export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "shell";
+export type JobKind = "cron" | "manual" | "claude" | "codex" | "opencode" | "antigravity" | "shell";
 
 export function kindForJob(job: RemoteJob): JobKind {
+  if (job.agent_provider === "antigravity" || job.job_type === "antigravity") return "antigravity";
   if (job.agent_provider === "codex" || job.job_type === "codex") return "codex";
   if (job.agent_provider === "opencode" || job.job_type === "opencode") return "opencode";
   if (job.agent_provider === "shell") return "shell";
@@ -27,6 +29,7 @@ export function providerKindForJob(job: RemoteJob): ProcessProvider | null {
     job.agent_provider === "claude" ||
     job.agent_provider === "codex" ||
     job.agent_provider === "opencode" ||
+    job.agent_provider === "antigravity" ||
     job.agent_provider === "shell"
   ) {
     return job.agent_provider;
@@ -34,6 +37,7 @@ export function providerKindForJob(job: RemoteJob): ProcessProvider | null {
   if (job.job_type === "claude") return "claude";
   if (job.job_type === "codex") return "codex";
   if (job.job_type === "opencode") return "opencode";
+  if (job.job_type === "antigravity") return "antigravity";
   if (job.job_type === "shell") return "shell";
   return null;
 }
@@ -51,6 +55,8 @@ export function kindForProcess(process: DetectedProcess): JobKind {
       return "codex";
     case "opencode":
       return "opencode";
+    case "antigravity":
+      return "antigravity";
     default:
       return "claude";
   }
@@ -67,6 +73,8 @@ function paletteForKind(kind: JobKind) {
     case "codex":
       return { bg: "transparent", fg: colors.text };
     case "opencode":
+      return { bg: "transparent", fg: colors.text };
+    case "antigravity":
       return { bg: "transparent", fg: colors.text };
     case "shell":
       return { bg: colors.successBg ?? "rgba(52, 199, 89, 0.14)", fg: colors.success ?? "#34c759" };
@@ -93,6 +101,8 @@ function sourceForKind(kind: JobKind) {
       return codexIcon;
     case "opencode":
       return opencodeIcon;
+    case "antigravity":
+      return antigravityIcon;
   }
 }
 
@@ -108,7 +118,7 @@ export function JobKindIcon({
   bare?: boolean;
 }) {
   const palette = paletteForKind(kind);
-  const hasIntrinsicBadge = kind === "claude" || kind === "codex" || kind === "opencode";
+  const hasIntrinsicBadge = kind === "claude" || kind === "codex" || kind === "opencode" || kind === "antigravity";
   const imageSize = hasIntrinsicBadge
     ? size
     : compact ? Math.round(size * 0.62) : Math.round(size * 0.66);

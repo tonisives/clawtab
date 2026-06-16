@@ -6,7 +6,7 @@ import type { AgentNodeData } from "./useRecencyLayout";
 
 function providerToKind(provider: ProcessProvider | null | undefined): JobKind | null {
   if (!provider) return null;
-  if (provider === "claude" || provider === "codex" || provider === "opencode") return provider;
+  if (provider === "claude" || provider === "codex" || provider === "opencode" || provider === "antigravity") return provider;
   return null;
 }
 

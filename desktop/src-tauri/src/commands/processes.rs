@@ -143,6 +143,7 @@ fn provider_capabilities(provider: ProcessProvider) -> (bool, bool, bool) {
         ProcessProvider::Claude => (true, true, true),
         ProcessProvider::Codex => (false, false, false),
         ProcessProvider::Opencode => (false, false, false),
+        ProcessProvider::Antigravity => (false, false, false),
         ProcessProvider::Shell => (false, false, false),
     }
 }
@@ -407,6 +408,8 @@ fn provider_from_tmux_command(command: &str) -> Option<ProcessProvider> {
         Some(ProcessProvider::Codex)
     } else if lower.contains("opencode") {
         Some(ProcessProvider::Opencode)
+    } else if lower.contains("agy") || lower.contains("antigravity") {
+        Some(ProcessProvider::Antigravity)
     } else if lower.contains("claude") {
         Some(ProcessProvider::Claude)
     } else {

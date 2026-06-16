@@ -23,6 +23,7 @@ pub async fn detect_agent_providers() -> Result<Vec<ProcessProvider>, String> {
                 ProcessProvider::Claude,
                 ProcessProvider::Codex,
                 ProcessProvider::Opencode,
+                ProcessProvider::Antigravity,
                 ProcessProvider::Shell,
             ]
             .into_iter()

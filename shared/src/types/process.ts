@@ -1,4 +1,4 @@
-export type ProcessProvider = "claude" | "codex" | "opencode" | "shell";
+export type ProcessProvider = "claude" | "codex" | "opencode" | "antigravity" | "shell";
 
 export interface AgentModelOption {
   provider: ProcessProvider;

@@ -2,6 +2,7 @@ mod claude;
 mod codex;
 mod common;
 mod opencode;
+mod antigravity;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -23,6 +24,7 @@ pub enum ProcessProvider {
     Claude,
     Codex,
     Opencode,
+    Antigravity,
     Shell,
 }
 
@@ -32,18 +34,22 @@ impl ProcessProvider {
             ProcessProvider::Claude => "claude",
             ProcessProvider::Codex => "codex",
             ProcessProvider::Opencode => "opencode",
+            ProcessProvider::Antigravity => "antigravity",
             ProcessProvider::Shell => "shell",
         }
     }
 
     pub fn binary_name(self) -> &'static str {
-        self.as_str()
+        match self {
+            ProcessProvider::Antigravity => "agy",
+            _ => self.as_str(),
+        }
     }
 
     pub fn supports_model_flag(self) -> bool {
         matches!(
             self,
-            ProcessProvider::Claude | ProcessProvider::Codex | ProcessProvider::Opencode
+            ProcessProvider::Claude | ProcessProvider::Codex | ProcessProvider::Opencode | ProcessProvider::Antigravity
         )
     }
 
@@ -160,6 +166,7 @@ pub fn resolve_session_info_for_provider_with_cwd(
         Some(ProcessProvider::Claude) => claude::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Codex) => codex::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Opencode) => opencode::resolve_session_info(pane_pid, snapshot, cwd),
+        Some(ProcessProvider::Antigravity) => antigravity::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Shell) | None => SessionInfo::default(),
     }
 }
@@ -221,6 +228,8 @@ fn provider_for_command(command: Option<&str>) -> Option<ProcessProvider> {
         Some(ProcessProvider::Codex)
     } else if lower.contains("opencode") {
         Some(ProcessProvider::Opencode)
+    } else if lower.contains("agy") || lower.contains("antigravity") {
+        Some(ProcessProvider::Antigravity)
     } else if lower.contains("claude") && !lower.contains("claude.app") {
         Some(ProcessProvider::Claude)
     } else {

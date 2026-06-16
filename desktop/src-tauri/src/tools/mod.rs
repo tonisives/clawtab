@@ -53,6 +53,15 @@ const TOOLS: &[ToolSpec] = &[
         group: Some("ai_agent"),
         brew_formula: None,
     },
+    ToolSpec {
+        name: "antigravity",
+        binary: "agy",
+        version_flag: "--version",
+        category: "AI Agent",
+        required: true,
+        group: Some("ai_agent"),
+        brew_formula: None,
+    },
     // Terminal
     ToolSpec {
         name: "ghostty",

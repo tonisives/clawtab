@@ -190,7 +190,7 @@ export function SetupWizard({ onComplete }: Props) {
           />
           {!hasAiAgent && tools.length > 0 && (
             <p style={{ color: "var(--danger-color)", marginTop: 12 }}>
-              An AI agent is required (claude, opencode, or codex). Run{" "}
+              An AI agent is required (claude, opencode, codex, or antigravity). Run{" "}
               <code>npm install -g @anthropic-ai/claude-code</code> then click Rescan.
             </p>
           )}

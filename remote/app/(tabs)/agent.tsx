@@ -25,13 +25,13 @@ import { BARE_PROVIDER_OPTIONS, buildModelOptions, labelForProviderModel } from 
 
 const STORAGE_KEY = "clawtab_agent_model_v2";
 
-const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode"];
+const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"];
 // Bare claude entry; the actual model gets resolved from server-pushed enabled_models.
 const DEFAULT_MODEL: AgentModelOption =
   BARE_PROVIDER_OPTIONS.find((m) => m.provider === "claude") ?? BARE_PROVIDER_OPTIONS[0];
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
-  return value === "claude" || value === "codex" || value === "opencode" || value === "shell";
+  return value === "claude" || value === "codex" || value === "opencode" || value === "antigravity" || value === "shell";
 }
 
 function getStoredModel(): AgentModelOption {
@@ -102,6 +102,7 @@ export default function AgentScreen() {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
     codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
     opencode: [] as string[],
+    antigravity: [] as string[],
   };
   const resolvedModels = (!enabledModels || Object.keys(enabledModels).length === 0) ? DEFAULT_ENABLED : enabledModels;
   const modelOptions = buildModelOptions(DEFAULT_PROVIDERS, resolvedModels);

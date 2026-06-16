@@ -95,6 +95,10 @@ fn build_send_cmd(
             "cd {} && {}{} --prompt $'{}'",
             work_dir, agent_command, model_flag, escaped_prompt
         ),
+        ProcessProvider::Antigravity => format!(
+            "cd {} && {}{} --prompt-interactive $'{}'",
+            work_dir, agent_command, model_flag, escaped_prompt
+        ),
         ProcessProvider::Shell => {
             if escaped_prompt.is_empty() {
                 format!("cd {}", work_dir)
