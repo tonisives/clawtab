@@ -32,13 +32,15 @@ pub struct UsageSnapshot {
     pub refreshed_at: String,
     pub claude: ProviderUsageSnapshot,
     pub codex: ProviderUsageSnapshot,
+    pub antigravity: ProviderUsageSnapshot,
     pub zai: ProviderUsageSnapshot,
 }
 
 pub async fn fetch_usage_snapshot(zai_token: Option<String>) -> UsageSnapshot {
-    let (claude, codex, zai) = tokio::join!(
+    let (claude, codex, antigravity, zai) = tokio::join!(
         fetch_claude_snapshot(),
         fetch_codex_snapshot(),
+        fetch_antigravity_snapshot(),
         fetch_zai_snapshot(zai_token),
     );
 
@@ -46,9 +48,277 @@ pub async fn fetch_usage_snapshot(zai_token: Option<String>) -> UsageSnapshot {
         refreshed_at: Utc::now().to_rfc3339(),
         claude,
         codex,
+        antigravity,
         zai,
     }
 }
+
+async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
+    if crate::tools::which("agy").is_some() {
+        match tokio::task::spawn_blocking(|| run_antigravity_usage_pty(Duration::from_secs(12))).await {
+            Ok(Ok(output)) => {
+                match parse_antigravity_usage_snapshot(&output) {
+                    Ok(snapshot) => snapshot,
+                    Err(err) => ProviderUsageSnapshot {
+                        provider: "antigravity".to_string(),
+                        status: "available".to_string(),
+                        summary: "Active".to_string(),
+                        note: Some(format!(
+                            "Connected. Failed to parse limits: {}. Raw output: {:?}",
+                            err, output
+                        )),
+                        entries: Vec::new(),
+                    }
+                }
+            }
+            Ok(Err(err)) => ProviderUsageSnapshot {
+                provider: "antigravity".to_string(),
+                status: "available".to_string(),
+                summary: "Active".to_string(),
+                note: Some(format!("Connected. Failed to retrieve usage statistics: {}", err)),
+                entries: Vec::new(),
+            },
+            Err(err) => ProviderUsageSnapshot {
+                provider: "antigravity".to_string(),
+                status: "available".to_string(),
+                summary: "Active".to_string(),
+                note: Some(format!("Connected. Task failed: {}", err)),
+                entries: Vec::new(),
+            }
+        }
+    } else {
+        ProviderUsageSnapshot {
+            provider: "antigravity".to_string(),
+            status: "unavailable".to_string(),
+            summary: "Not installed".to_string(),
+            note: Some("Antigravity CLI (agy) was not found on your system.".to_string()),
+            entries: Vec::new(),
+        }
+    }
+}
+
+fn resolve_antigravity_binary() -> PathBuf {
+    if let Some(path) = crate::tools::which("agy") {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from("agy")
+    }
+}
+
+fn run_antigravity_usage_pty(timeout: Duration) -> Result<String, String> {
+    let agy_binary = resolve_antigravity_binary();
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 70,
+            cols: 220,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|err| format!("openpty: {}", err))?;
+
+    let mut cmd = CommandBuilder::new(agy_binary.to_string_lossy().to_string());
+    for (key, val) in std::env::vars() {
+        cmd.env(key, val);
+    }
+    cmd.env("TERM", "xterm-256color");
+
+    let mut child = pair.slave.spawn_command(cmd).map_err(|err| {
+        format!(
+            "failed to start agy at {}: {}",
+            agy_binary.display(),
+            err
+        )
+    })?;
+    drop(pair.slave);
+
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|err| format!("clone reader: {}", err))?;
+    let mut writer = pair
+        .master
+        .take_writer()
+        .map_err(|err| format!("take writer: {}", err))?;
+
+    let rx = spawn_pty_reader(reader);
+    let output = drive_antigravity_usage(rx, &mut writer, timeout)?;
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let text = strip_ansi_codes(&String::from_utf8_lossy(&output));
+    if text.trim().is_empty() {
+        return Err("Antigravity usage probe returned no output".to_string());
+    }
+
+    Ok(text)
+}
+
+fn drive_antigravity_usage(
+    rx: mpsc::Receiver<Vec<u8>>,
+    writer: &mut dyn Write,
+    timeout: Duration,
+) -> Result<Vec<u8>, String> {
+    let deadline = Instant::now() + timeout;
+    let command_deadline = Instant::now() + Duration::from_millis(7000);
+    let mut output = Vec::new();
+    let mut command_sent = false;
+    let mut usage_seen_at: Option<Instant> = None;
+
+    while Instant::now() < deadline {
+        match rx.recv_timeout(Duration::from_millis(150)) {
+            Ok(bytes) => {
+                output.extend(bytes);
+                let text = String::from_utf8_lossy(&output);
+                if !command_sent && (text.contains("shortcuts") || Instant::now() >= command_deadline) {
+                    writer
+                        .write_all(b"/usage\r")
+                        .and_then(|_| writer.flush())
+                        .map_err(|err| format!("send /usage: {}", err))?;
+                    command_sent = true;
+                }
+                if text.contains("Five Hour Limit") && usage_seen_at.is_none() {
+                    usage_seen_at = Some(Instant::now());
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if !command_sent && Instant::now() >= command_deadline {
+                    writer
+                        .write_all(b"/usage\r")
+                        .and_then(|_| writer.flush())
+                        .map_err(|err| format!("send /usage: {}", err))?;
+                    command_sent = true;
+                }
+                if usage_seen_at
+                    .map(|seen| seen.elapsed() >= Duration::from_millis(800))
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    Ok(output)
+}
+
+#[derive(Debug)]
+struct AntigravityLimit {
+    percent_remaining: i64,
+    refreshes_in: Option<String>,
+}
+
+impl AntigravityLimit {
+    fn display_text(&self) -> String {
+        match &self.refreshes_in {
+            Some(reset) => format!("{}% remaining (refreshes in {})", self.percent_remaining, reset),
+            None => format!("{}% remaining", self.percent_remaining),
+        }
+    }
+
+    fn summary_text(&self) -> String {
+        format!("{}%", self.percent_remaining)
+    }
+}
+
+fn parse_antigravity_limit(lines: &[&str], needle: &str) -> Option<AntigravityLimit> {
+    let needle_lower = needle.to_ascii_lowercase();
+    let index = lines
+        .iter()
+        .position(|line| line.to_ascii_lowercase().contains(&needle_lower))?;
+
+    for line in lines.iter().skip(index + 1).take(3) {
+        let line_lower = line.to_ascii_lowercase();
+        if line_lower.contains("remaining") {
+            let pct = if let Some(pct_idx) = line.find('%') {
+                let before = &line[..pct_idx];
+                let num_str: String = before.chars().filter(|c| c.is_ascii_digit()).collect();
+                num_str.parse::<i64>().ok()
+            } else {
+                None
+            };
+
+            let refreshes = if let Some(ref_idx) = line_lower.find("refreshes in") {
+                let after = &line[ref_idx + "refreshes in".len()..];
+                let trimmed = after.trim().trim_matches(|c: char| c == '(' || c == ')' || c == '.').trim().to_string();
+                (!trimmed.is_empty()).then(|| trimmed)
+            } else {
+                None
+            };
+
+            if let Some(percent_remaining) = pct {
+                return Some(AntigravityLimit {
+                    percent_remaining,
+                    refreshes_in: refreshes,
+                });
+            }
+        }
+    }
+    None
+}
+
+fn parse_antigravity_usage_snapshot(text: &str) -> Result<ProviderUsageSnapshot, String> {
+    let lines = text.lines().map(|l| l.trim()).collect::<Vec<_>>();
+    let weekly = parse_antigravity_limit(&lines, "Weekly Limit");
+    let session = parse_antigravity_limit(&lines, "Five Hour Limit");
+
+    let account = lines
+        .iter()
+        .find(|line| line.to_ascii_lowercase().contains("account:"))
+        .and_then(|line| {
+            line.split_once(':')
+                .map(|(_, val)| val.trim().to_string())
+        })
+        .filter(|val| !val.is_empty());
+
+    if weekly.is_none() && session.is_none() {
+        return Err("Could not parse weekly or five hour limits".to_string());
+    }
+
+    let mut entries = Vec::new();
+    if let Some(ref email) = account {
+        entries.push(UsageEntry {
+            label: "Account".to_string(),
+            value: email.clone(),
+        });
+    }
+
+    if let Some(ref s) = session {
+        entries.push(UsageEntry {
+            label: "Session".to_string(),
+            value: s.display_text(),
+        });
+    }
+
+    if let Some(ref w) = weekly {
+        entries.push(UsageEntry {
+            label: "Week".to_string(),
+            value: w.display_text(),
+        });
+    }
+
+    let summary = format!(
+        "Session {}, Week {}",
+        session
+            .as_ref()
+            .map(AntigravityLimit::summary_text)
+            .unwrap_or_else(|| "n/a".to_string()),
+        weekly
+            .as_ref()
+            .map(AntigravityLimit::summary_text)
+            .unwrap_or_else(|| "n/a".to_string())
+    );
+
+    Ok(ProviderUsageSnapshot {
+        provider: "antigravity".to_string(),
+        status: "available".to_string(),
+        summary,
+        note: None,
+        entries,
+    })
+}
+
 
 async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
     match claude_usage::fetch_usage().await {
@@ -1465,5 +1735,47 @@ Weekly limit:
                 .used_percent,
             34
         );
+    }
+
+    #[test]
+    fn parses_antigravity_usage_limits() {
+        let text = r#"
+└ Models & Quota
+
+  Account: tonisives@gmail.com
+
+GEMINI MODELS
+  Models within this group: Gemini Flash, Gemini Pro
+
+  Weekly Limit
+    [███████████████████████████████████████░░░░░░░░░░░] 77.74%
+    78% remaining · Refreshes in 152h 1m
+
+  Five Hour Limit
+    [█████████████████████████████████░░░░░░░░░░░░░░░░░] 65.99%
+    66% remaining · Refreshes in 4h 26m
+"#;
+        let snapshot = parse_antigravity_usage_snapshot(text).expect("should parse successfully");
+        assert_eq!(snapshot.provider, "antigravity");
+        assert_eq!(snapshot.status, "available");
+        assert_eq!(snapshot.summary, "Session 66%, Week 78%");
+        
+        let account = snapshot.entries.iter().find(|e| e.label == "Account").expect("account entry");
+        assert_eq!(account.value, "tonisives@gmail.com");
+
+        let session = snapshot.entries.iter().find(|e| e.label == "Session").expect("session entry");
+        assert_eq!(session.value, "66% remaining (refreshes in 4h 26m)");
+
+        let week = snapshot.entries.iter().find(|e| e.label == "Week").expect("week entry");
+        assert_eq!(week.value, "78% remaining (refreshes in 152h 1m)");
+    }
+
+    #[test]
+    #[ignore]
+    fn test_live_antigravity_usage() {
+        let output = run_antigravity_usage_pty(Duration::from_secs(12)).expect("live PTY run failed");
+        println!("RAW OUTPUT:\n{}", output);
+        let snapshot = parse_antigravity_usage_snapshot(&output).expect("live parse failed");
+        println!("PARSED SNAPSHOT:\n{:#?}", snapshot);
     }
 }

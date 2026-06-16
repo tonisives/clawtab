@@ -245,9 +245,10 @@ pub(crate) fn refresh_tray_usage_menu(
 
     let settings_item = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let (claude, codex, zai) = tray_usage_labels(snapshot);
+    let (claude, codex, antigravity, zai) = tray_usage_labels(snapshot);
     let claude_item = MenuItem::with_id(app, "usage_claude", claude, false, None::<&str>)?;
     let codex_item = MenuItem::with_id(app, "usage_codex", codex, false, None::<&str>)?;
+    let antigravity_item = MenuItem::with_id(app, "usage_antigravity", antigravity, false, None::<&str>)?;
     let zai_item = MenuItem::with_id(app, "usage_zai", zai, false, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -258,6 +259,7 @@ pub(crate) fn refresh_tray_usage_menu(
             &sep1,
             &claude_item,
             &codex_item,
+            &antigravity_item,
             &zai_item,
             &sep2,
             &quit_item,
@@ -267,16 +269,18 @@ pub(crate) fn refresh_tray_usage_menu(
 }
 
 #[cfg(feature = "desktop")]
-fn tray_usage_labels(snapshot: Option<&usage::UsageSnapshot>) -> (String, String, String) {
+fn tray_usage_labels(snapshot: Option<&usage::UsageSnapshot>) -> (String, String, String, String) {
     match snapshot {
         Some(snapshot) => (
             format!("Claude: {}", snapshot.claude.summary),
             format!("Codex: {}", snapshot.codex.summary),
+            format!("Antigravity: {}", snapshot.antigravity.summary),
             format!("z.ai: {}", snapshot.zai.summary),
         ),
         None => (
             "Claude: loading...".to_string(),
             "Codex: loading...".to_string(),
+            "Antigravity: loading...".to_string(),
             "z.ai: loading...".to_string(),
         ),
     }
@@ -811,6 +815,7 @@ pub fn run() {
             commands::tools::detect_opencode_models,
             commands::tools::detect_claude_models,
             commands::tools::detect_codex_models,
+            commands::tools::detect_antigravity_models,
             commands::tools::install_tool,
             commands::tools::set_tool_path,
             commands::skills::list_skills,

@@ -184,6 +184,7 @@ export interface UsageSnapshot {
   refreshed_at: string;
   claude: ProviderUsageSnapshot;
   codex: ProviderUsageSnapshot;
+  antigravity: ProviderUsageSnapshot;
   zai: ProviderUsageSnapshot;
 }
 

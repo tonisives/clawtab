@@ -137,6 +137,7 @@ export function UsagePanel() {
             <>
               <UsageCard title="Claude" usage={usage.claude} />
               <UsageCard title="Codex" usage={usage.codex} />
+              <UsageCard title="Antigravity" usage={usage.antigravity} />
               <div>
                 <UsageCard title="z.ai" usage={usage.zai} />
                 <div className="form-group usage-credential-group">

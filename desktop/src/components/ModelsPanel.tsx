@@ -15,7 +15,7 @@ interface ModelEntry {
   enabled: boolean
 }
 
-const PROVIDERS_WITH_MODELS: ProcessProvider[] = ["claude", "codex"]
+const PROVIDERS_WITH_MODELS: ProcessProvider[] = ["claude", "codex", "antigravity"]
 
 function buildAllModels(
   enabledModels: Record<string, string[]>,
@@ -79,6 +79,7 @@ export function ModelsPanel() {
   const [customModelInput, setCustomModelInput] = useState<Record<string, string>>({})
   const [claudeApiModels, setClaudeApiModels] = useState<[string, string][]>([])
   const [codexApiModels, setCodexApiModels] = useState<[string, string][]>([])
+  const [antigravityApiModels, setAntigravityApiModels] = useState<[string, string][]>([])
   const [opencodeModels, setOpencodeModels] = useState<string[]>([])
   const [opencodeLoading, setOpencodeLoading] = useState(false)
   const [opencodeError, setOpencodeError] = useState<string | null>(null)
@@ -86,6 +87,8 @@ export function ModelsPanel() {
   const [refreshKey, setRefreshKey] = useState(0)
   const enableDetectedCodexOnRefreshRef = useRef(false)
   const disabledCodexOnRefreshRef = useRef<Set<string>>(new Set())
+  const enableDetectedAntigravityOnRefreshRef = useRef(false)
+  const disabledAntigravityOnRefreshRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
@@ -105,6 +108,12 @@ export function ModelsPanel() {
       .catch((e) => console.error("Failed to fetch Codex models:", e))
   }, [refreshKey])
 
+  useEffect(() => {
+    invoke<[string, string][]>("detect_antigravity_models")
+      .then(setAntigravityApiModels)
+      .catch((e) => console.error("Failed to fetch Antigravity models:", e))
+  }, [refreshKey])
+
   // First-launch seeding: when a provider has no enabled models yet but detection
   // returned a list, enable them all once.
   useEffect(() => {
@@ -117,12 +126,15 @@ export function ModelsPanel() {
     if ((!enabled.codex || enabled.codex.length === 0) && codexApiModels.length > 0) {
       updates.codex = codexApiModels.map(([id]) => id)
     }
+    if ((!enabled.antigravity || enabled.antigravity.length === 0) && antigravityApiModels.length > 0) {
+      updates.antigravity = antigravityApiModels.map(([id]) => id)
+    }
     if (Object.keys(updates).length === 0) return
     const next = { ...enabled, ...updates }
     invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
       .then(() => setSettings({ ...settings, enabled_models: next }))
       .catch((e) => console.error("Failed to seed enabled_models:", e))
-  }, [settings, claudeApiModels, codexApiModels])
+  }, [settings, claudeApiModels, codexApiModels, antigravityApiModels])
 
   useEffect(() => {
     if (!settings || !enableDetectedCodexOnRefreshRef.current || codexApiModels.length === 0) return
@@ -143,6 +155,26 @@ export function ModelsPanel() {
       .then(() => setSettings({ ...settings, enabled_models: next }))
       .catch((e) => console.error("Failed to enable refreshed Codex models:", e))
   }, [settings, codexApiModels])
+
+  useEffect(() => {
+    if (!settings || !enableDetectedAntigravityOnRefreshRef.current || antigravityApiModels.length === 0) return
+    const enabled = settings.enabled_models ?? {}
+    const current = enabled.antigravity ?? []
+    const detected = antigravityApiModels.map(([id]) => id)
+    const disabledBeforeRefresh = disabledAntigravityOnRefreshRef.current
+    const missing = detected.filter((id) => !current.includes(id) && !disabledBeforeRefresh.has(id))
+    if (missing.length === 0) {
+      enableDetectedAntigravityOnRefreshRef.current = false
+      disabledAntigravityOnRefreshRef.current = new Set()
+      return
+    }
+    enableDetectedAntigravityOnRefreshRef.current = false
+    disabledAntigravityOnRefreshRef.current = new Set()
+    const next = { ...enabled, antigravity: [...current, ...missing] }
+    invoke("set_settings", { newSettings: { ...settings, enabled_models: next } })
+      .then(() => setSettings({ ...settings, enabled_models: next }))
+      .catch((e) => console.error("Failed to enable refreshed Antigravity models:", e))
+  }, [settings, antigravityApiModels])
 
   // Detect OpenCode models on mount and refresh
   useEffect(() => {
@@ -165,6 +197,13 @@ export function ModelsPanel() {
       codexApiModels.map(([id]) => id).filter((id) => !enabledCodex.has(id)),
     )
     enableDetectedCodexOnRefreshRef.current = true
+
+    const enabledAntigravity = new Set(settings?.enabled_models?.antigravity ?? [])
+    disabledAntigravityOnRefreshRef.current = new Set(
+      antigravityApiModels.map(([id]) => id).filter((id) => !enabledAntigravity.has(id)),
+    )
+    enableDetectedAntigravityOnRefreshRef.current = true
+
     setRefreshKey((k) => k + 1)
   }
 
@@ -187,6 +226,7 @@ export function ModelsPanel() {
   const allModels = buildAllModels(enabledModels, {
     claude: claudeApiModels,
     codex: codexApiModels,
+    antigravity: antigravityApiModels,
     opencode: [],
     shell: [],
   })

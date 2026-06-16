@@ -216,14 +216,25 @@ pub fn which(binary: &str) -> Option<String> {
     let output = Command::new("which").arg(binary).output().ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if path.is_empty() {
-            None
-        } else {
-            Some(path)
+        if !path.is_empty() {
+            return Some(path);
         }
-    } else {
-        None
     }
+    // Fallback: Check standard macOS and user bin directories
+    let fallbacks = [
+        dirs::home_dir()
+            .unwrap_or_default()
+            .join(".local/bin")
+            .join(binary),
+        std::path::PathBuf::from("/opt/homebrew/bin").join(binary),
+        std::path::PathBuf::from("/usr/local/bin").join(binary),
+    ];
+    for path in &fallbacks {
+        if path.exists() {
+            return Some(path.display().to_string());
+        }
+    }
+    None
 }
 
 /// Check if a binary exists next to the current executable (bundled sibling)

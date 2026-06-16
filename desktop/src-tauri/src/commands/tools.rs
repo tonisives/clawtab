@@ -235,3 +235,49 @@ pub async fn install_tool(formula: String) -> Result<String, String> {
         Err(format!("{}{}", stdout, stderr))
     }
 }
+
+/// Runs `agy models` (with a timeout) and returns (slug, display_name) for available models.
+/// Falls back to a standard list of Gemini models if it fails or times out.
+#[tauri::command]
+pub async fn detect_antigravity_models() -> Result<Vec<(String, String)>, String> {
+    let cmd_fut = tokio::task::spawn_blocking(|| {
+        let output = std::process::Command::new("agy")
+            .arg("models")
+            .output();
+        match output {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let mut models = Vec::new();
+                for line in stdout.lines() {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with("Usage:") && !trimmed.contains("List available models") {
+                        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+                        if !parts.is_empty() {
+                            let id = parts[0].to_string();
+                            let name = parts[1..].join(" ");
+                            let name = if name.is_empty() { id.clone() } else { name };
+                            models.push((id, name));
+                        }
+                    }
+                }
+                if !models.is_empty() {
+                    return Ok(models);
+                }
+            }
+            _ => {}
+        }
+        Err("failed".to_string())
+    });
+
+    match tokio::time::timeout(std::time::Duration::from_millis(1500), cmd_fut).await {
+        Ok(Ok(Ok(models))) => Ok(models),
+        _ => {
+            Ok(vec![
+                ("gemini-2.5-pro".to_string(), "Gemini 2.5 Pro".to_string()),
+                ("gemini-2.5-flash".to_string(), "Gemini 2.5 Flash".to_string()),
+                ("gemini-1.5-pro".to_string(), "Gemini 1.5 Pro".to_string()),
+                ("gemini-1.5-flash".to_string(), "Gemini 1.5 Flash".to_string()),
+            ])
+        }
+    }
+}
