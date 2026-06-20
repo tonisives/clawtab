@@ -14,26 +14,6 @@ import SettingsScreen from "./settings";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 const NativeTabsRoot = NativeTabs as ComponentType<PropsWithChildren<any>>;
-const hiddenDisabledTabAppearance = {
-  stacked: {
-    disabled: {
-      tabBarItemIconColor: "transparent",
-      tabBarItemTitleFontColor: "transparent",
-    },
-  },
-  inline: {
-    disabled: {
-      tabBarItemIconColor: "transparent",
-      tabBarItemTitleFontColor: "transparent",
-    },
-  },
-  compactInline: {
-    disabled: {
-      tabBarItemIconColor: "transparent",
-      tabBarItemTitleFontColor: "transparent",
-    },
-  },
-};
 
 const tabIcons: Record<string, { focused: IoniconsName; default: IoniconsName }> = {
   Jobs: { focused: "briefcase", default: "briefcase-outline" },
@@ -165,54 +145,46 @@ function TabsContent({ isWide }: { isWide: boolean }) {
 
   if (!isWide) {
     return (
-      <NativeTabsRoot
-        tintColor={colors.accent}
-        iconColor={{ default: colors.textMuted, selected: colors.accent }}
-        backgroundColor={colors.bg}
-        blurEffect="systemChromeMaterialDark"
-        shadowColor={colors.border}
-        minimizeBehavior="onScrollDown"
-      >
-        <NativeTabs.Trigger name="index" contentStyle={{ backgroundColor: colors.bg }}>
-          <NativeTabs.Trigger.Label>Jobs</NativeTabs.Trigger.Label>
-          <NativeTabs.Trigger.Icon
-            sf={{ default: "briefcase", selected: "briefcase.fill" }}
-            md={{ default: "work_outline", selected: "work" }}
-          />
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger
-          name="settings"
-          contentStyle={{ backgroundColor: colors.bg }}
-          unstable_nativeProps={{
-            ios: {
-              standardAppearance: hiddenDisabledTabAppearance,
-              scrollEdgeAppearance: hiddenDisabledTabAppearance,
-            },
-          }}
+      <View style={styles.nativeTabsFrame}>
+        <NativeTabsRoot
+          tintColor={colors.accent}
+          iconColor={{ default: colors.textMuted, selected: colors.accent }}
+          backgroundColor={colors.bg}
+          blurEffect="systemChromeMaterialDark"
+          shadowColor={colors.border}
+          minimizeBehavior="onScrollDown"
         >
-          <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
-          <NativeTabs.Trigger.Icon
-            sf={{ default: "gearshape", selected: "gearshape.fill" }}
-            md={{ default: "settings", selected: "settings" }}
+          <NativeTabs.Trigger name="index" contentStyle={{ backgroundColor: colors.bg }}>
+            <NativeTabs.Trigger.Label>Jobs</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon
+              sf={{ default: "briefcase", selected: "briefcase.fill" }}
+              md={{ default: "work_outline", selected: "work" }}
+            />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="settings" contentStyle={{ backgroundColor: colors.bg }}>
+            <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon
+              sf={{ default: "gearshape", selected: "gearshape.fill" }}
+              md={{ default: "settings", selected: "settings" }}
+            />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger
+            name="search"
+            role="search"
+            disabled
+            contentStyle={{ backgroundColor: colors.bg }}
+            listeners={{
+              tabPress: () => {
+                if (!settingsActive) openSearch();
+              },
+            }}
           />
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger
-          name="search"
-          role="search"
-          disabled
-          contentStyle={{ backgroundColor: colors.bg }}
-          listeners={{
-            tabPress: () => {
-              if (!settingsActive) openSearch();
-            },
-          }}
-        >
-          {settingsActive ? <NativeTabs.Trigger.Label hidden /> : null}
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="agent" hidden />
-        <NativeTabs.Trigger name="connection" hidden />
-        <NativeTabs.Trigger name="devices" hidden />
-      </NativeTabsRoot>
+          <NativeTabs.Trigger name="agent" hidden />
+          <NativeTabs.Trigger name="connection" hidden />
+          <NativeTabs.Trigger name="devices" hidden />
+        </NativeTabsRoot>
+        {settingsActive ? <View pointerEvents="none" style={styles.hiddenSearchCover} /> : null}
+      </View>
     );
   }
 
@@ -287,6 +259,22 @@ function TabsContent({ isWide }: { isWide: boolean }) {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  nativeTabsFrame: {
+    flex: 1,
+  },
+  hiddenSearchCover: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    width: 112,
+    height: 96,
+    backgroundColor: colors.bg,
+    zIndex: 1000,
+    elevation: 1000,
+  },
+});
 
 export default function TabLayout() {
   const { isWide } = useResponsive();
