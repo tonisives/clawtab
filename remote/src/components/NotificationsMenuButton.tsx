@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, spacing } from "@clawtab/shared";
@@ -78,30 +79,51 @@ export function NotificationsMenuButton({
     return null;
   }
 
+  const glassAvailable = variant === "fluid" && Platform.OS === "ios" && (() => {
+    try {
+      return isGlassEffectAPIAvailable();
+    } catch {
+      return false;
+    }
+  })();
+
+  const buttonContent = (
+    <Pressable
+      onPress={openMenu}
+      accessibilityRole="button"
+      accessibilityLabel={activeQuestionCount > 0 ? `${activeQuestionCount} active question${activeQuestionCount === 1 ? "" : "s"}` : "Notifications"}
+      style={({ pressed }) => [
+        glassAvailable ? styles.fluidGlassPressable : variant === "fluid" ? styles.fluidButton : styles.button,
+        variant === "fluid" && activeQuestionCount > 0 && !glassAvailable && styles.fluidButtonHasQuestions,
+        variant === "compact" && activeQuestionCount > 0 && styles.buttonHasQuestions,
+        (pressed || open) && (glassAvailable ? styles.fluidGlassPressableActive : variant === "fluid" ? styles.fluidButtonActive : styles.buttonActive),
+      ]}
+    >
+      <Ionicons
+        name={activeQuestionCount > 0 ? "notifications" : "notifications-outline"}
+        size={variant === "fluid" ? 18 : 17}
+        color={activeQuestionCount > 0 ? colors.warning : colors.textMuted}
+      />
+      {activeQuestionCount > 0 && (
+        <View style={variant === "fluid" ? styles.fluidBadge : styles.badge}>
+          <Text style={variant === "fluid" ? styles.fluidBadgeText : styles.badgeText}>{activeQuestionCount}</Text>
+        </View>
+      )}
+    </Pressable>
+  );
+
   return (
     <View ref={buttonRef} collapsable={false}>
-      <Pressable
-        onPress={openMenu}
-        accessibilityRole="button"
-        accessibilityLabel={activeQuestionCount > 0 ? `${activeQuestionCount} active question${activeQuestionCount === 1 ? "" : "s"}` : "Notifications"}
-        style={({ pressed }) => [
-          variant === "fluid" ? styles.fluidButton : styles.button,
-          variant === "fluid" && activeQuestionCount > 0 && styles.fluidButtonHasQuestions,
-          variant === "compact" && activeQuestionCount > 0 && styles.buttonHasQuestions,
-          (pressed || open) && (variant === "fluid" ? styles.fluidButtonActive : styles.buttonActive),
-        ]}
-      >
-        <Ionicons
-          name={activeQuestionCount > 0 ? "notifications" : "notifications-outline"}
-          size={variant === "fluid" ? 20 : 17}
-          color={activeQuestionCount > 0 ? colors.warning : colors.textMuted}
-        />
-        {activeQuestionCount > 0 && (
-          <View style={variant === "fluid" ? styles.fluidBadge : styles.badge}>
-            <Text style={variant === "fluid" ? styles.fluidBadgeText : styles.badgeText}>{activeQuestionCount}</Text>
-          </View>
-        )}
-      </Pressable>
+      {glassAvailable ? (
+        <GlassView
+          glassEffectStyle="regular"
+          isInteractive
+          colorScheme="dark"
+          style={styles.fluidGlass}
+        >
+          {buttonContent}
+        </GlassView>
+      ) : buttonContent}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={styles.modalRoot}>
@@ -147,8 +169,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warningBg,
   },
   fluidButton: {
-    width: 52,
-    height: 52,
+    width: 42,
+    height: 42,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 999,
@@ -172,6 +194,23 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.97 }],
     backgroundColor: "rgba(42, 42, 42, 0.72)",
   },
+  fluidGlass: {
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  fluidGlassPressable: {
+    width: 42,
+    height: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    position: "relative",
+  },
+  fluidGlassPressableActive: {
+    transform: [{ scale: 0.97 }],
+  },
   badge: {
     position: "absolute",
     top: -5,
@@ -192,22 +231,20 @@ const styles = StyleSheet.create({
   },
   fluidBadge: {
     position: "absolute",
-    top: -4,
-    right: -4,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 6,
-    borderRadius: 10,
+    top: 3,
+    right: 3,
+    minWidth: 14,
+    height: 14,
+    paddingHorizontal: 3,
+    borderRadius: 7,
     backgroundColor: colors.warning,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.42)",
   },
   fluidBadgeText: {
     color: colors.bg,
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 8,
+    lineHeight: 10,
     fontWeight: "800",
   },
   modalRoot: {

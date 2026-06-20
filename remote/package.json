@@ -26,6 +26,7 @@
     "expo-crypto": "~56.0.4",
     "expo-dev-client": "~56.0.20",
     "expo-font": "~56.0.7",
+    "expo-glass-effect": "56.0.4",
     "expo-linking": "^56.0.14",
     "expo-notifications": "~56.0.18",
     "expo-nse-plugin": "^2.2.1",
