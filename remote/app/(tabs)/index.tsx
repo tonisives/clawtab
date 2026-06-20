@@ -966,14 +966,13 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   mobileHeader: {
-    height: 84,
+    height: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
   },
   mobileHeaderWrap: {
-    marginBottom: spacing.md,
     backgroundColor: colors.bg,
   },
   mobileListContent: {

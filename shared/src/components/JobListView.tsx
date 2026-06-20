@@ -970,7 +970,7 @@ export function JobListView({
     const jobAutoYesActive = jobPaneId ? autoYesPaneIds?.has(jobPaneId) ?? false : false;
     const isStopping = stoppingSlugsExternal?.has(item.job.slug) ?? false;
     const jobOnStop = isRunning && !isStopping && onStopJob ? () => onStopJob(item.job.slug) : undefined;
-    const marginTop = index > 0 ? spacing.sm : undefined;
+    const marginTop = Platform.OS === "web" && index > 0 ? spacing.sm : undefined;
     const dimmed = item.idx % 2 === 1;
     const childProcesses = matchedProcessesByJob.get(item.job.slug) ?? [];
     const hasChildProcesses = childProcesses.length > 0;
@@ -990,7 +990,7 @@ export function JobListView({
       const processOnRename = onRenameProcess ? () => onRenameProcess(process) : undefined;
       const processOnSaveName = onSaveProcessName ? (name: string) => onSaveProcessName(process, name) : undefined;
       return (
-        <View key={`job_${item.job.slug}_pane_${process.pane_id}`} style={[styles.jobChildProcess, offset > 0 ? { marginTop: spacing.xs } : undefined]}>
+        <View key={`job_${item.job.slug}_pane_${process.pane_id}`} style={[styles.jobChildProcess, Platform.OS === "web" && offset > 0 ? { marginTop: spacing.xs } : undefined]}>
           {customRenderProcessCard
             ? customRenderProcessCard({
               process,
@@ -1104,7 +1104,7 @@ export function JobListView({
     const procOnStop = onStopProcess ? () => onStopProcess(item.process.pane_id) : undefined;
     const procOnRename = onRenameProcess ? () => onRenameProcess(item.process) : undefined;
     const procOnSaveName = onSaveProcessName ? (name: string) => onSaveProcessName(item.process, name) : undefined;
-    const marginTop = index > 0 ? spacing.sm : undefined;
+    const marginTop = Platform.OS === "web" && index > 0 ? spacing.sm : undefined;
     const sortGroup = item.process.matched_group ?? `cwd:${item.process.cwd}`;
     const openElsewhereProc = openElsewhereContentKeys?.has(`proc:${item.process.pane_id}`) ?? false;
     const openElsewhereTerm = openElsewhereContentKeys?.has(`term:${item.process.pane_id}`) ?? false;
@@ -1194,7 +1194,11 @@ export function JobListView({
         const group = jobItems[0]?.job.group || "default";
         const jobSlugs = jobItems.map((jobItem) => jobItem.job.slug);
         pushToGroup(
-          wrapJobGroup ? wrapJobGroup(group, jobSlugs, children) : children,
+          wrapJobGroup
+            ? wrapJobGroup(group, jobSlugs, children)
+            : Platform.OS === "web"
+              ? children
+              : <View key={`job_group_${group}`} style={styles.nativeGroupedRows}>{children}</View>,
         );
         continue;
       }
@@ -1212,7 +1216,11 @@ export function JobListView({
         const group = processItems[0]?.process.matched_group ?? `cwd:${processItems[0]?.process.cwd ?? ""}`;
         const processPaneIds = processItems.map((processItem) => processItem.process.pane_id);
         pushToGroup(
-          wrapProcessGroup ? wrapProcessGroup(group, processPaneIds, children) : children,
+          wrapProcessGroup
+            ? wrapProcessGroup(group, processPaneIds, children)
+            : Platform.OS === "web"
+              ? children
+              : <View key={`process_group_${group}`} style={styles.nativeGroupedRows}>{children}</View>,
         );
         continue;
       }
@@ -1272,7 +1280,14 @@ export function JobListView({
                       ? spacing.sm / 2
                       : spacing.sm;
                 return (
-                  <View key={key} style={headerMarginTop ? { marginTop: headerMarginTop } : null} {...(hoverSwitchHandlers ?? {})}>
+                  <View
+                    key={key}
+                    style={[
+                      headerMarginTop ? { marginTop: headerMarginTop } : null,
+                      Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null,
+                    ]}
+                    {...(hoverSwitchHandlers ?? {})}
+                  >
                     <TouchableOpacity
                       onPress={() => {
                         if (onActivateWorkspace && isWorkspaceHeader) {
@@ -1342,12 +1357,15 @@ export function JobListView({
                     </TouchableOpacity>
                     {item.tabsToggle && (
                       <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          marginLeft: spacing.lg,
-                          marginBottom: spacing.xs,
-                        }}
+                        style={[
+                          {
+                            flexDirection: "row",
+                            alignItems: "center",
+                            marginLeft: Platform.OS === "web" ? spacing.lg : 0,
+                            marginBottom: spacing.xs,
+                          },
+                          Platform.OS !== "web" ? styles.nativeGroupSegmentRow : null,
+                        ]}
                       >
                         <View
                           style={{
@@ -1357,7 +1375,7 @@ export function JobListView({
                             borderWidth: 1,
                             borderColor: colors.border,
                             borderRadius: 999,
-                            padding: 2,
+                            padding: Platform.OS === "web" ? 2 : 3,
                           }}
                         >
                           {(["tabs", "jobs"] as const).map((v) => {
@@ -1373,15 +1391,15 @@ export function JobListView({
                                 }}
                                 activeOpacity={0.7}
                                 style={{
-                                  paddingHorizontal: 10,
-                                  paddingVertical: 2,
+                                  paddingHorizontal: Platform.OS === "web" ? 10 : 12,
+                                  paddingVertical: Platform.OS === "web" ? 2 : 10,
                                   borderRadius: 999,
                                   backgroundColor: active ? colors.accent : "transparent",
                                 }}
                               >
                                 <Text
                                   style={{
-                                    fontSize: 11,
+                                    fontSize: 12,
                                     fontWeight: "600",
                                     color: active ? "#ffffff" : colors.textSecondary,
                                   }}
@@ -1411,7 +1429,7 @@ export function JobListView({
                 const openElsewhere = openElsewhereContentKeys?.has(`term:${item.shell.pane_id}`) ?? false;
                 const shellSoftBorder = openElsewhere && !isSelected;
                 return (
-                  <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={index > 0 ? { marginTop: spacing.sm } : undefined}>
+                  <View key={key} {...(Platform.OS === "web" ? { dataSet: { shellId: item.shell.pane_id } } : {})} style={Platform.OS === "web" && index > 0 ? { marginTop: spacing.sm } : undefined}>
                     {customRenderShellCard
                       ? customRenderShellCard({ shell: item.shell, onPress: pressHandler, selected: isSelected, softBorder: shellSoftBorder, onStop: shellOnStop, onRename: shellOnRename, renameShortcutHint })
                       : <ShellCard shell={item.shell} onPress={pressHandler} selected={isSelected} softBorder={shellSoftBorder} onStop={shellOnStop} onRename={shellOnRename} renameShortcutHint={renameShortcutHint} />
@@ -1446,8 +1464,8 @@ export function JobListView({
                     activeOpacity={0.7}
                     style={{ marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, flexDirection: "row", alignItems: "center" }}
                   >
-                    <Text style={[styles.groupHeader, { fontSize: 10, color: colors.textMuted, flex: 1 }]}>Hidden Groups</Text>
-                    <Text style={{ fontSize: 10, color: colors.textMuted, marginRight: spacing.xs }}>{hiddenSectionCollapsed ? "▶" : "▼"}</Text>
+                    <Text style={[styles.groupHeader, { fontSize: 11, color: colors.textMuted, flex: 1 }]}>Hidden Groups</Text>
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginRight: spacing.xs }}>{hiddenSectionCollapsed ? "▶" : "▼"}</Text>
                   </TouchableOpacity>
                 );
               }
@@ -1465,7 +1483,7 @@ export function JobListView({
                           activeOpacity={0.6}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={{ fontSize: 11, color: colors.textMuted }}>Show</Text>
+                          <Text style={{ fontSize: 12, color: colors.textMuted }}>Show</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1519,7 +1537,7 @@ export function JobListView({
 
   const showInlineSearch = !hideSearchBar;
   const toolbar = (onSortChange && jobs.length > 1) || jobs.length > 0 || (onSetAllGroupTabView && globalTabsView.anyHeader) ? (
-    <View style={styles.sortRow}>
+    <View style={[styles.sortRow, Platform.OS !== "web" ? styles.nativeToolbarRow : null]}>
       {showInlineSearch && (
         <View style={styles.searchBar}>
           <Text style={styles.searchIcon}>{"\u2315"}</Text>
@@ -1581,7 +1599,7 @@ export function JobListView({
               borderWidth: 1,
               borderColor: colors.border,
               borderRadius: 999,
-              padding: 2,
+              padding: Platform.OS === "web" ? 2 : 3,
             }}
           >
             {(["tabs", "jobs"] as const).map((v) => {
@@ -1594,15 +1612,15 @@ export function JobListView({
                   onPress={() => onSetAllGroupTabView(globalTabsView.groups, v)}
                   activeOpacity={0.7}
                   style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 2,
+                    paddingHorizontal: Platform.OS === "web" ? 10 : 12,
+                    paddingVertical: Platform.OS === "web" ? 2 : 7,
                     borderRadius: 999,
                     backgroundColor: active ? colors.accent : "transparent",
                   }}
                 >
                   <Text
                     style={{
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: "600",
                       color: active ? "#ffffff" : colors.textSecondary,
                     }}
@@ -1845,6 +1863,15 @@ const styles = StyleSheet.create({
   list: {
     padding: spacing.lg,
   },
+  nativeGroupedRows: {
+    marginHorizontal: spacing.md,
+    borderRadius: 18,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+  },
+  nativeGroupHeaderWrap: {
+    marginHorizontal: spacing.md,
+  },
   jobWithPaneToggle: {
     position: "relative",
   },
@@ -1943,17 +1970,17 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.textSecondary,
   },
-  groupHeaderArrow: { fontFamily: "monospace", fontSize: 9, color: colors.textSecondary },
+  groupHeaderArrow: { fontFamily: "monospace", fontSize: 10, color: colors.textSecondary },
   groupHeader: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   groupFolderPath: {
     color: colors.textMuted,
-    fontSize: 11,
+    fontSize: 12,
     flex: 1,
     minWidth: 0,
   },
@@ -1997,6 +2024,13 @@ const styles = StyleSheet.create({
     rowGap: spacing.xs,
     marginBottom: spacing.xs,
     zIndex: 10,
+  },
+  nativeGroupSegmentRow: {
+    paddingVertical: spacing.xs,
+    paddingBottom: 10,
+  },
+  nativeToolbarRow: {
+    paddingHorizontal: spacing.md,
   },
   sortControl: {
     marginLeft: "auto",

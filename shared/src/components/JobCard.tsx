@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { TouchableOpacity, View, Text, StyleSheet } from "react-native";
+import { TouchableOpacity, View, Text, StyleSheet, Platform } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { Tooltip } from "./Tooltip";
@@ -78,6 +78,15 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    ...(Platform.OS !== "web"
+      ? {
+          borderRadius: 0,
+          borderWidth: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.borderLight,
+          paddingVertical: spacing.lg,
+        }
+      : {}),
   },
   cardDisabled: {
     opacity: 0.5,
@@ -117,7 +126,7 @@ const styles = StyleSheet.create({
   },
   name: {
     color: colors.text,
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: "500",
   },
   meta: {
@@ -129,18 +138,18 @@ const styles = StyleSheet.create({
   },
   cronText: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "monospace",
     flexShrink: 1,
   },
   metaText: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     flexShrink: 0,
   },
   nextRunText: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 13,
     flexShrink: 0,
   },
 });

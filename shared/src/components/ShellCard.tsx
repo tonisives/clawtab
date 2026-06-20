@@ -148,12 +148,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     opacity: 0.7,
+    ...(Platform.OS !== "web"
+      ? {
+          borderRadius: 0,
+          borderWidth: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.borderLight,
+          opacity: 1,
+          paddingVertical: spacing.lg,
+        }
+      : {}),
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   rowWithMenu: { paddingRight: 44 },
   info: { flex: 1, gap: 2, minWidth: 0 },
-  name: { color: colors.text, fontSize: 13, fontWeight: "500" },
-  subtitle: { color: colors.textMuted, fontSize: 11 },
+  name: { color: colors.text, fontSize: 16, fontWeight: "500" },
+  subtitle: { color: colors.textSecondary, fontSize: 13 },
   controlsFrame: {
     position: "absolute",
     top: 6,
