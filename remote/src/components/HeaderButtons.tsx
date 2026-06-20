@@ -1,15 +1,19 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { HeaderBackButton as NativeHeaderBackButton } from "expo-router/react-navigation";
+import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../theme/colors";
 
 export function HeaderBackButton({ onPress }: { onPress: () => void }) {
   return (
-    <NativeHeaderBackButton
-      displayMode="minimal"
-      tintColor={colors.text}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Back"
       onPress={onPress}
-    />
+      hitSlop={8}
+      style={styles.backButton}
+    >
+      <Ionicons name="chevron-back" size={22} color={colors.text} style={styles.backIcon} />
+    </Pressable>
   );
 }
 
@@ -54,6 +58,18 @@ export function HeaderTitleWithIcon({
 }
 
 const styles = StyleSheet.create({
+  backButton: {
+    width: 36,
+    height: 36,
+    minWidth: 36,
+    maxWidth: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  backIcon: {
+    transform: [{ translateX: -1 }],
+  },
   statusButton: {
     width: 36,
     height: 36,

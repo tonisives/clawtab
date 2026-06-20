@@ -35,7 +35,13 @@ export function NotificationsPanel({ mode, onNavigateAway }: NotificationsPanelP
   const nativeTop = insets.top + 58;
   const nativeBottom = insets.bottom + 58;
   const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
-  const nativeCardMinHeight = mode === "popup" ? Math.max(240, nativeAvailableHeight - 120) : undefined;
+  const nativeScreenCardMinHeight = Math.min(
+    windowSize.height,
+    Math.max(420, windowSize.height - insets.top - insets.bottom - 132),
+  );
+  const nativeCardMinHeight = mode === "popup"
+    ? Math.max(240, nativeAvailableHeight - 120)
+    : nativeScreenCardMinHeight;
 
   return (
     <ScrollView

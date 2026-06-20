@@ -59,6 +59,7 @@ export function NotificationSection({
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [cardWidth, setCardWidth] = useState(0);
+  const [optionScrollActive, setOptionScrollActive] = useState(false);
   const [departing, setDeparting] = useState<DepartingQuestion[]>([]);
   const prevQuestionsRef = useRef<ClaudeQuestion[]>([]);
   const [entering, setEntering] = useState<Set<string>>(new Set());
@@ -294,6 +295,8 @@ export function NotificationSection({
         autoAnswered={autoAnsweredIds?.has(d.question.question_id)}
         answerResetMs={answerResetMs}
         cardMinHeight={cardMinHeight}
+        onOptionScrollBegin={() => setOptionScrollActive(true)}
+        onOptionScrollEnd={() => setOptionScrollActive(false)}
       />
     );
 
@@ -352,6 +355,8 @@ export function NotificationSection({
         isLast={count === 1}
         answerResetMs={answerResetMs}
         cardMinHeight={cardMinHeight}
+        onOptionScrollBegin={() => setOptionScrollActive(true)}
+        onOptionScrollEnd={() => setOptionScrollActive(false)}
       />
     );
     const wrapped = wrapQuestionCard ? wrapQuestionCard(q, inner) : inner;
@@ -435,6 +440,7 @@ export function NotificationSection({
             ref={scrollRef}
             horizontal
             pagingEnabled
+            scrollEnabled={count > 1 && !optionScrollActive}
             showsHorizontalScrollIndicator={false}
             onScroll={handleScroll}
             scrollEventThrottle={16}

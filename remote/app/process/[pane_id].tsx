@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -607,62 +607,6 @@ function TerminalScrollButtons({
   );
 }
 
-function OptionButtons({
-  options,
-  onSend,
-  autoYesActive,
-  onToggleAutoYes,
-  bottomInset = 0,
-}: {
-  options: { number: string; label: string }[];
-  onSend: (text: string) => void;
-  autoYesActive?: boolean;
-  onToggleAutoYes?: () => void;
-  bottomInset?: number;
-}) {
-  if (options.length === 0) return null;
-  const bottomPadding = Math.max(6, bottomInset + 10);
-  const barHeight = bottomPadding + 34;
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }]}
-      contentContainerStyle={[styles.optionBarContent, { paddingBottom: bottomPadding }]}
-    >
-      {options.map((opt) => (
-        <TouchableOpacity
-          key={opt.number}
-          style={styles.optionBtn}
-          onPress={() => {
-            onSend(opt.number);
-          }}
-          activeOpacity={0.6}
-        >
-          <Text style={styles.optionBtnText}>
-            {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-      {onToggleAutoYes && (
-        <>
-          <View style={styles.autoYesSeparator} />
-          <TouchableOpacity
-            style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
-            onPress={onToggleAutoYes}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.autoYesBtnText} numberOfLines={1}>
-              {autoYesActive ? "! Auto ON" : "! Yes all"}
-            </Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </ScrollView>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -874,41 +818,4 @@ const styles = StyleSheet.create({
   },
   ptyConnectingText: { color: colors.textMuted, fontSize: 12 },
   loadingText: { color: colors.textMuted, fontSize: 13 },
-  optionBar: {
-    flexGrow: 0,
-    flexShrink: 0,
-    borderTopWidth: 1,
-    borderTopColor: "#303033",
-    backgroundColor: TERMINAL_BG,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.32,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  optionBarContent: {
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingTop: 8,
-    paddingBottom: 6,
-    alignItems: "center",
-  },
-  optionBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  optionBtnText: { color: colors.accent, fontSize: 12, fontWeight: "500" },
-  autoYesSeparator: { width: 1, height: 18, backgroundColor: colors.border },
-  autoYesBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.warning,
-  },
-  autoYesBtnActive: { backgroundColor: colors.warningBg },
-  autoYesBtnText: { color: colors.warning, fontSize: 12, fontWeight: "600" },
 });
