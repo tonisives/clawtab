@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { HeaderBackButton } from "expo-router/react-navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
@@ -355,9 +356,11 @@ export default function ProcessDetailScreen() {
             />
           ),
           headerLeft: () => (
-            <TouchableOpacity onPress={goBack} style={styles.headerBackBtn} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={26} color={colors.text} style={styles.headerBackIcon} />
-            </TouchableOpacity>
+            <HeaderBackButton
+              displayMode="minimal"
+              tintColor={colors.text}
+              onPress={goBack}
+            />
           ),
           headerRight: () => (
             <View ref={contextMenuRef} style={styles.headerRightSlot}>
@@ -372,7 +375,7 @@ export default function ProcessDetailScreen() {
               </TouchableOpacity>
               {Platform.OS === "web" && showContextMenu && (
                 <PopupMenu
-                  dropdownRef={contextDropdownRef}
+                  dropdownRef={contextDropdownRef as any}
                   triggerRef={contextButtonRef}
                   position={menuPos}
                   onClose={() => setShowContextMenu(false)}
@@ -553,6 +556,7 @@ function TerminalKeyboardToolbar({
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowRight} activeOpacity={0.7}>
         <Ionicons name="chevron-forward" size={20} color={colors.text} />
       </TouchableOpacity>
+      <View style={styles.keyboardToolSpacer} />
       <View style={styles.keyboardToolMenuWrap}>
         <TouchableOpacity style={styles.keyboardToolBtn} onPress={() => onMenuOpenChange(!menuOpen)} activeOpacity={0.7}>
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
@@ -663,27 +667,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   notFound: { color: colors.textMuted, fontSize: 16 },
-  headerBackBtn: {
+  headerRightSlot: {
+    position: "relative",
+    zIndex: 9999,
     width: 36,
     height: 36,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: -8,
-  },
-  headerBackIcon: {
-    marginLeft: 2,
-  },
-  headerRightSlot: {
-    position: "relative",
-    zIndex: 9999,
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
   },
   contextBtn: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,
@@ -702,7 +696,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   mobileContextBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     zIndex: 250,
     elevation: 250,
     backgroundColor: "transparent",
@@ -780,6 +778,7 @@ const styles = StyleSheet.create({
   },
   keyboardToolMenuWrap: {
     position: "relative",
+    alignSelf: "center",
     zIndex: 220,
     elevation: 220,
   },

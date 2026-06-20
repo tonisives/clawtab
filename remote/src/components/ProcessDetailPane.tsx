@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.xs,
   },
   backIcon: {
-    marginLeft: 2,
+    transform: [{ translateX: 3 }],
   },
   title: {
     color: colors.text,

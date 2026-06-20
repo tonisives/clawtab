@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { HeaderBackButton } from "expo-router/react-navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
@@ -329,9 +330,11 @@ export default function JobDetailScreen() {
             />
           ),
           headerLeft: () => (
-            <TouchableOpacity onPress={goBack} style={styles.headerBackBtn} activeOpacity={0.7}>
-              <Ionicons name="chevron-back" size={26} color={colors.text} style={styles.headerBackIcon} />
-            </TouchableOpacity>
+            <HeaderBackButton
+              displayMode="minimal"
+              tintColor={colors.text}
+              onPress={goBack}
+            />
           ),
           headerRight: () => <HeaderStatusDot color={statusColor(status)} />,
         }}
@@ -439,6 +442,7 @@ function TerminalKeyboardToolbar({
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowRight} activeOpacity={0.7}>
         <Ionicons name="chevron-forward" size={20} color={colors.text} />
       </TouchableOpacity>
+      <View style={styles.keyboardToolSpacer} />
       <View style={styles.keyboardToolMenuWrap}>
         <TouchableOpacity style={styles.keyboardToolBtn} onPress={() => onMenuOpenChange(!menuOpen)} activeOpacity={0.7}>
           <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
@@ -493,16 +497,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.bg,
-  },
-  headerBackBtn: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: -8,
-  },
-  headerBackIcon: {
-    marginLeft: 2,
   },
   center: {
     flex: 1,
@@ -591,6 +585,7 @@ const styles = StyleSheet.create({
   },
   keyboardToolMenuWrap: {
     position: "relative",
+    alignSelf: "center",
     zIndex: 220,
     elevation: 220,
   },

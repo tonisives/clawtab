@@ -11,12 +11,14 @@
   "peerDependencies": {
     "@dnd-kit/core": ">=6",
     "react": ">=19",
-    "react-native": ">=0.70 || >=0.70.0-0",
     "react-native-web": ">=0.19"
   },
   "devDependencies": {
-    "@types/react": "^19.1.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@types/react-native": "^0.73.0"
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native-web": "^0.21.2"
   }
 }

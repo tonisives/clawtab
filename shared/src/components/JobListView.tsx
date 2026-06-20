@@ -264,6 +264,9 @@ export interface JobListViewProps {
    *  global top-of-sidebar toggle. The caller receives the list of group
    *  keys currently visible in the sidebar. */
   onSetAllGroupTabView?: (groups: string[], view: "tabs" | "jobs") => void;
+  searchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+  hideSearchBar?: boolean;
 }
 
 type ListItem =
@@ -358,6 +361,9 @@ export function JobListView({
   groupTabView,
   onGroupTabViewChange,
   onSetAllGroupTabView,
+  searchQuery: controlledSearchQuery,
+  onSearchQueryChange,
+  hideSearchBar = false,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -382,7 +388,12 @@ export function JobListView({
     return () => { if (sidebarFocusRef) sidebarFocusRef.current = null; };
   }, [sidebarFocusRef]);
   const [sortOpen, setSortOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [internalSearchQuery, setInternalSearchQuery] = useState("");
+  const searchQuery = controlledSearchQuery ?? internalSearchQuery;
+  const setSearchQuery = useCallback((next: string) => {
+    if (controlledSearchQuery === undefined) setInternalSearchQuery(next);
+    onSearchQueryChange?.(next);
+  }, [controlledSearchQuery, onSearchQueryChange]);
   const [collapsedJobPanes, setCollapsedJobPanes] = useState<Set<string>>(() => new Set());
   const [hiddenSectionCollapsed, setHiddenSectionCollapsed] = useState(true);
   const [agentProviders, setAgentProviders] = useState<ProcessProvider[]>([]);
@@ -1502,31 +1513,34 @@ export function JobListView({
     (document.activeElement as HTMLElement)?.blur();
   }, []);
 
+  const showInlineSearch = !hideSearchBar;
   const toolbar = (onSortChange && jobs.length > 1) || jobs.length > 0 || (onSetAllGroupTabView && globalTabsView.anyHeader) ? (
     <View style={styles.sortRow}>
-      <View style={styles.searchBar}>
-        <Text style={styles.searchIcon}>{"\u2315"}</Text>
-        <TextInput
-          ref={searchRef}
-          style={styles.searchInput}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Filter jobs..."
-          placeholderTextColor={colors.textMuted}
-          returnKeyType="done"
-          inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
-          onKeyPress={(e) => {
-            if (e.nativeEvent.key === "Escape") {
-              handleClearSearch();
-            }
-          }}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={handleClearSearch} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Text style={styles.searchClear}>x</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {showInlineSearch && (
+        <View style={styles.searchBar}>
+          <Text style={styles.searchIcon}>{"\u2315"}</Text>
+          <TextInput
+            ref={searchRef}
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Filter jobs..."
+            placeholderTextColor={colors.textMuted}
+            returnKeyType="done"
+            inputAccessoryViewID={Platform.OS === "ios" ? "keyboard-dismiss" : undefined}
+            onKeyPress={(e) => {
+              if (e.nativeEvent.key === "Escape") {
+                handleClearSearch();
+              }
+            }}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={handleClearSearch} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.searchClear}>x</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
       {onSortChange && jobs.length > 1 && (
         <View style={styles.sortControl}>
           <TouchableOpacity
@@ -1892,14 +1906,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   addJobBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginLeft: "auto",
     justifyContent: "center",
     alignItems: "center",
     alignSelf: "center",
   },
   addJobBtnDots: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
