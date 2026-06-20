@@ -401,6 +401,7 @@ export function JobListView({
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const groupMenuDropdownRef = useRef<View>(null);
   const groupMenuTriggerRef = useRef<any>(null);
+  const groupMenuTriggerRefs = useRef<Record<string, any>>({});
   const sortTriggerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -1282,15 +1283,26 @@ export function JobListView({
                         </Text>
                       </TouchableOpacity>
                       <Text style={[styles.groupHeader, isActiveWorkspace ? styles.activeWorkspaceHeaderText : null, isInactiveWorkspace ? { opacity: 0.55 } : null]}>{item.displayGroup}</Text>
+                      {item.folderPath && (
+                        <Text style={[styles.groupFolderPath, { textAlign: "right" }]} numberOfLines={1}>
+                          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
+                        </Text>
+                      )}
                       {allowGroupMenu && (
                         <TouchableOpacity
-                          ref={(r: any) => { if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r; }}
+                          ref={(r: any) => {
+                            if (r) groupMenuTriggerRefs.current[item.group] = r;
+                            else delete groupMenuTriggerRefs.current[item.group];
+                            if (groupMenu?.group === item.group) groupMenuTriggerRef.current = r;
+                          }}
                           onPress={(e: any) => {
                             e.stopPropagation();
                             if (groupMenu?.group === item.group) {
                               setGroupMenu(null);
                               return;
                             }
+                            groupMenuTriggerRef.current = groupMenuTriggerRefs.current[item.group] ?? e?.currentTarget ?? e?.target ?? null;
+                            setGroupMenuPos(null);
                             if (isWeb) {
                               const node = e?.currentTarget ?? e?.target;
                               groupMenuTriggerRef.current = node;
@@ -1307,11 +1319,6 @@ export function JobListView({
                         >
                           <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
                         </TouchableOpacity>
-                      )}
-                      {item.folderPath && (
-                        <Text style={[styles.groupFolderPath, { textAlign: "right" }]} numberOfLines={1}>
-                          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
-                        </Text>
                       )}
                     </TouchableOpacity>
                     {item.tabsToggle && (

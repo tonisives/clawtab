@@ -5,13 +5,45 @@ import type { XtermLogHandle } from "@clawtab/shared";
 // Global PTY event listeners keyed by pane_id
 const ptyListeners = new Map<string, Set<(data: string) => void>>();
 const ptyExitListeners = new Map<string, Set<() => void>>();
-const ptySubscriptions = new Map<string, {
+type PtySubscription = {
   count: number;
   tmuxSession: string;
+  getDimensions: () => { cols: number; rows: number };
+  subscribeTimer?: ReturnType<typeof setTimeout>;
   unsubscribeTimer?: ReturnType<typeof setTimeout>;
-}>();
+};
+
+const ptySubscriptions = new Map<string, PtySubscription>();
 
 const CONNECTING_FALLBACK_MS = 15000;
+const DEFAULT_DIMS = { cols: 80, rows: 24 };
+
+function sendSubscribe(paneId: string, subscription: PtySubscription) {
+  const send = getWsSend();
+  if (!send) return false;
+  const dims = subscription.getDimensions();
+
+  send({
+    type: "subscribe_pty",
+    id: nextId(),
+    pane_id: paneId,
+    tmux_session: subscription.tmuxSession,
+    cols: dims.cols,
+    rows: dims.rows,
+  });
+  return true;
+}
+
+export function replayActivePtySubscriptions() {
+  for (const [paneId, subscription] of ptySubscriptions) {
+    if (subscription.count <= 0) continue;
+    if (subscription.subscribeTimer) clearTimeout(subscription.subscribeTimer);
+    subscription.subscribeTimer = undefined;
+    if (subscription.unsubscribeTimer) clearTimeout(subscription.unsubscribeTimer);
+    subscription.unsubscribeTimer = undefined;
+    sendSubscribe(paneId, subscription);
+  }
+}
 
 /** Called from useWebSocket when a pty_output message arrives */
 export function dispatchPtyOutput(paneId: string, data: string) {
@@ -89,15 +121,24 @@ export function usePty(
     if (!ptyExitListeners.has(paneId)) ptyExitListeners.set(paneId, new Set());
     ptyExitListeners.get(paneId)!.add(onExit);
 
+    const getDimensions = () => termRef.current?.dimensions() ?? DEFAULT_DIMS;
     const existing = ptySubscriptions.get(paneId);
     if (existing && existing.tmuxSession === tmuxSession) {
       if (existing.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
       existing.unsubscribeTimer = undefined;
       existing.count += 1;
+      existing.getDimensions = getDimensions;
       subscribedRef.current = true;
       setConnecting(false);
     } else {
       if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
+      const subscription: PtySubscription = {
+        count: 1,
+        tmuxSession,
+        getDimensions,
+      };
+      ptySubscriptions.set(paneId, subscription);
+      subscribedRef.current = true;
       if (send) {
         setConnecting(true);
         connectingTimerRef.current = setTimeout(() => {
@@ -105,22 +146,10 @@ export function usePty(
           setConnecting(false);
         }, CONNECTING_FALLBACK_MS);
         subscribeStartTimer = setTimeout(() => {
-          const currentSend = getWsSend();
-          if (!currentSend) return;
-          // Get initial dimensions from terminal
-          const dims = termRef.current?.dimensions() ?? { cols: 80, rows: 24 };
-
-          currentSend({
-            type: "subscribe_pty",
-            id: nextId(),
-            pane_id: paneId,
-            tmux_session: tmuxSession,
-            cols: dims.cols,
-            rows: dims.rows,
-          });
-          ptySubscriptions.set(paneId, { count: 1, tmuxSession });
-          subscribedRef.current = true;
+          subscription.subscribeTimer = undefined;
+          sendSubscribe(paneId, subscription);
         }, 120);
+        subscription.subscribeTimer = subscribeStartTimer;
       }
     }
 
@@ -128,6 +157,10 @@ export function usePty(
 
     return () => {
       if (subscribeStartTimer) clearTimeout(subscribeStartTimer);
+      const activeSubscription = ptySubscriptions.get(paneId);
+      if (activeSubscription && activeSubscription.subscribeTimer === subscribeStartTimer) {
+        activeSubscription.subscribeTimer = undefined;
+      }
       clearInterval(flushInterval);
       ptyListeners.get(paneId)?.delete(onOutput);
       ptyExitListeners.get(paneId)?.delete(onExit);

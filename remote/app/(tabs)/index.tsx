@@ -9,6 +9,7 @@ import {
 } from "react-native"
 import { useRouter } from "expo-router"
 import { DndContext, DragOverlay } from "@dnd-kit/core"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
@@ -34,6 +35,8 @@ import { buildModelOptions } from "../../src/lib/agentModels"
 
 type GroupTabView = Record<string, "tabs" | "jobs">
 
+const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
+const HIDDEN_GROUPS_STORAGE_KEY = "remote_hidden_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
@@ -80,6 +83,31 @@ function persistSelection(job: string | null, process: string | null) {
   else sessionStorage.removeItem("sel_process")
 }
 
+function parseStringSet(raw: string | null): Set<string> {
+  if (!raw) return new Set()
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((group): group is string => typeof group === "string"))
+  } catch {
+    return new Set()
+  }
+}
+
+function readWebStringSet(key: string): Set<string> {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return new Set()
+  return parseStringSet(localStorage.getItem(key))
+}
+
+function saveStringSet(key: string, value: Set<string>) {
+  const serialized = JSON.stringify([...value].sort())
+  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+    localStorage.setItem(key, serialized)
+    return
+  }
+  AsyncStorage.setItem(key, serialized).catch(() => {})
+}
+
 function readGroupTabView(): GroupTabView {
   if (Platform.OS !== "web" || typeof localStorage === "undefined") return {}
   const raw = localStorage.getItem(GROUP_TAB_VIEW_STORAGE_KEY)
@@ -110,7 +138,8 @@ export default function JobsScreen() {
   const enabledModels = useJobsStore((s) => s.enabledModels)
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => readWebStringSet(COLLAPSED_GROUPS_STORAGE_KEY))
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(() => readWebStringSet(HIDDEN_GROUPS_STORAGE_KEY))
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
@@ -138,8 +167,43 @@ export default function JobsScreen() {
       const next = new Set(prev)
       if (next.has(group)) next.delete(group)
       else next.add(group)
+      saveStringSet(COLLAPSED_GROUPS_STORAGE_KEY, next)
       return next
     })
+  }, [])
+
+  const hideGroup = useCallback((group: string) => {
+    setHiddenGroups((prev) => {
+      const next = new Set(prev)
+      next.add(group)
+      saveStringSet(HIDDEN_GROUPS_STORAGE_KEY, next)
+      return next
+    })
+  }, [])
+
+  const unhideGroup = useCallback((group: string) => {
+    setHiddenGroups((prev) => {
+      const next = new Set(prev)
+      next.delete(group)
+      saveStringSet(HIDDEN_GROUPS_STORAGE_KEY, next)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (Platform.OS === "web") return
+    let cancelled = false
+    AsyncStorage.multiGet([COLLAPSED_GROUPS_STORAGE_KEY, HIDDEN_GROUPS_STORAGE_KEY])
+      .then((entries) => {
+        if (cancelled) return
+        const values = new Map(entries)
+        setCollapsedGroups(parseStringSet(values.get(COLLAPSED_GROUPS_STORAGE_KEY) ?? null))
+        setHiddenGroups(parseStringSet(values.get(HIDDEN_GROUPS_STORAGE_KEY) ?? null))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleRefresh = useCallback(() => {
@@ -402,6 +466,9 @@ export default function JobsScreen() {
         detectedProcesses={visibleDetectedProcesses}
         collapsedGroups={collapsedGroups}
         onToggleGroup={toggleGroup}
+        hiddenGroups={hiddenGroups}
+        onHideGroup={hideGroup}
+        onUnhideGroup={unhideGroup}
         onRefresh={handleRefresh}
         sortMode={sortMode}
         onSortChange={setSortMode}
@@ -573,6 +640,9 @@ export default function JobsScreen() {
             detectedProcesses={visibleDetectedProcesses}
             collapsedGroups={collapsedGroups}
             onToggleGroup={toggleGroup}
+            hiddenGroups={hiddenGroups}
+            onHideGroup={hideGroup}
+            onUnhideGroup={unhideGroup}
             onRefresh={handleRefresh}
             sortMode={sortMode}
             onSortChange={setSortMode}

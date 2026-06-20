@@ -7,7 +7,7 @@ import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
 import { getPushToken } from "../lib/notifications";
 import { dispatchLogChunk } from "./useLogs";
-import { dispatchPtyOutput, dispatchPtyExit } from "./usePty";
+import { dispatchPtyOutput, dispatchPtyExit, replayActivePtySubscriptions } from "./usePty";
 import { dispatchTransportLogChunk } from "../transport/wsTransport";
 import { resolveRequest } from "../lib/useRequestMap";
 import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
@@ -67,6 +67,7 @@ export function useWebSocket() {
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
       ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
+      replayActivePtySubscriptions();
 
       // Flush any answers queued while offline
       flushPendingAnswers((msg) => {

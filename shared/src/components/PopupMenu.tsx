@@ -200,7 +200,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
   }, [onClose, ref, triggerRef]);
 
   useEffect(() => {
-    if (isWeb || !position || !triggerRef?.current?.measureInWindow) {
+    if (isWeb || !triggerRef?.current?.measureInWindow) {
       setNativeTriggerRect(null);
       return;
     }
