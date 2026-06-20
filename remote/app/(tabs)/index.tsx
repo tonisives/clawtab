@@ -184,10 +184,11 @@ function saveGroupTabView(value: GroupTabView) {
 
 function MobileHeader() {
   const insets = useSafeAreaInsets()
+  const topInset = Math.max(insets.top - 22, 0)
 
   return (
     <View style={styles.mobileHeaderWrap}>
-      <View style={{ height: insets.top }} />
+      <View style={{ height: topInset }} />
       <View style={styles.mobileHeader}>
         <Pressable onPress={() => Linking.openURL("https://clawtab.cc")} style={styles.mobileBrand}>
           <Image source={require("../../assets/clawtab-icon.png")} style={styles.mobileBrandIcon} />
@@ -966,7 +967,7 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   mobileHeader: {
-    height: 44,
+    height: 36,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -974,6 +975,7 @@ const styles = StyleSheet.create({
   },
   mobileHeaderWrap: {
     backgroundColor: colors.bg,
+    paddingBottom: spacing.lg,
   },
   mobileListContent: {
     padding: 0,
@@ -983,15 +985,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    transform: [{ translateY: -10 }],
   },
   mobileBrandIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 7,
   },
   mobileBrandText: {
     color: colors.text,
-    fontSize: 17,
+    fontSize: 20,
     fontWeight: "700",
   },
   floatingNotifications: {

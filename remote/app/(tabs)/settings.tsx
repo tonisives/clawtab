@@ -29,10 +29,11 @@ type SubStatus = api.SubscriptionStatus | null
 
 function MobileHeader() {
   const insets = useSafeAreaInsets()
+  const topInset = Math.max(insets.top - 22, 0)
 
   return (
     <View style={styles.mobileHeaderWrap}>
-      <View style={{ height: insets.top }} />
+      <View style={{ height: topInset }} />
       <View style={styles.mobileHeader}>
         <Pressable onPress={() => Linking.openURL("https://clawtab.cc")} style={styles.mobileBrand}>
           <Image source={require("../../assets/clawtab-icon.png")} style={styles.mobileBrandIcon} />
@@ -410,7 +411,7 @@ const styles = StyleSheet.create({
     paddingTop: 48,
   },
   mobileHeader: {
-    height: 44,
+    height: 36,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -418,16 +419,18 @@ const styles = StyleSheet.create({
   },
   mobileHeaderWrap: {
     backgroundColor: colors.bg,
+    paddingBottom: spacing.lg,
   },
   mobileBrand: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+    transform: [{ translateY: -10 }],
   },
   mobileBrandIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 7,
   },
   mobileBrandText: {
     color: colors.text,
