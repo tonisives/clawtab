@@ -5,15 +5,21 @@ const { withAppDelegate } = require("expo/config-plugins");
 function withNativeAnswer(config) {
   return withAppDelegate(config, (config) => {
     let contents = config.modResults.contents;
+    contents = contents.replaceAll("import EXNotifications", "import ExpoNotifications");
+    contents = contents.replace(/(^|\n)(?:public\s+|internal\s+)?import Expo(\n)/g, "$1internal import Expo$2");
+    contents = contents.replace(
+      /(^|\n)(?:public\s+|internal\s+)?import ExpoNotifications(\n)/g,
+      "$1internal import ExpoNotifications$2",
+    );
 
     // Add imports
     if (!contents.includes("import UserNotifications")) {
       contents = contents.replace(
-        "import Expo",
-        "import Expo\nimport UserNotifications\nimport EXNotifications",
+        "internal import Expo",
+        "internal import Expo\nimport UserNotifications\ninternal import ExpoNotifications",
       );
-    } else if (!contents.includes("import EXNotifications")) {
-      contents = contents.replace("import UserNotifications", "import UserNotifications\nimport EXNotifications");
+    } else if (!contents.includes("internal import ExpoNotifications")) {
+      contents = contents.replace("import UserNotifications", "import UserNotifications\ninternal import ExpoNotifications");
     }
 
     // Add registration call in didFinishLaunchingWithOptions
