@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native"
+import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
@@ -194,6 +195,9 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <TouchableOpacity onPress={onClose} style={styles.backButton} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={22} color={colors.text} style={styles.backIcon} />
+        </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
         <StatusBadge status={status} />
       </View>
@@ -231,6 +235,17 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.xs,
+  },
+  backIcon: {
+    marginLeft: 2,
   },
   title: {
     color: colors.text,

@@ -21,9 +21,9 @@
     "newArchEnabled": true,
     "scheme": "clawtab",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0a0a0a"
+      "backgroundColor": "#4F51AB"
     },
     "ios": {
       "supportsTablet": true,

@@ -91,7 +91,6 @@ export function usePty(
   useEffect(() => {
     const send = getWsSend();
     if (!paneId || !tmuxSession) return;
-    let subscribeStartTimer: ReturnType<typeof setTimeout> | undefined;
 
     gotDataRef.current = false;
     pendingOutputRef.current = [];
@@ -145,22 +144,14 @@ export function usePty(
           connectingTimerRef.current = undefined;
           setConnecting(false);
         }, CONNECTING_FALLBACK_MS);
-        subscribeStartTimer = setTimeout(() => {
-          subscription.subscribeTimer = undefined;
-          sendSubscribe(paneId, subscription);
-        }, 120);
-        subscription.subscribeTimer = subscribeStartTimer;
+        sendSubscribe(paneId, subscription);
       }
     }
 
     const flushInterval = setInterval(flushPendingOutput, 50);
 
     return () => {
-      if (subscribeStartTimer) clearTimeout(subscribeStartTimer);
       const activeSubscription = ptySubscriptions.get(paneId);
-      if (activeSubscription && activeSubscription.subscribeTimer === subscribeStartTimer) {
-        activeSubscription.subscribeTimer = undefined;
-      }
       clearInterval(flushInterval);
       ptyListeners.get(paneId)?.delete(onOutput);
       ptyExitListeners.get(paneId)?.delete(onExit);

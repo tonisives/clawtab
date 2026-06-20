@@ -83,6 +83,30 @@ function persistSelection(job: string | null, process: string | null) {
   else sessionStorage.removeItem("sel_process")
 }
 
+function jobRoute(job: RemoteJob, isDemo: boolean) {
+  return {
+    pathname: "/job/[name]",
+    params: {
+      name: job.slug,
+      ...(isDemo ? { demo: "1" } : {}),
+    },
+  } as const
+}
+
+function jobIdRoute(jobId: string) {
+  return {
+    pathname: "/job/[name]",
+    params: { name: jobId },
+  } as const
+}
+
+function processRoute(paneId: string) {
+  return {
+    pathname: "/process/[pane_id]",
+    params: { pane_id: paneId.replace(/%/g, "_pct_") },
+  } as const
+}
+
 function parseStringSet(raw: string | null): Set<string> {
   if (!raw) return new Set()
   try {
@@ -236,7 +260,7 @@ export default function JobsScreen() {
       setSelectedProcess(null)
       setSelection("job", job.slug)
     } else {
-      router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
+      router.push(jobRoute(job, isDemo))
     }
   }, [router, isDemo, isWide])
 
@@ -246,7 +270,7 @@ export default function JobsScreen() {
       setSelectedJob(null)
       setSelection("process", process.pane_id)
     } else {
-      router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
+      router.push(processRoute(process.pane_id))
     }
   }, [router, isWide])
 
@@ -307,7 +331,7 @@ export default function JobsScreen() {
   // Wrap select handlers to check tree first
   const handleSelectJobWithTree = useCallback((job: RemoteJob) => {
     if (!isWide) {
-      router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
+      router.push(jobRoute(job, isDemo))
       return
     }
     const content: PaneContent = { kind: "job", slug: job.slug }
@@ -317,7 +341,7 @@ export default function JobsScreen() {
 
   const handleSelectProcessWithTree = useCallback((process: DetectedProcess) => {
     if (!isWide) {
-      router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
+      router.push(processRoute(process.pane_id))
       return
     }
     const content: PaneContent = { kind: "process", paneId: process.pane_id }
@@ -371,13 +395,13 @@ export default function JobsScreen() {
         if (isWide) {
           handleSelectProcessWithTree(pendingProcess)
         } else {
-          router.push(`/process/${ack.pane_id.replace(/%/g, "_pct_")}`)
+          router.push(processRoute(ack.pane_id))
         }
       } else if (ack.job_id) {
         if (isWide) {
           setSelectedJob(ack.job_id)
         } else {
-          router.push(`/job/${ack.job_id}`)
+          router.push(jobIdRoute(ack.job_id))
         }
       }
     })

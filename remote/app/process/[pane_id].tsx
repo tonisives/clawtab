@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
@@ -103,6 +104,8 @@ export default function ProcessDetailScreen() {
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
+  const terminalMenuOpenRef = useRef(false);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
@@ -125,6 +128,14 @@ export default function ProcessDetailScreen() {
   const keyboardDismissRef = useRef<TextInput | null>(null);
   const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
   useDemoPty(pane_id, !!demoProcess);
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  }, [router]);
+
+  useEffect(() => {
+    terminalMenuOpenRef.current = terminalMenuOpen;
+  }, [terminalMenuOpen]);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -135,6 +146,10 @@ export default function ProcessDetailScreen() {
       termRef.current?.setVisualOffset(Math.max(0, keyboardHeight + KEYBOARD_TOOLBAR_HEIGHT + KEYBOARD_EXTRA_CLEARANCE));
     });
     const hide = Keyboard.addListener("keyboardWillHide", () => {
+      if (terminalMenuOpenRef.current) {
+        setTimeout(() => termRef.current?.focus(), 0);
+        return;
+      }
       setKeyboardVisible(false);
       setKeyboardHeight(0);
       termRef.current?.setVisualOffset(0);
@@ -229,10 +244,24 @@ export default function ProcessDetailScreen() {
 
   const sendTerminalText = useCallback(
     (text: string) => {
+      if (!text) return;
       ptySendInput(encodeTerminalInput(text));
     },
     [ptySendInput],
   );
+
+  const handleTerminalMenuOpenChange = useCallback((open: boolean) => {
+    setTerminalMenuOpen(open);
+    if (open) {
+      setTimeout(() => termRef.current?.focus(), 0);
+      setTimeout(() => termRef.current?.focus(), 80);
+    }
+  }, []);
+
+  const pasteTerminalText = useCallback(async () => {
+    const text = await Clipboard.getStringAsync();
+    sendTerminalText(text);
+  }, [sendTerminalText]);
 
   const dismissTerminalKeyboard = useCallback(() => {
     termRef.current?.blur();
@@ -324,6 +353,11 @@ export default function ProcessDetailScreen() {
               icon={<JobKindIcon kind={headerKind} size={26} bare />}
               onPress={showContextMenu ? closeContextMenu : undefined}
             />
+          ),
+          headerLeft: () => (
+            <TouchableOpacity onPress={goBack} style={styles.headerBackBtn} activeOpacity={0.7}>
+              <Ionicons name="chevron-back" size={26} color={colors.text} style={styles.headerBackIcon} />
+            </TouchableOpacity>
           ),
           headerRight: () => (
             <View ref={contextMenuRef} style={styles.headerRightSlot}>
@@ -428,9 +462,9 @@ export default function ProcessDetailScreen() {
           </View>
         ) : null}
       </View>
-      {keyboardVisible ? (
+      {keyboardVisible || terminalMenuOpen ? (
         <TerminalKeyboardToolbar
-          bottom={keyboardHeight}
+          bottom={keyboardVisible ? keyboardHeight : insets.bottom}
           onDismiss={dismissTerminalKeyboard}
           onEscape={() => sendTerminalText("\x1b")}
           onArrowUp={() => sendTerminalText("\x1b[A")}
@@ -438,6 +472,9 @@ export default function ProcessDetailScreen() {
           onArrowLeft={() => sendTerminalText("\x1b[D")}
           onArrowRight={() => sendTerminalText("\x1b[C")}
           onCtrlC={() => sendTerminalText("\x03")}
+          onPaste={pasteTerminalText}
+          menuOpen={terminalMenuOpen}
+          onMenuOpenChange={handleTerminalMenuOpenChange}
         />
       ) : null}
       <TextInput
@@ -471,6 +508,9 @@ function TerminalKeyboardToolbar({
   onArrowLeft,
   onArrowRight,
   onCtrlC,
+  onPaste,
+  menuOpen,
+  onMenuOpenChange,
 }: {
   bottom: number;
   onDismiss: () => void;
@@ -480,7 +520,15 @@ function TerminalKeyboardToolbar({
   onArrowLeft: () => void;
   onArrowRight: () => void;
   onCtrlC: () => void;
+  onPaste: () => Promise<void> | void;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
 }) {
+  const handlePastePress = useCallback(async () => {
+    await onPaste();
+    onMenuOpenChange(false);
+  }, [onPaste, onMenuOpenChange]);
+
   return (
     <View style={[styles.keyboardToolbar, { bottom }]}>
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
@@ -505,6 +553,18 @@ function TerminalKeyboardToolbar({
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowRight} activeOpacity={0.7}>
         <Ionicons name="chevron-forward" size={20} color={colors.text} />
       </TouchableOpacity>
+      <View style={styles.keyboardToolMenuWrap}>
+        <TouchableOpacity style={styles.keyboardToolBtn} onPress={() => onMenuOpenChange(!menuOpen)} activeOpacity={0.7}>
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+        </TouchableOpacity>
+        {menuOpen ? (
+          <View style={styles.keyboardPastePopover}>
+            <TouchableOpacity style={styles.keyboardPasteItem} onPress={handlePastePress} activeOpacity={0.7}>
+              <Text style={styles.keyboardPasteTitle}>Paste</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -603,6 +663,16 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   notFound: { color: colors.textMuted, fontSize: 16 },
+  headerBackBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: -8,
+  },
+  headerBackIcon: {
+    marginLeft: 2,
+  },
   headerRightSlot: {
     position: "relative",
     zIndex: 9999,
@@ -707,6 +777,33 @@ const styles = StyleSheet.create({
   },
   keyboardToolSpacer: {
     flex: 1,
+  },
+  keyboardToolMenuWrap: {
+    position: "relative",
+    zIndex: 220,
+    elevation: 220,
+  },
+  keyboardPastePopover: {
+    position: "absolute",
+    right: 0,
+    bottom: 42,
+    minWidth: 150,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    zIndex: 240,
+    elevation: 240,
+  },
+  keyboardPasteItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  keyboardPasteTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
   },
   keyboardDismissSink: {
     position: "absolute",

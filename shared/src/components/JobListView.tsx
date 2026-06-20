@@ -1317,7 +1317,11 @@ export function JobListView({
                           activeOpacity={0.6}
                           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         >
-                          <Text style={styles.addJobBtnText}>{"\u2026"}</Text>
+                          <View style={styles.addJobBtnDots} pointerEvents="none">
+                            <View style={styles.addJobBtnDot} />
+                            <View style={styles.addJobBtnDot} />
+                            <View style={styles.addJobBtnDot} />
+                          </View>
                         </TouchableOpacity>
                       )}
                     </TouchableOpacity>
@@ -1893,13 +1897,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    alignSelf: "center",
   },
-  addJobBtnText: {
-    color: colors.textSecondary,
-    fontSize: 18,
-    fontWeight: "700",
-    lineHeight: 20,
-    letterSpacing: 1,
+  addJobBtnDots: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  addJobBtnDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.textSecondary,
   },
   groupHeaderArrow: { fontFamily: "monospace", fontSize: 9, color: colors.textSecondary },
   groupHeader: {
