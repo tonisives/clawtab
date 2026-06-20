@@ -267,6 +267,8 @@ export interface JobListViewProps {
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
   hideSearchBar?: boolean;
+  scrollEventThrottle?: number;
+  renderAsScrollRoot?: boolean;
 }
 
 type ListItem =
@@ -364,6 +366,8 @@ export function JobListView({
   searchQuery: controlledSearchQuery,
   onSearchQueryChange,
   hideSearchBar = false,
+  scrollEventThrottle = 100,
+  renderAsScrollRoot = false,
 }: JobListViewProps) {
   const scrollRef = useRef<ScrollView>(null);
   const searchRef = useRef<TextInput>(null);
@@ -1781,12 +1785,7 @@ export function JobListView({
     ? { tabIndex: -1 as const, onMouseDown: handleContainerMouseDown, style: { flex: 1, outline: "none" } as const }
     : {};
 
-  return (
-    <View
-      ref={containerRef}
-      style={Platform.OS !== "web" ? { flex: 1 } : undefined}
-      {...containerWebProps}
-    >
+  const scrollView = (
     <ScrollView
       ref={scrollRef}
       style={styles.scroll}
@@ -1794,7 +1793,7 @@ export function JobListView({
       scrollEnabled={scrollEnabled}
       automaticallyAdjustKeyboardInsets
       onScroll={(e) => { onScrollOffsetChange?.(e.nativeEvent.contentOffset.y); }}
-      scrollEventThrottle={100}
+      scrollEventThrottle={scrollEventThrottle}
       refreshControl={
         onRefresh ? (
           <RefreshControl
@@ -1821,6 +1820,19 @@ export function JobListView({
         />
       )}
     </ScrollView>
+  );
+
+  if (renderAsScrollRoot) {
+    return scrollView;
+  }
+
+  return (
+    <View
+      ref={containerRef}
+      style={Platform.OS !== "web" ? { flex: 1 } : undefined}
+      {...containerWebProps}
+    >
+      {scrollView}
     </View>
   );
 }

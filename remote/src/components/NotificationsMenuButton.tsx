@@ -11,7 +11,13 @@ import { useWsStore } from "../store/ws";
 import { DemoNotificationStack } from "./DemoNotificationStack";
 import { NotificationStack } from "./NotificationStack";
 
-export function NotificationsMenuButton() {
+export function NotificationsMenuButton({
+  hideWhenEmpty = false,
+  variant = "compact",
+}: {
+  hideWhenEmpty?: boolean;
+  variant?: "compact" | "fluid";
+}) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; right: number }>({ top: 48, right: 12 });
   const windowSize = useWindowDimensions();
@@ -68,6 +74,10 @@ export function NotificationsMenuButton() {
     setOpen((value) => !value);
   };
 
+  if (hideWhenEmpty && activeQuestionCount === 0) {
+    return null;
+  }
+
   return (
     <View ref={buttonRef} collapsable={false}>
       <Pressable
@@ -75,19 +85,20 @@ export function NotificationsMenuButton() {
         accessibilityRole="button"
         accessibilityLabel={activeQuestionCount > 0 ? `${activeQuestionCount} active question${activeQuestionCount === 1 ? "" : "s"}` : "Notifications"}
         style={({ pressed }) => [
-          styles.button,
-          (pressed || open) && styles.buttonActive,
-          activeQuestionCount > 0 && styles.buttonHasQuestions,
+          variant === "fluid" ? styles.fluidButton : styles.button,
+          variant === "fluid" && activeQuestionCount > 0 && styles.fluidButtonHasQuestions,
+          variant === "compact" && activeQuestionCount > 0 && styles.buttonHasQuestions,
+          (pressed || open) && (variant === "fluid" ? styles.fluidButtonActive : styles.buttonActive),
         ]}
       >
         <Ionicons
           name={activeQuestionCount > 0 ? "notifications" : "notifications-outline"}
-          size={17}
+          size={variant === "fluid" ? 20 : 17}
           color={activeQuestionCount > 0 ? colors.warning : colors.textMuted}
         />
         {activeQuestionCount > 0 && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>({activeQuestionCount})</Text>
+          <View style={variant === "fluid" ? styles.fluidBadge : styles.badge}>
+            <Text style={variant === "fluid" ? styles.fluidBadgeText : styles.badgeText}>{activeQuestionCount}</Text>
           </View>
         )}
       </Pressable>
@@ -135,6 +146,32 @@ const styles = StyleSheet.create({
   buttonHasQuestions: {
     backgroundColor: colors.warningBg,
   },
+  fluidButton: {
+    width: 52,
+    height: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+    position: "relative",
+    backgroundColor: "rgba(24, 24, 24, 0.62)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.22)",
+    shadowColor: "#000000",
+    shadowOpacity: 0.28,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 14,
+  },
+  fluidButtonHasQuestions: {
+    backgroundColor: "rgba(32, 30, 24, 0.68)",
+    borderColor: "rgba(255, 210, 130, 0.34)",
+    shadowColor: "#000000",
+    shadowOpacity: 0.3,
+  },
+  fluidButtonActive: {
+    transform: [{ scale: 0.97 }],
+    backgroundColor: "rgba(42, 42, 42, 0.72)",
+  },
   badge: {
     position: "absolute",
     top: -5,
@@ -152,6 +189,26 @@ const styles = StyleSheet.create({
     fontSize: 9,
     lineHeight: 12,
     fontWeight: "700",
+  },
+  fluidBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: colors.warning,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.42)",
+  },
+  fluidBadgeText: {
+    color: colors.bg,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "800",
   },
   modalRoot: {
     flex: 1,

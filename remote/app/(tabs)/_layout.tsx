@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, type ComponentType, type PropsWithChildren } from "react";
 import { View, Text, Modal, Pressable as RNPressable, StyleSheet } from "react-native";
 import { Tabs } from "expo-router";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
 import { colors } from "../../src/theme/colors";
@@ -8,9 +9,11 @@ import { useResponsive } from "../../src/hooks/useResponsive";
 import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { SettingsModalProvider, useSettingsModal } from "../../src/store/settingsModal";
+import { useJobFilterStore } from "../../src/store/jobFilter";
 import SettingsScreen from "./settings";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
+const NativeTabsRoot = NativeTabs as ComponentType<PropsWithChildren<any>>;
 
 const tabIcons: Record<string, { focused: IoniconsName; default: IoniconsName }> = {
   Jobs: { focused: "briefcase", default: "briefcase-outline" },
@@ -136,6 +139,50 @@ const modalStyles = StyleSheet.create({
 });
 
 function TabsContent({ isWide }: { isWide: boolean }) {
+  const openSearch = useJobFilterStore((s) => s.openSearch);
+
+  if (!isWide) {
+    return (
+      <NativeTabsRoot
+        tintColor={colors.accent}
+        iconColor={{ default: colors.textMuted, selected: colors.accent }}
+        backgroundColor={colors.bg}
+        blurEffect="systemChromeMaterialDark"
+        shadowColor={colors.border}
+        minimizeBehavior="onScrollDown"
+      >
+        <NativeTabs.Trigger name="index" contentStyle={{ backgroundColor: colors.bg }}>
+          <NativeTabs.Trigger.Label>Jobs</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            sf={{ default: "briefcase", selected: "briefcase.fill" }}
+            md={{ default: "work_outline", selected: "work" }}
+          />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="settings" contentStyle={{ backgroundColor: colors.bg }}>
+          <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            sf={{ default: "gearshape", selected: "gearshape.fill" }}
+            md={{ default: "settings", selected: "settings" }}
+          />
+        </NativeTabs.Trigger>
+        <NativeTabs.Trigger
+          name="search"
+          role="search"
+          disabled
+          contentStyle={{ backgroundColor: colors.bg }}
+          listeners={{
+            tabPress: () => {
+              openSearch();
+            },
+          }}
+        />
+        <NativeTabs.Trigger name="agent" hidden />
+        <NativeTabs.Trigger name="connection" hidden />
+        <NativeTabs.Trigger name="devices" hidden />
+      </NativeTabsRoot>
+    );
+  }
+
   return (
     <Tabs
       initialRouteName="index"
@@ -197,6 +244,12 @@ function TabsContent({ isWide }: { isWide: boolean }) {
                 tabBarIcon: ({ focused }) => <TabIcon label="Settings" focused={focused} />,
               }
         }
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          href: null,
+        }}
       />
     </Tabs>
   );

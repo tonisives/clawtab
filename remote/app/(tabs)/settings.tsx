@@ -1,11 +1,13 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView, RefreshControl, Image, Linking } from "react-native";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "../../src/store/auth";
 import { useWsStore } from "../../src/store/ws";
 import { useJobsStore } from "../../src/store/jobs";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { ApiTokensSection } from "../../src/components/ApiTokensSection";
+import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { ShareSection } from "@clawtab/shared";
 import * as api from "../../src/api/client";
@@ -15,6 +17,25 @@ import { radius, spacing } from "../../src/theme/spacing";
 
 type SubStatus = api.SubscriptionStatus | null;
 
+function MobileHeader() {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={[styles.mobileHeader, { paddingTop: insets.top, height: 48 + insets.top }]}>
+      <Pressable
+        onPress={() => Linking.openURL("https://clawtab.cc")}
+        style={styles.mobileBrand}
+      >
+        <Image
+          source={require("../../assets/clawtab-icon.png")}
+          style={styles.mobileBrandIcon}
+        />
+        <Text style={styles.mobileBrandText}>ClawTab</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function SettingsScreen({ inModal = false }: { inModal?: boolean }) {
   const userId = useAuthStore((s) => s.userId);
   const email = useAuthStore((s) => s.email);
@@ -23,6 +44,7 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const desktopDeviceName = useWsStore((s) => s.desktopDeviceName);
   const { isWide } = useResponsive();
+  const insets = useSafeAreaInsets();
 
   const [sub, setSub] = useState<SubStatus>(null);
   const [subLoading, setSubLoading] = useState(true);
@@ -171,13 +193,16 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   };
 
   return (
-    <ScrollView
-      style={styles.scrollContainer}
-      contentContainerStyle={{ flexGrow: 1 }}
-      automaticallyAdjustKeyboardInsets
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.textMuted} />}
-    >
-      <ContentContainer>
+    <>
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={{ flexGrow: 1 }}
+        automaticallyAdjustKeyboardInsets
+        scrollEventThrottle={16}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.textMuted} />}
+      >
+        {!isWide && !inModal ? <MobileHeader /> : null}
+        <ContentContainer>
         <View style={[styles.container, isWide && !inModal && styles.containerWide]}>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Account</Text>
@@ -305,8 +330,14 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
             )}
           </View>
         </View>
-      </ContentContainer>
-    </ScrollView>
+        </ContentContainer>
+      </ScrollView>
+      {!isWide && !inModal ? (
+        <View style={[styles.floatingNotifications, { top: insets.top + 10 }]}>
+          <NotificationsMenuButton hideWhenEmpty variant="fluid" />
+        </View>
+      ) : null}
+    </>
   );
 }
 
@@ -322,6 +353,36 @@ const styles = StyleSheet.create({
   },
   containerWide: {
     paddingTop: 48,
+  },
+  mobileHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  mobileBrand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  mobileBrandIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+  },
+  mobileBrandText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  floatingNotifications: {
+    position: "absolute",
+    right: 12,
+    zIndex: 100,
+    elevation: 100,
   },
   section: {
     gap: spacing.md,

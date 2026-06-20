@@ -6,14 +6,24 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Modal,
+  Pressable,
+  TextInput,
+  Image,
+  Linking,
+  KeyboardAvoidingView,
 } from "react-native"
 import { useRouter } from "expo-router"
+import { Ionicons } from "@expo/vector-icons"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { DndContext, DragOverlay } from "@dnd-kit/core"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
+import { useJobFilterStore } from "../../src/store/jobFilter"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
+import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import {
   JobListView, SplitDetailArea, DropZoneOverlay,
   JobCard, RunningJobCard, ProcessCard,
@@ -38,6 +48,11 @@ type GroupTabView = Record<string, "tabs" | "jobs">
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
 const HIDDEN_GROUPS_STORAGE_KEY = "remote_hidden_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
+const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "recent", label: "Recent" },
+  { value: "added", label: "Added" },
+]
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
   return value === "claude" || value === "codex" || value === "opencode" || value === "antigravity" || value === "shell"
@@ -154,6 +169,25 @@ function saveGroupTabView(value: GroupTabView) {
   localStorage.setItem(GROUP_TAB_VIEW_STORAGE_KEY, JSON.stringify(value))
 }
 
+function MobileHeader() {
+  const insets = useSafeAreaInsets()
+
+  return (
+    <View style={[styles.mobileHeader, { paddingTop: insets.top, height: 48 + insets.top }]}>
+      <Pressable
+        onPress={() => Linking.openURL("https://clawtab.cc")}
+        style={styles.mobileBrand}
+      >
+        <Image
+          source={require("../../assets/clawtab-icon.png")}
+          style={styles.mobileBrandIcon}
+        />
+        <Text style={styles.mobileBrandText}>ClawTab</Text>
+      </Pressable>
+    </View>
+  )
+}
+
 export default function JobsScreen() {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
@@ -171,6 +205,13 @@ export default function JobsScreen() {
   const [demoToastVisible, setDemoToastVisible] = useState(false)
   const { isWide } = useResponsive()
   const router = useRouter()
+  const insets = useSafeAreaInsets()
+  const searchQuery = useJobFilterStore((s) => s.query)
+  const setSearchQuery = useJobFilterStore((s) => s.setQuery)
+  const searchOpen = useJobFilterStore((s) => s.searchOpen)
+  const closeSearch = useJobFilterStore((s) => s.closeSearch)
+  const clearSearch = useJobFilterStore((s) => s.clear)
+  const searchInputRef = useRef<TextInput>(null)
 
   const isDemo = connected && !desktopOnline && realJobs.length === 0
   const jobs = isDemo ? DEMO_JOBS : realJobs
@@ -417,6 +458,12 @@ export default function JobsScreen() {
     return () => clearTimeout(timer)
   }, [demoToastVisible])
 
+  useEffect(() => {
+    if (!searchOpen || isWide) return
+    const timer = setTimeout(() => searchInputRef.current?.focus(), 120)
+    return () => clearTimeout(timer)
+  }, [searchOpen, isWide])
+
   const runAgentHandler = isDemo ? handleDemoRunAgent : desktopOnline ? handleRunAgent : undefined
 
   const renderDraggableJobCard = useCallback(
@@ -506,8 +553,48 @@ export default function JobsScreen() {
         headerContent={bannerContent}
         showEmpty={loaded || isDemo}
         emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        hideSearchBar={!isWide}
       />
     </View>
+  )
+
+  const mobileJobList = (
+    <JobListView
+      jobs={jobs}
+      statuses={statuses}
+      detectedProcesses={visibleDetectedProcesses}
+      collapsedGroups={collapsedGroups}
+      onToggleGroup={toggleGroup}
+      hiddenGroups={hiddenGroups}
+      onHideGroup={hideGroup}
+      onUnhideGroup={unhideGroup}
+      onRefresh={handleRefresh}
+      sortMode={sortMode}
+      onSortChange={setSortMode}
+      onSelectJob={handleSelectJob}
+      onSelectProcess={handleSelectProcess}
+      onRunAgent={runAgentHandler}
+      agentModelOptions={agentModelOptions}
+      groupTabView={groupTabView}
+      onGroupTabViewChange={handleGroupTabViewChange}
+      onSetAllGroupTabView={handleSetAllGroupTabView}
+      headerContent={(
+        <>
+          <MobileHeader />
+          {isDemo ? <DemoBanner /> : null}
+          {bannerContent}
+        </>
+      )}
+      showEmpty={loaded || isDemo}
+      emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+      searchQuery={searchQuery}
+      onSearchQueryChange={setSearchQuery}
+      hideSearchBar
+      scrollEventThrottle={16}
+      renderAsScrollRoot
+    />
   )
 
   // Resizable list pane (web only)
@@ -549,14 +636,74 @@ export default function JobsScreen() {
 
   if (!isWide) {
     return (
-      <View style={styles.container}>
-        {jobList}
+      <>
+        {mobileJobList}
+        <View style={[styles.floatingNotifications, { top: insets.top + 10 }]}>
+          <NotificationsMenuButton hideWhenEmpty variant="fluid" />
+        </View>
+        <Modal
+          visible={searchOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={closeSearch}
+        >
+          <KeyboardAvoidingView
+            style={styles.searchKeyboardRoot}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={0}
+          >
+            <Pressable style={styles.searchBackdrop} onPress={closeSearch}>
+              <Pressable style={styles.searchPanel} onPress={(event) => event.stopPropagation()}>
+                <View style={styles.mobileSortRow}>
+                  {SORT_OPTIONS.map((option) => {
+                    const active = sortMode === option.value
+                    return (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setSortMode(option.value)}
+                        style={[styles.mobileSortButton, active && styles.mobileSortButtonActive]}
+                      >
+                        <Text style={[styles.mobileSortButtonText, active && styles.mobileSortButtonTextActive]}>
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+                <View style={styles.searchField}>
+                  <Ionicons name="search" size={18} color={colors.textMuted} />
+                  <TextInput
+                    ref={searchInputRef}
+                    style={styles.searchInput}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Filter jobs..."
+                    placeholderTextColor={colors.textMuted}
+                    returnKeyType="done"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onSubmitEditing={closeSearch}
+                  />
+                  {searchQuery.length > 0 ? (
+                    <Pressable
+                      onPress={clearSearch}
+                      style={styles.searchClearButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Modal>
         {demoToastVisible ? (
           <View style={styles.toast} pointerEvents="none">
             <Text style={styles.toastText}>Demo mode: cannot launch agents. Please connect desktop.</Text>
           </View>
         ) : null}
-      </View>
+      </>
     )
   }
 
@@ -682,6 +829,8 @@ export default function JobsScreen() {
             headerContent={bannerContent}
             showEmpty={loaded || isDemo}
             emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
             scrollEnabled={!split.isDragging}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}
@@ -715,6 +864,39 @@ export default function JobsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  mobileHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: -spacing.lg,
+    marginHorizontal: -spacing.lg,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  mobileBrand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  mobileBrandIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 5,
+  },
+  mobileBrandText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  floatingNotifications: {
+    position: "absolute",
+    right: 12,
+    zIndex: 100,
+    elevation: 100,
+  },
   splitContainer: {
     flex: 1,
     flexDirection: "row",
@@ -765,6 +947,78 @@ const styles = StyleSheet.create({
   },
   bannerWarn: { backgroundColor: "#332800" },
   bannerText: { color: colors.textSecondary, fontSize: 12 },
+  searchKeyboardRoot: {
+    flex: 1,
+  },
+  searchBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.18)",
+  },
+  searchPanel: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    borderRadius: 28,
+    backgroundColor: "rgba(24, 24, 24, 0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    padding: 8,
+    shadowColor: "#000000",
+    shadowOpacity: 0.32,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
+  },
+  mobileSortRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 8,
+    padding: 2,
+    borderRadius: 999,
+    backgroundColor: "rgba(10, 10, 10, 0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  mobileSortButton: {
+    flex: 1,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+  },
+  mobileSortButtonActive: {
+    backgroundColor: "rgba(121, 134, 203, 0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
+  },
+  mobileSortButtonText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  mobileSortButtonTextActive: {
+    color: colors.text,
+  },
+  searchField: {
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(10, 10, 10, 0.62)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+  searchClearButton: {
+    padding: 2,
+  },
   toast: {
     position: "absolute",
     left: 24,
