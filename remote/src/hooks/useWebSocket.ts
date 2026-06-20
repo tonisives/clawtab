@@ -153,6 +153,9 @@ export function useWebSocket() {
           resolveRequest(msg.id, msg.runs);
           break;
         case "error":
+          if (msg.id) {
+            resolveRequest(msg.id, msg);
+          }
           if (msg.code === "UNAUTHORIZED") {
             refreshToken().then((ok) => {
               if (ok) scheduleReconnect();

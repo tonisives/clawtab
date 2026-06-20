@@ -1,6 +1,17 @@
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { HeaderBackButton as NativeHeaderBackButton } from "expo-router/react-navigation";
 import { colors } from "../theme/colors";
+
+export function HeaderBackButton({ onPress }: { onPress: () => void }) {
+  return (
+    <NativeHeaderBackButton
+      displayMode="minimal"
+      tintColor={colors.text}
+      onPress={onPress}
+    />
+  );
+}
 
 export function HeaderStatusDot({ color }: { color: string }) {
   return (

@@ -66,6 +66,59 @@ term.loadAddon(fit);
 term.open(document.getElementById('terminal'));
 fit.fit();
 
+var iosKeyboardContext = '';
+
+function terminalInputTextarea() {
+  return document.querySelector('.xterm-helper-textarea');
+}
+
+function configureIosKeyboardContext() {
+  var textarea = terminalInputTextarea();
+  if (!textarea) return;
+  textarea.setAttribute('inputmode', 'text');
+  textarea.setAttribute('autocorrect', 'off');
+  textarea.setAttribute('autocomplete', 'off');
+  textarea.setAttribute('autocapitalize', 'none');
+  textarea.spellcheck = false;
+}
+
+function rememberIosKeyboardContext(data) {
+  if (!data) return;
+  if (data === '\\r' || data === '\\n' || data === '\\u0003' || data === '\\u001b') {
+    iosKeyboardContext = '';
+    return;
+  }
+  if (data === '\\b' || data === '\\u007f') {
+    iosKeyboardContext = iosKeyboardContext.slice(0, -1);
+    return;
+  }
+  if (data.length !== 1) return;
+  var code = data.charCodeAt(0);
+  if (code < 32 || code === 127) return;
+  iosKeyboardContext = (iosKeyboardContext + data).slice(-8);
+}
+
+function shouldResumeIosTextKeyboard(data) {
+  if (data !== ' ') return false;
+  var previous = iosKeyboardContext.charAt(iosKeyboardContext.length - 1);
+  return /[,.!?;:)]/.test(previous);
+}
+
+function resumeIosTextKeyboard() {
+  var textarea = terminalInputTextarea();
+  if (!textarea || document.activeElement !== textarea) return;
+  try {
+    textarea.blur();
+    setTimeout(function() {
+      configureIosKeyboardContext();
+      try { term.focus(); } catch (e) {}
+    }, 0);
+  } catch (e) {}
+}
+
+configureIosKeyboardContext();
+setTimeout(configureIosKeyboardContext, 0);
+
 function shouldForwardInput(data) {
   return !(/^\\x1b\\[(?:\\?|>|=)?[0-9;]*[cRn]$/.test(data));
 }
@@ -73,6 +126,9 @@ function shouldForwardInput(data) {
 term.onData(function(data) {
   if (!shouldForwardInput(data)) return;
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'data',data:btoa(data)}));
+  var resumeTextKeyboard = shouldResumeIosTextKeyboard(data);
+  rememberIosKeyboardContext(data);
+  if (resumeTextKeyboard) resumeIosTextKeyboard();
 });
 
 var pasteTarget = document.createElement('textarea');
@@ -179,7 +235,9 @@ window.blurTerminal = function() {
   } catch (e) {}
 };
 window.focusTerminal = function() {
+  configureIosKeyboardContext();
   try { term.focus(); } catch (e) {}
+  setTimeout(configureIosKeyboardContext, 0);
 };
 </script>
 </body>

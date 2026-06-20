@@ -62,9 +62,6 @@ export function NotificationSection({
   const [departing, setDeparting] = useState<DepartingQuestion[]>([]);
   const prevQuestionsRef = useRef<ClaudeQuestion[]>([]);
   const [entering, setEntering] = useState<Set<string>>(new Set());
-  const entranceAnims = useRef<Map<string, Animated.Value>>(new Map());
-  // Native slide-in anims for promoted cards
-  const slideInAnims = useRef<Map<string, Animated.Value>>(new Map());
   // Refs to card wrapper divs for imperative slide-in animation (web)
   const cardDivRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   // Queue of question IDs that need slide-in animation on next render
@@ -123,18 +120,6 @@ export function NotificationSection({
             setEntering(new Set());
           });
         });
-      } else {
-        for (const q of added) {
-          const anim = new Animated.Value(0);
-          entranceAnims.current.set(q.question_id, anim);
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }).start(() => {
-            entranceAnims.current.delete(q.question_id);
-          });
-        }
       }
     }
 
@@ -153,16 +138,6 @@ export function NotificationSection({
       if (promotedQ && !added.some((a) => a.question_id === promotedQ.question_id)) {
         if (isWeb) {
           pendingSlideIn.current.add(promotedQ.question_id);
-        } else {
-          const anim = new Animated.Value(0);
-          slideInAnims.current.set(promotedQ.question_id, anim);
-          Animated.timing(anim, {
-            toValue: 1,
-            duration: 300,
-            useNativeDriver: true,
-          }).start(() => {
-            slideInAnims.current.delete(promotedQ.question_id);
-          });
         }
       }
     }
@@ -402,22 +377,9 @@ export function NotificationSection({
       );
     }
 
-    const entAnim = entranceAnims.current.get(q.question_id);
-    const slideAnim = slideInAnims.current.get(q.question_id);
-    const anim = entAnim || slideAnim;
     return (
       <View key={q.question_id} style={{ width: cardWidth || "100%" }}>
-        {anim ? (
-          <Animated.View style={{
-            opacity: anim,
-            transform: [
-              { translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [-200, 0] }) },
-              { scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
-            ],
-          }}>
-            {wrapped}
-          </Animated.View>
-        ) : wrapped}
+        {wrapped}
       </View>
     );
   };

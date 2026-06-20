@@ -161,7 +161,7 @@ export function NotificationCard({
       onPress={() => handleOptionPress(opt.number, opt.label)}
       activeOpacity={0.6}
     >
-      <Text style={styles.optionBtnText} numberOfLines={isWeb ? 2 : 1}>
+      <Text style={[styles.optionBtnText, !isWeb && styles.optionBtnTextNative]} numberOfLines={isWeb ? 2 : 1}>
         {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
       </Text>
     </TouchableOpacity>
@@ -186,8 +186,8 @@ export function NotificationCard({
           onPress={() => onToggleAutoYes(question)}
           activeOpacity={0.6}
         >
-          <Text style={styles.autoYesBtnText} numberOfLines={1}>
-            {autoYesActive ? "Auto-yes on" : "Yes all"}
+          <Text style={[styles.autoYesBtnText, styles.autoYesBtnTextNative]} numberOfLines={1}>
+            {autoYesActive ? "Auto-yes on" : "Yes to all"}
           </Text>
         </TouchableOpacity>
       )}
@@ -342,13 +342,13 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   optionRowNative: {
-    gap: 6,
+    gap: 8,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingVertical: 10,
   },
   answerOptionsNative: {
     flexDirection: "row",
-    gap: 6,
+    gap: 8,
   },
   optionRowContent: {
     gap: 6,
@@ -368,11 +368,24 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     maxWidth: undefined,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.accentBg,
   },
   optionBtnText: {
     color: colors.accent,
     fontSize: 12,
     fontWeight: "500",
+  },
+  optionBtnTextNative: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+    textAlign: "center",
   },
   separator: {
     width: 1,
@@ -387,7 +400,13 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   autoYesBtnNative: {
-    alignSelf: "flex-start",
+    minHeight: 44,
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
   autoYesBtnActive: {
     backgroundColor: colors.warningBg,
@@ -396,6 +415,11 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontSize: 12,
     fontWeight: "600",
+  },
+  autoYesBtnTextNative: {
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "700",
   },
   sentRow: {
     flexDirection: "row",

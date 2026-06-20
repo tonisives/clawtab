@@ -149,17 +149,19 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : ""
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
   const termRef = useRef<XtermLogHandle | null>(null)
-  const { sendInput, sendResize, connecting: ptyConnecting } = usePty(statusPaneId, statusTmuxSession, termRef)
+  const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo
 
   const renderTerminal = useCallback(
     () => (
       <View style={{ flex: 1, minHeight: 0 }}>
-        <View style={[styles.ptyConnecting, !ptyConnecting && styles.ptyConnectingHidden]}>
-          {ptyConnecting ? (
+        <View style={[styles.ptyConnecting, !ptyConnecting && !ptyError && styles.ptyConnectingHidden]}>
+          {ptyConnecting || ptyError ? (
             <>
-              <ActivityIndicator size="small" color={colors.accent} />
-              <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
+              {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+              <Text style={styles.ptyConnectingText}>
+                {ptyError ?? "Connecting to terminal..."}
+              </Text>
             </>
           ) : null}
         </View>
@@ -171,7 +173,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
         />
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting],
+    [sendInput, sendResize, ptyConnecting, ptyError],
   )
 
   if (!job) {
@@ -196,7 +198,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.backButton} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} style={styles.backIcon} />
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
         <StatusBadge status={status} />
@@ -243,9 +245,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: spacing.xs,
-  },
-  backIcon: {
-    transform: [{ translateX: 3 }],
   },
   title: {
     color: colors.text,

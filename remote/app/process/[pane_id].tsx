@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { HeaderBackButton } from "expo-router/react-navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
@@ -14,7 +13,7 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
-import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderBackButton, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -127,7 +126,12 @@ export default function ProcessDetailScreen() {
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
   const keyboardDismissRef = useRef<TextInput | null>(null);
-  const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
+  const {
+    sendInput: ptySendInput,
+    sendResize,
+    connecting: ptyConnecting,
+    error: ptyError,
+  } = usePty(pane_id, tmuxSession, termRef);
   useDemoPty(pane_id, !!demoProcess);
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -355,13 +359,7 @@ export default function ProcessDetailScreen() {
               onPress={showContextMenu ? closeContextMenu : undefined}
             />
           ),
-          headerLeft: () => (
-            <HeaderBackButton
-              displayMode="minimal"
-              tintColor={colors.text}
-              onPress={goBack}
-            />
-          ),
+          headerLeft: () => <HeaderBackButton onPress={goBack} />,
           headerRight: () => (
             <View ref={contextMenuRef} style={styles.headerRightSlot}>
               <TouchableOpacity
@@ -458,10 +456,12 @@ export default function ProcessDetailScreen() {
           onExitCopyMode={exitCopyMode}
           copyModeActive={copyModeActive}
         />
-        {ptyConnecting ? (
+        {ptyConnecting || ptyError ? (
           <View style={styles.ptyConnectingOverlay} pointerEvents="none">
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.ptyConnectingText}>Connecting to agent...</Text>
+            {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+            <Text style={styles.ptyConnectingText}>
+              {ptyError ?? "Connecting to agent..."}
+            </Text>
           </View>
         ) : null}
       </View>

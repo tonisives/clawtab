@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Image,
   Linking,
+  Platform,
 } from "react-native"
 import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -17,7 +18,6 @@ import { useWsStore } from "../../src/store/ws"
 import { useJobsStore } from "../../src/store/jobs"
 import { ContentContainer } from "../../src/components/ContentContainer"
 import { ApiTokensSection } from "../../src/components/ApiTokensSection"
-import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { ShareSection } from "@clawtab/shared"
 import * as api from "../../src/api/client"
@@ -52,7 +52,6 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const desktopDeviceName = useWsStore((s) => s.desktopDeviceName)
   const { isWide } = useResponsive()
-  const insets = useSafeAreaInsets()
 
   const [sub, setSub] = useState<SubStatus>(null)
   const [subLoading, setSubLoading] = useState(true)
@@ -235,54 +234,58 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Account</Text>
               {email && (
-                <View style={styles.row}>
-                  <Text style={styles.label}>Email</Text>
-                  <Text style={styles.value} numberOfLines={1}>
-                    {email}
-                  </Text>
+                <View style={styles.listGroup}>
+                  <View style={styles.row}>
+                    <Text style={styles.label}>Email</Text>
+                    <Text style={styles.value} numberOfLines={1}>
+                      {email}
+                    </Text>
+                  </View>
                 </View>
               )}
             </View>
 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Connection</Text>
-              <View style={styles.row}>
-                <Text style={styles.label}>Relay</Text>
-                <View style={styles.statusRow}>
-                  <View
-                    style={[
-                      styles.dot,
-                      { backgroundColor: connected ? colors.success : colors.textMuted },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: connected ? colors.success : colors.textMuted },
-                    ]}
-                  >
-                    {connected ? "Connected" : "Connecting..."}
-                  </Text>
+              <View style={styles.listGroup}>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Relay</Text>
+                  <View style={styles.statusRow}>
+                    <View
+                      style={[
+                        styles.dot,
+                        { backgroundColor: connected ? colors.success : colors.textMuted },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.statusText,
+                        { color: connected ? colors.success : colors.textMuted },
+                      ]}
+                    >
+                      {connected ? "Connected" : "Connecting..."}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Desktop</Text>
-                <View style={styles.statusRow}>
-                  <View
-                    style={[
-                      styles.dot,
-                      { backgroundColor: desktopOnline ? colors.success : colors.textMuted },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: desktopOnline ? colors.success : colors.textMuted },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {desktopOnline ? (desktopDeviceName ?? "Online") : "Offline"}
-                  </Text>
+                <View style={styles.row}>
+                  <Text style={styles.label}>Desktop</Text>
+                  <View style={styles.statusRow}>
+                    <View
+                      style={[
+                        styles.dot,
+                        { backgroundColor: desktopOnline ? colors.success : colors.textMuted },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.statusText,
+                        { color: desktopOnline ? colors.success : colors.textMuted },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {desktopOnline ? (desktopDeviceName ?? "Online") : "Offline"}
+                    </Text>
+                  </View>
                 </View>
               </View>
               {!desktopOnline && (
@@ -304,18 +307,20 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
             {!subLoading && sub?.subscribed && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Subscription</Text>
-                <View style={styles.row}>
-                  <Text style={styles.label}>Status</Text>
-                  <Text style={[styles.value, { color: colors.success }]}>Active</Text>
-                </View>
-                {sub.current_period_end && (
+                <View style={styles.listGroup}>
                   <View style={styles.row}>
-                    <Text style={styles.label}>Period ends</Text>
-                    <Text style={styles.value}>
-                      {new Date(sub.current_period_end).toLocaleDateString()}
-                    </Text>
+                    <Text style={styles.label}>Status</Text>
+                    <Text style={[styles.value, { color: colors.success }]}>Active</Text>
                   </View>
-                )}
+                  {sub.current_period_end && (
+                    <View style={styles.row}>
+                      <Text style={styles.label}>Period ends</Text>
+                      <Text style={styles.value}>
+                        {new Date(sub.current_period_end).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  )}
+                </View>
                 <Pressable
                   style={[styles.billingBtn, actionLoading && styles.btnDisabled]}
                   onPress={handleManageBilling}
@@ -331,8 +336,10 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Shared Access</Text>
               {sharesLoading ? (
-                <View style={styles.row}>
-                  <ActivityIndicator size="small" color={colors.textMuted} />
+                <View style={styles.listGroup}>
+                  <View style={styles.row}>
+                    <ActivityIndicator size="small" color={colors.textMuted} />
+                  </View>
                 </View>
               ) : (
                 <ShareSection
@@ -388,11 +395,6 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
           </View>
         </ContentContainer>
       </ScrollView>
-      {!isWide && !inModal ? (
-        <View style={[styles.floatingNotifications, { top: insets.top + 9 }]}>
-          <NotificationsMenuButton hideWhenEmpty variant="fluid" />
-        </View>
-      ) : null}
     </>
   )
 }
@@ -437,12 +439,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
   },
-  floatingNotifications: {
-    position: "absolute",
-    right: 12,
-    zIndex: 100,
-    elevation: 100,
-  },
   section: {
     gap: spacing.md,
   },
@@ -453,6 +449,16 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
+  listGroup: {
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+          borderRadius: 18,
+          overflow: "hidden",
+          backgroundColor: colors.surface,
+        }
+      : {}),
+  },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -462,6 +468,15 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    ...(Platform.OS !== "web"
+      ? {
+          borderRadius: 0,
+          borderWidth: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.borderLight,
+          paddingVertical: spacing.lg,
+        }
+      : {}),
   },
   statusRow: {
     flexDirection: "row",
@@ -495,6 +510,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: "center",
     gap: spacing.sm,
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+          borderRadius: 18,
+          borderWidth: 0,
+        }
+      : {}),
   },
   offlineTitle: {
     color: colors.warning,
@@ -513,7 +535,7 @@ const styles = StyleSheet.create({
   },
   billingBtn: {
     height: 44,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.accent,
@@ -534,7 +556,7 @@ const styles = StyleSheet.create({
   },
   dangerBtn: {
     height: 44,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.danger,
     justifyContent: "center",
@@ -558,7 +580,7 @@ const styles = StyleSheet.create({
   },
   deleteBtn: {
     height: 44,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     backgroundColor: colors.danger,
     justifyContent: "center",
     alignItems: "center",

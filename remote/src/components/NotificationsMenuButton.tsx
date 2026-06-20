@@ -1,16 +1,16 @@
 import { useMemo, useRef, useState } from "react";
-import { Dimensions, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Dimensions, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, spacing } from "@clawtab/shared";
+import { colors } from "@clawtab/shared";
 import { DEMO_QUESTIONS } from "../demo/data";
 import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
-import { DemoNotificationStack } from "./DemoNotificationStack";
-import { NotificationStack } from "./NotificationStack";
+import { NotificationsPanel } from "./NotificationsPanel";
 
 export function NotificationsMenuButton({
   hideWhenEmpty = false,
@@ -19,6 +19,7 @@ export function NotificationsMenuButton({
   hideWhenEmpty?: boolean;
   variant?: "compact" | "fluid";
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; right: number }>({ top: 48, right: 12 });
   const windowSize = useWindowDimensions();
@@ -40,8 +41,6 @@ export function NotificationsMenuButton({
   const hasContent = activeQuestionCount > 0 || (!isDemo && autoYesPaneIds.size > 0);
   const nativeTop = insets.top + 58;
   const nativeBottom = insets.bottom + 58;
-  const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
-  const nativeCardMinHeight = Math.max(240, nativeAvailableHeight - 120);
   const popupFrame = Platform.OS === "web"
     ? {
         top: position.top,
@@ -57,6 +56,11 @@ export function NotificationsMenuButton({
       };
 
   const openMenu = () => {
+    if (Platform.OS === "ios") {
+      router.push("/notifications");
+      return;
+    }
+
     const screen = Dimensions.get("window");
     const node = buttonRef.current as unknown as {
       measureInWindow?: (callback: (x: number, y: number, width: number, height: number) => void) => void;
@@ -113,7 +117,7 @@ export function NotificationsMenuButton({
   );
 
   return (
-    <View ref={buttonRef} collapsable={false}>
+    <View ref={buttonRef} collapsable={false} style={styles.buttonFrame}>
       {glassAvailable ? (
         <GlassView
           glassEffectStyle="regular"
@@ -130,22 +134,7 @@ export function NotificationsMenuButton({
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
           <View style={[styles.popup, Platform.OS !== "web" && styles.nativePopup, isDemo && styles.demoPopup, popupFrame]}>
             <Text style={styles.title}>Notifications</Text>
-            <ScrollView
-              style={styles.popupScroll}
-              contentContainerStyle={[styles.popupScrollContent, isDemo && styles.demoNotificationContent]}
-            >
-              {hasContent ? (
-                isDemo ? <DemoNotificationStack embedded /> : (
-                  <NotificationStack
-                    embedded
-                    cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
-                    onNavigateAway={() => setOpen(false)}
-                  />
-                )
-              ) : (
-                <Text style={styles.empty}>No pending questions.</Text>
-              )}
-            </ScrollView>
+            <NotificationsPanel mode="popup" onNavigateAway={() => setOpen(false)} />
           </View>
         </View>
       </Modal>
@@ -154,6 +143,9 @@ export function NotificationsMenuButton({
 }
 
 const styles = StyleSheet.create({
+  buttonFrame: {
+    transform: [{ translateY: 3 }],
+  },
   button: {
     width: 28,
     height: 28,
@@ -263,12 +255,6 @@ const styles = StyleSheet.create({
   nativePopup: {
     padding: 12,
   },
-  popupScroll: {
-    flex: 1,
-  },
-  popupScrollContent: {
-    flexGrow: 1,
-  },
   demoPopup: {
     ...(Platform.OS === "web"
       ? {
@@ -277,9 +263,6 @@ const styles = StyleSheet.create({
         }
       : null),
   },
-  demoNotificationContent: {
-    minHeight: 280,
-  },
   title: {
     marginBottom: 8,
     color: colors.text,
@@ -287,11 +270,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 0.4,
-  },
-  empty: {
-    padding: spacing.md,
-    color: colors.textSecondary,
-    fontSize: 12,
-    textAlign: "center",
   },
 });

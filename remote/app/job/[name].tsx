@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { HeaderBackButton } from "expo-router/react-navigation";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJob, useJobStatus, useJobsStore } from "../../src/store/jobs";
@@ -20,7 +19,7 @@ import { createWsTransport } from "../../src/transport/wsTransport";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
-import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderBackButton, HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
@@ -174,7 +173,12 @@ export default function JobDetailScreen() {
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : "";
   const termRef = useRef<XtermLogHandle | null>(null);
   const keyboardDismissRef = useRef<TextInput | null>(null);
-  const { sendInput, sendResize, connecting: ptyConnecting } = usePty(statusPaneId, statusTmuxSession, termRef);
+  const {
+    sendInput,
+    sendResize,
+    connecting: ptyConnecting,
+    error: ptyError,
+  } = usePty(statusPaneId, statusTmuxSession, termRef);
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo;
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -268,11 +272,13 @@ export default function JobDetailScreen() {
   const renderTerminal = useCallback(
     () => (
       <View style={{ flex: 1, minHeight: 0 }}>
-        <View style={[styles.ptyConnecting, !ptyConnecting && styles.ptyConnectingHidden]}>
-          {ptyConnecting ? (
+        <View style={[styles.ptyConnecting, !ptyConnecting && !ptyError && styles.ptyConnectingHidden]}>
+          {ptyConnecting || ptyError ? (
             <>
-              <ActivityIndicator size="small" color={colors.accent} />
-              <Text style={styles.ptyConnectingText}>Connecting to terminal...</Text>
+              {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+              <Text style={styles.ptyConnectingText}>
+                {ptyError ?? "Connecting to terminal..."}
+              </Text>
             </>
           ) : null}
         </View>
@@ -283,7 +289,7 @@ export default function JobDetailScreen() {
             onResize={sendResize}
             interactive
           />
-          {!ptyConnecting ? (
+          {!ptyConnecting && !ptyError ? (
             <TerminalScrollButtons
               onScrollUp={() => scrollTerminal("up")}
               onScrollDown={() => scrollTerminal("down")}
@@ -294,7 +300,7 @@ export default function JobDetailScreen() {
         </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom],
+    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom],
   );
 
   if (!job) {
@@ -329,13 +335,7 @@ export default function JobDetailScreen() {
               icon={<JobKindIcon kind={kindForJob(job)} size={26} bare />}
             />
           ),
-          headerLeft: () => (
-            <HeaderBackButton
-              displayMode="minimal"
-              tintColor={colors.text}
-              onPress={goBack}
-            />
-          ),
+          headerLeft: () => <HeaderBackButton onPress={goBack} />,
           headerRight: () => <HeaderStatusDot color={statusColor(status)} />,
         }}
       />

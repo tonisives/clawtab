@@ -266,6 +266,13 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+          borderRadius: 18,
+          borderWidth: 0,
+        }
+      : {}),
   },
   emptyText: {
     color: colors.textMuted,
@@ -279,6 +286,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     gap: spacing.sm,
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+          borderRadius: 18,
+          borderWidth: 0,
+        }
+      : {}),
   },
   tokenRow: {
     flexDirection: "row",
@@ -315,7 +329,7 @@ const styles = StyleSheet.create({
   revokeBtn: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.danger,
   },
@@ -331,16 +345,23 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+          borderRadius: 18,
+          borderWidth: 0,
+        }
+      : {}),
   },
   input: {
-    height: 40,
+    height: 44,
     paddingHorizontal: spacing.md,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: Platform.OS === "web" ? colors.border : "rgba(255, 255, 255, 0.08)",
     color: colors.text,
-    fontSize: 14,
-    backgroundColor: colors.bg,
+    fontSize: 16,
+    backgroundColor: Platform.OS === "web" ? colors.bg : "rgba(10, 10, 10, 0.62)",
   },
   formButtons: {
     flexDirection: "row",
@@ -350,7 +371,7 @@ const styles = StyleSheet.create({
   cancelBtn: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
+    borderRadius: 999,
   },
   cancelText: {
     color: colors.textMuted,
@@ -359,7 +380,7 @@ const styles = StyleSheet.create({
   createBtn: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     backgroundColor: colors.accent,
   },
   createBtnText: {
@@ -372,11 +393,16 @@ const styles = StyleSheet.create({
   },
   addBtn: {
     paddingVertical: spacing.md,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
     borderStyle: "dashed",
     alignItems: "center",
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+        }
+      : {}),
   },
   addBtnText: {
     color: colors.accent,
@@ -386,7 +412,7 @@ const styles = StyleSheet.create({
   copyBtn: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     backgroundColor: colors.accent,
     minWidth: 64,
     alignItems: "center",
@@ -409,7 +435,7 @@ const styles = StyleSheet.create({
   },
   codeBlock: {
     backgroundColor: colors.surface,
-    borderRadius: radius.sm,
+    borderRadius: Platform.OS === "web" ? radius.sm : 18,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
@@ -417,6 +443,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: Platform.select({ web: "monospace", default: "Menlo" }),
     lineHeight: 18,
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+          borderWidth: 0,
+        }
+      : {}),
   },
   usageNote: {
     color: colors.textMuted,

@@ -14,3 +14,7 @@ export function resolveRequest(id: string, data: unknown): boolean {
   cb(data);
   return true;
 }
+
+export function clearRequest(id: string): void {
+  pending.delete(id);
+}

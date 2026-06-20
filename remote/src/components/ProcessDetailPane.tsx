@@ -206,12 +206,20 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
   const tmuxSession = activeProcess?.tmux_session ?? ""
-  const { sendInput, sendResize } = usePty(paneId, tmuxSession, termRef)
+  const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(paneId, tmuxSession, termRef)
   useDemoPty(paneId, !!demoProcess)
 
   const renderTerminal = useCallback(
     () => (
       <View style={{ flex: 1, minHeight: 0 }}>
+        {ptyConnecting || ptyError ? (
+          <View style={styles.ptyConnecting}>
+            {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+            <Text style={styles.ptyConnectingText}>
+              {ptyError ?? "Connecting to terminal..."}
+            </Text>
+          </View>
+        ) : null}
         <XtermLog
           ref={termRef}
           onData={sendInput}
@@ -220,7 +228,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
         />
       </View>
     ),
-    [sendInput, sendResize],
+    [sendInput, sendResize, ptyConnecting, ptyError],
   )
 
   const isAlive = !!process
@@ -264,7 +272,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.backButton} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} style={styles.backIcon} />
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
         <StatusBadge status={syntheticStatus} />
@@ -315,9 +323,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: spacing.xs,
-  },
-  backIcon: {
-    transform: [{ translateX: 3 }],
   },
   title: {
     color: colors.text,
