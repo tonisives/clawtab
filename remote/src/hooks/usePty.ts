@@ -45,6 +45,19 @@ export function replayActivePtySubscriptions() {
   }
 }
 
+export function releaseActivePtySubscriptions() {
+  const send = getWsSend();
+  if (!send) return;
+  for (const [paneId, subscription] of ptySubscriptions) {
+    if (subscription.count <= 0) continue;
+    if (subscription.subscribeTimer) clearTimeout(subscription.subscribeTimer);
+    subscription.subscribeTimer = undefined;
+    if (subscription.unsubscribeTimer) clearTimeout(subscription.unsubscribeTimer);
+    subscription.unsubscribeTimer = undefined;
+    send({ type: "unsubscribe_pty", pane_id: paneId });
+  }
+}
+
 /** Called from useWebSocket when a pty_output message arrives */
 export function dispatchPtyOutput(paneId: string, data: string) {
   const listeners = ptyListeners.get(paneId);
