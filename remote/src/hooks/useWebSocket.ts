@@ -7,7 +7,7 @@ import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
 import { getPushToken } from "../lib/notifications";
 import { dispatchLogChunk } from "./useLogs";
-import { dispatchPtyOutput, dispatchPtyExit } from "./usePty";
+import { dispatchPtyOutput, dispatchPtyExit, replayActivePtySubscriptions, releaseActivePtySubscriptions } from "./usePty";
 import { dispatchTransportLogChunk } from "../transport/wsTransport";
 import { resolveRequest } from "../lib/useRequestMap";
 import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
@@ -28,6 +28,7 @@ export function useWebSocket() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const mountedRef = useRef(true);
   const isAuthenticatedRef = useRef(isAuthenticated);
+  const appStateRef = useRef(RNAppState.currentState);
   isAuthenticatedRef.current = isAuthenticated;
 
   // Use ref to break circular dependency between connect and scheduleReconnect
@@ -67,6 +68,7 @@ export function useWebSocket() {
 
       ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
       ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
+      replayActivePtySubscriptions();
 
       // Flush any answers queued while offline
       flushPendingAnswers((msg) => {
@@ -151,6 +153,9 @@ export function useWebSocket() {
           resolveRequest(msg.id, msg.runs);
           break;
         case "error":
+          if (msg.id) {
+            resolveRequest(msg.id, msg);
+          }
           if (msg.code === "UNAUTHORIZED") {
             refreshToken().then((ok) => {
               if (ok) scheduleReconnect();
@@ -246,12 +251,19 @@ export function useWebSocket() {
     }
 
     const sub = RNAppState.addEventListener("change", (state) => {
+      const wasActive = appStateRef.current === "active";
+      appStateRef.current = state;
+
       if (state === "active" && isAuthenticatedRef.current) {
         const ws = getWs();
         if (!ws || ws.readyState !== WebSocket.OPEN) {
           backoffRef.current = 1000;
           connectRef.current();
+        } else {
+          replayActivePtySubscriptions();
         }
+      } else if (wasActive) {
+        releaseActivePtySubscriptions();
       }
     });
 

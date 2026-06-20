@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/spacing";
+import { spacing } from "../theme/spacing";
 import type { AgentModelOption, ProcessProvider } from "../types/process";
 import { JobKindIcon } from "./JobKindIcon";
 import { PopupMenu, type PopupMenuItem } from "./PopupMenu";
@@ -110,23 +110,28 @@ export function GroupAgentRow({
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
+    paddingHorizontal: Platform.OS === "web" ? spacing.xs : spacing.md,
+    paddingVertical: Platform.OS === "web" ? 2 : spacing.sm,
   },
   addButton: {
-    width: 22,
-    height: 22,
-    borderRadius: radius.sm,
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    width: Platform.OS === "web" ? 22 : 42,
+    height: Platform.OS === "web" ? 22 : 42,
+    borderRadius: 999,
+    backgroundColor: Platform.OS === "web" ? "rgba(255, 255, 255, 0.04)" : "rgba(24, 24, 24, 0.62)",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: Platform.OS === "web" ? colors.border : "rgba(255, 255, 255, 0.22)",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000000",
+    shadowOpacity: Platform.OS === "web" ? 0 : 0.28,
+    shadowRadius: Platform.OS === "web" ? 0 : 22,
+    shadowOffset: { width: 0, height: Platform.OS === "web" ? 0 : 12 },
+    elevation: Platform.OS === "web" ? 0 : 14,
   },
   addButtonText: {
-    color: colors.textMuted,
-    fontSize: 14,
-    lineHeight: 16,
+    color: Platform.OS === "web" ? colors.textMuted : colors.textSecondary,
+    fontSize: Platform.OS === "web" ? 14 : 25,
+    lineHeight: Platform.OS === "web" ? 16 : 27,
     fontWeight: "400",
   },
 });

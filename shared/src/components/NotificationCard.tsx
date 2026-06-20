@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import type { ClaudeQuestion } from "../types/process";
@@ -34,6 +35,8 @@ export interface NotificationCardProps {
   /** Override the auto-reset delay (ms) for the "Sent" indicator. Default: 10000 */
   answerResetMs?: number;
   cardMinHeight?: number;
+  onOptionScrollBegin?: () => void;
+  onOptionScrollEnd?: () => void;
 }
 
 export function NotificationCard({
@@ -48,11 +51,15 @@ export function NotificationCard({
   isLast,
   answerResetMs = 10000,
   cardMinHeight,
+  onOptionScrollBegin,
+  onOptionScrollEnd,
 }: NotificationCardProps) {
+  const { width } = useWindowDimensions();
   const [answered, setAnswered] = useState(false);
   const prevQuestionId = useRef(question.question_id);
   const flyAnim = useRef(new Animated.Value(0)).current;
   const webCardHeight = useRef(0);
+  const previewScrollRef = useRef<ScrollView>(null);
 
   // Reset answered state when question changes
   useEffect(() => {
@@ -121,8 +128,9 @@ export function NotificationCard({
 
   const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160);
   const cardSizeStyle = cardMinHeight
-    ? (isWeb ? { minHeight: cardMinHeight, maxHeight: cardMinHeight } : { minHeight: cardMinHeight })
+    ? { minHeight: cardMinHeight, maxHeight: cardMinHeight }
     : null;
+  const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)));
 
   const optionControls = (
     <>
@@ -157,11 +165,15 @@ export function NotificationCard({
   const answerOptionControls = question.options.map((opt) => (
     <TouchableOpacity
       key={opt.number}
-      style={[styles.optionBtn, !isWeb && styles.optionBtnNative]}
+      style={[
+        styles.optionBtn,
+        !isWeb && styles.optionBtnNative,
+        !isWeb && opt.label.length > 18 && { width: maxButtonWidth },
+      ]}
       onPress={() => handleOptionPress(opt.number, opt.label)}
       activeOpacity={0.6}
     >
-      <Text style={styles.optionBtnText} numberOfLines={isWeb ? 2 : 1}>
+      <Text style={[styles.optionBtnText, !isWeb && styles.optionBtnTextNative]} numberOfLines={2}>
         {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
       </Text>
     </TouchableOpacity>
@@ -177,17 +189,26 @@ export function NotificationCard({
     </ScrollView>
   ) : (
     <View style={[styles.optionRow, styles.optionRowNative]}>
-      <View style={styles.answerOptionsNative}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        nestedScrollEnabled
+        style={styles.answerOptionsNative}
+        contentContainerStyle={styles.answerOptionsNativeContent}
+        onScrollBeginDrag={onOptionScrollBegin}
+        onScrollEndDrag={onOptionScrollEnd}
+        onMomentumScrollEnd={onOptionScrollEnd}
+      >
         {answerOptionControls}
-      </View>
+      </ScrollView>
       {onToggleAutoYes && (
         <TouchableOpacity
           style={[styles.autoYesBtn, styles.autoYesBtnNative, autoYesActive && styles.autoYesBtnActive]}
           onPress={() => onToggleAutoYes(question)}
           activeOpacity={0.6}
         >
-          <Text style={styles.autoYesBtnText} numberOfLines={1}>
-            {autoYesActive ? "Auto-yes on" : "Yes all"}
+          <Text style={[styles.autoYesBtnText, styles.autoYesBtnTextNative]} numberOfLines={1}>
+            {autoYesActive ? "Auto-yes on" : "Yes to all"}
           </Text>
         </TouchableOpacity>
       )}
@@ -215,7 +236,15 @@ export function NotificationCard({
         </View>
 
         {preview ? (
-          <View style={[styles.logPreview, !isWeb && styles.logPreviewNative]}>{previewContent}</View>
+          <ScrollView
+            ref={previewScrollRef}
+            style={styles.logPreview}
+            contentContainerStyle={styles.logPreviewContent}
+            nestedScrollEnabled
+            onContentSizeChange={() => previewScrollRef.current?.scrollToEnd({ animated: false })}
+          >
+            {previewContent}
+          </ScrollView>
         ) : null}
       </TouchableOpacity>
 
@@ -324,12 +353,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     padding: spacing.sm,
     marginTop: 2,
-    maxHeight: 360,
-    overflow: "hidden",
   },
-  logPreviewNative: {
-    flex: 0,
-    maxHeight: undefined,
+  logPreviewContent: {
+    flexGrow: 1,
+    justifyContent: "flex-end",
   },
   logText: {
     color: colors.textSecondary,
@@ -342,13 +369,16 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   optionRowNative: {
-    gap: 6,
+    gap: 8,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingVertical: 10,
   },
   answerOptionsNative: {
+    width: "100%",
+  },
+  answerOptionsNativeContent: {
     flexDirection: "row",
-    gap: 6,
+    gap: 8,
   },
   optionRowContent: {
     gap: 6,
@@ -365,14 +395,24 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   optionBtnNative: {
-    flex: 1,
-    minWidth: 0,
-    maxWidth: undefined,
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: colors.accentBg,
   },
   optionBtnText: {
     color: colors.accent,
     fontSize: 12,
     fontWeight: "500",
+  },
+  optionBtnTextNative: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "700",
+    textAlign: "center",
   },
   separator: {
     width: 1,
@@ -387,7 +427,13 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   autoYesBtnNative: {
-    alignSelf: "flex-start",
+    minHeight: 44,
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: 999,
   },
   autoYesBtnActive: {
     backgroundColor: colors.warningBg,
@@ -396,6 +442,11 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontSize: 12,
     fontWeight: "600",
+  },
+  autoYesBtnTextNative: {
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "700",
   },
   sentRow: {
     flexDirection: "row",

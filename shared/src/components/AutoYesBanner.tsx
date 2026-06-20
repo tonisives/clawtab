@@ -1,9 +1,6 @@
-import { useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/spacing";
-
-const COLLAPSE_THRESHOLD = 3;
+import { spacing } from "../theme/spacing";
 
 export interface AutoYesEntry {
   paneId: string;
@@ -19,59 +16,56 @@ export interface AutoYesBannerProps {
 }
 
 export function AutoYesBanner({ entries, onDisable, onPress }: AutoYesBannerProps) {
-  const [expanded, setExpanded] = useState(false);
-
   if (entries.length === 0) return null;
-
-  const shouldCollapse = entries.length > COLLAPSE_THRESHOLD;
-  const visibleEntries = shouldCollapse && !expanded ? [] : entries;
 
   return (
     <View style={styles.container}>
-      {shouldCollapse && (
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() => setExpanded(!expanded)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.label}>
-            ! Auto-yes: {entries.length} panes {expanded ? "(collapse)" : "(expand)"}
-          </Text>
-        </TouchableOpacity>
-      )}
-      {visibleEntries.map((e) => (
-        <TouchableOpacity
-          key={e.paneId}
-          style={styles.row}
-          onPress={onPress ? () => onPress(e) : undefined}
-          activeOpacity={onPress ? 0.7 : 1}
-          disabled={!onPress}
-        >
-          <Text style={styles.label} numberOfLines={1}>! Auto-yes: {e.label}</Text>
+      <ScrollView
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator={entries.length > 3}
+      >
+        {entries.map((e) => (
           <TouchableOpacity
-            style={styles.disableBtn}
-            onPress={(ev) => { ev.stopPropagation(); onDisable(e.paneId); }}
-            activeOpacity={0.6}
+            key={e.paneId}
+            style={styles.row}
+            onPress={onPress ? () => onPress(e) : undefined}
+            activeOpacity={onPress ? 0.7 : 1}
+            disabled={!onPress}
           >
-            <Text style={styles.disableBtnText}>Disable</Text>
+            <Text style={styles.label} numberOfLines={1}>! Auto-yes: {e.label}</Text>
+            <TouchableOpacity
+              style={styles.disableBtn}
+              onPress={(ev) => { ev.stopPropagation(); onDisable(e.paneId); }}
+              activeOpacity={0.6}
+            >
+              <Text style={styles.disableBtnText}>Disable</Text>
+            </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      ))}
+        ))}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    gap: 4,
     marginBottom: spacing.sm,
   },
+  list: {
+    maxHeight: 110,
+  },
+  listContent: {
+    gap: 4,
+  },
   row: {
+    minHeight: 34,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: colors.warningBg,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.warning,
     paddingHorizontal: spacing.md,
@@ -86,7 +80,7 @@ const styles = StyleSheet.create({
   disableBtn: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.warning,
   },

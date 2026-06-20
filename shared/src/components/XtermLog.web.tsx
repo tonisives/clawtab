@@ -16,6 +16,10 @@ export interface XtermLogHandle {
   setVisualOffset(px: number): void;
   /** Blur the terminal input so native keyboards close */
   blur(): void;
+  /** Focus the terminal input */
+  focus(): void;
+  /** Focuses the hidden paste target on native; no-op on web */
+  showPasteMenu(): void;
 }
 
 interface XtermLogProps {
@@ -89,6 +93,10 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       blur() {
         termRef.current?.blur();
       },
+      focus() {
+        termRef.current?.focus();
+      },
+      showPasteMenu() {},
     }));
 
     useEffect(() => {

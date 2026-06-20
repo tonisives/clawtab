@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
-import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderBackButton, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -103,6 +104,8 @@ export default function ProcessDetailScreen() {
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
+  const terminalMenuOpenRef = useRef(false);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
@@ -123,8 +126,21 @@ export default function ProcessDetailScreen() {
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
   const keyboardDismissRef = useRef<TextInput | null>(null);
-  const { sendInput: ptySendInput, sendResize, connecting: ptyConnecting } = usePty(pane_id, tmuxSession, termRef);
+  const {
+    sendInput: ptySendInput,
+    sendResize,
+    connecting: ptyConnecting,
+    error: ptyError,
+  } = usePty(pane_id, tmuxSession, termRef);
   useDemoPty(pane_id, !!demoProcess);
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)");
+  }, [router]);
+
+  useEffect(() => {
+    terminalMenuOpenRef.current = terminalMenuOpen;
+  }, [terminalMenuOpen]);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -135,6 +151,10 @@ export default function ProcessDetailScreen() {
       termRef.current?.setVisualOffset(Math.max(0, keyboardHeight + KEYBOARD_TOOLBAR_HEIGHT + KEYBOARD_EXTRA_CLEARANCE));
     });
     const hide = Keyboard.addListener("keyboardWillHide", () => {
+      if (terminalMenuOpenRef.current) {
+        setTimeout(() => termRef.current?.focus(), 0);
+        return;
+      }
       setKeyboardVisible(false);
       setKeyboardHeight(0);
       termRef.current?.setVisualOffset(0);
@@ -229,10 +249,24 @@ export default function ProcessDetailScreen() {
 
   const sendTerminalText = useCallback(
     (text: string) => {
+      if (!text) return;
       ptySendInput(encodeTerminalInput(text));
     },
     [ptySendInput],
   );
+
+  const handleTerminalMenuOpenChange = useCallback((open: boolean) => {
+    setTerminalMenuOpen(open);
+    if (open) {
+      setTimeout(() => termRef.current?.focus(), 0);
+      setTimeout(() => termRef.current?.focus(), 80);
+    }
+  }, []);
+
+  const pasteTerminalText = useCallback(async () => {
+    const text = await Clipboard.getStringAsync();
+    sendTerminalText(text);
+  }, [sendTerminalText]);
 
   const dismissTerminalKeyboard = useCallback(() => {
     termRef.current?.blur();
@@ -325,6 +359,7 @@ export default function ProcessDetailScreen() {
               onPress={showContextMenu ? closeContextMenu : undefined}
             />
           ),
+          headerLeft: () => <HeaderBackButton onPress={goBack} />,
           headerRight: () => (
             <View ref={contextMenuRef} style={styles.headerRightSlot}>
               <TouchableOpacity
@@ -338,7 +373,7 @@ export default function ProcessDetailScreen() {
               </TouchableOpacity>
               {Platform.OS === "web" && showContextMenu && (
                 <PopupMenu
-                  dropdownRef={contextDropdownRef}
+                  dropdownRef={contextDropdownRef as any}
                   triggerRef={contextButtonRef}
                   position={menuPos}
                   onClose={() => setShowContextMenu(false)}
@@ -421,16 +456,18 @@ export default function ProcessDetailScreen() {
           onExitCopyMode={exitCopyMode}
           copyModeActive={copyModeActive}
         />
-        {ptyConnecting ? (
+        {ptyConnecting || ptyError ? (
           <View style={styles.ptyConnectingOverlay} pointerEvents="none">
-            <ActivityIndicator size="small" color={colors.accent} />
-            <Text style={styles.ptyConnectingText}>Connecting to agent...</Text>
+            {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+            <Text style={styles.ptyConnectingText}>
+              {ptyError ?? "Connecting to agent..."}
+            </Text>
           </View>
         ) : null}
       </View>
-      {keyboardVisible ? (
+      {keyboardVisible || terminalMenuOpen ? (
         <TerminalKeyboardToolbar
-          bottom={keyboardHeight}
+          bottom={keyboardVisible ? keyboardHeight : insets.bottom}
           onDismiss={dismissTerminalKeyboard}
           onEscape={() => sendTerminalText("\x1b")}
           onArrowUp={() => sendTerminalText("\x1b[A")}
@@ -438,6 +475,9 @@ export default function ProcessDetailScreen() {
           onArrowLeft={() => sendTerminalText("\x1b[D")}
           onArrowRight={() => sendTerminalText("\x1b[C")}
           onCtrlC={() => sendTerminalText("\x03")}
+          onPaste={pasteTerminalText}
+          menuOpen={terminalMenuOpen}
+          onMenuOpenChange={handleTerminalMenuOpenChange}
         />
       ) : null}
       <TextInput
@@ -471,6 +511,9 @@ function TerminalKeyboardToolbar({
   onArrowLeft,
   onArrowRight,
   onCtrlC,
+  onPaste,
+  menuOpen,
+  onMenuOpenChange,
 }: {
   bottom: number;
   onDismiss: () => void;
@@ -480,7 +523,15 @@ function TerminalKeyboardToolbar({
   onArrowLeft: () => void;
   onArrowRight: () => void;
   onCtrlC: () => void;
+  onPaste: () => Promise<void> | void;
+  menuOpen: boolean;
+  onMenuOpenChange: (open: boolean) => void;
 }) {
+  const handlePastePress = useCallback(async () => {
+    await onPaste();
+    onMenuOpenChange(false);
+  }, [onPaste, onMenuOpenChange]);
+
   return (
     <View style={[styles.keyboardToolbar, { bottom }]}>
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
@@ -505,6 +556,19 @@ function TerminalKeyboardToolbar({
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onArrowRight} activeOpacity={0.7}>
         <Ionicons name="chevron-forward" size={20} color={colors.text} />
       </TouchableOpacity>
+      <View style={styles.keyboardToolSpacer} />
+      <View style={styles.keyboardToolMenuWrap}>
+        <TouchableOpacity style={styles.keyboardToolBtn} onPress={() => onMenuOpenChange(!menuOpen)} activeOpacity={0.7}>
+          <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+        </TouchableOpacity>
+        {menuOpen ? (
+          <View style={styles.keyboardPastePopover}>
+            <TouchableOpacity style={styles.keyboardPasteItem} onPress={handlePastePress} activeOpacity={0.7}>
+              <Text style={styles.keyboardPasteTitle}>Paste</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -543,62 +607,6 @@ function TerminalScrollButtons({
   );
 }
 
-function OptionButtons({
-  options,
-  onSend,
-  autoYesActive,
-  onToggleAutoYes,
-  bottomInset = 0,
-}: {
-  options: { number: string; label: string }[];
-  onSend: (text: string) => void;
-  autoYesActive?: boolean;
-  onToggleAutoYes?: () => void;
-  bottomInset?: number;
-}) {
-  if (options.length === 0) return null;
-  const bottomPadding = Math.max(6, bottomInset + 10);
-  const barHeight = bottomPadding + 34;
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }]}
-      contentContainerStyle={[styles.optionBarContent, { paddingBottom: bottomPadding }]}
-    >
-      {options.map((opt) => (
-        <TouchableOpacity
-          key={opt.number}
-          style={styles.optionBtn}
-          onPress={() => {
-            onSend(opt.number);
-          }}
-          activeOpacity={0.6}
-        >
-          <Text style={styles.optionBtnText}>
-            {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-      {onToggleAutoYes && (
-        <>
-          <View style={styles.autoYesSeparator} />
-          <TouchableOpacity
-            style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
-            onPress={onToggleAutoYes}
-            activeOpacity={0.6}
-          >
-            <Text style={styles.autoYesBtnText} numberOfLines={1}>
-              {autoYesActive ? "! Auto ON" : "! Yes all"}
-            </Text>
-          </TouchableOpacity>
-        </>
-      )}
-    </ScrollView>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -606,14 +614,14 @@ const styles = StyleSheet.create({
   headerRightSlot: {
     position: "relative",
     zIndex: 9999,
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
   },
   contextBtn: {
-    width: 44,
-    height: 44,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: radius.sm,
@@ -632,7 +640,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   mobileContextBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     zIndex: 250,
     elevation: 250,
     backgroundColor: "transparent",
@@ -708,6 +720,34 @@ const styles = StyleSheet.create({
   keyboardToolSpacer: {
     flex: 1,
   },
+  keyboardToolMenuWrap: {
+    position: "relative",
+    alignSelf: "center",
+    zIndex: 220,
+    elevation: 220,
+  },
+  keyboardPastePopover: {
+    position: "absolute",
+    right: 0,
+    bottom: 42,
+    minWidth: 150,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    zIndex: 240,
+    elevation: 240,
+  },
+  keyboardPasteItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  keyboardPasteTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
   keyboardDismissSink: {
     position: "absolute",
     width: 1,
@@ -778,41 +818,4 @@ const styles = StyleSheet.create({
   },
   ptyConnectingText: { color: colors.textMuted, fontSize: 12 },
   loadingText: { color: colors.textMuted, fontSize: 13 },
-  optionBar: {
-    flexGrow: 0,
-    flexShrink: 0,
-    borderTopWidth: 1,
-    borderTopColor: "#303033",
-    backgroundColor: TERMINAL_BG,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.32,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  optionBarContent: {
-    gap: 6,
-    paddingHorizontal: spacing.md,
-    paddingTop: 8,
-    paddingBottom: 6,
-    alignItems: "center",
-  },
-  optionBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.accent,
-  },
-  optionBtnText: { color: colors.accent, fontSize: 12, fontWeight: "500" },
-  autoYesSeparator: { width: 1, height: 18, backgroundColor: colors.border },
-  autoYesBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.warning,
-  },
-  autoYesBtnActive: { backgroundColor: colors.warningBg },
-  autoYesBtnText: { color: colors.warning, fontSize: 12, fontWeight: "600" },
 });

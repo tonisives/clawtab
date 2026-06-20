@@ -6,6 +6,8 @@
       "@/*": [
         "./src/*"
       ],
+      "react-native": ["./node_modules/react-native"],
+      "react-native/*": ["./node_modules/react-native/*"],
       "@clawtab/shared": ["../shared/src"],
       "@clawtab/shared/*": ["../shared/src/*"]
     }

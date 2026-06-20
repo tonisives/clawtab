@@ -14,6 +14,10 @@ export interface XtermLogHandle {
   setVisualOffset(px: number): void;
   /** Blur the terminal input so native keyboards close */
   blur(): void;
+  /** Focus the terminal input */
+  focus(): void;
+  /** Focuses the hidden paste target so iOS can show paste actions */
+  showPasteMenu(): void;
 }
 
 interface XtermLogProps {
@@ -62,8 +66,126 @@ term.loadAddon(fit);
 term.open(document.getElementById('terminal'));
 fit.fit();
 
+var iosKeyboardContext = '';
+
+function terminalInputTextarea() {
+  return document.querySelector('.xterm-helper-textarea');
+}
+
+function configureIosKeyboardContext() {
+  var textarea = terminalInputTextarea();
+  if (!textarea) return;
+  textarea.setAttribute('inputmode', 'text');
+  textarea.setAttribute('autocorrect', 'off');
+  textarea.setAttribute('autocomplete', 'off');
+  textarea.setAttribute('autocapitalize', 'none');
+  textarea.spellcheck = false;
+}
+
+function rememberIosKeyboardContext(data) {
+  if (!data) return;
+  if (data === '\\r' || data === '\\n' || data === '\\u0003' || data === '\\u001b') {
+    iosKeyboardContext = '';
+    return;
+  }
+  if (data === '\\b' || data === '\\u007f') {
+    iosKeyboardContext = iosKeyboardContext.slice(0, -1);
+    return;
+  }
+  if (data.length !== 1) return;
+  var code = data.charCodeAt(0);
+  if (code < 32 || code === 127) return;
+  iosKeyboardContext = (iosKeyboardContext + data).slice(-8);
+}
+
+function shouldResumeIosTextKeyboard(data) {
+  if (data !== ' ') return false;
+  var previous = iosKeyboardContext.charAt(iosKeyboardContext.length - 1);
+  return /[,.!?;:)]/.test(previous);
+}
+
+function resumeIosTextKeyboard() {
+  var textarea = terminalInputTextarea();
+  if (!textarea || document.activeElement !== textarea) return;
+  try {
+    textarea.blur();
+    setTimeout(function() {
+      configureIosKeyboardContext();
+      try { term.focus(); } catch (e) {}
+    }, 0);
+  } catch (e) {}
+}
+
+configureIosKeyboardContext();
+setTimeout(configureIosKeyboardContext, 0);
+
+function shouldForwardInput(data) {
+  return !(/^\\x1b\\[(?:\\?|>|=)?[0-9;]*[cRn]$/.test(data));
+}
+
 term.onData(function(data) {
+  if (!shouldForwardInput(data)) return;
   window.ReactNativeWebView.postMessage(JSON.stringify({type:'data',data:btoa(data)}));
+  var resumeTextKeyboard = shouldResumeIosTextKeyboard(data);
+  rememberIosKeyboardContext(data);
+  if (resumeTextKeyboard) resumeIosTextKeyboard();
+});
+
+var pasteTarget = document.createElement('textarea');
+pasteTarget.setAttribute('aria-hidden', 'true');
+pasteTarget.autocapitalize = 'none';
+pasteTarget.autocomplete = 'off';
+pasteTarget.autocorrect = 'off';
+pasteTarget.spellcheck = false;
+pasteTarget.style.position = 'fixed';
+pasteTarget.style.width = '2px';
+pasteTarget.style.height = '2px';
+pasteTarget.style.opacity = '0.01';
+pasteTarget.style.left = '-20px';
+pasteTarget.style.top = '-20px';
+document.body.appendChild(pasteTarget);
+
+pasteTarget.addEventListener('paste', function(e) {
+  var text = '';
+  try { text = e.clipboardData.getData('text/plain') || ''; } catch (err) {}
+  if (!text) return;
+  e.preventDefault();
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'data',data:btoa(text)}));
+  pasteTarget.value = '';
+  try { term.focus(); } catch (err) {}
+});
+
+function showPasteTarget(x, y) {
+  pasteTarget.style.left = Math.max(0, Math.round(x || 0)) + 'px';
+  pasteTarget.style.top = Math.max(0, Math.round(y || 0)) + 'px';
+  pasteTarget.value = '';
+  pasteTarget.focus();
+  pasteTarget.select();
+}
+
+window.showPasteMenu = function() {
+  var rect = document.getElementById('terminal').getBoundingClientRect();
+  showPasteTarget(rect.left + 24, rect.top + 24);
+};
+
+var longPressTimer = null;
+document.getElementById('terminal').addEventListener('touchstart', function(e) {
+  if (longPressTimer) clearTimeout(longPressTimer);
+  var touch = e.touches && e.touches[0];
+  longPressTimer = setTimeout(function() {
+    if (touch) showPasteTarget(touch.clientX, touch.clientY);
+  }, 450);
+}, { passive: true });
+document.getElementById('terminal').addEventListener('touchmove', function() {
+  if (longPressTimer) clearTimeout(longPressTimer);
+  longPressTimer = null;
+}, { passive: true });
+document.getElementById('terminal').addEventListener('touchend', function() {
+  if (longPressTimer) clearTimeout(longPressTimer);
+  longPressTimer = null;
+}, { passive: true });
+document.getElementById('terminal').addEventListener('dblclick', function(e) {
+  showPasteTarget(e.clientX, e.clientY);
 });
 
 var ro = new ResizeObserver(function() {
@@ -112,6 +234,11 @@ window.blurTerminal = function() {
     if (active && active.blur) active.blur();
   } catch (e) {}
 };
+window.focusTerminal = function() {
+  configureIosKeyboardContext();
+  try { term.focus(); } catch (e) {}
+  setTimeout(configureIosKeyboardContext, 0);
+};
 </script>
 </body>
 </html>`;
@@ -124,14 +251,29 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
   function XtermLog({ onData, onResize, interactive = true }, ref) {
     const webViewRef = useRef<any>(null);
     const dimsRef = useRef({ cols: 80, rows: 24 });
+    const readyRef = useRef(false);
+    const pendingWritesRef = useRef<string[]>([]);
+
+    const injectWrite = useCallback((b64: string) => {
+      const escaped = b64.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      webViewRef.current?.injectJavaScript(
+        `(function(){var b='${escaped}';var a=Uint8Array.from(atob(b),function(c){return c.charCodeAt(0)});term.write(a,function(){window.applyVisualOffset&&window.applyVisualOffset()})})();true;`
+      );
+    }, []);
+
+    const flushPendingWrites = useCallback(() => {
+      if (!readyRef.current || pendingWritesRef.current.length === 0) return;
+      for (const b64 of pendingWritesRef.current) injectWrite(b64);
+      pendingWritesRef.current = [];
+    }, [injectWrite]);
 
     useImperativeHandle(ref, () => ({
       write(b64: string) {
-        // Escape the base64 string for injection
-        const escaped = b64.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-        webViewRef.current?.injectJavaScript(
-          `(function(){var b='${escaped}';var a=Uint8Array.from(atob(b),function(c){return c.charCodeAt(0)});term.write(a,function(){window.applyVisualOffset&&window.applyVisualOffset()})})();true;`
-        );
+        if (!readyRef.current) {
+          pendingWritesRef.current.push(b64);
+          return;
+        }
+        injectWrite(b64);
       },
       writeText(text: string) {
         const normalised = text.replace(/\r?\n/g, "\r\n");
@@ -151,6 +293,12 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       blur() {
         webViewRef.current?.injectJavaScript(`window.blurTerminal && window.blurTerminal();true;`);
       },
+      focus() {
+        webViewRef.current?.injectJavaScript(`window.focusTerminal && window.focusTerminal();true;`);
+      },
+      showPasteMenu() {
+        webViewRef.current?.injectJavaScript(`window.showPasteMenu && window.showPasteMenu();true;`);
+      },
     }));
 
     const handleMessage = useCallback(
@@ -162,12 +310,15 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           } else if (msg.type === "resize") {
             dimsRef.current = { cols: msg.cols, rows: msg.rows };
             onResize?.(msg.cols, msg.rows);
+          } else if (msg.type === "ready") {
+            readyRef.current = true;
+            flushPendingWrites();
           }
         } catch {
           // ignore parse errors
         }
       },
-      [onData, onResize, interactive],
+      [onData, onResize, interactive, flushPendingWrites],
     );
 
     // Dynamic import of WebView - it's a peer dependency

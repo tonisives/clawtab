@@ -190,23 +190,28 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: "row",
     gap: spacing.sm,
+    ...(Platform.OS !== "web"
+      ? {
+          marginHorizontal: -spacing.md,
+        }
+      : {}),
   },
   input: {
     flex: 1,
-    height: 36,
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
+    height: 44,
+    backgroundColor: Platform.OS === "web" ? colors.surface : "rgba(10, 10, 10, 0.62)",
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: Platform.OS === "web" ? colors.border : "rgba(255, 255, 255, 0.08)",
     paddingHorizontal: spacing.md,
     color: colors.text,
-    fontSize: 13,
+    fontSize: 16,
     ...(Platform.OS === "web" ? { outlineStyle: "none" } as any : {}),
   },
   addBtn: {
-    height: 36,
+    height: 44,
     paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     backgroundColor: colors.accent,
     justifyContent: "center",
     alignItems: "center",
@@ -229,6 +234,15 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: spacing.xs,
+    ...(Platform.OS !== "web"
+      ? {
+          gap: 0,
+          marginHorizontal: -spacing.md,
+          borderRadius: 18,
+          overflow: "hidden",
+          backgroundColor: colors.surface,
+        }
+      : {}),
   },
   shareRow: {
     flexDirection: "row",
@@ -238,6 +252,15 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    ...(Platform.OS !== "web"
+      ? {
+          borderRadius: 0,
+          borderWidth: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.borderLight,
+          paddingVertical: spacing.lg,
+        }
+      : {}),
   },
   shareRowExpanded: {
     borderBottomLeftRadius: 0,

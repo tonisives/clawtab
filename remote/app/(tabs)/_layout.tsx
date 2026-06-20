@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, type ComponentType, type PropsWithChildren } from "react";
 import { View, Text, Modal, Pressable as RNPressable, StyleSheet } from "react-native";
-import { Tabs } from "expo-router";
+import { Tabs, usePathname } from "expo-router";
+import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
 import { colors } from "../../src/theme/colors";
@@ -8,9 +9,11 @@ import { useResponsive } from "../../src/hooks/useResponsive";
 import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { SettingsModalProvider, useSettingsModal } from "../../src/store/settingsModal";
+import { useJobFilterStore } from "../../src/store/jobFilter";
 import SettingsScreen from "./settings";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
+const NativeTabsRoot = NativeTabs as ComponentType<PropsWithChildren<any>>;
 
 const tabIcons: Record<string, { focused: IoniconsName; default: IoniconsName }> = {
   Jobs: { focused: "briefcase", default: "briefcase-outline" },
@@ -48,7 +51,7 @@ function HeaderRight() {
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginRight: 12 }}>
-      <NotificationsMenuButton />
+      {!open ? <NotificationsMenuButton /> : null}
       <Pressable
         onPress={show}
         style={{
@@ -136,6 +139,55 @@ const modalStyles = StyleSheet.create({
 });
 
 function TabsContent({ isWide }: { isWide: boolean }) {
+  const openSearch = useJobFilterStore((s) => s.openSearch);
+  const pathname = usePathname();
+  const settingsActive = pathname === "/settings";
+
+  if (!isWide) {
+    return (
+      <View style={styles.nativeTabsFrame}>
+        <NativeTabsRoot
+          tintColor={colors.accent}
+          iconColor={{ default: colors.textMuted, selected: colors.accent }}
+          backgroundColor={colors.bg}
+          blurEffect="systemChromeMaterialDark"
+          shadowColor={colors.border}
+          minimizeBehavior="onScrollDown"
+        >
+          <NativeTabs.Trigger name="index" contentStyle={{ backgroundColor: colors.bg }}>
+            <NativeTabs.Trigger.Label>Jobs</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon
+              sf={{ default: "briefcase", selected: "briefcase.fill" }}
+              md={{ default: "work_outline", selected: "work" }}
+            />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="settings" contentStyle={{ backgroundColor: colors.bg }}>
+            <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+            <NativeTabs.Trigger.Icon
+              sf={{ default: "gearshape", selected: "gearshape.fill" }}
+              md={{ default: "settings", selected: "settings" }}
+            />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger
+            name="search"
+            role="search"
+            disabled
+            contentStyle={{ backgroundColor: colors.bg }}
+            listeners={{
+              tabPress: () => {
+                if (!settingsActive) openSearch();
+              },
+            }}
+          />
+          <NativeTabs.Trigger name="agent" hidden />
+          <NativeTabs.Trigger name="connection" hidden />
+          <NativeTabs.Trigger name="devices" hidden />
+        </NativeTabsRoot>
+        {settingsActive ? <View pointerEvents="none" style={styles.hiddenSearchCover} /> : null}
+      </View>
+    );
+  }
+
   return (
     <Tabs
       initialRouteName="index"
@@ -198,9 +250,31 @@ function TabsContent({ isWide }: { isWide: boolean }) {
               }
         }
       />
+      <Tabs.Screen
+        name="search"
+        options={{
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  nativeTabsFrame: {
+    flex: 1,
+  },
+  hiddenSearchCover: {
+    position: "absolute",
+    right: 0,
+    bottom: 0,
+    width: 112,
+    height: 96,
+    backgroundColor: colors.bg,
+    zIndex: 1000,
+    elevation: 1000,
+  },
+});
 
 export default function TabLayout() {
   const { isWide } = useResponsive();

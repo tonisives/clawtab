@@ -6,20 +6,40 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Modal,
+  Pressable,
+  TextInput,
+  Image,
+  Linking,
+  KeyboardAvoidingView,
 } from "react-native"
 import { useRouter } from "expo-router"
+import { Ionicons } from "@expo/vector-icons"
+import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { DndContext, DragOverlay } from "@dnd-kit/core"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
+import { useJobFilterStore } from "../../src/store/jobFilter"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
+import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import {
-  JobListView, SplitDetailArea, DropZoneOverlay,
-  JobCard, RunningJobCard, ProcessCard,
+  JobListView,
+  SplitDetailArea,
+  DropZoneOverlay,
+  JobCard,
+  RunningJobCard,
+  ProcessCard,
   useSplitTree,
 } from "@clawtab/shared"
 import type { PaneContent, SplitDragData } from "@clawtab/shared"
-import { DraggableJobCard, DraggableProcessCard, type DragData } from "../../src/components/DraggableCards"
+import {
+  DraggableJobCard,
+  DraggableProcessCard,
+  type DragData,
+} from "../../src/components/DraggableCards"
 import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
@@ -34,16 +54,27 @@ import { buildModelOptions } from "../../src/lib/agentModels"
 
 type GroupTabView = Record<string, "tabs" | "jobs">
 
+const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
+const HIDDEN_GROUPS_STORAGE_KEY = "remote_hidden_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
+const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
+  { value: "name", label: "Name" },
+  { value: "recent", label: "Recent" },
+  { value: "added", label: "Added" },
+]
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
-  return value === "claude" || value === "codex" || value === "opencode" || value === "antigravity" || value === "shell"
+  return (
+    value === "claude" ||
+    value === "codex" ||
+    value === "opencode" ||
+    value === "antigravity" ||
+    value === "shell"
+  )
 }
 
 // Capture URL params before expo-router rewrites them on init
-const _initParams = Platform.OS === "web"
-  ? new URLSearchParams(window.location.search)
-  : null
+const _initParams = Platform.OS === "web" ? new URLSearchParams(window.location.search) : null
 
 /** Read initial selection: URL param (works for pasted URLs) or sessionStorage (survives refresh) */
 function readSelection(key: "job" | "process"): string | null {
@@ -80,6 +111,55 @@ function persistSelection(job: string | null, process: string | null) {
   else sessionStorage.removeItem("sel_process")
 }
 
+function jobRoute(job: RemoteJob, isDemo: boolean) {
+  return {
+    pathname: "/job/[name]",
+    params: {
+      name: job.slug,
+      ...(isDemo ? { demo: "1" } : {}),
+    },
+  } as const
+}
+
+function jobIdRoute(jobId: string) {
+  return {
+    pathname: "/job/[name]",
+    params: { name: jobId },
+  } as const
+}
+
+function processRoute(paneId: string) {
+  return {
+    pathname: "/process/[pane_id]",
+    params: { pane_id: paneId.replace(/%/g, "_pct_") },
+  } as const
+}
+
+function parseStringSet(raw: string | null): Set<string> {
+  if (!raw) return new Set()
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((group): group is string => typeof group === "string"))
+  } catch {
+    return new Set()
+  }
+}
+
+function readWebStringSet(key: string): Set<string> {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return new Set()
+  return parseStringSet(localStorage.getItem(key))
+}
+
+function saveStringSet(key: string, value: Set<string>) {
+  const serialized = JSON.stringify([...value].sort())
+  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+    localStorage.setItem(key, serialized)
+    return
+  }
+  AsyncStorage.setItem(key, serialized).catch(() => {})
+}
+
 function readGroupTabView(): GroupTabView {
   if (Platform.OS !== "web" || typeof localStorage === "undefined") return {}
   const raw = localStorage.getItem(GROUP_TAB_VIEW_STORAGE_KEY)
@@ -102,6 +182,23 @@ function saveGroupTabView(value: GroupTabView) {
   localStorage.setItem(GROUP_TAB_VIEW_STORAGE_KEY, JSON.stringify(value))
 }
 
+function MobileHeader() {
+  const insets = useSafeAreaInsets()
+  const topInset = Math.max(insets.top - 22, 0)
+
+  return (
+    <View style={styles.mobileHeaderWrap}>
+      <View style={{ height: topInset }} />
+      <View style={styles.mobileHeader}>
+        <Pressable onPress={() => Linking.openURL("https://clawtab.cc")} style={styles.mobileBrand}>
+          <Image source={require("../../assets/clawtab-icon.png")} style={styles.mobileBrandIcon} />
+          <Text style={styles.mobileBrandText}>ClawTab</Text>
+        </Pressable>
+      </View>
+    </View>
+  )
+}
+
 export default function JobsScreen() {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
@@ -110,14 +207,37 @@ export default function JobsScreen() {
   const enabledModels = useJobsStore((s) => s.enabledModels)
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() =>
+    readWebStringSet(COLLAPSED_GROUPS_STORAGE_KEY),
+  )
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(() =>
+    readWebStringSet(HIDDEN_GROUPS_STORAGE_KEY),
+  )
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
-  const [selectedProcess, setSelectedProcess] = useState<string | null>(() => readSelection("process"))
+  const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
+    readSelection("process"),
+  )
   const [demoToastVisible, setDemoToastVisible] = useState(false)
   const { isWide } = useResponsive()
   const router = useRouter()
+  const insets = useSafeAreaInsets()
+  const searchQuery = useJobFilterStore((s) => s.query)
+  const setSearchQuery = useJobFilterStore((s) => s.setQuery)
+  const searchOpen = useJobFilterStore((s) => s.searchOpen)
+  const closeSearch = useJobFilterStore((s) => s.closeSearch)
+  const clearSearch = useJobFilterStore((s) => s.clear)
+  const searchInputRef = useRef<TextInput>(null)
+  const glassAvailable =
+    Platform.OS === "ios" &&
+    (() => {
+      try {
+        return isGlassEffectAPIAvailable()
+      } catch {
+        return false
+      }
+    })()
 
   const isDemo = connected && !desktopOnline && realJobs.length === 0
   const jobs = isDemo ? DEMO_JOBS : realJobs
@@ -130,16 +250,55 @@ export default function JobsScreen() {
     opencode: [] as string[],
     antigravity: [] as string[],
   }
-  const resolvedModels = (!enabledModels || Object.keys(enabledModels).length === 0) ? DEFAULT_ENABLED : enabledModels
-  const agentModelOptions: AgentModelOption[] = buildModelOptions(["claude", "codex", "opencode", "antigravity"], resolvedModels)
+  const resolvedModels =
+    !enabledModels || Object.keys(enabledModels).length === 0 ? DEFAULT_ENABLED : enabledModels
+  const agentModelOptions: AgentModelOption[] = buildModelOptions(
+    ["claude", "codex", "opencode", "antigravity"],
+    resolvedModels,
+  )
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev)
       if (next.has(group)) next.delete(group)
       else next.add(group)
+      saveStringSet(COLLAPSED_GROUPS_STORAGE_KEY, next)
       return next
     })
+  }, [])
+
+  const hideGroup = useCallback((group: string) => {
+    setHiddenGroups((prev) => {
+      const next = new Set(prev)
+      next.add(group)
+      saveStringSet(HIDDEN_GROUPS_STORAGE_KEY, next)
+      return next
+    })
+  }, [])
+
+  const unhideGroup = useCallback((group: string) => {
+    setHiddenGroups((prev) => {
+      const next = new Set(prev)
+      next.delete(group)
+      saveStringSet(HIDDEN_GROUPS_STORAGE_KEY, next)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (Platform.OS === "web") return
+    let cancelled = false
+    AsyncStorage.multiGet([COLLAPSED_GROUPS_STORAGE_KEY, HIDDEN_GROUPS_STORAGE_KEY])
+      .then((entries) => {
+        if (cancelled) return
+        const values = new Map(entries)
+        setCollapsedGroups(parseStringSet(values.get(COLLAPSED_GROUPS_STORAGE_KEY) ?? null))
+        setHiddenGroups(parseStringSet(values.get(HIDDEN_GROUPS_STORAGE_KEY) ?? null))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const handleRefresh = useCallback(() => {
@@ -166,25 +325,31 @@ export default function JobsScreen() {
     })
   }, [])
 
-  const handleSelectJob = useCallback((job: RemoteJob) => {
-    if (isWide) {
-      setSelectedJob(job.slug)
-      setSelectedProcess(null)
-      setSelection("job", job.slug)
-    } else {
-      router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
-    }
-  }, [router, isDemo, isWide])
+  const handleSelectJob = useCallback(
+    (job: RemoteJob) => {
+      if (isWide) {
+        setSelectedJob(job.slug)
+        setSelectedProcess(null)
+        setSelection("job", job.slug)
+      } else {
+        router.push(jobRoute(job, isDemo))
+      }
+    },
+    [router, isDemo, isWide],
+  )
 
-  const handleSelectProcess = useCallback((process: DetectedProcess) => {
-    if (isWide) {
-      setSelectedProcess(process.pane_id)
-      setSelectedJob(null)
-      setSelection("process", process.pane_id)
-    } else {
-      router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
-    }
-  }, [router, isWide])
+  const handleSelectProcess = useCallback(
+    (process: DetectedProcess) => {
+      if (isWide) {
+        setSelectedProcess(process.pane_id)
+        setSelectedJob(null)
+        setSelection("process", process.pane_id)
+      } else {
+        router.push(processRoute(process.pane_id))
+      }
+    },
+    [router, isWide],
+  )
 
   // Restore URL ?params after expo-router finishes its initial URL rewrite
   useEffect(() => {
@@ -217,15 +382,18 @@ export default function JobsScreen() {
         setSelection("process", content.paneId)
       }
     }, []),
-    onReplaceSingle: useCallback((data: SplitDragData) => {
-      if (data.kind === "job") {
-        const job = jobs.find(j => j.slug === data.slug)
-        if (job) handleSelectJob(job)
-      } else if (data.kind === "process") {
-        const proc = visibleDetectedProcesses.find(p => p.pane_id === data.paneId)
-        if (proc) handleSelectProcess(proc)
-      }
-    }, [jobs, visibleDetectedProcesses, handleSelectJob, handleSelectProcess]),
+    onReplaceSingle: useCallback(
+      (data: SplitDragData) => {
+        if (data.kind === "job") {
+          const job = jobs.find((j) => j.slug === data.slug)
+          if (job) handleSelectJob(job)
+        } else if (data.kind === "process") {
+          const proc = visibleDetectedProcesses.find((p) => p.pane_id === data.paneId)
+          if (proc) handleSelectProcess(proc)
+        }
+      },
+      [jobs, visibleDetectedProcesses, handleSelectJob, handleSelectProcess],
+    ),
     currentContent,
   })
   const initialUrlSelectionPendingRef = useRef(
@@ -241,83 +409,96 @@ export default function JobsScreen() {
   }, [currentContent, split.tree, split.handleSelectInTree])
 
   // Wrap select handlers to check tree first
-  const handleSelectJobWithTree = useCallback((job: RemoteJob) => {
-    if (!isWide) {
-      router.push(`/job/${job.name}${isDemo ? "?demo=1" : ""}`)
-      return
-    }
-    const content: PaneContent = { kind: "job", slug: job.slug }
-    if (split.tree && split.handleSelectInTree(content)) return
-    handleSelectJob(job)
-  }, [isWide, isDemo, router, split.tree, split.handleSelectInTree, handleSelectJob])
-
-  const handleSelectProcessWithTree = useCallback((process: DetectedProcess) => {
-    if (!isWide) {
-      router.push(`/process/${process.pane_id.replace(/%/g, "_pct_")}`)
-      return
-    }
-    const content: PaneContent = { kind: "process", paneId: process.pane_id }
-    if (split.tree && split.handleSelectInTree(content)) return
-    handleSelectProcess(process)
-  }, [isWide, router, split.tree, split.handleSelectInTree, handleSelectProcess])
-
-  const handleRunAgent = useCallback((prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => {
-    const send = getWsSend()
-    if (!send) return
-    const id = nextId()
-    send({
-      type: "run_agent",
-      id,
-      prompt,
-      work_dir: workDir,
-      ...(provider ? { provider } : {}),
-      ...(model ? { model } : {}),
-    })
-    registerRequest<{
-      job_id?: string;
-      pane_id?: string;
-      tmux_session?: string;
-      work_dir?: string;
-      provider?: string;
-    }>(id).then((ack) => {
-      if (ack.pane_id && ack.tmux_session) {
-        const existing = useJobsStore.getState().detectedProcesses
-        const existingProcess = existing.find((process) => process.pane_id === ack.pane_id)
-        const pendingProcess: DetectedProcess = {
-          ...existingProcess,
-          pane_id: ack.pane_id,
-          cwd: ack.work_dir ?? workDir ?? existingProcess?.cwd ?? "",
-          version: existingProcess?.version ?? "",
-          provider: provider ?? (isProcessProvider(ack.provider) ? ack.provider : existingProcess?.provider ?? "claude"),
-          can_fork_session: existingProcess?.can_fork_session ?? false,
-          can_send_skills: existingProcess?.can_send_skills ?? false,
-          can_inject_secrets: existingProcess?.can_inject_secrets ?? false,
-          tmux_session: ack.tmux_session,
-          window_name: existingProcess?.window_name ?? "",
-          matched_group: existingProcess?.matched_group ?? null,
-          matched_job: ack.job_id ?? existingProcess?.matched_job ?? null,
-          log_lines: existingProcess?.log_lines ?? "",
-          first_query: (prompt || existingProcess?.first_query) ?? null,
-          last_query: existingProcess?.last_query ?? null,
-          session_started_at: existingProcess?.session_started_at ?? new Date().toISOString(),
-          token_count: existingProcess?.token_count ?? null,
-          _transient_state: "starting",
-        }
-        useJobsStore.getState().upsertDetectedProcess(pendingProcess)
-        if (isWide) {
-          handleSelectProcessWithTree(pendingProcess)
-        } else {
-          router.push(`/process/${ack.pane_id.replace(/%/g, "_pct_")}`)
-        }
-      } else if (ack.job_id) {
-        if (isWide) {
-          setSelectedJob(ack.job_id)
-        } else {
-          router.push(`/job/${ack.job_id}`)
-        }
+  const handleSelectJobWithTree = useCallback(
+    (job: RemoteJob) => {
+      if (!isWide) {
+        router.push(jobRoute(job, isDemo))
+        return
       }
-    })
-  }, [handleSelectProcessWithTree, isWide, router])
+      const content: PaneContent = { kind: "job", slug: job.slug }
+      if (split.tree && split.handleSelectInTree(content)) return
+      handleSelectJob(job)
+    },
+    [isWide, isDemo, router, split.tree, split.handleSelectInTree, handleSelectJob],
+  )
+
+  const handleSelectProcessWithTree = useCallback(
+    (process: DetectedProcess) => {
+      if (!isWide) {
+        router.push(processRoute(process.pane_id))
+        return
+      }
+      const content: PaneContent = { kind: "process", paneId: process.pane_id }
+      if (split.tree && split.handleSelectInTree(content)) return
+      handleSelectProcess(process)
+    },
+    [isWide, router, split.tree, split.handleSelectInTree, handleSelectProcess],
+  )
+
+  const handleRunAgent = useCallback(
+    (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => {
+      const send = getWsSend()
+      if (!send) return
+      const id = nextId()
+      send({
+        type: "run_agent",
+        id,
+        prompt,
+        work_dir: workDir,
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
+      })
+      registerRequest<{
+        job_id?: string
+        pane_id?: string
+        tmux_session?: string
+        work_dir?: string
+        provider?: string
+      }>(id).then((ack) => {
+        if (ack.pane_id && ack.tmux_session) {
+          const existing = useJobsStore.getState().detectedProcesses
+          const existingProcess = existing.find((process) => process.pane_id === ack.pane_id)
+          const pendingProcess: DetectedProcess = {
+            ...existingProcess,
+            pane_id: ack.pane_id,
+            cwd: ack.work_dir ?? workDir ?? existingProcess?.cwd ?? "",
+            version: existingProcess?.version ?? "",
+            provider:
+              provider ??
+              (isProcessProvider(ack.provider)
+                ? ack.provider
+                : (existingProcess?.provider ?? "claude")),
+            can_fork_session: existingProcess?.can_fork_session ?? false,
+            can_send_skills: existingProcess?.can_send_skills ?? false,
+            can_inject_secrets: existingProcess?.can_inject_secrets ?? false,
+            tmux_session: ack.tmux_session,
+            window_name: existingProcess?.window_name ?? "",
+            matched_group: existingProcess?.matched_group ?? null,
+            matched_job: ack.job_id ?? existingProcess?.matched_job ?? null,
+            log_lines: existingProcess?.log_lines ?? "",
+            first_query: (prompt || existingProcess?.first_query) ?? null,
+            last_query: existingProcess?.last_query ?? null,
+            session_started_at: existingProcess?.session_started_at ?? new Date().toISOString(),
+            token_count: existingProcess?.token_count ?? null,
+            _transient_state: "starting",
+          }
+          useJobsStore.getState().upsertDetectedProcess(pendingProcess)
+          if (isWide) {
+            handleSelectProcessWithTree(pendingProcess)
+          } else {
+            router.push(processRoute(ack.pane_id))
+          }
+        } else if (ack.job_id) {
+          if (isWide) {
+            setSelectedJob(ack.job_id)
+          } else {
+            router.push(jobIdRoute(ack.job_id))
+          }
+        }
+      })
+    },
+    [handleSelectProcessWithTree, isWide, router],
+  )
 
   const handleDemoRunAgent = useCallback(() => {
     setDemoToastVisible(true)
@@ -329,19 +510,33 @@ export default function JobsScreen() {
     return () => clearTimeout(timer)
   }, [demoToastVisible])
 
+  useEffect(() => {
+    if (!searchOpen || isWide) return
+    const timer = setTimeout(() => searchInputRef.current?.focus(), 120)
+    return () => clearTimeout(timer)
+  }, [searchOpen, isWide])
+
   const runAgentHandler = isDemo ? handleDemoRunAgent : desktopOnline ? handleRunAgent : undefined
 
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; status: JobStatus; onPress?: () => void; selected?: boolean | string; softBorder?: boolean }) => (
-      <DraggableJobCard {...props} />
-    ),
+    (props: {
+      job: RemoteJob
+      status: JobStatus
+      onPress?: () => void
+      selected?: boolean | string
+      softBorder?: boolean
+    }) => <DraggableJobCard {...props} />,
     [],
   )
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; softBorder?: boolean }) => (
-      <DraggableProcessCard {...props} />
-    ),
+    (props: {
+      process: DetectedProcess
+      onPress?: () => void
+      inGroup?: boolean
+      selected?: boolean | string
+      softBorder?: boolean
+    }) => <DraggableProcessCard {...props} />,
     [],
   )
 
@@ -374,8 +569,10 @@ export default function JobsScreen() {
           <Text style={styles.bannerText}>Desktop not connected</Text>
         </View>
       )}
-      {connected && !loaded && !isDemo && (
-        desktopOnline ? (
+      {connected &&
+        !loaded &&
+        !isDemo &&
+        (desktopOnline ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator color={colors.accent} />
             <Text style={styles.loadingText}>Loading jobs...</Text>
@@ -383,13 +580,17 @@ export default function JobsScreen() {
         ) : (
           <View style={styles.loadingContainer}>
             <Text style={styles.offlineTitle}>Desktop not connected</Text>
-            <Text style={styles.offlineText}>Please install ClawTab desktop and sign in to same account.</Text>
-            <TouchableOpacity onPress={() => openUrl("https://clawtab.cc/docs#quick-start")} activeOpacity={0.7}>
+            <Text style={styles.offlineText}>
+              Please install ClawTab desktop and sign in to same account.
+            </Text>
+            <TouchableOpacity
+              onPress={() => openUrl("https://clawtab.cc/docs#quick-start")}
+              activeOpacity={0.7}
+            >
               <Text style={styles.linkText}>Quick Start Guide</Text>
             </TouchableOpacity>
           </View>
-        )
-      )}
+        ))}
     </>
   )
 
@@ -402,6 +603,9 @@ export default function JobsScreen() {
         detectedProcesses={visibleDetectedProcesses}
         collapsedGroups={collapsedGroups}
         onToggleGroup={toggleGroup}
+        hiddenGroups={hiddenGroups}
+        onHideGroup={hideGroup}
+        onUnhideGroup={unhideGroup}
         onRefresh={handleRefresh}
         sortMode={sortMode}
         onSortChange={setSortMode}
@@ -415,8 +619,49 @@ export default function JobsScreen() {
         headerContent={bannerContent}
         showEmpty={loaded || isDemo}
         emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        hideSearchBar={!isWide}
       />
     </View>
+  )
+
+  const mobileJobList = (
+    <JobListView
+      jobs={jobs}
+      statuses={statuses}
+      detectedProcesses={visibleDetectedProcesses}
+      collapsedGroups={collapsedGroups}
+      onToggleGroup={toggleGroup}
+      hiddenGroups={hiddenGroups}
+      onHideGroup={hideGroup}
+      onUnhideGroup={unhideGroup}
+      onRefresh={handleRefresh}
+      sortMode={sortMode}
+      onSortChange={undefined}
+      onSelectJob={handleSelectJob}
+      onSelectProcess={handleSelectProcess}
+      onRunAgent={runAgentHandler}
+      agentModelOptions={agentModelOptions}
+      groupTabView={groupTabView}
+      onGroupTabViewChange={handleGroupTabViewChange}
+      onSetAllGroupTabView={handleSetAllGroupTabView}
+      headerContent={
+        <>
+          <MobileHeader />
+          {isDemo ? <DemoBanner /> : null}
+          {bannerContent}
+        </>
+      }
+      showEmpty={loaded || isDemo}
+      emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+      searchQuery={searchQuery}
+      onSearchQueryChange={setSearchQuery}
+      hideSearchBar
+      contentContainerStyle={styles.mobileListContent}
+      scrollEventThrottle={16}
+      renderAsScrollRoot
+    />
   )
 
   // Resizable list pane (web only)
@@ -458,41 +703,130 @@ export default function JobsScreen() {
 
   if (!isWide) {
     return (
-      <View style={styles.container}>
-        {jobList}
+      <>
+        {mobileJobList}
+        <View style={[styles.floatingNotifications, { top: insets.top + 17 }]}>
+          <NotificationsMenuButton hideWhenEmpty variant="fluid" />
+        </View>
+        <Modal visible={searchOpen} transparent animationType="fade" onRequestClose={closeSearch}>
+          <KeyboardAvoidingView
+            style={styles.searchKeyboardRoot}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            keyboardVerticalOffset={0}
+          >
+            <Pressable style={styles.searchBackdrop} onPress={closeSearch}>
+              <Pressable
+                style={styles.searchPanelWrap}
+                onPress={(event) => event.stopPropagation()}
+              >
+                <GlassView
+                  glassEffectStyle={glassAvailable ? "regular" : "none"}
+                  isInteractive={glassAvailable}
+                  colorScheme="dark"
+                  style={styles.searchPanel}
+                >
+                  <GlassView
+                    glassEffectStyle={glassAvailable ? "clear" : "none"}
+                    isInteractive={glassAvailable}
+                    colorScheme="dark"
+                    style={styles.mobileSortRow}
+                  >
+                    {SORT_OPTIONS.map((option) => {
+                      const active = sortMode === option.value
+                      return (
+                        <Pressable
+                          key={option.value}
+                          onPress={() => setSortMode(option.value)}
+                          style={[styles.mobileSortButton, active && styles.mobileSortButtonActive]}
+                        >
+                          <Text
+                            style={[
+                              styles.mobileSortButtonText,
+                              active && styles.mobileSortButtonTextActive,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      )
+                    })}
+                  </GlassView>
+                  <GlassView
+                    glassEffectStyle={glassAvailable ? "clear" : "none"}
+                    isInteractive={glassAvailable}
+                    colorScheme="dark"
+                    style={styles.searchField}
+                  >
+                    <Ionicons name="search" size={18} color={colors.textMuted} />
+                    <TextInput
+                      ref={searchInputRef}
+                      style={styles.searchInput}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      placeholder="Filter jobs..."
+                      placeholderTextColor={colors.textMuted}
+                      returnKeyType="done"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      onSubmitEditing={closeSearch}
+                    />
+                    {searchQuery.length > 0 ? (
+                      <Pressable
+                        onPress={clearSearch}
+                        style={styles.searchClearButton}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                      </Pressable>
+                    ) : null}
+                  </GlassView>
+                </GlassView>
+              </Pressable>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Modal>
         {demoToastVisible ? (
           <View style={styles.toast} pointerEvents="none">
-            <Text style={styles.toastText}>Demo mode: cannot launch agents. Please connect desktop.</Text>
+            <Text style={styles.toastText}>
+              Demo mode: cannot launch agents. Please connect desktop.
+            </Text>
           </View>
         ) : null}
-      </View>
+      </>
     )
   }
 
   // Render leaf content
-  const renderLeaf = useCallback((content: PaneContent, leafId: string) => {
-    if (content.kind === "job") {
-      return (
-        <JobDetailPane
-          key={`leaf-${leafId}-${content.slug}`}
-          jobName={content.slug}
-          isDemo={isDemo}
-          onClose={() => split.handleClosePane(leafId)}
-        />
-      )
-    }
-    if (content.kind === "process") {
-      return (
-        <ProcessDetailPane
-          key={`leaf-${leafId}-${content.paneId}`}
-          paneId={content.paneId}
-          demoProcess={isDemo ? visibleDetectedProcesses.find((p) => p.pane_id === content.paneId) : undefined}
-          onClose={() => split.handleClosePane(leafId)}
-        />
-      )
-    }
-    return null
-  }, [isDemo, split.handleClosePane, visibleDetectedProcesses])
+  const renderLeaf = useCallback(
+    (content: PaneContent, leafId: string) => {
+      if (content.kind === "job") {
+        return (
+          <JobDetailPane
+            key={`leaf-${leafId}-${content.slug}`}
+            jobName={content.slug}
+            isDemo={isDemo}
+            onClose={() => split.handleClosePane(leafId)}
+          />
+        )
+      }
+      if (content.kind === "process") {
+        return (
+          <ProcessDetailPane
+            key={`leaf-${leafId}-${content.paneId}`}
+            paneId={content.paneId}
+            demoProcess={
+              isDemo
+                ? visibleDetectedProcesses.find((p) => p.pane_id === content.paneId)
+                : undefined
+            }
+            onClose={() => split.handleClosePane(leafId)}
+          />
+        )
+      }
+      return null
+    },
+    [isDemo, split.handleClosePane, visibleDetectedProcesses],
+  )
 
   // Non-tree primary content (when no split tree)
   const primaryContent = selectedJob ? (
@@ -509,7 +843,9 @@ export default function JobsScreen() {
     <ProcessDetailPane
       key={selectedProcess}
       paneId={selectedProcess}
-      demoProcess={isDemo ? visibleDetectedProcesses.find((p) => p.pane_id === selectedProcess) : undefined}
+      demoProcess={
+        isDemo ? visibleDetectedProcesses.find((p) => p.pane_id === selectedProcess) : undefined
+      }
       onClose={() => {
         setSelectedProcess(null)
         setSelection("process", null)
@@ -530,9 +866,11 @@ export default function JobsScreen() {
         {data.kind === "job" ? (
           (() => {
             const s = statuses[data.slug] ?? { state: "idle" as const }
-            return s.state === "running"
-              ? <RunningJobCard job={data.job} status={s} />
-              : <JobCard job={data.job} status={s} />
+            return s.state === "running" ? (
+              <RunningJobCard job={data.job} status={s} />
+            ) : (
+              <JobCard job={data.job} status={s} />
+            )
           })()
         ) : (
           <ProcessCard process={data.process} />
@@ -573,6 +911,9 @@ export default function JobsScreen() {
             detectedProcesses={visibleDetectedProcesses}
             collapsedGroups={collapsedGroups}
             onToggleGroup={toggleGroup}
+            hiddenGroups={hiddenGroups}
+            onHideGroup={hideGroup}
+            onUnhideGroup={unhideGroup}
             onRefresh={handleRefresh}
             sortMode={sortMode}
             onSortChange={setSortMode}
@@ -587,7 +928,11 @@ export default function JobsScreen() {
             onSetAllGroupTabView={handleSetAllGroupTabView}
             headerContent={bannerContent}
             showEmpty={loaded || isDemo}
-            emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
+            emptyMessage={
+              connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."
+            }
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
             scrollEnabled={!split.isDragging}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}
@@ -607,12 +952,12 @@ export default function JobsScreen() {
           />
         </View>
       </View>
-      <DragOverlay dropAnimation={null}>
-        {dragOverlayContent}
-      </DragOverlay>
+      <DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
       {demoToastVisible ? (
         <View style={styles.toast} pointerEvents="none">
-          <Text style={styles.toastText}>Demo mode: cannot launch agents. Please connect desktop.</Text>
+          <Text style={styles.toastText}>
+            Demo mode: cannot launch agents. Please connect desktop.
+          </Text>
         </View>
       ) : null}
     </DndContext>
@@ -621,6 +966,43 @@ export default function JobsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  mobileHeader: {
+    height: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+  },
+  mobileHeaderWrap: {
+    backgroundColor: colors.bg,
+    paddingBottom: spacing.lg,
+  },
+  mobileListContent: {
+    padding: 0,
+    paddingBottom: spacing.lg,
+  },
+  mobileBrand: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    transform: [{ translateY: -10 }],
+  },
+  mobileBrandIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 7,
+  },
+  mobileBrandText: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  floatingNotifications: {
+    position: "absolute",
+    right: 12,
+    zIndex: 100,
+    elevation: 100,
+  },
   splitContainer: {
     flex: 1,
     flexDirection: "row",
@@ -671,6 +1053,80 @@ const styles = StyleSheet.create({
   },
   bannerWarn: { backgroundColor: "#332800" },
   bannerText: { color: colors.textSecondary, fontSize: 12 },
+  searchKeyboardRoot: {
+    flex: 1,
+  },
+  searchBackdrop: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.18)",
+  },
+  searchPanelWrap: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+  },
+  searchPanel: {
+    borderRadius: 28,
+    backgroundColor: "rgba(24, 24, 24, 0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    padding: 8,
+    shadowColor: "#000000",
+    shadowOpacity: 0.32,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 16,
+  },
+  mobileSortRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 8,
+    padding: 2,
+    borderRadius: 999,
+    backgroundColor: "rgba(10, 10, 10, 0.58)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  mobileSortButton: {
+    flex: 1,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 999,
+  },
+  mobileSortButtonActive: {
+    backgroundColor: "rgba(121, 134, 203, 0.72)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.18)",
+  },
+  mobileSortButtonText: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  mobileSortButtonTextActive: {
+    color: colors.text,
+  },
+  searchField: {
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "rgba(10, 10, 10, 0.62)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 16,
+    paddingVertical: 0,
+  },
+  searchClearButton: {
+    padding: 2,
+  },
   toast: {
     position: "absolute",
     left: 24,

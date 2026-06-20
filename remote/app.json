@@ -2,7 +2,7 @@
   "expo": {
     "name": "ClawTab",
     "slug": "clawtab",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "runtimeVersion": {
       "policy": "appVersion"
     },
@@ -18,15 +18,10 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "scheme": "clawtab",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0a0a0a"
-    },
     "ios": {
       "supportsTablet": true,
+      "deploymentTarget": "16.4",
       "bundleIdentifier": "cc.clawtab",
       "buildNumber": "2",
       "usesAppleSignIn": true,
@@ -41,7 +36,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0a"
       },
-      "edgeToEdgeEnabled": true,
       "package": "cc.clawtab"
     },
     "web": {
@@ -51,6 +45,15 @@
     "plugins": [
       "./plugins/with-native-answer",
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#4F51AB",
+          "enableFullScreenImage_legacy": true
+        }
+      ],
       "expo-secure-store",
       "expo-web-browser",
       "expo-apple-authentication",
@@ -76,7 +79,8 @@
             "bundleName": "ClawTabNotificationService"
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {

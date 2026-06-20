@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView, useWindowDimensions } from "react-native";
 import { isFreetextOption } from "../../util/jobs";
 import { styles } from "./styles";
 
@@ -25,39 +25,52 @@ export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive
   autoYesShortcut?: string;
   bottomInset?: number;
 }) {
+  const { width } = useWindowDimensions();
   if (options.length === 0) return null;
 
   const bottomPadding = Math.max(6, bottomInset + 10);
-  const barHeight = bottomPadding + 34;
+  const hasAutoYes = Boolean(onToggleAutoYes);
+  const barHeight = bottomPadding + 62 + (hasAutoYes ? 54 : 0);
+  const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)));
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }]}
-      contentContainerStyle={[styles.optionBarContent, { paddingBottom: bottomPadding }]}
-    >
-      {options.map((opt) => (
-        <TouchableOpacity
-          key={opt.number}
-          style={styles.optionBtn}
-          onPress={() => {
-            if (isFreetextOption(opt.label) && onFreetextOption) {
-              onFreetextOption(opt.number);
-            } else {
-              onSend(opt.number);
-            }
-          }}
-          activeOpacity={0.6}
+    <View style={[styles.optionBar, { height: barHeight, maxHeight: barHeight }]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.optionAnswerScroll}
+        contentContainerStyle={styles.optionBarContent}
+      >
+        {options.map((opt) => (
+          <TouchableOpacity
+            key={opt.number}
+            style={[
+              styles.optionBtn,
+              { maxWidth: maxButtonWidth },
+              opt.label.length > 18 && { width: maxButtonWidth },
+            ]}
+            onPress={() => {
+              if (isFreetextOption(opt.label) && onFreetextOption) {
+                onFreetextOption(opt.number);
+              } else {
+                onSend(opt.number);
+              }
+            }}
+            activeOpacity={0.6}
+          >
+            <Text style={styles.optionBtnText} numberOfLines={2}>
+              {opt.number}. {opt.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      {onToggleAutoYes ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.autoYesRow}
+          contentContainerStyle={[styles.autoYesRowContent, { paddingBottom: bottomPadding }]}
         >
-          <Text style={styles.optionBtnText}>
-            {opt.number}. {opt.label.length > 25 ? opt.label.slice(0, 25) + "..." : opt.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-      {onToggleAutoYes && (
-        <>
-          <View style={styles.optionSeparator} />
           <TouchableOpacity
             style={[styles.autoYesBtn, autoYesActive && styles.autoYesBtnActive]}
             onPress={onToggleAutoYes}
@@ -67,8 +80,10 @@ export function OptionButtons({ options, onSend, onFreetextOption, autoYesActive
               {autoYesActive ? "! Auto ON" : "! Yes all"}{autoYesShortcut ? ` (${autoYesShortcut})` : ""}
             </Text>
           </TouchableOpacity>
-        </>
+        </ScrollView>
+      ) : (
+        <View style={{ height: bottomPadding }} />
       )}
-    </ScrollView>
+    </View>
   );
 }

@@ -233,6 +233,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     opacity: 0.7,
+    ...(Platform.OS !== "web"
+      ? {
+          borderRadius: 0,
+          borderWidth: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.borderLight,
+          opacity: 1,
+          paddingVertical: spacing.lg,
+        }
+      : {}),
   },
   processCardSelected: {
     borderColor: colors.accent,
@@ -240,10 +250,10 @@ const styles = StyleSheet.create({
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
-  processName: { color: colors.text, fontSize: 13, fontWeight: "500", flexShrink: 1 },
+  processName: { color: colors.text, fontSize: 16, fontWeight: "500", flexShrink: 1 },
   editInput: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: "500",
     padding: 0,
     margin: 0,
@@ -253,8 +263,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   queryPreview: {
-    color: colors.textMuted,
-    fontSize: 11,
+    color: colors.textSecondary,
+    fontSize: 13,
   },
   statusDot: {
     width: 8,

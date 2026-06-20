@@ -116,6 +116,15 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    ...(Platform.OS !== "web"
+      ? {
+          borderRadius: 0,
+          borderWidth: 0,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: colors.borderLight,
+          paddingVertical: spacing.lg,
+        }
+      : {}),
   },
   cardSelected: {
     borderColor: colors.accent,
@@ -140,9 +149,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-info: { flex: 1, gap: 2, minWidth: 0 },
-  name: { color: colors.text, fontSize: 15, fontWeight: "500" },
-  metaText: { color: colors.textSecondary, fontSize: 12 },
+  info: { flex: 1, gap: 2, minWidth: 0 },
+  name: { color: colors.text, fontSize: 17, fontWeight: "500" },
+  metaText: { color: colors.textSecondary, fontSize: 13 },
   rightCol: {
     alignItems: "center",
     justifyContent: "center",
