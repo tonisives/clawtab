@@ -7,30 +7,40 @@ import type { DetectedProcess, ShellPane } from "../../types/process";
 import { colors } from "../../theme/colors";
 
 interface UseScrollEffectsParams {
-  collapsedGroups: Set<string>;
-  detectedProcesses: DetectedProcess[];
-  groupTabView?: Record<string, "tabs" | "jobs">;
-  initialScrollOffset?: number;
-  jobs: RemoteJob[];
-  onGroupTabViewChange?: (group: string, view: "tabs" | "jobs") => void;
-  onToggleGroup: (group: string) => void;
-  scrollRef: React.RefObject<ScrollView | null>;
-  scrollToSlug?: { slug: string; seq: number } | null;
-  shellPanes: ShellPane[];
+  data: {
+    detectedProcesses: DetectedProcess[];
+    jobs: RemoteJob[];
+    shellPanes: ShellPane[];
+  };
+  grouping: {
+    collapsedGroups: Set<string>;
+    groupTabView?: Record<string, "tabs" | "jobs">;
+  };
+  refs: {
+    scrollRef: React.RefObject<ScrollView | null>;
+  };
+  scroll: {
+    initialScrollOffset?: number;
+    scrollToSlug?: { slug: string; seq: number } | null;
+  };
+  callbacks: {
+    onGroupTabViewChange?: (group: string, view: "tabs" | "jobs") => void;
+    onToggleGroup: (group: string) => void;
+  };
 }
 
 export function useScrollEffects({
-  collapsedGroups,
-  detectedProcesses,
-  groupTabView,
-  initialScrollOffset,
-  jobs,
-  onGroupTabViewChange,
-  onToggleGroup,
-  scrollRef,
-  scrollToSlug,
-  shellPanes,
+  data,
+  grouping,
+  refs,
+  scroll,
+  callbacks,
 }: UseScrollEffectsParams) {
+  const { detectedProcesses, jobs, shellPanes } = data;
+  const { collapsedGroups, groupTabView } = grouping;
+  const { scrollRef } = refs;
+  const { initialScrollOffset, scrollToSlug } = scroll;
+  const { onGroupTabViewChange, onToggleGroup } = callbacks;
   useEffect(() => {
     if (Platform.OS !== "web") return;
     const styleId = "clawtab-reveal-highlight-style";

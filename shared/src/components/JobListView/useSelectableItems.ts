@@ -5,16 +5,21 @@ import type { ListItem, SidebarSelectableItem } from "./sign";
 import { areSelectableItemsEqual } from "./helpers";
 
 interface UseSelectableItemsParams {
-  items: ListItem[];
-  matchedProcessesByJob: Map<string, DetectedProcess[]>;
-  onSelectableItemsChange?: (items: SidebarSelectableItem[]) => void;
+  derived: {
+    items: ListItem[];
+    matchedProcessesByJob: Map<string, DetectedProcess[]>;
+  };
+  callbacks: {
+    onSelectableItemsChange?: (items: SidebarSelectableItem[]) => void;
+  };
 }
 
 export function useSelectableItems({
-  items,
-  matchedProcessesByJob,
-  onSelectableItemsChange,
+  derived,
+  callbacks,
 }: UseSelectableItemsParams) {
+  const { items, matchedProcessesByJob } = derived;
+  const { onSelectableItemsChange } = callbacks;
   const selectableItems = useMemo((): SidebarSelectableItem[] => (
     items.flatMap((item): SidebarSelectableItem[] => {
       if (item.kind === "job") {

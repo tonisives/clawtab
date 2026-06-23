@@ -7,18 +7,23 @@ import { GROUP_AGENT_PROVIDER_STORAGE_KEY } from "./sign";
 const isWeb = Platform.OS === "web";
 
 interface UseGroupAgentControlsParams {
-  agentModelOptions: AgentModelOption[];
-  defaultAgentModel?: string | null;
-  defaultAgentProvider: ProcessProvider;
-  getAgentProviders?: () => Promise<ProcessProvider[]>;
+  agent: {
+    agentModelOptions: AgentModelOption[];
+    defaultAgentModel?: string | null;
+    defaultAgentProvider: ProcessProvider;
+    getAgentProviders?: () => Promise<ProcessProvider[]>;
+  };
 }
 
 export function useGroupAgentControls({
-  agentModelOptions,
-  defaultAgentModel,
-  defaultAgentProvider,
-  getAgentProviders,
+  agent,
 }: UseGroupAgentControlsParams) {
+  const {
+    agentModelOptions,
+    defaultAgentModel,
+    defaultAgentProvider,
+    getAgentProviders,
+  } = agent;
   const [agentProviders, setAgentProviders] = useState<ProcessProvider[]>([]);
   const [groupAgentProviders, setGroupAgentProviders] = useState<Record<string, ProcessProvider>>(() => {
     if (!isWeb || typeof localStorage === "undefined") return {};

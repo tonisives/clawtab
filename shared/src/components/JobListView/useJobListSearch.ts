@@ -2,19 +2,27 @@ import { useCallback, useEffect, useState } from "react";
 import type * as React from "react";
 import { Platform, type TextInput, type View } from "react-native";
 
-interface UseJobListSearchParams {
+interface UseJobListSearchRefs {
   containerRef: React.RefObject<View | null>;
-  controlledSearchQuery?: string;
-  onSearchQueryChange?: (query: string) => void;
   searchRef: React.RefObject<TextInput | null>;
 }
 
+interface UseJobListSearchState {
+  controlledSearchQuery?: string;
+  onSearchQueryChange?: (query: string) => void;
+}
+
+interface UseJobListSearchParams {
+  refs: UseJobListSearchRefs;
+  state: UseJobListSearchState;
+}
+
 export function useJobListSearch({
-  containerRef,
-  controlledSearchQuery,
-  onSearchQueryChange,
-  searchRef,
+  refs,
+  state,
 }: UseJobListSearchParams) {
+  const { containerRef, searchRef } = refs;
+  const { controlledSearchQuery, onSearchQueryChange } = state;
   const [internalSearchQuery, setInternalSearchQuery] = useState("");
   const searchQuery = controlledSearchQuery ?? internalSearchQuery;
   const setSearchQuery = useCallback((next: string) => {

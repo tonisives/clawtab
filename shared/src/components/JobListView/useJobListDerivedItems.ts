@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 import type { RemoteJob, JobStatus, JobSortMode } from "../../types/job";
-import type { DetectedProcess, ShellPane } from "../../types/process";
+import type { DetectedProcess, ProcessProvider, ShellPane } from "../../types/process";
 import type { ListItem } from "./sign";
 import {
   displayGroupName,
@@ -13,36 +13,43 @@ import {
 } from "./helpers";
 
 interface UseJobListDerivedItemsParams {
-  collapsedGroups: Set<string>;
-  detectedProcesses: DetectedProcess[];
-  groupTabView?: Record<string, "tabs" | "jobs">;
-  hiddenGroups?: Set<string>;
-  hiddenSectionCollapsed: boolean;
-  jobOrder: Record<string, string[]>;
-  jobs: RemoteJob[];
-  onRunAgent?: (prompt: string, workDir?: string, provider?: any, model?: string | null) => void;
-  processOrder: Record<string, string[]>;
-  query: string;
-  shellPanes: ShellPane[];
-  sortMode: JobSortMode;
-  statuses: Record<string, JobStatus>;
+  data: {
+    detectedProcesses: DetectedProcess[];
+    jobs: RemoteJob[];
+    shellPanes: ShellPane[];
+    statuses: Record<string, JobStatus>;
+  };
+  ordering: {
+    jobOrder: Record<string, string[]>;
+    processOrder: Record<string, string[]>;
+    sortMode: JobSortMode;
+  };
+  grouping: {
+    collapsedGroups: Set<string>;
+    groupTabView?: Record<string, "tabs" | "jobs">;
+    hiddenGroups?: Set<string>;
+    hiddenSectionCollapsed: boolean;
+  };
+  filters: {
+    query: string;
+  };
+  agent: {
+    onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => void;
+  };
 }
 
 export function useJobListDerivedItems({
-  collapsedGroups,
-  detectedProcesses,
-  groupTabView,
-  hiddenGroups,
-  hiddenSectionCollapsed,
-  jobOrder,
-  jobs,
-  onRunAgent,
-  processOrder,
-  query,
-  shellPanes,
-  sortMode,
-  statuses,
+  data,
+  ordering,
+  grouping,
+  filters,
+  agent,
 }: UseJobListDerivedItemsParams) {
+  const { detectedProcesses, jobs, shellPanes, statuses } = data;
+  const { jobOrder, processOrder, sortMode } = ordering;
+  const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed } = grouping;
+  const { query } = filters;
+  const { onRunAgent } = agent;
   const inferredJobSlugByPaneId = useMemo(() => {
     const map = new Map<string, string>();
     for (const proc of detectedProcesses) {
