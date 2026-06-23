@@ -9,6 +9,7 @@ use clawtab_protocol::{
 };
 
 pub struct DesktopConnection {
+    pub connection_id: Uuid,
     pub device_id: Uuid,
     pub device_name: String,
     pub tx: mpsc::UnboundedSender<String>,
@@ -68,16 +69,17 @@ impl Hub {
         );
     }
 
-    pub fn remove_desktop(&mut self, user_id: Uuid, device_id: Uuid) {
+    pub fn remove_desktop(&mut self, user_id: Uuid, connection_id: Uuid) -> bool {
         let Some(conns) = self.desktops.get_mut(&user_id) else {
-            return;
+            return false;
         };
 
-        let Some(idx) = conns.iter().position(|c| c.device_id == device_id) else {
-            return;
+        let Some(idx) = conns.iter().position(|c| c.connection_id == connection_id) else {
+            return false;
         };
 
         let removed = conns.swap_remove(idx);
+        let device_id = removed.device_id;
         let no_desktops = conns.is_empty();
 
         if no_desktops {
@@ -108,6 +110,7 @@ impl Hub {
                 online: false,
             },
         );
+        true
     }
 
     pub fn add_mobile(&mut self, user_id: Uuid, conn: MobileConnection) {
@@ -336,6 +339,7 @@ mod tests {
     fn add_remove_desktop_tracks_presence() {
         let mut hub = Hub::new();
         let user = Uuid::new_v4();
+        let connection = Uuid::new_v4();
         let device = Uuid::new_v4();
         let (tx, _rx) = mk_channel();
 
@@ -343,6 +347,7 @@ mod tests {
         hub.add_desktop(
             user,
             DesktopConnection {
+                connection_id: connection,
                 device_id: device,
                 device_name: "laptop".into(),
                 tx,
@@ -350,7 +355,7 @@ mod tests {
         );
         assert!(hub.has_desktop(user));
 
-        hub.remove_desktop(user, device);
+        hub.remove_desktop(user, connection);
         assert!(!hub.has_desktop(user));
     }
 
@@ -365,6 +370,7 @@ mod tests {
         hub.add_desktop(
             user,
             DesktopConnection {
+                connection_id: Uuid::new_v4(),
                 device_id: device,
                 device_name: "laptop".into(),
                 tx: desktop_tx,
@@ -396,6 +402,7 @@ mod tests {
         hub.add_desktop(
             owner,
             DesktopConnection {
+                connection_id: Uuid::new_v4(),
                 device_id: device,
                 device_name: "laptop".into(),
                 tx: desktop_tx,
@@ -433,6 +440,7 @@ mod tests {
         hub.add_desktop(
             user,
             DesktopConnection {
+                connection_id: Uuid::new_v4(),
                 device_id: Uuid::new_v4(),
                 device_name: "laptop".into(),
                 tx,
@@ -450,12 +458,15 @@ mod tests {
         let mut hub = Hub::new();
         let user = Uuid::new_v4();
         let device = Uuid::new_v4();
+        let old_connection = Uuid::new_v4();
+        let new_connection = Uuid::new_v4();
         let (old_tx, mut old_rx) = mk_channel();
         let (new_tx, mut new_rx) = mk_channel();
 
         hub.add_desktop(
             user,
             DesktopConnection {
+                connection_id: old_connection,
                 device_id: device,
                 device_name: "laptop".into(),
                 tx: old_tx,
@@ -464,11 +475,13 @@ mod tests {
         hub.add_desktop(
             user,
             DesktopConnection {
+                connection_id: new_connection,
                 device_id: device,
                 device_name: "laptop".into(),
                 tx: new_tx,
             },
         );
+        hub.remove_desktop(user, old_connection);
 
         let msg = ClientMessage::ListJobs { id: "x".into() };
         assert!(hub.forward_to_desktop(user, &msg));
@@ -487,6 +500,7 @@ mod tests {
         hub.add_desktop(
             user,
             DesktopConnection {
+                connection_id: Uuid::new_v4(),
                 device_id: Uuid::new_v4(),
                 device_name: "laptop-1".into(),
                 tx: tx1,
@@ -495,6 +509,7 @@ mod tests {
         hub.add_desktop(
             user,
             DesktopConnection {
+                connection_id: Uuid::new_v4(),
                 device_id: Uuid::new_v4(),
                 device_name: "laptop-2".into(),
                 tx: tx2,
