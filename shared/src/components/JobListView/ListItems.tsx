@@ -1,4 +1,4 @@
-import type * as React from "react";
+import { Fragment, type ReactNode } from "react";
 import { Platform, Text, View } from "react-native";
 
 import { spacing } from "../../theme/spacing";
@@ -27,9 +27,9 @@ export function JobListItems({ hook }: JobListItemsProps) {
     );
   }
 
-  const rendered: React.ReactNode[] = [];
+  const rendered: ReactNode[] = [];
   let index = 0;
-  let currentGroupBuffer: React.ReactNode[] | null = null;
+  let currentGroupBuffer: ReactNode[] | null = null;
   let currentGroupIsActive = false;
   let currentGroupKey: string | null = null;
   let prevFlushedWasActive = false;
@@ -62,13 +62,18 @@ export function JobListItems({ hook }: JobListItemsProps) {
       prevFlushedWasActive = false;
     }
   };
-  const pushToGroup = (node: React.ReactNode) => {
+  const pushToGroup = (node: ReactNode) => {
     if (currentGroupBuffer) {
       currentGroupBuffer.push(node);
     } else {
       rendered.push(node);
     }
   };
+  const keyedGroup = (key: string, children: ReactNode) => (
+    <Fragment key={key}>
+      {children}
+    </Fragment>
+  );
   const keyCounts = new Map<string, number>();
   const uniqueKey = (base: string) => {
     const count = keyCounts.get(base) ?? 0;
@@ -96,12 +101,13 @@ export function JobListItems({ hook }: JobListItemsProps) {
       ));
       const group = jobItems[0]?.job.group || "default";
       const jobSlugs = jobItems.map((jobItem) => jobItem.job.slug);
+      const groupKey = uniqueKey(`job_group_${group}`);
       pushToGroup(
         hook.wrapJobGroup
-          ? hook.wrapJobGroup(group, jobSlugs, children)
+          ? keyedGroup(groupKey, hook.wrapJobGroup(group, jobSlugs, children))
           : Platform.OS === "web"
-            ? children
-            : <View key={`job_group_${group}`} style={styles.nativeGroupedRows}>{children}</View>,
+            ? keyedGroup(groupKey, children)
+            : <View key={groupKey} style={styles.nativeGroupedRows}>{children}</View>,
       );
       continue;
     }
@@ -125,12 +131,13 @@ export function JobListItems({ hook }: JobListItemsProps) {
       ));
       const group = processItems[0]?.process.matched_group ?? `cwd:${processItems[0]?.process.cwd ?? ""}`;
       const processPaneIds = processItems.map((processItem) => processItem.process.pane_id);
+      const groupKey = uniqueKey(`process_group_${group}`);
       pushToGroup(
         hook.wrapProcessGroup
-          ? hook.wrapProcessGroup(group, processPaneIds, children)
+          ? keyedGroup(groupKey, hook.wrapProcessGroup(group, processPaneIds, children))
           : Platform.OS === "web"
-            ? children
-            : <View key={`process_group_${group}`} style={styles.nativeGroupedRows}>{children}</View>,
+            ? keyedGroup(groupKey, children)
+            : <View key={groupKey} style={styles.nativeGroupedRows}>{children}</View>,
       );
       continue;
     }
@@ -172,19 +179,19 @@ function renderSingleItem(
   prevWasActive: boolean,
 ) {
   if (item.kind === "header") {
-    return <JobListHeaderItem hook={hook} item={item} itemKey={key} index={index} prevWasActive={prevWasActive} />;
+    return <JobListHeaderItem key={key} hook={hook} item={item} itemKey={key} index={index} prevWasActive={prevWasActive} />;
   }
   if (item.kind === "shell") {
-    return <JobListShellItem hook={hook} shell={item.shell} itemKey={key} index={index} />;
+    return <JobListShellItem key={key} hook={hook} shell={item.shell} itemKey={key} index={index} />;
   }
   if (item.kind === "group-agent") {
-    return <JobListGroupAgentItem hook={hook} workDir={item.workDir} itemKey={key} />;
+    return <JobListGroupAgentItem key={key} hook={hook} workDir={item.workDir} itemKey={key} />;
   }
   if (item.kind === "hidden-section") {
-    return <JobListHiddenSection hook={hook} itemKey={key} />;
+    return <JobListHiddenSection key={key} hook={hook} itemKey={key} />;
   }
   if (item.kind === "hidden-header") {
-    return <JobListHiddenHeader hook={hook} item={item} itemKey={key} />;
+    return <JobListHiddenHeader key={key} hook={hook} item={item} itemKey={key} />;
   }
   return null;
 }
