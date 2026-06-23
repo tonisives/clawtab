@@ -21,6 +21,7 @@ pub(super) async fn run(
     device_id: Uuid,
     device_name: String,
 ) {
+    let connection_id = Uuid::new_v4();
     let (tx, rx) = mpsc::unbounded_channel::<String>();
 
     let guests = get_shared_guests(&state.pool, user_id).await;
@@ -29,6 +30,7 @@ pub(super) async fn run(
     register(
         &state,
         user_id,
+        connection_id,
         device_id,
         &device_name,
         tx.clone(),
@@ -36,11 +38,19 @@ pub(super) async fn run(
     )
     .await;
     send_welcome(&tx, device_id);
-    tracing::info!(%user_id, %device_id, %device_name, "desktop connected");
+    tracing::info!(%user_id, %device_id, %connection_id, %device_name, "desktop connected");
 
     let exit = drive_session(state.clone(), socket, rx, user_id).await;
 
-    unregister(&state, user_id, device_id, &device_name, &guest_ids).await;
+    unregister(
+        &state,
+        user_id,
+        connection_id,
+        device_id,
+        &device_name,
+        &guest_ids,
+    )
+    .await;
     update_device_last_seen(&state.pool, device_id).await;
     log_exit(exit, device_id);
 }
@@ -79,6 +89,7 @@ fn log_exit(exit: LoopExit, device_id: Uuid) {
 async fn register(
     state: &AppState,
     user_id: Uuid,
+    connection_id: Uuid,
     device_id: Uuid,
     device_name: &str,
     tx: mpsc::UnboundedSender<String>,
@@ -88,6 +99,7 @@ async fn register(
     hub.add_desktop(
         user_id,
         DesktopConnection {
+            connection_id,
             device_id,
             device_name: device_name.to_string(),
             tx,
@@ -108,21 +120,23 @@ async fn register(
 async fn unregister(
     state: &AppState,
     user_id: Uuid,
+    connection_id: Uuid,
     device_id: Uuid,
     device_name: &str,
     guest_ids: &[Uuid],
 ) {
     let mut hub = state.hub.write().await;
-    hub.remove_desktop(user_id, device_id);
-    for &gid in guest_ids {
-        hub.broadcast_to_mobiles(
-            gid,
-            &ServerMessage::DesktopStatus {
-                device_id: device_id.to_string(),
-                device_name: device_name.to_string(),
-                online: false,
-            },
-        );
+    if hub.remove_desktop(user_id, connection_id) {
+        for &gid in guest_ids {
+            hub.broadcast_to_mobiles(
+                gid,
+                &ServerMessage::DesktopStatus {
+                    device_id: device_id.to_string(),
+                    device_name: device_name.to_string(),
+                    online: false,
+                },
+            );
+        }
     }
 }
 
