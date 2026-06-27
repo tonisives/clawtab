@@ -117,9 +117,14 @@ export function createWsTransport(): Transport {
         ...(model ? { model } : {}),
       });
       const ack = await registerRequest<{
+        success?: boolean;
         pane_id?: string;
         tmux_session?: string;
+        error?: string;
       }>(id);
+      if (ack.success === false) {
+        throw new Error(ack.error ?? "Failed to start agent");
+      }
       return ack.pane_id && ack.tmux_session
         ? { pane_id: ack.pane_id, tmux_session: ack.tmux_session }
         : null;

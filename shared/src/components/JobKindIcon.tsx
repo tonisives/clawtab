@@ -1,4 +1,5 @@
-import { StyleSheet, View, Image } from "react-native";
+import { useState } from "react";
+import { StyleSheet, View, Image, Text } from "react-native";
 import type { RemoteJob } from "../types/job";
 import type { DetectedProcess, ProcessProvider } from "../types/process";
 import { colors } from "../theme/colors";
@@ -106,6 +107,25 @@ function sourceForKind(kind: JobKind) {
   }
 }
 
+function fallbackLabelForKind(kind: JobKind) {
+  switch (kind) {
+    case "claude":
+      return "C";
+    case "codex":
+      return "CX";
+    case "opencode":
+      return "OC";
+    case "antigravity":
+      return "AG";
+    case "shell":
+      return "$";
+    case "cron":
+      return "CR";
+    case "manual":
+      return "M";
+  }
+}
+
 export function JobKindIcon({
   kind,
   size = 32,
@@ -117,6 +137,7 @@ export function JobKindIcon({
   compact?: boolean;
   bare?: boolean;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const palette = paletteForKind(kind);
   const hasIntrinsicBadge = kind === "claude" || kind === "codex" || kind === "opencode" || kind === "antigravity";
   const imageSize = hasIntrinsicBadge
@@ -139,15 +160,32 @@ export function JobKindIcon({
             },
       ]}
     >
-      <Image
-        source={source}
-        style={{
-          width: imageSize,
-          height: imageSize,
-          borderRadius: hasIntrinsicBadge ? radius.sm : 0,
-        }}
-        resizeMode="contain"
-      />
+      {imageFailed ? (
+        <Text
+          style={[
+            styles.fallbackText,
+            {
+              color: palette.fg,
+              fontSize: Math.max(9, Math.round(size * (fallbackLabelForKind(kind).length > 1 ? 0.31 : 0.45))),
+            },
+          ]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+        >
+          {fallbackLabelForKind(kind)}
+        </Text>
+      ) : (
+        <Image
+          source={source}
+          style={{
+            width: imageSize,
+            height: imageSize,
+            borderRadius: hasIntrinsicBadge ? radius.sm : 0,
+          }}
+          resizeMode="contain"
+          onError={() => setImageFailed(true)}
+        />
+      )}
     </View>
   );
 }
@@ -157,5 +195,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",
+  },
+  fallbackText: {
+    fontWeight: "700",
+    letterSpacing: 0,
+    textAlign: "center",
   },
 });

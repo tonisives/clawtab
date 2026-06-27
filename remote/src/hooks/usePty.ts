@@ -14,7 +14,7 @@ type PtySubscription = {
   error?: string;
   stateListeners: Set<(state: PtyConnectionState, error?: string) => void>;
   pendingAckId?: string;
-  outputTimer?: ReturnType<typeof setTimeout>;
+  ackTimer?: ReturnType<typeof setTimeout>;
   subscribeTimer?: ReturnType<typeof setTimeout>;
   unsubscribeTimer?: ReturnType<typeof setTimeout>;
 };
@@ -23,7 +23,7 @@ const ptySubscriptions = new Map<string, PtySubscription>();
 
 type PtyConnectionState = "idle" | "connecting" | "failed";
 
-const OUTPUT_TIMEOUT_MS = 15000;
+const SUBSCRIBE_ACK_TIMEOUT_MS = 15000;
 const DEFAULT_DIMS = { cols: 80, rows: 24 };
 
 function setSubscriptionState(
@@ -41,9 +41,9 @@ function clearSubscribeWait(subscription: PtySubscription) {
     clearRequest(subscription.pendingAckId);
     subscription.pendingAckId = undefined;
   }
-  if (subscription.outputTimer) {
-    clearTimeout(subscription.outputTimer);
-    subscription.outputTimer = undefined;
+  if (subscription.ackTimer) {
+    clearTimeout(subscription.ackTimer);
+    subscription.ackTimer = undefined;
   }
 }
 
@@ -65,24 +65,30 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
     rows: dims.rows,
   });
   subscription.pendingAckId = id;
-  subscription.outputTimer = setTimeout(() => {
-    subscription.outputTimer = undefined;
+  subscription.ackTimer = setTimeout(() => {
+    subscription.ackTimer = undefined;
     if (subscription.state === "connecting") {
-      setSubscriptionState(subscription, "failed", "Terminal did not send output.");
+      subscription.pendingAckId = undefined;
+      clearRequest(id);
+      setSubscriptionState(subscription, "failed", "Terminal connection timed out.");
     }
-  }, OUTPUT_TIMEOUT_MS);
+  }, SUBSCRIBE_ACK_TIMEOUT_MS);
   registerRequest<{ success?: boolean; error?: string; code?: string; message?: string }>(id).then((ack) => {
     if (subscription.pendingAckId !== id) return;
     subscription.pendingAckId = undefined;
     if (ack?.success === false || ack?.code) {
-      if (subscription.outputTimer) clearTimeout(subscription.outputTimer);
-      subscription.outputTimer = undefined;
+      if (subscription.ackTimer) clearTimeout(subscription.ackTimer);
+      subscription.ackTimer = undefined;
       setSubscriptionState(
         subscription,
         "failed",
         ack.error ?? ack.message ?? "Terminal connection failed.",
       );
+      return;
     }
+    if (subscription.ackTimer) clearTimeout(subscription.ackTimer);
+    subscription.ackTimer = undefined;
+    setSubscriptionState(subscription, "idle");
   });
   return true;
 }

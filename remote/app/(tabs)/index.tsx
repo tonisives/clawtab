@@ -449,12 +449,15 @@ export default function JobsScreen() {
         ...(model ? { model } : {}),
       })
       registerRequest<{
+        success?: boolean
         job_id?: string
         pane_id?: string
         tmux_session?: string
         work_dir?: string
         provider?: string
+        error?: string
       }>(id).then((ack) => {
+        if (ack.success === false) return
         if (ack.pane_id && ack.tmux_session) {
           const existing = useJobsStore.getState().detectedProcesses
           const existingProcess = existing.find((process) => process.pane_id === ack.pane_id)

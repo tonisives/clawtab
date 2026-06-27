@@ -69,6 +69,7 @@ export type DesktopMessage =
       tmux_session?: string;
       work_dir?: string;
       provider?: string;
+      error?: string;
     }
   | { type: "create_job_ack"; id: string; success: boolean; error?: string }
   | { type: "detected_processes"; id: string; processes: DetectedProcess[] }
@@ -81,7 +82,7 @@ export type DesktopMessage =
   | { type: "auto_yes_panes"; pane_ids: string[] }
   | { type: "notification_history"; id: string; notifications: NotificationHistoryItem[] }
   | { type: "register_push_token_ack"; id: string; success: boolean }
-  | { type: "subscribe_pty_ack"; id: string; success: boolean }
+  | { type: "subscribe_pty_ack"; id: string; success: boolean; error?: string }
   | { type: "pty_output"; pane_id: string; data: string }
   | { type: "pty_exit"; pane_id: string };
 

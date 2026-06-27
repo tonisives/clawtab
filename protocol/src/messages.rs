@@ -245,6 +245,8 @@ pub enum DesktopMessage {
         work_dir: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         provider: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     /// Ack for create_job
     CreateJobAck {

@@ -146,9 +146,10 @@ export default function AgentScreen() {
         tmux_session?: string;
         work_dir?: string;
         provider?: string;
+        error?: string;
       }>(msgId);
       if (ack.success === false) {
-        setError("Failed to start agent");
+        setError(ack.error ?? "Failed to start agent");
         return;
       }
 

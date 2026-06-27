@@ -1,5 +1,5 @@
-import { useRef, useImperativeHandle, forwardRef, useCallback } from "react";
-import { View, StyleSheet } from "react-native";
+import { useRef, useImperativeHandle, forwardRef, useCallback, useState } from "react";
+import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
 
 export interface XtermLogHandle {
   /** Write base64-encoded terminal data */
@@ -27,6 +27,30 @@ interface XtermLogProps {
   onResize?: (cols: number, rows: number) => void;
   /** Whether terminal accepts input (default true) */
   interactive?: boolean;
+}
+
+function encodeTerminalInput(text: string): string {
+  if (typeof btoa === "function") return btoa(text);
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let output = "";
+  for (let i = 0; i < text.length; i += 3) {
+    const a = text.charCodeAt(i) & 0xff;
+    const b = i + 1 < text.length ? text.charCodeAt(i + 1) & 0xff : 0;
+    const c = i + 2 < text.length ? text.charCodeAt(i + 2) & 0xff : 0;
+    const triplet = (a << 16) | (b << 8) | c;
+    output += chars[(triplet >> 18) & 63];
+    output += chars[(triplet >> 12) & 63];
+    output += i + 1 < text.length ? chars[(triplet >> 6) & 63] : "=";
+    output += i + 2 < text.length ? chars[triplet & 63] : "=";
+  }
+  return output;
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  const max = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < max && a.charCodeAt(i) === b.charCodeAt(i)) i += 1;
+  return i;
 }
 
 // Minimal HTML page that bundles xterm.js via CDN
@@ -66,6 +90,7 @@ term.loadAddon(fit);
 term.open(document.getElementById('terminal'));
 fit.fit();
 
+var nativeKeyboardMode = false;
 var iosKeyboardContext = '';
 
 function terminalInputTextarea() {
@@ -119,6 +144,18 @@ function resumeIosTextKeyboard() {
 configureIosKeyboardContext();
 setTimeout(configureIosKeyboardContext, 0);
 
+window.setNativeKeyboardMode = function(enabled) {
+  nativeKeyboardMode = !!enabled;
+  term.options.disableStdin = nativeKeyboardMode;
+  if (nativeKeyboardMode) {
+    try { term.blur(); } catch (e) {}
+    try {
+      var active = document.activeElement;
+      if (active && active.blur) active.blur();
+    } catch (e) {}
+  }
+};
+
 function shouldForwardInput(data) {
   return !(/^\\x1b\\[(?:\\?|>|=)?[0-9;]*[cRn]$/.test(data));
 }
@@ -170,6 +207,11 @@ window.showPasteMenu = function() {
 
 var longPressTimer = null;
 document.getElementById('terminal').addEventListener('touchstart', function(e) {
+  if (nativeKeyboardMode) {
+    e.preventDefault();
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'focus'}));
+    return;
+  }
   if (longPressTimer) clearTimeout(longPressTimer);
   var touch = e.touches && e.touches[0];
   longPressTimer = setTimeout(function() {
@@ -185,6 +227,7 @@ document.getElementById('terminal').addEventListener('touchend', function() {
   longPressTimer = null;
 }, { passive: true });
 document.getElementById('terminal').addEventListener('dblclick', function(e) {
+  if (nativeKeyboardMode) return;
   showPasteTarget(e.clientX, e.clientY);
 });
 
@@ -235,6 +278,10 @@ window.blurTerminal = function() {
   } catch (e) {}
 };
 window.focusTerminal = function() {
+  if (nativeKeyboardMode) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:'focus'}));
+    return;
+  }
   configureIosKeyboardContext();
   try { term.focus(); } catch (e) {}
   setTimeout(configureIosKeyboardContext, 0);
@@ -249,10 +296,69 @@ window.focusTerminal = function() {
  */
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
   function XtermLog({ onData, onResize, interactive = true }, ref) {
+    const useNativeKeyboard = Platform.OS === "ios";
     const webViewRef = useRef<any>(null);
+    const nativeInputRef = useRef<TextInput | null>(null);
     const dimsRef = useRef({ cols: 80, rows: 24 });
     const readyRef = useRef(false);
     const pendingWritesRef = useRef<string[]>([]);
+    const nativeInputValueRef = useRef("");
+    const [nativeInputValue, setNativeInputValue] = useState("");
+
+    const sendNativeInput = useCallback(
+      (text: string) => {
+        if (!text || !interactive) return;
+        onData?.(encodeTerminalInput(text.replace(/\n/g, "\r")));
+      },
+      [interactive, onData],
+    );
+
+    const setNativeInputBuffer = useCallback((value: string) => {
+      const next = value.slice(-40);
+      nativeInputValueRef.current = next;
+      setNativeInputValue(next);
+    }, []);
+
+    const focusNativeInput = useCallback(() => {
+      if (!useNativeKeyboard || !interactive) return;
+      requestAnimationFrame(() => nativeInputRef.current?.focus());
+    }, [interactive, useNativeKeyboard]);
+
+    const handleNativeInputChange = useCallback(
+      (value: string) => {
+        const previous = nativeInputValueRef.current;
+        if (value === previous) return;
+
+        if (value.length > previous.length && value.startsWith(previous)) {
+          sendNativeInput(value.slice(previous.length));
+          setNativeInputBuffer(value);
+          return;
+        }
+
+        if (previous.length > value.length && previous.startsWith(value)) {
+          sendNativeInput("\x7f".repeat(previous.length - value.length));
+          setNativeInputBuffer(value);
+          return;
+        }
+
+        const prefix = commonPrefixLength(previous, value);
+        const deleted = previous.length - prefix;
+        const inserted = value.slice(prefix);
+        if (deleted > 0) sendNativeInput("\x7f".repeat(deleted));
+        if (inserted) sendNativeInput(inserted);
+        setNativeInputBuffer(value);
+      },
+      [sendNativeInput, setNativeInputBuffer],
+    );
+
+    const handleNativeKeyPress = useCallback(
+      (event: any) => {
+        if (event.nativeEvent.key === "Backspace" && nativeInputValueRef.current.length === 0) {
+          sendNativeInput("\x7f");
+        }
+      },
+      [sendNativeInput],
+    );
 
     const injectWrite = useCallback((b64: string) => {
       const escaped = b64.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
@@ -291,10 +397,15 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         webViewRef.current?.injectJavaScript(`window.setVisualOffset && window.setVisualOffset(${value});true;`);
       },
       blur() {
+        nativeInputRef.current?.blur();
         webViewRef.current?.injectJavaScript(`window.blurTerminal && window.blurTerminal();true;`);
       },
       focus() {
-        webViewRef.current?.injectJavaScript(`window.focusTerminal && window.focusTerminal();true;`);
+        if (useNativeKeyboard) {
+          focusNativeInput();
+        } else {
+          webViewRef.current?.injectJavaScript(`window.focusTerminal && window.focusTerminal();true;`);
+        }
       },
       showPasteMenu() {
         webViewRef.current?.injectJavaScript(`window.showPasteMenu && window.showPasteMenu();true;`);
@@ -305,20 +416,25 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       (event: any) => {
         try {
           const msg = JSON.parse(event.nativeEvent.data);
-          if (msg.type === "data" && interactive) {
+          if (msg.type === "data" && interactive && !useNativeKeyboard) {
             onData?.(msg.data);
           } else if (msg.type === "resize") {
             dimsRef.current = { cols: msg.cols, rows: msg.rows };
             onResize?.(msg.cols, msg.rows);
           } else if (msg.type === "ready") {
             readyRef.current = true;
+            if (useNativeKeyboard) {
+              webViewRef.current?.injectJavaScript(`window.setNativeKeyboardMode && window.setNativeKeyboardMode(true);true;`);
+            }
             flushPendingWrites();
+          } else if (msg.type === "focus") {
+            focusNativeInput();
           }
         } catch {
           // ignore parse errors
         }
       },
-      [onData, onResize, interactive, flushPendingWrites],
+      [onData, onResize, interactive, useNativeKeyboard, flushPendingWrites, focusNativeInput],
     );
 
     // Dynamic import of WebView - it's a peer dependency
@@ -343,6 +459,32 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           bounces={false}
           hideKeyboardAccessoryView
         />
+        {useNativeKeyboard ? (
+          <Pressable
+            style={styles.nativeKeyboardTapLayer}
+            onPressIn={focusNativeInput}
+            accessible={false}
+          />
+        ) : null}
+        {useNativeKeyboard ? (
+          <TextInput
+            ref={nativeInputRef}
+            style={styles.nativeInput}
+            value={nativeInputValue}
+            onChangeText={handleNativeInputChange}
+            onKeyPress={handleNativeKeyPress}
+            onSubmitEditing={() => sendNativeInput("\r")}
+            autoCapitalize="none"
+            autoCorrect={false}
+            spellCheck={false}
+            keyboardType="default"
+            caretHidden
+            contextMenuHidden
+            importantForAutofill="no"
+            editable={interactive}
+            multiline
+          />
+        ) : null}
       </View>
     );
   },
@@ -358,5 +500,22 @@ const styles = StyleSheet.create({
   webview: {
     flex: 1,
     backgroundColor: "#1c1c1e",
+  },
+  nativeInput: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: 1,
+    height: 1,
+    opacity: 0.01,
+    zIndex: 2,
+  },
+  nativeKeyboardTapLayer: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1,
   },
 });
