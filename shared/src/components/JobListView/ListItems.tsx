@@ -1,8 +1,8 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Platform, Text, View } from "react-native";
 
 import { spacing } from "../../theme/spacing";
-import type { ListItem } from "./sign";
+import type { GroupedRowPosition, ListItem } from "./sign";
 import { JobListGroupAgentItem } from "./GroupAgentItem";
 import { JobListHeaderItem } from "./HeaderItem";
 import { JobListHiddenHeader } from "./HiddenHeader";
@@ -69,23 +69,28 @@ export function JobListItems({ hook }: JobListItemsProps) {
       rendered.push(node);
     }
   };
-  const keyedGroup = (key: string, children: ReactNode) => (
-    <Fragment key={key}>
-      {children}
-    </Fragment>
-  );
   const keyCounts = new Map<string, number>();
   const uniqueKey = (base: string) => {
     const count = keyCounts.get(base) ?? 0;
     keyCounts.set(base, count + 1);
     return count === 0 ? base : `${base}_${count}`;
   };
+  const groupedPosition = (offset: number, count: number): GroupedRowPosition => {
+    if (count <= 1) return "single";
+    if (offset === 0) return "first";
+    if (offset === count - 1) return "last";
+    return "middle";
+  };
+  const wrapRows = (key: string, children: ReactNode) => (
+    Platform.OS === "web"
+      ? <View key={key} style={styles.webGroupedRows}>{children}</View>
+      : <View key={key} style={styles.nativeGroupedRows}>{children}</View>
+  );
 
   while (index < hook.items.length) {
     const item = hook.items[index];
     if (item.kind === "job") {
       const jobItems: Extract<ListItem, { kind: "job" }>[] = [];
-      const startIndex = index;
       while (index < hook.items.length && hook.items[index]?.kind === "job") {
         jobItems.push(hook.items[index] as Extract<ListItem, { kind: "job" }>);
         index += 1;
@@ -96,7 +101,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
           hook={hook}
           item={jobItem}
           itemKey={`j_${jobItem.job.slug || jobItem.job.name}`}
-          index={startIndex + offset}
+          groupedPosition={groupedPosition(offset, jobItems.length)}
         />
       ));
       const group = jobItems[0]?.job.group || "default";
@@ -104,17 +109,14 @@ export function JobListItems({ hook }: JobListItemsProps) {
       const groupKey = uniqueKey(`job_group_${group}`);
       pushToGroup(
         hook.wrapJobGroup
-          ? keyedGroup(groupKey, hook.wrapJobGroup(group, jobSlugs, children))
-          : Platform.OS === "web"
-            ? keyedGroup(groupKey, children)
-            : <View key={groupKey} style={styles.nativeGroupedRows}>{children}</View>,
+          ? wrapRows(groupKey, hook.wrapJobGroup(group, jobSlugs, children))
+          : wrapRows(groupKey, children),
       );
       continue;
     }
 
     if (item.kind === "process") {
       const processItems: Extract<ListItem, { kind: "process" }>[] = [];
-      const startIndex = index;
       while (index < hook.items.length && hook.items[index]?.kind === "process") {
         processItems.push(hook.items[index] as Extract<ListItem, { kind: "process" }>);
         index += 1;
@@ -125,8 +127,8 @@ export function JobListItems({ hook }: JobListItemsProps) {
           hook={hook}
           process={processItem.process}
           itemKey={`p_${processItem.process.pane_id}`}
-          index={startIndex + offset}
           inGroup={processItem.inGroup}
+          groupedPosition={groupedPosition(offset, processItems.length)}
         />
       ));
       const group = processItems[0]?.process.matched_group ?? `cwd:${processItems[0]?.process.cwd ?? ""}`;
@@ -134,20 +136,37 @@ export function JobListItems({ hook }: JobListItemsProps) {
       const groupKey = uniqueKey(`process_group_${group}`);
       pushToGroup(
         hook.wrapProcessGroup
-          ? keyedGroup(groupKey, hook.wrapProcessGroup(group, processPaneIds, children))
-          : Platform.OS === "web"
-            ? keyedGroup(groupKey, children)
-            : <View key={groupKey} style={styles.nativeGroupedRows}>{children}</View>,
+          ? wrapRows(groupKey, hook.wrapProcessGroup(group, processPaneIds, children))
+          : wrapRows(groupKey, children),
       );
+      continue;
+    }
+
+    if (item.kind === "shell") {
+      const shellItems: Extract<ListItem, { kind: "shell" }>[] = [];
+      const startIndex = index;
+      while (index < hook.items.length && hook.items[index]?.kind === "shell") {
+        shellItems.push(hook.items[index] as Extract<ListItem, { kind: "shell" }>);
+        index += 1;
+      }
+      const children = shellItems.map((shellItem, offset) => (
+        <JobListShellItem
+          key={`s_${shellItem.shell.pane_id}`}
+          hook={hook}
+          shell={shellItem.shell}
+          itemKey={`s_${shellItem.shell.pane_id}`}
+          index={startIndex + offset}
+          groupedPosition={groupedPosition(offset, shellItems.length)}
+        />
+      ));
+      pushToGroup(wrapRows(uniqueKey("shell_group"), children));
       continue;
     }
 
     const key =
       item.kind === "header"
         ? `h_${item.group}`
-        : item.kind === "shell"
-          ? `s_${item.shell.pane_id}`
-          : item.kind === "group-agent"
+        : item.kind === "group-agent"
             ? uniqueKey(`ga_${item.workDir}`)
             : item.kind === "hidden-section"
               ? "hidden_section"
@@ -173,16 +192,13 @@ export function JobListItems({ hook }: JobListItemsProps) {
 
 function renderSingleItem(
   hook: JobListViewHook,
-  item: Exclude<ListItem, { kind: "job" | "process" }>,
+  item: Exclude<ListItem, { kind: "job" | "process" | "shell" }>,
   key: string,
   index: number,
   prevWasActive: boolean,
 ) {
   if (item.kind === "header") {
     return <JobListHeaderItem key={key} hook={hook} item={item} itemKey={key} index={index} prevWasActive={prevWasActive} />;
-  }
-  if (item.kind === "shell") {
-    return <JobListShellItem key={key} hook={hook} shell={item.shell} itemKey={key} index={index} />;
   }
   if (item.kind === "group-agent") {
     return <JobListGroupAgentItem key={key} hook={hook} workDir={item.workDir} itemKey={key} />;

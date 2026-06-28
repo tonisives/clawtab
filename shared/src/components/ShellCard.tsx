@@ -8,6 +8,14 @@ import { radius, spacing } from "../theme/spacing";
 import { JobKindIcon } from "./JobKindIcon";
 
 const isWeb = Platform.OS === "web";
+type GroupedRowPosition = "single" | "first" | "middle" | "last";
+
+function groupedCardStyle(position?: GroupedRowPosition) {
+  if (!isWeb || !position || position === "single") return null;
+  if (position === "first") return { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 };
+  if (position === "last") return { borderTopLeftRadius: 0, borderTopRightRadius: 0 };
+  return { borderRadius: 0 };
+}
 
 // Lazily-allocated 2d canvas for sync text measurement on web. Reused across cards.
 let measureCanvas: HTMLCanvasElement | null = null;
@@ -65,6 +73,7 @@ export function ShellCard({
   renameShortcutHint = "Cmd+R",
   onMoveToWorkspace,
   moveToWorkspaceLabel,
+  groupedPosition,
 }: {
   shell: ShellPane;
   onPress?: () => void;
@@ -75,6 +84,7 @@ export function ShellCard({
   renameShortcutHint?: string;
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
+  groupedPosition?: GroupedRowPosition;
 }) {
   const explicitName = shell.display_name ?? shell.pane_title ?? null;
   const fitted = useFittedPath(shell.cwd);
@@ -88,7 +98,7 @@ export function ShellCard({
   const showMenu = !!(onStop || onRename || canMoveToWorkspace);
 
   return (
-    <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
+    <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}>
       <TouchableOpacity style={[styles.row, showMenu && styles.rowWithMenu]} onPress={onPress} activeOpacity={0.7}>
         <JobKindIcon kind="shell" />
         <View style={styles.info}>

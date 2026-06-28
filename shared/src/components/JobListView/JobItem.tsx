@@ -1,10 +1,10 @@
 import { Platform, Text, TouchableOpacity, View } from "react-native";
 
 import type { ListItem } from "./sign";
+import type { GroupedRowPosition } from "./sign";
 import { IDLE_STATUS } from "./sign";
 import { JobCard } from "../JobCard";
 import { RunningJobCard } from "../RunningJobCard";
-import { spacing } from "../../theme/spacing";
 import { JobListProcessItem } from "./ProcessItem";
 import { styles } from "./styles";
 import type { JobListViewHook } from "./useJobListView";
@@ -13,10 +13,10 @@ interface JobListJobItemProps {
   hook: JobListViewHook;
   item: Extract<ListItem, { kind: "job" }>;
   itemKey: string;
-  index: number;
+  groupedPosition?: GroupedRowPosition;
 }
 
-export function JobListJobItem({ hook, item, itemKey, index }: JobListJobItemProps) {
+export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobListJobItemProps) {
   const status = hook.statuses[item.job.slug] ?? IDLE_STATUS;
   const onPress = hook.onSelectJob ? () => hook.onSelectJob?.(item.job) : undefined;
   const rawJobColor = hook.selectedItems?.get(item.job.slug);
@@ -31,7 +31,7 @@ export function JobListJobItem({ hook, item, itemKey, index }: JobListJobItemPro
   const autoYesActive = jobPaneId ? hook.autoYesPaneIds?.has(jobPaneId) ?? false : false;
   const stopping = hook.stoppingSlugsExternal?.has(item.job.slug) ?? false;
   const onStop = isRunning && !stopping && hook.onStopJob ? () => hook.onStopJob?.(item.job.slug) : undefined;
-  const marginTop = Platform.OS === "web" && index > 0 ? spacing.sm : undefined;
+  const marginTop = Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
   const dimmed = item.idx % 2 === 1;
   const childProcesses = hook.matchedProcessesByJob.get(item.job.slug) ?? [];
   const hasChildProcesses = childProcesses.length > 0;
@@ -71,6 +71,7 @@ export function JobListJobItem({ hook, item, itemKey, index }: JobListJobItemPro
             dimmed,
             dataJobSlug: item.job.slug,
             defaultAgentProvider: hook.defaultAgentProvider,
+            groupedPosition,
           })
         ) : (
           <View
@@ -91,6 +92,7 @@ export function JobListJobItem({ hook, item, itemKey, index }: JobListJobItemPro
                 autoYesActive={autoYesActive}
                 stopping={stopping}
                 defaultAgentProvider={hook.defaultAgentProvider}
+                groupedPosition={groupedPosition}
               />
             ) : (
               <JobCard
@@ -100,6 +102,7 @@ export function JobListJobItem({ hook, item, itemKey, index }: JobListJobItemPro
                 selected={selected}
                 softBorder={softBorder}
                 defaultAgentProvider={hook.defaultAgentProvider}
+                groupedPosition={groupedPosition}
               />
             )}
           </View>
@@ -114,10 +117,10 @@ export function JobListJobItem({ hook, item, itemKey, index }: JobListJobItemPro
               hook={hook}
               process={process}
               itemKey={`job_${item.job.slug}_pane_${process.pane_id}`}
-              index={offset}
               inGroup
               sortGroup={`job:${item.job.slug}`}
               childOfJobSlug={item.job.slug}
+              groupedPosition={childProcesses.length <= 1 ? "single" : offset === 0 ? "first" : offset === childProcesses.length - 1 ? "last" : "middle"}
             />
           ))}
         </View>

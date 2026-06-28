@@ -1,29 +1,29 @@
 import { Platform, View } from "react-native";
 
 import type { DetectedProcess } from "../../types/process";
-import { spacing } from "../../theme/spacing";
 import { ProcessCard } from "../ProcessCard";
 import { styles } from "./styles";
+import type { GroupedRowPosition } from "./sign";
 import type { JobListViewHook } from "./useJobListView";
 
 interface JobListProcessItemProps {
   hook: JobListViewHook;
   process: DetectedProcess;
   itemKey: string;
-  index: number;
   inGroup?: boolean;
   sortGroup?: string;
   childOfJobSlug?: string;
+  groupedPosition?: GroupedRowPosition;
 }
 
 export function JobListProcessItem({
   hook,
   process,
   itemKey,
-  index,
   inGroup,
   sortGroup,
   childOfJobSlug,
+  groupedPosition,
 }: JobListProcessItemProps) {
   const terminalKey = `_term_${process.pane_id}`;
   const rawColor = hook.selectedItems?.get(process.pane_id) ?? hook.selectedItems?.get(terminalKey);
@@ -35,7 +35,7 @@ export function JobListProcessItem({
     (hook.openElsewhereContentKeys?.has(`proc:${process.pane_id}`) ?? false) ||
     (hook.openElsewhereContentKeys?.has(`term:${process.pane_id}`) ?? false);
   const softBorder = openElsewhere && !selected;
-  const marginTop = Platform.OS === "web" && index > 0 ? spacing.sm : undefined;
+  const marginTop = Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
   const onPress = hook.onSelectProcess ? () => hook.onSelectProcess?.(process) : undefined;
   const onStop = hook.onStopProcess ? () => hook.onStopProcess?.(process.pane_id) : undefined;
   const onRename = hook.onRenameProcess ? () => hook.onRenameProcess?.(process) : undefined;
@@ -59,6 +59,7 @@ export function JobListProcessItem({
       onRenameDraftChange: (value: string | null) => hook.onProcessRenameDraftChange?.(process.pane_id, value),
       onRenameStateChange: (editing: boolean) => hook.onProcessRenameStateChange?.(process.pane_id, editing),
       renameShortcutHint: hook.renameShortcutHint,
+      groupedPosition,
     })
     : (
       <ProcessCard
@@ -75,6 +76,7 @@ export function JobListProcessItem({
         onRenameDraftChange={(value) => hook.onProcessRenameDraftChange?.(process.pane_id, value)}
         onRenameStateChange={(editing) => hook.onProcessRenameStateChange?.(process.pane_id, editing)}
         renameShortcutHint={hook.renameShortcutHint}
+        groupedPosition={groupedPosition}
       />
     );
 
@@ -82,7 +84,7 @@ export function JobListProcessItem({
     return (
       <View
         key={itemKey}
-        style={[styles.jobChildProcess, Platform.OS === "web" && index > 0 ? { marginTop: spacing.xs } : undefined]}
+        style={[styles.jobChildProcess, Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? { marginTop: -1 } : undefined]}
       >
         {card}
       </View>

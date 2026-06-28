@@ -1,13 +1,19 @@
-export const colors = {
-  bg: "#0a0a0a",
-  surface: "#161616",
-  surfaceHover: "#1c1c1c",
-  border: "#2a2a2a",
-  borderLight: "#333",
+import { Platform } from "react-native";
 
-  text: "#e4e4e4",
-  textSecondary: "#98989d",
-  textMuted: "#555",
+const webColor = (token: string, fallback: string) => (
+  Platform.OS === "web" ? `var(${token}, ${fallback})` : fallback
+);
+
+export const colors = {
+  bg: webColor("--bg-primary", "#0a0a0a"),
+  surface: webColor("--bg-secondary", "#161616"),
+  surfaceHover: webColor("--hover-bg", "#1c1c1c"),
+  border: webColor("--border-color", "#2a2a2a"),
+  borderLight: webColor("--border-light", "#333"),
+
+  text: webColor("--text-primary", "#e4e4e4"),
+  textSecondary: webColor("--text-secondary", "#98989d"),
+  textMuted: webColor("--text-muted", "#555"),
 
   accent: "#7986cb",
   accentDim: "#5c6bc0",

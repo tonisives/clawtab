@@ -6,6 +6,13 @@ import type { RemoteJob, JobStatus } from "@clawtab/shared";
 import type { DetectedProcess, ClaudeQuestion, PaneContent, ShellPane } from "@clawtab/shared";
 import { JobCard, RunningJobCard, ProcessCard, ShellCard } from "@clawtab/shared";
 
+type GroupedRowPosition = "single" | "first" | "middle" | "last";
+
+function groupedWrapperStyle(position?: GroupedRowPosition) {
+  if (!position || position === "single" || position === "first") return null;
+  return { marginTop: -1 };
+}
+
 function PinIcon({ filled }: { filled: boolean }) {
   return (
     <svg
@@ -109,6 +116,7 @@ export function DraggableJobCard({
   defaultAgentProvider,
   pinned,
   onTogglePin,
+  groupedPosition,
 }: {
   job: RemoteJob;
   group: string;
@@ -126,6 +134,7 @@ export function DraggableJobCard({
   defaultAgentProvider?: DetectedProcess["provider"];
   pinned?: boolean;
   onTogglePin?: () => void;
+  groupedPosition?: GroupedRowPosition;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: job.slug,
@@ -152,9 +161,10 @@ export function DraggableJobCard({
         outline: "none",
         transform: CSS.Transform.toString(transform),
         transition,
-        borderRadius: 10,
+        borderRadius: groupedPosition && groupedPosition !== "single" ? 0 : 10,
         marginTop,
         position: "relative",
+        ...groupedWrapperStyle(groupedPosition),
       }}
       {...listeners}
       {...attributes}
@@ -185,6 +195,7 @@ export function DraggableJobCard({
           onStop={onStop}
           autoYesActive={autoYesActive}
           stopping={stopping}
+          groupedPosition={groupedPosition}
         />
       ) : (
         <JobCard
@@ -194,6 +205,7 @@ export function DraggableJobCard({
           selected={selected}
           softBorder={softBorder}
           defaultAgentProvider={defaultAgentProvider}
+          groupedPosition={groupedPosition}
         />
       )}
       {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
@@ -223,6 +235,7 @@ export function DraggableProcessCard({
   moveToWorkspaceLabel,
   pinned,
   onTogglePin,
+  groupedPosition,
 }: {
   process: DetectedProcess;
   sortGroup: string;
@@ -245,6 +258,7 @@ export function DraggableProcessCard({
   moveToWorkspaceLabel?: string;
   pinned?: boolean;
   onTogglePin?: () => void;
+  groupedPosition?: GroupedRowPosition;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
     id: process.pane_id,
@@ -273,8 +287,9 @@ export function DraggableProcessCard({
         transform: CSS.Transform.toString(transform),
         transition,
         marginTop,
-        borderRadius: 10,
+        borderRadius: groupedPosition && groupedPosition !== "single" ? 0 : 10,
         position: "relative",
+        ...groupedWrapperStyle(groupedPosition),
       }}
       {...listeners}
       {...attributes}
@@ -311,6 +326,7 @@ export function DraggableProcessCard({
         renameShortcutHint={renameShortcutHint}
         onMoveToWorkspace={onMoveToWorkspace}
         moveToWorkspaceLabel={moveToWorkspaceLabel}
+        groupedPosition={groupedPosition}
       />
       {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
     </div>
@@ -362,6 +378,7 @@ export function DraggableShellCard({
   moveToWorkspaceLabel,
   pinned,
   onTogglePin,
+  groupedPosition,
 }: {
   shell: ShellPane;
   onPress?: () => void;
@@ -374,6 +391,7 @@ export function DraggableShellCard({
   moveToWorkspaceLabel?: string;
   pinned?: boolean;
   onTogglePin?: () => void;
+  groupedPosition?: GroupedRowPosition;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `shell-${shell.pane_id}`,
@@ -390,7 +408,7 @@ export function DraggableShellCard({
     <div
       ref={setNodeRef}
       data-shell-id={shell.pane_id}
-      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none", position: "relative" }}
+      style={{ opacity: isDragging ? 0.4 : 1, cursor: "grab", touchAction: "none", outline: "none", position: "relative", ...groupedWrapperStyle(groupedPosition) }}
       {...listeners}
       {...attributes}
       tabIndex={-1}
@@ -405,6 +423,7 @@ export function DraggableShellCard({
         renameShortcutHint={renameShortcutHint}
         onMoveToWorkspace={onMoveToWorkspace}
         moveToWorkspaceLabel={moveToWorkspaceLabel}
+        groupedPosition={groupedPosition}
       />
       {onTogglePin ? <ShellControlsFrame pinned={!!pinned} onTogglePin={onTogglePin} /> : null}
     </div>

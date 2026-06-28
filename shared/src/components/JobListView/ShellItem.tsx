@@ -1,8 +1,8 @@
 import { Platform, View } from "react-native";
 
 import type { ShellPane } from "../../types/process";
-import { spacing } from "../../theme/spacing";
 import { ShellCard } from "../ShellCard";
+import type { GroupedRowPosition } from "./sign";
 import type { JobListViewHook } from "./useJobListView";
 
 interface JobListShellItemProps {
@@ -10,9 +10,10 @@ interface JobListShellItemProps {
   shell: ShellPane;
   itemKey: string;
   index: number;
+  groupedPosition?: GroupedRowPosition;
 }
 
-export function JobListShellItem({ hook, shell, itemKey, index }: JobListShellItemProps) {
+export function JobListShellItem({ hook, shell, itemKey, groupedPosition }: JobListShellItemProps) {
   const onPress = hook.onSelectShell ? () => hook.onSelectShell?.(shell) : undefined;
   const keyId = `_term_${shell.pane_id}`;
   const rawColor = hook.selectedItems?.get(keyId);
@@ -29,11 +30,11 @@ export function JobListShellItem({ hook, shell, itemKey, index }: JobListShellIt
     <View
       key={itemKey}
       {...(Platform.OS === "web" ? { dataSet: { shellId: shell.pane_id } } : {})}
-      style={Platform.OS === "web" && index > 0 ? { marginTop: spacing.sm } : undefined}
+      style={Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? { marginTop: -1 } : undefined}
     >
       {hook.customRenderShellCard
-        ? hook.customRenderShellCard({ shell, onPress, selected, softBorder, onStop, onRename, renameShortcutHint: hook.renameShortcutHint })
-        : <ShellCard shell={shell} onPress={onPress} selected={selected} softBorder={softBorder} onStop={onStop} onRename={onRename} renameShortcutHint={hook.renameShortcutHint} />
+        ? hook.customRenderShellCard({ shell, onPress, selected, softBorder, onStop, onRename, renameShortcutHint: hook.renameShortcutHint, groupedPosition })
+        : <ShellCard shell={shell} onPress={onPress} selected={selected} softBorder={softBorder} onStop={onStop} onRename={onRename} renameShortcutHint={hook.renameShortcutHint} groupedPosition={groupedPosition} />
       }
     </View>
   );

@@ -10,6 +10,15 @@ import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
 
+type GroupedRowPosition = "single" | "first" | "middle" | "last";
+
+function groupedCardStyle(position?: GroupedRowPosition) {
+  if (Platform.OS !== "web" || !position || position === "single") return null;
+  if (position === "first") return { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 };
+  if (position === "last") return { borderTopLeftRadius: 0, borderTopRightRadius: 0 };
+  return { borderRadius: 0 };
+}
+
 export const JobCard = memo(function JobCard({
   job,
   status,
@@ -17,6 +26,7 @@ export const JobCard = memo(function JobCard({
   selected,
   softBorder,
   defaultAgentProvider,
+  groupedPosition,
 }: {
   job: RemoteJob;
   status: JobStatus;
@@ -24,6 +34,7 @@ export const JobCard = memo(function JobCard({
   selected?: boolean | string;
   softBorder?: boolean;
   defaultAgentProvider?: ProcessProvider;
+  groupedPosition?: GroupedRowPosition;
 }) {
   const lastRun =
     status.state === "success"
@@ -39,7 +50,7 @@ export const JobCard = memo(function JobCard({
 
   return (
     <TouchableOpacity
-      style={[styles.card, !job.enabled && styles.cardDisabled, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}
+      style={[styles.card, !job.enabled && styles.cardDisabled, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}
       onPress={onPress}
       activeOpacity={0.7}
     >

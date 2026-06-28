@@ -15,6 +15,8 @@ import type { useViewingState } from "../hooks/useViewingState";
 import { formatShortcutSteps } from "../../../shortcuts";
 import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
 
+type GroupedRowPosition = "single" | "first" | "middle" | "last";
+
 function PinOverlay({ onUnpin }: { onUnpin: () => void }) {
   return (
     <button
@@ -187,7 +189,7 @@ export function JobsSidebar({
   const togglePin = settings.togglePin;
 
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider }) => {
+    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider; groupedPosition?: GroupedRowPosition }) => {
       const pinKey = `job:${props.job.slug}`;
       return (
         <DraggableJobCard
@@ -203,7 +205,7 @@ export function JobsSidebar({
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string }) => {
+    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string; groupedPosition?: GroupedRowPosition }) => {
       const target = moveToWorkspaceForCwd(props.process.cwd, props.process.matched_group);
       const pinKey = `process:${props.process.pane_id}`;
       return (
@@ -221,7 +223,7 @@ export function JobsSidebar({
   );
 
   const renderDraggableShellCard = useCallback(
-    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string }) => {
+    (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string; groupedPosition?: GroupedRowPosition }) => {
       const target = moveToWorkspaceForCwd(props.shell.cwd, props.shell.matched_group);
       const pinKey = `shell:${props.shell.pane_id}`;
       return (

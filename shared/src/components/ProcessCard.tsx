@@ -9,6 +9,14 @@ import { radius, spacing } from "../theme/spacing";
 import { JobKindIcon, kindForProcess } from "./JobKindIcon";
 
 const isWeb = Platform.OS === "web";
+type GroupedRowPosition = "single" | "first" | "middle" | "last";
+
+function groupedCardStyle(position?: GroupedRowPosition) {
+  if (!isWeb || !position || position === "single") return null;
+  if (position === "first") return { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 };
+  if (position === "last") return { borderTopLeftRadius: 0, borderTopRightRadius: 0 };
+  return { borderRadius: 0 };
+}
 
 export function ProcessCard({
   process,
@@ -26,6 +34,7 @@ export function ProcessCard({
   renameShortcutHint = "Cmd+R",
   onMoveToWorkspace,
   moveToWorkspaceLabel,
+  groupedPosition,
 }: {
   process: DetectedProcess;
   onPress?: () => void;
@@ -42,6 +51,7 @@ export function ProcessCard({
   renameShortcutHint?: string;
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
+  groupedPosition?: GroupedRowPosition;
 }) {
   const displayName = processDisplayTitle(process);
   const firstQueryTitle = compactProcessQuery(process.first_query);
@@ -139,7 +149,7 @@ export function ProcessCard({
   const kind = kindForProcess(process);
 
   return (
-    <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null]}>
+    <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={editing ? undefined : onPress}

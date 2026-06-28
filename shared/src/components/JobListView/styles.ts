@@ -16,6 +16,11 @@ export const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: colors.surface,
   },
+  webGroupedRows: {
+    borderRadius: 8,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+  },
   nativeGroupHeaderWrap: {
     marginHorizontal: spacing.md,
   },
