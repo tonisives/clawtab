@@ -4,6 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { PaneInstance, PtySpawnResult } from "./types";
 import { debugXtermPane, eventKey, isFocusPending, requestXtermPaneFocus } from "./paneRegistry";
 import { waitForViewportReady, wireResizeObserver } from "./paneResize";
+import { applyTerminalRuntimeOptions } from "./terminalTheme";
 
 type SetupCtx = {
   inst: PaneInstance;
@@ -17,7 +18,7 @@ async function replayCachedOutput(ctx: SetupCtx) {
   if (inst.cancelled) return;
   debugXtermPane(inst.paneId, "cache read", { elapsedMs: elapsed(), bytes: cachedBytes.length });
   if (cachedBytes.length > 0) {
-    inst.terminal.write(new Uint8Array(cachedBytes));
+    inst.terminal.write(new Uint8Array(cachedBytes), () => applyTerminalRuntimeOptions(inst.terminal, inst.container));
     debugXtermPane(inst.paneId, "cache written", { elapsedMs: elapsed(), bytes: cachedBytes.length });
   }
 }
@@ -36,7 +37,7 @@ async function wireOutputListeners(ctx: SetupCtx) {
       inst.firstContentOutputSeen = true;
       debugXtermPane(inst.paneId, "first content pty output", { elapsedMs: elapsed(), bytes: event.payload.length });
     }
-    inst.terminal.write(new Uint8Array(event.payload));
+    inst.terminal.write(new Uint8Array(event.payload), () => applyTerminalRuntimeOptions(inst.terminal, inst.container));
   });
   debugXtermPane(inst.paneId, "output listener ready", { elapsedMs: elapsed(), event: `pty-output-${key}` });
 

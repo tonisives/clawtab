@@ -14,12 +14,12 @@ export const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     borderRadius: 18,
     overflow: "hidden",
-    backgroundColor: colors.surface,
+    backgroundColor: colors.groupedSurface,
   },
   webGroupedRows: {
     borderRadius: 8,
     overflow: "hidden",
-    backgroundColor: colors.surface,
+    backgroundColor: colors.groupedSurface,
   },
   nativeGroupHeaderWrap: {
     marginHorizontal: spacing.md,
@@ -178,8 +178,7 @@ export const styles = StyleSheet.create({
     zIndex: 10,
   },
   nativeGroupSegmentRow: {
-    paddingVertical: spacing.xs,
-    paddingBottom: 10,
+    marginLeft: spacing.xs,
   },
   nativeToolbarRow: {
     paddingHorizontal: spacing.md,

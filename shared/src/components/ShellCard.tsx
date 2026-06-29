@@ -12,9 +12,9 @@ type GroupedRowPosition = "single" | "first" | "middle" | "last";
 
 function groupedCardStyle(position?: GroupedRowPosition) {
   if (!isWeb || !position || position === "single") return null;
-  if (position === "first") return { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 };
-  if (position === "last") return { borderTopLeftRadius: 0, borderTopRightRadius: 0 };
-  return { borderRadius: 0 };
+  if (position === "first") return { backgroundColor: colors.groupedSurface, borderBottomLeftRadius: 0, borderBottomRightRadius: 0 };
+  if (position === "last") return { backgroundColor: colors.groupedSurface, borderTopLeftRadius: 0, borderTopRightRadius: 0 };
+  return { backgroundColor: colors.groupedSurface, borderRadius: 0 };
 }
 
 // Lazily-allocated 2d canvas for sync text measurement on web. Reused across cards.

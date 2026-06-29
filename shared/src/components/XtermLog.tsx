@@ -1,5 +1,6 @@
 import { useRef, useImperativeHandle, forwardRef, useCallback, useState } from "react";
 import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
+import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
 
 export interface XtermLogHandle {
   /** Write base64-encoded terminal data */
@@ -70,8 +71,13 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#1c1c1e}
 <div id="terminal"></div>
 <script>
 var term = new Terminal({
-  fontSize: 12,
-  fontFamily: 'monospace',
+  fontSize: ${TERMINAL_FONT_SIZE},
+  fontFamily: ${JSON.stringify(TERMINAL_FONT_FAMILY)},
+  lineHeight: ${TERMINAL_LINE_HEIGHT},
+  letterSpacing: 0,
+  rescaleOverlappingGlyphs: true,
+  cursorStyle: 'bar',
+  cursorInactiveStyle: 'bar',
   theme: {
     background:'#1c1c1e',foreground:'#e4e4e4',cursor:'#7986cb',
     cursorAccent:'#0a0a0a',selectionBackground:'rgba(121,134,203,0.3)',

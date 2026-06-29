@@ -3,10 +3,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getTerminalTheme, subscribeTerminalThemeChange } from "@clawtab/shared";
 import "@xterm/xterm/css/xterm.css";
 import type { AppSettings } from "../../types";
 import { DEFAULT_SHORTCUTS, resolveShortcutSettings } from "../../shortcuts";
-import { TERMINAL_OPTIONS } from "./terminalTheme";
+import { applyTerminalRuntimeOptions, TERMINAL_OPTIONS } from "./terminalTheme";
 import {
   debugXtermPane,
   paneInstances,
@@ -16,6 +17,7 @@ import {
 import { attachPaneShortcuts } from "./paneShortcuts";
 import { setupPaneInstance } from "./paneSetup";
 import { RELEASE_GRACE_MS, type PaneInstance } from "./types";
+import type { TerminalTheme } from "@clawtab/shared";
 
 type PtySpawnResult = {
   native_cols: number;
@@ -24,6 +26,23 @@ type PtySpawnResult = {
 };
 
 let resumeListenerInstalled = false;
+let themeListenerInstalled = false;
+
+function applyTerminalTheme(inst: PaneInstance, theme: TerminalTheme) {
+  applyTerminalRuntimeOptions(inst.terminal, inst.container, theme);
+}
+
+function ensureTerminalThemeListener() {
+  if (themeListenerInstalled) return;
+  themeListenerInstalled = true;
+  subscribeTerminalThemeChange((theme) => {
+    for (const inst of paneInstances.values()) {
+      if (inst.cancelled) continue;
+      applyTerminalTheme(inst, theme);
+    }
+  });
+}
+
 function ensureResumeListener() {
   if (resumeListenerInstalled) return;
   resumeListenerInstalled = true;
@@ -143,6 +162,7 @@ export function createPaneInstance(paneId: string, tmuxSession: string, resolved
     lastSentRows: 0,
     resizeTimer: null,
   };
+  applyTerminalRuntimeOptions(inst.terminal, inst.container);
 
   loadShortcutSettings(inst);
   attachPaneShortcuts(inst);
@@ -180,6 +200,7 @@ function teardownPaneInstance(inst: PaneInstance) {
 
 export function acquirePane(paneId: string, tmuxSession: string, resolvedGroup: string): PaneInstance {
   ensureResumeListener();
+  ensureTerminalThemeListener();
   let inst = paneInstances.get(paneId);
   const created = !inst;
   if (!inst) {
@@ -191,6 +212,7 @@ export function acquirePane(paneId: string, tmuxSession: string, resolvedGroup: 
     inst.releaseTimer = null;
   }
   inst.refCount += 1;
+  applyTerminalTheme(inst, getTerminalTheme());
   debugXtermPane(paneId, `acquire refCount=${inst.refCount} created=${created} registrySize=${paneInstances.size}`);
   return inst;
 }

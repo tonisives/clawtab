@@ -71,6 +71,16 @@ export { JobDetailView } from "./components/JobDetailView";
 export { XtermLog } from "./components/XtermLog";
 export type { XtermLogHandle } from "./components/XtermLog";
 export { ReadOnlyXterm } from "./components/ReadOnlyXterm";
+export {
+  DARK_TERMINAL_THEME,
+  LIGHT_TERMINAL_THEME,
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+  TERMINAL_LINE_HEIGHT,
+  getTerminalTheme,
+  subscribeTerminalThemeChange,
+} from "./theme/terminal";
+export type { TerminalTheme } from "./theme/terminal";
 export { ShareSection } from "./components/ShareSection";
 export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
 export { PopupMenu } from "./components/PopupMenu";

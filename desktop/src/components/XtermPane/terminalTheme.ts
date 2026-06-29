@@ -1,32 +1,37 @@
 import type { ITerminalOptions } from "@xterm/xterm";
+import type { Terminal } from "@xterm/xterm";
+import { getTerminalTheme, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "@clawtab/shared";
+import type { TerminalTheme } from "@clawtab/shared";
 
 export const TERMINAL_OPTIONS: ITerminalOptions = {
-  fontSize: 12,
-  fontFamily: "monospace",
-  theme: {
-    background: "#1c1c1e",
-    foreground: "#e4e4e4",
-    cursor: "#7986cb",
-    cursorAccent: "#0a0a0a",
-    selectionBackground: "rgba(121, 134, 203, 0.3)",
-    selectionForeground: "#e4e4e4",
-    black: "#161616",
-    red: "#ff453a",
-    green: "#32d74b",
-    yellow: "#ff9f0a",
-    blue: "#7986cb",
-    magenta: "#da77f2",
-    cyan: "#66d9e8",
-    white: "#e4e4e4",
-    brightBlack: "#555",
-    brightRed: "#ff6b6b",
-    brightGreen: "#51cf66",
-    brightYellow: "#ffd43b",
-    brightBlue: "#91d5ff",
-    brightMagenta: "#e599f7",
-    brightCyan: "#99e9f2",
-    brightWhite: "#ffffff",
-  },
+  fontSize: TERMINAL_FONT_SIZE,
+  fontFamily: TERMINAL_FONT_FAMILY,
+  lineHeight: TERMINAL_LINE_HEIGHT,
+  letterSpacing: 0,
+  rescaleOverlappingGlyphs: true,
+  cursorStyle: "bar",
+  cursorInactiveStyle: "bar",
+  theme: getTerminalTheme(),
   allowProposedApi: true,
   scrollback: 10000,
 };
+
+export function applyTerminalRuntimeOptions(
+  terminal: Terminal,
+  container: HTMLElement,
+  theme: TerminalTheme = getTerminalTheme(),
+) {
+  terminal.options.fontSize = TERMINAL_OPTIONS.fontSize;
+  terminal.options.fontFamily = TERMINAL_OPTIONS.fontFamily;
+  terminal.options.lineHeight = TERMINAL_OPTIONS.lineHeight;
+  terminal.options.letterSpacing = TERMINAL_OPTIONS.letterSpacing;
+  terminal.options.rescaleOverlappingGlyphs = TERMINAL_OPTIONS.rescaleOverlappingGlyphs;
+  terminal.options.cursorStyle = TERMINAL_OPTIONS.cursorStyle;
+  terminal.options.cursorInactiveStyle = TERMINAL_OPTIONS.cursorInactiveStyle;
+  terminal.options.theme = theme;
+  container.style.backgroundColor = theme.background ?? "";
+  terminal.clearTextureAtlas();
+  if (terminal.rows > 0) {
+    terminal.refresh(0, terminal.rows - 1);
+  }
+}

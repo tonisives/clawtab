@@ -203,6 +203,7 @@ async fn dispatch_job_msg(
                 tmux_session: result.as_ref().ok().and_then(|r| r.tmux_session.clone()),
                 work_dir: result.as_ref().ok().map(|r| r.work_dir.clone()),
                 provider: result.as_ref().ok().map(|r| r.provider.clone()),
+                error: result.err(),
             })
         }
         ClientMessage::CreateJob { id, .. } => {

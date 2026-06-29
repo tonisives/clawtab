@@ -85,6 +85,63 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
             {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
           </Text>
         )}
+        {item.tabsToggle && (
+          <View
+            style={[
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                flexShrink: 0,
+                marginLeft: item.folderPath ? spacing.xs : "auto",
+              },
+              Platform.OS !== "web" ? styles.nativeGroupSegmentRow : null,
+            ]}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: colors.groupedSurface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 999,
+                padding: Platform.OS === "web" ? 2 : 3,
+              }}
+            >
+              {(["tabs", "jobs"] as const).map((view) => {
+                const active = item.tabsToggle!.view === view;
+                const count = view === "tabs" ? item.tabsToggle!.tabCount : item.tabsToggle!.jobCount;
+                const label = view === "tabs" ? "Tabs" : "Jobs";
+                return (
+                  <TouchableOpacity
+                    key={view}
+                    onPress={(event: any) => {
+                      event?.stopPropagation?.();
+                      hook.onGroupTabViewChange?.(item.tabsToggle!.group, view);
+                    }}
+                    activeOpacity={0.7}
+                    style={{
+                      paddingHorizontal: Platform.OS === "web" ? 9 : 12,
+                      paddingVertical: Platform.OS === "web" ? 2 : 8,
+                      borderRadius: 999,
+                      backgroundColor: active ? colors.accent : "transparent",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "600",
+                        color: active ? "#ffffff" : colors.textSecondary,
+                      }}
+                    >
+                      {label} ({count})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        )}
         {allowGroupMenu && (
           <TouchableOpacity
             ref={(ref: any) => {
@@ -110,7 +167,7 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
               }
               hook.setGroupMenu({ group: item.group, folderPath: item.folderPath });
             }}
-            style={styles.addJobBtn}
+            style={[styles.addJobBtn, item.tabsToggle ? { marginLeft: spacing.xs } : null]}
             activeOpacity={0.6}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -122,63 +179,6 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
           </TouchableOpacity>
         )}
       </TouchableOpacity>
-      {item.tabsToggle && (
-        <View
-          style={[
-            {
-              flexDirection: "row",
-              alignItems: "center",
-              marginLeft: Platform.OS === "web" ? spacing.lg : 0,
-              marginBottom: spacing.xs,
-            },
-            Platform.OS !== "web" ? styles.nativeGroupSegmentRow : null,
-          ]}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 999,
-              padding: Platform.OS === "web" ? 2 : 3,
-            }}
-          >
-            {(["tabs", "jobs"] as const).map((view) => {
-              const active = item.tabsToggle!.view === view;
-              const count = view === "tabs" ? item.tabsToggle!.tabCount : item.tabsToggle!.jobCount;
-              const label = view === "tabs" ? "Tabs" : "Jobs";
-              return (
-                <TouchableOpacity
-                  key={view}
-                  onPress={(event: any) => {
-                    event?.stopPropagation?.();
-                    hook.onGroupTabViewChange?.(item.tabsToggle!.group, view);
-                  }}
-                  activeOpacity={0.7}
-                  style={{
-                    paddingHorizontal: Platform.OS === "web" ? 10 : 12,
-                    paddingVertical: Platform.OS === "web" ? 2 : 10,
-                    borderRadius: 999,
-                    backgroundColor: active ? colors.accent : "transparent",
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "600",
-                      color: active ? "#ffffff" : colors.textSecondary,
-                    }}
-                  >
-                    {label} ({count})
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      )}
     </View>
   );
 }

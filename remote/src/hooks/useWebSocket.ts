@@ -260,6 +260,8 @@ export function useWebSocket() {
           backoffRef.current = 1000;
           connectRef.current();
         } else {
+          ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
+          ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
           replayActivePtySubscriptions();
         }
       } else if (wasActive) {

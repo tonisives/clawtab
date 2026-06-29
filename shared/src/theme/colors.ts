@@ -7,6 +7,7 @@ const webColor = (token: string, fallback: string) => (
 export const colors = {
   bg: webColor("--bg-primary", "#0a0a0a"),
   surface: webColor("--bg-secondary", "#161616"),
+  groupedSurface: webColor("--bg-tertiary", "#202020"),
   surfaceHover: webColor("--hover-bg", "#1c1c1c"),
   border: webColor("--border-color", "#2a2a2a"),
   borderLight: webColor("--border-light", "#333"),

@@ -151,6 +151,7 @@ export function usePty(
   const subscribedRef = useRef(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [hasOutput, setHasOutput] = useState(false);
   const gotDataRef = useRef(false);
   const pendingOutputRef = useRef<string[]>([]);
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -177,6 +178,7 @@ export function usePty(
     const onOutput = (data: string) => {
       if (!gotDataRef.current) {
         gotDataRef.current = true;
+        setHasOutput(true);
         setConnecting(false);
         setError(undefined);
       }
@@ -207,6 +209,10 @@ export function usePty(
       existing.getDimensions = getDimensions;
       subscribedRef.current = true;
       stateListener = (state: PtyConnectionState, message?: string) => {
+        if (state === "connecting") {
+          gotDataRef.current = false;
+          setHasOutput(false);
+        }
         setConnecting(state === "connecting");
         setError(state === "failed" ? message ?? "Terminal connection failed." : undefined);
       };
@@ -218,6 +224,10 @@ export function usePty(
     } else {
       if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
       stateListener = (state: PtyConnectionState, message?: string) => {
+        if (state === "connecting") {
+          gotDataRef.current = false;
+          setHasOutput(false);
+        }
         setConnecting(state === "connecting");
         setError(state === "failed" ? message ?? "Terminal connection failed." : undefined);
       };
@@ -303,5 +313,5 @@ export function usePty(
     [paneId],
   );
 
-  return { sendInput, sendResize, connecting, error };
+  return { sendInput, sendResize, connecting, error, hasOutput };
 }

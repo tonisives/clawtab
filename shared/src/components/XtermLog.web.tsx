@@ -2,6 +2,13 @@ import { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import {
+  getTerminalTheme,
+  subscribeTerminalThemeChange,
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+  TERMINAL_LINE_HEIGHT,
+} from "../theme/terminal";
 
 export interface XtermLogHandle {
   /** Write base64-encoded terminal data */
@@ -40,10 +47,18 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const interactiveRef = useRef(interactive);
     const visualOffsetMaxRef = useRef(0);
 
+    const enforceCursorStyle = () => {
+      const t = termRef.current;
+      if (!t) return;
+      t.options.cursorStyle = "bar";
+      t.options.cursorInactiveStyle = "bar";
+    };
+
     const applyVisualOffset = () => {
       const t = termRef.current;
       const el = containerRef.current;
       if (!t || !el) return;
+      enforceCursorStyle();
       const maxPx = Math.max(0, Math.round(visualOffsetMaxRef.current));
       const rowHeight = el.clientHeight / Math.max(1, t.rows);
       let lastContentY = -1;
@@ -102,38 +117,22 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     useEffect(() => {
       if (!containerRef.current) return;
       const el = containerRef.current;
+      const initialTheme = getTerminalTheme();
 
       const t = new Terminal({
-        fontSize: 12,
-        fontFamily: "monospace",
-        theme: {
-          background: "#1c1c1e",
-          foreground: "#e4e4e4",
-          cursor: "#7986cb",
-          cursorAccent: "#0a0a0a",
-          selectionBackground: "rgba(121, 134, 203, 0.3)",
-          selectionForeground: "#e4e4e4",
-          black: "#161616",
-          red: "#ff453a",
-          green: "#32d74b",
-          yellow: "#ff9f0a",
-          blue: "#7986cb",
-          magenta: "#da77f2",
-          cyan: "#66d9e8",
-          white: "#e4e4e4",
-          brightBlack: "#555",
-          brightRed: "#ff6b6b",
-          brightGreen: "#51cf66",
-          brightYellow: "#ffd43b",
-          brightBlue: "#91d5ff",
-          brightMagenta: "#e599f7",
-          brightCyan: "#99e9f2",
-          brightWhite: "#ffffff",
-        },
+        fontSize: TERMINAL_FONT_SIZE,
+        fontFamily: TERMINAL_FONT_FAMILY,
+        lineHeight: TERMINAL_LINE_HEIGHT,
+        letterSpacing: 0,
+        rescaleOverlappingGlyphs: true,
+        cursorStyle: "bar",
+        cursorInactiveStyle: "bar",
+        theme: initialTheme,
         allowProposedApi: true,
         scrollback: 10000,
         disableStdin: !interactive,
       });
+      el.style.backgroundColor = initialTheme.background ?? "";
 
       const fit = new FitAddon();
       t.loadAddon(fit);
@@ -168,6 +167,12 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       // Report initial size
       onResizeRef.current?.(t.cols, t.rows);
 
+      const unsubscribeTheme = subscribeTerminalThemeChange((theme) => {
+        t.options.theme = theme;
+        el.style.backgroundColor = theme.background ?? "";
+        if (t.rows > 0) t.refresh(0, t.rows - 1);
+      });
+
       let dataDisposable: { dispose(): void } | null = null;
       dataDisposable = t.onData((data) => {
         if (!interactiveRef.current) return;
@@ -175,6 +180,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       });
 
       return () => {
+        unsubscribeTheme();
         observer.disconnect();
         dataDisposable?.dispose();
         t.dispose();

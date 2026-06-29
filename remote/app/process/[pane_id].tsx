@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable, AppState as RNAppState } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
@@ -131,8 +131,10 @@ export default function ProcessDetailScreen() {
     sendResize,
     connecting: ptyConnecting,
     error: ptyError,
+    hasOutput: ptyHasOutput,
   } = usePty(pane_id, tmuxSession, termRef);
   useDemoPty(pane_id, !!demoProcess);
+  const [terminalEpoch, setTerminalEpoch] = useState(0);
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace("/(tabs)");
@@ -141,6 +143,17 @@ export default function ProcessDetailScreen() {
   useEffect(() => {
     terminalMenuOpenRef.current = terminalMenuOpen;
   }, [terminalMenuOpen]);
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    const sub = RNAppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        termRef.current = null;
+        setTerminalEpoch((value) => value + 1);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -335,18 +348,24 @@ export default function ProcessDetailScreen() {
   );
 
   if (waitingForData) {
+    const loading = processLoadingState({ connected, desktopOnline, hasTmuxSession: !!tmuxSession });
     return (
       <View style={styles.container}>
         <Stack.Screen options={{ title: pane_id }} />
         <View style={styles.center}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.loadingText}>
-            {!connected ? "Connecting..." : "Loading..."}
-          </Text>
+          <LoadingBar label={loading.label} progress={loading.progress} />
         </View>
       </View>
     );
   }
+
+  const terminalLoading = !ptyError && (!connected || !desktopOnline || !tmuxSession || ptyConnecting || !ptyHasOutput);
+  const terminalLoadingState = processLoadingState({
+    connected,
+    desktopOnline,
+    hasTmuxSession: !!tmuxSession,
+    waitingForAgent: terminalLoading,
+  });
 
   return (
     <View style={styles.container}>
@@ -445,6 +464,7 @@ export default function ProcessDetailScreen() {
 
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
         <XtermLog
+          key={`${pane_id}:${terminalEpoch}`}
           ref={termRef}
           onData={ptySendInput}
           onResize={sendResize}
@@ -456,12 +476,13 @@ export default function ProcessDetailScreen() {
           onExitCopyMode={exitCopyMode}
           copyModeActive={copyModeActive}
         />
-        {ptyConnecting || ptyError ? (
+        {terminalLoading || ptyError ? (
           <View style={styles.ptyConnectingOverlay} pointerEvents="none">
-            {ptyConnecting ? <ActivityIndicator size="small" color={colors.accent} /> : null}
-            <Text style={styles.ptyConnectingText}>
-              {ptyError ?? "Connecting to agent..."}
-            </Text>
+            <LoadingBar
+              label={ptyError ?? terminalLoadingState.label}
+              progress={ptyError ? 1 : terminalLoadingState.progress}
+              error={!!ptyError}
+            />
           </View>
         ) : null}
       </View>
@@ -498,6 +519,54 @@ export default function ProcessDetailScreen() {
           bottomInset={insets.bottom}
         />
       )}
+    </View>
+  );
+}
+
+function processLoadingState({
+  connected,
+  desktopOnline,
+  hasTmuxSession,
+  waitingForAgent = false,
+}: {
+  connected: boolean;
+  desktopOnline: boolean;
+  hasTmuxSession: boolean;
+  waitingForAgent?: boolean;
+}) {
+  if (!connected) return { label: "Connecting to relay...", progress: 0.28 };
+  if (!desktopOnline) return { label: "Connecting to desktop...", progress: 0.55 };
+  if (!hasTmuxSession) return { label: "Loading agent session...", progress: 0.72 };
+  if (waitingForAgent) return { label: "Loading terminal output...", progress: 0.88 };
+  return { label: "Connected", progress: 1 };
+}
+
+function LoadingBar({
+  label,
+  progress,
+  error = false,
+}: {
+  label: string;
+  progress: number;
+  error?: boolean;
+}) {
+  return (
+    <View style={styles.loadingBarWrap}>
+      <View style={styles.loadingBarHeader}>
+        {!error ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+        <Text style={[styles.loadingText, error && { color: colors.danger }]}>{label}</Text>
+      </View>
+      <View style={styles.loadingTrack}>
+        <View
+          style={[
+            styles.loadingFill,
+            {
+              width: `${Math.max(0.08, Math.min(1, progress)) * 100}%`,
+              backgroundColor: error ? colors.danger : colors.accent,
+            },
+          ]}
+        />
+      </View>
     </View>
   );
 }
@@ -804,17 +873,37 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: spacing.sm,
     left: spacing.sm,
+    right: spacing.sm,
     zIndex: 90,
     elevation: 90,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: "rgba(28, 28, 30, 0.88)",
+  },
+  loadingBarWrap: {
+    width: "100%",
+    maxWidth: 320,
+    gap: 8,
+  },
+  loadingBarHeader: {
+    minHeight: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  loadingTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+    backgroundColor: colors.border,
+  },
+  loadingFill: {
+    height: "100%",
+    borderRadius: 2,
   },
   ptyConnectingText: { color: colors.textMuted, fontSize: 12 },
   loadingText: { color: colors.textMuted, fontSize: 13 },

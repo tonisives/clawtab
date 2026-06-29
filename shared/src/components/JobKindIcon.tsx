@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, View, Image, Text } from "react-native";
 import type { RemoteJob } from "../types/job";
 import type { DetectedProcess, ProcessProvider } from "../types/process";
@@ -51,14 +51,27 @@ export function scheduledProviderKindForJob(job: RemoteJob, defaultAgentProvider
 }
 
 export function kindForProcess(process: DetectedProcess): JobKind {
-  switch (process.provider) {
+  const provider = process.provider;
+  switch (provider) {
     case "codex":
       return "codex";
     case "opencode":
       return "opencode";
     case "antigravity":
       return "antigravity";
+    case "shell":
+      return "shell";
     default:
+      {
+        const text = [
+          process.pane_title,
+          process.window_name,
+          process.display_name,
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (text.includes("codex")) return "codex";
+        if (text.includes("opencode")) return "opencode";
+        if (text.includes("agy") || text.includes("antigravity")) return "antigravity";
+      }
       return "claude";
   }
 }
@@ -145,6 +158,10 @@ export function JobKindIcon({
     : compact ? Math.round(size * 0.62) : Math.round(size * 0.66);
   const asset = sourceForKind(kind);
   const source = asset as any;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [kind, source]);
 
   return (
     <View
