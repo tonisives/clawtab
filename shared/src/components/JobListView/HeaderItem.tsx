@@ -45,6 +45,42 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
       : prevWasActive
         ? spacing.sm / 2
         : spacing.sm;
+  const menuButton = allowGroupMenu ? (
+    <TouchableOpacity
+      ref={(ref: any) => {
+        if (ref) hook.groupMenuTriggerRefs.current[item.group] = ref;
+        else delete hook.groupMenuTriggerRefs.current[item.group];
+        if (hook.groupMenu?.group === item.group) hook.groupMenuTriggerRef.current = ref;
+      }}
+      onPress={(event: any) => {
+        event.stopPropagation();
+        if (hook.groupMenu?.group === item.group) {
+          hook.setGroupMenu(null);
+          return;
+        }
+        hook.groupMenuTriggerRef.current = hook.groupMenuTriggerRefs.current[item.group] ?? event?.currentTarget ?? event?.target ?? null;
+        hook.setGroupMenuPos(null);
+        if (Platform.OS === "web") {
+          const node = event?.currentTarget ?? event?.target;
+          hook.groupMenuTriggerRef.current = node;
+          if (node?.getBoundingClientRect) {
+            const rect = node.getBoundingClientRect();
+            hook.setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
+          }
+        }
+        hook.setGroupMenu({ group: item.group, folderPath: item.folderPath });
+      }}
+      style={styles.addJobBtn}
+      activeOpacity={0.6}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <View style={styles.addJobBtnDots} pointerEvents="none">
+        <View style={styles.addJobBtnDot} />
+        <View style={styles.addJobBtnDot} />
+        <View style={styles.addJobBtnDot} />
+      </View>
+    </TouchableOpacity>
+  ) : null;
 
   return (
     <View
@@ -66,34 +102,26 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
         style={[styles.groupHeaderRow, isActiveWorkspace ? styles.activeWorkspaceHeaderRow : null]}
         activeOpacity={0.6}
       >
-        <TouchableOpacity
-          onPress={(event: any) => {
-            event?.stopPropagation?.();
-            hook.onToggleGroup(item.group);
-          }}
-          style={styles.groupHeaderArrowBtn}
-          activeOpacity={0.6}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Text style={styles.groupHeaderArrow}>
-            {isCollapsed ? "\u25B6" : "\u25BC"}
-          </Text>
-        </TouchableOpacity>
-        <Text style={[styles.groupHeader, isActiveWorkspace ? styles.activeWorkspaceHeaderText : null, isInactiveWorkspace ? { opacity: 0.55 } : null]}>{item.displayGroup}</Text>
-        {item.folderPath && (
-          <Text style={[styles.groupFolderPath, { textAlign: "right" }]} numberOfLines={1}>
-            {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
-          </Text>
-        )}
+        <View style={styles.groupHeaderTitleArea}>
+          <TouchableOpacity
+            onPress={(event: any) => {
+              event?.stopPropagation?.();
+              hook.onToggleGroup(item.group);
+            }}
+            style={styles.groupHeaderArrowBtn}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.groupHeaderArrow}>
+              {isCollapsed ? "\u25B6" : "\u25BC"}
+            </Text>
+          </TouchableOpacity>
+          <Text style={[styles.groupHeader, isActiveWorkspace ? styles.activeWorkspaceHeaderText : null, isInactiveWorkspace ? { opacity: 0.55 } : null]} numberOfLines={1}>{item.displayGroup}</Text>
+        </View>
         {item.tabsToggle && (
           <View
             style={[
-              {
-                flexDirection: "row",
-                alignItems: "center",
-                flexShrink: 0,
-                marginLeft: item.folderPath ? spacing.xs : "auto",
-              },
+              styles.groupHeaderSegmentSlot,
               Platform.OS !== "web" ? styles.nativeGroupSegmentRow : null,
             ]}
           >
@@ -106,6 +134,7 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
                 borderColor: colors.border,
                 borderRadius: 999,
                 padding: Platform.OS === "web" ? 2 : 3,
+                height: Platform.OS === "web" ? undefined : 34,
               }}
             >
               {(["tabs", "jobs"] as const).map((view) => {
@@ -122,14 +151,16 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
                     activeOpacity={0.7}
                     style={{
                       paddingHorizontal: Platform.OS === "web" ? 9 : 12,
-                      paddingVertical: Platform.OS === "web" ? 2 : 8,
+                      paddingVertical: Platform.OS === "web" ? 2 : 5,
                       borderRadius: 999,
                       backgroundColor: active ? colors.accent : "transparent",
+                      justifyContent: "center",
                     }}
                   >
                     <Text
                       style={{
                         fontSize: 12,
+                        lineHeight: Platform.OS === "web" ? undefined : 14,
                         fontWeight: "600",
                         color: active ? "#ffffff" : colors.textSecondary,
                       }}
@@ -142,42 +173,9 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
             </View>
           </View>
         )}
-        {allowGroupMenu && (
-          <TouchableOpacity
-            ref={(ref: any) => {
-              if (ref) hook.groupMenuTriggerRefs.current[item.group] = ref;
-              else delete hook.groupMenuTriggerRefs.current[item.group];
-              if (hook.groupMenu?.group === item.group) hook.groupMenuTriggerRef.current = ref;
-            }}
-            onPress={(event: any) => {
-              event.stopPropagation();
-              if (hook.groupMenu?.group === item.group) {
-                hook.setGroupMenu(null);
-                return;
-              }
-              hook.groupMenuTriggerRef.current = hook.groupMenuTriggerRefs.current[item.group] ?? event?.currentTarget ?? event?.target ?? null;
-              hook.setGroupMenuPos(null);
-              if (Platform.OS === "web") {
-                const node = event?.currentTarget ?? event?.target;
-                hook.groupMenuTriggerRef.current = node;
-                if (node?.getBoundingClientRect) {
-                  const rect = node.getBoundingClientRect();
-                  hook.setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
-                }
-              }
-              hook.setGroupMenu({ group: item.group, folderPath: item.folderPath });
-            }}
-            style={[styles.addJobBtn, item.tabsToggle ? { marginLeft: spacing.xs } : null]}
-            activeOpacity={0.6}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <View style={styles.addJobBtnDots} pointerEvents="none">
-              <View style={styles.addJobBtnDot} />
-              <View style={styles.addJobBtnDot} />
-              <View style={styles.addJobBtnDot} />
-            </View>
-          </TouchableOpacity>
-        )}
+        <View style={styles.groupHeaderMenuSlot}>
+          {menuButton}
+        </View>
       </TouchableOpacity>
     </View>
   );

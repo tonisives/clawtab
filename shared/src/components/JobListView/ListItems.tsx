@@ -166,7 +166,9 @@ export function JobListItems({ hook }: JobListItemsProps) {
     const key =
       item.kind === "header"
         ? `h_${item.group}`
-        : item.kind === "group-agent"
+        : item.kind === "group-footer"
+          ? uniqueKey(`gf_${item.group}`)
+          : item.kind === "group-agent"
             ? uniqueKey(`ga_${item.workDir}`)
             : item.kind === "hidden-section"
               ? "hidden_section"
@@ -200,8 +202,17 @@ function renderSingleItem(
   if (item.kind === "header") {
     return <JobListHeaderItem key={key} hook={hook} item={item} itemKey={key} index={index} prevWasActive={prevWasActive} />;
   }
+  if (item.kind === "group-footer") {
+    return (
+      <View key={key} style={styles.groupFooter}>
+        <Text style={styles.groupFolderPath} numberOfLines={1}>
+          {item.folderPath.replace(/^\/Users\/[^/]+/, "~")}
+        </Text>
+      </View>
+    );
+  }
   if (item.kind === "group-agent") {
-    return <JobListGroupAgentItem key={key} hook={hook} workDir={item.workDir} itemKey={key} />;
+    return <JobListGroupAgentItem key={key} hook={hook} workDir={item.workDir} footerPath={item.footerPath} itemKey={key} />;
   }
   if (item.kind === "hidden-section") {
     return <JobListHiddenSection key={key} hook={hook} itemKey={key} />;

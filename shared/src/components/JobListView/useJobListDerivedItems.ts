@@ -358,7 +358,7 @@ export function useJobListDerivedItems({
         let view: "tabs" | "jobs" = persisted ?? defaultView;
         if (view === "jobs" && !hasJobs) view = "tabs";
         const expanded = !collapsedGroups.has(entry.displayGroup);
-        const tabsToggle = expanded ? { group: entry.group, view, hasTabs: hasTabsContent, hasJobs, tabCount, jobCount } : undefined;
+        const tabsToggle = { group: entry.group, view, hasTabs: hasTabsContent, hasJobs, tabCount, jobCount };
         if (hasMultipleGroups || result.length > 0 || query) {
           result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, tabsToggle });
         }
@@ -371,7 +371,7 @@ export function useJobListDerivedItems({
             if (onRunAgent) {
               const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
               if (groupWorkDir) {
-                result.push({ kind: "group-agent", workDir: groupWorkDir });
+                result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
               }
             }
           } else {
@@ -384,9 +384,12 @@ export function useJobListDerivedItems({
             if (onRunAgent) {
               const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
               if (groupWorkDir) {
-                result.push({ kind: "group-agent", workDir: groupWorkDir });
+                result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
               }
             }
+          }
+          if (entry.folderPath && !onRunAgent) {
+            result.push({ kind: "group-footer", group: entry.displayGroup, folderPath: entry.folderPath });
           }
         }
       } else if (entry.type === "detected") {
@@ -396,7 +399,10 @@ export function useJobListDerivedItems({
             result.push({ kind: "process", process: proc });
           }
           if (onRunAgent && entry.folderPath) {
-            result.push({ kind: "group-agent", workDir: entry.folderPath });
+            result.push({ kind: "group-agent", workDir: entry.folderPath, footerPath: entry.folderPath });
+          }
+          if (entry.folderPath && !onRunAgent) {
+            result.push({ kind: "group-footer", group: entry.groupKey, folderPath: entry.folderPath });
           }
         }
       } else {

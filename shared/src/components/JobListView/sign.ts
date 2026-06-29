@@ -126,10 +126,11 @@ export interface JobListViewProps {
 
 export type ListItem =
   | { kind: "header"; group: string; displayGroup: string; folderPath?: string; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean; tabCount: number; jobCount: number } }
+  | { kind: "group-footer"; group: string; folderPath: string }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: DetectedProcess; inGroup?: boolean }
   | { kind: "shell"; shell: ShellPane }
-  | { kind: "group-agent"; workDir: string }
+  | { kind: "group-agent"; workDir: string; footerPath?: string }
   | { kind: "hidden-section" }
   | { kind: "hidden-header"; group: string; displayGroup: string };
 

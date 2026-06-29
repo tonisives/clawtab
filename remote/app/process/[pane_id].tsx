@@ -359,7 +359,7 @@ export default function ProcessDetailScreen() {
     );
   }
 
-  const terminalLoading = !ptyError && (!connected || !desktopOnline || !tmuxSession || ptyConnecting || !ptyHasOutput);
+  const terminalLoading = !demoProcess && !ptyError && (!connected || !desktopOnline || !tmuxSession || ptyConnecting || !ptyHasOutput);
   const terminalLoadingState = processLoadingState({
     connected,
     desktopOnline,
@@ -905,6 +905,5 @@ const styles = StyleSheet.create({
     height: "100%",
     borderRadius: 2,
   },
-  ptyConnectingText: { color: colors.textMuted, fontSize: 12 },
   loadingText: { color: colors.textMuted, fontSize: 13 },
 });

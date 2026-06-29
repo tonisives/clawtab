@@ -63,7 +63,7 @@ export const styles = StyleSheet.create({
   titleEditBtn: {
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
@@ -220,7 +220,7 @@ export const styles = StyleSheet.create({
   actionBtn: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     alignItems: "center" as const,
     justifyContent: "center" as const,
   },
@@ -231,6 +231,7 @@ export const styles = StyleSheet.create({
   actionBtnSquare: {
     width: 24,
     height: 24,
+    borderRadius: 12,
     paddingHorizontal: 0,
     paddingVertical: 0,
   },
@@ -640,11 +641,15 @@ export const styles = StyleSheet.create({
     lineHeight: 18,
   },
   moreBtn: {
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
+    width: 24,
+    height: 24,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
   },
   moreBtnText: {
     color: colors.textSecondary,

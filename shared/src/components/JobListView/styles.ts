@@ -1,4 +1,4 @@
-import { StyleSheet } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -12,11 +12,14 @@ export const styles = StyleSheet.create({
   },
   nativeGroupedRows: {
     marginHorizontal: spacing.md,
+    marginVertical: spacing.md,
     borderRadius: 18,
     overflow: "hidden",
     backgroundColor: colors.groupedSurface,
   },
   webGroupedRows: {
+    marginHorizontal: spacing.xs,
+    marginVertical: spacing.md,
     borderRadius: 8,
     overflow: "hidden",
     backgroundColor: colors.groupedSurface,
@@ -68,9 +71,41 @@ export const styles = StyleSheet.create({
   groupHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: spacing.xs,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  groupHeaderTitleArea: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+  },
+  groupHeaderSegmentSlot: {
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  groupHeaderMenuSlot: {
+    flexShrink: 0,
+    alignItems: "flex-end",
+  },
+  groupAgentFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingRight: spacing.sm,
+  },
+  groupAgentFooterPath: {
+    flex: 1,
+    textAlign: "right",
+  },
+  groupFooter: {
+    alignItems: "flex-end",
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
   activeWorkspaceGroup: {
     backgroundColor: colors.accentBg,
@@ -97,10 +132,13 @@ export const styles = StyleSheet.create({
     alignItems: "center",
   },
   addJobBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: Platform.OS === "web" ? 28 : 34,
+    height: Platform.OS === "web" ? 28 : 34,
+    borderRadius: Platform.OS === "web" ? 14 : 17,
     marginLeft: "auto",
+    backgroundColor: colors.groupedSurface,
+    borderWidth: 1,
+    borderColor: colors.border,
     justifyContent: "center",
     alignItems: "center",
     alignSelf: "center",
@@ -125,15 +163,16 @@ export const styles = StyleSheet.create({
   groupHeaderArrow: { fontFamily: "monospace", fontSize: 10, color: colors.textSecondary },
   groupHeader: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: Platform.OS === "web" ? 13 : 15,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 1,
+    flexShrink: 1,
   },
   groupFolderPath: {
     color: colors.textMuted,
     fontSize: 12,
-    flex: 1,
+    flexShrink: 1,
     minWidth: 0,
   },
   searchIcon: {
