@@ -220,6 +220,7 @@ export default function JobsScreen() {
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
     readSelection("process"),
   )
+  const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const [demoToastVisible, setDemoToastVisible] = useState(false)
   const { isWide } = useResponsive()
   const router = useRouter()
@@ -247,6 +248,13 @@ export default function JobsScreen() {
   const jobs = isDemo ? DEMO_JOBS : realJobs
   const statuses = isDemo ? DEMO_STATUSES : realStatuses
   const visibleDetectedProcesses = isDemo ? DEMO_PROCESSES : detectedProcesses
+
+  useEffect(() => {
+    setStoppingJobSlugs((prev) => {
+      const next = new Set([...prev].filter((slug) => statuses[slug]?.state === "running"))
+      return next.size === prev.size ? prev : next
+    })
+  }, [statuses])
 
   const DEFAULT_ENABLED = {
     claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
@@ -314,6 +322,50 @@ export default function JobsScreen() {
     if (send) {
       send({ type: "list_jobs", id: nextId() })
     }
+  }, [])
+
+  const handleStopJob = useCallback((slug: string) => {
+    const send = getWsSend()
+    if (!send) return
+    const id = nextId()
+    setStoppingJobSlugs((prev) => new Set(prev).add(slug))
+    send({ type: "stop_job", id, name: slug })
+    registerRequest<{ success: boolean; error?: string }>(id).then((ack) => {
+      if (ack.success !== false) return
+      setStoppingJobSlugs((prev) => {
+        const next = new Set(prev)
+        next.delete(slug)
+        return next
+      })
+      console.error(`Failed to stop job ${slug}:`, ack.error)
+    })
+  }, [])
+
+  const handleStopProcess = useCallback((paneId: string) => {
+    const send = getWsSend()
+    if (!send) return
+    const process = useJobsStore.getState().detectedProcesses.find((item) => item.pane_id === paneId)
+    if (process) {
+      useJobsStore.getState().upsertDetectedProcess({ ...process, _transient_state: "stopping" })
+    }
+    const id = nextId()
+    send({ type: "stop_detected_process", id, pane_id: paneId })
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
+    Promise.race([
+      registerRequest<{ success?: boolean; error?: string }>(id),
+      timeout,
+    ]).then((ack) => {
+      if (ack?.success === false) {
+        const current = useJobsStore.getState().detectedProcesses.find((item) => item.pane_id === paneId)
+        if (current) {
+          const { _transient_state: _transientState, ...rest } = current
+          useJobsStore.getState().upsertDetectedProcess(rest)
+        }
+        console.error(`Failed to stop process ${paneId}:`, ack.error)
+        return
+      }
+      useJobsStore.getState().removeDetectedProcess(paneId)
+    })
   }, [])
 
   const handleGroupTabViewChange = useCallback((group: string, view: "tabs" | "jobs") => {
@@ -536,6 +588,13 @@ export default function JobsScreen() {
       onPress?: () => void
       selected?: boolean | string
       softBorder?: boolean
+      onStop?: () => void
+      onTogglePin?: () => void
+      pinned?: boolean
+      autoYesActive?: boolean
+      stopping?: boolean
+      defaultAgentProvider?: ProcessProvider
+      groupedPosition?: "single" | "first" | "middle" | "last"
     }) => <DraggableJobCard {...props} />,
     [],
   )
@@ -547,6 +606,11 @@ export default function JobsScreen() {
       inGroup?: boolean
       selected?: boolean | string
       softBorder?: boolean
+      onStop?: () => void
+      onTogglePin?: () => void
+      pinned?: boolean
+      autoYesActive?: boolean
+      groupedPosition?: "single" | "first" | "middle" | "last"
     }) => <DraggableProcessCard {...props} />,
     [],
   )
@@ -624,6 +688,9 @@ export default function JobsScreen() {
         onSelectProcess={handleSelectProcess}
         pinnedItems={pinnedItems}
         onTogglePin={togglePin}
+        onStopJob={isDemo ? undefined : handleStopJob}
+        onStopProcess={isDemo ? undefined : handleStopProcess}
+        stoppingSlugs={stoppingJobSlugs}
         onRunAgent={runAgentHandler}
         agentModelOptions={agentModelOptions}
         groupTabView={groupTabView}
@@ -656,6 +723,9 @@ export default function JobsScreen() {
       onSelectProcess={handleSelectProcess}
       pinnedItems={pinnedItems}
       onTogglePin={togglePin}
+      onStopJob={isDemo ? undefined : handleStopJob}
+      onStopProcess={isDemo ? undefined : handleStopProcess}
+      stoppingSlugs={stoppingJobSlugs}
       onRunAgent={runAgentHandler}
       agentModelOptions={agentModelOptions}
       groupTabView={groupTabView}
@@ -936,6 +1006,9 @@ export default function JobsScreen() {
             onSelectProcess={handleSelectProcessWithTree}
             pinnedItems={pinnedItems}
             onTogglePin={togglePin}
+            onStopJob={isDemo ? undefined : handleStopJob}
+            onStopProcess={isDemo ? undefined : handleStopProcess}
+            stoppingSlugs={stoppingJobSlugs}
             selectedItems={split.selectedItems}
             focusedItemKey={split.focusedItemKey}
             onRunAgent={runAgentHandler}

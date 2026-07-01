@@ -1,6 +1,7 @@
 import { useDraggable } from "@dnd-kit/core"
 import type { RemoteJob, JobStatus } from "@clawtab/shared"
 import type { DetectedProcess } from "@clawtab/shared"
+import type { ProcessProvider } from "@clawtab/shared"
 import { JobCard, RunningJobCard, ProcessCard } from "@clawtab/shared"
 
 export type DragData =
@@ -16,16 +17,26 @@ export function DraggableJobCard({
   onPress,
   selected,
   softBorder,
+  onStop,
   onTogglePin,
   pinned,
+  autoYesActive,
+  stopping,
+  defaultAgentProvider,
+  groupedPosition,
 }: {
   job: RemoteJob
   status: JobStatus
   onPress?: () => void
   selected?: boolean | string
   softBorder?: boolean
+  onStop?: () => void
   onTogglePin?: () => void
   pinned?: boolean
+  autoYesActive?: boolean
+  stopping?: boolean
+  defaultAgentProvider?: ProcessProvider
+  groupedPosition?: "single" | "first" | "middle" | "last"
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-job-${job.slug}`,
@@ -40,9 +51,32 @@ export function DraggableJobCard({
       {...attributes}
     >
       {status.state === "running" ? (
-        <RunningJobCard job={job} status={status} onPress={onPress} selected={selected} softBorder={softBorder} onTogglePin={onTogglePin} pinned={pinned} />
+        <RunningJobCard
+          job={job}
+          status={status}
+          onPress={onPress}
+          selected={selected}
+          softBorder={softBorder}
+          onStop={onStop}
+          onTogglePin={onTogglePin}
+          pinned={pinned}
+          autoYesActive={autoYesActive}
+          stopping={stopping}
+          defaultAgentProvider={defaultAgentProvider}
+          groupedPosition={groupedPosition}
+        />
       ) : (
-        <JobCard job={job} status={status} onPress={onPress} onTogglePin={onTogglePin} pinned={pinned} selected={selected} softBorder={softBorder} />
+        <JobCard
+          job={job}
+          status={status}
+          onPress={onPress}
+          onTogglePin={onTogglePin}
+          pinned={pinned}
+          selected={selected}
+          softBorder={softBorder}
+          defaultAgentProvider={defaultAgentProvider}
+          groupedPosition={groupedPosition}
+        />
       )}
     </div>
   )
@@ -54,16 +88,22 @@ export function DraggableProcessCard({
   inGroup,
   selected,
   softBorder,
+  onStop,
   onTogglePin,
   pinned,
+  autoYesActive,
+  groupedPosition,
 }: {
   process: DetectedProcess
   onPress?: () => void
   inGroup?: boolean
   selected?: boolean | string
   softBorder?: boolean
+  onStop?: () => void
   onTogglePin?: () => void
   pinned?: boolean
+  autoYesActive?: boolean
+  groupedPosition?: "single" | "first" | "middle" | "last"
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-process-${process.pane_id}`,
@@ -77,7 +117,18 @@ export function DraggableProcessCard({
       {...listeners}
       {...attributes}
     >
-      <ProcessCard process={process} onPress={onPress} inGroup={inGroup} selected={selected} softBorder={softBorder} onTogglePin={onTogglePin} pinned={pinned} />
+      <ProcessCard
+        process={process}
+        onPress={onPress}
+        inGroup={inGroup}
+        selected={selected}
+        softBorder={softBorder}
+        onStop={onStop}
+        onTogglePin={onTogglePin}
+        pinned={pinned}
+        autoYesActive={autoYesActive}
+        groupedPosition={groupedPosition}
+      />
     </div>
   )
 }
