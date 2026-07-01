@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { JobKindIcon, PopupMenu } from "@clawtab/shared";
+import { colors, JobKindIcon, PopupMenu } from "@clawtab/shared";
 import type { ProcessProvider } from "@clawtab/shared";
 import {
   buildModelOptions,
@@ -147,30 +147,46 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
             <span style={{ color: "var(--text-muted)", fontSize: 9, marginTop: -1 }}>&#9662;</span>
           </button>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
-          {launchableOptions.map((opt) => (
-            <button
-              key={`${opt.provider}:${opt.modelId ?? ""}`}
-              onClick={() => { void launch(opt.provider, opt.modelId); }}
-              disabled={sending}
-              style={launchItemStyle(sending)}
-            >
-              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18 }}>
-                <JobKindIcon kind={opt.provider} size={16} compact bare />
-              </span>
-              <span style={{ flex: 1, textAlign: "left" }}>{opt.label}</span>
-            </button>
+        <div style={launchListStyle}>
+          {launchableOptions.map((opt, index) => (
+            <Fragment key={`${opt.provider}:${opt.modelId ?? ""}`}>
+              <div
+                role="button"
+                tabIndex={sending ? -1 : 0}
+                aria-disabled={sending}
+                onClick={() => { if (!sending) void launch(opt.provider, opt.modelId); }}
+                onKeyDown={(e) => {
+                  if (sending || (e.key !== "Enter" && e.key !== " ")) return;
+                  e.preventDefault();
+                  void launch(opt.provider, opt.modelId);
+                }}
+                style={launchItemStyle(sending)}
+              >
+                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18 }}>
+                  <JobKindIcon kind={opt.provider} size={16} compact bare />
+                </span>
+                <span style={{ flex: 1, textAlign: "left" }}>{opt.label}</span>
+              </div>
+              {index < launchableOptions.length ? <div style={launchSeparatorStyle} /> : null}
+            </Fragment>
           ))}
-          <button
-            onClick={() => { void launch("shell", null); }}
-            disabled={sending}
+          <div
+            role="button"
+            tabIndex={sending ? -1 : 0}
+            aria-disabled={sending}
+            onClick={() => { if (!sending) void launch("shell", null); }}
+            onKeyDown={(e) => {
+              if (sending || (e.key !== "Enter" && e.key !== " ")) return;
+              e.preventDefault();
+              void launch("shell", null);
+            }}
             style={launchItemStyle(sending)}
           >
             <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18 }}>
               <JobKindIcon kind="shell" size={16} compact bare />
             </span>
             <span style={{ flex: 1, textAlign: "left" }}>Terminal</span>
-          </button>
+          </div>
         </div>
       </div>
       {folderMenuOpen && (
@@ -203,19 +219,40 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
   );
 }
 
-function launchItemStyle(disabled: boolean): React.CSSProperties {
+const launchListStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  marginTop: 4,
+  borderRadius: 8,
+  overflow: "hidden",
+  background: colors.groupedSurface,
+};
+
+const launchSeparatorStyle: CSSProperties = {
+  height: 1,
+  background: colors.border,
+  flexShrink: 0,
+};
+
+function launchItemStyle(disabled: boolean): CSSProperties {
   return {
     display: "flex",
     alignItems: "center",
     gap: 10,
     padding: "8px 12px",
-    borderRadius: 6,
-    background: "rgba(255, 255, 255, 0.03)",
-    border: "1px solid var(--border-light, rgba(255,255,255,0.08))",
+    borderRadius: 0,
+    background: "transparent",
+    backgroundColor: "transparent",
+    border: "none",
+    appearance: "none",
+    WebkitAppearance: "none",
+    boxShadow: "none",
     cursor: disabled ? "default" : "pointer",
-    color: "var(--text)",
+    color: colors.text,
     fontSize: 13,
     fontFamily: "inherit",
+    margin: 0,
+    outline: "none",
     opacity: disabled ? 0.5 : 1,
     width: "100%",
     textAlign: "left",

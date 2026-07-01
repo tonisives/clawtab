@@ -63,11 +63,12 @@ interface PopupMenuProps {
   nativePlacement?: "auto" | "above" | "below";
 }
 
-function HoverableItem({ item, onPress, highlighted = false, onHover }: {
+function HoverableItem({ item, onPress, highlighted = false, onHover, showDivider = false }: {
   item: Extract<PopupMenuItem, { type: "item" }> | Extract<PopupMenuItem, { type: "submenu" }>;
   onPress: () => void;
   highlighted?: boolean;
   onHover?: () => void;
+  showDivider?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const webProps = isWeb ? {
@@ -87,6 +88,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
     <TouchableOpacity
       style={[
         styles.item,
+        showDivider && styles.itemDivider,
         active && styles.itemActive,
         highlighted && styles.itemHover,
         hovered && styles.itemHover,
@@ -363,6 +365,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
         if (item.type === "separator") {
           return <View key={`sep-${i}`} style={styles.separator} />;
         }
+        const showDivider = activeItems[i + 1] != null && activeItems[i + 1]?.type !== "separator";
         if (item.type === "submenu") {
           return (
             <HoverableItem
@@ -370,6 +373,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
               item={item}
               highlighted={i === highlightedIndex}
               onHover={() => setHighlightedIndex(i)}
+              showDivider={showDivider}
               onPress={() => setSubmenu({ label: item.label, items: item.items })}
             />
           );
@@ -380,6 +384,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
             item={item}
             highlighted={i === highlightedIndex}
             onHover={() => setHighlightedIndex(i)}
+            showDivider={showDivider}
             onPress={() => { onClose(); item.onPress(); }}
           />
         );
@@ -458,6 +463,13 @@ const styles = StyleSheet.create({
       paddingVertical: 13,
       minHeight: 48,
       justifyContent: "center",
+    }),
+  },
+  itemDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+    ...(isWeb ? {} : {
+      borderBottomColor: "rgba(255,255,255,0.11)",
     }),
   },
   itemActive: {
