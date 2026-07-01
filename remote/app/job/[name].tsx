@@ -421,7 +421,7 @@ function TerminalKeyboardToolbar({
   return (
     <View style={[styles.keyboardToolbar, { bottom }]}>
       <TouchableOpacity style={styles.keyboardToolBtn} onPress={onDismiss} activeOpacity={0.7}>
-        <Ionicons name="close" size={20} color={colors.text} />
+        <Ionicons name="chevron-down" size={20} color={colors.text} />
       </TouchableOpacity>
       <TouchableOpacity style={styles.keyboardToolBtnWide} onPress={onEscape} activeOpacity={0.7}>
         <Text style={styles.keyboardToolText}>Esc</Text>
