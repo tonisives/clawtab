@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import { Stack } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, StyleSheet, Platform } from "react-native";
+import { View, ActivityIndicator, Platform, StyleSheet } from "react-native";
 import { useAuthStore } from "../src/store/auth";
 import { useWebSocket } from "../src/hooks/useWebSocket";
 import { useJobsStore } from "../src/store/jobs";
@@ -10,6 +10,25 @@ import { loadCache } from "../src/lib/jobCache";
 import { loadPendingAnswers } from "../src/lib/pendingAnswers";
 import { handleColdStartAnswer, useNotifications } from "../src/hooks/useNotifications";
 import { colors } from "../src/theme/colors";
+import { NotificationsMenuButton } from "../src/components/NotificationsMenuButton";
+import { useResponsive } from "../src/hooks/useResponsive";
+
+const navTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: colors.accent,
+    background: colors.bg,
+    card: colors.bg,
+    text: colors.text,
+    border: colors.border,
+    notification: colors.warning,
+  },
+};
+
+function RootHeaderRight() {
+  return <NotificationsMenuButton hideWhenEmpty countOnly showDemoQuestions={false} />;
+}
 
 function useWebDarkScrollbars() {
   useEffect(() => {
@@ -51,6 +70,7 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   useWebDarkScrollbars();
+  const { isWide } = useResponsive();
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
@@ -70,10 +90,41 @@ export default function RootLayout() {
   }
 
   const content = (
-    <View style={styles.root}>
-      <Stack screenOptions={{ headerShown: false }} />
-      <StatusBar style="light" />
-    </View>
+    <ThemeProvider value={navTheme}>
+      <View style={styles.root}>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen
+            name="(tabs)"
+            options={{
+              headerShown: !isWide,
+              title: "ClawTab",
+              headerLargeTitle: true,
+              headerTransparent: true,
+              headerStyle: { backgroundColor: "transparent" },
+              headerTintColor: colors.text,
+              headerShadowVisible: false,
+              headerLargeTitleStyle: styles.headerLargeTitle,
+              headerTitleStyle: styles.headerTitle,
+              headerRight: () => <RootHeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="notifications"
+            options={{
+              headerShown: true,
+              title: "Notifications",
+              headerStyle: { backgroundColor: colors.bg },
+              headerTintColor: colors.text,
+              headerTitleStyle: styles.headerTitle,
+              headerShadowVisible: true,
+              headerBackTitle: "",
+              headerBackButtonDisplayMode: "minimal",
+            }}
+          />
+        </Stack>
+        <StatusBar style="light" />
+      </View>
+    </ThemeProvider>
   );
 
   if (!isAuthenticated) {
@@ -97,5 +148,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: colors.bg,
+  },
+  headerLargeTitle: {
+    color: colors.text,
+    fontWeight: "700",
+  },
+  headerTitle: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: "600",
   },
 });

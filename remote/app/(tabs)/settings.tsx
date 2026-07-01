@@ -7,12 +7,9 @@ import {
   ActivityIndicator,
   ScrollView,
   RefreshControl,
-  Image,
-  Linking,
   Platform,
 } from "react-native"
-import { useRouter } from "expo-router"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { Stack, useRouter } from "expo-router"
 import { useAuthStore } from "../../src/store/auth"
 import { useWsStore } from "../../src/store/ws"
 import { useJobsStore } from "../../src/store/jobs"
@@ -26,23 +23,6 @@ import { colors } from "../../src/theme/colors"
 import { radius, spacing } from "../../src/theme/spacing"
 
 type SubStatus = api.SubscriptionStatus | null
-
-function MobileHeader() {
-  const insets = useSafeAreaInsets()
-  const topInset = Math.max(insets.top - 22, 0)
-
-  return (
-    <View style={styles.mobileHeaderWrap}>
-      <View style={{ height: topInset }} />
-      <View style={styles.mobileHeader}>
-        <Pressable onPress={() => Linking.openURL("https://clawtab.cc")} style={styles.mobileBrand}>
-          <Image source={require("../../assets/clawtab-icon.png")} style={styles.mobileBrandIcon} />
-          <Text style={styles.mobileBrandText}>ClawTab</Text>
-        </Pressable>
-      </View>
-    </View>
-  )
-}
 
 export default function SettingsScreen({ inModal = false }: { inModal?: boolean }) {
   const userId = useAuthStore((s) => s.userId)
@@ -215,8 +195,17 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
 
   return (
     <>
+      {!isWide && !inModal ? (
+        <Stack.Screen
+          options={{
+            title: "ClawTab",
+            headerLargeTitle: true,
+          }}
+        />
+      ) : null}
       <ScrollView
         style={styles.scrollContainer}
+        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ flexGrow: 1 }}
         automaticallyAdjustKeyboardInsets
         scrollEventThrottle={16}
@@ -228,7 +217,6 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
           />
         }
       >
-        {!isWide && !inModal ? <MobileHeader /> : null}
         <ContentContainer>
           <View style={[styles.container, isWide && !inModal && styles.containerWide]}>
             <View style={styles.section}>
@@ -411,33 +399,6 @@ const styles = StyleSheet.create({
   },
   containerWide: {
     paddingTop: 48,
-  },
-  mobileHeader: {
-    height: 36,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-  },
-  mobileHeaderWrap: {
-    backgroundColor: colors.bg,
-    paddingBottom: spacing.lg,
-  },
-  mobileBrand: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    transform: [{ translateY: -10 }],
-  },
-  mobileBrandIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 7,
-  },
-  mobileBrandText: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "700",
   },
   section: {
     gap: spacing.md,

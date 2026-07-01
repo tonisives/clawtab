@@ -14,8 +14,9 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
-import { HeaderBackButton, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
+import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -43,6 +44,7 @@ function encodeTerminalInput(text: string): string {
 export default function ProcessDetailScreen() {
   const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();
   const router = useRouter();
+  const goBack = useDetailBack("/(tabs)");
   const insets = useSafeAreaInsets();
   // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
   // We encode % as _pct_ in URLs and decode it back here.
@@ -141,11 +143,6 @@ export default function ProcessDetailScreen() {
     hasOutput: ptyHasOutput,
   } = usePty(pane_id, tmuxSession, termRef);
   useDemoPty(pane_id, !!demoProcess);
-  const goBack = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/(tabs)");
-  }, [router]);
-
   useEffect(() => {
     terminalMenuOpenRef.current = terminalMenuOpen;
   }, [terminalMenuOpen]);
@@ -289,7 +286,7 @@ export default function ProcessDetailScreen() {
     }, 30);
   }, []);
 
-  const doStop = async () => {
+  const doStop = useCallback(async () => {
     const send = getWsSend();
     if (!send || stopping) return;
     setStopping(true);
@@ -306,14 +303,14 @@ export default function ProcessDetailScreen() {
       else router.replace("/(tabs)");
     }
     setStopping(false);
-  };
+  }, [pane_id, router, stopping]);
 
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     confirm("Stop process", `Kill the Claude process in ${displayName}?`, doStop);
-  };
+  }, [displayName, doStop]);
 
   const [starting, setStarting] = useState(false);
-  const handleStart = async () => {
+  const handleStart = useCallback(async () => {
     const send = getWsSend();
     if (!send || starting) return;
     setStarting(true);
@@ -321,7 +318,7 @@ export default function ProcessDetailScreen() {
     const id = nextId();
     send({ type: "run_agent", id, prompt: "", work_dir: workDir });
     setTimeout(() => setStarting(false), 3000);
-  };
+  }, [lastProcess, process, starting]);
 
   const isAlive = !!process || !!paneQuestion;
   const closeContextMenu = useCallback(() => {
@@ -353,12 +350,21 @@ export default function ProcessDetailScreen() {
     },
     [handleStart, handleStop, isAlive, isPinned, pinKey, starting, stopping, togglePin],
   );
-
   if (waitingForData) {
     const loading = processLoadingState({ connected, desktopOnline, hasTmuxSession: !!tmuxSession });
     return (
       <View style={styles.container}>
-        <Stack.Screen options={{ title: pane_id }} />
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            title: pane_id,
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "600" },
+            headerBackTitle: "",
+            headerBackButtonDisplayMode: "minimal",
+          }}
+        />
         <View style={styles.center}>
           <LoadingBar label={loading.label} progress={loading.progress} />
         </View>
@@ -373,11 +379,16 @@ export default function ProcessDetailScreen() {
     hasTmuxSession: !!tmuxSession,
     waitingForAgent: terminalLoading,
   });
-
   return (
     <View style={styles.container}>
       <Stack.Screen
         options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.bg },
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontWeight: "600" },
+          headerBackTitle: "",
+          headerBackButtonDisplayMode: "minimal",
           headerTitle: () => (
             <HeaderTitleWithIcon
               title={headerTitle}
@@ -385,7 +396,6 @@ export default function ProcessDetailScreen() {
               onPress={showContextMenu ? closeContextMenu : undefined}
             />
           ),
-          headerLeft: () => <HeaderBackButton onPress={goBack} />,
           headerRight: () => (
             <View ref={contextMenuRef} style={styles.headerRightSlot}>
               <TouchableOpacity
@@ -410,7 +420,7 @@ export default function ProcessDetailScreen() {
                   ] : [
                     { type: "item", label: isPinned ? "Unpin" : "Pin", onPress: () => { togglePin(pinKey); setShowContextMenu(false); }, color: colors.accent },
                     { type: "separator" },
-                    { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
+                    { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.success },
                   ]}
                 />
               )}

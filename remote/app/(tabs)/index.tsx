@@ -8,11 +8,9 @@ import {
   Modal,
   Pressable,
   TextInput,
-  Image,
-  Linking,
   KeyboardAvoidingView,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { Stack, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -24,7 +22,6 @@ import { useJobFilterStore } from "../../src/store/jobFilter"
 import { usePinsStore } from "../../src/store/pins"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
-import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import { LoadingBar } from "../../src/components/LoadingBar"
 import {
   JobListView,
@@ -196,23 +193,6 @@ function readGroupTabView(): GroupTabView {
 function saveGroupTabView(value: GroupTabView) {
   if (Platform.OS !== "web" || typeof localStorage === "undefined") return
   localStorage.setItem(GROUP_TAB_VIEW_STORAGE_KEY, JSON.stringify(value))
-}
-
-function MobileHeader() {
-  const insets = useSafeAreaInsets()
-  const topInset = Math.max(insets.top - 22, 0)
-
-  return (
-    <View style={styles.mobileHeaderWrap}>
-      <View style={{ height: topInset }} />
-      <View style={styles.mobileHeader}>
-        <Pressable onPress={() => Linking.openURL("https://clawtab.cc")} style={styles.mobileBrand}>
-          <Image source={require("../../assets/clawtab-icon.png")} style={styles.mobileBrandIcon} />
-          <Text style={styles.mobileBrandText}>ClawTab</Text>
-        </Pressable>
-      </View>
-    </View>
-  )
 }
 
 export default function JobsScreen() {
@@ -728,7 +708,6 @@ export default function JobsScreen() {
       onSetAllGroupTabView={handleSetAllGroupTabView}
       headerContent={
         <>
-          <MobileHeader />
           {isDemo ? <DemoBanner /> : null}
           {bannerContent}
         </>
@@ -784,10 +763,13 @@ export default function JobsScreen() {
   if (!isWide) {
     return (
       <>
+        <Stack.Screen
+          options={{
+            title: "ClawTab",
+            headerLargeTitle: true,
+          }}
+        />
         {mobileJobList}
-        <View style={[styles.floatingNotifications, { top: insets.top + 17 }]}>
-          <NotificationsMenuButton hideWhenEmpty variant="fluid" />
-        </View>
         <Modal visible={searchOpen} transparent animationType="fade" onRequestClose={closeSearch}>
           <KeyboardAvoidingView
             style={styles.searchKeyboardRoot}
@@ -1051,42 +1033,9 @@ export default function JobsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  mobileHeader: {
-    height: 36,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.lg,
-  },
-  mobileHeaderWrap: {
-    backgroundColor: colors.bg,
-    paddingBottom: spacing.lg,
-  },
   mobileListContent: {
     padding: 0,
     paddingBottom: spacing.lg,
-  },
-  mobileBrand: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    transform: [{ translateY: -10 }],
-  },
-  mobileBrandIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 7,
-  },
-  mobileBrandText: {
-    color: colors.text,
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  floatingNotifications: {
-    position: "absolute",
-    right: 12,
-    zIndex: 100,
-    elevation: 100,
   },
   splitContainer: {
     flex: 1,

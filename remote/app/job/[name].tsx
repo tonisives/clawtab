@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
-import { useLocalSearchParams, useRouter, Stack } from "expo-router";
+import { useLocalSearchParams, Stack } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,7 +19,8 @@ import { createWsTransport } from "../../src/transport/wsTransport";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
-import { HeaderBackButton, HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
@@ -92,7 +93,7 @@ export default function JobDetailScreen() {
   const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus;
   const { logs } = useLogs(slug);
   const runs = useRunsStore((s) => s.runs[slug]) ?? null;
-  const router = useRouter();
+  const goBack = useDetailBack("/(tabs)");
   const [runsLoading, setRunsLoading] = useState(false);
   const connected = useWsStore((s) => s.connected);
   const questions = useNotificationStore((s) => s.questions);
@@ -185,11 +186,6 @@ export default function JobDetailScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const terminalMenuOpenRef = useRef(false);
-  const goBack = useCallback(() => {
-    if (router.canGoBack()) router.back();
-    else router.replace("/(tabs)");
-  }, [router]);
-
   useEffect(() => {
     terminalMenuOpenRef.current = terminalMenuOpen;
   }, [terminalMenuOpen]);
@@ -302,13 +298,22 @@ export default function JobDetailScreen() {
     ),
     [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom],
   );
-
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
     return (
       <View style={styles.container}>
-        <Stack.Screen options={{ title: name }} />
+        <Stack.Screen
+          options={{
+            headerShown: true,
+            title: name,
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.text,
+            headerTitleStyle: { fontWeight: "600" },
+            headerBackTitle: "",
+            headerBackButtonDisplayMode: "minimal",
+          }}
+        />
         <View style={styles.center}>
           {waiting ? (
             <>
@@ -329,13 +334,18 @@ export default function JobDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
+          headerShown: true,
+          headerStyle: { backgroundColor: colors.bg },
+          headerTintColor: colors.text,
+          headerTitleStyle: { fontWeight: "600" },
+          headerBackTitle: "",
+          headerBackButtonDisplayMode: "minimal",
           headerTitle: () => (
             <HeaderTitleWithIcon
               title={job.name}
               icon={<JobKindIcon kind={kindForJob(job)} size={26} bare />}
             />
           ),
-          headerLeft: () => <HeaderBackButton onPress={goBack} />,
           headerRight: () => <HeaderStatusDot color={statusColor(status)} />,
         }}
       />
