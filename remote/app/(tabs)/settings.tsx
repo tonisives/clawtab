@@ -198,8 +198,9 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
       {!isWide && !inModal ? (
         <Stack.Screen
           options={{
-            title: "ClawTab",
+            title: "Settings",
             headerLargeTitle: true,
+            headerRight: () => null,
           }}
         />
       ) : null}
