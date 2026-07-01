@@ -27,6 +27,12 @@ export const styles = StyleSheet.create({
   nativeGroupHeaderWrap: {
     marginHorizontal: spacing.md,
   },
+  hiddenSection: {
+    marginTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+  },
   jobWithPaneToggle: {
     position: "relative",
   },

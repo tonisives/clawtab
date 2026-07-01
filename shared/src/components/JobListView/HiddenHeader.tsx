@@ -1,4 +1,4 @@
-import { Text, TouchableOpacity, View } from "react-native";
+import { Platform, Text, TouchableOpacity, View } from "react-native";
 
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -14,10 +14,17 @@ interface JobListHiddenHeaderProps {
 
 export function JobListHiddenHeader({ hook, item, itemKey }: JobListHiddenHeaderProps) {
   return (
-    <View key={itemKey} style={{ marginTop: spacing.xs }}>
-      <View style={[styles.groupHeaderRow, { opacity: 0.5 }]}>
-        <Text style={styles.groupHeader}>{item.displayGroup}</Text>
-        <View style={{ flex: 1 }} />
+    <View
+      key={itemKey}
+      style={[
+        { marginTop: spacing.xs },
+        Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null,
+      ]}
+    >
+      <View style={styles.groupHeaderRow}>
+        <View style={styles.groupHeaderTitleArea}>
+          <Text style={styles.groupHeader} numberOfLines={1}>{item.displayGroup}</Text>
+        </View>
         {hook.onUnhideGroup && (
           <TouchableOpacity
             onPress={() => hook.onUnhideGroup?.(item.group)}

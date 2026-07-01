@@ -1,7 +1,5 @@
-import { Text, TouchableOpacity } from "react-native";
+import { Platform, Text, TouchableOpacity, View } from "react-native";
 
-import { colors } from "../../theme/colors";
-import { spacing } from "../../theme/spacing";
 import { styles } from "./styles";
 import type { JobListViewHook } from "./useJobListView";
 
@@ -16,10 +14,20 @@ export function JobListHiddenSection({ hook, itemKey }: JobListHiddenSectionProp
       key={itemKey}
       onPress={() => hook.setHiddenSectionCollapsed((value) => !value)}
       activeOpacity={0.7}
-      style={{ marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, flexDirection: "row", alignItems: "center" }}
+      style={styles.hiddenSection}
     >
-      <Text style={[styles.groupHeader, { fontSize: 11, color: colors.textMuted, flex: 1 }]}>Hidden Groups</Text>
-      <Text style={{ fontSize: 11, color: colors.textMuted, marginRight: spacing.xs }}>{hook.hiddenSectionCollapsed ? "\u25B6" : "\u25BC"}</Text>
+      <View style={Platform.OS !== "web" ? styles.nativeGroupHeaderWrap : null}>
+        <View style={styles.groupHeaderRow}>
+          <View style={styles.groupHeaderTitleArea}>
+            <View style={styles.groupHeaderArrowBtn}>
+              <Text style={styles.groupHeaderArrow}>
+                {hook.hiddenSectionCollapsed ? "\u25B6" : "\u25BC"}
+              </Text>
+            </View>
+            <Text style={styles.groupHeader} numberOfLines={1}>Hidden Groups</Text>
+          </View>
+        </View>
+      </View>
     </TouchableOpacity>
   );
 }
