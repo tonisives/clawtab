@@ -236,30 +236,17 @@ pub async fn install_tool(formula: String) -> Result<String, String> {
     }
 }
 
-/// Runs `agy models` (with a timeout) and returns (slug, display_name) for available models.
-/// Falls back to a standard list of Gemini models if it fails or times out.
+/// Runs `agy models` (with a timeout) and returns (model_value, display_name) for available models.
+/// Antigravity currently prints display-only model names, and those names are also what
+/// `agy --model` accepts, so keep the full line as the value in that case.
 #[tauri::command]
 pub async fn detect_antigravity_models() -> Result<Vec<(String, String)>, String> {
     let cmd_fut = tokio::task::spawn_blocking(|| {
-        let output = std::process::Command::new("agy")
-            .arg("models")
-            .output();
+        let output = std::process::Command::new("agy").arg("models").output();
         match output {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
-                let mut models = Vec::new();
-                for line in stdout.lines() {
-                    let trimmed = line.trim();
-                    if !trimmed.is_empty() && !trimmed.starts_with("Usage:") && !trimmed.contains("List available models") {
-                        let parts: Vec<&str> = trimmed.split_whitespace().collect();
-                        if !parts.is_empty() {
-                            let id = parts[0].to_string();
-                            let name = parts[1..].join(" ");
-                            let name = if name.is_empty() { id.clone() } else { name };
-                            models.push((id, name));
-                        }
-                    }
-                }
+                let models = parse_antigravity_models_output(&stdout);
                 if !models.is_empty() {
                     return Ok(models);
                 }
@@ -271,13 +258,110 @@ pub async fn detect_antigravity_models() -> Result<Vec<(String, String)>, String
 
     match tokio::time::timeout(std::time::Duration::from_millis(1500), cmd_fut).await {
         Ok(Ok(Ok(models))) => Ok(models),
-        _ => {
-            Ok(vec![
-                ("gemini-2.5-pro".to_string(), "Gemini 2.5 Pro".to_string()),
-                ("gemini-2.5-flash".to_string(), "Gemini 2.5 Flash".to_string()),
-                ("gemini-1.5-pro".to_string(), "Gemini 1.5 Pro".to_string()),
-                ("gemini-1.5-flash".to_string(), "Gemini 1.5 Flash".to_string()),
-            ])
-        }
+        _ => Ok(default_antigravity_models()),
+    }
+}
+
+fn parse_antigravity_models_output(stdout: &str) -> Vec<(String, String)> {
+    stdout
+        .lines()
+        .filter_map(parse_antigravity_model_line)
+        .collect()
+}
+
+fn parse_antigravity_model_line(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty()
+        || trimmed.starts_with("Usage:")
+        || trimmed.starts_with("Available subcommands:")
+        || trimmed.contains("List available models")
+    {
+        return None;
+    }
+
+    let parts: Vec<&str> = trimmed.split_whitespace().collect();
+    let first = parts.first()?;
+    if looks_like_antigravity_model_id(first) && parts.len() > 1 {
+        return Some(((*first).to_string(), parts[1..].join(" ")));
+    }
+
+    Some((trimmed.to_string(), trimmed.to_string()))
+}
+
+fn looks_like_antigravity_model_id(value: &str) -> bool {
+    value.starts_with("gemini-")
+        || value.starts_with("claude-")
+        || value.starts_with("gpt-")
+        || value.starts_with("o1")
+        || value.starts_with("o3")
+        || value.starts_with("o4")
+}
+
+fn default_antigravity_models() -> Vec<(String, String)> {
+    [
+        "Gemini 3.5 Flash (Medium)",
+        "Gemini 3.5 Flash (High)",
+        "Gemini 3.5 Flash (Low)",
+        "Gemini 3.1 Pro (Low)",
+        "Gemini 3.1 Pro (High)",
+        "Claude Sonnet 4.6 (Thinking)",
+        "Claude Opus 4.6 (Thinking)",
+        "GPT-OSS 120B (Medium)",
+    ]
+    .into_iter()
+    .map(|model| (model.to_string(), model.to_string()))
+    .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_antigravity_models, parse_antigravity_models_output};
+
+    #[test]
+    fn parses_display_only_antigravity_models() {
+        let models = parse_antigravity_models_output(
+            "Gemini 3.5 Flash (Medium)\nGemini 3.5 Flash (High)\nClaude Sonnet 4.6 (Thinking)\n",
+        );
+
+        assert_eq!(
+            models,
+            vec![
+                (
+                    "Gemini 3.5 Flash (Medium)".to_string(),
+                    "Gemini 3.5 Flash (Medium)".to_string()
+                ),
+                (
+                    "Gemini 3.5 Flash (High)".to_string(),
+                    "Gemini 3.5 Flash (High)".to_string()
+                ),
+                (
+                    "Claude Sonnet 4.6 (Thinking)".to_string(),
+                    "Claude Sonnet 4.6 (Thinking)".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn still_parses_slug_plus_display_antigravity_models() {
+        let models =
+            parse_antigravity_models_output("gemini-2.5-flash Gemini 2.5 Flash\nUsage: ignored\n");
+
+        assert_eq!(
+            models,
+            vec![(
+                "gemini-2.5-flash".to_string(),
+                "Gemini 2.5 Flash".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn fallback_antigravity_models_include_gemini_3_5_flash() {
+        let models = default_antigravity_models();
+
+        assert!(models
+            .iter()
+            .any(|(id, name)| id == "Gemini 3.5 Flash (Medium)" && name == id));
     }
 }

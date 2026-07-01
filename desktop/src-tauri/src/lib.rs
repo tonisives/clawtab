@@ -248,7 +248,8 @@ pub(crate) fn refresh_tray_usage_menu(
     let (claude, codex, antigravity, zai) = tray_usage_labels(snapshot);
     let claude_item = MenuItem::with_id(app, "usage_claude", claude, false, None::<&str>)?;
     let codex_item = MenuItem::with_id(app, "usage_codex", codex, false, None::<&str>)?;
-    let antigravity_item = MenuItem::with_id(app, "usage_antigravity", antigravity, false, None::<&str>)?;
+    let antigravity_item =
+        MenuItem::with_id(app, "usage_antigravity", antigravity, false, None::<&str>)?;
     let zai_item = MenuItem::with_id(app, "usage_zai", zai, false, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;

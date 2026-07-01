@@ -1152,7 +1152,12 @@ pub fn list_window_names_in_session(session: &str) -> Result<Vec<String>, String
 /// helper to resolve the real (non-view) session owning a window.
 pub fn list_all_windows_with_session() -> Result<Vec<(String, String)>, String> {
     let raw = run_capture(
-        &["list-windows", "-a", "-F", "#{session_name}|CT|#{window_id}"],
+        &[
+            "list-windows",
+            "-a",
+            "-F",
+            "#{session_name}|CT|#{window_id}",
+        ],
         "tmux::list_all_windows_with_session",
     )?;
     let mut out = Vec::new();

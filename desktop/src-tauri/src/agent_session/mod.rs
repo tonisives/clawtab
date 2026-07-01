@@ -1,8 +1,8 @@
+mod antigravity;
 mod claude;
 mod codex;
 mod common;
 mod opencode;
-mod antigravity;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -49,7 +49,10 @@ impl ProcessProvider {
     pub fn supports_model_flag(self) -> bool {
         matches!(
             self,
-            ProcessProvider::Claude | ProcessProvider::Codex | ProcessProvider::Opencode | ProcessProvider::Antigravity
+            ProcessProvider::Claude
+                | ProcessProvider::Codex
+                | ProcessProvider::Opencode
+                | ProcessProvider::Antigravity
         )
     }
 
@@ -57,9 +60,14 @@ impl ProcessProvider {
     pub fn model_flag_format(self, model: &str) -> String {
         match self {
             ProcessProvider::Opencode => format!(" -m {}", model),
+            ProcessProvider::Antigravity => format!(" --model {}", shell_quote(model)),
             _ => format!(" --model {}", model),
         }
     }
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 #[derive(Debug, Clone, Default)]

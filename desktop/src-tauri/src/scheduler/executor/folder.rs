@@ -56,7 +56,9 @@ pub(super) async fn execute_folder_job(
             crate::agent_session::ProcessProvider::Claude => s.claude_path.clone(),
             crate::agent_session::ProcessProvider::Codex
             | crate::agent_session::ProcessProvider::Opencode
-            | crate::agent_session::ProcessProvider::Antigravity => provider.binary_name().to_string(),
+            | crate::agent_session::ProcessProvider::Antigravity => {
+                provider.binary_name().to_string()
+            }
             crate::agent_session::ProcessProvider::Shell => String::new(),
         };
         (provider, model, session, folder_path.clone(), command)
