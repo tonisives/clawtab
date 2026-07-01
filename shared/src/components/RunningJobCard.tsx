@@ -4,7 +4,6 @@ import type { JobStatus, RemoteJob } from "../types/job";
 import type { ProcessProvider } from "../types/process";
 import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
-import { showNativeActionMenu } from "./nativeActionMenu";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
 import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
@@ -55,13 +54,6 @@ export const RunningJobCard = memo(function RunningJobCard({
   const showMenu = (onStop || onTogglePin) && !stopping;
   const openMenu = useCallback((e?: any) => {
     if (!showMenu) return;
-    if (!isWeb) {
-      showNativeActionMenu([
-        ...(onTogglePin ? [{ label: pinned ? "Unpin" : "Pin", onPress: onTogglePin }] : []),
-        ...(onStop ? [{ label: "Stop", onPress: onStop, destructive: true }] : []),
-      ]);
-      return;
-    }
     if (isWeb) {
       const node = e?.currentTarget ?? e?.target;
       if (node?.getBoundingClientRect) {
@@ -70,7 +62,7 @@ export const RunningJobCard = memo(function RunningJobCard({
       }
     } else if (e?.nativeEvent) {
       setMenuPos({
-        top: (e.nativeEvent.pageY ?? 44) + 6,
+        top: e.nativeEvent.pageY ?? 44,
         left: e.nativeEvent.pageX ?? 12,
       });
     }
@@ -129,10 +121,11 @@ export const RunningJobCard = memo(function RunningJobCard({
           ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </View>
-      {isWeb && menuOpen && showMenu && (
+      {menuOpen && showMenu && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
+          nativePlacement="above"
           onClose={() => setMenuOpen(false)}
           items={[
             ...(onTogglePin ? [{ type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } }] : []),

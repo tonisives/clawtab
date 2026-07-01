@@ -4,7 +4,6 @@ import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { Tooltip } from "./Tooltip";
 import { PopupMenu } from "./PopupMenu";
-import { showNativeActionMenu } from "./nativeActionMenu";
 import type { ProcessProvider } from "../types/process";
 import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
@@ -58,12 +57,6 @@ export const JobCard = memo(function JobCard({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const openMenu = useCallback((e?: any) => {
     if (!onTogglePin) return;
-    if (Platform.OS !== "web") {
-      showNativeActionMenu([
-        { label: pinned ? "Unpin" : "Pin", onPress: onTogglePin },
-      ]);
-      return;
-    }
     if (Platform.OS === "web") {
       const node = e?.currentTarget ?? e?.target;
       if (node?.getBoundingClientRect) {
@@ -72,7 +65,7 @@ export const JobCard = memo(function JobCard({
       }
     } else if (e?.nativeEvent) {
       setMenuPos({
-        top: (e.nativeEvent.pageY ?? 44) + 6,
+        top: e.nativeEvent.pageY ?? 44,
         left: e.nativeEvent.pageX ?? 12,
       });
     }
@@ -113,10 +106,11 @@ export const JobCard = memo(function JobCard({
           <StatusBadge status={status} />
         </View>
       </TouchableOpacity>
-      {Platform.OS === "web" && menuOpen && onTogglePin ? (
+      {menuOpen && onTogglePin ? (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
+          nativePlacement="above"
           onClose={() => setMenuOpen(false)}
           items={[
             { type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } },

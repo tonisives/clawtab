@@ -60,6 +60,7 @@ interface PopupMenuProps {
   autoFocus?: boolean;
   initialHighlight?: boolean;
   nativeBottomInset?: number;
+  nativePlacement?: "auto" | "above" | "below";
 }
 
 function HoverableItem({ item, onPress, highlighted = false, onHover }: {
@@ -103,7 +104,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
             styles.itemText,
             active && styles.itemTextActive,
             color ? { color } : null,
-          ]}>
+          ]} numberOfLines={1}>
             {item.label}
           </Text>
         </View>
@@ -116,7 +117,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover }: {
   );
 }
 
-export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8 }: PopupMenuProps) {
+export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, autoFocus = false, initialHighlight = true, nativeBottomInset = 8, nativePlacement = "auto" }: PopupMenuProps) {
   const localRef = useRef<View>(null);
   const ref = dropdownRef ?? localRef;
   const windowSize = useWindowDimensions();
@@ -210,26 +211,32 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
   }, [position, triggerRef]);
 
   const estimateNativeMenuHeight = () => {
-    const contentHeight = activeItems.reduce((total, item) => total + (item.type === "separator" ? 1 : 36), 8);
-    return contentHeight + (submenu ? 34 : 0);
+    const contentHeight = activeItems.reduce((total, item) => total + (item.type === "separator" ? 11 : 48), 16);
+    return contentHeight + (submenu ? 48 : 0);
   };
 
   const nativeResolvedPos = (() => {
     if (isWeb) return null;
     const margin = 8;
-    const menuWidth = 160;
+    const menuWidth = Math.min(520, Math.max(260, windowSize.width * 0.75));
     const menuHeight = nativeMenuHeight || estimateNativeMenuHeight();
     const bottomLimit = windowSize.height - nativeBottomInset - margin;
-    const triggerTop = nativeTriggerRect?.y ?? (position?.top ?? 44);
-    const triggerLeft = nativeTriggerRect?.x ?? (position?.left ?? 12);
+    const triggerTop = nativePlacement === "above" && position ? position.top : nativeTriggerRect?.y ?? (position?.top ?? 44);
+    const triggerLeft = nativePlacement === "above" && position ? position.left : nativeTriggerRect?.x ?? (position?.left ?? 12);
     const triggerHeight = nativeTriggerRect?.height ?? 22;
     const belowTop = position?.top ?? (triggerTop + triggerHeight + 6);
     const aboveTop = triggerTop - menuHeight - 6;
 
     let top = belowTop;
-    if (top + menuHeight > bottomLimit) {
+    if (nativePlacement === "above") {
+      top = aboveTop >= margin ? aboveTop : belowTop;
+    } else if (nativePlacement === "below") {
+      top = belowTop;
+    } else if (top + menuHeight > bottomLimit) {
       top = aboveTop >= margin ? aboveTop : Math.max(margin, bottomLimit - menuHeight);
     }
+    if (top + menuHeight > bottomLimit) top = Math.max(margin, bottomLimit - menuHeight);
+    if (top < margin) top = margin;
 
     let left = position?.left ?? triggerLeft;
     if (left + menuWidth > windowSize.width - margin) left = windowSize.width - menuWidth - margin;
@@ -255,6 +262,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
       } as any : [styles.menu, styles.webInlineMenu])
     : [
         styles.menu,
+        styles.nativeMenu,
         { top: nativeResolvedPos?.top ?? position?.top ?? 44, left: nativeResolvedPos?.left ?? position?.left ?? 12 },
       ];
 
@@ -410,21 +418,47 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     ...(isWeb ? { boxShadow: "0 4px 12px rgba(0,0,0,0.3)" } : {}),
   },
+  nativeMenu: {
+    width: "75%",
+    minWidth: 260,
+    maxWidth: 520,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderColor: "rgba(255,255,255,0.14)",
+    backgroundColor: "rgba(28,28,30,0.94)",
+    shadowColor: "#000000",
+    shadowOpacity: 0.34,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 24,
+    transform: [{ scale: 0.96 }],
+  },
   webInlineMenu: {
     top: "100%",
     right: 0,
   },
   nativeBackdrop: {
     flex: 1,
+    backgroundColor: "rgba(0,0,0,0.62)",
   },
   separator: {
     height: 1,
     backgroundColor: colors.border,
     marginHorizontal: spacing.sm,
+    ...(isWeb ? {} : {
+      backgroundColor: "rgba(255,255,255,0.11)",
+      marginVertical: 5,
+    }),
   },
   item: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+    ...(isWeb ? {} : {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: 13,
+      minHeight: 48,
+      justifyContent: "center",
+    }),
   },
   itemActive: {
     backgroundColor: `${colors.accent}18`,
@@ -443,7 +477,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     minWidth: 0,
+    flex: 1,
     flexShrink: 1,
+    paddingRight: spacing.sm,
   },
   itemIconWrap: {
     width: 16,
@@ -454,6 +490,11 @@ const styles = StyleSheet.create({
   itemText: {
     color: colors.text,
     fontSize: 13,
+    flexShrink: 1,
+    ...(isWeb ? {} : {
+      fontSize: 17,
+      fontWeight: "600",
+    }),
   },
   itemHint: {
     color: colors.textMuted,
@@ -468,6 +509,9 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 16,
     marginLeft: spacing.sm,
+    ...(isWeb ? {} : {
+      fontSize: 22,
+    }),
   },
   backItem: {
     paddingHorizontal: spacing.md,
@@ -479,5 +523,9 @@ const styles = StyleSheet.create({
   backText: {
     color: colors.textMuted,
     fontSize: 12,
+    ...(isWeb ? {} : {
+      fontSize: 16,
+      fontWeight: "600",
+    }),
   },
 });

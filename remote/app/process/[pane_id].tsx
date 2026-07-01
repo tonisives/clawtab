@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, showNativeActionMenu, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -329,17 +329,15 @@ export default function ProcessDetailScreen() {
   const openContextMenu = useCallback(
     (e?: any) => {
       if (Platform.OS !== "web") {
-        showNativeActionMenu(
-          isAlive
-            ? [
-                { label: isPinned ? "Unpin" : "Pin", onPress: () => togglePin(pinKey) },
-                { label: stopping ? "Stopping..." : "Stop", onPress: handleStop, destructive: true },
-              ]
-            : [
-                { label: isPinned ? "Unpin" : "Pin", onPress: () => togglePin(pinKey) },
-                { label: starting ? "Starting..." : "Start", onPress: handleStart },
-              ],
-        );
+        if (contextButtonRef.current?.measureInWindow) {
+          contextButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+            setMenuPos({ top: y + height + 6, left: x + width });
+            setShowContextMenu(true);
+          });
+        } else {
+          setMenuPos({ top: 44, left: 12 });
+          setShowContextMenu(true);
+        }
         return;
       }
 
@@ -398,7 +396,7 @@ export default function ProcessDetailScreen() {
               >
                 <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
               </TouchableOpacity>
-              {Platform.OS === "web" && showContextMenu && (
+              {showContextMenu && (
                 <PopupMenu
                   dropdownRef={contextDropdownRef as any}
                   triggerRef={contextButtonRef}

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { DetectedProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
-import { showNativeActionMenu } from "./nativeActionMenu";
 import { compactProcessQuery, processDisplayTitle, shortenPath } from "../util/format";
 import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
@@ -154,15 +153,6 @@ export function ProcessCard({
   const kind = kindForProcess(process);
   const openMenu = useCallback((e?: any) => {
     if (!showMenu || editing) return;
-    if (!isWeb) {
-      showNativeActionMenu([
-        ...(onTogglePin ? [{ label: pinned ? "Unpin" : "Pin", onPress: onTogglePin }] : []),
-        ...(canRename ? [{ label: "Rename", onPress: startEditing }] : []),
-        ...(canMoveToWorkspace ? [{ label: moveToWorkspaceLabel!, onPress: onMoveToWorkspace! }] : []),
-        ...(onStop ? [{ label: "Stop", onPress: onStop, destructive: true }] : []),
-      ]);
-      return;
-    }
     if (isWeb) {
       const node = e?.currentTarget ?? e?.target;
       if (node?.getBoundingClientRect) {
@@ -171,12 +161,12 @@ export function ProcessCard({
       }
     } else if (e?.nativeEvent) {
       setMenuPos({
-        top: (e.nativeEvent.pageY ?? 44) + 6,
+        top: e.nativeEvent.pageY ?? 44,
         left: e.nativeEvent.pageX ?? 12,
       });
     }
     setMenuOpen(true);
-  }, [canMoveToWorkspace, canRename, editing, moveToWorkspaceLabel, onMoveToWorkspace, onStop, onTogglePin, pinned, showMenu, startEditing]);
+  }, [editing, showMenu]);
 
   return (
     <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}>
@@ -243,10 +233,11 @@ export function ProcessCard({
           ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </TouchableOpacity>
-      {isWeb && menuOpen && (onStop || onRename || onSaveName || onTogglePin || canMoveToWorkspace) && (
+      {menuOpen && (onStop || onRename || onSaveName || onTogglePin || canMoveToWorkspace) && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
+          nativePlacement="above"
           onClose={() => setMenuOpen(false)}
           items={[
             ...(onTogglePin ? [{ type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } }] : []),
