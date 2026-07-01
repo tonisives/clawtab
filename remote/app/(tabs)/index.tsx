@@ -10,7 +10,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
 } from "react-native"
-import { Stack, useRouter } from "expo-router"
+import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -763,12 +763,6 @@ export default function JobsScreen() {
   if (!isWide) {
     return (
       <>
-        <Stack.Screen
-          options={{
-            title: "ClawTab",
-            headerLargeTitle: true,
-          }}
-        />
         {mobileJobList}
         <Modal visible={searchOpen} transparent animationType="fade" onRequestClose={closeSearch}>
           <KeyboardAvoidingView

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { DarkTheme, Stack, ThemeProvider } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { View, ActivityIndicator, Platform, StyleSheet } from "react-native";
 import { useAuthStore } from "../src/store/auth";
@@ -71,9 +71,12 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   useWebDarkScrollbars();
   const { isWide } = useResponsive();
+  const pathname = usePathname();
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
+  const isSettingsTab = pathname === "/settings";
+  const tabsTitle = isSettingsTab ? "Settings" : "ClawTab";
 
   useEffect(() => {
     init();
@@ -97,7 +100,7 @@ export default function RootLayout() {
             name="(tabs)"
             options={{
               headerShown: !isWide,
-              title: "ClawTab",
+              title: tabsTitle,
               headerLargeTitle: true,
               headerTransparent: true,
               headerStyle: { backgroundColor: "transparent" },
@@ -105,7 +108,7 @@ export default function RootLayout() {
               headerShadowVisible: false,
               headerLargeTitleStyle: styles.headerLargeTitle,
               headerTitleStyle: styles.headerTitle,
-              headerRight: () => <RootHeaderRight />,
+              headerRight: isSettingsTab ? () => null : () => <RootHeaderRight />,
             }}
           />
           <Stack.Screen
