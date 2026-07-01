@@ -101,14 +101,18 @@ export function NotificationsMenuButton({
       accessibilityRole="button"
       accessibilityLabel={activeQuestionCount > 0 ? `${activeQuestionCount} active question${activeQuestionCount === 1 ? "" : "s"}` : "Notifications"}
       style={({ pressed }) => [
-        countOnly ? styles.countButton : glassAvailable ? styles.fluidGlassPressable : variant === "fluid" ? styles.fluidButton : styles.button,
+        countOnly ? [styles.countButton, activeQuestionCount === 0 && styles.countButtonEmpty] : glassAvailable ? styles.fluidGlassPressable : variant === "fluid" ? styles.fluidButton : styles.button,
         variant === "fluid" && activeQuestionCount > 0 && !glassAvailable && styles.fluidButtonHasQuestions,
         variant === "compact" && activeQuestionCount > 0 && !countOnly && styles.buttonHasQuestions,
         (pressed || open) && (glassAvailable ? styles.fluidGlassPressableActive : variant === "fluid" ? styles.fluidButtonActive : styles.buttonActive),
       ]}
     >
       {countOnly ? (
-        <Text style={styles.countButtonText}>{activeQuestionCount}</Text>
+        activeQuestionCount > 0 ? (
+          <Text style={styles.countButtonText}>{activeQuestionCount}</Text>
+        ) : (
+          <Ionicons name="checkmark-circle-outline" size={18} color={colors.textMuted} />
+        )
       ) : (
         <Ionicons
           name={activeQuestionCount > 0 ? "notifications" : "notifications-outline"}
@@ -186,6 +190,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 14,
     backgroundColor: colors.warning,
+  },
+  countButtonEmpty: {
+    backgroundColor: "transparent",
   },
   countButtonText: {
     color: colors.bg,

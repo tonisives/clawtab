@@ -27,7 +27,7 @@ const navTheme = {
 };
 
 function RootHeaderRight() {
-  return <NotificationsMenuButton hideWhenEmpty countOnly showDemoQuestions={false} />;
+  return <NotificationsMenuButton countOnly showDemoQuestions={false} />;
 }
 
 function useWebDarkScrollbars() {

@@ -222,6 +222,9 @@ export const styles = StyleSheet.create({
   nativeToolbarRow: {
     paddingHorizontal: spacing.md,
   },
+  nativeGlobalTabsSegment: {
+    marginBottom: spacing.lg,
+  },
   sortControl: {
     marginLeft: "auto",
   },

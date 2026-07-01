@@ -1035,6 +1035,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   mobileListContent: {
     padding: 0,
+    paddingTop: 0,
     paddingBottom: spacing.lg,
   },
   splitContainer: {

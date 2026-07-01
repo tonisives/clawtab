@@ -109,15 +109,18 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
         <>
           <View style={{ flexBasis: "100%", height: 0 }} />
           <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: colors.surface,
-              borderWidth: 1,
-              borderColor: colors.border,
-              borderRadius: 999,
-              padding: Platform.OS === "web" ? 2 : 3,
-            }}
+            style={[
+              {
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 999,
+                padding: Platform.OS === "web" ? 2 : 3,
+              },
+              Platform.OS !== "web" ? styles.nativeGlobalTabsSegment : null,
+            ]}
           >
             {(["tabs", "jobs"] as const).map((view) => {
               const active = globalTabsView.activeView === view;

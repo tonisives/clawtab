@@ -739,8 +739,48 @@ fn parse_process_provider(provider: Option<&str>) -> Result<Option<ProcessProvid
         Some("claude") => Ok(Some(ProcessProvider::Claude)),
         Some("codex") => Ok(Some(ProcessProvider::Codex)),
         Some("opencode") => Ok(Some(ProcessProvider::Opencode)),
+        Some("antigravity") => Ok(Some(ProcessProvider::Antigravity)),
         Some("shell") => Ok(Some(ProcessProvider::Shell)),
         Some(other) => Err(format!("unsupported agent provider '{}'", other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_process_provider;
+    use crate::agent_session::ProcessProvider;
+
+    #[test]
+    fn parses_mobile_agent_providers() {
+        assert_eq!(parse_process_provider(None).unwrap(), None);
+        assert_eq!(
+            parse_process_provider(Some("claude")).unwrap(),
+            Some(ProcessProvider::Claude)
+        );
+        assert_eq!(
+            parse_process_provider(Some("codex")).unwrap(),
+            Some(ProcessProvider::Codex)
+        );
+        assert_eq!(
+            parse_process_provider(Some("opencode")).unwrap(),
+            Some(ProcessProvider::Opencode)
+        );
+        assert_eq!(
+            parse_process_provider(Some("antigravity")).unwrap(),
+            Some(ProcessProvider::Antigravity)
+        );
+        assert_eq!(
+            parse_process_provider(Some("shell")).unwrap(),
+            Some(ProcessProvider::Shell)
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_mobile_agent_provider() {
+        assert_eq!(
+            parse_process_provider(Some("cursor")).unwrap_err(),
+            "unsupported agent provider 'cursor'"
+        );
     }
 }
 
