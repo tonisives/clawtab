@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Keyboard, TextInput } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,6 +15,7 @@ import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
 import { HeaderBackButton, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { LoadingBar } from "../../src/components/LoadingBar";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -514,36 +515,6 @@ function processLoadingState({
   return { label: "Connected", progress: 1 };
 }
 
-function LoadingBar({
-  label,
-  progress,
-  error = false,
-}: {
-  label: string;
-  progress: number;
-  error?: boolean;
-}) {
-  return (
-    <View style={styles.loadingBarWrap}>
-      <View style={styles.loadingBarHeader}>
-        {!error ? <ActivityIndicator size="small" color={colors.accent} /> : null}
-        <Text style={[styles.loadingText, error && { color: colors.danger }]}>{label}</Text>
-      </View>
-      <View style={styles.loadingTrack}>
-        <View
-          style={[
-            styles.loadingFill,
-            {
-              width: `${Math.max(0.08, Math.min(1, progress)) * 100}%`,
-              backgroundColor: error ? colors.danger : colors.accent,
-            },
-          ]}
-        />
-      </View>
-    </View>
-  );
-}
-
 function TerminalKeyboardToolbar({
   bottom,
   onDismiss,
@@ -822,27 +793,4 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: "rgba(28, 28, 30, 0.88)",
   },
-  loadingBarWrap: {
-    width: "100%",
-    maxWidth: 320,
-    gap: 8,
-  },
-  loadingBarHeader: {
-    minHeight: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  loadingTrack: {
-    height: 4,
-    borderRadius: 2,
-    overflow: "hidden",
-    backgroundColor: colors.border,
-  },
-  loadingFill: {
-    height: "100%",
-    borderRadius: 2,
-  },
-  loadingText: { color: colors.textMuted, fontSize: 13 },
 });

@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Platform,
   Modal,
   Pressable,
@@ -26,6 +25,7 @@ import { usePinsStore } from "../../src/store/pins"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
+import { LoadingBar } from "../../src/components/LoadingBar"
 import {
   JobListView,
   SplitDetailArea,
@@ -45,7 +45,6 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { DemoBanner } from "../../src/components/DemoOverlay"
-import { openUrl } from "../../src/lib/platform"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
@@ -58,6 +57,7 @@ type GroupTabView = Record<string, "tabs" | "jobs">
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
 const HIDDEN_GROUPS_STORAGE_KEY = "remote_hidden_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
+const JOB_LIST_LOADING_PROGRESS = 0.62
 const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
   { value: "name", label: "Name" },
   { value: "recent", label: "Recent" },
@@ -145,6 +145,21 @@ function parseStringSet(raw: string | null): Set<string> {
   } catch {
     return new Set()
   }
+}
+
+function jobListLoadingState({
+  connected,
+  desktopOnline,
+  loaded,
+}: {
+  connected: boolean
+  desktopOnline: boolean
+  loaded: boolean
+}) {
+  if (!connected) return { label: "Connecting to relay...", progress: JOB_LIST_LOADING_PROGRESS }
+  if (!desktopOnline) return { label: "Connecting to desktop...", progress: JOB_LIST_LOADING_PROGRESS }
+  if (!loaded) return { label: "Loading jobs...", progress: JOB_LIST_LOADING_PROGRESS }
+  return null
 }
 
 function readWebStringSet(key: string): Set<string> {
@@ -632,11 +647,13 @@ export default function JobsScreen() {
     })
   }, [visibleDetectedProcesses, selectedProcess, processesLoaded, split.cleanStaleLeaves])
 
+  const jobListLoading = !isDemo ? jobListLoadingState({ connected, desktopOnline, loaded }) : null
+
   const bannerContent = (
     <>
-      {!connected && (
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>Connecting to relay...</Text>
+      {jobListLoading && (
+        <View style={styles.loadingContainer}>
+          <LoadingBar label={jobListLoading.label} progress={jobListLoading.progress} />
         </View>
       )}
       {connected && !desktopOnline && !isDemo && realJobs.length > 0 && (
@@ -644,28 +661,6 @@ export default function JobsScreen() {
           <Text style={styles.bannerText}>Desktop not connected</Text>
         </View>
       )}
-      {connected &&
-        !loaded &&
-        !isDemo &&
-        (desktopOnline ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color={colors.accent} />
-            <Text style={styles.loadingText}>Loading jobs...</Text>
-          </View>
-        ) : (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.offlineTitle}>Desktop not connected</Text>
-            <Text style={styles.offlineText}>
-              Please install ClawTab desktop and sign in to same account.
-            </Text>
-            <TouchableOpacity
-              onPress={() => openUrl("https://clawtab.cc/docs#quick-start")}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.linkText}>Quick Start Guide</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
     </>
   )
 
@@ -1130,10 +1125,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingVertical: 60,
   },
-  loadingText: { color: colors.textMuted, fontSize: 13 },
-  offlineTitle: { color: colors.warning, fontSize: 15, fontWeight: "600" as const },
-  offlineText: { color: colors.textMuted, fontSize: 13, textAlign: "center" as const },
-  linkText: { color: colors.accent, fontSize: 14, fontWeight: "500" as const },
   banner: {
     backgroundColor: colors.surface,
     padding: spacing.sm,
