@@ -1,4 +1,8 @@
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
+use std::time::Duration;
+
+use crate::ipc::{self, IpcCommand, IpcResponse};
 
 pub const PLIST_LABEL: &str = "com.clawtab.daemon";
 pub const ENGINE_EXECUTABLE_PATH: &str =
@@ -49,32 +53,59 @@ pub fn is_installed() -> bool {
     plist_dest().exists()
 }
 
-/// Check if the daemon is running via launchctl. Returns (running, pid).
-pub fn is_running() -> (bool, Option<u32>) {
+fn ping_daemon_socket() -> bool {
+    let stream = std::os::unix::net::UnixStream::connect(ipc::daemon_socket_path());
+    let mut stream = match stream {
+        Ok(stream) => stream,
+        Err(_) => return false,
+    };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(750)));
+
+    let cmd = match serde_json::to_string(&IpcCommand::Ping) {
+        Ok(cmd) => cmd,
+        Err(_) => return false,
+    };
+
+    if stream.write_all(cmd.as_bytes()).is_err()
+        || stream.write_all(b"\n").is_err()
+        || stream.flush().is_err()
+    {
+        return false;
+    }
+
+    let mut reader = std::io::BufReader::new(stream);
+    let mut line = String::new();
+    if reader.read_line(&mut line).is_err() {
+        return false;
+    }
+
+    matches!(
+        serde_json::from_str::<IpcResponse>(line.trim()),
+        Ok(IpcResponse::Pong)
+    )
+}
+
+fn launchctl_pid() -> Option<u32> {
     let output = std::process::Command::new("launchctl")
         .args(["list"])
-        .output();
+        .output()
+        .ok()?;
 
-    match output {
-        Ok(o) => {
-            let stdout = String::from_utf8_lossy(&o.stdout);
-            let found = stdout.lines().find(|l| l.contains(PLIST_LABEL));
-            match found {
-                Some(line) => {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    let pid_str = parts.first().unwrap_or(&"-");
-                    if *pid_str == "-" {
-                        (false, None)
-                    } else {
-                        let pid = pid_str.parse::<u32>().ok();
-                        (true, pid)
-                    }
-                }
-                None => (false, None),
-            }
-        }
-        Err(_) => (false, None),
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout.lines().find(|line| line.contains(PLIST_LABEL))?;
+    let pid_str = line.split_whitespace().next().unwrap_or("-");
+    if pid_str == "-" {
+        None
+    } else {
+        pid_str.parse::<u32>().ok()
     }
+}
+
+/// Check if the daemon is running via its IPC socket. Returns (running, pid).
+pub fn is_running() -> (bool, Option<u32>) {
+    (ping_daemon_socket(), launchctl_pid())
 }
 
 pub fn install() -> Result<String, String> {

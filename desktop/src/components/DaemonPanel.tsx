@@ -100,7 +100,9 @@ export function DaemonPanel() {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, color: "var(--text-primary)" }}>
               {status.running
-                ? `Running (pid ${status.pid})`
+                ? status.pid
+                  ? `Running (pid ${status.pid})`
+                  : "Running"
                 : status.installed
                   ? "Installed but not running"
                   : "Not installed"}
