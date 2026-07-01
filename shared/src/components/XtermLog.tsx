@@ -96,6 +96,48 @@ term.loadAddon(fit);
 term.open(document.getElementById('terminal'));
 fit.fit();
 
+var terminalWriteQueue = [];
+var terminalWriteBusy = false;
+function drainTerminalWriteQueue() {
+  if (terminalWriteBusy) return;
+  var item = terminalWriteQueue.shift();
+  if (!item) return;
+  terminalWriteBusy = true;
+  if (item.type === 'reset') {
+    term.reset();
+    if (window.applyVisualOffset) window.applyVisualOffset();
+    terminalWriteBusy = false;
+    setTimeout(drainTerminalWriteQueue, 0);
+    return;
+  }
+  if (item.type === 'text') {
+    term.write(item.text || '', function() {
+      if (window.applyVisualOffset) window.applyVisualOffset();
+      terminalWriteBusy = false;
+      drainTerminalWriteQueue();
+    });
+    return;
+  }
+  var bytes = Uint8Array.from(atob(item.data || ''), function(c) { return c.charCodeAt(0); });
+  term.write(bytes, function() {
+    if (window.applyVisualOffset) window.applyVisualOffset();
+    terminalWriteBusy = false;
+    drainTerminalWriteQueue();
+  });
+}
+window.enqueueTerminalWrite = function(b64) {
+  terminalWriteQueue.push({type:'write',data:b64});
+  drainTerminalWriteQueue();
+};
+window.enqueueTerminalText = function(text) {
+  terminalWriteQueue.push({type:'text',text:text});
+  drainTerminalWriteQueue();
+};
+window.enqueueTerminalReset = function() {
+  terminalWriteQueue.push({type:'reset'});
+  drainTerminalWriteQueue();
+};
+
 var nativeKeyboardMode = false;
 var iosKeyboardContext = '';
 
@@ -237,13 +279,22 @@ document.getElementById('terminal').addEventListener('dblclick', function(e) {
   showPasteTarget(e.clientX, e.clientY);
 });
 
+var lastReportedCols = 0;
+var lastReportedRows = 0;
+function reportResize() {
+  if (!term.cols || !term.rows) return;
+  if (term.cols === lastReportedCols && term.rows === lastReportedRows) return;
+  lastReportedCols = term.cols;
+  lastReportedRows = term.rows;
+  window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
+}
 var ro = new ResizeObserver(function() {
   fit.fit();
-  window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
+  reportResize();
 });
 ro.observe(document.getElementById('terminal'));
 
-window.ReactNativeWebView.postMessage(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
+reportResize();
 window.ReactNativeWebView.postMessage(JSON.stringify({type:'ready'}));
 var visualOffsetMax = 0;
 window.applyVisualOffset = function() {
@@ -306,6 +357,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     const webViewRef = useRef<any>(null);
     const nativeInputRef = useRef<TextInput | null>(null);
     const dimsRef = useRef({ cols: 80, rows: 24 });
+    const lastResizeRef = useRef({ cols: 0, rows: 0 });
     const readyRef = useRef(false);
     const pendingWritesRef = useRef<string[]>([]);
     const nativeInputValueRef = useRef("");
@@ -367,9 +419,8 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     );
 
     const injectWrite = useCallback((b64: string) => {
-      const escaped = b64.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
       webViewRef.current?.injectJavaScript(
-        `(function(){var b='${escaped}';var a=Uint8Array.from(atob(b),function(c){return c.charCodeAt(0)});term.write(a,function(){window.applyVisualOffset&&window.applyVisualOffset()})})();true;`
+        `window.enqueueTerminalWrite && window.enqueueTerminalWrite(${JSON.stringify(b64)});true;`
       );
     }, []);
 
@@ -389,11 +440,10 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       },
       writeText(text: string) {
         const normalised = text.replace(/\r?\n/g, "\r\n");
-        const escaped = normalised.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/\r/g, "\\r").replace(/\n/g, "\\n");
-        webViewRef.current?.injectJavaScript(`term.write('${escaped}',function(){window.applyVisualOffset&&window.applyVisualOffset()});true;`);
+        webViewRef.current?.injectJavaScript(`window.enqueueTerminalText && window.enqueueTerminalText(${JSON.stringify(normalised)});true;`);
       },
       clear() {
-        webViewRef.current?.injectJavaScript(`term.reset();true;`);
+        webViewRef.current?.injectJavaScript(`window.enqueueTerminalReset && window.enqueueTerminalReset();true;`);
       },
       dimensions() {
         return dimsRef.current;
@@ -425,8 +475,13 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
           if (msg.type === "data" && interactive && !useNativeKeyboard) {
             onData?.(msg.data);
           } else if (msg.type === "resize") {
-            dimsRef.current = { cols: msg.cols, rows: msg.rows };
-            onResize?.(msg.cols, msg.rows);
+            if (!Number.isFinite(msg.cols) || !Number.isFinite(msg.rows) || msg.cols <= 0 || msg.rows <= 0) return;
+            const cols = Math.round(msg.cols);
+            const rows = Math.round(msg.rows);
+            if (cols === lastResizeRef.current.cols && rows === lastResizeRef.current.rows) return;
+            lastResizeRef.current = { cols, rows };
+            dimsRef.current = { cols, rows };
+            onResize?.(cols, rows);
           } else if (msg.type === "ready") {
             readyRef.current = true;
             if (useNativeKeyboard) {

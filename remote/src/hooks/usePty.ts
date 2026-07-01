@@ -20,6 +20,7 @@ type PtySubscription = {
   retryTimer?: ReturnType<typeof setTimeout>;
   startedAt: number;
   retryAttempt: number;
+  released: boolean;
 };
 
 const ptySubscriptions = new Map<string, PtySubscription>();
@@ -31,6 +32,7 @@ const SUBSCRIBE_RETRY_WINDOW_MS = 45000;
 const SUBSCRIBE_RETRY_BASE_MS = 700;
 const SUBSCRIBE_RETRY_MAX_MS = 3000;
 const DEFAULT_DIMS = { cols: 80, rows: 24 };
+const TERMINAL_RESET_B64 = "G2M=";
 
 function setSubscriptionState(
   subscription: PtySubscription,
@@ -95,7 +97,9 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
   clearSubscribeWait(subscription);
   clearSubscribeRetry(subscription);
   setSubscriptionState(subscription, "connecting");
+  subscription.released = false;
 
+  const ackPromise = registerRequest<{ success?: boolean; error?: string; code?: string; message?: string }>(id);
   send({
     type: "subscribe_pty",
     id,
@@ -113,7 +117,7 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
       scheduleSubscribeRetry(paneId, subscription, "Terminal connection timed out.");
     }
   }, SUBSCRIBE_ACK_TIMEOUT_MS);
-  registerRequest<{ success?: boolean; error?: string; code?: string; message?: string }>(id).then((ack) => {
+  ackPromise.then((ack) => {
     if (subscription.pendingAckId !== id) return;
     subscription.pendingAckId = undefined;
     if (ack?.success === false || ack?.code) {
@@ -136,9 +140,10 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
   return true;
 }
 
-export function replayActivePtySubscriptions() {
+export function replayActivePtySubscriptions(mode: "connect" | "resume" = "connect") {
   for (const [paneId, subscription] of ptySubscriptions) {
     if (subscription.count <= 0) continue;
+    if (mode === "resume" && !subscription.released) continue;
     if (subscription.subscribeTimer) clearTimeout(subscription.subscribeTimer);
     subscription.subscribeTimer = undefined;
     if (subscription.unsubscribeTimer) clearTimeout(subscription.unsubscribeTimer);
@@ -160,7 +165,12 @@ export function releaseActivePtySubscriptions() {
     subscription.unsubscribeTimer = undefined;
     clearSubscribeRetry(subscription);
     send({ type: "unsubscribe_pty", pane_id: paneId });
+    subscription.released = true;
   }
+}
+
+function isTerminalReset(data: string) {
+  return data === TERMINAL_RESET_B64;
 }
 
 /** Called from useWebSocket when a pty_output message arrives */
@@ -202,6 +212,7 @@ export function usePty(
   const [error, setError] = useState<string | undefined>(undefined);
   const [hasOutput, setHasOutput] = useState(false);
   const gotDataRef = useRef(false);
+  const tmuxSessionRef = useRef(tmuxSession);
   const pendingOutputRef = useRef<string[]>([]);
   const lastResizeRef = useRef<{ cols: number; rows: number } | null>(null);
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -209,15 +220,26 @@ export function usePty(
   const flushPendingOutput = useCallback(() => {
     const term = termRef.current;
     if (!term || pendingOutputRef.current.length === 0) return false;
-    for (const data of pendingOutputRef.current) term.write(data);
+    for (const data of pendingOutputRef.current) {
+      if (isTerminalReset(data)) {
+        term.clear();
+      } else {
+        term.write(data);
+      }
+    }
     pendingOutputRef.current = [];
     return true;
   }, [termRef]);
 
+  useEffect(() => {
+    if (tmuxSession) tmuxSessionRef.current = tmuxSession;
+  }, [tmuxSession]);
+
   // Subscribe to PTY stream
   useEffect(() => {
     const send = getWsSend();
-    if (!paneId || !tmuxSession) return;
+    const activeTmuxSession = tmuxSessionRef.current;
+    if (!paneId || !activeTmuxSession) return;
 
     gotDataRef.current = false;
     pendingOutputRef.current = [];
@@ -233,6 +255,10 @@ export function usePty(
       }
       if (termRef.current) {
         flushPendingOutput();
+        if (isTerminalReset(data)) {
+          termRef.current.clear();
+          return;
+        }
         termRef.current.write(data);
       } else {
         pendingOutputRef.current.push(data);
@@ -251,40 +277,42 @@ export function usePty(
 
     const getDimensions = () => termRef.current?.dimensions() ?? DEFAULT_DIMS;
     const existing = ptySubscriptions.get(paneId);
-    if (existing && existing.tmuxSession === tmuxSession) {
+    if (existing) {
       if (existing.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
       existing.unsubscribeTimer = undefined;
       existing.count += 1;
       existing.getDimensions = getDimensions;
       subscribedRef.current = true;
       stateListener = (state: PtyConnectionState, message?: string) => {
-        if (state === "connecting" && !gotDataRef.current) {
+        const waitingForFirstOutput = state === "connecting" && !gotDataRef.current;
+        if (waitingForFirstOutput) {
           gotDataRef.current = false;
           setHasOutput(false);
         }
-        setConnecting(state === "connecting");
+        setConnecting(waitingForFirstOutput);
         setError(state === "failed" ? message ?? "Terminal connection failed." : undefined);
       };
       existing.stateListeners.add(stateListener);
       stateListener(existing.state, existing.error);
     } else {
-      if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
       stateListener = (state: PtyConnectionState, message?: string) => {
-        if (state === "connecting" && !gotDataRef.current) {
+        const waitingForFirstOutput = state === "connecting" && !gotDataRef.current;
+        if (waitingForFirstOutput) {
           gotDataRef.current = false;
           setHasOutput(false);
         }
-        setConnecting(state === "connecting");
+        setConnecting(waitingForFirstOutput);
         setError(state === "failed" ? message ?? "Terminal connection failed." : undefined);
       };
       const subscription: PtySubscription = {
         count: 1,
-        tmuxSession,
+        tmuxSession: activeTmuxSession,
         getDimensions,
         state: "connecting",
         stateListeners: new Set([stateListener]),
         startedAt: Date.now(),
         retryAttempt: 0,
+        released: false,
       };
       ptySubscriptions.set(paneId, subscription);
       subscribedRef.current = true;
@@ -327,7 +355,7 @@ export function usePty(
       setConnecting(false);
       setError(undefined);
     };
-  }, [paneId, tmuxSession, flushPendingOutput]);
+  }, [paneId, !!tmuxSession, flushPendingOutput]);
 
   const sendInput = useCallback(
     (b64: string) => {

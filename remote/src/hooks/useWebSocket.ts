@@ -262,7 +262,7 @@ export function useWebSocket() {
         } else {
           ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
           ws.send(JSON.stringify({ type: "get_settings", id: nextId() }));
-          replayActivePtySubscriptions();
+          replayActivePtySubscriptions("resume");
         }
       } else if (wasActive) {
         releaseActivePtySubscriptions();

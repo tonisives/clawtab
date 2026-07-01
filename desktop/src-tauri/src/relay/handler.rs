@@ -347,13 +347,23 @@ fn dispatch_pty_msg(
             cols,
             rows,
         } => {
-            let _ = pty_manager
-                .lock()
-                .resize(&pane_id, cols as u16, rows as u16);
+            if let Some((cols, rows)) = sanitize_pty_size(cols, rows) {
+                let _ = pty_manager.lock().resize(&pane_id, cols, rows);
+            }
             None
         }
         _ => None,
     }
+}
+
+fn sanitize_pty_size(cols: u32, rows: u32) -> Option<(u16, u16)> {
+    if cols == 0 || rows == 0 {
+        return None;
+    }
+    Some((
+        cols.min(u16::MAX as u32) as u16,
+        rows.min(u16::MAX as u32) as u16,
+    ))
 }
 
 fn handle_list_jobs(
@@ -449,11 +459,12 @@ fn handle_subscribe_pty(
 ) -> DesktopMessage {
     let relay_for_pty = Arc::clone(relay);
     let (tx, rx) = std::sync::mpsc::channel::<(String, Vec<u8>)>();
+    let (cols, rows) = sanitize_pty_size(cols, rows).unwrap_or((80, 24));
     let result = pty_manager.lock().spawn(
         &pane_id,
         &tmux_session,
-        cols as u16,
-        rows as u16,
+        cols,
+        rows,
         "default",
         OutputSink::Channel(tx),
     );
