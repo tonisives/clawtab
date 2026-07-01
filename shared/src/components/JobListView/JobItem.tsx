@@ -19,6 +19,9 @@ interface JobListJobItemProps {
 export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobListJobItemProps) {
   const status = hook.statuses[item.job.slug] ?? IDLE_STATUS;
   const onPress = hook.onSelectJob ? () => hook.onSelectJob?.(item.job) : undefined;
+  const pinKey = `job:${item.job.slug}`;
+  const pinned = hook.pinnedItems?.includes(pinKey) ?? false;
+  const onTogglePin = hook.onTogglePin ? () => hook.onTogglePin?.(pinKey) : undefined;
   const rawJobColor = hook.selectedItems?.get(item.job.slug);
   const isJobFocused = !hook.focusedItemKey || hook.focusedItemKey === item.job.slug;
   const selected: boolean | string = rawJobColor
@@ -65,6 +68,8 @@ export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobList
             selected,
             softBorder,
             onStop,
+            onTogglePin,
+            pinned,
             autoYesActive,
             stopping,
             marginTop,
@@ -89,6 +94,8 @@ export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobList
                 selected={selected}
                 softBorder={softBorder}
                 onStop={onStop}
+                onTogglePin={onTogglePin}
+                pinned={pinned}
                 autoYesActive={autoYesActive}
                 stopping={stopping}
                 defaultAgentProvider={hook.defaultAgentProvider}
@@ -99,6 +106,8 @@ export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobList
                 job={item.job}
                 status={status}
                 onPress={onPress}
+                onTogglePin={onTogglePin}
+                pinned={pinned}
                 selected={selected}
                 softBorder={softBorder}
                 defaultAgentProvider={hook.defaultAgentProvider}

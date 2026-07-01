@@ -1,8 +1,10 @@
-import { memo } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { TouchableOpacity, View, Text, StyleSheet, Platform } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
 import { StatusBadge } from "./StatusBadge";
 import { Tooltip } from "./Tooltip";
+import { PopupMenu } from "./PopupMenu";
+import { showNativeActionMenu } from "./nativeActionMenu";
 import type { ProcessProvider } from "../types/process";
 import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
@@ -23,6 +25,8 @@ export const JobCard = memo(function JobCard({
   job,
   status,
   onPress,
+  onTogglePin,
+  pinned,
   selected,
   softBorder,
   defaultAgentProvider,
@@ -31,6 +35,8 @@ export const JobCard = memo(function JobCard({
   job: RemoteJob;
   status: JobStatus;
   onPress?: () => void;
+  onTogglePin?: () => void;
+  pinned?: boolean;
   selected?: boolean | string;
   softBorder?: boolean;
   defaultAgentProvider?: ProcessProvider;
@@ -47,38 +53,77 @@ export const JobCard = memo(function JobCard({
 
   const kind = job.cron ? "cron" : kindForJob(job);
   const providerKind = job.cron ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuBtnRef = useRef<any>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const openMenu = useCallback((e?: any) => {
+    if (!onTogglePin) return;
+    if (Platform.OS !== "web") {
+      showNativeActionMenu([
+        { label: pinned ? "Unpin" : "Pin", onPress: onTogglePin },
+      ]);
+      return;
+    }
+    if (Platform.OS === "web") {
+      const node = e?.currentTarget ?? e?.target;
+      if (node?.getBoundingClientRect) {
+        const rect = node.getBoundingClientRect();
+        setMenuPos({ top: rect.bottom + 4, left: rect.right });
+      }
+    } else if (e?.nativeEvent) {
+      setMenuPos({
+        top: (e.nativeEvent.pageY ?? 44) + 6,
+        left: e.nativeEvent.pageX ?? 12,
+      });
+    }
+    setMenuOpen(true);
+  }, [onTogglePin, pinned]);
 
   return (
-    <TouchableOpacity
-      style={[styles.card, !job.enabled && styles.cardDisabled, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.row}>
-        <View style={styles.iconWrap}>
-          <JobKindIcon kind={kind} />
-          {providerKind ? (
-            <View style={styles.providerBadge}>
-              <JobKindIcon kind={providerKind} size={14} compact bare />
-            </View>
-          ) : null}
-        </View>
-        <View style={styles.info}>
-          <Text style={styles.name} numberOfLines={1}>
-            {job.name}
-          </Text>
-          <View style={styles.meta}>
-            {job.cron && job.enabled ? (() => {
-              const next = nextCronDate(job.cron);
-              return next ? <Text style={styles.nextRunText} numberOfLines={1}>{formatNextRun(next)}</Text> : null;
-            })() : null}
-            {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
-            {job.cron ? <Tooltip label={cronTooltip(job.cron)}><Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text></Tooltip> : null}
+    <View>
+      <TouchableOpacity
+        ref={menuBtnRef}
+        style={[styles.card, !job.enabled && styles.cardDisabled, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}
+        onPress={onPress}
+        onLongPress={openMenu}
+        activeOpacity={0.7}
+      >
+        <View style={styles.row}>
+          <View style={styles.iconWrap}>
+            <JobKindIcon kind={kind} />
+            {providerKind ? (
+              <View style={styles.providerBadge}>
+                <JobKindIcon kind={providerKind} size={14} compact bare />
+              </View>
+            ) : null}
           </View>
+          <View style={styles.info}>
+            <Text style={styles.name} numberOfLines={1}>
+              {job.name}
+            </Text>
+            <View style={styles.meta}>
+              {job.cron && job.enabled ? (() => {
+                const next = nextCronDate(job.cron);
+                return next ? <Text style={styles.nextRunText} numberOfLines={1}>{formatNextRun(next)}</Text> : null;
+              })() : null}
+              {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
+              {job.cron ? <Tooltip label={cronTooltip(job.cron)}><Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text></Tooltip> : null}
+            </View>
+          </View>
+          <StatusBadge status={status} />
         </View>
-        <StatusBadge status={status} />
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      {Platform.OS === "web" && menuOpen && onTogglePin ? (
+        <PopupMenu
+          triggerRef={menuBtnRef}
+          position={menuPos}
+          onClose={() => setMenuOpen(false)}
+          items={[
+            { type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } },
+          ]}
+        />
+      ) : null}
+    </View>
   );
 })
 

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput, Pressable, AppState as RNAppState } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Platform, Keyboard, TextInput } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
+import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, showNativeActionMenu, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -106,6 +107,11 @@ export default function ProcessDetailScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const terminalMenuOpenRef = useRef(false);
+  const pinnedItems = usePinsStore((s) => s.pinnedItems);
+  const hydratePins = usePinsStore((s) => s.hydrate);
+  const togglePin = usePinsStore((s) => s.togglePin);
+  const pinKey = `process:${pane_id}`;
+  const isPinned = pinnedItems.includes(pinKey);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
@@ -134,7 +140,6 @@ export default function ProcessDetailScreen() {
     hasOutput: ptyHasOutput,
   } = usePty(pane_id, tmuxSession, termRef);
   useDemoPty(pane_id, !!demoProcess);
-  const [terminalEpoch, setTerminalEpoch] = useState(0);
   const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace("/(tabs)");
@@ -145,15 +150,8 @@ export default function ProcessDetailScreen() {
   }, [terminalMenuOpen]);
 
   useEffect(() => {
-    if (Platform.OS === "web") return;
-    const sub = RNAppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        termRef.current = null;
-        setTerminalEpoch((value) => value + 1);
-      }
-    });
-    return () => sub.remove();
-  }, []);
+    hydratePins();
+  }, [hydratePins]);
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -331,7 +329,17 @@ export default function ProcessDetailScreen() {
   const openContextMenu = useCallback(
     (e?: any) => {
       if (Platform.OS !== "web") {
-        setShowContextMenu((v) => !v);
+        showNativeActionMenu(
+          isAlive
+            ? [
+                { label: isPinned ? "Unpin" : "Pin", onPress: () => togglePin(pinKey) },
+                { label: stopping ? "Stopping..." : "Stop", onPress: handleStop, destructive: true },
+              ]
+            : [
+                { label: isPinned ? "Unpin" : "Pin", onPress: () => togglePin(pinKey) },
+                { label: starting ? "Starting..." : "Start", onPress: handleStart },
+              ],
+        );
         return;
       }
 
@@ -344,7 +352,7 @@ export default function ProcessDetailScreen() {
       }
       setShowContextMenu((v) => !v);
     },
-    [],
+    [handleStart, handleStop, isAlive, isPinned, pinKey, starting, stopping, togglePin],
   );
 
   if (waitingForData) {
@@ -397,8 +405,12 @@ export default function ProcessDetailScreen() {
                   position={menuPos}
                   onClose={() => setShowContextMenu(false)}
                   items={isAlive ? [
+                    { type: "item", label: isPinned ? "Unpin" : "Pin", onPress: () => { togglePin(pinKey); setShowContextMenu(false); }, color: colors.accent },
+                    { type: "separator" },
                     { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
                   ] : [
+                    { type: "item", label: isPinned ? "Unpin" : "Pin", onPress: () => { togglePin(pinKey); setShowContextMenu(false); }, color: colors.accent },
+                    { type: "separator" },
                     { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.accent },
                   ]}
                 />
@@ -407,44 +419,6 @@ export default function ProcessDetailScreen() {
           ),
         }}
       />
-      {Platform.OS !== "web" && showContextMenu ? (
-        <Pressable
-          style={styles.mobileContextBackdrop}
-          onPress={closeContextMenu}
-        />
-      ) : null}
-      {Platform.OS !== "web" && showContextMenu ? (
-        <View style={styles.mobileContextMenu}>
-          {isAlive ? (
-            <TouchableOpacity
-              style={styles.mobileContextItem}
-              onPress={() => {
-                setShowContextMenu(false);
-                handleStop();
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.mobileContextText, { color: colors.danger }]}>
-                {stopping ? "Stopping..." : "Stop"}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.mobileContextItem}
-              onPress={() => {
-                setShowContextMenu(false);
-                handleStart();
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.mobileContextText, { color: colors.accent }]}>
-                {starting ? "Starting..." : "Start"}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : null}
-
       {activeProcess?.first_query && (
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Query</Text>
@@ -463,13 +437,14 @@ export default function ProcessDetailScreen() {
       )}
 
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
-        <XtermLog
-          key={`${pane_id}:${terminalEpoch}`}
-          ref={termRef}
-          onData={ptySendInput}
-          onResize={sendResize}
-          interactive
-        />
+        <View style={[styles.terminalSurface, terminalLoading && ptyHasOutput && styles.terminalSurfaceDimmed]}>
+          <XtermLog
+            ref={termRef}
+            onData={ptySendInput}
+            onResize={sendResize}
+            interactive
+          />
+        </View>
         <TerminalScrollButtons
           onScrollUp={() => scrollTerminal("up")}
           onScrollDown={() => scrollTerminal("down")}
@@ -695,37 +670,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: radius.sm,
   },
-  mobileContextMenu: {
-    position: "absolute",
-    top: 8,
-    right: spacing.md,
-    zIndex: 300,
-    elevation: 300,
-    minWidth: 160,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    paddingVertical: 4,
-  },
-  mobileContextBackdrop: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 250,
-    elevation: 250,
-    backgroundColor: "transparent",
-  },
-  mobileContextItem: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  mobileContextText: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
   queryRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -743,6 +687,13 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: "relative",
     backgroundColor: TERMINAL_BG,
+  },
+  terminalSurface: {
+    flex: 1,
+    minHeight: 0,
+  },
+  terminalSurfaceDimmed: {
+    opacity: 0.42,
   },
   keyboardToolbar: {
     position: "absolute",
@@ -858,16 +809,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: "rgba(28, 28, 30, 0.82)",
-  },
-  ptyConnecting: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    gap: 8,
-    paddingVertical: 8,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   ptyConnectingOverlay: {
     position: "absolute",

@@ -31,6 +31,7 @@ export function useJobListView(props: JobListViewProps) {
     groupTabView: props.groupTabView,
     hiddenGroups: props.hiddenGroups,
     hiddenSectionCollapsed,
+    pinnedItems: props.pinnedItems,
   };
   const agent = {
     agentModelOptions: props.agentModelOptions ?? [],
@@ -157,9 +158,11 @@ export function useJobListView(props: JobListViewProps) {
     onStopProcess: props.onStopProcess,
     onStopShell: props.onStopShell,
     onToggleGroup: callbacks.onToggleGroup,
+    onTogglePin: props.onTogglePin,
     onUnhideGroup: props.onUnhideGroup,
     onSortChange: props.onSortChange,
     openElsewhereContentKeys: props.openElsewhereContentKeys,
+    pinnedItems: props.pinnedItems,
     query: search.query,
     renameProcessPaneId: props.renameProcessPaneId,
     renameProcessSignal: props.renameProcessSignal,

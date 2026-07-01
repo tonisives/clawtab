@@ -1,9 +1,10 @@
-import { memo, useRef, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { JobStatus, RemoteJob } from "../types/job";
 import type { ProcessProvider } from "../types/process";
 import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
+import { showNativeActionMenu } from "./nativeActionMenu";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
 import { timeAgo } from "../util/format";
 import { colors } from "../theme/colors";
@@ -26,6 +27,8 @@ export const RunningJobCard = memo(function RunningJobCard({
   selected,
   softBorder,
   onStop,
+  onTogglePin,
+  pinned,
   autoYesActive,
   stopping,
   defaultAgentProvider,
@@ -37,6 +40,8 @@ export const RunningJobCard = memo(function RunningJobCard({
   selected?: boolean | string;
   softBorder?: boolean;
   onStop?: () => void;
+  onTogglePin?: () => void;
+  pinned?: boolean;
   autoYesActive?: boolean;
   stopping?: boolean;
   defaultAgentProvider?: ProcessProvider;
@@ -47,11 +52,36 @@ export const RunningJobCard = memo(function RunningJobCard({
   const menuBtnRef = useRef<any>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
-  const showMenu = onStop && !stopping;
+  const showMenu = (onStop || onTogglePin) && !stopping;
+  const openMenu = useCallback((e?: any) => {
+    if (!showMenu) return;
+    if (!isWeb) {
+      showNativeActionMenu([
+        ...(onTogglePin ? [{ label: pinned ? "Unpin" : "Pin", onPress: onTogglePin }] : []),
+        ...(onStop ? [{ label: "Stop", onPress: onStop, destructive: true }] : []),
+      ]);
+      return;
+    }
+    if (isWeb) {
+      const node = e?.currentTarget ?? e?.target;
+      if (node?.getBoundingClientRect) {
+        const rect = node.getBoundingClientRect();
+        setMenuPos({ top: rect.bottom + 4, left: rect.right });
+      }
+    } else if (e?.nativeEvent) {
+      setMenuPos({
+        top: (e.nativeEvent.pageY ?? 44) + 6,
+        left: e.nativeEvent.pageX ?? 12,
+      });
+    }
+    setMenuOpen(true);
+  }, [onStop, onTogglePin, pinned, showMenu]);
+
   return (
     <TouchableOpacity
       style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}
       onPress={onPress}
+      onLongPress={openMenu}
       activeOpacity={0.7}
     >
       <View style={styles.row}>
@@ -79,14 +109,8 @@ export const RunningJobCard = memo(function RunningJobCard({
               ref={menuBtnRef}
               onPress={(e: any) => {
                 e.stopPropagation();
-                if (isWeb) {
-                  const node = e?.currentTarget ?? e?.target;
-                  if (node?.getBoundingClientRect) {
-                    const rect = node.getBoundingClientRect();
-                    setMenuPos({ top: rect.bottom + 4, left: rect.right });
-                  }
-                }
-                setMenuOpen((v) => !v);
+                if (menuOpen) setMenuOpen(false);
+                else openMenu(e);
               }}
               style={styles.moreBtn}
               activeOpacity={0.6}
@@ -105,13 +129,15 @@ export const RunningJobCard = memo(function RunningJobCard({
           ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </View>
-      {menuOpen && showMenu && (
+      {isWeb && menuOpen && showMenu && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
-            { type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger },
+            ...(onTogglePin ? [{ type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } }] : []),
+            ...(onTogglePin && onStop ? [{ type: "separator" as const }] : []),
+            ...(onStop ? [{ type: "item" as const, label: "Stop", onPress: () => { onStop(); setMenuOpen(false); }, color: colors.danger }] : []),
           ]}
         />
       )}

@@ -37,6 +37,9 @@ export function JobListProcessItem({
   const softBorder = openElsewhere && !selected;
   const marginTop = Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
   const onPress = hook.onSelectProcess ? () => hook.onSelectProcess?.(process) : undefined;
+  const pinKey = `process:${process.pane_id}`;
+  const pinned = hook.pinnedItems?.includes(pinKey) ?? false;
+  const onTogglePin = hook.onTogglePin ? () => hook.onTogglePin?.(pinKey) : undefined;
   const onStop = hook.onStopProcess ? () => hook.onStopProcess?.(process.pane_id) : undefined;
   const onRename = hook.onRenameProcess ? () => hook.onRenameProcess?.(process) : undefined;
   const onSaveName = hook.onSaveProcessName ? (name: string) => hook.onSaveProcessName?.(process, name) : undefined;
@@ -52,6 +55,8 @@ export function JobListProcessItem({
       onStop,
       onRename,
       onSaveName,
+      onTogglePin,
+      pinned,
       autoYesActive: hook.autoYesPaneIds?.has(process.pane_id) ?? false,
       marginTop,
       dataProcessId: process.pane_id,
@@ -71,6 +76,8 @@ export function JobListProcessItem({
         onStop={onStop}
         onRename={onRename}
         onSaveName={onSaveName}
+        onTogglePin={onTogglePin}
+        pinned={pinned}
         autoYesActive={hook.autoYesPaneIds?.has(process.pane_id) ?? false}
         startRenameSignal={hook.renameProcessPaneId === process.pane_id ? hook.renameProcessSignal : undefined}
         onRenameDraftChange={(value) => hook.onProcessRenameDraftChange?.(process.pane_id, value)}

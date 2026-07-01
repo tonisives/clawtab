@@ -54,6 +54,8 @@ export { StatusBadge } from "./components/StatusBadge";
 export { JobCard } from "./components/JobCard";
 export { RunningJobCard } from "./components/RunningJobCard";
 export { ProcessCard } from "./components/ProcessCard";
+export { showNativeActionMenu } from "./components/nativeActionMenu";
+export type { NativeActionMenuItem } from "./components/nativeActionMenu";
 export { ShellCard } from "./components/ShellCard";
 export { JobKindIcon, kindForJob, kindForProcess, kindForShell, type JobKind } from "./components/JobKindIcon";
 export { LogViewer } from "./components/LogViewer";

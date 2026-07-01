@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from "react-native";
 import type { DetectedProcess } from "../types/process";
 import { PopupMenu } from "./PopupMenu";
+import { showNativeActionMenu } from "./nativeActionMenu";
 import { compactProcessQuery, processDisplayTitle, shortenPath } from "../util/format";
 import { Tooltip } from "./Tooltip";
 import { colors } from "../theme/colors";
@@ -27,6 +28,8 @@ export function ProcessCard({
   onStop,
   onRename,
   onSaveName,
+  onTogglePin,
+  pinned,
   autoYesActive,
   startRenameSignal,
   onRenameDraftChange,
@@ -44,6 +47,8 @@ export function ProcessCard({
   onStop?: () => void;
   onRename?: () => void;
   onSaveName?: (name: string) => void;
+  onTogglePin?: () => void;
+  pinned?: boolean;
   autoYesActive?: boolean;
   startRenameSignal?: number;
   onRenameDraftChange?: (value: string | null) => void;
@@ -145,14 +150,40 @@ export function ProcessCard({
   );
 
   const canMoveToWorkspace = !!onMoveToWorkspace && !!moveToWorkspaceLabel && !transient;
-  const showMenu = (onStop || onRename || onSaveName || canMoveToWorkspace) && !transient;
+  const showMenu = (onStop || onRename || onSaveName || onTogglePin || canMoveToWorkspace) && !transient;
   const kind = kindForProcess(process);
+  const openMenu = useCallback((e?: any) => {
+    if (!showMenu || editing) return;
+    if (!isWeb) {
+      showNativeActionMenu([
+        ...(onTogglePin ? [{ label: pinned ? "Unpin" : "Pin", onPress: onTogglePin }] : []),
+        ...(canRename ? [{ label: "Rename", onPress: startEditing }] : []),
+        ...(canMoveToWorkspace ? [{ label: moveToWorkspaceLabel!, onPress: onMoveToWorkspace! }] : []),
+        ...(onStop ? [{ label: "Stop", onPress: onStop, destructive: true }] : []),
+      ]);
+      return;
+    }
+    if (isWeb) {
+      const node = e?.currentTarget ?? e?.target;
+      if (node?.getBoundingClientRect) {
+        const rect = node.getBoundingClientRect();
+        setMenuPos({ top: rect.bottom + 4, left: rect.right });
+      }
+    } else if (e?.nativeEvent) {
+      setMenuPos({
+        top: (e.nativeEvent.pageY ?? 44) + 6,
+        left: e.nativeEvent.pageX ?? 12,
+      });
+    }
+    setMenuOpen(true);
+  }, [canMoveToWorkspace, canRename, editing, moveToWorkspaceLabel, onMoveToWorkspace, onStop, onTogglePin, pinned, showMenu, startEditing]);
 
   return (
     <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={editing ? undefined : onPress}
+        onLongPress={openMenu}
         activeOpacity={0.7}
       >
         <JobKindIcon kind={kind} />
@@ -196,14 +227,8 @@ export function ProcessCard({
               ref={menuBtnRef}
               onPress={(e: any) => {
                 e.stopPropagation();
-                if (isWeb) {
-                  const node = e?.currentTarget ?? e?.target;
-                  if (node?.getBoundingClientRect) {
-                    const rect = node.getBoundingClientRect();
-                    setMenuPos({ top: rect.bottom + 4, left: rect.right });
-                  }
-                }
-                setMenuOpen((v) => !v);
+                if (menuOpen) setMenuOpen(false);
+                else openMenu(e);
               }}
               style={styles.moreBtn}
               activeOpacity={0.6}
@@ -218,12 +243,14 @@ export function ProcessCard({
           ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </TouchableOpacity>
-      {menuOpen && (onStop || onRename || onSaveName || canMoveToWorkspace) && (
+      {isWeb && menuOpen && (onStop || onRename || onSaveName || onTogglePin || canMoveToWorkspace) && (
         <PopupMenu
           triggerRef={menuBtnRef}
           position={menuPos}
           onClose={() => setMenuOpen(false)}
           items={[
+            ...(onTogglePin ? [{ type: "item" as const, label: pinned ? "Unpin" : "Pin", onPress: () => { onTogglePin(); setMenuOpen(false); } }] : []),
+            ...(onTogglePin && (canRename || canMoveToWorkspace || onStop) ? [{ type: "separator" as const }] : []),
             ...(canRename ? [{ type: "item" as const, label: "Rename", hint: renameShortcutHint, onPress: () => { startEditing(); } }] : []),
             ...(canMoveToWorkspace ? [{ type: "item" as const, label: moveToWorkspaceLabel!, onPress: () => { onMoveToWorkspace!(); setMenuOpen(false); } }] : []),
             ...((canRename || canMoveToWorkspace) && onStop ? [{ type: "separator" as const }] : []),

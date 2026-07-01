@@ -29,6 +29,7 @@ interface UseJobListDerivedItemsParams {
     groupTabView?: Record<string, "tabs" | "jobs">;
     hiddenGroups?: Set<string>;
     hiddenSectionCollapsed: boolean;
+    pinnedItems?: string[];
   };
   filters: {
     query: string;
@@ -47,7 +48,7 @@ export function useJobListDerivedItems({
 }: UseJobListDerivedItemsParams) {
   const { detectedProcesses, jobs, shellPanes, statuses } = data;
   const { jobOrder, processOrder, sortMode } = ordering;
-  const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed } = grouping;
+  const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed, pinnedItems } = grouping;
   const { query } = filters;
   const { onRunAgent } = agent;
   const inferredJobSlugByPaneId = useMemo(() => {
@@ -260,6 +261,26 @@ export function useJobListDerivedItems({
   const items = useMemo(() => {
     const result: ListItem[] = [];
 
+    if (pinnedItems?.length) {
+      const pinnedRows: ListItem[] = [];
+      const jobsBySlug = new Map(jobs.map((job) => [job.slug, job]));
+      const processesByPaneId = new Map(detectedProcesses.map((process) => [process.pane_id, process]));
+      for (const key of pinnedItems) {
+        const [kind, id] = key.split(/:(.*)/s);
+        if (kind === "job") {
+          const job = jobsBySlug.get(id);
+          if (job) pinnedRows.push({ kind: "job", job, idx: 0 });
+        } else if (kind === "process") {
+          const process = processesByPaneId.get(id);
+          if (process) pinnedRows.push({ kind: "process", process });
+        }
+      }
+      if (pinnedRows.length > 0) {
+        result.push({ kind: "header", group: "__pinned", displayGroup: "Pinned" });
+        result.push(...pinnedRows);
+      }
+    }
+
     // Build detected-process folder groups and ungrouped list
     const detFolderGroups: [string, DetectedProcess[]][] = [];
     const detUngrouped: DetectedProcess[] = [];
@@ -445,7 +466,7 @@ export function useJobListDerivedItems({
     }
 
     return result;
-  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, hiddenSectionCollapsed, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, query, shellPanes, groupTabView]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, hiddenSectionCollapsed, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, query, shellPanes, groupTabView, pinnedItems, jobs, detectedProcesses]);
 
 
   return {

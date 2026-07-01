@@ -22,6 +22,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
 import { useJobFilterStore } from "../../src/store/jobFilter"
+import { usePinsStore } from "../../src/store/pins"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
@@ -229,6 +230,9 @@ export default function JobsScreen() {
   const closeSearch = useJobFilterStore((s) => s.closeSearch)
   const clearSearch = useJobFilterStore((s) => s.clear)
   const searchInputRef = useRef<TextInput>(null)
+  const pinnedItems = usePinsStore((s) => s.pinnedItems)
+  const hydratePins = usePinsStore((s) => s.hydrate)
+  const togglePin = usePinsStore((s) => s.togglePin)
   const glassAvailable =
     Platform.OS === "ios" &&
     (() => {
@@ -300,6 +304,10 @@ export default function JobsScreen() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    hydratePins()
+  }, [hydratePins])
 
   const handleRefresh = useCallback(() => {
     const send = getWsSend()
@@ -614,6 +622,8 @@ export default function JobsScreen() {
         onSortChange={setSortMode}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
+        pinnedItems={pinnedItems}
+        onTogglePin={togglePin}
         onRunAgent={runAgentHandler}
         agentModelOptions={agentModelOptions}
         groupTabView={groupTabView}
@@ -644,6 +654,8 @@ export default function JobsScreen() {
       onSortChange={undefined}
       onSelectJob={handleSelectJob}
       onSelectProcess={handleSelectProcess}
+      pinnedItems={pinnedItems}
+      onTogglePin={togglePin}
       onRunAgent={runAgentHandler}
       agentModelOptions={agentModelOptions}
       groupTabView={groupTabView}
@@ -922,6 +934,8 @@ export default function JobsScreen() {
             onSortChange={setSortMode}
             onSelectJob={handleSelectJobWithTree}
             onSelectProcess={handleSelectProcessWithTree}
+            pinnedItems={pinnedItems}
+            onTogglePin={togglePin}
             selectedItems={split.selectedItems}
             focusedItemKey={split.focusedItemKey}
             onRunAgent={runAgentHandler}

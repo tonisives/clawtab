@@ -17,6 +17,9 @@ type PtySubscription = {
   ackTimer?: ReturnType<typeof setTimeout>;
   subscribeTimer?: ReturnType<typeof setTimeout>;
   unsubscribeTimer?: ReturnType<typeof setTimeout>;
+  retryTimer?: ReturnType<typeof setTimeout>;
+  startedAt: number;
+  retryAttempt: number;
 };
 
 const ptySubscriptions = new Map<string, PtySubscription>();
@@ -24,6 +27,9 @@ const ptySubscriptions = new Map<string, PtySubscription>();
 type PtyConnectionState = "idle" | "connecting" | "failed";
 
 const SUBSCRIBE_ACK_TIMEOUT_MS = 15000;
+const SUBSCRIBE_RETRY_WINDOW_MS = 45000;
+const SUBSCRIBE_RETRY_BASE_MS = 700;
+const SUBSCRIBE_RETRY_MAX_MS = 3000;
 const DEFAULT_DIMS = { cols: 80, rows: 24 };
 
 function setSubscriptionState(
@@ -47,6 +53,39 @@ function clearSubscribeWait(subscription: PtySubscription) {
   }
 }
 
+function clearSubscribeRetry(subscription: PtySubscription) {
+  if (subscription.retryTimer) {
+    clearTimeout(subscription.retryTimer);
+    subscription.retryTimer = undefined;
+  }
+}
+
+function scheduleSubscribeRetry(
+  paneId: string,
+  subscription: PtySubscription,
+  finalError: string,
+) {
+  clearSubscribeWait(subscription);
+  const elapsed = Date.now() - subscription.startedAt;
+  if (elapsed >= SUBSCRIBE_RETRY_WINDOW_MS || subscription.count <= 0) {
+    clearSubscribeRetry(subscription);
+    setSubscriptionState(subscription, "failed", finalError);
+    return;
+  }
+
+  const delay = Math.min(
+    SUBSCRIBE_RETRY_MAX_MS,
+    SUBSCRIBE_RETRY_BASE_MS * Math.max(1, subscription.retryAttempt),
+  );
+  subscription.retryAttempt += 1;
+  setSubscriptionState(subscription, "connecting");
+  clearSubscribeRetry(subscription);
+  subscription.retryTimer = setTimeout(() => {
+    subscription.retryTimer = undefined;
+    sendSubscribe(paneId, subscription);
+  }, delay);
+}
+
 function sendSubscribe(paneId: string, subscription: PtySubscription) {
   const send = getWsSend();
   if (!send) return false;
@@ -54,6 +93,7 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
   const id = nextId();
 
   clearSubscribeWait(subscription);
+  clearSubscribeRetry(subscription);
   setSubscriptionState(subscription, "connecting");
 
   send({
@@ -70,7 +110,7 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
     if (subscription.state === "connecting") {
       subscription.pendingAckId = undefined;
       clearRequest(id);
-      setSubscriptionState(subscription, "failed", "Terminal connection timed out.");
+      scheduleSubscribeRetry(paneId, subscription, "Terminal connection timed out.");
     }
   }, SUBSCRIBE_ACK_TIMEOUT_MS);
   registerRequest<{ success?: boolean; error?: string; code?: string; message?: string }>(id).then((ack) => {
@@ -79,15 +119,18 @@ function sendSubscribe(paneId: string, subscription: PtySubscription) {
     if (ack?.success === false || ack?.code) {
       if (subscription.ackTimer) clearTimeout(subscription.ackTimer);
       subscription.ackTimer = undefined;
-      setSubscriptionState(
+      scheduleSubscribeRetry(
+        paneId,
         subscription,
-        "failed",
         ack.error ?? ack.message ?? "Terminal connection failed.",
       );
       return;
     }
     if (subscription.ackTimer) clearTimeout(subscription.ackTimer);
     subscription.ackTimer = undefined;
+    clearSubscribeRetry(subscription);
+    subscription.retryAttempt = 0;
+    subscription.startedAt = Date.now();
     setSubscriptionState(subscription, "idle");
   });
   return true;
@@ -100,6 +143,8 @@ export function replayActivePtySubscriptions() {
     subscription.subscribeTimer = undefined;
     if (subscription.unsubscribeTimer) clearTimeout(subscription.unsubscribeTimer);
     subscription.unsubscribeTimer = undefined;
+    subscription.startedAt = Date.now();
+    subscription.retryAttempt = 0;
     sendSubscribe(paneId, subscription);
   }
 }
@@ -113,6 +158,7 @@ export function releaseActivePtySubscriptions() {
     subscription.subscribeTimer = undefined;
     if (subscription.unsubscribeTimer) clearTimeout(subscription.unsubscribeTimer);
     subscription.unsubscribeTimer = undefined;
+    clearSubscribeRetry(subscription);
     send({ type: "unsubscribe_pty", pane_id: paneId });
   }
 }
@@ -122,6 +168,9 @@ export function dispatchPtyOutput(paneId: string, data: string) {
   const subscription = ptySubscriptions.get(paneId);
   if (subscription) {
     clearSubscribeWait(subscription);
+    clearSubscribeRetry(subscription);
+    subscription.retryAttempt = 0;
+    subscription.startedAt = Date.now();
     setSubscriptionState(subscription, "idle");
   }
   const listeners = ptyListeners.get(paneId);
@@ -209,7 +258,7 @@ export function usePty(
       existing.getDimensions = getDimensions;
       subscribedRef.current = true;
       stateListener = (state: PtyConnectionState, message?: string) => {
-        if (state === "connecting") {
+        if (state === "connecting" && !gotDataRef.current) {
           gotDataRef.current = false;
           setHasOutput(false);
         }
@@ -218,13 +267,10 @@ export function usePty(
       };
       existing.stateListeners.add(stateListener);
       stateListener(existing.state, existing.error);
-      if (send) {
-        sendSubscribe(paneId, existing);
-      }
     } else {
       if (existing?.unsubscribeTimer) clearTimeout(existing.unsubscribeTimer);
       stateListener = (state: PtyConnectionState, message?: string) => {
-        if (state === "connecting") {
+        if (state === "connecting" && !gotDataRef.current) {
           gotDataRef.current = false;
           setHasOutput(false);
         }
@@ -237,6 +283,8 @@ export function usePty(
         getDimensions,
         state: "connecting",
         stateListeners: new Set([stateListener]),
+        startedAt: Date.now(),
+        retryAttempt: 0,
       };
       ptySubscriptions.set(paneId, subscription);
       subscribedRef.current = true;
@@ -263,6 +311,7 @@ export function usePty(
               const current = ptySubscriptions.get(paneId);
               if (!current || current.count > 0) return;
               clearSubscribeWait(current);
+              clearSubscribeRetry(current);
               const s = getWsSend();
               if (s) s({ type: "unsubscribe_pty", pane_id: paneId });
               ptySubscriptions.delete(paneId);
