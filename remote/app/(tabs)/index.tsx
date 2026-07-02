@@ -10,7 +10,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
 } from "react-native"
-import { Stack, useRouter } from "expo-router"
+import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -45,7 +45,6 @@ import { DemoBanner } from "../../src/components/DemoOverlay"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
-import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import type { RemoteJob, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
 import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 import { buildModelOptions } from "../../src/lib/agentModels"
@@ -764,13 +763,6 @@ export default function JobsScreen() {
   if (!isWide) {
     return (
       <>
-        <Stack.Screen
-          options={{
-            title: "ClawTab",
-            headerLargeTitle: true,
-            headerRight: () => <NotificationsMenuButton countOnly showDemoQuestions={false} />,
-          }}
-        />
         {mobileJobList}
         <Modal visible={searchOpen} transparent animationType="fade" onRequestClose={closeSearch}>
           <KeyboardAvoidingView

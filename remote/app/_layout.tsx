@@ -10,7 +10,9 @@ import { loadCache } from "../src/lib/jobCache";
 import { loadPendingAnswers } from "../src/lib/pendingAnswers";
 import { handleColdStartAnswer, useNotifications } from "../src/hooks/useNotifications";
 import { colors } from "../src/theme/colors";
+import { NotificationsMenuButton } from "../src/components/NotificationsMenuButton";
 import { useResponsive } from "../src/hooks/useResponsive";
+import { useMobileHeaderStore } from "../src/store/mobileHeader";
 
 const navTheme = {
   ...DarkTheme,
@@ -24,6 +26,10 @@ const navTheme = {
     notification: colors.warning,
   },
 };
+
+function RootHeaderRight() {
+  return <NotificationsMenuButton countOnly showDemoQuestions={false} />;
+}
 
 function useWebDarkScrollbars() {
   useEffect(() => {
@@ -66,9 +72,11 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   useWebDarkScrollbars();
   const { isWide } = useResponsive();
+  const mobileHeaderTab = useMobileHeaderStore((s) => s.tab);
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
+  const isSettingsTab = mobileHeaderTab === "settings";
 
   useEffect(() => {
     init();
@@ -92,6 +100,7 @@ export default function RootLayout() {
             name="(tabs)"
             options={{
               headerShown: !isWide,
+              title: isSettingsTab ? "Settings" : "ClawTab",
               headerLargeTitle: true,
               headerTransparent: true,
               headerStyle: { backgroundColor: "transparent" },
@@ -99,6 +108,7 @@ export default function RootLayout() {
               headerShadowVisible: false,
               headerLargeTitleStyle: styles.headerLargeTitle,
               headerTitleStyle: styles.headerTitle,
+              headerRight: isSettingsTab ? () => null : () => <RootHeaderRight />,
             }}
           />
           <Stack.Screen

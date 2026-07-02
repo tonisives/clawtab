@@ -10,6 +10,7 @@ import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { SettingsModalProvider, useSettingsModal } from "../../src/store/settingsModal";
 import { useJobFilterStore } from "../../src/store/jobFilter";
+import { useMobileHeaderStore } from "../../src/store/mobileHeader";
 import SettingsScreen from "./settings";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
@@ -140,8 +141,13 @@ const modalStyles = StyleSheet.create({
 
 function TabsContent({ isWide }: { isWide: boolean }) {
   const openSearch = useJobFilterStore((s) => s.openSearch);
+  const setMobileHeaderTab = useMobileHeaderStore((s) => s.setTab);
   const pathname = usePathname();
   const settingsActive = pathname === "/settings";
+
+  useEffect(() => {
+    setMobileHeaderTab(settingsActive ? "settings" : "jobs");
+  }, [settingsActive, setMobileHeaderTab]);
 
   if (!isWide) {
     return (
@@ -154,14 +160,22 @@ function TabsContent({ isWide }: { isWide: boolean }) {
           shadowColor={colors.border}
           minimizeBehavior="onScrollDown"
         >
-          <NativeTabs.Trigger name="index" contentStyle={{ backgroundColor: colors.bg }}>
+          <NativeTabs.Trigger
+            name="index"
+            contentStyle={{ backgroundColor: colors.bg }}
+            listeners={{ tabPress: () => setMobileHeaderTab("jobs") }}
+          >
             <NativeTabs.Trigger.Label>Jobs</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon
               sf={{ default: "briefcase", selected: "briefcase.fill" }}
               md={{ default: "work_outline", selected: "work" }}
             />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="settings" contentStyle={{ backgroundColor: colors.bg }}>
+          <NativeTabs.Trigger
+            name="settings"
+            contentStyle={{ backgroundColor: colors.bg }}
+            listeners={{ tabPress: () => setMobileHeaderTab("settings") }}
+          >
             <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon
               sf={{ default: "gearshape", selected: "gearshape.fill" }}
