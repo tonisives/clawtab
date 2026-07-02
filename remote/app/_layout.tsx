@@ -1,7 +1,7 @@
 import { useEffect } from "react";
-import { DarkTheme, Stack, ThemeProvider, usePathname } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, Platform, StyleSheet, Text } from "react-native";
+import { View, ActivityIndicator, Platform, StyleSheet } from "react-native";
 import { useAuthStore } from "../src/store/auth";
 import { useWebSocket } from "../src/hooks/useWebSocket";
 import { useJobsStore } from "../src/store/jobs";
@@ -10,7 +10,6 @@ import { loadCache } from "../src/lib/jobCache";
 import { loadPendingAnswers } from "../src/lib/pendingAnswers";
 import { handleColdStartAnswer, useNotifications } from "../src/hooks/useNotifications";
 import { colors } from "../src/theme/colors";
-import { NotificationsMenuButton } from "../src/components/NotificationsMenuButton";
 import { useResponsive } from "../src/hooks/useResponsive";
 
 const navTheme = {
@@ -25,14 +24,6 @@ const navTheme = {
     notification: colors.warning,
   },
 };
-
-function RootHeaderRight() {
-  return <NotificationsMenuButton countOnly showDemoQuestions={false} />;
-}
-
-function RootHeaderTitle({ title }: { title: string }) {
-  return <Text style={styles.headerTitle}>{title}</Text>;
-}
 
 function useWebDarkScrollbars() {
   useEffect(() => {
@@ -75,12 +66,9 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   useWebDarkScrollbars();
   const { isWide } = useResponsive();
-  const pathname = usePathname();
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
-  const isSettingsTab = pathname === "/settings";
-  const tabsTitle = isSettingsTab ? "Settings" : "ClawTab";
 
   useEffect(() => {
     init();
@@ -104,8 +92,6 @@ export default function RootLayout() {
             name="(tabs)"
             options={{
               headerShown: !isWide,
-              title: tabsTitle,
-              headerTitle: () => <RootHeaderTitle title={tabsTitle} />,
               headerLargeTitle: true,
               headerTransparent: true,
               headerStyle: { backgroundColor: "transparent" },
@@ -113,7 +99,6 @@ export default function RootLayout() {
               headerShadowVisible: false,
               headerLargeTitleStyle: styles.headerLargeTitle,
               headerTitleStyle: styles.headerTitle,
-              headerRight: isSettingsTab ? () => null : () => <RootHeaderRight />,
             }}
           />
           <Stack.Screen

@@ -9,7 +9,7 @@ import {
   RefreshControl,
   Platform,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { Stack, useRouter } from "expo-router"
 import { useAuthStore } from "../../src/store/auth"
 import { useWsStore } from "../../src/store/ws"
 import { useJobsStore } from "../../src/store/jobs"
@@ -195,6 +195,15 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
 
   return (
     <>
+      {!isWide && !inModal ? (
+        <Stack.Screen
+          options={{
+            title: "Settings",
+            headerLargeTitle: true,
+            headerRight: () => null,
+          }}
+        />
+      ) : null}
       <ScrollView
         style={styles.scrollContainer}
         contentInsetAdjustmentBehavior="automatic"
