@@ -39,7 +39,7 @@ function HeaderBrand() {
       style={{ flexDirection: "row", alignItems: "center", gap: 8, marginLeft: 12 }}
     >
       <Image
-        source={require("../../assets/clawtab-icon.png")}
+        source={require("../../assets/icon.png")}
         style={{ width: 24, height: 24, borderRadius: 5 }}
       />
       <Text style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>ClawTab</Text>

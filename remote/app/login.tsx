@@ -18,7 +18,7 @@ import { colors } from "../src/theme/colors";
 import { radius, spacing } from "../src/theme/spacing";
 
 const APPLE_WEB_CLIENT_ID = "cc.clawtab.web";
-const clawTabIcon = require("../assets/clawtab-icon.png");
+const appIcon = require("../assets/icon.png");
 
 // Native-only: conditionally import Google Sign-In
 let GoogleSignin: any = null;
@@ -217,7 +217,7 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <View style={styles.card}>
         <View style={styles.header}>
-          <Image source={clawTabIcon} style={styles.logo} resizeMode="contain" />
+          <Image source={appIcon} style={styles.logo} resizeMode="contain" />
           <Text style={styles.title}>ClawTab</Text>
           <Text style={styles.subtitle}>Remote job control</Text>
         </View>
@@ -310,6 +310,7 @@ const styles = StyleSheet.create({
   logo: {
     width: 116,
     height: 116,
+    borderRadius: 26,
     marginBottom: spacing.lg,
   },
   title: {
@@ -331,7 +332,7 @@ const styles = StyleSheet.create({
   },
   googleBtn: {
     height: 44,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
@@ -345,7 +346,7 @@ const styles = StyleSheet.create({
   },
   appleBtn: {
     height: 44,
-    borderRadius: radius.sm,
+    borderRadius: 999,
     backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
@@ -401,7 +402,7 @@ const styles = StyleSheet.create({
   modalBtn: {
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
-    borderRadius: radius.sm,
+    borderRadius: 999,
   },
   modalBtnText: {
     color: colors.textSecondary,
