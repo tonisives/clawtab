@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  type LayoutChangeEvent,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,8 +17,40 @@ import { radius, spacing } from "../theme/spacing";
 import { AnsiText, hasAnsi } from "./AnsiText";
 import { collapseSeparators, truncateLogLines } from "../util/logs";
 import { isFreetextOption } from "../util/jobs";
+import { fitPath, shortenPath } from "../util/format";
 
 const isWeb = Platform.OS === "web";
+
+let measureCanvas: HTMLCanvasElement | null = null;
+function measureTextPx(text: string, font: string): number {
+  if (!isWeb || typeof document === "undefined") return text.length * 7.4;
+  if (!measureCanvas) measureCanvas = document.createElement("canvas");
+  const ctx = measureCanvas.getContext("2d");
+  if (!ctx) return text.length * 7.4;
+  ctx.font = font;
+  return ctx.measureText(text).width;
+}
+
+function useFittedNotificationPath(path: string): {
+  text: string;
+  onLayout: (event: LayoutChangeEvent) => void;
+} {
+  const [width, setWidth] = useState(0);
+  const [text, setText] = useState(() => shortenPath(path));
+
+  useEffect(() => {
+    const font = "500 15px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    setText(fitPath(path, width, (candidate) => measureTextPx(candidate, font)));
+  }, [path, width]);
+
+  return {
+    text,
+    onLayout: (event: LayoutChangeEvent) => {
+      const nextWidth = event.nativeEvent.layout.width;
+      setWidth((prev) => (Math.abs(prev - nextWidth) > 1 ? nextWidth : prev));
+    },
+  };
+}
 
 export interface NotificationCardProps {
   question: ClaudeQuestion;
@@ -122,9 +155,8 @@ export function NotificationCard({
 
   const showAnswered = answered || autoAnswered;
 
-  const title = resolvedJob
-    ? resolvedJob
-    : question.cwd.replace(/^\/Users\/[^/]+/, "~");
+  const fittedPath = useFittedNotificationPath(question.cwd);
+  const title = resolvedJob ? resolvedJob : fittedPath.text;
 
   const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160);
   const cardSizeStyle = cardMinHeight
@@ -228,7 +260,14 @@ export function NotificationCard({
         activeOpacity={0.7}
       >
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
+          <Text
+            style={styles.cardTitle}
+            numberOfLines={1}
+            ellipsizeMode={resolvedJob ? "tail" : "head"}
+            onLayout={resolvedJob ? undefined : fittedPath.onLayout}
+          >
+            {title}
+          </Text>
           <View style={styles.headerRight}>
             <Text style={styles.openText}>Open</Text>
             <Text style={styles.chevron}>{"\u203A"}</Text>
@@ -343,6 +382,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   cardTitle: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: spacing.sm,
     color: colors.text,
     fontSize: 15,
     fontWeight: "500",
