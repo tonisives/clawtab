@@ -17,6 +17,7 @@ import { useDemoPty } from "../../src/hooks/useDemoPty";
 import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
+import { useResponsive } from "../../src/hooks/useResponsive";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -46,6 +47,7 @@ export default function ProcessDetailScreen() {
   const router = useRouter();
   const goBack = useDetailBack("/(tabs)");
   const insets = useSafeAreaInsets();
+  const { isWide } = useResponsive();
   // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
   // We encode % as _pct_ in URLs and decode it back here.
   const pane_id = (rawPaneId ?? "").replace(/_pct_/g, "%");
@@ -356,7 +358,7 @@ export default function ProcessDetailScreen() {
       <View style={styles.container}>
         <Stack.Screen
           options={{
-            headerShown: true,
+            headerShown: !isWide,
             title: pane_id,
             headerStyle: { backgroundColor: colors.bg },
             headerTintColor: colors.text,
@@ -383,7 +385,7 @@ export default function ProcessDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          headerShown: true,
+          headerShown: !isWide,
           headerStyle: { backgroundColor: colors.bg },
           headerTintColor: colors.text,
           headerTitleStyle: { fontWeight: "600" },

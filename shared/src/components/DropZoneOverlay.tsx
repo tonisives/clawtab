@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Platform, Text, View } from "react-native";
 import type { SplitNode } from "../types/splitTree";
 
 export type DropZoneId =
@@ -126,6 +127,7 @@ export function DropZoneOverlay({
   const [measuredSize, setMeasuredSize] = useState({ w: 0, h: 0 });
 
   useLayoutEffect(() => {
+    if (Platform.OS !== "web") return;
     const el = overlayRef.current;
     if (!el) return;
 
@@ -142,6 +144,85 @@ export function DropZoneOverlay({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  if (Platform.OS !== "web") {
+    if (!activeZone || !tree) return null;
+
+    const leafRect = computeLeafRect(tree, activeZone.leafId, { x: 0, y: 0, w: containerW, h: containerH });
+    if (!leafRect) return null;
+
+    const key = zoneKey(activeZone);
+    const style = ZONE_STYLES[key];
+    if (!style) return null;
+
+    let highlightRect: Rect;
+    const pad = 8;
+    if (activeZone.action === "replace") {
+      highlightRect = {
+        x: leafRect.x + pad,
+        y: leafRect.y + pad,
+        w: leafRect.w - pad * 2,
+        h: leafRect.h - pad * 2,
+      };
+    } else {
+      const { direction, position } = activeZone;
+      if (direction === "horizontal") {
+        const halfW = leafRect.w / 2;
+        highlightRect = position === "before"
+          ? { x: leafRect.x + pad, y: leafRect.y + pad, w: halfW - pad, h: leafRect.h - pad * 2 }
+          : { x: leafRect.x + halfW, y: leafRect.y + pad, w: halfW - pad, h: leafRect.h - pad * 2 };
+      } else {
+        const halfH = leafRect.h / 2;
+        highlightRect = position === "before"
+          ? { x: leafRect.x + pad, y: leafRect.y + pad, w: leafRect.w - pad * 2, h: halfH - pad }
+          : { x: leafRect.x + pad, y: leafRect.y + halfH, w: leafRect.w - pad * 2, h: halfH - pad };
+      }
+    }
+
+    if (highlightRect.w <= 0 || highlightRect.h <= 0) return null;
+
+    return (
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+          zIndex: 100,
+        }}
+      >
+        <View
+          style={{
+            position: "absolute",
+            left: highlightRect.x,
+            top: highlightRect.y,
+            width: highlightRect.w,
+            height: highlightRect.h,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: style.bg,
+            borderWidth: 2,
+            borderStyle: "dashed",
+            borderColor: style.border,
+            borderRadius: 8,
+          }}
+        >
+          <Text
+            style={{
+              color: style.border,
+              fontSize: 13,
+              fontWeight: "600",
+              opacity: 0.9,
+            }}
+          >
+            {style.label}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   const outer = (children?: ReactNode) => (
     <div

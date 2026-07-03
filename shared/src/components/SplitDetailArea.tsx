@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Platform, View } from "react-native";
 import type { SplitNode, PaneContent } from "../types/splitTree";
 
 export type { SplitDirection } from "../types/splitTree";
@@ -32,6 +33,7 @@ export function SplitDetailArea({
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
+    if (Platform.OS !== "web") return;
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
@@ -45,6 +47,7 @@ export function SplitDetailArea({
   }, []);
 
   useEffect(() => {
+    if (Platform.OS !== "web") return;
     if (!focusedLeafId) return;
     const container = containerRef.current;
     if (!container) return;
@@ -61,6 +64,31 @@ export function SplitDetailArea({
     });
     return () => cancelAnimationFrame(raf);
   }, [focusedLeafId]);
+
+  if (Platform.OS !== "web") {
+    return (
+      <View
+        style={{ flex: 1, overflow: "hidden", position: "relative" }}
+        onLayout={(event) => {
+          const { width, height } = event.nativeEvent.layout;
+          setContainerSize({ w: width, h: height });
+        }}
+      >
+        {tree ? (
+          <SplitNodeRendererNative
+            node={tree}
+            renderLeaf={renderLeaf}
+            onFocusLeaf={onFocusLeaf}
+            focusedLeafId={focusedLeafId}
+            paneColors={paneColors}
+          />
+        ) : (
+          emptyContent ?? null
+        )}
+        {overlay}
+      </View>
+    );
+  }
 
   return (
     <div
@@ -89,6 +117,102 @@ export function SplitDetailArea({
       )}
       {overlay}
     </div>
+  );
+}
+
+function SplitNodeRendererNative({
+  node,
+  renderLeaf,
+  onFocusLeaf,
+  focusedLeafId,
+  paneColors,
+}: {
+  node: SplitNode;
+  renderLeaf: (content: PaneContent, leafId: string) => ReactNode;
+  onFocusLeaf?: (leafId: string) => void;
+  focusedLeafId?: string | null;
+  paneColors?: Map<string, string>;
+}) {
+  if (node.type === "leaf") {
+    const color = paneColors?.get(node.id);
+    const showColorStrip = paneColors && paneColors.size > 1;
+    const isFocused = focusedLeafId === node.id;
+    return (
+      <View
+        style={{
+          flex: 1,
+          overflow: "hidden",
+          position: "relative",
+          borderRadius: 3,
+          opacity: showColorStrip && !isFocused ? 0.85 : 1,
+        }}
+        onTouchStart={onFocusLeaf ? () => onFocusLeaf(node.id) : undefined}
+      >
+        {renderLeaf(node.content, node.id)}
+        {showColorStrip ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              borderRadius: 3,
+              borderWidth: 1,
+              borderColor: (color ?? "transparent") + (isFocused ? "" : "66"),
+              zIndex: 9999,
+            }}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  const isH = node.direction === "horizontal";
+  return (
+    <View
+      style={{
+        flex: 1,
+        flexDirection: isH ? "row" : "column",
+        overflow: "hidden",
+      }}
+    >
+      <View
+        style={{
+          ...(isH
+            ? { width: `${node.ratio * 100}%` }
+            : { height: `${node.ratio * 100}%` }),
+          overflow: "hidden",
+        }}
+      >
+        <SplitNodeRendererNative
+          key={node.first.id}
+          node={node.first}
+          renderLeaf={renderLeaf}
+          onFocusLeaf={onFocusLeaf}
+          focusedLeafId={focusedLeafId}
+          paneColors={paneColors}
+        />
+      </View>
+      <View
+        style={{
+          ...(isH ? { width: 1 } : { height: 1 }),
+          flexShrink: 0,
+          backgroundColor: "#333333",
+        }}
+      />
+      <View style={{ flex: 1, overflow: "hidden" }}>
+        <SplitNodeRendererNative
+          key={node.second.id}
+          node={node.second}
+          renderLeaf={renderLeaf}
+          onFocusLeaf={onFocusLeaf}
+          focusedLeafId={focusedLeafId}
+          paneColors={paneColors}
+        />
+      </View>
+    </View>
   );
 }
 

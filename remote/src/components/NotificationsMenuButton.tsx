@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import { Dimensions, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -23,7 +22,6 @@ export function NotificationsMenuButton({
   countOnly?: boolean;
   showDemoQuestions?: boolean;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; right: number }>({ top: 48, right: 12 });
   const windowSize = useWindowDimensions();
@@ -43,8 +41,6 @@ export function NotificationsMenuButton({
   }, [isDemo, questions, showDemoQuestions]);
 
   const hasContent = activeQuestionCount > 0 || (!isDemo && autoYesPaneIds.size > 0);
-  const nativeTop = insets.top + 58;
-  const nativeBottom = insets.bottom + 58;
   const popupFrame = Platform.OS === "web"
     ? {
         top: position.top,
@@ -53,18 +49,13 @@ export function NotificationsMenuButton({
         maxHeight: Math.min(720, windowSize.height * 0.82),
       }
     : {
-        top: nativeTop,
-        right: 10,
-        bottom: nativeBottom,
-        left: 10,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
       };
 
   const openMenu = () => {
-    if (Platform.OS === "ios") {
-      router.push("/notifications");
-      return;
-    }
-
     const screen = Dimensions.get("window");
     const node = buttonRef.current as unknown as {
       measureInWindow?: (callback: (x: number, y: number, width: number, height: number) => void) => void;
@@ -144,11 +135,23 @@ export function NotificationsMenuButton({
         </View>
       )}
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+      <Modal
+        visible={open}
+        transparent
+        animationType={Platform.OS === "ios" ? "slide" : "fade"}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        onRequestClose={() => setOpen(false)}
+      >
         <View style={styles.modalRoot}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-          <View style={[styles.popup, Platform.OS !== "web" && styles.nativePopup, isDemo && styles.demoPopup, popupFrame]}>
-            <Text style={styles.title}>Notifications</Text>
+          <View style={[styles.popup, Platform.OS !== "web" && [styles.nativePopup, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }], isDemo && styles.demoPopup, popupFrame]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.title}>Notifications</Text>
+              <Pressable onPress={() => setOpen(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={20} color={colors.text} />
+              </Pressable>
+            </View>
             <NotificationsPanel mode="popup" onNavigateAway={() => setOpen(false)} />
           </View>
         </View>
@@ -160,7 +163,10 @@ export function NotificationsMenuButton({
 const styles = StyleSheet.create({
   buttonFrame: {
     position: "relative",
-    transform: [{ translateY: 3 }],
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
   },
   countButtonFrame: {
     position: "relative",
@@ -170,18 +176,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   button: {
-    width: 28,
-    height: 28,
+    width: 36,
+    height: 36,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 6,
+    borderRadius: 18,
     position: "relative",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   buttonActive: {
-    backgroundColor: colors.surfaceHover,
+    backgroundColor: colors.accentBg,
+    borderColor: "rgba(121, 134, 203, 0.32)",
   },
   buttonHasQuestions: {
     backgroundColor: colors.warningBg,
+    borderColor: "rgba(255, 159, 10, 0.28)",
   },
   countButton: {
     width: 28,
@@ -246,8 +257,8 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: "absolute",
-    top: -5,
-    right: -7,
+    top: -2,
+    right: -4,
     minWidth: 20,
     height: 14,
     paddingHorizontal: 4,
@@ -296,7 +307,10 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web" ? { boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)" as any } : { elevation: 12 }),
   },
   nativePopup: {
-    padding: 12,
+    paddingHorizontal: 12,
+    borderWidth: 0,
+    borderRadius: 0,
+    elevation: 0,
   },
   demoPopup: {
     ...(Platform.OS === "web"
@@ -307,11 +321,26 @@ const styles = StyleSheet.create({
       : null),
   },
   title: {
-    marginBottom: 8,
     color: colors.text,
-    fontSize: 12,
+    fontSize: 17,
     fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+  },
+  modalHeader: {
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 4,
+    marginBottom: 8,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 });

@@ -95,10 +95,11 @@ export default function RootLayout() {
   const content = (
     <ThemeProvider value={navTheme}>
       <View style={styles.root}>
-        <Stack screenOptions={{ headerShown: false }}>
+        <Stack screenOptions={{ headerShown: false, animation: "none" }}>
           <Stack.Screen
             name="(tabs)"
             options={{
+              animation: "none",
               headerShown: !isWide,
               title: isSettingsTab ? "Settings" : "ClawTab",
               headerLargeTitle: true,
@@ -114,7 +115,9 @@ export default function RootLayout() {
           <Stack.Screen
             name="notifications"
             options={{
-              headerShown: true,
+              animation: "slide_from_bottom",
+              presentation: "modal",
+              headerShown: false,
               title: "Notifications",
               headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.text,

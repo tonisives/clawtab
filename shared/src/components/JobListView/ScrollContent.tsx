@@ -18,8 +18,13 @@ export function JobListScrollContent({ hook }: JobListScrollContentProps) {
       style={styles.scroll}
       contentContainerStyle={[styles.list, hook.contentContainerStyle]}
       scrollEnabled={hook.scrollEnabled}
-      contentInsetAdjustmentBehavior="automatic"
+      contentInsetAdjustmentBehavior="never"
       automaticallyAdjustKeyboardInsets
+      alwaysBounceHorizontal={false}
+      alwaysBounceVertical={false}
+      bounces={false}
+      directionalLockEnabled
+      horizontal={false}
       onScroll={(event) => { hook.onScrollOffsetChange?.(event.nativeEvent.contentOffset.y); }}
       scrollEventThrottle={hook.scrollEventThrottle}
       refreshControl={

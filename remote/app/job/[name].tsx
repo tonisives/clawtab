@@ -21,6 +21,7 @@ import { registerRequest } from "../../src/lib/useRequestMap";
 import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../../src/demo/data";
 import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
+import { useResponsive } from "../../src/hooks/useResponsive";
 import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
@@ -83,6 +84,7 @@ function agentJobFromSlug(slug: string): RemoteJob {
 export default function JobDetailScreen() {
   const { name, run_id, demo } = useLocalSearchParams<{ name: string; run_id?: string; demo?: string }>();
   const insets = useSafeAreaInsets();
+  const { isWide } = useResponsive();
   const storeJob = useJob(name);
   const isAgent = !storeJob && name.startsWith("agent-");
   const isDemo = demo === "1" || (!storeJob && !isAgent && isDemoJob(name));
@@ -305,7 +307,7 @@ export default function JobDetailScreen() {
       <View style={styles.container}>
         <Stack.Screen
           options={{
-            headerShown: true,
+            headerShown: !isWide,
             title: name,
             headerStyle: { backgroundColor: colors.bg },
             headerTintColor: colors.text,
@@ -334,7 +336,7 @@ export default function JobDetailScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          headerShown: true,
+          headerShown: !isWide,
           headerStyle: { backgroundColor: colors.bg },
           headerTintColor: colors.text,
           headerTitleStyle: { fontWeight: "600" },

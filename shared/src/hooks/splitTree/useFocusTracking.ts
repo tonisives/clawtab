@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Platform } from "react-native";
 
 /** Keep focusedLeafId in sync with real DOM focus: when any element inside a
  *  pane leaf gains focus (mouse, keyboard nav, programmatic xterm focus), the
@@ -28,6 +29,7 @@ export function useFocusTracking(opts: {
   const { detailPaneRef, setFocusedLeafId } = opts;
 
   useEffect(() => {
+    if (Platform.OS !== "web") return;
     const el = detailPaneRef.current;
     if (!el) return;
     let raf1: number | null = null;

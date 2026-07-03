@@ -71,7 +71,7 @@ export const RunningJobCard = memo(function RunningJobCard({
 
   return (
     <TouchableOpacity
-      style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}
+      style={[styles.card, selected ? styles.cardSelected : null, softBorder && !selected ? styles.cardSoftBorder : null, groupedCardStyle(groupedPosition)]}
       onPress={onPress}
       onLongPress={openMenu}
       activeOpacity={0.7}
@@ -145,6 +145,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    position: "relative",
+    overflow: "hidden",
     ...(Platform.OS !== "web"
       ? {
           borderRadius: 0,
@@ -156,7 +158,12 @@ const styles = StyleSheet.create({
       : {}),
   },
   cardSelected: {
-    borderColor: colors.accent,
+    backgroundColor: colors.accentBg,
+    borderColor: colors.borderLight,
+  },
+  cardSoftBorder: {
+    borderColor: colors.accent + "55",
+    borderWidth: 1,
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md, minWidth: 0 },
   iconWrap: {

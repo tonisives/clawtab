@@ -7,6 +7,7 @@ import {
   type DragMoveEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { Platform } from "react-native";
 import type { PaneContent, SplitNode } from "../../types/splitTree";
 import {
   collectLeaves,
@@ -56,6 +57,11 @@ export function useDragDrop(opts: {
   }, []);
 
   const handleDragMove = useCallback((event: DragMoveEvent) => {
+    if (Platform.OS !== "web") {
+      dragActiveZoneRef.current = null;
+      setDragActiveZone(null);
+      return;
+    }
     const el = detailPaneRef.current;
     if (!el) { dragActiveZoneRef.current = null; setDragActiveZone(null); return; }
     const rect = el.getBoundingClientRect();

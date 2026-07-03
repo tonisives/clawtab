@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Platform } from "react-native";
 import type { SplitNode } from "../../types/splitTree";
 import { useControlledSync } from "./useControlledSync";
 import { useDerivedData } from "./useDerivedData";
@@ -43,6 +44,7 @@ export function useSplitTree(options: UseSplitTreeOptions) {
   const [detailSize, setDetailSize] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
+    if (Platform.OS !== "web") return;
     const el = detailPaneRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {

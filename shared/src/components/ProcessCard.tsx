@@ -169,7 +169,7 @@ export function ProcessCard({
   }, [editing, showMenu]);
 
   return (
-    <View style={[styles.processCard, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}>
+    <View style={[styles.processCard, selected ? styles.processCardSelected : null, softBorder && !selected ? styles.processCardSoftBorder : null, groupedCardStyle(groupedPosition)]}>
       <TouchableOpacity
         style={styles.processRow}
         onPress={editing ? undefined : onPress}
@@ -261,6 +261,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     opacity: 0.7,
+    position: "relative",
+    overflow: "hidden",
     ...(Platform.OS !== "web"
       ? {
           borderRadius: 0,
@@ -273,8 +275,13 @@ const styles = StyleSheet.create({
       : {}),
   },
   processCardSelected: {
-    borderColor: colors.accent,
+    backgroundColor: colors.accentBg,
     opacity: 1,
+    borderColor: colors.borderLight,
+  },
+  processCardSoftBorder: {
+    borderColor: colors.accent + "55",
+    borderWidth: 1,
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },

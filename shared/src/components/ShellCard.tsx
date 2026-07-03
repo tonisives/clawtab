@@ -98,7 +98,7 @@ export function ShellCard({
   const showMenu = !!(onStop || onRename || canMoveToWorkspace);
 
   return (
-    <View style={[styles.card, selected ? { borderColor: typeof selected === "string" ? selected : colors.accent, borderWidth: 2, opacity: 1, boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.1), 1px 1px 0 rgba(0,0,0,0.18)" } : softBorder ? { borderColor: colors.accent + "55", borderWidth: 1 } : null, groupedCardStyle(groupedPosition)]}>
+    <View style={[styles.card, selected ? styles.cardSelected : null, softBorder && !selected ? styles.cardSoftBorder : null, groupedCardStyle(groupedPosition)]}>
       <TouchableOpacity style={[styles.row, showMenu && styles.rowWithMenu]} onPress={onPress} activeOpacity={0.7}>
         <JobKindIcon kind="shell" />
         <View style={styles.info}>
@@ -158,6 +158,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     opacity: 0.7,
+    position: "relative",
+    overflow: "hidden",
     ...(Platform.OS !== "web"
       ? {
           borderRadius: 0,
@@ -168,6 +170,15 @@ const styles = StyleSheet.create({
           paddingVertical: spacing.lg,
         }
       : {}),
+  },
+  cardSelected: {
+    backgroundColor: colors.accentBg,
+    borderColor: colors.borderLight,
+    opacity: 1,
+  },
+  cardSoftBorder: {
+    borderColor: colors.accent + "55",
+    borderWidth: 1,
   },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   rowWithMenu: { paddingRight: 44 },

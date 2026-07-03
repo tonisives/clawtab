@@ -918,7 +918,7 @@ export default function JobsScreen() {
     const data = split.dragOverlayData as DragData | null
     if (!data) return null
     return (
-      <div style={{ opacity: 0.8, pointerEvents: "none" as const, width: 300 }}>
+      <View style={{ opacity: 0.8, width: 300 }} pointerEvents="none">
         {data.kind === "job" ? (
           (() => {
             const s = statuses[data.slug] ?? { state: "idle" as const }
@@ -931,7 +931,7 @@ export default function JobsScreen() {
         ) : (
           <ProcessCard process={data.process} />
         )}
-      </div>
+      </View>
     )
   })()
 
@@ -950,6 +950,85 @@ export default function JobsScreen() {
     </View>
   )
 
+  const splitContent = (
+    <View style={styles.splitContainer}>
+      <View style={[styles.listPane, { width: listWidth }]}>
+        {isDemo && <DemoBanner />}
+        <JobListView
+          jobs={jobs}
+          statuses={statuses}
+          detectedProcesses={visibleDetectedProcesses}
+          collapsedGroups={collapsedGroups}
+          onToggleGroup={toggleGroup}
+          hiddenGroups={hiddenGroups}
+          onHideGroup={hideGroup}
+          onUnhideGroup={unhideGroup}
+          onRefresh={handleRefresh}
+          sortMode={sortMode}
+          onSortChange={setSortMode}
+          onSelectJob={handleSelectJobWithTree}
+          onSelectProcess={handleSelectProcessWithTree}
+          pinnedItems={pinnedItems}
+          onTogglePin={togglePin}
+          onStopJob={isDemo ? undefined : handleStopJob}
+          onStopProcess={isDemo ? undefined : handleStopProcess}
+          stoppingSlugs={stoppingJobSlugs}
+          selectedItems={split.selectedItems}
+          focusedItemKey={split.focusedItemKey}
+          onRunAgent={runAgentHandler}
+          agentModelOptions={agentModelOptions}
+          groupTabView={groupTabView}
+          onGroupTabViewChange={handleGroupTabViewChange}
+          onSetAllGroupTabView={handleSetAllGroupTabView}
+          headerContent={bannerContent}
+          showEmpty={loaded || isDemo}
+          emptyMessage={
+            connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."
+          }
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          scrollEnabled={!split.isDragging}
+          renderJobCard={renderDraggableJobCard}
+          renderProcessCard={renderDraggableProcessCard}
+        />
+      </View>
+      <View ref={handleRef} style={styles.resizeHandle} />
+      <View ref={split.detailPaneRef as unknown as React.Ref<View>} style={styles.detailPane}>
+        <SplitDetailArea
+          tree={split.tree}
+          renderLeaf={renderLeaf}
+          onRatioChange={split.handleSplitRatioChange}
+          onFocusLeaf={split.setFocusedLeafId}
+          focusedLeafId={split.focusedLeafId}
+          paneColors={split.paneColors}
+          emptyContent={primaryContent}
+          overlay={dropOverlay}
+        />
+      </View>
+    </View>
+  )
+
+  const toast = (
+    <>
+      {demoToastVisible ? (
+        <View style={styles.toast} pointerEvents="none">
+          <Text style={styles.toastText}>
+            Demo mode: cannot launch agents. Please connect desktop.
+          </Text>
+        </View>
+      ) : null}
+    </>
+  )
+
+  if (Platform.OS !== "web") {
+    return (
+      <>
+        {splitContent}
+        {toast}
+      </>
+    )
+  }
+
   return (
     <DndContext
       sensors={split.sensors}
@@ -958,69 +1037,9 @@ export default function JobsScreen() {
       onDragEnd={split.handleDragEnd}
       onDragCancel={split.handleDragCancel}
     >
-      <View style={styles.splitContainer}>
-        <View style={[styles.listPane, { width: listWidth }]}>
-          {isDemo && <DemoBanner />}
-          <JobListView
-            jobs={jobs}
-            statuses={statuses}
-            detectedProcesses={visibleDetectedProcesses}
-            collapsedGroups={collapsedGroups}
-            onToggleGroup={toggleGroup}
-            hiddenGroups={hiddenGroups}
-            onHideGroup={hideGroup}
-            onUnhideGroup={unhideGroup}
-            onRefresh={handleRefresh}
-            sortMode={sortMode}
-            onSortChange={setSortMode}
-            onSelectJob={handleSelectJobWithTree}
-            onSelectProcess={handleSelectProcessWithTree}
-            pinnedItems={pinnedItems}
-            onTogglePin={togglePin}
-            onStopJob={isDemo ? undefined : handleStopJob}
-            onStopProcess={isDemo ? undefined : handleStopProcess}
-            stoppingSlugs={stoppingJobSlugs}
-            selectedItems={split.selectedItems}
-            focusedItemKey={split.focusedItemKey}
-            onRunAgent={runAgentHandler}
-            agentModelOptions={agentModelOptions}
-            groupTabView={groupTabView}
-            onGroupTabViewChange={handleGroupTabViewChange}
-            onSetAllGroupTabView={handleSetAllGroupTabView}
-            headerContent={bannerContent}
-            showEmpty={loaded || isDemo}
-            emptyMessage={
-              connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."
-            }
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            scrollEnabled={!split.isDragging}
-            renderJobCard={renderDraggableJobCard}
-            renderProcessCard={renderDraggableProcessCard}
-          />
-        </View>
-        <View ref={handleRef} style={styles.resizeHandle} />
-        <View ref={split.detailPaneRef as unknown as React.Ref<View>} style={styles.detailPane}>
-          <SplitDetailArea
-            tree={split.tree}
-            renderLeaf={renderLeaf}
-            onRatioChange={split.handleSplitRatioChange}
-            onFocusLeaf={split.setFocusedLeafId}
-            focusedLeafId={split.focusedLeafId}
-            paneColors={split.paneColors}
-            emptyContent={primaryContent}
-            overlay={dropOverlay}
-          />
-        </View>
-      </View>
+      {splitContent}
       <DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
-      {demoToastVisible ? (
-        <View style={styles.toast} pointerEvents="none">
-          <Text style={styles.toastText}>
-            Demo mode: cannot launch agents. Please connect desktop.
-          </Text>
-        </View>
-      ) : null}
+      {toast}
     </DndContext>
   )
 }
@@ -1036,11 +1055,13 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     backgroundColor: colors.bg,
+    overflow: "hidden",
   },
   listPane: {
     borderRightWidth: 1,
     borderRightColor: colors.border,
     backgroundColor: colors.bg,
+    overflow: "hidden",
   },
   resizeHandle: {
     width: 5,
@@ -1053,6 +1074,7 @@ const styles = StyleSheet.create({
   detailPane: {
     flex: 1,
     backgroundColor: colors.bg,
+    overflow: "hidden",
   },
   emptyDetail: {
     flex: 1,

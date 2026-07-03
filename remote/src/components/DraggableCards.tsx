@@ -3,6 +3,7 @@ import type { RemoteJob, JobStatus } from "@clawtab/shared"
 import type { DetectedProcess } from "@clawtab/shared"
 import type { ProcessProvider } from "@clawtab/shared"
 import { JobCard, RunningJobCard, ProcessCard } from "@clawtab/shared"
+import { Platform, View } from "react-native"
 
 export type DragData =
   | { kind: "job"; slug: string; job: RemoteJob }
@@ -38,6 +39,39 @@ export function DraggableJobCard({
   defaultAgentProvider?: ProcessProvider
   groupedPosition?: "single" | "first" | "middle" | "last"
 }) {
+  if (Platform.OS !== "web") {
+    const content = status.state === "running" ? (
+      <RunningJobCard
+        job={job}
+        status={status}
+        onPress={onPress}
+        selected={selected}
+        softBorder={softBorder}
+        onStop={onStop}
+        onTogglePin={onTogglePin}
+        pinned={pinned}
+        autoYesActive={autoYesActive}
+        stopping={stopping}
+        defaultAgentProvider={defaultAgentProvider}
+        groupedPosition={groupedPosition}
+      />
+    ) : (
+      <JobCard
+        job={job}
+        status={status}
+        onPress={onPress}
+        onTogglePin={onTogglePin}
+        pinned={pinned}
+        selected={selected}
+        softBorder={softBorder}
+        defaultAgentProvider={defaultAgentProvider}
+        groupedPosition={groupedPosition}
+      />
+    )
+
+    return <View>{content}</View>
+  }
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-job-${job.slug}`,
     data: { kind: "job", slug: job.slug, job } satisfies DragData,
@@ -105,6 +139,25 @@ export function DraggableProcessCard({
   autoYesActive?: boolean
   groupedPosition?: "single" | "first" | "middle" | "last"
 }) {
+  if (Platform.OS !== "web") {
+    return (
+      <View>
+        <ProcessCard
+          process={process}
+          onPress={onPress}
+          inGroup={inGroup}
+          selected={selected}
+          softBorder={softBorder}
+          onStop={onStop}
+          onTogglePin={onTogglePin}
+          pinned={pinned}
+          autoYesActive={autoYesActive}
+          groupedPosition={groupedPosition}
+        />
+      </View>
+    )
+  }
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `drag-process-${process.pane_id}`,
     data: { kind: "process", paneId: process.pane_id, process } satisfies DragData,
