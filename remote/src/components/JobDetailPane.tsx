@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
 import { useNotificationStore } from "../store/notifications"
@@ -57,6 +58,7 @@ interface JobDetailPaneProps {
 }
 
 export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDetailPaneProps) {
+  const insets = useSafeAreaInsets()
   const storeJob = useJob(jobName)
   const isAgent = !storeJob && jobName.startsWith("agent-")
   const isDemo = parentIsDemo || (!storeJob && !isAgent && isDemoJob(jobName))
@@ -195,7 +197,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
         <StatusBadge status={status} />
       </View>

@@ -46,6 +46,13 @@ pub enum IpcCommand {
     GetSecretValues {
         keys: Vec<String>,
     },
+    SetSecret {
+        key: String,
+        value: String,
+    },
+    DeleteSecret {
+        key: String,
+    },
     GetPaneInfo {
         pane_id: String,
     },

@@ -21,8 +21,8 @@ export function JobListScrollContent({ hook }: JobListScrollContentProps) {
       contentInsetAdjustmentBehavior="never"
       automaticallyAdjustKeyboardInsets
       alwaysBounceHorizontal={false}
-      alwaysBounceVertical={false}
-      bounces={false}
+      alwaysBounceVertical
+      bounces
       directionalLockEnabled
       horizontal={false}
       onScroll={(event) => { hook.onScrollOffsetChange?.(event.nativeEvent.contentOffset.y); }}

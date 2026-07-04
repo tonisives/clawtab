@@ -1,4 +1,5 @@
 use std::env;
+use std::io::{self, Write};
 
 use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDirection};
 
@@ -30,6 +31,8 @@ fn print_usage() {
     eprintln!("  pane-info restore-command [pane_id]  Print a restore command for an agent pane");
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret value (single key) or KEY=VALUE lines (multiple keys)");
+    eprintln!("  secrets insert [--yes] <key> <value>  Store a secret; confirms before overwrite");
+    eprintln!("  secrets delete [--yes] <key>          Delete a secret; confirms first");
     eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
     eprintln!();
     eprintln!("Pane (require desktop app):");
@@ -73,6 +76,11 @@ async fn main() {
     // Handle daemon subcommands locally (no IPC needed)
     if command == "daemon" {
         handle_daemon_command(&args);
+        return;
+    }
+
+    if command == "secrets" {
+        handle_secrets_command(&args).await;
         return;
     }
 
@@ -141,19 +149,6 @@ async fn main() {
             name: require_name(&args, "restart"),
         }),
         "status" => Target::Daemon(IpcCommand::GetStatus),
-        "secrets" => {
-            if args.len() >= 3 && args[2] == "get" {
-                if args.len() < 4 {
-                    eprintln!("Error: 'secrets get' requires at least one key");
-                    std::process::exit(1);
-                }
-                Target::Daemon(IpcCommand::GetSecretValues {
-                    keys: args[3..].to_vec(),
-                })
-            } else {
-                Target::Daemon(IpcCommand::ListSecretKeys)
-            }
-        }
         "pane-info" => {
             let restore_command = args.get(2).is_some_and(|arg| arg == "restore-command");
             let pane_arg_index = if restore_command { 3 } else { 2 };
@@ -419,6 +414,149 @@ async fn main() {
             std::process::exit(1);
         }
     }
+}
+
+async fn handle_secrets_command(args: &[String]) {
+    let subcommand = args.get(2).map(String::as_str);
+
+    match subcommand {
+        None => match ipc::send_command(IpcCommand::ListSecretKeys).await {
+            Ok(IpcResponse::SecretKeys(keys)) => print_secret_keys(keys),
+            Ok(IpcResponse::Error(msg)) => exit_error(&msg),
+            Ok(_) => exit_error("unexpected response from daemon"),
+            Err(e) => exit_error(&e),
+        },
+        Some("get") => {
+            if args.len() < 4 {
+                exit_error("'secrets get' requires at least one key");
+            }
+            match ipc::send_command(IpcCommand::GetSecretValues {
+                keys: args[3..].to_vec(),
+            })
+            .await
+            {
+                Ok(IpcResponse::SecretValues(pairs)) => print_secret_values(pairs),
+                Ok(IpcResponse::Error(msg)) => exit_error(&msg),
+                Ok(_) => exit_error("unexpected response from daemon"),
+                Err(e) => exit_error(&e),
+            }
+        }
+        Some("insert") => {
+            let (yes, positionals) = parse_secret_args(&args[3..]);
+            if positionals.len() != 2 {
+                exit_error("usage: cwtctl secrets insert [--yes] <key> <value>");
+            }
+            let key = positionals[0].clone();
+            let value = positionals[1].clone();
+            if key.trim().is_empty() {
+                exit_error("secret key cannot be empty");
+            }
+
+            if secret_exists(&key).await && !yes {
+                confirm_or_exit(&format!("Overwrite secret '{}'", key), &key);
+            }
+
+            match ipc::send_command(IpcCommand::SetSecret {
+                key: key.clone(),
+                value,
+            })
+            .await
+            {
+                Ok(IpcResponse::Ok) => println!("Stored secret '{}'", key),
+                Ok(IpcResponse::Error(msg)) => exit_error(&msg),
+                Ok(_) => exit_error("unexpected response from daemon"),
+                Err(e) => exit_error(&e),
+            }
+        }
+        Some("delete") => {
+            let (yes, positionals) = parse_secret_args(&args[3..]);
+            if positionals.len() != 1 {
+                exit_error("usage: cwtctl secrets delete [--yes] <key>");
+            }
+            let key = positionals[0].clone();
+            if key.trim().is_empty() {
+                exit_error("secret key cannot be empty");
+            }
+
+            if !yes {
+                confirm_or_exit(&format!("Delete secret '{}'", key), &key);
+            }
+
+            match ipc::send_command(IpcCommand::DeleteSecret { key: key.clone() }).await {
+                Ok(IpcResponse::Ok) => println!("Deleted secret '{}'", key),
+                Ok(IpcResponse::Error(msg)) => exit_error(&msg),
+                Ok(_) => exit_error("unexpected response from daemon"),
+                Err(e) => exit_error(&e),
+            }
+        }
+        Some(other) => {
+            eprintln!("Unknown secrets subcommand: {}", other);
+            eprintln!("Usage: cwtctl secrets [get|insert|delete] ...");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn parse_secret_args(args: &[String]) -> (bool, Vec<String>) {
+    let mut yes = false;
+    let mut positionals = Vec::new();
+    for arg in args {
+        if arg == "--yes" || arg == "-y" {
+            yes = true;
+        } else {
+            positionals.push(arg.clone());
+        }
+    }
+    (yes, positionals)
+}
+
+async fn secret_exists(key: &str) -> bool {
+    match ipc::send_command(IpcCommand::ListSecretKeys).await {
+        Ok(IpcResponse::SecretKeys(keys)) => keys.iter().any(|existing| existing == key),
+        Ok(IpcResponse::Error(msg)) => exit_error(&msg),
+        Ok(_) => exit_error("unexpected response from daemon"),
+        Err(e) => exit_error(&e),
+    }
+}
+
+fn confirm_or_exit(action: &str, key: &str) {
+    eprint!("{}. Type '{}' to confirm: ", action, key);
+    let _ = io::stderr().flush();
+
+    let mut input = String::new();
+    if let Err(e) = io::stdin().read_line(&mut input) {
+        exit_error(&format!("failed to read confirmation: {}", e));
+    }
+
+    if input.trim_end() != key {
+        eprintln!("Aborted");
+        std::process::exit(1);
+    }
+}
+
+fn print_secret_keys(keys: Vec<String>) {
+    if keys.is_empty() {
+        println!("No secrets stored");
+    } else {
+        for key in keys {
+            println!("{}", key);
+        }
+    }
+}
+
+fn print_secret_values(pairs: Vec<(String, String)>) {
+    if pairs.len() == 1 {
+        println!("{}", pairs[0].1);
+    } else {
+        for (k, v) in pairs {
+            println!("{}={}", k, v);
+        }
+    }
+}
+
+fn exit_error(msg: &str) -> ! {
+    eprintln!("Error: {}", msg);
+    std::process::exit(1);
 }
 
 fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {

@@ -1,5 +1,5 @@
-import { useEffect, useState, type ComponentType, type PropsWithChildren } from "react";
-import { Modal, View, Text, StyleSheet } from "react-native";
+import { useEffect, type ComponentType, type PropsWithChildren } from "react";
+import { View, Text } from "react-native";
 import { Tabs, usePathname } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -10,8 +10,6 @@ import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { useJobFilterStore } from "../../src/store/jobFilter";
 import { useMobileHeaderStore } from "../../src/store/mobileHeader";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import SettingsScreen from "./settings";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 const NativeTabsRoot = NativeTabs as ComponentType<PropsWithChildren<any>>;
@@ -44,49 +42,6 @@ function HeaderBrand() {
       />
       <Text style={{ color: colors.text, fontSize: 15, fontWeight: "700" }}>ClawTab</Text>
     </Pressable>
-  );
-}
-
-function HeaderRight() {
-  const pathname = usePathname();
-  const settingsActive = pathname === "/settings";
-  const insets = useSafeAreaInsets();
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  return (
-    <View style={styles.headerActions}>
-      <NotificationsMenuButton />
-      <Pressable
-        onPress={() => setSettingsOpen(true)}
-        style={[styles.headerActionButton, (settingsActive || settingsOpen) && styles.headerActionButtonActive]}
-      >
-        <Ionicons
-          name={settingsActive || settingsOpen ? "settings" : "settings-outline"}
-          size={18}
-          color={settingsActive || settingsOpen ? colors.accent : colors.textMuted}
-        />
-      </Pressable>
-      <Modal
-        visible={settingsOpen}
-        transparent
-        animationType="slide"
-        presentationStyle="overFullScreen"
-        statusBarTranslucent
-        onRequestClose={() => setSettingsOpen(false)}
-      >
-        <View style={[styles.fullScreenModal, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Settings</Text>
-            <Pressable onPress={() => setSettingsOpen(false)} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={20} color={colors.text} />
-            </Pressable>
-          </View>
-          <View style={styles.modalBody}>
-            <SettingsScreen inModal />
-          </View>
-        </View>
-      </Modal>
-    </View>
   );
 }
 
@@ -148,7 +103,6 @@ function TabsContent({ isWide }: { isWide: boolean }) {
           <NativeTabs.Trigger name="connection" hidden />
           <NativeTabs.Trigger name="devices" hidden />
         </NativeTabsRoot>
-        {settingsActive ? <View pointerEvents="none" style={styles.hiddenSearchCover} /> : null}
       </View>
     );
   }
@@ -226,80 +180,11 @@ function TabsContent({ isWide }: { isWide: boolean }) {
   );
 }
 
-const styles = StyleSheet.create({
-  layoutRoot: {
-    flex: 1,
-  },
-  headerActions: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    zIndex: 1000,
-    elevation: 1000,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  headerActionButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  headerActionButtonActive: {
-    backgroundColor: colors.accentBg,
-    borderColor: "rgba(121, 134, 203, 0.32)",
-  },
-  fullScreenModal: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    paddingHorizontal: 12,
-  },
-  modalHeader: {
-    height: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-    marginBottom: 8,
-  },
-  modalTitle: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  modalCloseButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  modalBody: {
-    flex: 1,
-    overflow: "hidden",
-  },
+const styles = {
   nativeTabsFrame: {
     flex: 1,
   },
-  hiddenSearchCover: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 112,
-    height: 96,
-    backgroundColor: colors.bg,
-    zIndex: 1000,
-    elevation: 1000,
-  },
-});
+} as const;
 
 export default function TabLayout() {
   const { isWide } = useResponsive();
@@ -308,10 +193,5 @@ export default function TabLayout() {
     registerNotificationCategories();
   }, []);
 
-  return (
-    <View style={styles.layoutRoot}>
-      <TabsContent isWide={isWide} />
-      {isWide ? <HeaderRight /> : null}
-    </View>
-  );
+  return <TabsContent isWide={isWide} />;
 }

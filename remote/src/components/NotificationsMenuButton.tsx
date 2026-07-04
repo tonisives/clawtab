@@ -137,14 +137,16 @@ export function NotificationsMenuButton({
 
       <Modal
         visible={open}
-        transparent
+        transparent={Platform.OS === "web"}
         animationType={Platform.OS === "ios" ? "slide" : "fade"}
-        presentationStyle="overFullScreen"
+        presentationStyle={Platform.OS === "web" ? "overFullScreen" : "fullScreen"}
         statusBarTranslucent
         onRequestClose={() => setOpen(false)}
       >
         <View style={styles.modalRoot}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+          {Platform.OS === "web" ? (
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+          ) : null}
           <View style={[styles.popup, Platform.OS !== "web" && [styles.nativePopup, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }], isDemo && styles.demoPopup, popupFrame]}>
             <View style={styles.modalHeader}>
               <Text style={styles.title}>Notifications</Text>

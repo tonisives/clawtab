@@ -505,6 +505,14 @@ async fn handle_ipc_command(
                 .collect();
             IpcResponse::SecretValues(pairs)
         }
+        IpcCommand::SetSecret { key, value } => match secrets.lock().set(&key, &value) {
+            Ok(()) => IpcResponse::Ok,
+            Err(e) => IpcResponse::Error(e),
+        },
+        IpcCommand::DeleteSecret { key } => match secrets.lock().delete(&key) {
+            Ok(()) => IpcResponse::Ok,
+            Err(e) => IpcResponse::Error(e),
+        },
         IpcCommand::ReloadSecrets => {
             secrets.lock().reload();
             IpcResponse::Ok

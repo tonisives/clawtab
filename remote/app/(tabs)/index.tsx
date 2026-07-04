@@ -9,6 +9,8 @@ import {
   Pressable,
   TextInput,
   KeyboardAvoidingView,
+  Image,
+  Linking,
 } from "react-native"
 import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
@@ -42,6 +44,7 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { DemoBanner } from "../../src/components/DemoOverlay"
+import { WideHeaderActions } from "./_components/WideHeaderActions"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
@@ -953,44 +956,61 @@ export default function JobsScreen() {
   const splitContent = (
     <View style={styles.splitContainer}>
       <View style={[styles.listPane, { width: listWidth }]}>
+        <View style={[styles.listPaneHeader, { paddingTop: insets.top + 8 }]}>
+          <Pressable
+            onPress={() => Linking.openURL("https://clawtab.cc")}
+            style={styles.listPaneBrand}
+            accessibilityRole="link"
+            accessibilityLabel="Open ClawTab website"
+          >
+            <Image
+              source={require("../../assets/icon.png")}
+              style={styles.listPaneBrandIcon}
+            />
+            <Text style={styles.listPaneBrandText}>ClawTab</Text>
+          </Pressable>
+          <WideHeaderActions />
+        </View>
         {isDemo && <DemoBanner />}
-        <JobListView
-          jobs={jobs}
-          statuses={statuses}
-          detectedProcesses={visibleDetectedProcesses}
-          collapsedGroups={collapsedGroups}
-          onToggleGroup={toggleGroup}
-          hiddenGroups={hiddenGroups}
-          onHideGroup={hideGroup}
-          onUnhideGroup={unhideGroup}
-          onRefresh={handleRefresh}
-          sortMode={sortMode}
-          onSortChange={setSortMode}
-          onSelectJob={handleSelectJobWithTree}
-          onSelectProcess={handleSelectProcessWithTree}
-          pinnedItems={pinnedItems}
-          onTogglePin={togglePin}
-          onStopJob={isDemo ? undefined : handleStopJob}
-          onStopProcess={isDemo ? undefined : handleStopProcess}
-          stoppingSlugs={stoppingJobSlugs}
-          selectedItems={split.selectedItems}
-          focusedItemKey={split.focusedItemKey}
-          onRunAgent={runAgentHandler}
-          agentModelOptions={agentModelOptions}
-          groupTabView={groupTabView}
-          onGroupTabViewChange={handleGroupTabViewChange}
-          onSetAllGroupTabView={handleSetAllGroupTabView}
-          headerContent={bannerContent}
-          showEmpty={loaded || isDemo}
-          emptyMessage={
-            connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."
-          }
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          scrollEnabled={!split.isDragging}
-          renderJobCard={renderDraggableJobCard}
-          renderProcessCard={renderDraggableProcessCard}
-        />
+        <View style={styles.listPaneScrollArea}>
+          <JobListView
+            jobs={jobs}
+            statuses={statuses}
+            detectedProcesses={visibleDetectedProcesses}
+            collapsedGroups={collapsedGroups}
+            onToggleGroup={toggleGroup}
+            hiddenGroups={hiddenGroups}
+            onHideGroup={hideGroup}
+            onUnhideGroup={unhideGroup}
+            onRefresh={handleRefresh}
+            sortMode={sortMode}
+            onSortChange={setSortMode}
+            onSelectJob={handleSelectJobWithTree}
+            onSelectProcess={handleSelectProcessWithTree}
+            pinnedItems={pinnedItems}
+            onTogglePin={togglePin}
+            onStopJob={isDemo ? undefined : handleStopJob}
+            onStopProcess={isDemo ? undefined : handleStopProcess}
+            stoppingSlugs={stoppingJobSlugs}
+            selectedItems={split.selectedItems}
+            focusedItemKey={split.focusedItemKey}
+            onRunAgent={runAgentHandler}
+            agentModelOptions={agentModelOptions}
+            groupTabView={groupTabView}
+            onGroupTabViewChange={handleGroupTabViewChange}
+            onSetAllGroupTabView={handleSetAllGroupTabView}
+            headerContent={bannerContent}
+            showEmpty={loaded || isDemo}
+            emptyMessage={
+              connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."
+            }
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            scrollEnabled={!split.isDragging}
+            renderJobCard={renderDraggableJobCard}
+            renderProcessCard={renderDraggableProcessCard}
+          />
+        </View>
       </View>
       <View ref={handleRef} style={styles.resizeHandle} />
       <View ref={split.detailPaneRef as unknown as React.Ref<View>} style={styles.detailPane}>
@@ -1058,10 +1078,46 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   listPane: {
+    flexDirection: "column",
     borderRightWidth: 1,
     borderRightColor: colors.border,
     backgroundColor: colors.bg,
     overflow: "hidden",
+  },
+  listPaneHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    backgroundColor: colors.bg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    zIndex: 20,
+  },
+  listPaneScrollArea: {
+    flex: 1,
+    minHeight: 0,
+    overflow: "hidden",
+  },
+  listPaneBrand: {
+    minWidth: 0,
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  listPaneBrandIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+  },
+  listPaneBrandText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "700",
+    flexShrink: 1,
   },
   resizeHandle: {
     width: 5,

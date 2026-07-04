@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
 import { useWsStore } from "../store/ws"
@@ -91,6 +91,7 @@ interface ProcessDetailPaneProps {
 }
 
 export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetailPaneProps) {
+  const insets = useSafeAreaInsets()
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === paneId),
   )
@@ -270,10 +271,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onClose} style={styles.backButton} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </TouchableOpacity>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
         <StatusBadge status={syntheticStatus} />
       </View>
@@ -315,16 +313,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-  },
-  backButton: {
-    width: 32,
-    height: 32,
-    minWidth: 32,
-    maxWidth: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: spacing.xs,
   },
   title: {
     color: colors.text,
