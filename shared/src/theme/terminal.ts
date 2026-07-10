@@ -4,6 +4,7 @@ export type TerminalTheme = NonNullable<ITerminalOptions["theme"]>;
 
 export const TERMINAL_FONT_SIZE = 12;
 export const TERMINAL_LINE_HEIGHT = 1.25;
+export const TERMINAL_CUSTOM_GLYPHS = false;
 
 export const TERMINAL_FONT_FAMILY = [
   '"MesloLGS Nerd Font Mono"',

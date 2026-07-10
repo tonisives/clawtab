@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import {
   getTerminalTheme,
   subscribeTerminalThemeChange,
+  TERMINAL_CUSTOM_GLYPHS,
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
   TERMINAL_LINE_HEIGHT,
@@ -124,6 +125,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         fontFamily: TERMINAL_FONT_FAMILY,
         lineHeight: TERMINAL_LINE_HEIGHT,
         letterSpacing: 0,
+        customGlyphs: TERMINAL_CUSTOM_GLYPHS,
         rescaleOverlappingGlyphs: true,
         cursorStyle: "bar",
         cursorInactiveStyle: "bar",

@@ -44,7 +44,7 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { DemoBanner } from "../../src/components/DemoOverlay"
-import { WideHeaderActions } from "./_components/WideHeaderActions"
+import { WideHeaderActions, WideSettingsOverlay } from "../../src/components/WideHeaderActions"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
@@ -218,6 +218,7 @@ export default function JobsScreen() {
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
     readSelection("process"),
   )
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const [demoToastVisible, setDemoToastVisible] = useState(false)
   const { isWide } = useResponsive()
@@ -969,7 +970,7 @@ export default function JobsScreen() {
             />
             <Text style={styles.listPaneBrandText}>ClawTab</Text>
           </Pressable>
-          <WideHeaderActions />
+          <WideHeaderActions onOpenSettings={() => setSettingsOpen(true)} />
         </View>
         {isDemo && <DemoBanner />}
         <View style={styles.listPaneScrollArea}>
@@ -1006,7 +1007,7 @@ export default function JobsScreen() {
             }
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
-            scrollEnabled={!split.isDragging}
+            scrollEnabled={Platform.OS !== "web" || !split.isDragging}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}
           />
@@ -1040,31 +1041,40 @@ export default function JobsScreen() {
     </>
   )
 
+  const settingsOverlay = settingsOpen ? (
+    <WideSettingsOverlay onClose={() => setSettingsOpen(false)} />
+  ) : null
+
   if (Platform.OS !== "web") {
     return (
-      <>
+      <View style={styles.screenRoot}>
         {splitContent}
         {toast}
-      </>
+        {settingsOverlay}
+      </View>
     )
   }
 
   return (
-    <DndContext
-      sensors={split.sensors}
-      onDragStart={split.handleDragStart}
-      onDragMove={split.handleDragMove}
-      onDragEnd={split.handleDragEnd}
-      onDragCancel={split.handleDragCancel}
-    >
-      {splitContent}
-      <DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
+    <View style={styles.screenRoot}>
+      <DndContext
+        sensors={split.sensors}
+        onDragStart={split.handleDragStart}
+        onDragMove={split.handleDragMove}
+        onDragEnd={split.handleDragEnd}
+        onDragCancel={split.handleDragCancel}
+      >
+        {splitContent}
+        <DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
+      </DndContext>
       {toast}
-    </DndContext>
+      {settingsOverlay}
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
+  screenRoot: { flex: 1, backgroundColor: colors.bg },
   container: { flex: 1, backgroundColor: colors.bg },
   mobileListContent: {
     padding: 0,
@@ -1099,7 +1109,7 @@ const styles = StyleSheet.create({
   listPaneScrollArea: {
     flex: 1,
     minHeight: 0,
-    overflow: "hidden",
+    ...(Platform.OS === "web" ? { overflow: "hidden" as const } : {}),
   },
   listPaneBrand: {
     minWidth: 0,

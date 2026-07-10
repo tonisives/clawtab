@@ -149,10 +149,11 @@ export function NotificationsMenuButton({
           ) : null}
           <View style={[styles.popup, Platform.OS !== "web" && [styles.nativePopup, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }], isDemo && styles.demoPopup, popupFrame]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.title}>Notifications</Text>
               <Pressable onPress={() => setOpen(false)} style={styles.closeButton}>
                 <Ionicons name="close" size={20} color={colors.text} />
               </Pressable>
+              <Text style={styles.title}>Notifications</Text>
+              <View style={styles.modalHeaderSpacer} />
             </View>
             <NotificationsPanel mode="popup" onNavigateAway={() => setOpen(false)} />
           </View>
@@ -344,5 +345,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  modalHeaderSpacer: {
+    width: 36,
+    height: 36,
   },
 });

@@ -197,9 +197,11 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
     <>
       <ScrollView
         style={styles.scrollContainer}
-        contentInsetAdjustmentBehavior="automatic"
+        contentInsetAdjustmentBehavior={inModal ? "never" : "automatic"}
         contentContainerStyle={{ flexGrow: 1 }}
         automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
         scrollEventThrottle={16}
         refreshControl={
           <RefreshControl

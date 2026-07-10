@@ -1,10 +1,12 @@
-import { useWindowDimensions } from "react-native";
+import { Dimensions, useWindowDimensions } from "react-native";
 
 const BREAKPOINT_MD = 768;
 const BREAKPOINT_LG = 1024;
 
 export function useResponsive() {
-  const { width } = useWindowDimensions();
+  const windowDimensions = useWindowDimensions();
+  const fallbackWidth = Dimensions.get("window").width;
+  const width = windowDimensions.width || fallbackWidth;
   return {
     width,
     isWide: width >= BREAKPOINT_MD,

@@ -77,6 +77,7 @@ export {
   TERMINAL_FONT_FAMILY,
   TERMINAL_FONT_SIZE,
   TERMINAL_LINE_HEIGHT,
+  TERMINAL_CUSTOM_GLYPHS,
   getTerminalTheme,
   subscribeTerminalThemeChange,
 } from "./theme/terminal";

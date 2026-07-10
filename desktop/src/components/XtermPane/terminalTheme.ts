@@ -1,6 +1,12 @@
 import type { ITerminalOptions } from "@xterm/xterm";
 import type { Terminal } from "@xterm/xterm";
-import { getTerminalTheme, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "@clawtab/shared";
+import {
+  getTerminalTheme,
+  TERMINAL_CUSTOM_GLYPHS,
+  TERMINAL_FONT_FAMILY,
+  TERMINAL_FONT_SIZE,
+  TERMINAL_LINE_HEIGHT,
+} from "@clawtab/shared";
 import type { TerminalTheme } from "@clawtab/shared";
 
 export const TERMINAL_OPTIONS: ITerminalOptions = {
@@ -8,6 +14,7 @@ export const TERMINAL_OPTIONS: ITerminalOptions = {
   fontFamily: TERMINAL_FONT_FAMILY,
   lineHeight: TERMINAL_LINE_HEIGHT,
   letterSpacing: 0,
+  customGlyphs: TERMINAL_CUSTOM_GLYPHS,
   rescaleOverlappingGlyphs: true,
   cursorStyle: "bar",
   cursorInactiveStyle: "bar",
@@ -25,6 +32,7 @@ export function applyTerminalRuntimeOptions(
   terminal.options.fontFamily = TERMINAL_OPTIONS.fontFamily;
   terminal.options.lineHeight = TERMINAL_OPTIONS.lineHeight;
   terminal.options.letterSpacing = TERMINAL_OPTIONS.letterSpacing;
+  terminal.options.customGlyphs = TERMINAL_OPTIONS.customGlyphs;
   terminal.options.rescaleOverlappingGlyphs = TERMINAL_OPTIONS.rescaleOverlappingGlyphs;
   terminal.options.cursorStyle = TERMINAL_OPTIONS.cursorStyle;
   terminal.options.cursorInactiveStyle = TERMINAL_OPTIONS.cursorInactiveStyle;

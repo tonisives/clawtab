@@ -1,6 +1,6 @@
 import { useRef, useImperativeHandle, forwardRef, useCallback, useState } from "react";
 import { View, StyleSheet, TextInput, Platform, Pressable } from "react-native";
-import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
+import { TERMINAL_CUSTOM_GLYPHS, TERMINAL_FONT_FAMILY, TERMINAL_FONT_SIZE, TERMINAL_LINE_HEIGHT } from "../theme/terminal";
 
 export interface XtermLogHandle {
   /** Write base64-encoded terminal data */
@@ -75,6 +75,7 @@ var term = new Terminal({
   fontFamily: ${JSON.stringify(TERMINAL_FONT_FAMILY)},
   lineHeight: ${TERMINAL_LINE_HEIGHT},
   letterSpacing: 0,
+  customGlyphs: ${TERMINAL_CUSTOM_GLYPHS},
   rescaleOverlappingGlyphs: true,
   cursorStyle: 'bar',
   cursorInactiveStyle: 'bar',
