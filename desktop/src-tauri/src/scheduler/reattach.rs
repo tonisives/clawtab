@@ -143,7 +143,7 @@ fn finalize_idle_pane(
             job.name,
             output.len(),
         );
-        super::monitor::save_log_file(&job.slug, &run.id, &output);
+        super::monitor::save_log_file(&job.slug, &run.id, &output, job.group == "agent");
     }
 }
 
@@ -315,6 +315,8 @@ fn spawn_reattach_monitor(
         run_id,
         job_id: job.name.clone(),
         slug: job.slug.clone(),
+        is_agent: job.group == "agent",
+        agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
         kill_on_end: job.kill_on_end,
         telegram,
         telegram_notify: job.telegram_notify.clone(),

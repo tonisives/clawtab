@@ -13,6 +13,24 @@ pub fn agent_dir_path() -> std::path::PathBuf {
         .join("agent")
 }
 
+/// Remove the one-shot prompt belonging to a finished ad-hoc agent.
+/// Only generated prompt files inside the central agent directory are eligible.
+pub(crate) fn remove_agent_prompt(path: &std::path::Path) {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return;
+    };
+    if !name.starts_with(".agent-prompt-agent-")
+        || path.parent() != Some(agent_dir_path().as_path())
+    {
+        return;
+    }
+    match std::fs::remove_file(path) {
+        Ok(()) => log::info!("Removed finished agent prompt {}", path.display()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => log::warn!("Failed to remove agent prompt {}: {}", path.display(), e),
+    }
+}
+
 /// Generate the auto-generated context for the agent directory.
 /// Contains workspace info, available tools, and Telegram communication instructions.
 pub(crate) fn generate_agent_cwt_context(

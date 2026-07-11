@@ -133,6 +133,8 @@ fn build_monitor_params(rc: &RunCtx<'_>, handle: TmuxHandle) -> MonitorParams {
         run_id: rc.run_id.to_string(),
         job_id: job.name.clone(),
         slug: job.slug.clone(),
+        is_agent: job.group == "agent",
+        agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
         kill_on_end: job.kill_on_end,
         telegram,
         telegram_notify: job.telegram_notify.clone(),
@@ -169,6 +171,9 @@ pub(super) async fn finalize_run(rc: &RunCtx<'_>, outcome: RunOutcome<'_>) {
     dispatch_notification(rc, &outcome).await;
     if let Some(tid) = rc.trigger_id {
         push_trigger_result(rc, tid, &outcome);
+    }
+    if rc.job.group == "agent" {
+        crate::agent::remove_agent_prompt(&std::path::PathBuf::from(&rc.job.path));
     }
 }
 

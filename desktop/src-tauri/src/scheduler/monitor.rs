@@ -24,6 +24,8 @@ pub struct MonitorParams {
     pub run_id: String,
     pub job_id: String,
     pub slug: String,
+    pub is_agent: bool,
+    pub agent_prompt_path: Option<std::path::PathBuf>,
     pub kill_on_end: bool,
     pub telegram: Option<TelegramStream>,
     pub telegram_notify: TelegramNotify,
@@ -95,11 +97,14 @@ pub async fn monitor_pane(params: MonitorParams) {
 
     finalize_telegram(&params, use_telegram, working_message_id).await;
     let full_output = compute_full_output(&params, state.accumulated_log);
-    save_log_file(&params.slug, &params.run_id, &full_output);
+    save_log_file(&params.slug, &params.run_id, &full_output, params.is_agent);
     maybe_kill_pane(&params);
     persist_finish(&params, &full_output);
     notify_finish(&params, use_telegram, use_app).await;
     push_trigger_result_if_any(&params);
+    if let Some(path) = params.agent_prompt_path.as_deref() {
+        crate::agent::remove_agent_prompt(path);
+    }
 
     log::info!(
         "[{}] Monitor finished for job '{}'",
@@ -501,8 +506,9 @@ fn push_trigger_result_if_any(params: &MonitorParams) {
     crate::relay::push_trigger_result(&params.relay, tid, "succeeded", Some(0), parsed, None);
 }
 
-pub(crate) fn save_log_file(slug: &str, run_id: &str, content: &str) {
+pub(crate) fn save_log_file(slug: &str, run_id: &str, content: &str, is_agent: bool) {
     let dir = match crate::config::config_dir() {
+        Some(d) if is_agent => d.join("agent").join("logs"),
         Some(d) => d.join("jobs").join(slug).join("logs"),
         None => return,
     };
