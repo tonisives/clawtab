@@ -1,15 +1,20 @@
-import { useEffect, type ComponentType, type PropsWithChildren } from "react";
+import { useCallback, useEffect, type ComponentType, type PropsWithChildren } from "react";
 import { View, Text } from "react-native";
-import { Tabs, usePathname } from "expo-router";
+import { Tabs, usePathname, useRouter } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, Linking } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../src/theme/colors";
 import { useResponsive } from "../../src/hooks/useResponsive";
 import { registerNotificationCategories } from "../../src/lib/notifications";
 import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton";
 import { useJobFilterStore } from "../../src/store/jobFilter";
 import { useMobileHeaderStore } from "../../src/store/mobileHeader";
+import {
+  IpadBottomBar,
+  type IpadNavigationItem,
+} from "../../src/components/IpadBottomBar";
 
 type IoniconsName = keyof typeof Ionicons.glyphMap;
 const NativeTabsRoot = NativeTabs as ComponentType<PropsWithChildren<any>>;
@@ -45,17 +50,49 @@ function HeaderBrand() {
   );
 }
 
-function TabsContent({ isWide }: { isWide: boolean }) {
+function TabsContent({
+  isIosPadPortrait,
+  isSplitView,
+  isWide,
+}: {
+  isIosPadPortrait: boolean;
+  isSplitView: boolean;
+  isWide: boolean;
+}) {
   const openSearch = useJobFilterStore((s) => s.openSearch);
   const setMobileHeaderTab = useMobileHeaderStore((s) => s.setTab);
   const pathname = usePathname();
-  const settingsActive = pathname === "/settings";
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const settingsActive = pathname.endsWith("/settings");
 
   useEffect(() => {
     setMobileHeaderTab(settingsActive ? "settings" : "jobs");
   }, [settingsActive, setMobileHeaderTab]);
 
-  if (!isWide) {
+  useEffect(() => {
+    if (isSplitView && settingsActive) router.replace("/(tabs)");
+  }, [isSplitView, router, settingsActive]);
+
+  const handleIpadNavigation = useCallback(
+    (item: IpadNavigationItem) => {
+      if (item === "jobs") {
+        router.replace("/(tabs)");
+      } else if (item === "settings") {
+        router.replace("/settings");
+      } else if (item === "notifications") {
+        router.push("/notifications");
+      } else if (settingsActive) {
+        router.replace("/(tabs)");
+        setTimeout(openSearch, 80);
+      } else {
+        openSearch();
+      }
+    },
+    [openSearch, router, settingsActive],
+  );
+
+  if (!isWide && !isSplitView && !isIosPadPortrait) {
     return (
       <View style={styles.nativeTabsFrame}>
         <NativeTabsRoot
@@ -107,11 +144,11 @@ function TabsContent({ isWide }: { isWide: boolean }) {
     );
   }
 
-  return (
+  const tabs = (
     <Tabs
       initialRouteName="index"
       screenOptions={{
-        headerShown: !isWide,
+        headerShown: !isWide && !isSplitView && !isIosPadPortrait,
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerLeft: undefined,
@@ -120,7 +157,7 @@ function TabsContent({ isWide }: { isWide: boolean }) {
             <NotificationsMenuButton />
           </View>
         ),
-        tabBarStyle: isWide
+        tabBarStyle: isWide || isSplitView || isIosPadPortrait
           ? { display: "none" }
           : {
               backgroundColor: colors.bg,
@@ -135,7 +172,7 @@ function TabsContent({ isWide }: { isWide: boolean }) {
         options={{
           title: "",
           tabBarLabel: "Jobs",
-          ...(!isWide ? { headerLeft: () => <HeaderBrand /> } : {}),
+          ...(!isWide && !isIosPadPortrait ? { headerLeft: () => <HeaderBrand /> } : {}),
           tabBarIcon: ({ focused }) => (
             <TabIcon label="Jobs" focused={focused} />
           ),
@@ -162,7 +199,7 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       <Tabs.Screen
         name="settings"
         options={
-          isWide
+          isWide || isSplitView || isIosPadPortrait
             ? { href: null }
             : {
                 title: "Settings",
@@ -178,20 +215,65 @@ function TabsContent({ isWide }: { isWide: boolean }) {
       />
     </Tabs>
   );
+
+  if (isIosPadPortrait) {
+    return (
+      <View style={styles.ipadPortraitFrame}>
+        <View style={styles.ipadPortraitTabs}>{tabs}</View>
+        <View style={[styles.ipadPortraitBar, { paddingBottom: insets.bottom + 8 }]}>
+          <IpadBottomBar
+            activeSection={settingsActive ? "settings" : "jobs"}
+            onSelect={handleIpadNavigation}
+            style={styles.ipadPortraitBarControl}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  return tabs;
 }
 
 const styles = {
   nativeTabsFrame: {
     flex: 1,
   },
+  ipadPortraitFrame: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    position: "relative",
+  },
+  ipadPortraitTabs: {
+    flex: 1,
+    minHeight: 0,
+  },
+  ipadPortraitBar: {
+    position: "absolute",
+    left: 0,
+    bottom: 0,
+    zIndex: 30,
+    paddingTop: 8,
+    paddingLeft: 16,
+    paddingRight: 0,
+    alignItems: "flex-start",
+  },
+  ipadPortraitBarControl: {
+    width: 220,
+  },
 } as const;
 
 export default function TabLayout() {
-  const { isWide } = useResponsive();
+  const { isIosPadPortrait, isSplitView, isWide } = useResponsive();
 
   useEffect(() => {
     registerNotificationCategories();
   }, []);
 
-  return <TabsContent isWide={isWide} />;
+  return (
+    <TabsContent
+      isIosPadPortrait={isIosPadPortrait}
+      isSplitView={isSplitView}
+      isWide={isWide}
+    />
+  );
 }

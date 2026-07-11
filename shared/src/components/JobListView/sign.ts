@@ -1,5 +1,5 @@
 import type * as React from "react";
-import type { StyleProp, ViewStyle } from "react-native";
+import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
 
 import type { RemoteJob, JobStatus, JobSortMode } from "../../types/job";
 import type { AgentModelOption, DetectedProcess, ProcessProvider, ShellPane } from "../../types/process";
@@ -63,6 +63,7 @@ export interface JobListViewProps {
   emptyMessage?: string;
   // Extra style for scroll content container
   contentContainerStyle?: StyleProp<ViewStyle>;
+  contentInsetAdjustmentBehavior?: ScrollViewProps["contentInsetAdjustmentBehavior"];
   // Restore scroll position (web only)
   initialScrollOffset?: number;
   // Report scroll position changes (web only)

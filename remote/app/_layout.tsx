@@ -1,7 +1,8 @@
 import { useEffect } from "react";
-import { DarkTheme, Stack, ThemeProvider } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, Platform, StyleSheet } from "react-native";
+import { View, ActivityIndicator, Platform, Pressable, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "../src/store/auth";
 import { useWebSocket } from "../src/hooks/useWebSocket";
 import { useJobsStore } from "../src/store/jobs";
@@ -28,7 +29,12 @@ const navTheme = {
 };
 
 function RootHeaderRight() {
-  return <NotificationsMenuButton countOnly showDemoQuestions={false} />;
+  const isPad = Platform.OS === "ios" && Platform.isPad === true;
+  return isPad ? (
+    <NotificationsMenuButton variant="fluid" showDemoQuestions={false} />
+  ) : (
+    <NotificationsMenuButton countOnly showDemoQuestions={false} />
+  );
 }
 
 function useWebDarkScrollbars() {
@@ -71,12 +77,13 @@ function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
 export default function RootLayout() {
   useWebDarkScrollbars();
-  const { isWide } = useResponsive();
+  const { isIosPadPortrait, isSplitView, isWide } = useResponsive();
   const mobileHeaderTab = useMobileHeaderStore((s) => s.tab);
   const loading = useAuthStore((s) => s.loading);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
   const isSettingsTab = mobileHeaderTab === "settings";
+  const router = useRouter();
 
   useEffect(() => {
     init();
@@ -100,8 +107,8 @@ export default function RootLayout() {
             name="(tabs)"
             options={{
               animation: "none",
-              headerShown: !isWide,
-              title: isSettingsTab ? "Settings" : "ClawTab",
+              headerShown: !isWide && !isSplitView && !isIosPadPortrait,
+              title: isSplitView ? "" : isSettingsTab ? "Settings" : "ClawTab",
               headerLargeTitle: true,
               headerTransparent: true,
               headerStyle: { backgroundColor: "transparent" },
@@ -109,22 +116,34 @@ export default function RootLayout() {
               headerShadowVisible: false,
               headerLargeTitleStyle: styles.headerLargeTitle,
               headerTitleStyle: styles.headerTitle,
-              headerRight: isSettingsTab ? () => null : () => <RootHeaderRight />,
+              headerRight: isSplitView || isIosPadPortrait ? () => null : () => <RootHeaderRight />,
             }}
           />
+          <Stack.Screen name="job/[name]" options={{ animation: "slide_from_right" }} />
+          <Stack.Screen name="process/[pane_id]" options={{ animation: "slide_from_right" }} />
           <Stack.Screen
             name="notifications"
             options={{
               animation: "slide_from_bottom",
               presentation: "modal",
-              headerShown: false,
+              headerShown: true,
               title: "Notifications",
               headerStyle: { backgroundColor: colors.bg },
               headerTintColor: colors.text,
               headerTitleStyle: styles.headerTitle,
               headerShadowVisible: true,
-              headerBackTitle: "",
-              headerBackButtonDisplayMode: "minimal",
+              headerLeft: () => null,
+              headerRight: () => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close notifications"
+                  hitSlop={12}
+                  onPress={() => router.dismiss()}
+                  style={styles.closeButton}
+                >
+                  <Ionicons name="close" size={22} color={colors.text} />
+                </Pressable>
+              ),
             }}
           />
         </Stack>
@@ -163,5 +182,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontWeight: "600",
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: colors.surface,
   },
 });

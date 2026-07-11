@@ -31,7 +31,7 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const desktopDeviceName = useWsStore((s) => s.desktopDeviceName)
-  const { isWide } = useResponsive()
+  const { isIosPadPortrait, isWide } = useResponsive()
 
   const [sub, setSub] = useState<SubStatus>(null)
   const [subLoading, setSubLoading] = useState(true)
@@ -198,7 +198,10 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
       <ScrollView
         style={styles.scrollContainer}
         contentInsetAdjustmentBehavior={inModal ? "never" : "automatic"}
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingBottom: isIosPadPortrait && !inModal ? 96 : 0,
+        }}
         automaticallyAdjustKeyboardInsets
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
@@ -213,6 +216,9 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
       >
         <ContentContainer>
           <View style={[styles.container, isWide && !inModal && styles.containerWide]}>
+            {isIosPadPortrait && !inModal ? (
+              <Text style={styles.portraitPageTitle}>Settings</Text>
+            ) : null}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Account</Text>
               {email && (
@@ -393,6 +399,13 @@ const styles = StyleSheet.create({
   },
   containerWide: {
     paddingTop: 48,
+  },
+  portraitPageTitle: {
+    color: colors.text,
+    fontSize: 34,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    marginBottom: spacing.sm,
   },
   section: {
     gap: spacing.md,

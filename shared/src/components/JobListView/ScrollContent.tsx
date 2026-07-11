@@ -18,7 +18,7 @@ export function JobListScrollContent({ hook }: JobListScrollContentProps) {
       style={styles.scroll}
       contentContainerStyle={[styles.list, hook.contentContainerStyle]}
       scrollEnabled={hook.scrollEnabled}
-      contentInsetAdjustmentBehavior="never"
+      contentInsetAdjustmentBehavior={hook.contentInsetAdjustmentBehavior ?? "never"}
       automaticallyAdjustKeyboardInsets
       alwaysBounceHorizontal={false}
       alwaysBounceVertical

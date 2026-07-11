@@ -114,6 +114,7 @@ export function useJobListView(props: JobListViewProps) {
     containerStyle: refs.containerStyle,
     containerWebProps: refs.containerWebProps,
     contentContainerStyle: props.contentContainerStyle,
+    contentInsetAdjustmentBehavior: props.contentInsetAdjustmentBehavior,
     customRenderJobCard: props.renderJobCard,
     customRenderProcessCard: props.renderProcessCard,
     customRenderShellCard: props.renderShellCard,

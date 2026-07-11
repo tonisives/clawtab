@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Platform,
+  Animated,
   Modal,
   Pressable,
   TextInput,
@@ -22,8 +22,19 @@ import { useJobsStore } from "../../src/store/jobs"
 import { useWsStore } from "../../src/store/ws"
 import { useJobFilterStore } from "../../src/store/jobFilter"
 import { usePinsStore } from "../../src/store/pins"
+import SettingsScreen from "./settings"
 import { JobDetailPane } from "../../src/components/JobDetailPane"
 import { ProcessDetailPane } from "../../src/components/ProcessDetailPane"
+import {
+  LiquidSectionSwitcher,
+  type SidebarSection as LiquidSidebarSection,
+} from "../../src/components/LiquidSectionSwitcher"
+import {
+  IpadBottomBar,
+  type IpadBarSection,
+  type IpadNavigationItem,
+} from "../../src/components/IpadBottomBar"
+import { NotificationsPanel } from "../../src/components/NotificationsPanel"
 import { LoadingBar } from "../../src/components/LoadingBar"
 import {
   JobListView,
@@ -44,7 +55,7 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime"
 import { registerRequest } from "../../src/lib/useRequestMap"
 import { useResponsive } from "../../src/hooks/useResponsive"
 import { DemoBanner } from "../../src/components/DemoOverlay"
-import { WideHeaderActions, WideSettingsOverlay } from "../../src/components/WideHeaderActions"
+import { NotificationsMenuButton } from "../../src/components/NotificationsMenuButton"
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
@@ -53,16 +64,12 @@ import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 import { buildModelOptions } from "../../src/lib/agentModels"
 
 type GroupTabView = Record<string, "tabs" | "jobs">
+type SidebarSection = LiquidSidebarSection | "notifications"
 
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
 const HIDDEN_GROUPS_STORAGE_KEY = "remote_hidden_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
 const JOB_LIST_LOADING_PROGRESS = 0.62
-const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
-  { value: "name", label: "Name" },
-  { value: "recent", label: "Recent" },
-  { value: "added", label: "Added" },
-]
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
   return (
@@ -218,18 +225,20 @@ export default function JobsScreen() {
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
     readSelection("process"),
   )
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sidebarSection, setSidebarSection] = useState<SidebarSection>("jobs")
   const [stoppingJobSlugs, setStoppingJobSlugs] = useState<Set<string>>(() => new Set())
   const [demoToastVisible, setDemoToastVisible] = useState(false)
-  const { isWide } = useResponsive()
+  const { isIosPad, isIosPadPortrait, isSplitView, isWide } = useResponsive()
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const searchQuery = useJobFilterStore((s) => s.query)
+  const openSearch = useJobFilterStore((s) => s.openSearch)
   const setSearchQuery = useJobFilterStore((s) => s.setQuery)
   const searchOpen = useJobFilterStore((s) => s.searchOpen)
   const closeSearch = useJobFilterStore((s) => s.closeSearch)
   const clearSearch = useJobFilterStore((s) => s.clear)
   const searchInputRef = useRef<TextInput>(null)
+  const searchAnimation = useRef(new Animated.Value(0)).current
   const pinnedItems = usePinsStore((s) => s.pinnedItems)
   const hydratePins = usePinsStore((s) => s.hydrate)
   const togglePin = usePinsStore((s) => s.togglePin)
@@ -256,8 +265,8 @@ export default function JobsScreen() {
   }, [statuses])
 
   const DEFAULT_ENABLED = {
-    claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
-    codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
+    claude: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-8"],
+    codex: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
     opencode: [] as string[],
     antigravity: [] as string[],
   }
@@ -386,7 +395,8 @@ export default function JobsScreen() {
 
   const handleSelectJob = useCallback(
     (job: RemoteJob) => {
-      if (isWide) {
+      if (isSplitView) {
+        setSidebarSection("jobs")
         setSelectedJob(job.slug)
         setSelectedProcess(null)
         setSelection("job", job.slug)
@@ -394,12 +404,13 @@ export default function JobsScreen() {
         router.push(jobRoute(job, isDemo))
       }
     },
-    [router, isDemo, isWide],
+    [router, isDemo, isSplitView],
   )
 
   const handleSelectProcess = useCallback(
     (process: DetectedProcess) => {
-      if (isWide) {
+      if (isSplitView) {
+        setSidebarSection("jobs")
         setSelectedProcess(process.pane_id)
         setSelectedJob(null)
         setSelection("process", process.pane_id)
@@ -407,7 +418,7 @@ export default function JobsScreen() {
         router.push(processRoute(process.pane_id))
       }
     },
-    [router, isWide],
+    [router, isSplitView],
   )
 
   // Restore URL ?params after expo-router finishes its initial URL rewrite
@@ -470,28 +481,34 @@ export default function JobsScreen() {
   // Wrap select handlers to check tree first
   const handleSelectJobWithTree = useCallback(
     (job: RemoteJob) => {
-      if (!isWide) {
+      if (!isSplitView) {
         router.push(jobRoute(job, isDemo))
         return
       }
       const content: PaneContent = { kind: "job", slug: job.slug }
-      if (split.tree && split.handleSelectInTree(content)) return
+      if (split.tree && split.handleSelectInTree(content)) {
+        setSidebarSection("jobs")
+        return
+      }
       handleSelectJob(job)
     },
-    [isWide, isDemo, router, split.tree, split.handleSelectInTree, handleSelectJob],
+    [isSplitView, isDemo, router, split.tree, split.handleSelectInTree, handleSelectJob],
   )
 
   const handleSelectProcessWithTree = useCallback(
     (process: DetectedProcess) => {
-      if (!isWide) {
+      if (!isSplitView) {
         router.push(processRoute(process.pane_id))
         return
       }
       const content: PaneContent = { kind: "process", paneId: process.pane_id }
-      if (split.tree && split.handleSelectInTree(content)) return
+      if (split.tree && split.handleSelectInTree(content)) {
+        setSidebarSection("jobs")
+        return
+      }
       handleSelectProcess(process)
     },
-    [isWide, router, split.tree, split.handleSelectInTree, handleSelectProcess],
+    [isSplitView, router, split.tree, split.handleSelectInTree, handleSelectProcess],
   )
 
   const handleRunAgent = useCallback(
@@ -545,13 +562,15 @@ export default function JobsScreen() {
             _transient_state: "starting",
           }
           useJobsStore.getState().upsertDetectedProcess(pendingProcess)
-          if (isWide) {
+          if (isSplitView) {
+            setSidebarSection("jobs")
             handleSelectProcessWithTree(pendingProcess)
           } else {
             router.push(processRoute(ack.pane_id))
           }
         } else if (ack.job_id) {
-          if (isWide) {
+          if (isSplitView) {
+            setSidebarSection("jobs")
             setSelectedJob(ack.job_id)
           } else {
             router.push(jobIdRoute(ack.job_id))
@@ -559,7 +578,7 @@ export default function JobsScreen() {
         }
       })
     },
-    [handleSelectProcessWithTree, isWide, router],
+    [handleSelectProcessWithTree, isSplitView, router],
   )
 
   const handleDemoRunAgent = useCallback(() => {
@@ -573,12 +592,52 @@ export default function JobsScreen() {
   }, [demoToastVisible])
 
   useEffect(() => {
-    if (!searchOpen || isWide) return
+    if (!searchOpen) {
+      searchAnimation.setValue(0)
+      return
+    }
+    searchAnimation.setValue(0)
+    const animation = Animated.parallel([
+      Animated.timing(searchAnimation, {
+        toValue: 1,
+        duration: isIosPad ? 220 : 160,
+        useNativeDriver: true,
+      }),
+    ])
+    animation.start()
     const timer = setTimeout(() => searchInputRef.current?.focus(), 120)
-    return () => clearTimeout(timer)
-  }, [searchOpen, isWide])
+    return () => {
+      animation.stop()
+      clearTimeout(timer)
+    }
+  }, [isIosPad, searchAnimation, searchOpen])
 
   const runAgentHandler = isDemo ? handleDemoRunAgent : desktopOnline ? handleRunAgent : undefined
+
+  const handleOpenSidebarSettings = useCallback(() => {
+    if (isSplitView) setSidebarSection("settings")
+    else if (isIosPad) router.push("/settings")
+  }, [isIosPad, isSplitView, router])
+
+  const handleOpenSidebarNotifications = useCallback(() => {
+    if (isSplitView) setSidebarSection("notifications")
+    else if (isIosPad) router.push("/notifications")
+  }, [isIosPad, isSplitView, router])
+
+  const handleOpenSidebarJobs = useCallback(() => {
+    if (isSplitView) setSidebarSection("jobs")
+    else if (isIosPad) router.replace("/(tabs)")
+  }, [isIosPad, isSplitView, router])
+
+  const handleIpadNavigation = useCallback(
+    (item: IpadNavigationItem) => {
+      if (item === "jobs") handleOpenSidebarJobs()
+      else if (item === "settings") handleOpenSidebarSettings()
+      else if (item === "notifications") handleOpenSidebarNotifications()
+      else openSearch()
+    },
+    [handleOpenSidebarJobs, handleOpenSidebarNotifications, handleOpenSidebarSettings, openSearch],
+  )
 
   const renderDraggableJobCard = useCallback(
     (props: {
@@ -662,7 +721,7 @@ export default function JobsScreen() {
         onUnhideGroup={unhideGroup}
         onRefresh={handleRefresh}
         sortMode={sortMode}
-        onSortChange={setSortMode}
+        onSortChange={undefined}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
         pinnedItems={pinnedItems}
@@ -680,7 +739,7 @@ export default function JobsScreen() {
         emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
-        hideSearchBar={!isWide}
+        hideSearchBar={!isSplitView}
       />
     </View>
   )
@@ -712,6 +771,7 @@ export default function JobsScreen() {
       onSetAllGroupTabView={handleSetAllGroupTabView}
       headerContent={
         <>
+          {isIosPadPortrait ? <Text style={styles.portraitPageTitle}>ClawTab</Text> : null}
           {isDemo ? <DemoBanner /> : null}
           {bannerContent}
         </>
@@ -721,7 +781,11 @@ export default function JobsScreen() {
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
       hideSearchBar
-      contentContainerStyle={styles.mobileListContent}
+      contentContainerStyle={[
+        styles.mobileListContent,
+        isIosPadPortrait && { paddingBottom: insets.bottom + 96 },
+      ]}
+      contentInsetAdjustmentBehavior={isIosPadPortrait ? "automatic" : "never"}
       scrollEventThrottle={16}
       renderAsScrollRoot
     />
@@ -738,7 +802,7 @@ export default function JobsScreen() {
   const handleRef = useRef<View>(null)
 
   useEffect(() => {
-    if (Platform.OS !== "web" || !handleRef.current || !isWide) return
+    if (Platform.OS !== "web" || !handleRef.current || !isSplitView) return
     const el = handleRef.current as unknown as HTMLElement
     const onMouseDown = (e: MouseEvent) => {
       e.preventDefault()
@@ -762,99 +826,7 @@ export default function JobsScreen() {
     }
     el.addEventListener("mousedown", onMouseDown)
     return () => el.removeEventListener("mousedown", onMouseDown)
-  }, [isWide, listWidth])
-
-  if (!isWide) {
-    return (
-      <>
-        {mobileJobList}
-        <Modal visible={searchOpen} transparent animationType="fade" onRequestClose={closeSearch}>
-          <KeyboardAvoidingView
-            style={styles.searchKeyboardRoot}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={0}
-          >
-            <Pressable style={styles.searchBackdrop} onPress={closeSearch}>
-              <Pressable
-                style={styles.searchPanelWrap}
-                onPress={(event) => event.stopPropagation()}
-              >
-                <GlassView
-                  glassEffectStyle={glassAvailable ? "regular" : "none"}
-                  isInteractive={glassAvailable}
-                  colorScheme="dark"
-                  style={styles.searchPanel}
-                >
-                  <GlassView
-                    glassEffectStyle={glassAvailable ? "clear" : "none"}
-                    isInteractive={glassAvailable}
-                    colorScheme="dark"
-                    style={styles.mobileSortRow}
-                  >
-                    {SORT_OPTIONS.map((option) => {
-                      const active = sortMode === option.value
-                      return (
-                        <Pressable
-                          key={option.value}
-                          onPress={() => setSortMode(option.value)}
-                          style={[styles.mobileSortButton, active && styles.mobileSortButtonActive]}
-                        >
-                          <Text
-                            style={[
-                              styles.mobileSortButtonText,
-                              active && styles.mobileSortButtonTextActive,
-                            ]}
-                          >
-                            {option.label}
-                          </Text>
-                        </Pressable>
-                      )
-                    })}
-                  </GlassView>
-                  <GlassView
-                    glassEffectStyle={glassAvailable ? "clear" : "none"}
-                    isInteractive={glassAvailable}
-                    colorScheme="dark"
-                    style={styles.searchField}
-                  >
-                    <Ionicons name="search" size={18} color={colors.textMuted} />
-                    <TextInput
-                      ref={searchInputRef}
-                      style={styles.searchInput}
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      placeholder="Filter jobs..."
-                      placeholderTextColor={colors.textMuted}
-                      returnKeyType="done"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      onSubmitEditing={closeSearch}
-                    />
-                    {searchQuery.length > 0 ? (
-                      <Pressable
-                        onPress={clearSearch}
-                        style={styles.searchClearButton}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-                      </Pressable>
-                    ) : null}
-                  </GlassView>
-                </GlassView>
-              </Pressable>
-            </Pressable>
-          </KeyboardAvoidingView>
-        </Modal>
-        {demoToastVisible ? (
-          <View style={styles.toast} pointerEvents="none">
-            <Text style={styles.toastText}>
-              Demo mode: cannot launch agents. Please connect desktop.
-            </Text>
-          </View>
-        ) : null}
-      </>
-    )
-  }
+  }, [isSplitView, listWidth])
 
   // Render leaf content
   const renderLeaf = useCallback(
@@ -887,6 +859,97 @@ export default function JobsScreen() {
     },
     [isDemo, split.handleClosePane, visibleDetectedProcesses],
   )
+
+  const searchModal = (
+    <Modal
+      visible={searchOpen}
+      transparent
+      animationType={isIosPad ? "none" : "fade"}
+      onRequestClose={closeSearch}
+    >
+      <KeyboardAvoidingView
+        style={styles.searchKeyboardRoot}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
+        <Pressable style={styles.searchBackdrop} onPress={closeSearch}>
+          <Animated.View
+            style={[
+              styles.searchPanelWrap,
+              isIosPad && { marginBottom: insets.bottom + 82 },
+              isIosPad && isSplitView && { width: Math.max(240, listWidth - 24), alignSelf: "flex-start" },
+              isIosPad && {
+                opacity: searchAnimation,
+                transform: [
+                  {
+                    translateY: searchAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [30, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Pressable style={styles.searchPanelTouch} onPress={(event) => event.stopPropagation()}>
+              <GlassView
+                glassEffectStyle={glassAvailable ? "regular" : "none"}
+                isInteractive={glassAvailable}
+                colorScheme="dark"
+                style={styles.searchPanel}
+              >
+                <GlassView
+                  glassEffectStyle={glassAvailable ? "clear" : "none"}
+                  isInteractive={glassAvailable}
+                  colorScheme="dark"
+                  style={styles.searchField}
+                >
+                  <Ionicons name="search" size={18} color={colors.textMuted} />
+                  <TextInput
+                    ref={searchInputRef}
+                    style={styles.searchInput}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder="Filter jobs..."
+                    placeholderTextColor={colors.textMuted}
+                    returnKeyType="done"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onSubmitEditing={closeSearch}
+                  />
+                  {searchQuery.length > 0 ? (
+                    <Pressable
+                      onPress={clearSearch}
+                      style={styles.searchClearButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                    </Pressable>
+                  ) : null}
+                </GlassView>
+              </GlassView>
+            </Pressable>
+          </Animated.View>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  )
+
+  if (!isSplitView) {
+    return (
+      <>
+        {mobileJobList}
+        {searchModal}
+        {demoToastVisible ? (
+          <View style={styles.toast} pointerEvents="none">
+            <Text style={styles.toastText}>
+              Demo mode: cannot launch agents. Please connect desktop.
+            </Text>
+          </View>
+        ) : null}
+      </>
+    )
+  }
 
   // Non-tree primary content (when no split tree)
   const primaryContent = selectedJob ? (
@@ -948,31 +1011,76 @@ export default function JobsScreen() {
     />
   ) : null
 
-  const emptyContent = (
-    <View style={styles.emptyDetail}>
-      <Text style={styles.emptyDetailText}>Select a job to view details</Text>
+  const ipadActiveSection: IpadBarSection =
+    sidebarSection === "settings"
+      ? "settings"
+      : sidebarSection === "notifications"
+        ? "notifications"
+        : "jobs"
+
+  const sidebarHeader = (
+    <View
+      style={[
+        styles.sidebarHeader,
+        { paddingTop: Platform.OS === "web" ? 12 : insets.top + 8 },
+      ]}
+    >
+      <View style={styles.sidebarTitleRow}>
+        <Pressable
+          onPress={() => Linking.openURL("https://clawtab.cc")}
+          style={styles.listPaneBrand}
+          accessibilityRole="link"
+          accessibilityLabel="Open ClawTab website"
+        >
+          <Image source={require("../../assets/icon.png")} style={styles.listPaneBrandIcon} />
+          <Text style={styles.listPaneBrandText}>ClawTab</Text>
+        </Pressable>
+        {!isIosPad && <NotificationsMenuButton variant={isWide ? "compact" : "fluid"} />}
+      </View>
+
+      {!isIosPad && (
+        <>
+          <LiquidSectionSwitcher
+            activeSection={sidebarSection === "settings" ? "settings" : "jobs"}
+            onChange={(section) => {
+              if (section === "settings") handleOpenSidebarSettings()
+              else handleOpenSidebarJobs()
+            }}
+          />
+
+          <View style={styles.sidebarSearchField}>
+            <Ionicons name="search" size={17} color={colors.textMuted} />
+            <TextInput
+              style={styles.sidebarSearchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search jobs"
+              placeholderTextColor={colors.textMuted}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable
+                onPress={clearSearch}
+                style={styles.sidebarSearchClearButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+              >
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
+        </>
+      )}
     </View>
   )
 
   const splitContent = (
     <View style={styles.splitContainer}>
       <View style={[styles.listPane, { width: listWidth }]}>
-        <View style={[styles.listPaneHeader, { paddingTop: insets.top + 8 }]}>
-          <Pressable
-            onPress={() => Linking.openURL("https://clawtab.cc")}
-            style={styles.listPaneBrand}
-            accessibilityRole="link"
-            accessibilityLabel="Open ClawTab website"
-          >
-            <Image
-              source={require("../../assets/icon.png")}
-              style={styles.listPaneBrandIcon}
-            />
-            <Text style={styles.listPaneBrandText}>ClawTab</Text>
-          </Pressable>
-          <WideHeaderActions onOpenSettings={() => setSettingsOpen(true)} />
-        </View>
-        {isDemo && <DemoBanner />}
+        {!isIosPad ? sidebarHeader : null}
         <View style={styles.listPaneScrollArea}>
           <JobListView
             jobs={jobs}
@@ -985,7 +1093,7 @@ export default function JobsScreen() {
             onUnhideGroup={unhideGroup}
             onRefresh={handleRefresh}
             sortMode={sortMode}
-            onSortChange={setSortMode}
+            onSortChange={isIosPad ? undefined : setSortMode}
             onSelectJob={handleSelectJobWithTree}
             onSelectProcess={handleSelectProcessWithTree}
             pinnedItems={pinnedItems}
@@ -1000,31 +1108,61 @@ export default function JobsScreen() {
             groupTabView={groupTabView}
             onGroupTabViewChange={handleGroupTabViewChange}
             onSetAllGroupTabView={handleSetAllGroupTabView}
-            headerContent={bannerContent}
+            headerContent={
+              <>
+                {isIosPad ? (
+                  <View style={[styles.scrollableSidebarTitle, { marginTop: insets.top }]}>
+                    <Pressable
+                      onPress={() => Linking.openURL("https://clawtab.cc")}
+                      style={styles.listPaneBrand}
+                      accessibilityRole="link"
+                      accessibilityLabel="Open ClawTab website"
+                    >
+                      <Text style={styles.ipadSidebarBrandText}>ClawTab</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+                {isDemo ? <DemoBanner /> : null}
+                {bannerContent}
+              </>
+            }
             showEmpty={loaded || isDemo}
             emptyMessage={
               connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."
             }
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
+            hideSearchBar
+            contentContainerStyle={isIosPad ? { paddingBottom: insets.bottom + 96 } : undefined}
             scrollEnabled={Platform.OS !== "web" || !split.isDragging}
             renderJobCard={renderDraggableJobCard}
             renderProcessCard={renderDraggableProcessCard}
           />
         </View>
+        {isIosPad && (
+          <View style={[styles.ipadBottomBarWrap, { paddingBottom: insets.bottom + 8 }]}>
+            <IpadBottomBar activeSection={ipadActiveSection} onSelect={handleIpadNavigation} />
+          </View>
+        )}
       </View>
       <View ref={handleRef} style={styles.resizeHandle} />
       <View ref={split.detailPaneRef as unknown as React.Ref<View>} style={styles.detailPane}>
-        <SplitDetailArea
-          tree={split.tree}
-          renderLeaf={renderLeaf}
-          onRatioChange={split.handleSplitRatioChange}
-          onFocusLeaf={split.setFocusedLeafId}
-          focusedLeafId={split.focusedLeafId}
-          paneColors={split.paneColors}
-          emptyContent={primaryContent}
-          overlay={dropOverlay}
-        />
+        {sidebarSection === "settings" ? (
+          <SettingsScreen inModal />
+        ) : sidebarSection === "notifications" ? (
+          <NotificationsPanel mode="screen" />
+        ) : (
+          <SplitDetailArea
+            tree={split.tree}
+            renderLeaf={renderLeaf}
+            onRatioChange={split.handleSplitRatioChange}
+            onFocusLeaf={split.setFocusedLeafId}
+            focusedLeafId={split.focusedLeafId}
+            paneColors={split.paneColors}
+            emptyContent={primaryContent}
+            overlay={dropOverlay}
+          />
+        )}
       </View>
     </View>
   )
@@ -1041,16 +1179,12 @@ export default function JobsScreen() {
     </>
   )
 
-  const settingsOverlay = settingsOpen ? (
-    <WideSettingsOverlay onClose={() => setSettingsOpen(false)} />
-  ) : null
-
   if (Platform.OS !== "web") {
     return (
       <View style={styles.screenRoot}>
         {splitContent}
+        {searchModal}
         {toast}
-        {settingsOverlay}
       </View>
     )
   }
@@ -1067,8 +1201,8 @@ export default function JobsScreen() {
         {splitContent}
         <DragOverlay dropAnimation={null}>{dragOverlayContent}</DragOverlay>
       </DndContext>
+      {searchModal}
       {toast}
-      {settingsOverlay}
     </View>
   )
 }
@@ -1080,6 +1214,15 @@ const styles = StyleSheet.create({
     padding: 0,
     paddingTop: 0,
     paddingBottom: spacing.lg,
+  },
+  portraitPageTitle: {
+    color: colors.text,
+    fontSize: 34,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.md,
   },
   splitContainer: {
     flex: 1,
@@ -1094,17 +1237,55 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     overflow: "hidden",
   },
-  listPaneHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 12,
+  sidebarHeader: {
+    gap: 10,
     paddingHorizontal: 12,
-    paddingBottom: 8,
+    paddingBottom: 10,
     backgroundColor: colors.bg,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     zIndex: 20,
+  },
+  sidebarTitleRow: {
+    minHeight: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  ipadBottomBarWrap: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30,
+    paddingTop: 8,
+    paddingHorizontal: 10,
+  },
+  scrollableSidebarTitle: {
+    minHeight: 38,
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  sidebarSearchField: {
+    height: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sidebarSearchInput: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 15,
+    paddingVertical: 0,
+  },
+  sidebarSearchClearButton: {
+    padding: 2,
   },
   listPaneScrollArea: {
     flex: 1,
@@ -1127,6 +1308,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     fontWeight: "700",
+    flexShrink: 1,
+  },
+  ipadSidebarBrandText: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: "700",
+    letterSpacing: 0.2,
     flexShrink: 1,
   },
   resizeHandle: {
@@ -1178,6 +1366,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 12,
     marginBottom: 10,
   },
+  searchPanelTouch: {
+    borderRadius: 28,
+  },
   searchPanel: {
     borderRadius: 28,
     backgroundColor: "rgba(24, 24, 24, 0.72)",
@@ -1189,36 +1380,6 @@ const styles = StyleSheet.create({
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 12 },
     elevation: 16,
-  },
-  mobileSortRow: {
-    flexDirection: "row",
-    gap: 6,
-    marginBottom: 8,
-    padding: 2,
-    borderRadius: 999,
-    backgroundColor: "rgba(10, 10, 10, 0.58)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-  },
-  mobileSortButton: {
-    flex: 1,
-    height: 34,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 999,
-  },
-  mobileSortButtonActive: {
-    backgroundColor: "rgba(121, 134, 203, 0.72)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.18)",
-  },
-  mobileSortButtonText: {
-    color: colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  mobileSortButtonTextActive: {
-    color: colors.text,
   },
   searchField: {
     height: 44,

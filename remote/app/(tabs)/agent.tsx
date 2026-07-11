@@ -99,8 +99,8 @@ export default function AgentScreen() {
   }, [prompt, adjustHeight]);
 
   const DEFAULT_ENABLED = {
-    claude: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
-    codex: ["gpt-5.4", "gpt-5.4-mini", "o3", "o4-mini"],
+    claude: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-8"],
+    codex: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
     opencode: [] as string[],
     antigravity: [] as string[],
   };
