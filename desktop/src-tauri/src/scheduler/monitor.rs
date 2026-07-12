@@ -24,7 +24,7 @@ pub struct MonitorParams {
     pub run_id: String,
     pub job_id: String,
     pub slug: String,
-    pub is_agent: bool,
+    pub agent_group: Option<String>,
     pub agent_prompt_path: Option<std::path::PathBuf>,
     pub kill_on_end: bool,
     pub telegram: Option<TelegramStream>,
@@ -97,7 +97,15 @@ pub async fn monitor_pane(params: MonitorParams) {
 
     finalize_telegram(&params, use_telegram, working_message_id).await;
     let full_output = compute_full_output(&params, state.accumulated_log);
-    save_log_file(&params.slug, &params.run_id, &full_output, params.is_agent);
+    if let Some(path) = save_log_file(
+        &params.slug,
+        &params.run_id,
+        &full_output,
+        params.agent_group.as_deref(),
+    ) {
+        let h = params.history.lock();
+        let _ = h.update_log_path(&params.run_id, &path.to_string_lossy());
+    }
     maybe_kill_pane(&params);
     persist_finish(&params, &full_output);
     notify_finish(&params, use_telegram, use_app).await;
@@ -506,21 +514,30 @@ fn push_trigger_result_if_any(params: &MonitorParams) {
     crate::relay::push_trigger_result(&params.relay, tid, "succeeded", Some(0), parsed, None);
 }
 
-pub(crate) fn save_log_file(slug: &str, run_id: &str, content: &str, is_agent: bool) {
+pub(crate) fn save_log_file(
+    slug: &str,
+    run_id: &str,
+    content: &str,
+    agent_group: Option<&str>,
+) -> Option<std::path::PathBuf> {
     let dir = match crate::config::config_dir() {
-        Some(d) if is_agent => d.join("agent").join("logs"),
-        Some(d) => d.join("jobs").join(slug).join("logs"),
-        None => return,
+        Some(d) => match agent_group {
+            Some(group) => crate::agent::agent_logs_dir(group),
+            None => d.join("jobs").join(slug).join("logs"),
+        },
+        None => return None,
     };
     if let Err(e) = std::fs::create_dir_all(&dir) {
         log::error!("Failed to create log dir {}: {}", dir.display(), e);
-        return;
+        return None;
     }
     let path = dir.join(format!("{}.log", run_id));
     if let Err(e) = std::fs::write(&path, content) {
         log::error!("Failed to write log file {}: {}", path.display(), e);
+        None
     } else {
         log::info!("Saved log to {}", path.display());
+        Some(path)
     }
 }
 

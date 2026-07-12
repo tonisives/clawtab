@@ -102,7 +102,8 @@ Two concurrent loops:
   v
 Process exit detected:
   ├── Capture full scrollback
-  ├── Save to ~/.config/clawtab/jobs/<slug>/logs/<run-id>.log
+  ├── Save configured-job output to ~/.config/clawtab/jobs/<slug>/logs/<run-id>.log
+  ├── Save ad-hoc `+` agent output to ~/.config/clawtab/agent/<group>/logs/<run-id>.log
   ├── Update history record
   ├── Kill the tmux pane
   ├── Set status to Success

@@ -133,7 +133,7 @@ fn build_monitor_params(rc: &RunCtx<'_>, handle: TmuxHandle) -> MonitorParams {
         run_id: rc.run_id.to_string(),
         job_id: job.name.clone(),
         slug: job.slug.clone(),
-        is_agent: job.group == "agent",
+        agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
         kill_on_end: job.kill_on_end,
         telegram,

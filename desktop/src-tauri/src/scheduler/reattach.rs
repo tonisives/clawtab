@@ -143,7 +143,16 @@ fn finalize_idle_pane(
             job.name,
             output.len(),
         );
-        super::monitor::save_log_file(&job.slug, &run.id, &output, job.group == "agent");
+        if let Some(path) = super::monitor::save_log_file(
+            &job.slug,
+            &run.id,
+            &output,
+            (job.group == "agent")
+                .then(|| crate::agent::agent_group_from_slug(&job.slug))
+                .as_deref(),
+        ) {
+            let _ = h.update_log_path(&run.id, &path.to_string_lossy());
+        }
     }
 }
 
@@ -315,7 +324,7 @@ fn spawn_reattach_monitor(
         run_id,
         job_id: job.name.clone(),
         slug: job.slug.clone(),
-        is_agent: job.group == "agent",
+        agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
         kill_on_end: job.kill_on_end,
         telegram,

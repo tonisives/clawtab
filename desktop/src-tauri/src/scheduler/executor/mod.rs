@@ -171,10 +171,15 @@ fn prepare_result_file(
 ) -> Option<std::path::PathBuf> {
     let path = trigger_id.and_then(|_| {
         crate::config::config_dir().map(|d| {
-            d.join("jobs")
-                .join(&job.slug)
-                .join("logs")
-                .join(format!("{}.json", run_id))
+            if job.group == "agent" {
+                crate::agent::agent_logs_dir(&crate::agent::agent_group_from_slug(&job.slug))
+                    .join(format!("{}.json", run_id))
+            } else {
+                d.join("jobs")
+                    .join(&job.slug)
+                    .join("logs")
+                    .join(format!("{}.json", run_id))
+            }
         })
     })?;
     ensure_parent_dir(&path, "result");

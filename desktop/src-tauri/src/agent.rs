@@ -13,15 +13,149 @@ pub fn agent_dir_path() -> std::path::PathBuf {
         .join("agent")
 }
 
+/// Return the stable group name for an ad-hoc agent slug.
+///
+/// Ad-hoc agents use unique slugs such as `agent-clawtab-1782946653914` so
+/// their tmux panes do not collide. Their on-disk state should be grouped by
+/// the part before that uniqueness suffix.
+pub(crate) fn agent_group_from_slug(slug: &str) -> String {
+    let base = slug.strip_prefix("agent-").unwrap_or(slug);
+    let group = base
+        .rsplit_once('-')
+        .filter(|(_, suffix)| {
+            suffix.len() >= 10 && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .map(|(prefix, _)| prefix)
+        .filter(|prefix| !prefix.is_empty())
+        .unwrap_or(base);
+
+    sanitize_agent_group(group)
+}
+
+fn sanitize_agent_group(group: &str) -> String {
+    let mut result = String::with_capacity(group.len().min(64));
+    for byte in group.bytes() {
+        if byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' {
+            result.push(byte.to_ascii_lowercase() as char);
+        } else if !result.ends_with('-') {
+            result.push('-');
+        }
+        if result.len() >= 64 {
+            break;
+        }
+    }
+    let result = result.trim_matches('-');
+    if result.is_empty() || result.bytes().all(|byte| byte.is_ascii_digit()) {
+        "default".to_string()
+    } else {
+        result.to_string()
+    }
+}
+
+pub(crate) fn agent_group_dir(group: &str) -> std::path::PathBuf {
+    agent_dir_path().join(sanitize_agent_group(group))
+}
+
+pub(crate) fn agent_logs_dir(group: &str) -> std::path::PathBuf {
+    agent_group_dir(group).join("logs")
+}
+
+/// Migrate ad-hoc logs written by older builds under `jobs/agent-*` or the
+/// ungrouped `agent/logs` directory. Configured jobs always have `job.yaml`;
+/// only agent-only directories are eligible for this migration.
+pub(crate) fn migrate_legacy_agent_storage() {
+    let Some(config_dir) = crate::config::config_dir() else {
+        return;
+    };
+    let jobs_dir = config_dir.join("jobs");
+    if let Ok(entries) = std::fs::read_dir(&jobs_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if !path.is_dir() || !name.starts_with("agent-") || path.join("job.yaml").exists() {
+                continue;
+            }
+            let group = agent_group_from_slug(name);
+            let legacy_logs = path.join("logs");
+            migrate_log_dir(&legacy_logs, &agent_logs_dir(&group));
+            remove_empty_legacy_dir(&legacy_logs);
+            remove_empty_legacy_dir(&path);
+        }
+    }
+
+    let ungrouped_logs = agent_dir_path().join("logs");
+    migrate_log_dir(&ungrouped_logs, &agent_logs_dir("default"));
+    remove_empty_legacy_dir(&ungrouped_logs);
+}
+
+fn migrate_log_dir(source: &std::path::Path, destination: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(source) else {
+        return;
+    };
+    if std::fs::create_dir_all(destination).is_err() {
+        return;
+    }
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        if name == ".DS_Store" {
+            continue;
+        }
+        let target = destination.join(name);
+        if target.exists() {
+            continue;
+        }
+        if let Err(e) = std::fs::rename(&path, &target) {
+            log::warn!(
+                "Failed to migrate agent log {} to {}: {}",
+                path.display(),
+                target.display(),
+                e
+            );
+        }
+    }
+}
+
+fn remove_empty_legacy_dir(path: &std::path::Path) {
+    if !path.is_dir() {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if entry.file_name() == ".DS_Store" {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+    let _ = std::fs::remove_dir(path);
+    if path.file_name().and_then(|name| name.to_str()) == Some("logs") {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
+}
+
 /// Remove the one-shot prompt belonging to a finished ad-hoc agent.
 /// Only generated prompt files inside the central agent directory are eligible.
 pub(crate) fn remove_agent_prompt(path: &std::path::Path) {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return;
     };
-    if !name.starts_with(".agent-prompt-agent-")
-        || path.parent() != Some(agent_dir_path().as_path())
-    {
+    if !name.starts_with(".agent-prompt-") {
+        return;
+    }
+    let agent_dir = agent_dir_path();
+    let Ok(relative) = path.strip_prefix(&agent_dir) else {
+        return;
+    };
+    if relative.components().count() > 2 {
         return;
     }
     match std::fs::remove_file(path) {
@@ -161,7 +295,7 @@ fn write_cli_help(out: &mut String) {
 }
 
 /// Build a synthetic `Job` for running Claude as an ad-hoc interactive agent.
-/// Writes enriched prompt to `~/.config/clawtab/agent/.agent-prompt.md`
+/// Writes enriched prompt to `~/.config/clawtab/agent/<group>/...`
 /// and returns a Job that can be passed to `execute_job`.
 ///
 /// When `target_dir` is provided, the agent runs in that directory instead of the
@@ -180,18 +314,6 @@ pub fn build_agent_job(
     std::fs::create_dir_all(&agent_dir)
         .map_err(|e| format!("Failed to create agent dir: {}", e))?;
 
-    // For group/folder agents, skip the agent cwt.md - just run claude in that folder
-    let enriched = if target_dir.is_some() {
-        prompt.to_string()
-    } else {
-        // Regenerate the auto-generated context with the specific chat_id
-        let context = generate_agent_cwt_context(settings, jobs, chat_id);
-        let cwt_md_path = agent_dir.join("cwt.md");
-        std::fs::write(&cwt_md_path, &context)
-            .map_err(|e| format!("Failed to write agent cwt.md: {}", e))?;
-        format!("@{}\n\n{}", cwt_md_path.display(), prompt)
-    };
-
     // Derive name/slug and work_dir from target_dir. Slug must be unique per
     // spawn: executor.rs prunes panes by slug (list_panes_by_slug), so reusing
     // an existing pane's slug would kill it when a new agent/shell is spawned
@@ -200,7 +322,7 @@ pub fn build_agent_job(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let (job_id, job_slug, work_dir) = if let Some(dir) = target_dir {
+    let (job_id, job_slug, work_dir, agent_group) = if let Some(dir) = target_dir {
         let project_dir = std::path::Path::new(dir);
         let folder = project_dir
             .file_name()
@@ -208,18 +330,40 @@ pub fn build_agent_job(
             .unwrap_or("agent");
         let name = format!("agent-{}", folder);
         let slug = format!("agent-{}-{}", folder, unique_suffix);
-        (name, slug, project_dir.to_string_lossy().to_string())
+        (
+            name,
+            slug,
+            project_dir.to_string_lossy().to_string(),
+            sanitize_agent_group(folder),
+        )
     } else {
         (
             "agent".to_string(),
             format!("agent-{}", unique_suffix),
             agent_dir.display().to_string(),
+            "default".to_string(),
         )
+    };
+
+    let group_dir = agent_group_dir(&agent_group);
+    std::fs::create_dir_all(&group_dir)
+        .map_err(|e| format!("Failed to create agent group dir: {}", e))?;
+
+    // For group/folder agents, skip the shared context - just run claude in
+    // that folder. The default agent keeps its generated context in its group.
+    let enriched = if target_dir.is_some() {
+        prompt.to_string()
+    } else {
+        let context = generate_agent_cwt_context(settings, jobs, chat_id);
+        let cwt_md_path = group_dir.join("cwt.md");
+        std::fs::write(&cwt_md_path, &context)
+            .map_err(|e| format!("Failed to write agent cwt.md: {}", e))?;
+        format!("@{}\n\n{}", cwt_md_path.display(), prompt)
     };
 
     // Write prompt to a per-agent file to avoid collisions
     let prompt_filename = format!(".agent-prompt-{}.md", job_slug);
-    let prompt_path = agent_dir.join(&prompt_filename);
+    let prompt_path = group_dir.join(&prompt_filename);
     std::fs::write(&prompt_path, &enriched)
         .map_err(|e| format!("Failed to write agent prompt: {}", e))?;
 

@@ -9,6 +9,7 @@
 | `~/.config/clawtab/jobs/` | Job definitions directory |
 | `~/.config/clawtab/jobs/<project>/<job-name>/job.yaml` | Individual job config |
 | `~/.config/clawtab/jobs/<project>/<job-name>/logs/<run-id>.log` | Tmux job output log |
+| `~/.config/clawtab/agent/<group>/logs/<run-id>.log` | Ad-hoc `+` agent output log |
 | `~/.config/clawtab/jobs/<project>/<job-name>/job.md` | Job-specific prompt/instructions |
 | `~/.config/clawtab/jobs/<project>/context.md` | User-written shared context for all jobs in a project |
 | `~/.config/clawtab/jobs/<project>/<job-name>/context.md` | Auto-generated per-job context |
