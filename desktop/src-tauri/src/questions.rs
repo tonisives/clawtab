@@ -7,7 +7,18 @@ use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 use crate::agent_session::{detect_process_provider, ProcessSnapshot};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
+use crate::ipc::AgentActivity;
 use crate::relay::RelayHandle;
+
+type DetectedAgent = (
+    String,
+    String,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
 
 /// Strip ANSI escape sequences from text.
 fn strip_ansi(text: &str) -> String {
@@ -442,9 +453,11 @@ pub async fn question_detection_loop(
     job_status: Arc<Mutex<HashMap<String, JobStatus>>>,
     relay: Arc<Mutex<Option<RelayHandle>>>,
     active_questions: Arc<Mutex<Vec<ClaudeQuestion>>>,
+    agent_activity: Arc<Mutex<Vec<AgentActivity>>>,
     auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     notifier: Arc<dyn crate::notifications::Notifier>,
     notification_state: Arc<Mutex<crate::notifications::NotificationState>>,
+    event_sink: Arc<dyn crate::events::EventSink>,
 ) {
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
     let mut last_sent_ids: HashSet<String> = HashSet::new();
@@ -472,6 +485,24 @@ pub async fn question_detection_loop(
 
         log::debug!("[questions] storing {} active questions", questions.len());
         *active_questions.lock() = questions.clone();
+
+        let asking_panes: HashSet<String> = questions
+            .iter()
+            .map(|question| question.pane_id.clone())
+            .collect();
+        let activity = agent_activity_for_processes(&processes, &asking_panes);
+        let activity_changed = {
+            let mut stored_activity = agent_activity.lock();
+            if *stored_activity != activity {
+                *stored_activity = activity.clone();
+                true
+            } else {
+                false
+            }
+        };
+        if activity_changed {
+            event_sink.emit_agent_activity_changed(activity);
+        }
 
         let settings_snapshot = settings.lock().clone();
         let notifiable_questions = filter_visible_questions(&questions);
@@ -629,15 +660,7 @@ fn prune_stale_auto_yes_panes(
 }
 
 fn update_question_cache(
-    processes: &[(
-        String,
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-    )],
+    processes: &[DetectedAgent],
     question_cache: &mut HashMap<String, CachedQuestion>,
 ) -> HashSet<String> {
     let mut detected = HashSet::new();
@@ -943,15 +966,7 @@ fn send_relay_questions(
 fn pick_sleep_ms(
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
     question_cache: &HashMap<String, CachedQuestion>,
-    processes: &[(
-        String,
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-    )],
+    processes: &[DetectedAgent],
 ) -> u64 {
     let has_auto_yes = !auto_yes_panes.lock().is_empty();
     if has_auto_yes {
@@ -1002,16 +1017,35 @@ fn last_context_lines(text: &str) -> String {
     context.join("\n")
 }
 
+/// Return activity for every currently detected agent process.
+///
+/// Process detection is the daemon's durable signal that an interactive agent
+/// is still running. Terminal output is intentionally not used as a timeout:
+/// an agent can spend longer than one polling interval waiting on a tool or a
+/// network request without producing output. A detected question takes
+/// precedence over `working` for that pane.
+fn agent_activity_for_processes(
+    processes: &[DetectedAgent],
+    asking_panes: &HashSet<String>,
+) -> Vec<AgentActivity> {
+    let mut activity = processes
+        .iter()
+        .map(|(pane_id, _, _, _, _, _, _)| {
+            let asking = asking_panes.contains(pane_id);
+            AgentActivity {
+                pane_id: pane_id.clone(),
+                working: !asking,
+                asking,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
+    activity
+}
+
 struct DetectionResult {
-    processes: Vec<(
-        String,
-        String,
-        String,
-        String,
-        String,
-        Option<String>,
-        Option<String>,
-    )>,
+    processes: Vec<DetectedAgent>,
     /// All pane IDs that currently exist in tmux (not just Claude processes).
     all_pane_ids: HashSet<String>,
 }
@@ -1169,8 +1203,50 @@ fn detect_question_processes(
 
 #[cfg(test)]
 mod tests {
-    use super::{find_yes_option, parse_numbered_options, parse_opencode_buttons};
+    use super::{
+        agent_activity_for_processes, find_yes_option, parse_numbered_options,
+        parse_opencode_buttons, DetectedAgent,
+    };
     use clawtab_protocol::QuestionOption;
+    use std::collections::HashSet;
+
+    fn agent(pane_id: &str, log_lines: &str) -> DetectedAgent {
+        (
+            pane_id.to_string(),
+            "/tmp/project".to_string(),
+            "main".to_string(),
+            "agent".to_string(),
+            log_lines.to_string(),
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn reports_detected_agents_as_working() {
+        let no_questions = HashSet::new();
+        let activity = agent_activity_for_processes(&[agent("%1", "unchanged")], &no_questions);
+        assert_eq!(activity.len(), 1);
+        assert!(activity[0].working);
+        assert!(!activity[0].asking);
+    }
+
+    #[test]
+    fn asking_is_independent_and_suppresses_working_for_that_pane() {
+        let asking = HashSet::from(["%2".to_string()]);
+
+        let activity =
+            agent_activity_for_processes(&[agent("%1", "working"), agent("%2", "asking")], &asking);
+
+        assert_eq!(activity.len(), 2);
+        assert!(activity[0].working);
+        assert!(!activity[0].asking);
+        assert!(!activity[1].working);
+        assert!(activity[1].asking);
+
+        let cleared = agent_activity_for_processes(&[], &HashSet::new());
+        assert!(cleared.is_empty());
+    }
 
     #[test]
     fn parses_claude_style_numbered_prompt() {

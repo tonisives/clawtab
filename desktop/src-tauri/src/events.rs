@@ -11,6 +11,9 @@ pub trait EventSink: Send + Sync {
         let _ = (name, status);
     }
     fn emit_questions_changed(&self) {}
+    fn emit_agent_activity_changed(&self, activity: Vec<ipc::AgentActivity>) {
+        let _ = activity;
+    }
     fn emit_relay_status_changed(&self, status: ipc::IpcRelayStatus) {
         let _ = status;
     }
@@ -56,6 +59,11 @@ impl EventSink for TauriEventSink {
         let _ = self.app_handle.emit("questions-changed", ());
     }
 
+    fn emit_agent_activity_changed(&self, activity: Vec<ipc::AgentActivity>) {
+        use tauri::Emitter;
+        let _ = self.app_handle.emit("agent-activity-changed", activity);
+    }
+
     fn emit_relay_status_changed(&self, status: ipc::IpcRelayStatus) {
         use tauri::Emitter;
         let _ = self.app_handle.emit("relay-status-changed", status);
@@ -99,6 +107,10 @@ impl EventSink for IpcBroadcastEventSink {
 
     fn emit_questions_changed(&self) {
         self.spawn_broadcast(IpcEvent::QuestionsChanged);
+    }
+
+    fn emit_agent_activity_changed(&self, activity: Vec<ipc::AgentActivity>) {
+        self.spawn_broadcast(IpcEvent::AgentActivityChanged(activity));
     }
 
     fn emit_relay_status_changed(&self, status: ipc::IpcRelayStatus) {
@@ -148,6 +160,9 @@ pub async fn run_daemon_event_subscription(
                         }
                         IpcEvent::QuestionsChanged => {
                             let _ = app_handle.emit("questions-changed", ());
+                        }
+                        IpcEvent::AgentActivityChanged(activity) => {
+                            let _ = app_handle.emit("agent-activity-changed", activity);
                         }
                         IpcEvent::RelayStatusChanged(status) => {
                             let _ = app_handle.emit("relay-status-changed", status);

@@ -114,6 +114,7 @@ Commands (`IpcCommand` variants):
 {"ResumeJob": {"name": "daily-backup"}}
 {"RestartJob": {"name": "daily-backup"}}
 "GetStatus"
+"GetAgentActivity"
 "OpenSettings"
 {"ToggleAutoYes": {"pane_id": "%12"}}
 ```
@@ -125,6 +126,7 @@ Responses (`IpcResponse` variants):
 "Ok"
 {"Jobs": ["daily-backup", "deploy"]}
 {"Status": {"daily-backup": {"state": "idle"}}}
+{"AgentActivity": [{"pane_id": "%12", "working": true, "asking": false}]}
 {"Error": "Job not found"}
 ```
 
@@ -155,4 +157,15 @@ echo '{"FocusPane": {"direction": "left"}}' | nc -U /tmp/clawtab-desktop.sock
 
 ### Event push socket -- `/tmp/clawtab-events.sock`
 
-The daemon also exposes a one-way event-push socket. Clients connect and read newline-delimited `IpcEvent` JSON values pushed by the daemon (job status changes, auto-yes changes, relay status, etc.). No requests are sent.
+The daemon also exposes a one-way event-push socket. Clients connect and read newline-delimited `IpcEvent` JSON values pushed by the daemon (job status changes, auto-yes changes, relay status, agent activity, etc.). No requests are sent.
+
+Agent activity events use this shape:
+
+```json
+{"AgentActivityChanged": [{"pane_id": "%12", "working": true, "asking": false}]}
+```
+
+`GetAgentActivity` is an IPC-only command used by the tmux plugin; it is not a
+user-facing `cwtctl` command. The plugin also requires `jq` to decode the local
+JSON response. `working` remains true while the daemon detects the agent
+process; `asking` takes precedence for that pane when a question is detected.

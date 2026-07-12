@@ -46,6 +46,10 @@ tmux bind-key "$skills_key" run-shell "$CURRENT_DIR/scripts/search-skills-launch
 tmux bind-key "$fork_key" run-shell "$CURRENT_DIR/scripts/fork-session.sh '#{pane_id}'"
 tmux bind-key "$sidebar_key" run-shell "$CURRENT_DIR/scripts/sidebar-launcher.sh '#{pane_id}'"
 
+# Keep per-window agent activity synchronized from the daemon's IPC event
+# stream. The listener is locked so re-sourcing this plugin is harmless.
+tmux run-shell -b "$CURRENT_DIR/scripts/agent-status-listener.sh"
+
 # Append auto-yes indicator to pane-border-format (right-aligned)
 # Uses pane option @clawtab-auto-yes for instant toggle feedback (no shell cache delay)
 current_border=$(tmux show-option -gqv pane-border-format)
@@ -54,8 +58,23 @@ if [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
     tmux set-option -g pane-border-format "${current_border}${clawtab_part}"
 fi
 
+# Append activity indicators without replacing a user's existing window
+# formats. The custom window options are updated by agent-status-listener.sh.
+spinner_command=$(printf '%q' "$CURRENT_DIR/scripts/agent-spinner.sh")
+clawtab_activity_part="#{?#{@clawtab-agent-question},#[fg=red#,bold]!#[default],}#{?#{@clawtab-agent-working},#[fg=cyan]#(${spinner_command})#[default],}"
+
+current_window_status=$(tmux show-option -gqv window-status-format)
+if [[ "$current_window_status" != *"clawtab-agent-question"* || "$current_window_status" != *"clawtab-agent-working"* ]]; then
+    tmux set-option -g window-status-format "${current_window_status}${clawtab_activity_part}"
+fi
+
+current_window_status_current=$(tmux show-option -gqv window-status-current-format)
+if [[ "$current_window_status_current" != *"clawtab-agent-question"* || "$current_window_status_current" != *"clawtab-agent-working"* ]]; then
+    tmux set-option -g window-status-current-format "${current_window_status_current}${clawtab_activity_part}"
+fi
+
 # Note: MouseDown1Border would conflict with drag-to-resize, so no border click binding.
 # Use prefix + y (or configured key) to toggle auto-yes.
 
-# Refresh pane borders every 5s so auto-yes indicator stays current
-tmux set-option -g status-interval 5
+# Refresh the status line every second so the spinner animates.
+tmux set-option -g status-interval 1

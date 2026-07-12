@@ -111,6 +111,8 @@ fn main() {
     let relay_auth_expired: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     let active_questions: Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>> =
         Arc::new(Mutex::new(Vec::new()));
+    let agent_activity: Arc<Mutex<Vec<clawtab_lib::ipc::AgentActivity>>> =
+        Arc::new(Mutex::new(Vec::new()));
     let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let notification_state: Arc<Mutex<clawtab_lib::notifications::NotificationState>> = Arc::new(
@@ -157,6 +159,7 @@ fn main() {
             let relay_sub = Arc::clone(&relay_sub_required);
             let relay_auth = Arc::clone(&relay_auth_expired);
             let active_questions = Arc::clone(&active_questions);
+            let agent_activity = Arc::clone(&agent_activity);
             let pty_manager = Arc::clone(&pty_manager);
             let event_sink_for_ipc = Arc::clone(&event_sink);
             let ctx_for_ipc = ctx.clone();
@@ -166,6 +169,7 @@ fn main() {
                     let relay_sub = Arc::clone(&relay_sub);
                     let relay_auth = Arc::clone(&relay_auth);
                     let active_questions = Arc::clone(&active_questions);
+                    let agent_activity = Arc::clone(&agent_activity);
                     let pty_manager = Arc::clone(&pty_manager);
                     let event_sink_for_ipc = Arc::clone(&event_sink_for_ipc);
                     let ctx_for_ipc = ctx_for_ipc.clone();
@@ -175,6 +179,7 @@ fn main() {
                             &relay_sub,
                             &relay_auth,
                             &active_questions,
+                            &agent_activity,
                             &pty_manager,
                             &event_sink_for_ipc,
                             &ctx_for_ipc,
@@ -195,10 +200,12 @@ fn main() {
             let job_status = Arc::clone(&job_status);
             let relay = Arc::clone(&relay_handle);
             let active_questions = Arc::clone(&active_questions);
+            let agent_activity = Arc::clone(&agent_activity);
             let auto_yes_panes = Arc::clone(&auto_yes_panes);
             let notifier = Arc::clone(&notifier);
             let notification_state = Arc::clone(&notification_state);
             let settings = Arc::clone(&settings);
+            let event_sink = Arc::clone(&event_sink);
             tokio::spawn(async move {
                 clawtab_lib::questions::question_detection_loop(
                     settings,
@@ -206,9 +213,11 @@ fn main() {
                     job_status,
                     relay,
                     active_questions,
+                    agent_activity,
                     auto_yes_panes,
                     notifier,
                     notification_state,
+                    event_sink,
                 )
                 .await;
             });
@@ -362,6 +371,7 @@ async fn handle_ipc_command(
     relay_sub_required: &Arc<Mutex<bool>>,
     relay_auth_expired: &Arc<Mutex<bool>>,
     active_questions: &Arc<Mutex<Vec<clawtab_protocol::ClaudeQuestion>>>,
+    agent_activity: &Arc<Mutex<Vec<clawtab_lib::ipc::AgentActivity>>>,
     pty_manager: &clawtab_lib::pty::SharedPtyManager,
     event_sink: &Arc<dyn clawtab_lib::events::EventSink>,
     ctx: &clawtab_lib::job_context::JobContext,
@@ -506,6 +516,21 @@ async fn handle_ipc_command(
                 Ok(snapshot) => IpcResponse::ProviderUsage(snapshot),
                 Err(error) => IpcResponse::Error(error),
             }
+        }
+        IpcCommand::GetAgentActivity => {
+            let asking_panes: HashSet<String> = active_questions
+                .lock()
+                .iter()
+                .map(|question| question.pane_id.clone())
+                .collect();
+            let mut activity = agent_activity.lock().clone();
+            for item in &mut activity {
+                item.asking = asking_panes.contains(&item.pane_id);
+                if item.asking {
+                    item.working = false;
+                }
+            }
+            IpcResponse::AgentActivity(activity)
         }
         IpcCommand::ListSecretKeys => {
             let s = secrets.lock();
