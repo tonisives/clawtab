@@ -32,10 +32,12 @@ elif echo "$PANE_COMMAND" | grep -qi 'codex'; then
     AGENT_LABEL="Codex"
 elif echo "$PANE_COMMAND" | grep -qi 'opencode'; then
     AGENT_LABEL="OpenCode"
+elif echo "$PANE_COMMAND" | grep -qiE 'agy|antigravity'; then
+    AGENT_LABEL="Antigravity"
 fi
 
 META_FILE=$(mktemp /tmp/clawtab-meta-XXXXXX)
-trap 'rm -f "$META_FILE"' EXIT
+trap 'rm -f "$META_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # State
 TAB=0
@@ -286,6 +288,17 @@ SESSION_RELATIVE_TIME=""
 declare -a QUERY_LINES
 QUERY_SCROLL=0
 
+# Provider usage for the current agent (loaded once when the popup opens)
+USAGE_PROVIDER=""
+USAGE_TITLE=""
+USAGE_SESSION=""
+USAGE_WEEK=""
+USAGE_LINE=""
+USAGE_FILE=""
+USAGE_DONE_FILE=""
+USAGE_PID=""
+USAGE_LOADING=0
+
 relative_time() {
     local epoch=$1
     local now
@@ -359,6 +372,125 @@ wrap_query_lines() {
 }
 load_session_info
 
+prepare_usage() {
+    USAGE_PROVIDER=""
+    USAGE_TITLE=""
+    USAGE_SESSION=""
+    USAGE_WEEK=""
+    USAGE_LINE=""
+
+    case "$AGENT_LABEL" in
+        Codex)
+            USAGE_PROVIDER="codex"
+            USAGE_TITLE="codex"
+            ;;
+        "Claude Code")
+            USAGE_PROVIDER="claude"
+            USAGE_TITLE="claude"
+            ;;
+        Antigravity)
+            USAGE_PROVIDER="antigravity"
+            USAGE_TITLE="antigravity"
+            ;;
+    esac
+
+    [ -z "$USAGE_PROVIDER" ] && return
+    USAGE_LINE="${USAGE_TITLE} usage..."
+}
+
+start_usage_load() {
+    prepare_usage
+    [ -z "$USAGE_PROVIDER" ] && return
+
+    if ! command -v cwtctl &>/dev/null; then
+        USAGE_LINE="${USAGE_TITLE} usage unavailable"
+        return
+    fi
+
+    USAGE_FILE=$(mktemp /tmp/clawtab-usage-XXXXXX)
+    USAGE_DONE_FILE="${USAGE_FILE}.done"
+    rm -f "$USAGE_FILE" "$USAGE_DONE_FILE"
+    (
+        cwtctl usage "$USAGE_PROVIDER" > "$USAGE_FILE" 2>/dev/null
+        : > "$USAGE_DONE_FILE"
+    ) &
+    USAGE_PID=$!
+    USAGE_LOADING=1
+}
+
+compact_usage_value() {
+    local value="$1"
+    local percent=""
+    local reset=""
+    local duration=""
+    local absolute=""
+
+    if [[ "$value" == *"% used"* ]]; then
+        percent="${value%%\% used*}"
+        if [[ "$value" == *,\ reset\ * ]]; then
+            reset="${value#*, reset }"
+        fi
+    elif [[ "$value" == *"% left"* ]]; then
+        local left="${value%%\% left*}"
+        if [[ "$left" =~ ^[0-9]+$ ]]; then
+            percent=$((100 - left))
+        fi
+        reset="${value#*\% left}"
+        reset="${reset# (resets }"
+        reset="${reset%)}"
+    fi
+
+    if [[ "$reset" == in\ * ]]; then
+        reset="${reset#in }"
+    fi
+    if [[ "$reset" == *"("* ]]; then
+        absolute="${reset#*(}"
+        absolute="${absolute%)}"
+        absolute=$(printf '%s' "$absolute" | tr '[:upper:]' '[:lower:]')
+        duration="${reset%% (*}"
+    else
+        duration="$reset"
+    fi
+    if [[ "$duration" == *h* || "$duration" == *d* || "$duration" == *m* ]]; then
+        duration="${duration// /}"
+    fi
+
+    if [ -n "$absolute" ]; then
+        printf "%s%%/%s(%s)" "$percent" "$duration" "$absolute"
+    elif [ -n "$duration" ]; then
+        printf "%s%%/%s" "$percent" "$duration"
+    else
+        printf "%s%%" "$percent"
+    fi
+}
+
+finish_usage_load() {
+    [ "$USAGE_LOADING" -eq 1 ] || return 1
+    [ -f "$USAGE_DONE_FILE" ] || return 1
+
+    local raw line
+    raw=$(<"$USAGE_FILE")
+    while IFS= read -r line; do
+        case "$line" in
+            session=*) USAGE_SESSION="${line#session=}" ;;
+            week=*) USAGE_WEEK="${line#week=}" ;;
+        esac
+    done <<< "$raw"
+
+    USAGE_LOADING=0
+    rm -f "$USAGE_FILE" "$USAGE_DONE_FILE"
+
+    if [ -n "$USAGE_SESSION" ] && [ -n "$USAGE_WEEK" ]; then
+        USAGE_LINE="${USAGE_TITLE} session $(compact_usage_value "$USAGE_SESSION"), week $(compact_usage_value "$USAGE_WEEK")"
+    else
+        USAGE_LINE="${USAGE_TITLE} usage unavailable"
+    fi
+
+    return 0
+}
+
+start_usage_load
+
 trim_for_row() {
     local text="$1"
     local max_len=$((TERM_COLS - 16))
@@ -380,14 +512,34 @@ draw_section_header() {
     printf "${C_BORDER}${BOX_ML}${BOX_H}${C_HEADER} %s ${C_BORDER}%s${BOX_MR}${C_RESET}" "$label" "$(hfill $fill)" >&3
 }
 
+draw_usage_line() {
+    draw_row_start 2
+    if [ -n "$USAGE_LINE" ]; then
+        local line="$USAGE_LINE"
+        local max_len=$((TERM_COLS - 4))
+        [ $max_len -lt 1 ] && max_len=1
+        if [ ${#line} -gt $max_len ]; then
+            if [ $max_len -gt 3 ]; then
+                line="${line:0:$((max_len - 3))}..."
+            else
+                line="${line:0:$max_len}"
+            fi
+        fi
+        printf "${C_NORMAL}%s${C_RESET}" "$line" >&3
+    fi
+    draw_row_end 2
+}
+
 # Draw shortcuts (Home) tab
 draw_shortcuts() {
     local current row
 
-    row=2
-    draw_empty_row $row
-
+    draw_usage_line
     row=3
+    if [ -n "$USAGE_LINE" ]; then
+        draw_empty_row $row
+        ((row++))
+    fi
     for ((i=0; i<${#SHORTCUT_ITEMS[@]}; i++)); do
         draw_row_start $row
         local label="${SHORTCUT_ITEMS[$i]}"
@@ -798,18 +950,22 @@ draw() {
 
 # Read a single keypress (handles escape sequences)
 read_key() {
-    IFS= read -rsn1 key
+    if ! IFS= read -rsn1 -t 1 key; then
+        echo "timeout"
+        return
+    fi
     case "$key" in
         "") echo "enter" ;;
         " ") echo "space" ;;
         $'\t') echo "next_tab" ;;
         $'\x1b')
-            read -rsn1 -t 0.05 k2
+            sleep 0.05
+            read -rsn1 -t 0 k2
             if [ -z "$k2" ]; then
                 echo "esc"
                 return
             fi
-            read -rsn1 -t 0.05 k3
+            read -rsn1 -t 0 k3
             case "$k3" in
                 A) echo "up" ;;
                 B) echo "down" ;;
@@ -832,17 +988,21 @@ read_key() {
 
 # Read a keypress while in search mode
 read_search_key() {
-    IFS= read -rsn1 key
+    if ! IFS= read -rsn1 -t 1 key; then
+        echo "timeout"
+        return
+    fi
     case "$key" in
         "") echo "enter" ;;
         $'\t') echo "next_tab" ;;
         $'\x1b')
-            read -rsn1 -t 0.05 k2
+            sleep 0.05
+            read -rsn1 -t 0 k2
             if [ -z "$k2" ]; then
                 echo "esc"
                 return
             fi
-            read -rsn1 -t 0.05 k3
+            read -rsn1 -t 0 k3
             case "$k3" in
                 A) echo "up" ;;
                 B) echo "down" ;;
@@ -862,7 +1022,7 @@ exec 3>&1 1>/dev/null
 # Hide cursor, enable alternate screen
 tput civis 2>/dev/null >&3
 printf '\033[?1049h' >&3
-trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; rm -f "$META_FILE"' EXIT
+trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # Initial draw
 draw
@@ -870,6 +1030,16 @@ draw
 # Event loop
 max=0
 while true; do
+    if finish_usage_load; then
+        draw_tabs
+        case $TAB in
+            0) draw_shortcuts ;;
+            1) draw_secrets ;;
+            2) draw_skills ;;
+        esac
+        draw_status_bar
+    fi
+
     if [ $SEARCHING -eq 1 ]; then
         search_key=$(read_search_key)
         case "$search_key" in
@@ -944,6 +1114,8 @@ while true; do
 
     local_key=$(read_key)
     case "$local_key" in
+        timeout)
+            ;;
         esc)
             break
             ;;

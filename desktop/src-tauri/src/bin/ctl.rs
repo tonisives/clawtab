@@ -24,6 +24,9 @@ fn print_usage() {
     eprintln!("  resume <name>     Resume a paused job");
     eprintln!("  restart <name>    Restart a job");
     eprintln!("  status            Show job statuses");
+    eprintln!(
+        "  usage <provider>  Show local provider quota usage (claude, codex, antigravity, zai)"
+    );
     eprintln!("  auto-yes          Show auto-yes panes");
     eprintln!("  auto-yes toggle [pane_id]  Toggle auto-yes for pane (uses $TMUX_PANE if omitted)");
     eprintln!("  auto-yes check [pane_id]   Check if pane has auto-yes (exit 0=on, 1=off)");
@@ -76,6 +79,11 @@ async fn main() {
     // Handle daemon subcommands locally (no IPC needed)
     if command == "daemon" {
         handle_daemon_command(&args);
+        return;
+    }
+
+    if command == "usage" {
+        handle_usage_command(&args).await;
         return;
     }
 
@@ -382,6 +390,7 @@ async fn main() {
                     }
                 }
             }
+            IpcResponse::ProviderUsage(usage) => print_provider_usage(usage),
             IpcResponse::RelayStatus(status) => {
                 println!(
                     "{}",
@@ -413,6 +422,46 @@ async fn main() {
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+async fn handle_usage_command(args: &[String]) {
+    let provider = args.get(2).cloned().unwrap_or_else(|| {
+        eprintln!("Error: 'usage' requires a provider (claude, codex, antigravity, or zai)");
+        std::process::exit(1);
+    });
+    let zai_token = if provider.eq_ignore_ascii_case("zai") || provider.eq_ignore_ascii_case("z.ai")
+    {
+        let explicit_tokens = {
+            let secrets = clawtab_lib::secrets::SecretsManager::new();
+            clawtab_lib::usage::ZAI_TOKEN_KEYS
+                .iter()
+                .map(|key| secrets.get(key).cloned())
+                .collect()
+        };
+        clawtab_lib::usage::resolve_zai_token_from_sources(explicit_tokens)
+    } else {
+        None
+    };
+
+    match clawtab_lib::usage::fetch_provider_usage(&provider, zai_token).await {
+        Ok(usage) => print_provider_usage(usage),
+        Err(error) => exit_error(&error),
+    }
+}
+
+fn print_provider_usage(usage: clawtab_lib::usage::ProviderUsageSnapshot) {
+    if usage.status == "unavailable" {
+        if let Some(note) = usage.note.as_deref() {
+            eprintln!("usage detail: {}", note);
+        }
+    }
+    println!("provider={}", usage.provider);
+    println!("status={}", usage.status);
+    println!("summary={}", usage.summary);
+    for entry in usage.entries {
+        let key = entry.label.to_ascii_lowercase().replace(' ', "_");
+        println!("{}={}", key, entry.value);
     }
 }
 

@@ -493,6 +493,20 @@ async fn handle_ipc_command(
             let qs = active_questions.lock().clone();
             IpcResponse::ActiveQuestions(qs)
         }
+        IpcCommand::GetProviderUsage { provider } => {
+            let explicit_tokens = {
+                let stored_secrets = secrets.lock();
+                clawtab_lib::usage::ZAI_TOKEN_KEYS
+                    .iter()
+                    .map(|key| stored_secrets.get(key).cloned())
+                    .collect()
+            };
+            let zai_token = clawtab_lib::usage::resolve_zai_token_from_sources(explicit_tokens);
+            match clawtab_lib::usage::fetch_provider_usage(&provider, zai_token).await {
+                Ok(snapshot) => IpcResponse::ProviderUsage(snapshot),
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
         IpcCommand::ListSecretKeys => {
             let s = secrets.lock();
             IpcResponse::SecretKeys(s.list_keys())

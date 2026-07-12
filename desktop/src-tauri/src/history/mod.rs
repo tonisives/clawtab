@@ -73,6 +73,7 @@ impl HistoryStore {
         .ok();
 
         let store = Self { conn };
+        crate::agent::migrate_legacy_agent_storage();
         store.backfill_orphan_logs();
         Ok(store)
     }

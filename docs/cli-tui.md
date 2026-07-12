@@ -24,6 +24,7 @@ cwtctl <command> [args]
 | `resume <name>` | Resume a paused job |
 | `restart <name>` | Restart a completed/failed job |
 | `status` | Show all job statuses as JSON |
+| `usage <provider>` | Show local quota usage for `claude`, `codex`, `antigravity`, or `zai` |
 | `auto-yes` | Show panes with auto-yes enabled |
 | `auto-yes toggle [pane_id]` | Toggle auto-yes for a pane |
 | `auto-yes check [pane_id]` | Check auto-yes (exit 0=on, 1=off) |

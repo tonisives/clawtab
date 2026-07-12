@@ -42,6 +42,9 @@ pub enum IpcCommand {
         pane_id: String,
     },
     GetActiveQuestions,
+    GetProviderUsage {
+        provider: String,
+    },
     ListSecretKeys,
     GetSecretValues {
         keys: Vec<String>,
@@ -166,6 +169,7 @@ pub enum IpcResponse {
     Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
     AutoYesPanes(Vec<String>),
     ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),
+    ProviderUsage(crate::usage::ProviderUsageSnapshot),
     SecretKeys(Vec<String>),
     SecretValues(Vec<(String, String)>),
     PaneInfo {

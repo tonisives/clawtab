@@ -38,7 +38,7 @@ pub mod tmux;
 mod tools;
 #[cfg(feature = "desktop")]
 mod updater;
-mod usage;
+pub mod usage;
 pub mod watcher;
 
 // Everything below this point is desktop-only (Tauri GUI app).

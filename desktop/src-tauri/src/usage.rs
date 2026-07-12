@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Local, TimeZone, Utc};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,22 @@ pub async fn fetch_usage_snapshot(zai_token: Option<String>) -> UsageSnapshot {
         codex,
         antigravity,
         zai,
+    }
+}
+
+pub async fn fetch_provider_usage(
+    provider: &str,
+    zai_token: Option<String>,
+) -> Result<ProviderUsageSnapshot, String> {
+    match provider.trim().to_ascii_lowercase().as_str() {
+        "claude" => Ok(fetch_claude_snapshot().await),
+        "codex" => Ok(fetch_codex_snapshot().await),
+        "antigravity" => Ok(fetch_antigravity_snapshot().await),
+        "zai" | "z.ai" => Ok(fetch_zai_snapshot(zai_token).await),
+        other => Err(format!(
+            "unknown usage provider '{}'; expected claude, codex, antigravity, or zai",
+            other
+        )),
     }
 }
 
@@ -406,6 +422,8 @@ fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
     let codex_binary = resolve_codex_binary();
     let mut child = Command::new(&codex_binary)
         .args(["-s", "read-only", "-a", "untrusted", "app-server"])
+        .env("TERM", "xterm-256color")
+        .env_remove("TMUX")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -755,18 +773,19 @@ fn usage_bucket_text(bucket: Option<&claude_usage::UsageBucket>) -> String {
 
 fn codex_window_percent(window: Option<&CodexRateLimitWindow>) -> String {
     window
-        .map(|window| format!("{}%", window.used_percent))
+        .map(|window| format!("{}% used", window.used_percent))
         .unwrap_or_else(|| "n/a".to_string())
 }
 
 fn codex_window_text(window: Option<&CodexRateLimitWindow>) -> String {
     match window {
         Some(window) => match window.resets_at {
-            Some(reset_ts) => {
-                let reset_text = epoch_seconds_to_human(reset_ts);
-                format!("{}% (resets {})", window.used_percent, reset_text)
-            }
-            None => format!("{}%", window.used_percent),
+            Some(reset_ts) => format!(
+                "{}% used, {}",
+                window.used_percent,
+                codex_reset_text(reset_ts)
+            ),
+            None => format!("{}% used", window.used_percent),
         },
         None => "n/a".to_string(),
     }
@@ -1194,6 +1213,18 @@ fn epoch_seconds_to_human(epoch_secs: i64) -> String {
     }
 }
 
+fn codex_reset_text(epoch_secs: i64) -> String {
+    let Some(target) = Utc.timestamp_opt(epoch_secs, 0).single() else {
+        return "reset unknown".to_string();
+    };
+    let local_target = target.with_timezone(&Local);
+    format!(
+        "reset {} ({})",
+        epoch_seconds_to_human(epoch_secs),
+        local_target.format("%a %-I%p")
+    )
+}
+
 fn relative_time_from(target: DateTime<Utc>) -> String {
     let delta = target - Utc::now();
     if delta.num_seconds() <= 0 {
@@ -1384,14 +1415,18 @@ struct CodexCliLimit {
 }
 
 impl CodexCliLimit {
+    fn percent_used(&self) -> i64 {
+        (100 - self.percent_left).clamp(0, 100)
+    }
+
     fn summary_text(&self) -> String {
-        format!("{}% left", self.percent_left)
+        format!("{}% used", self.percent_used())
     }
 
     fn display_text(&self) -> String {
         match &self.reset {
-            Some(reset) => format!("{}% left (resets {})", self.percent_left, reset),
-            None => format!("{}% left", self.percent_left),
+            Some(reset) => format!("{}% used, reset {}", self.percent_used(), reset),
+            None => format!("{}% used", self.percent_used()),
         }
     }
 }
@@ -1663,8 +1698,8 @@ Weekly limit:
             .iter()
             .find(|entry| entry.label == "Week")
             .expect("week entry");
-        assert_eq!(week.value, "49% left (resets 06:14 on 17 Apr)");
-        assert_eq!(snapshot.summary, "Session 38% left, Week 49% left");
+        assert_eq!(week.value, "51% used, reset 06:14 on 17 Apr");
+        assert_eq!(snapshot.summary, "Session 62% used, Week 51% used");
     }
 
     #[test]
@@ -1704,10 +1739,10 @@ Weekly limit:
         let snapshot = build_codex_snapshot(account, limits);
 
         assert_eq!(snapshot.status, "available");
-        assert_eq!(snapshot.summary, "Session 62%, Week 41%");
+        assert_eq!(snapshot.summary, "Session 62% used, Week 41% used");
         assert_eq!(snapshot.entries[0].value, "Plus");
-        assert_eq!(snapshot.entries[1].value, "62%");
-        assert_eq!(snapshot.entries[2].value, "41%");
+        assert_eq!(snapshot.entries[1].value, "62% used");
+        assert_eq!(snapshot.entries[2].value, "41% used");
     }
 
     #[test]
