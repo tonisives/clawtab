@@ -20,6 +20,7 @@ type DetectedAgent = (
     Option<String>,
     Option<String>,
     String,
+    String,
     u64,
     u16,
     u16,
@@ -681,6 +682,7 @@ fn update_question_cache(
         matched_group,
         matched_job,
         _activity_history,
+        _activity_visible,
         _history_size,
         _pane_width,
         _pane_height,
@@ -1039,6 +1041,9 @@ fn last_context_lines(text: &str) -> String {
 #[derive(Default)]
 struct ActivityTracker {
     last_history: HashMap<String, String>,
+    last_visible: HashMap<String, String>,
+    last_visible_text: HashMap<String, String>,
+    visible_color_streak: HashMap<String, u8>,
     last_history_size: HashMap<String, u64>,
     last_layout: HashMap<String, (u16, u16)>,
     last_changed: HashMap<String, Instant>,
@@ -1047,6 +1052,15 @@ struct ActivityTracker {
 fn normalize_activity_history(text: &str) -> String {
     strip_ansi(text)
         .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+fn normalize_activity_visible(text: &str) -> String {
+    text.lines()
         .map(str::trim_end)
         .collect::<Vec<_>>()
         .join("\n")
@@ -1064,11 +1078,25 @@ impl ActivityTracker {
         let mut seen_panes = HashSet::new();
         let mut activity = Vec::with_capacity(processes.len());
 
-        for (pane_id, _, _, _, _, _, _, activity_history, history_size, pane_width, pane_height) in
-            processes
+        for (
+            pane_id,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            activity_history,
+            activity_visible,
+            history_size,
+            pane_width,
+            pane_height,
+        ) in processes
         {
             seen_panes.insert(pane_id.clone());
             let normalized_history = normalize_activity_history(activity_history);
+            let normalized_visible = normalize_activity_visible(activity_visible);
+            let visible_text = normalize_activity_history(&normalized_visible);
 
             let history_changed = self
                 .last_history
@@ -1082,13 +1110,36 @@ impl ActivityTracker {
                 .last_layout
                 .get(pane_id)
                 .is_some_and(|previous| previous != &(*pane_width, *pane_height));
+            let color_only_change = self
+                .last_visible
+                .get(pane_id)
+                .is_some_and(|previous| previous != &normalized_visible)
+                && self
+                    .last_visible_text
+                    .get(pane_id)
+                    .is_some_and(|previous| previous == &visible_text)
+                && !visible_text.is_empty();
+            let color_streak = if color_only_change {
+                self.visible_color_streak
+                    .get(pane_id)
+                    .copied()
+                    .unwrap_or_default()
+                    .saturating_add(1)
+            } else {
+                0
+            };
             if layout_changed {
                 self.last_changed.remove(pane_id);
-            } else if history_changed || history_grew {
+            } else if history_changed || history_grew || color_streak >= 2 {
                 self.last_changed.insert(pane_id.clone(), now);
             }
             self.last_history
                 .insert(pane_id.clone(), normalized_history);
+            self.last_visible
+                .insert(pane_id.clone(), normalized_visible);
+            self.last_visible_text.insert(pane_id.clone(), visible_text);
+            self.visible_color_streak
+                .insert(pane_id.clone(), color_streak);
             self.last_history_size
                 .insert(pane_id.clone(), *history_size);
             self.last_layout
@@ -1106,6 +1157,12 @@ impl ActivityTracker {
         }
 
         self.last_history
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.last_visible
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.last_visible_text
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.visible_color_streak
             .retain(|pane_id, _| seen_panes.contains(pane_id));
         self.last_history_size
             .retain(|pane_id, _| seen_panes.contains(pane_id));
@@ -1134,7 +1191,7 @@ const DETECT_QUESTIONS_SEP: &str = "|||";
 fn list_panes_for_questions() -> Option<String> {
     use std::process::Command;
     let format_str = format!(
-        "#{{pane_id}}{0}#{{pane_current_command}}{0}#{{pane_current_path}}{0}#{{session_name}}{0}#{{window_name}}{0}#{{pane_pid}}{0}#{{history_size}}{0}#{{pane_width}}{0}#{{pane_height}}",
+        "#{{pane_id}}{0}#{{pane_current_command}}{0}#{{pane_current_path}}{0}#{{session_name}}{0}#{{window_name}}{0}#{{pane_pid}}{0}#{{history_size}}{0}#{{pane_width}}{0}#{{pane_height}}{0}#{{cursor_y}}",
         DETECT_QUESTIONS_SEP
     );
     match Command::new("tmux")
@@ -1224,8 +1281,8 @@ fn detect_question_processes(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(9, DETECT_QUESTIONS_SEP).collect();
-        if parts.len() < 9 {
+        let parts: Vec<&str> = line.splitn(10, DETECT_QUESTIONS_SEP).collect();
+        if parts.len() < 10 {
             continue;
         }
         let (
@@ -1238,9 +1295,10 @@ fn detect_question_processes(
             history_size,
             pane_width,
             pane_height,
+            cursor_y,
         ) = (
             parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7],
-            parts[8],
+            parts[8], parts[9],
         );
 
         all_pane_ids.insert(pane_id.to_string());
@@ -1274,6 +1332,9 @@ fn detect_question_processes(
         let history_size = history_size.parse().unwrap_or_default();
         let pane_width = pane_width.parse().unwrap_or_default();
         let pane_height = pane_height.parse().unwrap_or_default();
+        let cursor_y = cursor_y.parse().unwrap_or_default();
+        let activity_visible =
+            crate::tmux::capture_pane_activity(pane_id, pane_height, cursor_y).unwrap_or_default();
 
         results.push((
             pane_id.to_string(),
@@ -1284,6 +1345,7 @@ fn detect_question_processes(
             matched_group,
             matched_job,
             activity_history,
+            activity_visible,
             history_size,
             pane_width,
             pane_height,
@@ -1314,6 +1376,26 @@ mod tests {
         pane_width: u16,
         pane_height: u16,
     ) -> DetectedAgent {
+        agent_with_layout_and_visible(
+            pane_id,
+            log_lines,
+            activity_history,
+            "",
+            history_size,
+            pane_width,
+            pane_height,
+        )
+    }
+
+    fn agent_with_layout_and_visible(
+        pane_id: &str,
+        log_lines: &str,
+        activity_history: &str,
+        activity_visible: &str,
+        history_size: u64,
+        pane_width: u16,
+        pane_height: u16,
+    ) -> DetectedAgent {
         (
             pane_id.to_string(),
             "/tmp/project".to_string(),
@@ -1323,6 +1405,7 @@ mod tests {
             None,
             None,
             activity_history.to_string(),
+            activity_visible.to_string(),
             history_size,
             pane_width,
             pane_height,
@@ -1410,6 +1493,56 @@ mod tests {
         );
 
         assert!(!typed[0].working);
+    }
+
+    #[test]
+    fn detects_repeated_color_only_animation() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        let no_questions = HashSet::new();
+
+        tracker.update(
+            &[agent_with_layout_and_visible(
+                "%1",
+                "same",
+                "same history",
+                "\x1b[31mThinking\x1b[0m",
+                20,
+                120,
+                40,
+            )],
+            &no_questions,
+            now,
+        );
+        let first_color_change = tracker.update(
+            &[agent_with_layout_and_visible(
+                "%1",
+                "same",
+                "same history",
+                "\x1b[32mThinking\x1b[0m",
+                20,
+                120,
+                40,
+            )],
+            &no_questions,
+            now + Duration::from_secs(2),
+        );
+        assert!(!first_color_change[0].working);
+
+        let second_color_change = tracker.update(
+            &[agent_with_layout_and_visible(
+                "%1",
+                "same",
+                "same history",
+                "\x1b[34mThinking\x1b[0m",
+                20,
+                120,
+                40,
+            )],
+            &no_questions,
+            now + Duration::from_secs(4),
+        );
+        assert!(second_color_change[0].working);
     }
 
     #[test]

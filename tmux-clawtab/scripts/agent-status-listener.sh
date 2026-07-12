@@ -93,6 +93,39 @@ clear_activity_options() {
         tmux set-window-option -q -t "$window_id" @clawtab-agent-present 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-working 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-question 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-question-next 0 2>/dev/null || true
+    done
+}
+
+stage_activity_options() {
+    tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r window_id; do
+        [ -n "$window_id" ] || continue
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 0 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-question-next 0 2>/dev/null || true
+    done
+}
+
+commit_staged_activity_options() {
+    tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r window_id; do
+        [ -n "$window_id" ] || continue
+        seen="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-seen}' 2>/dev/null || true)"
+        if [ "$seen" = "1" ]; then
+            present="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-present-next}' 2>/dev/null || true)"
+            working="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-working-next}' 2>/dev/null || true)"
+            asking="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-question-next}' 2>/dev/null || true)"
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-present "${present:-0}" 2>/dev/null || true
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-working "${working:-0}" 2>/dev/null || true
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-question "${asking:-0}" 2>/dev/null || true
+        else
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-present 0 2>/dev/null || true
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-working 0 2>/dev/null || true
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-question 0 2>/dev/null || true
+        fi
     done
 }
 
@@ -102,7 +135,7 @@ apply_snapshot() {
         return 1
     fi
 
-    clear_activity_options
+    stage_activity_options
     printf '%s\n' "$snapshot" | "$JQ_BIN" -r \
         '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring)] | @tsv' \
         2>/dev/null | while IFS=$'\t' read -r pane_id working asking; do
@@ -110,14 +143,16 @@ apply_snapshot() {
         window_id="$(tmux display-message -p -t "$pane_id" '#{window_id}' 2>/dev/null || true)"
         [ -n "$window_id" ] || continue
 
-        tmux set-window-option -q -t "$window_id" @clawtab-agent-present 1 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 1 2>/dev/null || true
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 1 2>/dev/null || true
         if [ "$working" = "true" ]; then
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-working 1 2>/dev/null || true
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 1 2>/dev/null || true
         fi
         if [ "$asking" = "true" ]; then
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-question 1 2>/dev/null || true
+            tmux set-window-option -q -t "$window_id" @clawtab-agent-question-next 1 2>/dev/null || true
         fi
     done
+    commit_staged_activity_options
 }
 
 fetch_snapshot() {
@@ -152,6 +187,5 @@ while true; do
         fi
     done
 
-    clear_activity_options
     sleep 2
 done

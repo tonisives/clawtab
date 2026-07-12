@@ -133,10 +133,11 @@ pub struct PaneEntry {
 
 /// Activity state for one detected agent pane.
 ///
-/// `working` means the pane's recent terminal scrollback changed and it is not
-/// asking a question. Visible-screen redraws, echoed input, and layout reflows
-/// are ignored. `asking` is independent so a window containing both kinds of
-/// panes can render both indicators.
+/// `working` means the pane's recent terminal scrollback changed or its
+/// visible agent UI has a repeated color-only animation, and it is not asking
+/// a question. Echoed input and layout reflows are ignored. `asking` is
+/// independent so a window containing both kinds of panes can render both
+/// indicators.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentActivity {
     pub pane_id: String,

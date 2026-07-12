@@ -168,6 +168,6 @@ Agent activity events use this shape:
 `GetAgentActivity` is an IPC-only command used by the tmux plugin; it is not a
 user-facing `cwtctl` command. The plugin also requires `jq` to decode the local
 JSON response. `working` is true for a short window after the daemon detects
-new terminal scrollback; visible-screen redraws, echoed input, and layout
-reflows are ignored. `asking` takes precedence for that pane when a question is
-detected.
+new terminal scrollback or a repeated color-only animation in the visible
+agent UI; echoed input and layout reflows are ignored. `asking` takes precedence
+for that pane when a question is detected.

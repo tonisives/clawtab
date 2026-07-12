@@ -63,41 +63,68 @@ fi
 # Append activity indicators without replacing a user's existing window
 # formats. The custom window options are updated by agent-status-listener.sh.
 spinner_command=$(printf '%q' "$CURRENT_DIR/scripts/agent-spinner.sh")
-clawtab_activity_part="#{?#{@clawtab-agent-question}, #[fg=yellow#,bold]!#[default],}#{?#{@clawtab-agent-working}, #[fg=cyan]#(${spinner_command})#[default],}#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
-clawtab_idle_part="#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
+clawtab_question_part="#{?#{@clawtab-agent-question},#[fg=yellow#,bold]!#[default],}"
+clawtab_working_part="#{?#{@clawtab-agent-working},#{?#{@clawtab-agent-question}, ,}#[fg=cyan]#(${spinner_command})#[default],}"
+clawtab_check_part="#{?#{@clawtab-agent-present},#{?#{@clawtab-agent-question},,#{?#{@clawtab-agent-working},,#[fg=green#,bold]✓#[default]}},}"
+clawtab_activity_core="${clawtab_question_part}${clawtab_working_part}${clawtab_check_part}"
+clawtab_activity_prefix="#{?#{||:#{@clawtab-agent-question},#{||:#{@clawtab-agent-working},#{@clawtab-agent-present}}}, ,}"
+clawtab_activity_part="${clawtab_activity_prefix}${clawtab_activity_core}"
+previous_clawtab_activity_part="#{?#{@clawtab-agent-question}, #[fg=yellow#,bold]!#[default],}#{?#{@clawtab-agent-working}, #[fg=cyan]#(${spinner_command})#[default],}#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
 legacy_clawtab_activity_part="#{?#{@clawtab-agent-question},#[fg=red#,bold]!#[default],#{?#{@clawtab-agent-working},#[fg=cyan]#(${spinner_command})#[default],#{?#{@clawtab-agent-present},#[fg=green#,bold]✓#[default],}}}"
 legacy_clawtab_basic_part="#{?#{@clawtab-agent-question},#[fg=red#,bold]!#[default],}#{?#{@clawtab-agent-working},#[fg=cyan]#(${spinner_command})#[default],}"
+
+activity_part_for_format() {
+    local format="$1"
+    if [[ "$format" == *" " ]]; then
+        printf '%s' "$clawtab_activity_core"
+    else
+        printf '%s' "$clawtab_activity_part"
+    fi
+}
 
 append_activity_format() {
     local option_name="$1"
     local current_format
+    local base_format
+    local activity_part
     current_format=$(tmux show-option -gqv "$option_name")
 
     # Do not append the current indicators more than once when the plugin is
     # reloaded.
-    if [[ "$current_format" == *"$clawtab_activity_part"* ]]; then
+    if [[ "$current_format" == *"$clawtab_activity_core"* ]]; then
+        return
+    fi
+
+    if [[ "$current_format" == *"$previous_clawtab_activity_part"* ]]; then
+        base_format="${current_format/"$previous_clawtab_activity_part"/}"
+        activity_part="$(activity_part_for_format "$base_format")"
+        tmux set-option -g "$option_name" "${base_format}${activity_part}"
         return
     fi
 
     # Upgrade the previous indicator format in place so color and padding
     # changes also reach an already-running tmux server.
     if [[ "$current_format" == *"$legacy_clawtab_activity_part"* ]]; then
-        current_format="${current_format/"$legacy_clawtab_activity_part"/"$clawtab_activity_part"}"
-        tmux set-option -g "$option_name" "$current_format"
+        base_format="${current_format/"$legacy_clawtab_activity_part"/}"
+        activity_part="$(activity_part_for_format "$base_format")"
+        tmux set-option -g "$option_name" "${base_format}${activity_part}"
         return
     fi
     if [[ "$current_format" == *"$legacy_clawtab_basic_part"* ]]; then
-        current_format="${current_format/"$legacy_clawtab_basic_part"/"$clawtab_activity_part"}"
-        tmux set-option -g "$option_name" "$current_format"
+        base_format="${current_format/"$legacy_clawtab_basic_part"/}"
+        activity_part="$(activity_part_for_format "$base_format")"
+        tmux set-option -g "$option_name" "${base_format}${activity_part}"
         return
     fi
 
     # Upgrade a status format installed by an older plugin version without
     # duplicating its ! and spinner indicators.
     if [[ "$current_format" == *"clawtab-agent-question"* && "$current_format" == *"clawtab-agent-working"* ]]; then
-        tmux set-option -g "$option_name" "${current_format}${clawtab_idle_part}"
+        activity_part="$(activity_part_for_format "$current_format")"
+        tmux set-option -g "$option_name" "${current_format}${activity_part}"
     else
-        tmux set-option -g "$option_name" "${current_format}${clawtab_activity_part}"
+        activity_part="$(activity_part_for_format "$current_format")"
+        tmux set-option -g "$option_name" "${current_format}${activity_part}"
     fi
 }
 

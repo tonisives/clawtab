@@ -626,6 +626,47 @@ pub fn capture_pane_history(pane_id: &str, lines: u32) -> Result<String, String>
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Capture the visible pane with ANSI styles preserved, excluding the cursor
+/// row where interactive agents echo user input.
+pub fn capture_pane_activity(
+    pane_id: &str,
+    pane_height: u16,
+    cursor_y: u16,
+) -> Result<String, String> {
+    let end = pane_height.saturating_sub(1).to_string();
+    let output = run(
+        &[
+            "capture-pane",
+            "-t",
+            pane_id,
+            "-p",
+            "-e",
+            "-N",
+            "-S",
+            "0",
+            "-E",
+            &end,
+        ],
+        "tmux::capture_pane_activity",
+    )
+    .map_err(|e| format!("Failed to capture pane activity: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    let cursor_line = usize::from(cursor_y);
+    let captured = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = captured.lines().collect();
+    Ok(lines
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, line)| (index != cursor_line).then_some(line))
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
 /// List pane IDs in a specific window. Returns panes like `%12`, `%13`.
 pub fn list_panes_in_window(session: &str, window: &str) -> Result<Vec<String>, String> {
     let target = format!("{}:{}", session, window);
