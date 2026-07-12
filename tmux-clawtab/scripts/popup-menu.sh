@@ -22,22 +22,26 @@ if [ -z "$PANE_ID" ]; then
     exit 1
 fi
 
-PANE_COMMAND=$(tmux display-message -t "$PANE_ID" -p '#{pane_current_command}' 2>/dev/null || true)
 AGENT_LABEL="Unsupported"
-if echo "$PANE_COMMAND" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-    AGENT_LABEL="Claude Code"
-elif echo "$PANE_COMMAND" | grep -qi 'claude'; then
-    AGENT_LABEL="Claude Code"
-elif echo "$PANE_COMMAND" | grep -qi 'codex'; then
-    AGENT_LABEL="Codex"
-elif echo "$PANE_COMMAND" | grep -qi 'opencode'; then
-    AGENT_LABEL="OpenCode"
-elif echo "$PANE_COMMAND" | grep -qiE 'agy|antigravity'; then
-    AGENT_LABEL="Antigravity"
-fi
+
+set_agent_label() {
+    local pane_command="${1:-}"
+    AGENT_LABEL="Unsupported"
+    if echo "$pane_command" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+        AGENT_LABEL="Claude Code"
+    elif echo "$pane_command" | grep -qi 'claude'; then
+        AGENT_LABEL="Claude Code"
+    elif echo "$pane_command" | grep -qi 'codex'; then
+        AGENT_LABEL="Codex"
+    elif echo "$pane_command" | grep -qi 'opencode'; then
+        AGENT_LABEL="OpenCode"
+    elif echo "$pane_command" | grep -qiE 'agy|antigravity'; then
+        AGENT_LABEL="Antigravity"
+    fi
+}
 
 META_FILE=$(mktemp /tmp/clawtab-meta-XXXXXX)
-trap 'rm -f "$META_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+trap 'rm -f "$META_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # State
 TAB=0
@@ -66,8 +70,14 @@ declare -a FILTERED_INDICES
 load_skills() {
     SKILLS_LIST=()
     SKILL_SELECTED=()
+    local skills_file="${1:-}"
     local skills_dir="$HOME/.claude/skills"
-    if [ -d "$skills_dir" ]; then
+    if [ -n "$skills_file" ] && [ -f "$skills_file" ]; then
+        while IFS= read -r line; do
+            SKILLS_LIST+=("$line")
+            SKILL_SELECTED+=(0)
+        done < "$skills_file"
+    elif [ -d "$skills_dir" ]; then
         while IFS= read -r line; do
             SKILLS_LIST+=("$line")
             SKILL_SELECTED+=(0)
@@ -78,20 +88,20 @@ load_skills() {
 load_secrets() {
     SECRETS_LIST=()
     SECRET_SELECTED=()
-    if command -v cwtctl &>/dev/null; then
-        local raw
+    local secrets_file="${1:-}"
+    local raw=""
+    if [ -n "$secrets_file" ] && [ -f "$secrets_file" ]; then
+        raw=$(<"$secrets_file")
+    elif command -v cwtctl &>/dev/null; then
         raw=$(cwtctl secrets 2>/dev/null)
-        if [ -n "$raw" ] && [ "$raw" != "No secrets stored" ]; then
-            while IFS= read -r line; do
-                SECRETS_LIST+=("$line")
-                SECRET_SELECTED+=(0)
-            done <<< "$raw"
-        fi
+    fi
+    if [ -n "$raw" ] && [ "$raw" != "No secrets stored" ]; then
+        while IFS= read -r line; do
+            SECRETS_LIST+=("$line")
+            SECRET_SELECTED+=(0)
+        done <<< "$raw"
     fi
 }
-
-load_skills
-load_secrets
 
 # Apply search filter - populates FILTERED_INDICES
 apply_filter() {
@@ -288,6 +298,16 @@ SESSION_RELATIVE_TIME=""
 declare -a QUERY_LINES
 QUERY_SCROLL=0
 
+# Background data loading for the initial popup render.
+DATA_PANE_COMMAND_FILE=""
+DATA_SKILLS_FILE=""
+DATA_SECRETS_FILE=""
+DATA_SESSION_FILE=""
+DATA_RESTORE_FILE=""
+DATA_DONE_FILE=""
+DATA_PID=""
+DATA_LOADING=0
+
 # Provider usage for the current agent (loaded once when the popup opens)
 USAGE_PROVIDER=""
 USAGE_TITLE=""
@@ -322,27 +342,41 @@ relative_time() {
 }
 
 load_session_info() {
-    if command -v cwtctl &>/dev/null; then
-        local raw
-        raw=$(cwtctl pane-info "$PANE_ID" 2>/dev/null)
-        if [ -n "$raw" ]; then
-            SESSION_ID=$(echo "$raw" | grep '^session_id=' | cut -d= -f2-)
-            SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
-            SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
-            SESSION_LAST_QUERY=$(echo "$raw" | grep '^last_query=' | cut -d= -f2-)
-            SESSION_RESTORE_COMMAND=$(cwtctl pane-info restore-command "$PANE_ID" 2>/dev/null || true)
-            case "$SESSION_RESTORE_COMMAND" in
-                codex\ *) AGENT_LABEL="Codex" ;;
-                opencode\ *) AGENT_LABEL="OpenCode" ;;
-                claude\ *) AGENT_LABEL="Claude Code" ;;
-            esac
-            local epoch
-            epoch=$(echo "$raw" | grep '^started_epoch=' | cut -d= -f2-)
-            if [ -n "$epoch" ]; then
-                SESSION_RELATIVE_TIME=$(relative_time "$epoch")
-            fi
+    local session_file="${1:-}"
+    local restore_file="${2:-}"
+    local raw=""
+
+    SESSION_ID=""
+    SESSION_RESTORE_COMMAND=""
+    SESSION_FIRST_QUERY=""
+    SESSION_LAST_QUERY=""
+    SESSION_STARTED_AT=""
+    SESSION_RELATIVE_TIME=""
+
+    if [ -n "$session_file" ] && [ -f "$session_file" ]; then
+        raw=$(<"$session_file")
+    fi
+    if [ -n "$restore_file" ] && [ -f "$restore_file" ]; then
+        SESSION_RESTORE_COMMAND=$(<"$restore_file")
+    fi
+
+    if [ -n "$raw" ]; then
+        SESSION_ID=$(echo "$raw" | grep '^session_id=' | cut -d= -f2-)
+        SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
+        SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
+        SESSION_LAST_QUERY=$(echo "$raw" | grep '^last_query=' | cut -d= -f2-)
+        local epoch
+        epoch=$(echo "$raw" | grep '^started_epoch=' | cut -d= -f2-)
+        if [ -n "$epoch" ]; then
+            SESSION_RELATIVE_TIME=$(relative_time "$epoch")
         fi
     fi
+
+    case "$SESSION_RESTORE_COMMAND" in
+        codex\ *) AGENT_LABEL="Codex" ;;
+        opencode\ *) AGENT_LABEL="OpenCode" ;;
+        claude\ *) AGENT_LABEL="Claude Code" ;;
+    esac
 }
 
 # Word-wrap a text string into QUERY_LINES array for the current terminal width
@@ -370,7 +404,6 @@ wrap_query_lines() {
         query="${query# }"
     done
 }
-load_session_info
 
 prepare_usage() {
     USAGE_PROVIDER=""
@@ -420,6 +453,7 @@ start_usage_load() {
 
 compact_usage_value() {
     local value="$1"
+    local include_absolute="${2:-1}"
     local percent=""
     local reset=""
     local duration=""
@@ -451,14 +485,19 @@ compact_usage_value() {
     else
         duration="$reset"
     fi
+    if [ "$include_absolute" -eq 0 ]; then
+        absolute=""
+    fi
     if [[ "$duration" == *h* || "$duration" == *d* || "$duration" == *m* ]]; then
         duration="${duration// /}"
     fi
 
-    if [ -n "$absolute" ]; then
-        printf "%s%%/%s(%s)" "$percent" "$duration" "$absolute"
+    if [ -z "$percent" ]; then
+        printf "%s" "${value:-n/a}"
+    elif [ -n "$absolute" ]; then
+        printf "%s%% / %s(%s)" "$percent" "$duration" "$absolute"
     elif [ -n "$duration" ]; then
-        printf "%s%%/%s" "$percent" "$duration"
+        printf "%s%% / %s" "$percent" "$duration"
     else
         printf "%s%%" "$percent"
     fi
@@ -481,7 +520,7 @@ finish_usage_load() {
     rm -f "$USAGE_FILE" "$USAGE_DONE_FILE"
 
     if [ -n "$USAGE_SESSION" ] && [ -n "$USAGE_WEEK" ]; then
-        USAGE_LINE="${USAGE_TITLE} session $(compact_usage_value "$USAGE_SESSION"), week $(compact_usage_value "$USAGE_WEEK")"
+        USAGE_LINE="${USAGE_TITLE} session $(compact_usage_value "$USAGE_SESSION" 0), week $(compact_usage_value "$USAGE_WEEK" 1)"
     else
         USAGE_LINE="${USAGE_TITLE} usage unavailable"
     fi
@@ -489,7 +528,73 @@ finish_usage_load() {
     return 0
 }
 
-start_usage_load
+start_data_load() {
+    DATA_PANE_COMMAND_FILE=$(mktemp /tmp/clawtab-data-pane-command-XXXXXX)
+    DATA_SKILLS_FILE=$(mktemp /tmp/clawtab-data-skills-XXXXXX)
+    DATA_SECRETS_FILE=$(mktemp /tmp/clawtab-data-secrets-XXXXXX)
+    DATA_SESSION_FILE=$(mktemp /tmp/clawtab-data-session-XXXXXX)
+    DATA_RESTORE_FILE=$(mktemp /tmp/clawtab-data-restore-XXXXXX)
+    DATA_DONE_FILE=$(mktemp /tmp/clawtab-data-done-XXXXXX)
+    rm -f "$DATA_DONE_FILE"
+
+    (
+        (
+            tmux display-message -t "$PANE_ID" -p '#{pane_current_command}' 2>/dev/null || true
+        ) > "$DATA_PANE_COMMAND_FILE" &
+
+        (
+            if [ -d "$HOME/.claude/skills" ]; then
+                ls -1 "$HOME/.claude/skills" 2>/dev/null
+            fi
+        ) > "$DATA_SKILLS_FILE" &
+
+        (
+            if command -v cwtctl &>/dev/null; then
+                cwtctl secrets 2>/dev/null
+            fi
+        ) > "$DATA_SECRETS_FILE" &
+
+        (
+            if command -v cwtctl &>/dev/null; then
+                cwtctl pane-info "$PANE_ID" 2>/dev/null
+            fi
+        ) > "$DATA_SESSION_FILE" &
+
+        (
+            if command -v cwtctl &>/dev/null; then
+                cwtctl pane-info restore-command "$PANE_ID" 2>/dev/null
+            fi
+        ) > "$DATA_RESTORE_FILE" &
+
+        wait
+        : > "$DATA_DONE_FILE"
+    ) &
+    DATA_PID=$!
+    DATA_LOADING=1
+}
+
+finish_data_load() {
+    [ "$DATA_LOADING" -eq 1 ] || return 1
+    [ -f "$DATA_DONE_FILE" ] || return 1
+
+    local pane_command=""
+    if [ -f "$DATA_PANE_COMMAND_FILE" ]; then
+        pane_command=$(<"$DATA_PANE_COMMAND_FILE")
+    fi
+    set_agent_label "$pane_command"
+    load_skills "$DATA_SKILLS_FILE"
+    load_secrets "$DATA_SECRETS_FILE"
+    load_session_info "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE"
+
+    DATA_LOADING=0
+    rm -f "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" \
+        "$DATA_RESTORE_FILE" "$DATA_DONE_FILE"
+
+    start_usage_load
+    return 0
+}
+
+start_data_load
 
 trim_for_row() {
     local text="$1"
@@ -513,7 +618,8 @@ draw_section_header() {
 }
 
 draw_usage_line() {
-    draw_row_start 2
+    local row=$1
+    draw_row_start "$row"
     if [ -n "$USAGE_LINE" ]; then
         local line="$USAGE_LINE"
         local max_len=$((TERM_COLS - 4))
@@ -527,16 +633,18 @@ draw_usage_line() {
         fi
         printf "${C_NORMAL}%s${C_RESET}" "$line" >&3
     fi
-    draw_row_end 2
+    draw_row_end "$row"
 }
 
 # Draw shortcuts (Home) tab
 draw_shortcuts() {
     local current row
 
-    draw_usage_line
+    draw_empty_row 2
     row=3
     if [ -n "$USAGE_LINE" ]; then
+        draw_usage_line "$row"
+        ((row++))
         draw_empty_row $row
         ((row++))
     fi
@@ -1022,7 +1130,7 @@ exec 3>&1 1>/dev/null
 # Hide cursor, enable alternate screen
 tput civis 2>/dev/null >&3
 printf '\033[?1049h' >&3
-trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$DATA_PID" ]; then kill "$DATA_PID" 2>/dev/null || true; fi; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # Initial draw
 draw
@@ -1030,6 +1138,16 @@ draw
 # Event loop
 max=0
 while true; do
+    if finish_data_load; then
+        draw_tabs
+        case $TAB in
+            0) draw_shortcuts ;;
+            1) draw_secrets ;;
+            2) draw_skills ;;
+        esac
+        draw_status_bar
+    fi
+
     if finish_usage_load; then
         draw_tabs
         case $TAB in
