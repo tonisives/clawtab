@@ -382,6 +382,10 @@ async fn main() {
                     }
                 }
             }
+            IpcResponse::AgentActivity(_) => {
+                eprintln!("Error: agent activity is available through the tmux IPC integration");
+                std::process::exit(1);
+            }
             IpcResponse::RelayStatus(status) => {
                 println!(
                     "{}",

@@ -42,6 +42,11 @@ pub enum IpcCommand {
         pane_id: String,
     },
     GetActiveQuestions,
+    /// Return the current activity state for detected agent panes.
+    ///
+    /// This is intentionally an IPC-only command. It is consumed by the tmux
+    /// plugin and is not exposed as a cwtctl subcommand.
+    GetAgentActivity,
     ListSecretKeys,
     GetSecretValues {
         keys: Vec<String>,
@@ -123,6 +128,18 @@ pub struct PaneEntry {
     pub current_command: String,
 }
 
+/// Activity state for one detected agent pane.
+///
+/// `working` means an agent process is currently detected in the pane and is
+/// not asking a question. `asking` is independent so a window containing both
+/// kinds of panes can render both indicators.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AgentActivity {
+    pub pane_id: String,
+    pub working: bool,
+    pub asking: bool,
+}
+
 /// Direction for pane focus changes. Used by external integrations
 /// (vim/tmux configs) calling into the desktop app via cwtctl.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -166,6 +183,7 @@ pub enum IpcResponse {
     Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
     AutoYesPanes(Vec<String>),
     ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),
+    AgentActivity(Vec<AgentActivity>),
     SecretKeys(Vec<String>),
     SecretValues(Vec<(String, String)>),
     PaneInfo {
@@ -193,6 +211,7 @@ pub enum IpcEvent {
         status: crate::config::jobs::JobStatus,
     },
     QuestionsChanged,
+    AgentActivityChanged(Vec<AgentActivity>),
     RelayStatusChanged(IpcRelayStatus),
     /// Daemon-originated notification request. The desktop client, when
     /// subscribed, displays this via tauri-plugin-notification. The daemon
@@ -420,4 +439,35 @@ pub async fn subscribe_events() -> Result<BufReader<tokio::net::unix::OwnedReadH
         .map_err(|e| format!("Failed to connect to event server: {}", e))?;
     let (read, _write) = stream.into_split();
     Ok(BufReader::new(read))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AgentActivity, IpcCommand, IpcEvent, IpcResponse};
+
+    #[test]
+    fn agent_activity_ipc_shapes_round_trip() {
+        let activity = vec![AgentActivity {
+            pane_id: "%12".to_string(),
+            working: true,
+            asking: false,
+        }];
+
+        assert_eq!(
+            serde_json::to_string(&IpcCommand::GetAgentActivity).unwrap(),
+            "\"GetAgentActivity\""
+        );
+
+        let response = IpcResponse::AgentActivity(activity.clone());
+        let decoded_response: IpcResponse =
+            serde_json::from_str(&serde_json::to_string(&response).unwrap()).unwrap();
+        assert!(matches!(decoded_response, IpcResponse::AgentActivity(items) if items == activity));
+
+        let event = IpcEvent::AgentActivityChanged(activity.clone());
+        let decoded_event: IpcEvent =
+            serde_json::from_str(&serde_json::to_string(&event).unwrap()).unwrap();
+        assert!(
+            matches!(decoded_event, IpcEvent::AgentActivityChanged(items) if items == activity)
+        );
+    }
 }
