@@ -10,4 +10,5 @@ echo "$PANE_ID" > "$PANE_FILE"
 TERM_W=$(tmux display-message -p '#{window_width}')
 POPUP_W=90
 [ "$POPUP_W" -gt "$TERM_W" ] && POPUP_W="$TERM_W"
-tmux display-popup -E -w "$POPUP_W" -h 95% "$CURRENT_DIR/popup-menu.sh '$PANE_FILE'"
+"$CURRENT_DIR/display-pane-popup.sh" "$PANE_ID" "$POPUP_W" 95% \
+    "$CURRENT_DIR/popup-menu.sh" "$PANE_FILE"
