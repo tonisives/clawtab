@@ -1,6 +1,7 @@
 use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
@@ -19,6 +20,8 @@ type DetectedAgent = (
     Option<String>,
     Option<String>,
 );
+
+const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(8);
 
 /// Strip ANSI escape sequences from text.
 fn strip_ansi(text: &str) -> String {
@@ -460,6 +463,7 @@ pub async fn question_detection_loop(
     event_sink: Arc<dyn crate::events::EventSink>,
 ) {
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
+    let mut activity_tracker = ActivityTracker::default();
     let mut last_sent_ids: HashSet<String> = HashSet::new();
     let mut ticks_since_send: u32 = 0;
     let mut auto_answered_ids: HashMap<String, u32> = HashMap::new();
@@ -490,7 +494,7 @@ pub async fn question_detection_loop(
             .iter()
             .map(|question| question.pane_id.clone())
             .collect();
-        let activity = agent_activity_for_processes(&processes, &asking_panes);
+        let activity = activity_tracker.update(&processes, &asking_panes, Instant::now());
         let activity_changed = {
             let mut stored_activity = agent_activity.lock();
             if *stored_activity != activity {
@@ -974,7 +978,7 @@ fn pick_sleep_ms(
     } else if !question_cache.is_empty() {
         2000
     } else if !processes.is_empty() {
-        10000
+        2000
     } else {
         15000
     }
@@ -1017,31 +1021,64 @@ fn last_context_lines(text: &str) -> String {
     context.join("\n")
 }
 
-/// Return activity for every currently detected agent process.
-///
-/// Process detection is the daemon's durable signal that an interactive agent
-/// is still running. Terminal output is intentionally not used as a timeout:
-/// an agent can spend longer than one polling interval waiting on a tool or a
-/// network request without producing output. A detected question takes
-/// precedence over `working` for that pane.
-fn agent_activity_for_processes(
-    processes: &[DetectedAgent],
-    asking_panes: &HashSet<String>,
-) -> Vec<AgentActivity> {
-    let mut activity = processes
-        .iter()
-        .map(|(pane_id, _, _, _, _, _, _)| {
-            let asking = asking_panes.contains(pane_id);
-            AgentActivity {
-                pane_id: pane_id.clone(),
-                working: !asking,
-                asking,
-            }
-        })
-        .collect::<Vec<_>>();
+#[derive(Default)]
+struct ActivityTracker {
+    last_output: HashMap<String, String>,
+    last_changed: HashMap<String, Instant>,
+}
 
-    activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
-    activity
+fn normalize_activity_output(text: &str) -> String {
+    strip_ansi(text)
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+impl ActivityTracker {
+    fn update(
+        &mut self,
+        processes: &[DetectedAgent],
+        asking_panes: &HashSet<String>,
+        now: Instant,
+    ) -> Vec<AgentActivity> {
+        let mut seen_panes = HashSet::new();
+        let mut activity = Vec::with_capacity(processes.len());
+
+        for (pane_id, _, _, _, log_lines, _, _) in processes {
+            seen_panes.insert(pane_id.clone());
+            let normalized_output = normalize_activity_output(log_lines);
+
+            let output_changed = self
+                .last_output
+                .get(pane_id)
+                .is_some_and(|previous| previous != &normalized_output);
+            if output_changed {
+                self.last_changed.insert(pane_id.clone(), now);
+            }
+            self.last_output.insert(pane_id.clone(), normalized_output);
+
+            let recently_active = self.last_changed.get(pane_id).is_some_and(|changed_at| {
+                now.duration_since(*changed_at) <= RECENT_ACTIVITY_WINDOW
+            });
+            let asking = asking_panes.contains(pane_id);
+            activity.push(AgentActivity {
+                pane_id: pane_id.clone(),
+                working: recently_active && !asking,
+                asking,
+            });
+        }
+
+        self.last_output
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.last_changed
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+
+        activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
+        activity
+    }
 }
 
 struct DetectionResult {
@@ -1204,11 +1241,12 @@ fn detect_question_processes(
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_activity_for_processes, find_yes_option, parse_numbered_options,
-        parse_opencode_buttons, DetectedAgent,
+        find_yes_option, parse_numbered_options, parse_opencode_buttons, ActivityTracker,
+        DetectedAgent,
     };
     use clawtab_protocol::QuestionOption;
     use std::collections::HashSet;
+    use std::time::{Duration, Instant};
 
     fn agent(pane_id: &str, log_lines: &str) -> DetectedAgent {
         (
@@ -1223,20 +1261,72 @@ mod tests {
     }
 
     #[test]
-    fn reports_detected_agents_as_working() {
+    fn tracks_output_changes_and_expiry() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
         let no_questions = HashSet::new();
-        let activity = agent_activity_for_processes(&[agent("%1", "unchanged")], &no_questions);
-        assert_eq!(activity.len(), 1);
-        assert!(activity[0].working);
-        assert!(!activity[0].asking);
+
+        let initial = tracker.update(&[agent("%1", "same")], &no_questions, now);
+        assert!(!initial[0].working);
+
+        let unchanged = tracker.update(
+            &[agent("%1", "same")],
+            &no_questions,
+            now + Duration::from_secs(2),
+        );
+        assert!(!unchanged[0].working);
+
+        let changed = tracker.update(
+            &[agent("%1", "changed")],
+            &no_questions,
+            now + Duration::from_secs(2),
+        );
+        assert!(changed[0].working);
+
+        let expired = tracker.update(
+            &[agent("%1", "changed")],
+            &no_questions,
+            now + Duration::from_secs(11),
+        );
+        assert!(!expired[0].working);
+    }
+
+    #[test]
+    fn ignores_ansi_only_repaints_and_trailing_whitespace() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        let no_questions = HashSet::new();
+
+        tracker.update(
+            &[agent("%1", "\x1b[32mready\x1b[0m   ")],
+            &no_questions,
+            now,
+        );
+        let repainted = tracker.update(
+            &[agent("%1", "\x1b[1;32mready\x1b[0m")],
+            &no_questions,
+            now + Duration::from_secs(2),
+        );
+
+        assert!(!repainted[0].working);
     }
 
     #[test]
     fn asking_is_independent_and_suppresses_working_for_that_pane() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
         let asking = HashSet::from(["%2".to_string()]);
 
-        let activity =
-            agent_activity_for_processes(&[agent("%1", "working"), agent("%2", "asking")], &asking);
+        tracker.update(
+            &[agent("%1", "before"), agent("%2", "before")],
+            &HashSet::new(),
+            now,
+        );
+        let activity = tracker.update(
+            &[agent("%1", "working"), agent("%2", "asking")],
+            &asking,
+            now + Duration::from_secs(1),
+        );
 
         assert_eq!(activity.len(), 2);
         assert!(activity[0].working);
@@ -1244,7 +1334,7 @@ mod tests {
         assert!(!activity[1].working);
         assert!(activity[1].asking);
 
-        let cleared = agent_activity_for_processes(&[], &HashSet::new());
+        let cleared = tracker.update(&[], &HashSet::new(), now);
         assert!(cleared.is_empty());
     }
 

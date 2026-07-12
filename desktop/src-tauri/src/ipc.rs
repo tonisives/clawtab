@@ -133,9 +133,9 @@ pub struct PaneEntry {
 
 /// Activity state for one detected agent pane.
 ///
-/// `working` means an agent process is currently detected in the pane and is
-/// not asking a question. `asking` is independent so a window containing both
-/// kinds of panes can render both indicators.
+/// `working` means the pane's captured terminal output changed recently and it
+/// is not asking a question. `asking` is independent so a window containing
+/// both kinds of panes can render both indicators.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AgentActivity {
     pub pane_id: String,

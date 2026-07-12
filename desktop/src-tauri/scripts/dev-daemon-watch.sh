@@ -18,7 +18,14 @@ PLIST="$HOME/Library/LaunchAgents/com.clawtab.daemon.plist"
 # trigger macOS removable-volume prompts on login.
 export CLAWTAB_ENGINE_APP="${CLAWTAB_ENGINE_APP:-$HOME/Library/Caches/ClawTab-dev/ClawTab Daemon.app}"
 
+if ! command -v cargo-watch >/dev/null 2>&1; then
+  echo "[dev-daemon] cargo-watch is not installed or not in PATH" >&2
+  echo "[dev-daemon] install it with: cargo install cargo-watch" >&2
+  exit 1
+fi
+
 did_cleanup=0
+cargo_watch_pid=""
 cleanup() {
   if [ "$did_cleanup" -eq 1 ]; then
     return
@@ -29,8 +36,9 @@ cleanup() {
   launchctl unload "$PLIST" >/dev/null 2>&1 || true
   pkill -f "ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon" >/dev/null 2>&1 || true
 
-  if [ -n "${cargo_watch_pid:-}" ]; then
+  if [ -n "$cargo_watch_pid" ]; then
     kill -TERM "$cargo_watch_pid" >/dev/null 2>&1 || true
+    wait "$cargo_watch_pid" >/dev/null 2>&1 || true
   fi
 }
 trap 'cleanup; exit 130' INT
@@ -38,20 +46,27 @@ trap 'cleanup; exit 143' TERM
 trap cleanup EXIT
 
 cd "$SRC_TAURI_DIR"
-cargo watch \
-  -x "build --bin clawtab-daemon --no-default-features" \
-  -s "bash $SCRIPT_DIR/dev-daemon-reload.sh" &
-cargo_watch_pid=$!
+start_cargo_watch() {
+  cargo watch \
+    -x "build --bin clawtab-daemon --no-default-features" \
+    -s "bash $SCRIPT_DIR/dev-daemon-reload.sh" &
+  cargo_watch_pid=$!
+}
 
-# launchd may start this before the login session is fully settled. In that
-# case cargo-watch can finish after the initial command even though overmind
-# should stay up. Keep this wrapper alive until launchd or overmind stops it.
-while kill -0 "$cargo_watch_pid" 2>/dev/null; do
-  wait "$cargo_watch_pid" || true
-  if ! kill -0 "$cargo_watch_pid" 2>/dev/null; then
-    while true; do
-      sleep 3600
-    done
+# launchd may start this before the login session is fully settled. If
+# cargo-watch exits during startup or later crashes, restart it so the daemon
+# continues to pick up source changes without restarting the dev stack.
+while true; do
+  start_cargo_watch
+  wait "$cargo_watch_pid" || exit_code=$?
+  exit_code="${exit_code:-0}"
+  cargo_watch_pid=""
+
+  if [ "$did_cleanup" -eq 1 ]; then
+    exit "$exit_code"
   fi
+
+  echo "[dev-daemon] cargo-watch exited with status $exit_code; restarting" >&2
+  unset exit_code
   sleep 1
 done

@@ -167,5 +167,6 @@ Agent activity events use this shape:
 
 `GetAgentActivity` is an IPC-only command used by the tmux plugin; it is not a
 user-facing `cwtctl` command. The plugin also requires `jq` to decode the local
-JSON response. `working` remains true while the daemon detects the agent
-process; `asking` takes precedence for that pane when a question is detected.
+JSON response. `working` is true for a short window after the daemon detects
+new terminal output; `asking` takes precedence for that pane when a question
+is detected.
