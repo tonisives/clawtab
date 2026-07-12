@@ -46,7 +46,8 @@ esac
 [ "$POPUP_H" -lt 1 ] && POPUP_H=1
 
 POPUP_X=$((PANE_X + (PANE_W - POPUP_W) / 2))
-POPUP_Y=$((PANE_Y + (PANE_H - POPUP_H) / 2))
+# tmux's numeric -y position is the popup's bottom edge.
+POPUP_Y=$((PANE_Y + (PANE_H + POPUP_H + 1) / 2))
 
 tmux display-popup -E -t "$PANE_ID" \
     -x "$POPUP_X" -y "$POPUP_Y" \

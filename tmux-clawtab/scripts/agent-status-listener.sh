@@ -1,12 +1,30 @@
 #!/usr/bin/env bash
 
-# Keep one listener per machine; it updates the tmux server that sourced it.
-# Re-sourcing the plugin does not create duplicate listeners.
+# Keep one listener per tmux server generation. Multiple tmux servers can run
+# on the same machine (for example, a user's server and an overmind server),
+# and a resurrected server must be able to start a fresh listener.
 set -u
 
 DAEMON_SOCKET="/tmp/clawtab.sock"
 EVENT_SOCKET="/tmp/clawtab-events.sock"
-LOCK_DIR="/tmp/clawtab/tmux-agent-status.lock"
+
+tmux_server_socket="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
+tmux_server_pid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
+if [ -n "${TMUX:-}" ]; then
+    [ -n "$tmux_server_socket" ] || tmux_server_socket="${TMUX%%,*}"
+    if [ -z "$tmux_server_pid" ]; then
+        tmux_server_pid="${TMUX#*,}"
+        tmux_server_pid="${tmux_server_pid%%,*}"
+    fi
+fi
+tmux_server_identity="${tmux_server_socket}:${tmux_server_pid}"
+if command -v shasum >/dev/null 2>&1; then
+    lock_key="$(printf '%s' "$tmux_server_identity" | shasum -a 256 | cut -c1-16)"
+else
+    lock_key="$(printf '%s' "$tmux_server_identity" | tr '/:,' '___' | tr -cd '[:alnum:]_.-')"
+fi
+[ -n "$lock_key" ] || lock_key="default"
+LOCK_DIR="/tmp/clawtab/tmux-agent-status-${lock_key}.lock"
 
 JQ_BIN="$(command -v jq 2>/dev/null || true)"
 if [ -z "$JQ_BIN" ]; then
