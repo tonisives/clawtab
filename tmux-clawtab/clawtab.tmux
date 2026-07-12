@@ -47,8 +47,10 @@ tmux bind-key "$fork_key" run-shell "$CURRENT_DIR/scripts/fork-session.sh '#{pan
 tmux bind-key "$sidebar_key" run-shell "$CURRENT_DIR/scripts/sidebar-launcher.sh '#{pane_id}'"
 
 # Keep per-window agent activity synchronized from the daemon's IPC event
-# stream. The listener is locked so re-sourcing this plugin is harmless.
-tmux run-shell -b "$CURRENT_DIR/scripts/agent-status-listener.sh"
+# stream. Re-sourcing replaces an older listener so script changes take effect
+# in an existing tmux server.
+listener_command="$(printf '%q' "$CURRENT_DIR/scripts/agent-status-listener.sh") --replace"
+tmux run-shell -b "$listener_command"
 
 # Append auto-yes indicator to pane-border-format (right-aligned)
 # Uses pane option @clawtab-auto-yes for instant toggle feedback (no shell cache delay)
@@ -61,17 +63,46 @@ fi
 # Append activity indicators without replacing a user's existing window
 # formats. The custom window options are updated by agent-status-listener.sh.
 spinner_command=$(printf '%q' "$CURRENT_DIR/scripts/agent-spinner.sh")
-clawtab_activity_part="#{?#{@clawtab-agent-question},#[fg=red#,bold]!#[default],}#{?#{@clawtab-agent-working},#[fg=cyan]#(${spinner_command})#[default],}"
+clawtab_activity_part="#{?#{@clawtab-agent-question}, #[fg=yellow#,bold]!#[default],}#{?#{@clawtab-agent-working}, #[fg=cyan]#(${spinner_command})#[default],}#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
+clawtab_idle_part="#{?#{@clawtab-agent-present}, #[fg=green#,bold]✓#[default],}"
+legacy_clawtab_activity_part="#{?#{@clawtab-agent-question},#[fg=red#,bold]!#[default],#{?#{@clawtab-agent-working},#[fg=cyan]#(${spinner_command})#[default],#{?#{@clawtab-agent-present},#[fg=green#,bold]✓#[default],}}}"
+legacy_clawtab_basic_part="#{?#{@clawtab-agent-question},#[fg=red#,bold]!#[default],}#{?#{@clawtab-agent-working},#[fg=cyan]#(${spinner_command})#[default],}"
 
-current_window_status=$(tmux show-option -gqv window-status-format)
-if [[ "$current_window_status" != *"clawtab-agent-question"* || "$current_window_status" != *"clawtab-agent-working"* ]]; then
-    tmux set-option -g window-status-format "${current_window_status}${clawtab_activity_part}"
-fi
+append_activity_format() {
+    local option_name="$1"
+    local current_format
+    current_format=$(tmux show-option -gqv "$option_name")
 
-current_window_status_current=$(tmux show-option -gqv window-status-current-format)
-if [[ "$current_window_status_current" != *"clawtab-agent-question"* || "$current_window_status_current" != *"clawtab-agent-working"* ]]; then
-    tmux set-option -g window-status-current-format "${current_window_status_current}${clawtab_activity_part}"
-fi
+    # Do not append the current indicators more than once when the plugin is
+    # reloaded.
+    if [[ "$current_format" == *"$clawtab_activity_part"* ]]; then
+        return
+    fi
+
+    # Upgrade the previous indicator format in place so color and padding
+    # changes also reach an already-running tmux server.
+    if [[ "$current_format" == *"$legacy_clawtab_activity_part"* ]]; then
+        current_format="${current_format/"$legacy_clawtab_activity_part"/"$clawtab_activity_part"}"
+        tmux set-option -g "$option_name" "$current_format"
+        return
+    fi
+    if [[ "$current_format" == *"$legacy_clawtab_basic_part"* ]]; then
+        current_format="${current_format/"$legacy_clawtab_basic_part"/"$clawtab_activity_part"}"
+        tmux set-option -g "$option_name" "$current_format"
+        return
+    fi
+
+    # Upgrade a status format installed by an older plugin version without
+    # duplicating its ! and spinner indicators.
+    if [[ "$current_format" == *"clawtab-agent-question"* && "$current_format" == *"clawtab-agent-working"* ]]; then
+        tmux set-option -g "$option_name" "${current_format}${clawtab_idle_part}"
+    else
+        tmux set-option -g "$option_name" "${current_format}${clawtab_activity_part}"
+    fi
+}
+
+append_activity_format window-status-format
+append_activity_format window-status-current-format
 
 # Note: MouseDown1Border would conflict with drag-to-resize, so no border click binding.
 # Use prefix + y (or configured key) to toggle auto-yes.

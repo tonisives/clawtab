@@ -19,6 +19,10 @@ type DetectedAgent = (
     String,
     Option<String>,
     Option<String>,
+    String,
+    u64,
+    u16,
+    u16,
 );
 
 const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(8);
@@ -668,8 +672,19 @@ fn update_question_cache(
     question_cache: &mut HashMap<String, CachedQuestion>,
 ) -> HashSet<String> {
     let mut detected = HashSet::new();
-    for (pane_id, cwd, tmux_session, window_name, log_lines, matched_group, matched_job) in
-        processes
+    for (
+        pane_id,
+        cwd,
+        tmux_session,
+        window_name,
+        log_lines,
+        matched_group,
+        matched_job,
+        _activity_history,
+        _history_size,
+        _pane_width,
+        _pane_height,
+    ) in processes
     {
         if try_numbered_question(
             pane_id,
@@ -1023,11 +1038,13 @@ fn last_context_lines(text: &str) -> String {
 
 #[derive(Default)]
 struct ActivityTracker {
-    last_output: HashMap<String, String>,
+    last_history: HashMap<String, String>,
+    last_history_size: HashMap<String, u64>,
+    last_layout: HashMap<String, (u16, u16)>,
     last_changed: HashMap<String, Instant>,
 }
 
-fn normalize_activity_output(text: &str) -> String {
+fn normalize_activity_history(text: &str) -> String {
     strip_ansi(text)
         .lines()
         .map(str::trim_end)
@@ -1047,18 +1064,35 @@ impl ActivityTracker {
         let mut seen_panes = HashSet::new();
         let mut activity = Vec::with_capacity(processes.len());
 
-        for (pane_id, _, _, _, log_lines, _, _) in processes {
+        for (pane_id, _, _, _, _, _, _, activity_history, history_size, pane_width, pane_height) in
+            processes
+        {
             seen_panes.insert(pane_id.clone());
-            let normalized_output = normalize_activity_output(log_lines);
+            let normalized_history = normalize_activity_history(activity_history);
 
-            let output_changed = self
-                .last_output
+            let history_changed = self
+                .last_history
                 .get(pane_id)
-                .is_some_and(|previous| previous != &normalized_output);
-            if output_changed {
+                .is_some_and(|previous| previous != &normalized_history);
+            let history_grew = self
+                .last_history_size
+                .get(pane_id)
+                .is_some_and(|previous| history_size > previous);
+            let layout_changed = self
+                .last_layout
+                .get(pane_id)
+                .is_some_and(|previous| previous != &(*pane_width, *pane_height));
+            if layout_changed {
+                self.last_changed.remove(pane_id);
+            } else if history_changed || history_grew {
                 self.last_changed.insert(pane_id.clone(), now);
             }
-            self.last_output.insert(pane_id.clone(), normalized_output);
+            self.last_history
+                .insert(pane_id.clone(), normalized_history);
+            self.last_history_size
+                .insert(pane_id.clone(), *history_size);
+            self.last_layout
+                .insert(pane_id.clone(), (*pane_width, *pane_height));
 
             let recently_active = self.last_changed.get(pane_id).is_some_and(|changed_at| {
                 now.duration_since(*changed_at) <= RECENT_ACTIVITY_WINDOW
@@ -1071,7 +1105,11 @@ impl ActivityTracker {
             });
         }
 
-        self.last_output
+        self.last_history
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.last_history_size
+            .retain(|pane_id, _| seen_panes.contains(pane_id));
+        self.last_layout
             .retain(|pane_id, _| seen_panes.contains(pane_id));
         self.last_changed
             .retain(|pane_id, _| seen_panes.contains(pane_id));
@@ -1096,7 +1134,7 @@ const DETECT_QUESTIONS_SEP: &str = "|||";
 fn list_panes_for_questions() -> Option<String> {
     use std::process::Command;
     let format_str = format!(
-        "#{{pane_id}}{0}#{{pane_current_command}}{0}#{{pane_current_path}}{0}#{{session_name}}{0}#{{window_name}}{0}#{{pane_pid}}",
+        "#{{pane_id}}{0}#{{pane_current_command}}{0}#{{pane_current_path}}{0}#{{session_name}}{0}#{{window_name}}{0}#{{pane_pid}}{0}#{{history_size}}{0}#{{pane_width}}{0}#{{pane_height}}",
         DETECT_QUESTIONS_SEP
     );
     match Command::new("tmux")
@@ -1186,12 +1224,24 @@ fn detect_question_processes(
     let mut results = Vec::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.splitn(6, DETECT_QUESTIONS_SEP).collect();
-        if parts.len() < 6 {
+        let parts: Vec<&str> = line.splitn(9, DETECT_QUESTIONS_SEP).collect();
+        if parts.len() < 9 {
             continue;
         }
-        let (pane_id, _command, cwd, session, window, pane_pid) =
-            (parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+        let (
+            pane_id,
+            _command,
+            cwd,
+            session,
+            window,
+            pane_pid,
+            history_size,
+            pane_width,
+            pane_height,
+        ) = (
+            parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6], parts[7],
+            parts[8],
+        );
 
         all_pane_ids.insert(pane_id.to_string());
         if detect_questions_is_view_session(session) {
@@ -1220,6 +1270,10 @@ fn detect_question_processes(
             .unwrap_or_default()
             .trim()
             .to_string();
+        let activity_history = crate::tmux::capture_pane_history(pane_id, 64).unwrap_or_default();
+        let history_size = history_size.parse().unwrap_or_default();
+        let pane_width = pane_width.parse().unwrap_or_default();
+        let pane_height = pane_height.parse().unwrap_or_default();
 
         results.push((
             pane_id.to_string(),
@@ -1229,6 +1283,10 @@ fn detect_question_processes(
             log_lines,
             matched_group,
             matched_job,
+            activity_history,
+            history_size,
+            pane_width,
+            pane_height,
         ));
     }
 
@@ -1248,7 +1306,14 @@ mod tests {
     use std::collections::HashSet;
     use std::time::{Duration, Instant};
 
-    fn agent(pane_id: &str, log_lines: &str) -> DetectedAgent {
+    fn agent_with_layout(
+        pane_id: &str,
+        log_lines: &str,
+        activity_history: &str,
+        history_size: u64,
+        pane_width: u16,
+        pane_height: u16,
+    ) -> DetectedAgent {
         (
             pane_id.to_string(),
             "/tmp/project".to_string(),
@@ -1257,7 +1322,19 @@ mod tests {
             log_lines.to_string(),
             None,
             None,
+            activity_history.to_string(),
+            history_size,
+            pane_width,
+            pane_height,
         )
+    }
+
+    fn agent_with_history(pane_id: &str, log_lines: &str, activity_history: &str) -> DetectedAgent {
+        agent_with_layout(pane_id, log_lines, activity_history, 0, 0, 0)
+    }
+
+    fn agent(pane_id: &str, log_lines: &str) -> DetectedAgent {
+        agent_with_history(pane_id, log_lines, log_lines)
     }
 
     #[test]
@@ -1309,6 +1386,50 @@ mod tests {
         );
 
         assert!(!repainted[0].working);
+    }
+
+    #[test]
+    fn ignores_visible_input_when_scrollback_is_unchanged() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        let no_questions = HashSet::new();
+
+        tracker.update(
+            &[agent_with_history("%1", "prompt", "agent output")],
+            &no_questions,
+            now,
+        );
+        let typed = tracker.update(
+            &[agent_with_history(
+                "%1",
+                "prompt with typed text",
+                "agent output",
+            )],
+            &no_questions,
+            now + Duration::from_secs(2),
+        );
+
+        assert!(!typed[0].working);
+    }
+
+    #[test]
+    fn ignores_history_reflow_when_pane_layout_changes() {
+        let now = Instant::now();
+        let mut tracker = ActivityTracker::default();
+        let no_questions = HashSet::new();
+
+        tracker.update(
+            &[agent_with_layout("%1", "same", "old wrapping", 20, 120, 40)],
+            &no_questions,
+            now,
+        );
+        let reflowed = tracker.update(
+            &[agent_with_layout("%1", "same", "new wrapping", 20, 80, 40)],
+            &no_questions,
+            now + Duration::from_secs(2),
+        );
+
+        assert!(!reflowed[0].working);
     }
 
     #[test]

@@ -5,6 +5,11 @@
 # and a resurrected server must be able to start a fresh listener.
 set -u
 
+replace_existing=0
+if [ "${1:-}" = "--replace" ]; then
+    replace_existing=1
+fi
+
 DAEMON_SOCKET="/tmp/clawtab.sock"
 EVENT_SOCKET="/tmp/clawtab-events.sock"
 
@@ -39,6 +44,18 @@ if [ -z "$JQ_BIN" ]; then
     exit 0
 fi
 
+stop_listener_tree() {
+    local pid="$1"
+    local child
+    local children
+
+    children="$(pgrep -P "$pid" 2>/dev/null || true)"
+    for child in $children; do
+        stop_listener_tree "$child"
+    done
+    kill -TERM "$pid" 2>/dev/null || true
+}
+
 mkdir -p /tmp/clawtab 2>/dev/null || exit 0
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     existing_pid=""
@@ -46,17 +63,34 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
         existing_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
     fi
     if [ -n "$existing_pid" ] && kill -0 "$existing_pid" 2>/dev/null; then
-        exit 0
+        if [ "$replace_existing" -ne 1 ]; then
+            exit 0
+        fi
+        stop_listener_tree "$existing_pid"
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$existing_pid" 2>/dev/null || break
+            sleep 0.1
+        done
+        if kill -0 "$existing_pid" 2>/dev/null; then
+            kill -KILL "$existing_pid" 2>/dev/null || true
+        fi
     fi
-    rmdir "$LOCK_DIR" 2>/dev/null || exit 0
+    rm -f "$LOCK_DIR/pid" 2>/dev/null || true
+    rmdir "$LOCK_DIR" 2>/dev/null || true
     mkdir "$LOCK_DIR" 2>/dev/null || exit 0
 fi
 printf '%s\n' "$$" > "$LOCK_DIR/pid"
-trap 'rm -f "$LOCK_DIR/pid"; rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM
+cleanup() {
+    rm -f "$LOCK_DIR/pid"
+    rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM
 
 clear_activity_options() {
     tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r window_id; do
         [ -n "$window_id" ] || continue
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-present 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-working 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-question 0 2>/dev/null || true
     done
@@ -76,6 +110,7 @@ apply_snapshot() {
         window_id="$(tmux display-message -p -t "$pane_id" '#{window_id}' 2>/dev/null || true)"
         [ -n "$window_id" ] || continue
 
+        tmux set-window-option -q -t "$window_id" @clawtab-agent-present 1 2>/dev/null || true
         if [ "$working" = "true" ]; then
             tmux set-window-option -q -t "$window_id" @clawtab-agent-working 1 2>/dev/null || true
         fi

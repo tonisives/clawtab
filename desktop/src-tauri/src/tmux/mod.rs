@@ -597,6 +597,35 @@ pub fn capture_pane(_session: &str, pane_id: &str, lines: u32) -> Result<String,
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Capture only recent scrollback, excluding the currently visible screen.
+/// Visible-screen changes include echoed input and TUI redraws, so this is the
+/// stable activity signal used by the tmux status indicator.
+pub fn capture_pane_history(pane_id: &str, lines: u32) -> Result<String, String> {
+    let start = format!("-{}", lines);
+    let output = run(
+        &[
+            "capture-pane",
+            "-t",
+            pane_id,
+            "-p",
+            "-e",
+            "-S",
+            &start,
+            "-E",
+            "-1",
+        ],
+        "tmux::capture_pane_history",
+    )
+    .map_err(|e| format!("Failed to capture pane history: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 /// List pane IDs in a specific window. Returns panes like `%12`, `%13`.
 pub fn list_panes_in_window(session: &str, window: &str) -> Result<Vec<String>, String> {
     let target = format!("{}:{}", session, window);
