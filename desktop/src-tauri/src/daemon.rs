@@ -159,6 +159,25 @@ pub fn restart() -> Result<String, String> {
     }
 }
 
+/// Stop the loaded launchd service without removing its plist.
+pub fn stop() -> Result<String, String> {
+    let dest = plist_dest();
+    if !dest.exists() {
+        return Err("Daemon is not installed".into());
+    }
+
+    let status = std::process::Command::new("launchctl")
+        .args(["unload", &dest.display().to_string()])
+        .status()
+        .map_err(|e| format!("Failed to run launchctl: {}", e))?;
+
+    if status.success() {
+        Ok("Daemon stopped".into())
+    } else {
+        Err(format!("launchctl unload exited with {}", status))
+    }
+}
+
 pub fn uninstall() -> Result<String, String> {
     let dest = plist_dest();
     if !dest.exists() {

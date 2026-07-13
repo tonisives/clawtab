@@ -20,13 +20,7 @@ fn print_usage() {
     eprintln!("Usage: cwtctl <command> [args]");
     eprintln!();
     eprintln!("Commands (require daemon):");
-    eprintln!("  ping              Check if ClawTab daemon is running");
-    eprintln!("  list | ls         List jobs grouped by group");
-    eprintln!("  run <group>/<job> Run a job and attach/follow its output");
-    eprintln!("  pause <name>      Pause a running job");
-    eprintln!("  resume <name>     Resume a paused job");
-    eprintln!("  restart <name>    Restart a job");
-    eprintln!("  status            Show job statuses");
+    eprintln!("  jobs              Manage configured jobs");
     eprintln!(
         "  usage <provider>  Show local provider quota usage (claude, codex, antigravity, zai)"
     );
@@ -49,34 +43,100 @@ fn print_usage() {
     eprintln!();
     eprintln!("Daemon:");
     eprintln!("  daemon install    Install launchd service (auto-start on login)");
+    eprintln!("  daemon stop       Stop daemon but keep launchd service installed");
     eprintln!("  daemon uninstall  Remove launchd service");
+    eprintln!("  daemon ping       Check if daemon is running");
     eprintln!("  daemon status     Check if daemon is running");
     eprintln!("  daemon restart    Restart the daemon");
     eprintln!("  daemon logs       Show daemon logs");
 }
 
-fn require_name(args: &[String], cmd_name: &str) -> String {
-    if args.len() < 3 {
-        eprintln!("Error: '{}' requires a job name", cmd_name);
-        std::process::exit(1);
+fn print_jobs_usage() {
+    eprintln!("Usage: cwtctl jobs <command> [args]");
+    eprintln!();
+    eprintln!("Commands:");
+    eprintln!("  jobs list | ls             List jobs grouped by group");
+    eprintln!("  jobs run <group>/<job>     Run a job and attach/follow its output");
+    eprintln!("  jobs pause <group>/<job>   Pause a running job");
+    eprintln!("  jobs resume <group>/<job>  Resume a paused job");
+    eprintln!("  jobs restart <group>/<job> Restart a job");
+    eprintln!("  jobs status                Show job statuses");
+}
+
+fn is_jobs_subcommand(command: &str) -> bool {
+    matches!(
+        command,
+        "list" | "ls" | "run" | "pause" | "resume" | "restart" | "status"
+    )
+}
+
+fn require_job_reference(args: &[String], command: &str) -> String {
+    match args.len() {
+        3 => args[2].clone(),
+        4 => format!("{}/{}", args[2], args[3]),
+        _ => {
+            eprintln!(
+                "Usage: cwtctl {} <group>/<job> (or: cwtctl {} <group> <job>)",
+                command, command
+            );
+            std::process::exit(1);
+        }
     }
-    args[2].clone()
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
+    let raw_args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
+    if raw_args.len() < 2 {
         print_usage();
         std::process::exit(1);
     }
+
+    let jobs_scope = raw_args[1] == "jobs";
+    if jobs_scope {
+        match raw_args.get(2).map(String::as_str) {
+            None => {
+                print_jobs_usage();
+                std::process::exit(1);
+            }
+            Some("help" | "-h" | "--help") => {
+                print_jobs_usage();
+                std::process::exit(0);
+            }
+            Some(subcommand) if !is_jobs_subcommand(subcommand) => {
+                eprintln!("Unknown jobs subcommand: {}", subcommand);
+                print_jobs_usage();
+                std::process::exit(1);
+            }
+            Some(_) => {}
+        }
+    }
+
+    // Keep the existing command routing and positional argument handling by
+    // removing the `jobs` namespace before dispatching its subcommand.
+    let args = if jobs_scope {
+        let mut normalized = Vec::with_capacity(raw_args.len() - 1);
+        normalized.push(raw_args[0].clone());
+        normalized.extend(raw_args[2..].iter().cloned());
+        normalized
+    } else {
+        raw_args
+    };
 
     let command = args[1].as_str();
 
     if matches!(command, "help" | "-h" | "--help") {
         print_usage();
         std::process::exit(0);
+    }
+
+    if !jobs_scope && is_jobs_subcommand(command) {
+        eprintln!(
+            "Job commands are under the jobs namespace: cwtctl jobs {}",
+            command
+        );
+        std::process::exit(1);
     }
 
     // Handle daemon subcommands locally (no IPC needed)
@@ -96,7 +156,7 @@ async fn main() {
     }
 
     if command == "run" {
-        run_job_command(&args).await;
+        run_job_command(&args, if jobs_scope { "cwtctl jobs" } else { "cwtctl" }).await;
         return;
     }
 
@@ -150,16 +210,15 @@ async fn main() {
                 }
             }
         }
-        "ping" => Target::Daemon(IpcCommand::Ping),
         "list" | "ls" => Target::Daemon(IpcCommand::ListJobs),
         "pause" => Target::Daemon(IpcCommand::PauseJob {
-            name: require_name(&args, "pause"),
+            name: require_job_reference(&args, "jobs pause"),
         }),
         "resume" => Target::Daemon(IpcCommand::ResumeJob {
-            name: require_name(&args, "resume"),
+            name: require_job_reference(&args, "jobs resume"),
         }),
         "restart" => Target::Daemon(IpcCommand::RestartJob {
-            name: require_name(&args, "restart"),
+            name: require_job_reference(&args, "jobs restart"),
         }),
         "status" => Target::Daemon(IpcCommand::GetStatus),
         "pane-info" => {
@@ -446,8 +505,8 @@ async fn main() {
     }
 }
 
-async fn run_job_command(args: &[String]) {
-    let reference = parse_run_reference(args);
+async fn run_job_command(args: &[String], command_prefix: &str) {
+    let reference = parse_run_reference(args, command_prefix);
     let response = ipc::send_command(IpcCommand::RunJobCli {
         name: reference.clone(),
     })
@@ -465,16 +524,24 @@ async fn run_job_command(args: &[String]) {
     }
 }
 
-fn parse_run_reference(args: &[String]) -> String {
+fn parse_run_reference(args: &[String], command_prefix: &str) -> String {
     match args.len() {
         3 => args[2].clone(),
         4 => format!("{}/{}", args[2], args[3]),
-        _ => exit_error("usage: cwtctl run <group>/<job> (or: cwtctl run <group> <job>)"),
+        _ => {
+            let usage = format!(
+                "usage: {} run <group>/<job> (or: {} run <group> <job>)",
+                command_prefix, command_prefix
+            );
+            exit_error(&usage)
+        }
     }
 }
 
 async fn follow_started_job(reference: &str, slug: &str, run_id: &str, is_binary: bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Binary jobs are followed until they finish. Agent jobs only need a
+    // bounded wait for the daemon to publish their tmux pane.
+    let deadline = (!is_binary).then(|| Instant::now() + Duration::from_secs(10));
     let mut log_offset = 0_u64;
     let log_path = is_binary.then(|| binary_log_path(slug, run_id));
     let mut saw_running = false;
@@ -546,11 +613,7 @@ async fn follow_started_job(reference: &str, slug: &str, run_id: &str, is_binary
             log_offset = next_offset;
         }
 
-        if Instant::now() >= deadline {
-            if is_binary {
-                println!("Job is still running; log following stopped after 10 seconds.");
-                return;
-            }
+        if deadline.is_some_and(|limit| Instant::now() >= limit) {
             exit_error("job started but no pane or binary log became available");
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -883,12 +946,14 @@ fn handle_daemon_command(args: &[String]) {
     };
     match sub {
         "install" => daemon_install(),
+        "stop" => daemon_stop(),
         "uninstall" => daemon_uninstall(),
+        "ping" => daemon_ping(),
         "status" => daemon_status(),
         "restart" => daemon_restart(),
         "logs" => daemon_logs(),
         _ => {
-            eprintln!("Usage: cwtctl daemon <install|uninstall|status|restart|logs>");
+            eprintln!("Usage: cwtctl daemon <install|stop|uninstall|ping|status|restart|logs>");
             std::process::exit(1);
         }
     }
@@ -904,6 +969,16 @@ fn daemon_install() {
     }
 }
 
+fn daemon_stop() {
+    match daemon::stop() {
+        Ok(msg) => println!("{}", msg),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn daemon_uninstall() {
     match daemon::uninstall() {
         Ok(msg) => println!("{}", msg),
@@ -911,6 +986,16 @@ fn daemon_uninstall() {
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+fn daemon_ping() {
+    let (running, _) = daemon::is_running();
+    if running {
+        println!("pong");
+    } else {
+        eprintln!("Error: daemon is not running");
+        std::process::exit(1);
     }
 }
 

@@ -77,7 +77,7 @@ All job files (config, prompts, context) are stored centrally at `~/.config/claw
 ## Running a Job
 
 - **GUI**: Click "Run Now" on any job
-- **CLI**: `cwtctl run <group>/<name>`
+- **CLI**: `cwtctl jobs run <group>/<name>`
 - **TUI**: Select job, press `r`
 - **Telegram**: Send `/run <name>` to your bot
 - **Cron**: Automatically triggered based on the job's cron expression
@@ -85,7 +85,7 @@ All job files (config, prompts, context) are stored centrally at `~/.config/claw
 ## Checking Status
 
 ```bash
-cwtctl status
+cwtctl jobs status
 ```
 
 Status values: `idle`, `running`, `success`, `failed`, `paused`.

@@ -13,17 +13,16 @@
 cwtctl <command> [args]
 ```
 
-### Daemon commands
+### Commands requiring daemon
 
 | Command | Description |
 |---------|-------------|
-| `ping` | Check if the daemon is running |
-| `list` / `ls` | List all job names |
-| `run <name>` | Run a job |
-| `pause <name>` | Pause a running job |
-| `resume <name>` | Resume a paused job |
-| `restart <name>` | Restart a completed/failed job |
-| `status` | Show all job statuses as JSON |
+| `jobs list` / `jobs ls` | List all jobs grouped by group |
+| `jobs run <group>/<job>` | Run a job and follow its output |
+| `jobs pause <group>/<job>` | Pause a running job |
+| `jobs resume <group>/<job>` | Resume a paused job |
+| `jobs restart <group>/<job>` | Restart a completed/failed job |
+| `jobs status` | Show all job statuses as JSON |
 | `usage <provider>` | Show local quota usage for `claude`, `codex`, `antigravity`, or `zai` |
 | `auto-yes` | Show panes with auto-yes enabled |
 | `auto-yes toggle [pane_id]` | Toggle auto-yes for a pane |
@@ -31,6 +30,18 @@ cwtctl <command> [args]
 | `pane-info [pane_id]` | First query / session date for a Claude pane |
 | `secrets` / `secrets get <k>...` | Secret access |
 | `telegram send <message>` | Send a Telegram message |
+
+### Daemon lifecycle commands
+
+| Command | Description |
+|---------|-------------|
+| `daemon ping` | Check if the daemon is running |
+| `daemon install` | Install and start the launchd service |
+| `daemon stop` | Stop the daemon while keeping the launchd service installed |
+| `daemon uninstall` | Stop and remove the launchd service |
+| `daemon status` | Show whether the daemon is installed and running |
+| `daemon restart` | Restart the daemon |
+| `daemon logs` | Show recent daemon logs |
 
 ### Pane commands (require desktop app)
 

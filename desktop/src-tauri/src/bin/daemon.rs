@@ -448,7 +448,6 @@ async fn handle_ipc_command(
                     &HashMap::new(),
                     clawtab_lib::scheduler::executor::ExecuteOpts {
                         run_id: Some(task_run_id),
-                        use_auto_yes: true,
                         ..Default::default()
                     },
                 )
@@ -461,20 +460,34 @@ async fn handle_ipc_command(
             }
         }
         IpcCommand::PauseJob { name } => {
+            let job_slug = {
+                let jobs = jobs_config.lock();
+                match clawtab_lib::config::jobs::find_job(&jobs.jobs, &name) {
+                    Ok(job) => job.slug.clone(),
+                    Err(error) => return IpcResponse::Error(error),
+                }
+            };
             let mut status = job_status.lock();
-            match status.get(&name) {
+            match status.get(&job_slug) {
                 Some(JobStatus::Running { .. }) => {
-                    status.insert(name, JobStatus::Paused);
+                    status.insert(job_slug, JobStatus::Paused);
                     IpcResponse::Ok
                 }
                 _ => IpcResponse::Error("Job is not running".to_string()),
             }
         }
         IpcCommand::ResumeJob { name } => {
+            let job_slug = {
+                let jobs = jobs_config.lock();
+                match clawtab_lib::config::jobs::find_job(&jobs.jobs, &name) {
+                    Ok(job) => job.slug.clone(),
+                    Err(error) => return IpcResponse::Error(error),
+                }
+            };
             let mut status = job_status.lock();
-            match status.get(&name) {
+            match status.get(&job_slug) {
                 Some(JobStatus::Paused) => {
-                    status.insert(name, JobStatus::Idle);
+                    status.insert(job_slug, JobStatus::Idle);
                     IpcResponse::Ok
                 }
                 _ => IpcResponse::Error("Job is not paused".to_string()),
@@ -482,9 +495,9 @@ async fn handle_ipc_command(
         }
         IpcCommand::RestartJob { name } => {
             let jobs = jobs_config.lock();
-            let job = jobs.jobs.iter().find(|j| j.name == name);
+            let job = clawtab_lib::config::jobs::find_job(&jobs.jobs, &name);
             match job {
-                Some(job) => {
+                Ok(job) => {
                     let job = job.clone();
                     let ctx = ctx.clone();
                     tokio::spawn(async move {
@@ -499,7 +512,7 @@ async fn handle_ipc_command(
                     });
                     IpcResponse::Ok
                 }
-                None => IpcResponse::Error(format!("Job not found: {}", name)),
+                Err(error) => IpcResponse::Error(error),
             }
         }
         IpcCommand::GetStatus => {
