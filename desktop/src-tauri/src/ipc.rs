@@ -23,6 +23,12 @@ pub enum IpcCommand {
     RunJob {
         name: String,
     },
+    /// Start a job for the CLI and return the generated run id immediately.
+    /// The CLI uses that id to follow the correct binary log even when a job
+    /// finishes before the next status poll.
+    RunJobCli {
+        name: String,
+    },
     PauseJob {
         name: String,
     },
@@ -131,6 +137,18 @@ pub struct PaneEntry {
     pub current_command: String,
 }
 
+/// A configured job as exposed through the local daemon IPC.
+///
+/// The slug is the stable internal identifier used by status/history, while
+/// group + name are the human-facing address. Keeping all three avoids
+/// ambiguous commands when different groups contain jobs with the same name.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct JobSummary {
+    pub group: String,
+    pub name: String,
+    pub slug: String,
+}
+
 /// Activity state for one detected agent pane.
 ///
 /// `working` means the pane's recent terminal scrollback changed or its
@@ -184,7 +202,7 @@ pub struct IpcRelayStatus {
 pub enum IpcResponse {
     Pong,
     Ok,
-    Jobs(Vec<String>),
+    Jobs(Vec<JobSummary>),
     Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
     AutoYesPanes(Vec<String>),
     ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),
@@ -201,6 +219,11 @@ pub enum IpcResponse {
     PaneCreated {
         pane_id: Option<String>,
         tmux_session: Option<String>,
+    },
+    RunStarted {
+        slug: String,
+        run_id: String,
+        is_binary: bool,
     },
     AllPanes(Vec<PaneEntry>),
     Error(String),

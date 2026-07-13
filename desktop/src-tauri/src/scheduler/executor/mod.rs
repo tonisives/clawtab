@@ -37,6 +37,9 @@ pub(super) struct TmuxHandle {
 /// basic fire-and-forget run.
 #[derive(Default)]
 pub struct ExecuteOpts {
+    /// Explicit run id supplied by a local CLI caller. Other callers leave
+    /// this unset and receive a generated UUID (or their trigger id).
+    pub run_id: Option<String>,
     /// Enable auto-yes tracking for this run's tmux pane.
     pub use_auto_yes: bool,
     /// Channel to notify the caller of the spawned pane/session ids.
@@ -92,8 +95,10 @@ pub async fn execute_job(
     let mut pane_tx = opts.pane_tx;
     let trigger_id = opts.trigger_id;
 
-    let run_id = trigger_id
+    let run_id = opts
+        .run_id
         .clone()
+        .or_else(|| trigger_id.clone())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let started_at = Utc::now().to_rfc3339();
 

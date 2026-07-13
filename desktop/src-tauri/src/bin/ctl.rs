@@ -1,6 +1,9 @@
 use std::env;
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::process::Command;
+use std::time::{Duration, Instant};
 
+use clawtab_lib::config::jobs::JobStatus;
 use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDirection};
 
 /// Routes a parsed command to either the daemon or the desktop-app socket.
@@ -18,8 +21,8 @@ fn print_usage() {
     eprintln!();
     eprintln!("Commands (require daemon):");
     eprintln!("  ping              Check if ClawTab daemon is running");
-    eprintln!("  list | ls         List all jobs");
-    eprintln!("  run <name>        Run a job by name");
+    eprintln!("  list | ls         List jobs grouped by group");
+    eprintln!("  run <group>/<job> Run a job and attach/follow its output");
     eprintln!("  pause <name>      Pause a running job");
     eprintln!("  resume <name>     Resume a paused job");
     eprintln!("  restart <name>    Restart a job");
@@ -92,6 +95,11 @@ async fn main() {
         return;
     }
 
+    if command == "run" {
+        run_job_command(&args).await;
+        return;
+    }
+
     let target = match command {
         "open" => {
             let pane_id = if args.len() >= 3 {
@@ -144,9 +152,6 @@ async fn main() {
         }
         "ping" => Target::Daemon(IpcCommand::Ping),
         "list" | "ls" => Target::Daemon(IpcCommand::ListJobs),
-        "run" => Target::Daemon(IpcCommand::RunJob {
-            name: require_name(&args, "run"),
-        }),
         "pause" => Target::Daemon(IpcCommand::PauseJob {
             name: require_name(&args, "pause"),
         }),
@@ -309,8 +314,16 @@ async fn main() {
                 if jobs.is_empty() {
                     println!("No jobs configured");
                 } else {
+                    let mut current_group: Option<String> = None;
                     for job in jobs {
-                        println!("{}", job);
+                        if current_group.as_deref() != Some(job.group.as_str()) {
+                            if current_group.is_some() {
+                                println!();
+                            }
+                            println!("{}", job.group);
+                            current_group = Some(job.group.clone());
+                        }
+                        println!("  {}", job.name);
                     }
                 }
             }
@@ -411,6 +424,10 @@ async fn main() {
                     tmux_session.as_deref().unwrap_or("-")
                 );
             }
+            IpcResponse::RunStarted { .. } => {
+                eprintln!("Error: unexpected run-start response");
+                std::process::exit(1);
+            }
             IpcResponse::AllPanes(panes) => {
                 println!(
                     "{}",
@@ -427,6 +444,200 @@ async fn main() {
             std::process::exit(1);
         }
     }
+}
+
+async fn run_job_command(args: &[String]) {
+    let reference = parse_run_reference(args);
+    let response = ipc::send_command(IpcCommand::RunJobCli {
+        name: reference.clone(),
+    })
+    .await;
+
+    match response {
+        Ok(IpcResponse::RunStarted {
+            slug,
+            run_id,
+            is_binary,
+        }) => follow_started_job(&reference, &slug, &run_id, is_binary).await,
+        Ok(IpcResponse::Error(error)) => exit_error(&error),
+        Ok(response) => exit_error(&format!("unexpected response from daemon: {:?}", response)),
+        Err(error) => exit_error(&error),
+    }
+}
+
+fn parse_run_reference(args: &[String]) -> String {
+    match args.len() {
+        3 => args[2].clone(),
+        4 => format!("{}/{}", args[2], args[3]),
+        _ => exit_error("usage: cwtctl run <group>/<job> (or: cwtctl run <group> <job>)"),
+    }
+}
+
+async fn follow_started_job(reference: &str, slug: &str, run_id: &str, is_binary: bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut log_offset = 0_u64;
+    let log_path = is_binary.then(|| binary_log_path(slug, run_id));
+    let mut saw_running = false;
+    if is_binary {
+        println!("{} (binary logs):", reference);
+        let _ = io::stdout().flush();
+    }
+
+    loop {
+        let status = match get_job_status(slug).await {
+            Ok(status) => status,
+            Err(error) => exit_error(&error),
+        };
+
+        match status.as_ref() {
+            Some(JobStatus::Running {
+                run_id: current_run,
+                pane_id: Some(pane_id),
+                tmux_session: Some(tmux_session),
+                ..
+            }) => {
+                if current_run != run_id {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                // A pane may take a moment to be published when the daemon
+                // was busy. Attach as soon as it becomes available.
+                saw_running = true;
+                if !is_binary {
+                    if let Err(error) = attach_to_tmux(tmux_session, pane_id) {
+                        exit_error(&error);
+                    }
+                    return;
+                }
+            }
+            Some(JobStatus::Running {
+                run_id: current_run,
+                ..
+            }) => {
+                if current_run == run_id {
+                    saw_running = true;
+                }
+            }
+            Some(JobStatus::Success { .. }) | Some(JobStatus::Failed { .. }) => {
+                if let Some(path) = log_path.as_ref() {
+                    let (chunk, _) = read_log_chunk(path, log_offset);
+                    if !chunk.is_empty() {
+                        print!("{}", chunk);
+                        let _ = io::stdout().flush();
+                    }
+                    if path.exists() || saw_running {
+                        print_terminal_status(status.as_ref().expect("terminal status is present"));
+                        return;
+                    }
+                } else if saw_running {
+                    print_terminal_status(status.as_ref().expect("terminal status is present"));
+                    return;
+                }
+            }
+            Some(JobStatus::Idle) | Some(JobStatus::Paused) | None => {}
+        }
+
+        if let Some(path) = log_path.as_ref() {
+            let (chunk, next_offset) = read_log_chunk(path, log_offset);
+            if !chunk.is_empty() {
+                print!("{}", chunk);
+                let _ = io::stdout().flush();
+            }
+            log_offset = next_offset;
+        }
+
+        if Instant::now() >= deadline {
+            if is_binary {
+                println!("Job is still running; log following stopped after 10 seconds.");
+                return;
+            }
+            exit_error("job started but no pane or binary log became available");
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+async fn get_job_status(slug: &str) -> Result<Option<JobStatus>, String> {
+    match ipc::send_command(IpcCommand::GetStatus).await? {
+        IpcResponse::Status(statuses) => Ok(statuses.get(slug).cloned()),
+        response => Err(format!("unexpected response from daemon: {:?}", response)),
+    }
+}
+
+fn binary_log_path(slug: &str, run_id: &str) -> std::path::PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".config")
+        .join("clawtab")
+        .join("jobs")
+        .join(slug)
+        .join("logs")
+        .join(format!("{}.log", run_id))
+}
+
+fn read_log_chunk(path: &std::path::Path, offset: u64) -> (String, u64) {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return (String::new(), offset);
+    };
+    let start = if offset > metadata.len() { 0 } else { offset };
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return (String::new(), start);
+    };
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return (String::new(), start);
+    }
+    let mut bytes = Vec::new();
+    if file.read_to_end(&mut bytes).is_err() {
+        return (String::new(), start);
+    }
+    let next_offset = start.saturating_add(bytes.len() as u64);
+    (String::from_utf8_lossy(&bytes).into_owned(), next_offset)
+}
+
+fn print_terminal_status(status: &JobStatus) {
+    match status {
+        JobStatus::Success { .. } => println!("Finished: success"),
+        JobStatus::Failed { exit_code, .. } => {
+            println!("Finished: failed (exit code {})", exit_code)
+        }
+        _ => {}
+    }
+}
+
+fn attach_to_tmux(session: &str, pane: &str) -> Result<(), String> {
+    if env::var_os("TMUX").is_some() {
+        let status = Command::new("tmux")
+            .args(["switch-client", "-t", session])
+            .status()
+            .map_err(|error| format!("failed to switch to tmux session: {}", error))?;
+        if !status.success() {
+            return Err(format!("tmux switch-client exited with {}", status));
+        }
+        let status = Command::new("tmux")
+            .args(["select-pane", "-t", pane])
+            .status()
+            .map_err(|error| format!("failed to select tmux pane: {}", error))?;
+        if !status.success() {
+            return Err(format!("tmux select-pane exited with {}", status));
+        }
+        return Ok(());
+    }
+
+    let select = Command::new("tmux")
+        .args(["select-pane", "-t", pane])
+        .status()
+        .map_err(|error| format!("failed to select tmux pane: {}", error))?;
+    if !select.success() {
+        return Err(format!("tmux select-pane exited with {}", select));
+    }
+    let status = Command::new("tmux")
+        .args(["attach-session", "-t", session])
+        .status()
+        .map_err(|error| format!("failed to attach to tmux session: {}", error))?;
+    if !status.success() {
+        return Err(format!("tmux attach-session exited with {}", status));
+    }
+    Ok(())
 }
 
 async fn handle_usage_command(args: &[String]) {

@@ -11,7 +11,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
 use clawtab_lib::config::jobs::JobStatus;
-use clawtab_lib::ipc::{self, IpcCommand, IpcResponse, PaneEntry};
+use clawtab_lib::ipc::{self, IpcCommand, IpcResponse, JobSummary, PaneEntry};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum Section {
@@ -21,7 +21,7 @@ enum Section {
 
 struct App {
     panes: Vec<PaneEntry>,
-    jobs: Vec<String>,
+    jobs: Vec<JobSummary>,
     statuses: HashMap<String, JobStatus>,
     pane_state: ListState,
     job_state: ListState,
@@ -66,11 +66,16 @@ impl App {
             .collect()
     }
 
-    fn filtered_jobs(&self) -> Vec<&String> {
+    fn filtered_jobs(&self) -> Vec<&JobSummary> {
         let f = self.filter.to_lowercase();
         self.jobs
             .iter()
-            .filter(|n| f.is_empty() || n.to_lowercase().contains(&f))
+            .filter(|job| {
+                f.is_empty()
+                    || job.name.to_lowercase().contains(&f)
+                    || job.group.to_lowercase().contains(&f)
+                    || job.slug.to_lowercase().contains(&f)
+            })
             .collect()
     }
 
@@ -229,14 +234,19 @@ async fn activate(app: &mut App) {
             }
         }
         Section::Jobs => {
-            let name = {
+            let job = {
                 let jobs = app.filtered_jobs();
                 jobs.get(app.job_state.selected().unwrap_or(0))
-                    .map(|n| (*n).clone())
+                    .map(|job| (*job).clone())
             };
-            if let Some(n) = name {
-                match ipc::send_command(IpcCommand::RunJob { name: n.clone() }).await {
-                    Ok(IpcResponse::Ok) => app.message = Some(format!("Started: {}", n)),
+            if let Some(job) = job {
+                let display = format!("{}/{}", job.group, job.name);
+                match ipc::send_command(IpcCommand::RunJob {
+                    name: job.slug.clone(),
+                })
+                .await
+                {
+                    Ok(IpcResponse::Ok) => app.message = Some(format!("Started: {}", display)),
                     Ok(IpcResponse::Error(e)) => app.message = Some(format!("Error: {}", e)),
                     Err(e) => app.message = Some(format!("IPC: {}", e)),
                     _ => {}
@@ -247,15 +257,20 @@ async fn activate(app: &mut App) {
 }
 
 async fn open_folder(app: &mut App) {
-    let name = {
+    let job = {
         let jobs = app.filtered_jobs();
         jobs.get(app.job_state.selected().unwrap_or(0))
-            .map(|n| (*n).clone())
+            .map(|job| (*job).clone())
     };
-    if let Some(n) = name {
-        match ipc::send_command(IpcCommand::OpenJobFolder { name: n.clone() }).await {
+    if let Some(job) = job {
+        let display = format!("{}/{}", job.group, job.name);
+        match ipc::send_command(IpcCommand::OpenJobFolder {
+            name: job.slug.clone(),
+        })
+        .await
+        {
             Ok(IpcResponse::Ok) => {
-                app.message = Some(format!("Opened: {}", n));
+                app.message = Some(format!("Opened: {}", display));
                 app.running = false;
             }
             Ok(IpcResponse::Error(e)) => app.message = Some(format!("Error: {}", e)),
@@ -327,8 +342,8 @@ fn draw(f: &mut Frame, app: &mut App) {
     let jobs = app.filtered_jobs();
     let job_items: Vec<ListItem> = jobs
         .iter()
-        .map(|name| {
-            let (mark, style) = match app.statuses.get(*name) {
+        .map(|job| {
+            let (mark, style) = match app.statuses.get(&job.slug) {
                 Some(JobStatus::Running { .. }) => (">>", Style::default().fg(Color::Yellow)),
                 Some(JobStatus::Success { .. }) => ("ok", Style::default().fg(Color::Green)),
                 Some(JobStatus::Failed { .. }) => ("!!", Style::default().fg(Color::Red)),
@@ -337,7 +352,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             };
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", mark), style),
-                Span::raw((*name).clone()),
+                Span::raw(format!("{}/{}", job.group, job.name)),
             ]))
         })
         .collect();

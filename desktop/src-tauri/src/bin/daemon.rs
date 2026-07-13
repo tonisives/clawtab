@@ -387,14 +387,28 @@ async fn handle_ipc_command(
         IpcCommand::Ping => IpcResponse::Pong,
         IpcCommand::ListJobs => {
             let jobs = jobs_config.lock();
-            let names: Vec<String> = jobs.jobs.iter().map(|j| j.name.clone()).collect();
-            IpcResponse::Jobs(names)
+            let mut summaries: Vec<clawtab_lib::ipc::JobSummary> = jobs
+                .jobs
+                .iter()
+                .map(|job| clawtab_lib::ipc::JobSummary {
+                    group: clawtab_lib::config::jobs::job_group(job).to_string(),
+                    name: job.name.clone(),
+                    slug: job.slug.clone(),
+                })
+                .collect();
+            summaries.sort_by(|a, b| {
+                a.group
+                    .cmp(&b.group)
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.slug.cmp(&b.slug))
+            });
+            IpcResponse::Jobs(summaries)
         }
         IpcCommand::RunJob { name } => {
             let jobs = jobs_config.lock();
-            let job = jobs.jobs.iter().find(|j| j.name == name);
+            let job = clawtab_lib::config::jobs::find_job(&jobs.jobs, &name);
             match job {
-                Some(job) => {
+                Ok(job) => {
                     let job = job.clone();
                     let ctx = ctx.clone();
                     tokio::spawn(async move {
@@ -409,7 +423,41 @@ async fn handle_ipc_command(
                     });
                     IpcResponse::Ok
                 }
-                None => IpcResponse::Error(format!("Job not found: {}", name)),
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
+        IpcCommand::RunJobCli { name } => {
+            let job = {
+                let jobs = jobs_config.lock();
+                clawtab_lib::config::jobs::find_job(&jobs.jobs, &name).cloned()
+            };
+            let job = match job {
+                Ok(job) => job,
+                Err(error) => return IpcResponse::Error(error),
+            };
+            let run_id = uuid::Uuid::new_v4().to_string();
+            let slug = job.slug.clone();
+            let is_binary = matches!(job.job_type, clawtab_lib::config::jobs::JobType::Binary);
+            let ctx = ctx.clone();
+            let task_run_id = run_id.clone();
+            tokio::spawn(async move {
+                clawtab_lib::scheduler::executor::execute_job(
+                    &job,
+                    &ctx,
+                    "cli",
+                    &HashMap::new(),
+                    clawtab_lib::scheduler::executor::ExecuteOpts {
+                        run_id: Some(task_run_id),
+                        use_auto_yes: true,
+                        ..Default::default()
+                    },
+                )
+                .await;
+            });
+            IpcResponse::RunStarted {
+                slug,
+                run_id,
+                is_binary,
             }
         }
         IpcCommand::PauseJob { name } => {
@@ -727,16 +775,13 @@ async fn handle_ipc_command(
             IpcResponse::Ok
         }
         IpcCommand::RunJobNow { name, params } => {
-            let job = {
+            let job_result = {
                 let cfg = jobs_config.lock();
-                cfg.jobs
-                    .iter()
-                    .find(|j| j.slug == name || j.name == name)
-                    .cloned()
+                clawtab_lib::config::jobs::find_job(&cfg.jobs, &name).cloned()
             };
-            let job = match job {
-                Some(j) => j,
-                None => return IpcResponse::Error(format!("Job not found: {}", name)),
+            let job = match job_result {
+                Ok(j) => j,
+                Err(error) => return IpcResponse::Error(error),
             };
 
             let ctx = ctx.clone();
@@ -892,13 +937,15 @@ async fn handle_ipc_command(
         IpcCommand::OpenJobFolder { name } => {
             let dir = {
                 let jobs = jobs_config.lock();
-                jobs.jobs.iter().find(|j| j.name == name).and_then(|j| {
-                    j.folder_path.clone().or_else(|| {
-                        std::path::Path::new(&j.path)
-                            .parent()
-                            .map(|p| p.to_string_lossy().into_owned())
+                clawtab_lib::config::jobs::find_job(&jobs.jobs, &name)
+                    .ok()
+                    .and_then(|j| {
+                        j.folder_path.clone().or_else(|| {
+                            std::path::Path::new(&j.path)
+                                .parent()
+                                .map(|p| p.to_string_lossy().into_owned())
+                        })
                     })
-                })
             };
             match dir {
                 Some(d) => {

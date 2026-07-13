@@ -10,10 +10,10 @@ use crossterm::ExecutableCommand;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-use clawtab_lib::ipc::{self, IpcCommand, IpcResponse};
+use clawtab_lib::ipc::{self, IpcCommand, IpcResponse, JobSummary};
 
 struct App {
-    jobs: Vec<String>,
+    jobs: Vec<JobSummary>,
     statuses: HashMap<String, serde_json::Value>,
     list_state: ListState,
     message: Option<String>,
@@ -31,7 +31,7 @@ impl App {
         }
     }
 
-    fn selected_job(&self) -> Option<&String> {
+    fn selected_job(&self) -> Option<&JobSummary> {
         self.list_state.selected().and_then(|i| self.jobs.get(i))
     }
 
@@ -146,10 +146,12 @@ async fn handle_key(app: &mut App, key: KeyCode) {
             app.message = None;
         }
         KeyCode::Char('r') => {
-            if let Some(name) = app.selected_job().cloned() {
-                match ipc::send_command(IpcCommand::RunJob { name: name.clone() }).await {
+            if let Some(job) = app.selected_job().cloned() {
+                let name = job.slug.clone();
+                let display = format!("{}/{}", job.group, job.name);
+                match ipc::send_command(IpcCommand::RunJob { name }).await {
                     Ok(IpcResponse::Ok) => {
-                        app.message = Some(format!("Started: {}", name));
+                        app.message = Some(format!("Started: {}", display));
                     }
                     Ok(IpcResponse::Error(e)) => {
                         app.message = Some(format!("Error: {}", e));
@@ -162,10 +164,12 @@ async fn handle_key(app: &mut App, key: KeyCode) {
             }
         }
         KeyCode::Char('p') => {
-            if let Some(name) = app.selected_job().cloned() {
-                match ipc::send_command(IpcCommand::PauseJob { name: name.clone() }).await {
+            if let Some(job) = app.selected_job().cloned() {
+                let name = job.slug.clone();
+                let display = format!("{}/{}", job.group, job.name);
+                match ipc::send_command(IpcCommand::PauseJob { name }).await {
                     Ok(IpcResponse::Ok) => {
-                        app.message = Some(format!("Paused: {}", name));
+                        app.message = Some(format!("Paused: {}", display));
                     }
                     Ok(IpcResponse::Error(e)) => {
                         app.message = Some(format!("Error: {}", e));
@@ -175,10 +179,12 @@ async fn handle_key(app: &mut App, key: KeyCode) {
             }
         }
         KeyCode::Char('u') => {
-            if let Some(name) = app.selected_job().cloned() {
-                match ipc::send_command(IpcCommand::ResumeJob { name: name.clone() }).await {
+            if let Some(job) = app.selected_job().cloned() {
+                let name = job.slug.clone();
+                let display = format!("{}/{}", job.group, job.name);
+                match ipc::send_command(IpcCommand::ResumeJob { name }).await {
                     Ok(IpcResponse::Ok) => {
-                        app.message = Some(format!("Resumed: {}", name));
+                        app.message = Some(format!("Resumed: {}", display));
                     }
                     Ok(IpcResponse::Error(e)) => {
                         app.message = Some(format!("Error: {}", e));
@@ -188,10 +194,12 @@ async fn handle_key(app: &mut App, key: KeyCode) {
             }
         }
         KeyCode::Char('R') => {
-            if let Some(name) = app.selected_job().cloned() {
-                match ipc::send_command(IpcCommand::RestartJob { name: name.clone() }).await {
+            if let Some(job) = app.selected_job().cloned() {
+                let name = job.slug.clone();
+                let display = format!("{}/{}", job.group, job.name);
+                match ipc::send_command(IpcCommand::RestartJob { name }).await {
                     Ok(IpcResponse::Ok) => {
-                        app.message = Some(format!("Restarted: {}", name));
+                        app.message = Some(format!("Restarted: {}", display));
                     }
                     Ok(IpcResponse::Error(e)) => {
                         app.message = Some(format!("Error: {}", e));
@@ -214,9 +222,9 @@ async fn handle_key(app: &mut App, key: KeyCode) {
         }
         KeyCode::Char('o') => {
             // Open tmux session
-            if let Some(name) = app.selected_job().cloned() {
+            if let Some(job) = app.selected_job().cloned() {
                 let session = "tgs"; // default session
-                let window = format!("cm-{}", name);
+                let window = format!("cm-{}", job.name);
                 let _ = std::process::Command::new("tmux")
                     .args(["select-window", "-t", &format!("{}:{}", session, window)])
                     .spawn();
@@ -241,10 +249,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     let items: Vec<ListItem> = app
         .jobs
         .iter()
-        .map(|name| {
+        .map(|job| {
             let status = app
                 .statuses
-                .get(name)
+                .get(&job.slug)
                 .and_then(|v| v.get("state"))
                 .and_then(|s| s.as_str())
                 .unwrap_or("idle");
@@ -259,7 +267,7 @@ fn draw(f: &mut Frame, app: &mut App) {
 
             ListItem::new(Line::from(vec![
                 Span::styled(format!(" {} ", indicator), style),
-                Span::raw(name),
+                Span::raw(format!("{}/{}", job.group, job.name)),
             ]))
         })
         .collect();

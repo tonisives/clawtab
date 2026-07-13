@@ -151,6 +151,71 @@ fn default_group() -> String {
     "default".to_string()
 }
 
+/// Return the group used when addressing a job from a user-facing command.
+/// Older job files may omit the field, so treat those as belonging to the
+/// default group just like serde does when loading them.
+pub fn job_group(job: &Job) -> &str {
+    if job.group.is_empty() {
+        "default"
+    } else {
+        &job.group
+    }
+}
+
+/// Resolve a job reference.
+///
+/// A reference may be a stable slug, an explicit `group/name` pair, or a
+/// bare name when that name is unique. Explicit group/name matching takes
+/// precedence over slugs so that users can address jobs by the group they see
+/// in the UI even when a legacy slug uses a different project prefix.
+pub fn find_job<'a>(jobs: &'a [Job], reference: &str) -> Result<&'a Job, String> {
+    let reference = reference.trim();
+    if reference.is_empty() {
+        return Err("job reference cannot be empty".to_string());
+    }
+
+    if let Some((group, name)) = reference.split_once('/') {
+        let matches: Vec<&Job> = jobs
+            .iter()
+            .filter(|job| job_group(job) == group && job.name == name)
+            .collect();
+        if let Some(job) = matches.first() {
+            return Ok(job);
+        }
+
+        // A slug is also allowed for internal callers (for example the TUI),
+        // but an explicit group/name reference must not silently fall back to
+        // a different group just because the bare name happens to be unique.
+        if let Some(job) = jobs.iter().find(|job| job.slug == reference) {
+            return Ok(job);
+        }
+        return Err(format!("Job not found: {}", reference));
+    }
+
+    // Internal callers (and the UI) often already have the stable slug.
+    if let Some(job) = jobs.iter().find(|job| job.slug == reference) {
+        return Ok(job);
+    }
+
+    let matches: Vec<&Job> = jobs.iter().filter(|job| job.name == reference).collect();
+    match matches.as_slice() {
+        [job] => Ok(job),
+        [] => Err(format!("Job not found: {}", reference)),
+        _ => {
+            let mut choices = matches
+                .iter()
+                .map(|job| format!("{}/{}", job_group(job), job.name))
+                .collect::<Vec<_>>();
+            choices.sort();
+            Err(format!(
+                "Job name '{}' is ambiguous; use group/name ({}).",
+                reference,
+                choices.join(", ")
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct JobsConfig {
     pub jobs: Vec<Job>,
@@ -878,5 +943,43 @@ mod tests {
         assert_eq!(job.params[0].value, None);
         assert_eq!(job.params[1].name, "bar");
         assert_eq!(job.params[1].value.as_deref(), Some("baz"));
+    }
+
+    fn test_job(name: &str, group: &str, slug: &str) -> Job {
+        let mut job = parse_job(&base_yaml("params: []"));
+        job.name = name.to_string();
+        job.group = group.to_string();
+        job.slug = slug.to_string();
+        job
+    }
+
+    #[test]
+    fn find_job_resolves_group_and_name() {
+        let jobs = vec![
+            test_job("seo-improve", "clawtab", "clawtab/seo-improve"),
+            test_job("seo-improve", "tskr", "tskr/seo-improve"),
+        ];
+
+        assert_eq!(
+            find_job(&jobs, "tskr/seo-improve").unwrap().slug,
+            "tskr/seo-improve"
+        );
+        assert!(find_job(&jobs, "seo-improve")
+            .unwrap_err()
+            .contains("ambiguous"));
+    }
+
+    #[test]
+    fn find_job_accepts_stable_slug_when_group_differs() {
+        let jobs = vec![test_job("hello-world", "general", "hello-world/default")];
+
+        assert_eq!(
+            find_job(&jobs, "hello-world/default").unwrap().group,
+            "general"
+        );
+        assert_eq!(
+            find_job(&jobs, "general/hello-world").unwrap().slug,
+            "hello-world/default"
+        );
     }
 }

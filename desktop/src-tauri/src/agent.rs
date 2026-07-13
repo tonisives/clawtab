@@ -285,9 +285,9 @@ fn write_cli_help(out: &mut String) {
     out.push_str("`cwtctl` is available for managing ClawTab jobs:\n\n");
     out.push_str("```\n");
     out.push_str("cwtctl ping           # Check if ClawTab daemon is running\n");
-    out.push_str("cwtctl list           # List all configured jobs\n");
+    out.push_str("cwtctl list           # List configured jobs grouped by group\n");
     out.push_str("cwtctl status         # Show status of all jobs\n");
-    out.push_str("cwtctl run <name>     # Run a job immediately\n");
+    out.push_str("cwtctl run <group>/<name> # Run a job and attach/follow output\n");
     out.push_str("cwtctl pause <name>   # Pause a running job\n");
     out.push_str("cwtctl resume <name>  # Resume a paused job\n");
     out.push_str("cwtctl restart <name> # Restart a job\n");
