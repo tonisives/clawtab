@@ -232,6 +232,10 @@ export function ModelsPanel() {
   })
   const defaultProvider = settings.default_provider
   const defaultModel = settings.default_model ?? null
+  const titleSummaryProvider = settings.title_summary_provider ?? null
+  const titleSummaryModels = titleSummaryProvider
+    ? (enabledModels[titleSummaryProvider] ?? [])
+    : []
 
   const isDefault = (provider: ProcessProvider, modelId: string) =>
     provider === defaultProvider && modelId === defaultModel
@@ -345,6 +349,50 @@ export function ModelsPanel() {
           )}
           <span className="hint">
             The default model used when a job doesn't specify one.
+          </span>
+        </div>
+      </div>
+
+      <div className="field-group">
+        <span className="field-group-title">AI pane titles</span>
+        <div className="form-group">
+          <label>Agent</label>
+          <select
+            value={titleSummaryProvider ?? ""}
+            onChange={(event) => {
+              const provider = event.target.value
+                ? event.target.value as ProcessProvider
+                : null
+              update({
+                title_summary_provider: provider,
+                title_summary_model: null,
+              })
+            }}
+          >
+            <option value="">Automatic (current pane agent)</option>
+            <option value="claude">Claude Code</option>
+            <option value="codex">Codex</option>
+            <option value="opencode">OpenCode</option>
+            <option value="antigravity">Antigravity</option>
+          </select>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Model</label>
+          <select
+            value={settings.title_summary_model ?? ""}
+            disabled={!titleSummaryProvider}
+            onChange={(event) => update({ title_summary_model: event.target.value || null })}
+          >
+            <option value="">Automatic (middle enabled model)</option>
+            {titleSummaryModels.map((modelId) => (
+              <option key={modelId} value={modelId}>
+                {labelForProviderModel(titleSummaryProvider!, modelId)}
+              </option>
+            ))}
+          </select>
+          <span className="hint">
+            Used by the tmux modal&apos;s Shift+R action. Automatic follows the
+            pane&apos;s agent and selects the middle enabled model.
           </span>
         </div>
       </div>

@@ -7,8 +7,6 @@ PANE_ID="$1"
 # Write pane_id to temp file to avoid % escaping issues with tmux
 PANE_FILE=$(mktemp /tmp/clawtab-pane-XXXXXX)
 echo "$PANE_ID" > "$PANE_FILE"
-TERM_W=$(tmux display-message -p '#{window_width}')
-POPUP_W=90
-[ "$POPUP_W" -gt "$TERM_W" ] && POPUP_W="$TERM_W"
-"$CURRENT_DIR/display-pane-popup.sh" "$PANE_ID" "$POPUP_W" 95% \
+"$CURRENT_DIR/display-pane-popup.sh" "$PANE_ID" 95% 95% \
+    --no-border -s 'bg=default,fg=default' \
     "$CURRENT_DIR/popup-menu.sh" "$PANE_FILE"

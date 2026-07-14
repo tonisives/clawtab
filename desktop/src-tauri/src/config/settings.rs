@@ -129,6 +129,14 @@ pub struct AppSettings {
     /// Default model to use when a job doesn't specify one (e.g. "claude-opus-4-6")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
+    /// Provider used to generate concise pane titles. None uses the provider
+    /// detected for the target pane, then falls back to default_provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_summary_provider: Option<ProcessProvider>,
+    /// Model used for pane-title summaries. None selects the middle enabled
+    /// model for the resolved provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_summary_model: Option<String>,
     /// Per-provider list of enabled model IDs for the quick-select dropdown
     #[serde(default)]
     pub enabled_models: HashMap<String, Vec<String>>,
@@ -187,6 +195,8 @@ impl Default for AppSettings {
             default_work_dir: format!("{}/workspace/tgs/automation", home),
             default_provider: ProcessProvider::Claude,
             default_model: None,
+            title_summary_provider: None,
+            title_summary_model: None,
             enabled_models: HashMap::new(),
             claude_path: "claude".to_string(),
             preferred_editor: "nvim".to_string(),

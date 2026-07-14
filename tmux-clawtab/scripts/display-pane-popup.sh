@@ -6,6 +6,12 @@ REQUESTED_W="$2"
 REQUESTED_H="$3"
 shift 3
 
+POPUP_BORDER_OPTION=()
+if [ "${1:-}" = "--no-border" ]; then
+    POPUP_BORDER_OPTION=(-B)
+    shift
+fi
+
 if [ -z "$PANE_ID" ] || [ -z "$REQUESTED_W" ] || [ -z "$REQUESTED_H" ] ||
     [ "$#" -eq 0 ]; then
     exit 1
@@ -21,7 +27,8 @@ read -r PANE_X PANE_Y PANE_W PANE_H <<< "$geometry"
 
 if ! [[ "$PANE_X" =~ ^[0-9]+$ && "$PANE_Y" =~ ^[0-9]+$ &&
     "$PANE_W" =~ ^[0-9]+$ && "$PANE_H" =~ ^[0-9]+$ ]]; then
-    tmux display-popup -E -t "$PANE_ID" -w "$REQUESTED_W" -h "$REQUESTED_H" "$@"
+    tmux display-popup -E "${POPUP_BORDER_OPTION[@]}" -t "$PANE_ID" \
+        -w "$REQUESTED_W" -h "$REQUESTED_H" "$@"
     exit $?
 fi
 
@@ -50,6 +57,7 @@ POPUP_X=$((PANE_X + (PANE_W - POPUP_W) / 2))
 POPUP_Y=$((PANE_Y + (PANE_H + POPUP_H + 1) / 2))
 
 tmux display-popup -E -t "$PANE_ID" \
+    "${POPUP_BORDER_OPTION[@]}" \
     -x "$POPUP_X" -y "$POPUP_Y" \
     -w "$POPUP_W" -h "$POPUP_H" \
     "$@"

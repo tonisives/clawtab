@@ -34,6 +34,8 @@ fn print_usage() {
     eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
     eprintln!("  agent info [pane_id]                      Show agent session info");
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
+    eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
+    eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
     eprintln!();
     eprintln!("Pane (require desktop app):");
     eprintln!(
@@ -77,10 +79,12 @@ fn print_agent_usage() {
     eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
     eprintln!("  agent info [pane_id]                      Show agent session info");
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
+    eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
+    eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
 }
 
 fn is_agent_subcommand(command: &str) -> bool {
-    matches!(command, "auto-yes" | "info")
+    matches!(command, "auto-yes" | "info" | "rename" | "ai-rename")
 }
 
 fn require_job_reference(args: &[String], command: &str) -> String {
@@ -172,7 +176,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    if !agent_scope && matches!(command, "auto-yes" | "pane-info") {
+    if !agent_scope && matches!(command, "auto-yes" | "pane-info" | "rename" | "ai-rename") {
         eprintln!(
             "Agent commands are under the agent namespace: cwtctl agent {}",
             if command == "pane-info" {
@@ -325,15 +329,60 @@ async fn main() {
             if let Some(epoch) = info.started_epoch {
                 println!("started_epoch={}", epoch);
             }
-            if let Some(ref query) = info.first_query {
+            let settings = clawtab_lib::config::settings::AppSettings::load();
+            let process_override = settings.process_overrides.get(&pane_id);
+            let display_name = process_override.and_then(|meta| meta.display_name.as_ref());
+            let first_query = process_override
+                .and_then(|meta| meta.first_query.as_ref())
+                .or(info.first_query.as_ref());
+            let last_query = process_override
+                .and_then(|meta| meta.last_query.as_ref())
+                .or(info.last_query.as_ref());
+            if let Some(name) = display_name {
+                println!("display_name={}", name);
+            }
+            if let Some(query) = first_query {
                 println!("first_query={}", query);
             }
-            if let Some(ref query) = info.last_query {
+            if let Some(query) = last_query {
                 println!("last_query={}", query);
             }
-            if info.session_started_at.is_none() && info.first_query.is_none() {
+            if info.session_started_at.is_none() && first_query.is_none() {
                 eprintln!("No session info found");
                 std::process::exit(1);
+            }
+            return;
+        }
+        "rename" => {
+            if args.len() < 4 {
+                eprintln!("Usage: cwtctl agent rename <pane_id> <title>");
+                std::process::exit(1);
+            }
+            let pane_id = args[2].clone();
+            let title = args[3..].join(" ");
+            let display_name = if title.trim().is_empty() {
+                None
+            } else {
+                Some(title.trim().to_string())
+            };
+            if let Err(error) = save_pane_display_name(&pane_id, display_name).await {
+                eprintln!("Error: {}", error);
+                std::process::exit(1);
+            }
+            println!("ok");
+            return;
+        }
+        "ai-rename" => {
+            if args.len() != 3 {
+                eprintln!("Usage: cwtctl agent ai-rename <pane_id>");
+                std::process::exit(1);
+            }
+            match generate_pane_title(&args[2]).await {
+                Ok(title) => println!("{}", title),
+                Err(error) => {
+                    eprintln!("Error: {}", error);
+                    std::process::exit(1);
+                }
             }
             return;
         }
@@ -934,6 +983,240 @@ fn print_secret_values(pairs: Vec<(String, String)>) {
 fn exit_error(msg: &str) -> ! {
     eprintln!("Error: {}", msg);
     std::process::exit(1);
+}
+
+async fn save_pane_display_name(pane_id: &str, display_name: Option<String>) -> Result<(), String> {
+    let title = display_name.as_deref().unwrap_or("");
+    let pane_title_output = std::process::Command::new("tmux")
+        .args(["select-pane", "-t", pane_id, "-T", title])
+        .output()
+        .map_err(|error| format!("failed to set tmux pane title: {}", error))?;
+    if !pane_title_output.status.success() {
+        return Err(format!(
+            "failed to set tmux pane title: {}",
+            String::from_utf8_lossy(&pane_title_output.stderr).trim()
+        ));
+    }
+
+    let mut option_command = std::process::Command::new("tmux");
+    option_command.args(["set-option", "-p", "-t", pane_id]);
+    if display_name.is_some() {
+        option_command.args(["@clawtab-display-name", title]);
+    } else {
+        option_command.args(["-u", "@clawtab-display-name"]);
+    }
+    let option_output = option_command
+        .output()
+        .map_err(|error| format!("failed to persist tmux pane title: {}", error))?;
+    if !option_output.status.success() {
+        return Err(format!(
+            "failed to persist tmux pane title: {}",
+            String::from_utf8_lossy(&option_output.stderr).trim()
+        ));
+    }
+
+    match ipc::send_desktop_command(DesktopIpcCommand::RenamePane {
+        pane_id: pane_id.to_string(),
+        display_name: display_name.clone(),
+    })
+    .await
+    {
+        Ok(IpcResponse::Ok) => return Ok(()),
+        Ok(IpcResponse::Error(error)) => return Err(error),
+        Ok(response) => return Err(format!("unexpected desktop response: {:?}", response)),
+        Err(_) => {}
+    }
+
+    let mut settings = clawtab_lib::config::settings::AppSettings::load();
+    let entry = settings
+        .process_overrides
+        .entry(pane_id.to_string())
+        .or_default();
+    entry.display_name = display_name;
+    if entry.display_name.is_none()
+        && entry.first_query.is_none()
+        && entry.last_query.is_none()
+        && entry.group_override.is_none()
+    {
+        settings.process_overrides.remove(pane_id);
+    }
+    settings.save()
+}
+
+async fn generate_pane_title(pane_id: &str) -> Result<String, String> {
+    use clawtab_lib::agent_session::{ProcessProvider, ProcessSnapshot};
+
+    let pane_pid = resolve_tmux_pane_format(pane_id, "#{pane_pid}");
+    let pane_cwd = resolve_tmux_pane_format(pane_id, "#{pane_current_path}");
+    if pane_pid.is_empty() {
+        return Err("could not resolve pane PID".to_string());
+    }
+
+    let snapshot = ProcessSnapshot::capture();
+    let detected_provider =
+        clawtab_lib::agent_session::detect_process_provider(&pane_pid, Some(&snapshot));
+    let info = clawtab_lib::agent_session::resolve_session_info_for_provider_with_cwd(
+        &pane_pid,
+        detected_provider,
+        Some(&snapshot),
+        (!pane_cwd.is_empty()).then_some(pane_cwd.as_str()),
+    );
+    let settings = clawtab_lib::config::settings::AppSettings::load();
+    let process_override = settings.process_overrides.get(pane_id);
+    let first_query = process_override
+        .and_then(|meta| meta.first_query.as_ref())
+        .or(info.first_query.as_ref());
+    let last_query = process_override
+        .and_then(|meta| meta.last_query.as_ref())
+        .or(info.last_query.as_ref());
+    if first_query.is_none() && last_query.is_none() {
+        return Err("no agent queries found for this pane".to_string());
+    }
+
+    let mut provider = settings
+        .title_summary_provider
+        .or(detected_provider)
+        .unwrap_or(settings.default_provider);
+    if provider == ProcessProvider::Shell {
+        provider = settings.default_provider;
+    }
+    if provider == ProcessProvider::Shell {
+        return Err("configure a non-shell AI pane-title provider".to_string());
+    }
+
+    let model = settings
+        .title_summary_model
+        .clone()
+        .or_else(|| {
+            let models = settings.enabled_models.get(provider.as_str())?;
+            models.get(models.len() / 2).cloned()
+        })
+        .or_else(|| {
+            (provider == settings.default_provider)
+                .then(|| settings.default_model.clone())
+                .flatten()
+        });
+
+    let context_limit = 6_000;
+    let compact_context = |text: &str| -> String {
+        let mut value = text.chars().take(context_limit).collect::<String>();
+        if text.chars().count() > context_limit {
+            value.push_str("...");
+        }
+        value
+    };
+    let first = first_query.map(|value| compact_context(value));
+    let last = last_query.map(|value| compact_context(value));
+    let mut prompt = String::from(
+        "Create a concise title that summarizes this coding agent's objective. \
+Return only the title, with no quotes, markdown, explanation, or ending punctuation. \
+Use 3 to 8 words and at most 60 characters. Prefer the durable objective over the latest tactical step. \
+Do not use tools.\n\n",
+    );
+    if let Some(first) = first.as_ref() {
+        prompt.push_str("First query:\n");
+        prompt.push_str(first);
+        prompt.push_str("\n\n");
+    }
+    if let Some(last) = last.as_ref().filter(|last| Some(*last) != first.as_ref()) {
+        prompt.push_str("Latest query:\n");
+        prompt.push_str(last);
+        prompt.push('\n');
+    }
+
+    let binary = match provider {
+        ProcessProvider::Claude => settings.claude_path.clone(),
+        _ => settings
+            .tool_paths
+            .get(provider.binary_name())
+            .cloned()
+            .unwrap_or_else(|| provider.binary_name().to_string()),
+    };
+    let mut command = tokio::process::Command::new(binary);
+    command
+        .kill_on_drop(true)
+        .current_dir(std::env::temp_dir())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    match provider {
+        ProcessProvider::Claude => {
+            command.arg("-p");
+            if let Some(model) = model.as_ref() {
+                command.args(["--model", model]);
+            }
+            command.arg(&prompt);
+        }
+        ProcessProvider::Codex => {
+            command.args([
+                "exec",
+                "--ephemeral",
+                "--skip-git-repo-check",
+                "--sandbox",
+                "read-only",
+            ]);
+            if let Some(model) = model.as_ref() {
+                command.args(["--model", model]);
+            }
+            command.arg(&prompt);
+        }
+        ProcessProvider::Opencode => {
+            command.arg("run");
+            if let Some(model) = model.as_ref() {
+                command.args(["--model", model]);
+            }
+            command.arg(&prompt);
+        }
+        ProcessProvider::Antigravity => {
+            command.arg("-p");
+            if let Some(model) = model.as_ref() {
+                command.args(["--model", model]);
+            }
+            command.arg(&prompt);
+        }
+        ProcessProvider::Shell => unreachable!(),
+    }
+
+    let output = tokio::time::timeout(Duration::from_secs(45), command.output())
+        .await
+        .map_err(|_| "pane-title generation timed out after 45 seconds".to_string())?
+        .map_err(|error| format!("failed to start {}: {}", provider.as_str(), error))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("");
+        return Err(format!(
+            "{} title generation failed: {}",
+            provider.as_str(),
+            detail
+        ));
+    }
+
+    let clean = clawtab_lib::telegram::strip_ansi(&String::from_utf8_lossy(&output.stdout));
+    let raw_title = clean
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| format!("{} returned an empty title", provider.as_str()))?;
+    let raw_title = raw_title
+        .strip_prefix("Title:")
+        .unwrap_or(raw_title)
+        .trim()
+        .trim_matches(|character| matches!(character, '`' | '"' | '\''));
+    let mut title = raw_title.split_whitespace().collect::<Vec<_>>().join(" ");
+    if title.chars().count() > 60 {
+        title = title.chars().take(57).collect::<String>();
+        title.push_str("...");
+    }
+    if title.is_empty() {
+        return Err(format!("{} returned an empty title", provider.as_str()));
+    }
+    save_pane_display_name(pane_id, Some(title.clone())).await?;
+    Ok(title)
 }
 
 fn resolve_tmux_pane_format(pane_id: &str, format: &str) -> String {

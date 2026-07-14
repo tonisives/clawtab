@@ -133,6 +133,8 @@ export interface AppSettings {
   default_work_dir: string;
   default_provider: ProcessProvider;
   default_model: string | null;
+  title_summary_provider: ProcessProvider | null;
+  title_summary_model: string | null;
   enabled_models: Record<string, string[]>;
   claude_path: string;
   preferred_editor: string;

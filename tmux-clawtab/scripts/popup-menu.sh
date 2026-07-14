@@ -41,7 +41,8 @@ set_agent_label() {
 }
 
 META_FILE=$(mktemp /tmp/clawtab-meta-XXXXXX)
-trap 'rm -f "$META_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+TITLE_FILE=""
+trap 'rm -f "$META_FILE" "$TITLE_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # State
 TAB=0
@@ -172,7 +173,6 @@ hfill() {
     for ((i=0; i<n; i++)); do printf '%s' "$BOX_H"; done
 }
 
-
 # Draw left border at start of content row
 draw_row_start() {
     move_to "$1" 1
@@ -239,9 +239,8 @@ draw_status_bar() {
     printf "${C_BORDER}${BOX_BL}${BOX_H} " >&3
     case $TAB in
         0)
-            # "tab switch  j/k scroll  enter run" = 33 visible chars
-            printf "${C_DIM}tab${C_RESET}${C_STATUS} switch  ${C_DIM}j/k${C_RESET}${C_STATUS} scroll  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}" >&3
-            text_len=33
+            printf "${C_DIM}up/down${C_RESET}${C_STATUS} navigate  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}" >&3
+            text_len=27
             ;;
         1|2)
             local sel_count=0
@@ -286,11 +285,12 @@ draw_search_bar() {
 
 # Shortcuts tab items and cursor
 SHORTCUT_CURSOR=0
-SHORTCUT_ITEMS=("Toggle auto-yes" "Fork session")
+SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Fork session")
 
 # Session info (loaded once)
 SESSION_ID=""
 SESSION_RESTORE_COMMAND=""
+SESSION_DISPLAY_NAME=""
 SESSION_FIRST_QUERY=""
 SESSION_LAST_QUERY=""
 SESSION_STARTED_AT=""
@@ -348,6 +348,7 @@ load_session_info() {
 
     SESSION_ID=""
     SESSION_RESTORE_COMMAND=""
+    SESSION_DISPLAY_NAME=""
     SESSION_FIRST_QUERY=""
     SESSION_LAST_QUERY=""
     SESSION_STARTED_AT=""
@@ -363,6 +364,7 @@ load_session_info() {
     if [ -n "$raw" ]; then
         SESSION_ID=$(echo "$raw" | grep '^session_id=' | cut -d= -f2-)
         SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
+        SESSION_DISPLAY_NAME=$(echo "$raw" | grep '^display_name=' | cut -d= -f2-)
         SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
         SESSION_LAST_QUERY=$(echo "$raw" | grep '^last_query=' | cut -d= -f2-)
         local epoch
@@ -655,8 +657,9 @@ draw_shortcuts() {
 
         # Key hint
         local hint=""
-        if [ $i -eq 0 ]; then hint="y"; fi
-        if [ $i -eq 1 ]; then hint="f"; fi
+        if [ $i -eq 0 ]; then hint="r / R AI"; fi
+        if [ $i -eq 1 ]; then hint="y"; fi
+        if [ $i -eq 2 ]; then hint="f"; fi
 
         if [ $i -eq $SHORTCUT_CURSOR ]; then
             printf "${C_SELECTED} > %s ${C_RESET}" "$label" >&3
@@ -665,7 +668,7 @@ draw_shortcuts() {
         fi
 
         # Add status info
-        if [ $i -eq 0 ]; then
+        if [ $i -eq 1 ]; then
             current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-auto-yes)
             if [ "$current" = "1" ]; then
                 printf " ${C_CHECK_ON}ON${C_RESET}" >&3
@@ -906,6 +909,37 @@ resolve_pane_path() {
     pane_path=$(tmux list-panes -t "$PANE_ID" -F '#{pane_id} #{pane_current_path}' 2>/dev/null | grep "^${PANE_ID} " | cut -d' ' -f2-)
 }
 
+edit_title() {
+    command -v nvim &>/dev/null || return 0
+    TITLE_FILE=$(mktemp /tmp/clawtab-title-XXXXXX)
+    printf '%s\n' "$SESSION_DISPLAY_NAME" > "$TITLE_FILE"
+    tput cnorm 2>/dev/null >&3
+    nvim "$TITLE_FILE" </dev/tty >/dev/tty 2>/dev/tty
+    tput civis 2>/dev/null >&3
+
+    local title=""
+    IFS= read -r title < "$TITLE_FILE" || true
+    rm -f "$TITLE_FILE"
+    TITLE_FILE=""
+    title="${title#"${title%%[![:space:]]*}"}"
+    title="${title%"${title##*[![:space:]]}"}"
+    if cwtctl agent rename "$PANE_ID" "$title" >/dev/null 2>&1; then
+        SESSION_DISPLAY_NAME="$title"
+    fi
+}
+
+ai_rename_title() {
+    command -v cwtctl &>/dev/null || return 0
+    draw_empty_row 2
+    draw_row_start 3
+    printf "${C_SEARCH}Generating title...${C_RESET}" >&3
+    draw_row_end 3
+    local title
+    if title=$(cwtctl agent ai-rename "$PANE_ID" 2>/dev/null); then
+        SESSION_DISPLAY_NAME="$title"
+    fi
+}
+
 # Actions
 do_enter() {
     local sel_count secret_count
@@ -913,12 +947,17 @@ do_enter() {
         0)
             case $SHORTCUT_CURSOR in
                 0)
+                    edit_title
+                    draw
+                    return 0
+                    ;;
+                1)
                     "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
                     draw_shortcuts
                     draw_status_bar
                     return 0
                     ;;
-                1)
+                2)
                     "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
                     return 1
                     ;;
@@ -993,7 +1032,7 @@ EOF
 do_space() {
     case $TAB in
         0)
-            if [ $SHORTCUT_CURSOR -eq 0 ]; then
+            if [ $SHORTCUT_CURSOR -eq 1 ]; then
                 "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
                 draw_shortcuts
                 draw_status_bar
@@ -1056,6 +1095,34 @@ draw() {
     draw_status_bar
 }
 
+# Read the bytes after Escape. A non-zero timeout is required: in bash,
+# `read -t 0` only checks whether input is available and does not consume it.
+read_escape_key() {
+    local k2="" k3=""
+    if ! IFS= read -rsn1 -t 0.15 k2; then
+        echo "esc"
+        return
+    fi
+    if [ "$k2" != "[" ] && [ "$k2" != "O" ]; then
+        echo "unknown"
+        return
+    fi
+    if ! IFS= read -rsn1 -t 0.15 k3; then
+        echo "unknown"
+        return
+    fi
+    case "$k3" in
+        A) echo "up" ;;
+        B) echo "down" ;;
+        C) echo "right" ;;
+        D) echo "left" ;;
+        H) echo "home" ;;
+        F) echo "end" ;;
+        Z) echo "prev_tab" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
 # Read a single keypress (handles escape sequences)
 read_key() {
     if ! IFS= read -rsn1 -t 1 key; then
@@ -1066,26 +1133,12 @@ read_key() {
         "") echo "enter" ;;
         " ") echo "space" ;;
         $'\t') echo "next_tab" ;;
-        $'\x1b')
-            sleep 0.05
-            read -rsn1 -t 0 k2
-            if [ -z "$k2" ]; then
-                echo "esc"
-                return
-            fi
-            read -rsn1 -t 0 k3
-            case "$k3" in
-                A) echo "up" ;;
-                B) echo "down" ;;
-                C) echo "right" ;;
-                D) echo "left" ;;
-                Z) echo "prev_tab" ;;
-                *) echo "unknown" ;;
-            esac
-            ;;
+        $'\x1b') read_escape_key ;;
         "j") echo "down" ;;
         "k") echo "up" ;;
         "q") echo "esc" ;;
+        "r") echo "shortcut_r" ;;
+        "R") echo "shortcut_ai_rename" ;;
         "y") echo "shortcut_y" ;;
         "f") echo "shortcut_f" ;;
         "/") echo "search" ;;
@@ -1103,21 +1156,7 @@ read_search_key() {
     case "$key" in
         "") echo "enter" ;;
         $'\t') echo "next_tab" ;;
-        $'\x1b')
-            sleep 0.05
-            read -rsn1 -t 0 k2
-            if [ -z "$k2" ]; then
-                echo "esc"
-                return
-            fi
-            read -rsn1 -t 0 k3
-            case "$k3" in
-                A) echo "up" ;;
-                B) echo "down" ;;
-                Z) echo "prev_tab" ;;
-                *) echo "unknown" ;;
-            esac
-            ;;
+        $'\x1b') read_escape_key ;;
         $'\x7f') echo "backspace" ;;
         *) echo "char:$key" ;;
     esac
@@ -1130,7 +1169,7 @@ exec 3>&1 1>/dev/null
 # Hide cursor, enable alternate screen
 tput civis 2>/dev/null >&3
 printf '\033[?1049h' >&3
-trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$DATA_PID" ]; then kill "$DATA_PID" 2>/dev/null || true; fi; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$DATA_PID" ]; then kill "$DATA_PID" 2>/dev/null || true; fi; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$TITLE_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # Initial draw
 draw
@@ -1292,8 +1331,8 @@ while true; do
                 else
                     # Scroll last query if there are more lines
                     wrap_query_lines "$SESSION_LAST_QUERY"
-                    local q_total=${#QUERY_LINES[@]}
-                    local q_avail=$((TERM_ROWS - 4 - ${#SHORTCUT_ITEMS[@]} - 6))
+                    q_total=${#QUERY_LINES[@]}
+                    q_avail=$((TERM_ROWS - 4 - ${#SHORTCUT_ITEMS[@]} - 6))
                     [ $q_avail -lt 1 ] && q_avail=1
                     if [ $((QUERY_SCROLL + q_avail)) -lt $q_total ]; then
                         ((QUERY_SCROLL++))
@@ -1327,6 +1366,18 @@ while true; do
         enter)
             if ! do_enter; then
                 break
+            fi
+            ;;
+        shortcut_r)
+            if [ $TAB -eq 0 ]; then
+                edit_title
+                draw
+            fi
+            ;;
+        shortcut_ai_rename)
+            if [ $TAB -eq 0 ]; then
+                ai_rename_title
+                draw
             fi
             ;;
         shortcut_y)

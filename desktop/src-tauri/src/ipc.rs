@@ -179,8 +179,16 @@ pub enum PaneDirection {
 /// daemon never deserializes UI variants.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum DesktopIpcCommand {
-    FocusPane { direction: PaneDirection },
-    OpenPane { pane_id: String },
+    FocusPane {
+        direction: PaneDirection,
+    },
+    OpenPane {
+        pane_id: String,
+    },
+    RenamePane {
+        pane_id: String,
+        display_name: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

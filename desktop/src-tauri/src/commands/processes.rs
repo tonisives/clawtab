@@ -544,6 +544,14 @@ pub fn set_detected_process_display_name(
     pane_id: String,
     display_name: Option<String>,
 ) -> Result<(), String> {
+    set_process_display_name(&state, pane_id, display_name)
+}
+
+pub fn set_process_display_name(
+    state: &AppState,
+    pane_id: String,
+    display_name: Option<String>,
+) -> Result<(), String> {
     let mut overrides = state.process_overrides.lock();
     let entry = overrides.entry(pane_id).or_default();
     entry.display_name = display_name.and_then(normalize_optional_text);
@@ -620,7 +628,7 @@ fn prune_empty_overrides(overrides: &mut HashMap<String, DetectedProcessOverride
 }
 
 fn persist_process_overrides(
-    state: &State<'_, AppState>,
+    state: &AppState,
     overrides: HashMap<String, DetectedProcessOverride>,
 ) -> Result<(), String> {
     let mut settings = state.settings.lock();

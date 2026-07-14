@@ -521,6 +521,16 @@ fn dispatch_desktop_ipc(
             let _ = app_handle.emit("open-pane", pane_id);
             ipc::IpcResponse::Ok
         }
+        ipc::DesktopIpcCommand::RenamePane {
+            pane_id,
+            display_name,
+        } => {
+            let state = app_handle.state::<AppState>();
+            match commands::processes::set_process_display_name(&state, pane_id, display_name) {
+                Ok(()) => ipc::IpcResponse::Ok,
+                Err(error) => ipc::IpcResponse::Error(error),
+            }
+        }
     }
 }
 
