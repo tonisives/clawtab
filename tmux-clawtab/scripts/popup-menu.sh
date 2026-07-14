@@ -556,13 +556,13 @@ start_data_load() {
 
         (
             if command -v cwtctl &>/dev/null; then
-                cwtctl pane-info "$PANE_ID" 2>/dev/null
+                cwtctl agent info "$PANE_ID" 2>/dev/null
             fi
         ) > "$DATA_SESSION_FILE" &
 
         (
             if command -v cwtctl &>/dev/null; then
-                cwtctl pane-info restore-command "$PANE_ID" 2>/dev/null
+                cwtctl agent info restore-command "$PANE_ID" 2>/dev/null
             fi
         ) > "$DATA_RESTORE_FILE" &
 

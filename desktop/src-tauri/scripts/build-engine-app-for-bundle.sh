@@ -12,11 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_TAURI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-# Match the CARGO_TARGET_DIR used by the Makefile so we hit the same cache.
-# Fall back to the local target/ when running outside the Makefile.
-CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${CARGO_TARGET_ROOT:-$SRC_TAURI_DIR/target}}"
-export CARGO_TARGET_DIR
+. "$SRC_TAURI_DIR/../local-dev/paths.sh"
 
 cd "$SRC_TAURI_DIR"
 

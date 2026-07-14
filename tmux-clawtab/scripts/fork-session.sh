@@ -14,7 +14,7 @@ pane_path=$(tmux display-message -t "$pane_id" -p '#{pane_current_path}')
 
 restore_command=""
 if command -v cwtctl >/dev/null 2>&1; then
-    restore_command=$(cwtctl pane-info restore-command "$pane_id" 2>/dev/null || true)
+    restore_command=$(cwtctl agent info restore-command "$pane_id" 2>/dev/null || true)
 fi
 
 case "$restore_command" in

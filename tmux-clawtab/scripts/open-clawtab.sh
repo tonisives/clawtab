@@ -11,7 +11,7 @@ if ! command -v cwtctl &>/dev/null; then
     exit 1
 fi
 
-result=$(cwtctl open "$pane_id" 2>&1)
+result=$(cwtctl pane open "$pane_id" 2>&1)
 if [ $? -ne 0 ]; then
     tmux display-message "ClawTab: $result"
 fi

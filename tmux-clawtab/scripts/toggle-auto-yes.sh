@@ -17,11 +17,11 @@ fi
 # A silent failure here (e.g. cwtctl missing) would leave the [Y] indicator
 # showing while the daemon never auto-answers.
 if ! command -v cwtctl >/dev/null 2>&1; then
-    tmux display-message "clawtab: cwtctl not found in PATH - run 'make build-cwtctl'"
+    tmux display-message "clawtab: cwtctl not found in PATH - run 'make cwtctl-build && make cwtctl-copy-local'"
     exit 1
 fi
 
-if ! out=$(cwtctl auto-yes toggle "$pane_id" 2>&1); then
+if ! out=$(cwtctl agent auto-yes toggle "$pane_id" 2>&1); then
     tmux display-message "clawtab: auto-yes toggle failed: $out"
     exit 1
 fi

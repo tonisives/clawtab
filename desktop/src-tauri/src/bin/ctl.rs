@@ -24,20 +24,20 @@ fn print_usage() {
     eprintln!(
         "  usage <provider>  Show local provider quota usage (claude, codex, antigravity, zai)"
     );
-    eprintln!("  auto-yes          Show auto-yes panes");
-    eprintln!("  auto-yes toggle [pane_id]  Toggle auto-yes for pane (uses $TMUX_PANE if omitted)");
-    eprintln!("  auto-yes check [pane_id]   Check if pane has auto-yes (exit 0=on, 1=off)");
-    eprintln!("  pane-info [pane_id]        Show first query and session date for an agent pane");
-    eprintln!("  pane-info restore-command [pane_id]  Print a restore command for an agent pane");
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret value (single key) or KEY=VALUE lines (multiple keys)");
     eprintln!("  secrets insert [--yes] <key> <value>  Store a secret; confirms before overwrite");
     eprintln!("  secrets delete [--yes] <key>          Delete a secret; confirms first");
     eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
     eprintln!();
+    eprintln!("Agent:");
+    eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
+    eprintln!("  agent info [pane_id]                      Show agent session info");
+    eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
+    eprintln!();
     eprintln!("Pane (require desktop app):");
     eprintln!(
-        "  open [pane_id]              Open tmux pane in ClawTab (uses $TMUX_PANE if omitted)"
+        "  pane open [pane_id]         Open tmux pane in ClawTab (uses $TMUX_PANE if omitted)"
     );
     eprintln!("  pane focus <left|right|up|down>  Move focus between ClawTab panes");
     eprintln!();
@@ -70,6 +70,19 @@ fn is_jobs_subcommand(command: &str) -> bool {
     )
 }
 
+fn print_agent_usage() {
+    eprintln!("Usage: cwtctl agent <command> [args]");
+    eprintln!();
+    eprintln!("Commands:");
+    eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
+    eprintln!("  agent info [pane_id]                      Show agent session info");
+    eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
+}
+
+fn is_agent_subcommand(command: &str) -> bool {
+    matches!(command, "auto-yes" | "info")
+}
+
 fn require_job_reference(args: &[String], command: &str) -> String {
     match args.len() {
         3 => args[2].clone(),
@@ -94,6 +107,7 @@ async fn main() {
     }
 
     let jobs_scope = raw_args[1] == "jobs";
+    let agent_scope = raw_args[1] == "agent";
     if jobs_scope {
         match raw_args.get(2).map(String::as_str) {
             None => {
@@ -113,9 +127,28 @@ async fn main() {
         }
     }
 
+    if agent_scope {
+        match raw_args.get(2).map(String::as_str) {
+            None => {
+                print_agent_usage();
+                std::process::exit(1);
+            }
+            Some("help" | "-h" | "--help") => {
+                print_agent_usage();
+                std::process::exit(0);
+            }
+            Some(subcommand) if !is_agent_subcommand(subcommand) => {
+                eprintln!("Unknown agent subcommand: {}", subcommand);
+                print_agent_usage();
+                std::process::exit(1);
+            }
+            Some(_) => {}
+        }
+    }
+
     // Keep the existing command routing and positional argument handling by
     // removing the `jobs` namespace before dispatching its subcommand.
-    let args = if jobs_scope {
+    let args = if jobs_scope || agent_scope {
         let mut normalized = Vec::with_capacity(raw_args.len() - 1);
         normalized.push(raw_args[0].clone());
         normalized.extend(raw_args[2..].iter().cloned());
@@ -136,6 +169,23 @@ async fn main() {
             "Job commands are under the jobs namespace: cwtctl jobs {}",
             command
         );
+        std::process::exit(1);
+    }
+
+    if !agent_scope && matches!(command, "auto-yes" | "pane-info") {
+        eprintln!(
+            "Agent commands are under the agent namespace: cwtctl agent {}",
+            if command == "pane-info" {
+                "info"
+            } else {
+                command
+            }
+        );
+        std::process::exit(1);
+    }
+
+    if command == "open" {
+        eprintln!("Pane commands are under the pane namespace: cwtctl pane open");
         std::process::exit(1);
     }
 
@@ -161,22 +211,22 @@ async fn main() {
     }
 
     let target = match command {
-        "open" => {
-            let pane_id = if args.len() >= 3 {
-                args[2].clone()
-            } else {
-                env::var("TMUX_PANE").unwrap_or_else(|_| {
-                    eprintln!(
-                        "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
-                    );
-                    std::process::exit(1);
-                })
-            };
-            Target::Desktop(DesktopIpcCommand::OpenPane { pane_id })
-        }
         "pane" => {
             let sub = args.get(2).map(String::as_str).unwrap_or("");
             match sub {
+                "open" => {
+                    let pane_id = if args.len() >= 4 {
+                        args[3].clone()
+                    } else {
+                        env::var("TMUX_PANE").unwrap_or_else(|_| {
+                            eprintln!(
+                                "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
+                            );
+                            std::process::exit(1);
+                        })
+                    };
+                    Target::Desktop(DesktopIpcCommand::OpenPane { pane_id })
+                }
                 "focus" => {
                     let dir_str = args.get(3).map(String::as_str).unwrap_or("");
                     let direction = match dir_str {
@@ -201,7 +251,7 @@ async fn main() {
                     Target::Desktop(DesktopIpcCommand::FocusPane { direction })
                 }
                 "" => {
-                    eprintln!("Error: 'pane' requires a subcommand (focus)");
+                    eprintln!("Error: 'pane' requires a subcommand (open|focus)");
                     std::process::exit(1);
                 }
                 other => {
@@ -221,7 +271,7 @@ async fn main() {
             name: require_job_reference(&args, "jobs restart"),
         }),
         "status" => Target::Daemon(IpcCommand::GetStatus),
-        "pane-info" => {
+        "info" => {
             let restore_command = args.get(2).is_some_and(|arg| arg == "restore-command");
             let pane_arg_index = if restore_command { 3 } else { 2 };
             let pane_id = if args.len() > pane_arg_index {

@@ -118,7 +118,7 @@ pub fn install() -> Result<String, String> {
     let _ = std::fs::create_dir_all("/tmp/clawtab");
 
     if !std::path::Path::new(ENGINE_EXECUTABLE_PATH).exists() {
-        return Err("ClawTab Daemon.app not found. Run 'make build-daemon' first.".into());
+        return Err("ClawTab Daemon.app not found. Run 'make daemon-build && make daemon-copy-local' first.".into());
     }
 
     std::fs::write(&dest, PLIST_CONTENT).map_err(|e| format!("Failed to write plist: {}", e))?;

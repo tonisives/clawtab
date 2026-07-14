@@ -24,12 +24,18 @@ cwtctl <command> [args]
 | `jobs restart <group>/<job>` | Restart a completed/failed job |
 | `jobs status` | Show all job statuses as JSON |
 | `usage <provider>` | Show local quota usage for `claude`, `codex`, `antigravity`, or `zai` |
-| `auto-yes` | Show panes with auto-yes enabled |
-| `auto-yes toggle [pane_id]` | Toggle auto-yes for a pane |
-| `auto-yes check [pane_id]` | Check auto-yes (exit 0=on, 1=off) |
-| `pane-info [pane_id]` | First query / session date for a Claude pane |
 | `secrets` / `secrets get <k>...` | Secret access |
 | `telegram send <message>` | Send a Telegram message |
+
+### Agent commands
+
+| Command | Description |
+|---------|-------------|
+| `agent auto-yes` | Show panes with auto-yes enabled |
+| `agent auto-yes toggle [pane_id]` | Toggle auto-yes for a pane |
+| `agent auto-yes check [pane_id]` | Check auto-yes (exit 0=on, 1=off) |
+| `agent info [pane_id]` | Show first query / session date for an agent pane |
+| `agent info restore-command [pane_id]` | Print a restore command for an agent pane |
 
 ### Daemon lifecycle commands
 
@@ -47,7 +53,7 @@ cwtctl <command> [args]
 
 | Command | Description |
 |---------|-------------|
-| `open [pane_id]` | Open a tmux pane in the ClawTab GUI |
+| `pane open [pane_id]` | Open a tmux pane in the ClawTab GUI |
 | `pane focus <left\|right\|up\|down>` | Move focus between ClawTab panes |
 
 `pane focus` is intended to be called from `tmux.conf` and vim/nvim configs to share `Ctrl-h/j/k/l` navigation between vim windows, tmux panes, and ClawTab panes. See [Vim / Tmux Navigation](./vim-tmux-navigation.md).
