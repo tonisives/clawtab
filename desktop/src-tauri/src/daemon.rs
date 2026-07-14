@@ -5,8 +5,7 @@ use std::time::Duration;
 use crate::ipc::{self, IpcCommand, IpcResponse};
 
 pub const PLIST_LABEL: &str = "com.clawtab.daemon";
-pub const ENGINE_EXECUTABLE_PATH: &str =
-    "/usr/local/ClawTab Daemon.app/Contents/MacOS/ClawTab Daemon";
+pub const ENGINE_EXECUTABLE_PATH: &str = "/usr/local/bin/clawtab-daemon";
 
 pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -16,9 +15,7 @@ pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <string>com.clawtab.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/open</string>
-        <string>-W</string>
-        <string>/usr/local/ClawTab Daemon.app</string>
+        <string>/usr/local/bin/clawtab-daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -118,7 +115,10 @@ pub fn install() -> Result<String, String> {
     let _ = std::fs::create_dir_all("/tmp/clawtab");
 
     if !std::path::Path::new(ENGINE_EXECUTABLE_PATH).exists() {
-        return Err("ClawTab Daemon.app not found. Run 'make daemon-build && make daemon-copy-local' first.".into());
+        return Err(
+            "clawtab-daemon not found. Run 'make daemon-build && make daemon-copy-local' first."
+                .into(),
+        );
     }
 
     std::fs::write(&dest, PLIST_CONTENT).map_err(|e| format!("Failed to write plist: {}", e))?;

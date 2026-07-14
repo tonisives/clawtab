@@ -12,7 +12,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_TAURI_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-. "$SRC_TAURI_DIR/../local-dev/paths.sh"
+
+# Match the shared target directory used by the Makefile when provided, and
+# fall back to the local target directory for standalone Tauri builds.
+CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-${CARGO_TARGET_ROOT:-$SRC_TAURI_DIR/target}}"
+export CARGO_TARGET_DIR
 
 cd "$SRC_TAURI_DIR"
 
