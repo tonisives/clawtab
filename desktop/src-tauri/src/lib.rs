@@ -880,6 +880,7 @@ pub fn run() {
             commands::processes::set_auto_yes_panes,
             commands::processes::set_protected_panes,
             commands::processes::set_detected_process_display_name,
+            commands::processes::clear_agent_pane_title,
             commands::processes::set_detected_process_group,
             commands::processes::set_detected_process_queries,
             commands::processes::sigint_detected_process,

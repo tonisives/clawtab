@@ -8,5 +8,5 @@ PANE_ID="$1"
 PANE_FILE=$(mktemp /tmp/clawtab-pane-XXXXXX)
 echo "$PANE_ID" > "$PANE_FILE"
 "$CURRENT_DIR/display-pane-popup.sh" "$PANE_ID" 95% 95% \
-    --no-border -s 'bg=default,fg=default' \
+    --no-border -s 'bg=terminal,fg=terminal' \
     "$CURRENT_DIR/popup-menu.sh" "$PANE_FILE"

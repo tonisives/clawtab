@@ -100,6 +100,42 @@ clear_activity_options() {
     done
 }
 
+clear_agent_pane_title() {
+    pane_id="$1"
+    display_name="$(tmux show-option -pqv -t "$pane_id" @clawtab-display-name 2>/dev/null || true)"
+    [ -n "$display_name" ] || return
+
+    # cwtctl also removes the persisted process override, preventing this
+    # agent's title from being reused if another agent starts in the pane.
+    if command -v cwtctl >/dev/null 2>&1 &&
+        cwtctl agent rename "$pane_id" "" >/dev/null 2>&1; then
+        return
+    fi
+
+    # Keep the visible tmux state correct even when cwtctl is unavailable.
+    tmux select-pane -t "$pane_id" -T "" 2>/dev/null || true
+    tmux set-option -pqu -t "$pane_id" @clawtab-display-name 2>/dev/null || true
+}
+
+stage_agent_pane_options() {
+    tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r pane_id; do
+        [ -n "$pane_id" ] || continue
+        tmux set-option -pq -t "$pane_id" @clawtab-agent-pane-present-next 0 2>/dev/null || true
+    done
+}
+
+commit_agent_pane_options() {
+    tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r pane_id; do
+        [ -n "$pane_id" ] || continue
+        was_present="$(tmux show-option -pqv -t "$pane_id" @clawtab-agent-pane-present 2>/dev/null || true)"
+        is_present="$(tmux show-option -pqv -t "$pane_id" @clawtab-agent-pane-present-next 2>/dev/null || true)"
+        if [ "$was_present" = "1" ] && [ "$is_present" != "1" ]; then
+            clear_agent_pane_title "$pane_id"
+        fi
+        tmux set-option -pq -t "$pane_id" @clawtab-agent-pane-present "${is_present:-0}" 2>/dev/null || true
+    done
+}
+
 stage_activity_options() {
     tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r window_id; do
         [ -n "$window_id" ] || continue
@@ -136,6 +172,7 @@ apply_snapshot() {
     fi
 
     stage_activity_options
+    stage_agent_pane_options
     printf '%s\n' "$snapshot" | "$JQ_BIN" -r \
         '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring)] | @tsv' \
         2>/dev/null | while IFS=$'\t' read -r pane_id working asking; do
@@ -143,6 +180,7 @@ apply_snapshot() {
         window_id="$(tmux display-message -p -t "$pane_id" '#{window_id}' 2>/dev/null || true)"
         [ -n "$window_id" ] || continue
 
+        tmux set-option -pq -t "$pane_id" @clawtab-agent-pane-present-next 1 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 1 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 1 2>/dev/null || true
         if [ "$working" = "true" ]; then
@@ -153,6 +191,7 @@ apply_snapshot() {
         fi
     done
     commit_staged_activity_options
+    commit_agent_pane_options
 }
 
 fetch_snapshot() {

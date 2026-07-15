@@ -547,6 +547,12 @@ pub fn set_detected_process_display_name(
     set_process_display_name(&state, pane_id, display_name)
 }
 
+#[tauri::command]
+pub fn clear_agent_pane_title(state: State<'_, AppState>, pane_id: String) -> Result<(), String> {
+    crate::tmux::clear_pane_display_name(&pane_id)?;
+    set_process_display_name(&state, pane_id, None)
+}
+
 pub fn set_process_display_name(
     state: &AppState,
     pane_id: String,

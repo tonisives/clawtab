@@ -279,6 +279,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
 
     Promise.all(
       removed.map(async (process): Promise<ShellPane | null> => {
+        await invoke("clear_agent_pane_title", { paneId: process.pane_id }).catch(() => {});
         const info = await invoke<ExistingPaneInfo | null>("get_existing_pane_info", { paneId: process.pane_id }).catch(() => null);
         if (!info) return null;
         const shell: ShellPane = {
@@ -288,7 +289,7 @@ export function useProcessLifecycle({ core, split, viewing }: UseProcessLifecycl
           window_name: info.window_name,
           pane_title: info.pane_title ?? null,
           matched_group: process.matched_group ?? info.matched_group ?? null,
-          display_name: process.display_name ?? null,
+          display_name: null,
         };
         return shell;
       }),

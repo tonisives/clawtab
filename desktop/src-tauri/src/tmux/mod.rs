@@ -323,6 +323,45 @@ pub fn set_pane_title(pane_id: &str, title: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Remove a ClawTab-managed display name from a pane that has returned to a
+/// plain shell after its agent exits.
+pub fn clear_pane_display_name(pane_id: &str) -> Result<(), String> {
+    let display_name = run(
+        &[
+            "show-option",
+            "-pqv",
+            "-t",
+            pane_id,
+            "@clawtab-display-name",
+        ],
+        "tmux::clear_pane_display_name::show_option",
+    )
+    .map_err(|e| format!("Failed to inspect pane display name: {}", e))?;
+
+    if !display_name.status.success() {
+        let stderr = String::from_utf8_lossy(&display_name.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    if !String::from_utf8_lossy(&display_name.stdout)
+        .trim()
+        .is_empty()
+    {
+        set_pane_title(pane_id, "")?;
+    }
+
+    let output = run(
+        &["set-option", "-pqu", "-t", pane_id, "@clawtab-display-name"],
+        "tmux::clear_pane_display_name",
+    )
+    .map_err(|e| format!("Failed to clear pane display name: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(())
+}
+
 /// Tag a pane with the owning job's slug via a tmux per-pane user option.
 /// Unlike pane_title, this can't be overwritten by the running process's
 /// terminal output, so it survives the whole lifetime of the pane.
