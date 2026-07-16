@@ -13,11 +13,37 @@ pub struct DetectedProcessOverride {
     pub display_name: Option<String>,
     pub first_query: Option<String>,
     pub last_query: Option<String>,
+    /// Identity of the tmux pane process when this override was saved.
+    /// Pane IDs are recycled after tmux server restarts, so the ID alone is
+    /// not sufficient to associate metadata with a logical pane.
+    #[serde(default)]
+    pub pane_pid: Option<String>,
+    /// Agent session identity when available. This prevents metadata from a
+    /// completed agent from leaking into a new agent started in the same pane.
+    #[serde(default)]
+    pub session_id: Option<String>,
     /// Group override for process detection.
     /// `None` = no override (use normal matching logic).
     /// `Some("")` = explicitly independent (no group).
     /// `Some("group_name")` = pinned to a specific group.
     pub group_override: Option<String>,
+}
+
+impl DetectedProcessOverride {
+    pub fn matches_identity(&self, pane_pid: &str, session_id: Option<&str>) -> bool {
+        // Unscoped legacy entries cannot be distinguished from metadata for a
+        // recycled pane ID, so require a saved pane PID before applying them.
+        self.pane_pid.as_deref() == Some(pane_pid)
+            && self
+                .session_id
+                .as_deref()
+                .is_none_or(|saved_session_id| Some(saved_session_id) == session_id)
+    }
+
+    pub fn set_identity(&mut self, pane_pid: String, session_id: Option<String>) {
+        self.pane_pid = Some(pane_pid);
+        self.session_id = session_id;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,5 +275,23 @@ impl AppSettings {
         let contents =
             serde_yml::to_string(self).map_err(|e| format!("Failed to serialize: {}", e))?;
         std::fs::write(&path, contents).map_err(|e| format!("Failed to write settings: {}", e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DetectedProcessOverride;
+
+    #[test]
+    fn process_override_identity_rejects_recycled_panes_and_sessions() {
+        let mut process_override = DetectedProcessOverride::default();
+        assert!(!process_override.matches_identity("100", Some("session-a")));
+
+        process_override.set_identity("100".to_string(), Some("session-a".to_string()));
+
+        assert!(process_override.matches_identity("100", Some("session-a")));
+        assert!(!process_override.matches_identity("101", Some("session-a")));
+        assert!(!process_override.matches_identity("100", Some("session-b")));
+        assert!(!process_override.matches_identity("100", None));
     }
 }

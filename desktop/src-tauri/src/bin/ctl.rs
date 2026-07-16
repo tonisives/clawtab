@@ -330,7 +330,10 @@ async fn main() {
                 println!("started_epoch={}", epoch);
             }
             let settings = clawtab_lib::config::settings::AppSettings::load();
-            let process_override = settings.process_overrides.get(&pane_id);
+            let process_override = settings
+                .process_overrides
+                .get(&pane_id)
+                .filter(|meta| meta.matches_identity(&pane_pid, info.session_id.as_deref()));
             let display_name = process_override.and_then(|meta| meta.display_name.as_ref());
             let first_query = process_override
                 .and_then(|meta| meta.first_query.as_ref())
@@ -1033,6 +1036,24 @@ async fn save_pane_display_name(pane_id: &str, display_name: Option<String>) -> 
         .entry(pane_id.to_string())
         .or_default();
     entry.display_name = display_name;
+    if entry.display_name.is_some() {
+        let pane_pid = resolve_tmux_pane_format(pane_id, "#{pane_pid}");
+        let pane_cwd = resolve_tmux_pane_format(pane_id, "#{pane_current_path}");
+        if !pane_pid.is_empty() {
+            let snapshot = clawtab_lib::agent_session::ProcessSnapshot::capture();
+            let provider =
+                clawtab_lib::agent_session::detect_process_provider(&pane_pid, Some(&snapshot));
+            let session_id =
+                clawtab_lib::agent_session::resolve_session_info_for_provider_with_cwd(
+                    &pane_pid,
+                    provider,
+                    Some(&snapshot),
+                    (!pane_cwd.is_empty()).then_some(pane_cwd.as_str()),
+                )
+                .session_id;
+            entry.set_identity(pane_pid, session_id);
+        }
+    }
     if entry.display_name.is_none()
         && entry.first_query.is_none()
         && entry.last_query.is_none()

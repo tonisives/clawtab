@@ -420,12 +420,9 @@ fn provider_from_tmux_command(command: &str) -> Option<ProcessProvider> {
 fn resolve_group_and_job(
     row: &PaneRow<'_>,
     ctx: &DetectCtx<'_>,
+    override_meta: Option<&DetectedProcessOverride>,
 ) -> (Option<String>, Option<String>) {
-    if let Some(group_val) = ctx
-        .overrides
-        .get(row.pane_id)
-        .and_then(|o| o.group_override.as_ref())
-    {
+    if let Some(group_val) = override_meta.and_then(|meta| meta.group_override.as_ref()) {
         let group = if group_val.is_empty() {
             None
         } else {
@@ -496,7 +493,6 @@ fn build_detected_process(
     provider: ProcessProvider,
     ctx: &DetectCtx<'_>,
 ) -> DetectedProcess {
-    let (matched_group, matched_job) = resolve_group_and_job(row, ctx);
     let log_lines = capture_log_lines(row, ctx.live_viewer_panes);
     let session_info = crate::agent_session::resolve_session_info_for_provider_with_cwd(
         row.pane_pid,
@@ -504,7 +500,11 @@ fn build_detected_process(
         Some(ctx.process_snapshot),
         Some(row.cwd),
     );
-    let override_meta = ctx.overrides.get(row.pane_id);
+    let override_meta = ctx
+        .overrides
+        .get(row.pane_id)
+        .filter(|meta| meta.matches_identity(row.pane_pid, session_info.session_id.as_deref()));
+    let (matched_group, matched_job) = resolve_group_and_job(row, ctx, override_meta);
     let (can_fork_session, can_send_skills, can_inject_secrets) = provider_capabilities(provider);
     let version = resolve_version(row, ctx.process_snapshot);
 
@@ -558,9 +558,17 @@ pub fn set_process_display_name(
     pane_id: String,
     display_name: Option<String>,
 ) -> Result<(), String> {
+    let display_name = display_name.and_then(normalize_optional_text);
+    let identity = display_name
+        .as_ref()
+        .map(|_| resolve_process_override_identity(&pane_id))
+        .transpose()?;
     let mut overrides = state.process_overrides.lock();
     let entry = overrides.entry(pane_id).or_default();
-    entry.display_name = display_name.and_then(normalize_optional_text);
+    entry.display_name = display_name;
+    if let Some((pane_pid, session_id)) = identity {
+        entry.set_identity(pane_pid, session_id);
+    }
     prune_empty_overrides(&mut overrides);
     let snapshot = overrides.clone();
     drop(overrides);
@@ -574,10 +582,12 @@ pub fn set_detected_process_queries(
     first_query: Option<String>,
     last_query: Option<String>,
 ) -> Result<(), String> {
+    let identity = resolve_process_override_identity(&pane_id)?;
     let mut overrides = state.process_overrides.lock();
     let entry = overrides.entry(pane_id).or_default();
     entry.first_query = first_query.and_then(normalize_optional_text);
     entry.last_query = last_query.and_then(normalize_optional_text);
+    entry.set_identity(identity.0, identity.1);
     prune_empty_overrides(&mut overrides);
     let snapshot = overrides.clone();
     drop(overrides);
@@ -590,10 +600,12 @@ pub fn set_detected_process_group(
     pane_id: String,
     group: String,
 ) -> Result<(), String> {
+    let identity = resolve_process_override_identity(&pane_id)?;
     let mut overrides = state.process_overrides.lock();
     let entry = overrides.entry(pane_id).or_default();
     // "" signals "independent" (no group); non-empty signals pinned to that group.
     entry.group_override = Some(group.trim().to_string());
+    entry.set_identity(identity.0, identity.1);
     prune_empty_overrides(&mut overrides);
     let snapshot = overrides.clone();
     drop(overrides);
@@ -622,6 +634,48 @@ fn normalize_optional_text(value: String) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn resolve_process_override_identity(pane_id: &str) -> Result<(String, Option<String>), String> {
+    let output = debug_spawn::run_logged(
+        "tmux",
+        &[
+            "display-message",
+            "-t",
+            pane_id,
+            "-p",
+            "#{pane_pid}|CT|#{pane_current_path}",
+        ],
+        "processes::resolve_process_override_identity",
+    )
+    .map_err(|error| format!("Failed to inspect tmux pane: {}", error))?;
+    if !output.status.success() {
+        return Err(format!(
+            "tmux error: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout);
+    let (pane_pid, pane_cwd) = raw
+        .trim_end()
+        .split_once("|CT|")
+        .ok_or_else(|| "tmux returned malformed pane identity".to_string())?;
+    if pane_pid.is_empty() {
+        return Err("tmux returned an empty pane PID".to_string());
+    }
+
+    let snapshot = crate::agent_session::ProcessSnapshot::capture();
+    let provider = detect_process_provider(pane_pid, Some(&snapshot));
+    let session_id = crate::agent_session::resolve_session_info_for_provider_with_cwd(
+        pane_pid,
+        provider,
+        Some(&snapshot),
+        (!pane_cwd.is_empty()).then_some(pane_cwd),
+    )
+    .session_id;
+
+    Ok((pane_pid.to_string(), session_id))
 }
 
 fn prune_empty_overrides(overrides: &mut HashMap<String, DetectedProcessOverride>) {
