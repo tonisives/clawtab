@@ -23,6 +23,13 @@ if [ -n "${TMUX:-}" ]; then
     fi
 fi
 tmux_server_identity="${tmux_server_socket}:${tmux_server_pid}"
+
+tmux_server_is_alive() {
+    current_socket="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
+    current_pid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
+    [ "${current_socket}:${current_pid}" = "$tmux_server_identity" ]
+}
+
 if command -v shasum >/dev/null 2>&1; then
     lock_key="$(printf '%s' "$tmux_server_identity" | shasum -a 256 | cut -c1-16)"
 else
@@ -30,6 +37,7 @@ else
 fi
 [ -n "$lock_key" ] || lock_key="default"
 LOCK_DIR="/tmp/clawtab/tmux-agent-status-${lock_key}.lock"
+EVENT_PIPE="$LOCK_DIR/events"
 
 JQ_BIN="$(command -v jq 2>/dev/null || true)"
 if [ -z "$JQ_BIN" ]; then
@@ -80,7 +88,12 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
     mkdir "$LOCK_DIR" 2>/dev/null || exit 0
 fi
 printf '%s\n' "$$" > "$LOCK_DIR/pid"
+event_nc_pid=""
 cleanup() {
+    if [ -n "$event_nc_pid" ]; then
+        kill -TERM "$event_nc_pid" 2>/dev/null || true
+    fi
+    rm -f "$EVENT_PIPE" 2>/dev/null || true
     rm -f "$LOCK_DIR/pid"
     rmdir "$LOCK_DIR" 2>/dev/null || true
 }
@@ -200,31 +213,89 @@ fetch_snapshot() {
         head -n 1
 }
 
-clear_activity_options
+# Keep the last successfully applied snapshot across short daemon/socket
+# interruptions. Clearing immediately makes every window icon disappear one at
+# a time, then reappear one at a time when the next fetch succeeds.
+FAILURES_BEFORE_CLEAR=15
+consecutive_failures=0
+activity_was_cleared=0
+
+record_snapshot_failure() {
+    consecutive_failures=$((consecutive_failures + 1))
+    if [ "$consecutive_failures" -ge "$FAILURES_BEFORE_CLEAR" ] &&
+        [ "$activity_was_cleared" -eq 0 ]; then
+        clear_activity_options
+        activity_was_cleared=1
+    fi
+}
+
+record_snapshot_success() {
+    consecutive_failures=0
+    activity_was_cleared=0
+}
+
+# Current daemons put the complete activity snapshot in the event itself. Only
+# older QuestionsChanged events need a request-socket fetch. Ignoring unrelated
+# events avoids a request burst when several tmux servers are subscribed.
+snapshot_action_for_event() {
+    printf '%s\n' "$1" | "$JQ_BIN" -c '
+        if type == "object" and has("AgentActivityChanged") then
+            {AgentActivity: .AgentActivityChanged}
+        elif . == "QuestionsChanged" then
+            {FetchAgentActivity: true}
+        else
+            empty
+        end
+    ' 2>/dev/null
+}
 
 while true; do
+    # A listener can outlive the tmux server that launched it because it blocks
+    # on the shared event socket. The timed event read below brings us back here
+    # so stale listeners terminate instead of accumulating forever.
+    if ! tmux_server_is_alive; then
+        exit 0
+    fi
+
     if [ ! -S "$DAEMON_SOCKET" ] || [ ! -S "$EVENT_SOCKET" ]; then
-        clear_activity_options
+        record_snapshot_failure
         sleep 2
         continue
     fi
 
     snapshot="$(fetch_snapshot)"
     if ! apply_snapshot "$snapshot"; then
-        clear_activity_options
+        record_snapshot_failure
         sleep 2
         continue
     fi
+    record_snapshot_success
 
-    # The event payload contains the same snapshot, but fetching through the
-    # request socket keeps this script independent of event JSON shape and
-    # also handles question changes emitted by older daemons.
-    nc -U "$EVENT_SOCKET" 2>/dev/null | while IFS= read -r _event; do
-        next_snapshot="$(fetch_snapshot)"
-        if ! apply_snapshot "$next_snapshot"; then
-            clear_activity_options
+    rm -f "$EVENT_PIPE" 2>/dev/null || true
+    if ! mkfifo "$EVENT_PIPE" 2>/dev/null; then
+        sleep 2
+        continue
+    fi
+    nc -U "$EVENT_SOCKET" >"$EVENT_PIPE" 2>/dev/null &
+    event_nc_pid=$!
+    while IFS= read -r -t 15 event; do
+        action="$(snapshot_action_for_event "$event")"
+        [ -n "$action" ] || continue
+
+        if printf '%s\n' "$action" | "$JQ_BIN" -e 'has("FetchAgentActivity")' >/dev/null 2>&1; then
+            next_snapshot="$(fetch_snapshot)"
+        else
+            next_snapshot="$action"
         fi
-    done
+
+        # A transient event/request failure must not erase a known-good state.
+        # The outer loop handles persistent failures with a grace period.
+        apply_snapshot "$next_snapshot" || true
+    done <"$EVENT_PIPE"
+    kill -TERM "$event_nc_pid" 2>/dev/null || true
+    wait "$event_nc_pid" 2>/dev/null || true
+    event_nc_pid=""
+    rm -f "$EVENT_PIPE" 2>/dev/null || true
 
     sleep 2
 done
