@@ -26,7 +26,9 @@ fn print_usage() {
     );
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret value (single key) or KEY=VALUE lines (multiple keys)");
-    eprintln!("  secrets insert [--yes] <key> <value>  Store a secret; confirms before overwrite");
+    eprintln!(
+        "  secrets insert [--yes] <key>  Prompt for and store a secret; confirms before overwrite"
+    );
     eprintln!("  secrets delete [--yes] <key>          Delete a secret; confirms first");
     eprintln!("  telegram send <message>    Send a Telegram message via configured bot");
     eprintln!();
@@ -872,11 +874,10 @@ async fn handle_secrets_command(args: &[String]) {
         }
         Some("insert") => {
             let (yes, positionals) = parse_secret_args(&args[3..]);
-            if positionals.len() != 2 {
-                exit_error("usage: cwtctl secrets insert [--yes] <key> <value>");
+            if positionals.len() != 1 {
+                exit_error("usage: cwtctl secrets insert [--yes] <key>");
             }
             let key = positionals[0].clone();
-            let value = positionals[1].clone();
             if key.trim().is_empty() {
                 exit_error("secret key cannot be empty");
             }
@@ -884,6 +885,8 @@ async fn handle_secrets_command(args: &[String]) {
             if secret_exists(&key).await && !yes {
                 confirm_or_exit(&format!("Overwrite secret '{}'", key), &key);
             }
+            let value = rpassword::prompt_password("Secret value: ")
+                .unwrap_or_else(|e| exit_error(&format!("failed to read secret value: {}", e)));
 
             match ipc::send_command(IpcCommand::SetSecret {
                 key: key.clone(),

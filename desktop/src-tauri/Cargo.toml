@@ -78,6 +78,7 @@ libc = "0.2"
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 portable-pty = "0.8"
 parking_lot = "0.12"
+rpassword = "7"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.5"
