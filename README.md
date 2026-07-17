@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  <video src="https://cdn.clawtab.cc/assets/home/tmux-main.mp4?v=20260716" poster="https://cdn.clawtab.cc/assets/home/tmux-main-poster.jpg?v=20260716" width="1000" controls autoplay muted loop playsinline>
-    <a href="https://cdn.clawtab.cc/assets/home/tmux-main.mp4?v=20260716">Watch ClawTab running tmux agents</a>
-  </video>
+  <a href="https://cdn.clawtab.cc/assets/home/tmux-main.mp4?v=20260716">
+    <img src="https://cdn.clawtab.cc/assets/home/tmux-main-readme.webp?v=20260717" alt="ClawTab managing live agents in tmux" width="1000" />
+  </a>
 </p>
 
 <p align="center">
@@ -111,15 +111,9 @@ ClawTab uses [xterm.js](https://github.com/xtermjs/xterm.js) to show the same te
   <img src="docs/readme-pics/agent-and-shell-side-by-side.png" alt="An agent and a shell open side by side" width="1000" />
 </p>
 
-## Mind Map
+## Optional GUI and Mind Map
 
-The Mind Map lays out every running Claude Code, Codex, and OpenCode agent as a recency-weighted constellation around its group hub. Recently active agents sit close and large, while idle agents drift to the edge. Click a node to open its live tmux terminal without leaving the canvas.
-
-- **Recency layout** - Card size, opacity, and edge weight reflect recent activity.
-- **Agents and Jobs modes** - Switch between live agent processes and scheduled jobs.
-- **State at a glance** - Working agents and panes waiting for input have distinct states.
-- **Multiple live terminals** - Open several draggable, resizable terminal windows at once.
-- **Spawn from a hub** - Launch a new agent directly into a project group.
+ClawTab works headlessly through tmux, the daemon, and `cwtctl`. The macOS GUI is optional: open it when you want visual split workspaces or a Mind Map of running Claude Code, Codex, and OpenCode agents. Click an agent in the map to open its live tmux terminal, then close the GUI without stopping the session.
 
 <p align="center">
   <img src="https://cdn.clawtab.cc/assets/articles/mind-map/mindmap-claude-and-codex.png" alt="ClawTab Mind Map with agent hubs and live terminal windows" width="1000" />
