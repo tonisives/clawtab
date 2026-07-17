@@ -103,14 +103,6 @@ For an interactive agent job, `cwtctl jobs run` waits for the daemon to publish 
   <img src="https://cdn.clawtab.cc/assets/articles/daemon-tmux/cwtctl-command-groups.png?v=20260716" alt="cwtctl command groups for agents, jobs, panes, secrets, Telegram, and the daemon" width="1000" />
 </p>
 
-## Full Terminal Support
-
-ClawTab uses [xterm.js](https://github.com/xtermjs/xterm.js) to show the same terminal in the desktop and Remote interfaces. You can answer questions, edit in Neovim, and use your full shell configuration. Normal shells can sit beside agent panes and be used for any purpose.
-
-<p align="center">
-  <img src="docs/readme-pics/agent-and-shell-side-by-side.png" alt="An agent and a shell open side by side" width="1000" />
-</p>
-
 ## Optional GUI and Mind Map
 
 ClawTab works headlessly through tmux, the daemon, and `cwtctl`. The macOS GUI is optional: open it when you want visual split workspaces or a Mind Map of running Claude Code, Codex, and OpenCode agents. Click an agent in the map to open its live tmux terminal, then close the GUI without stopping the session.
@@ -129,7 +121,9 @@ Read more in the [Mind Map article](https://clawtab.cc/articles/mind-map).
 - **Multi-agent support** - Follow questions and output across providers, projects, and tmux windows.
 
 <p align="center">
-  <img src="docs/readme-pics/mobile-answer-agent-simulator-to-split-tmux.gif" alt="Answering an agent from the ClawTab mobile app" width="600" />
+  <a href="https://clawtab.cc/assets/remote/app-preview.mp4">
+    <img src="https://cdn.clawtab.cc/assets/remote/app-preview-readme.webp?v=20260717" alt="ClawTab mobile app showing remote agent controls" width="500" />
+  </a>
 </p>
 
 The daemon owns the tmux sessions and connects to the Rust/Axum relay. Web and mobile clients receive terminal output and send input through the relay back to the original pane.
