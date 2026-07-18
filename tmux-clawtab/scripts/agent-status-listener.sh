@@ -12,6 +12,8 @@ fi
 
 DAEMON_SOCKET="/tmp/clawtab.sock"
 EVENT_SOCKET="/tmp/clawtab-events.sock"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PANE_BORDER_CACHE_SCRIPT="$SCRIPT_DIR/pane-border-cache.sh"
 
 tmux_server_socket="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
 tmux_server_pid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
@@ -124,6 +126,8 @@ clear_activity_options() {
 
 clear_agent_pane_title() {
     pane_id="$1"
+    tmux set-option -pqu -t "$pane_id" @clawtab-pane-info 2>/dev/null || true
+    tmux set-option -pqu -t "$pane_id" @clawtab-pane-has-info 2>/dev/null || true
     display_name="$(tmux show-option -pqv -t "$pane_id" @clawtab-display-name 2>/dev/null || true)"
     [ -n "$display_name" ] || return
 
@@ -208,6 +212,8 @@ apply_snapshot() {
             pane)
                 if [ "$first" = "0" ]; then
                     clear_agent_pane_title "$target"
+                elif [ -x "$PANE_BORDER_CACHE_SCRIPT" ]; then
+                    "$PANE_BORDER_CACHE_SCRIPT" "$target" >/dev/null 2>&1 &
                 fi
                 tmux set-option -pq -t "$target" @clawtab-agent-pane-present "$first" 2>/dev/null || true
                 ;;

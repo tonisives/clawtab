@@ -55,9 +55,47 @@ tmux run-shell -b "$listener_command"
 # Append auto-yes indicator to pane-border-format (right-aligned)
 # Uses pane option @clawtab-auto-yes for instant toggle feedback (no shell cache delay)
 current_border=$(tmux show-option -gqv pane-border-format)
+border_cache_enabled=0
+rewrite_pane_info_helper() {
+    local helper_ref="$1"
+    local base_call="#(${helper_ref} '#{pane_id}' '#{pane_width}'"
+    local path_call="${base_call} --path)"
+    local has_info_call="${base_call} --has-info)"
+    local info_call="${base_call})"
+    local path_cache='#{@clawtab-pane-path}'
+    local has_info_cache='#{@clawtab-pane-has-info}'
+    local info_cache='#{@clawtab-pane-info}'
+
+    if [[ "$current_border" == *"$base_call"* ]]; then
+        current_border="${current_border//$path_call/$path_cache}"
+        current_border="${current_border//$has_info_call/$has_info_cache}"
+        current_border="${current_border//$info_call/$info_cache}"
+        border_cache_enabled=1
+    fi
+}
+rewrite_pane_info_helper "~/.config/tmux/clawtab-pane-info.sh"
+rewrite_pane_info_helper "$HOME/.config/tmux/clawtab-pane-info.sh"
+if [[ "$current_border" == *"@clawtab-pane-path"* && "$current_border" == *"@clawtab-pane-info"* ]]; then
+    border_cache_enabled=1
+fi
+
 if [[ "$current_border" != *"clawtab-auto-yes"* ]]; then
     clawtab_part="#[align=right]#{?#{==:#{@clawtab-auto-yes},1},#[fg=green#,bold][Y]#[default],#{?#{||:#{m:*.*.*,#{pane_current_command}},#{||:#{m:*codex*,#{pane_current_command}},#{m:*claude*,#{pane_current_command}}}},#[fg=colour240][y]#[default],}}"
-    tmux set-option -g pane-border-format "${current_border}${clawtab_part}"
+    current_border="${current_border}${clawtab_part}"
+fi
+tmux set-option -g pane-border-format "$current_border"
+
+if [ "$border_cache_enabled" -eq 1 ]; then
+    pane_border_cache_script="$CURRENT_DIR/scripts/pane-border-cache.sh"
+    tmux set-hook -g 'pane-focus-in[100]' \
+        "run-shell -b '$pane_border_cache_script \"#{pane_id}\" \"#{pane_width}\"'"
+    tmux set-hook -g 'after-select-window[100]' \
+        "run-shell -b '$pane_border_cache_script'"
+    tmux set-hook -g 'after-new-window[100]' \
+        "run-shell -b '$pane_border_cache_script'"
+    tmux set-hook -g 'after-split-window[100]' \
+        "run-shell -b '$pane_border_cache_script'"
+    tmux run-shell -b "$pane_border_cache_script"
 fi
 
 # Append activity indicators without replacing a user's existing window
