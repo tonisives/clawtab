@@ -90,6 +90,8 @@ pub struct AppState {
 }
 
 #[cfg(feature = "desktop")]
+const MENU_OPEN_SETTINGS: &str = "open_settings";
+#[cfg(feature = "desktop")]
 const MENU_SHORTCUT_RENAME_ACTIVE_PANE: &str = "shortcut_rename_active_pane";
 #[cfg(feature = "desktop")]
 const MENU_SHORTCUT_FOCUS_AGENT_INPUT: &str = "shortcut_focus_agent_input";
@@ -131,6 +133,7 @@ fn shortcut_binding_to_accelerator(binding: &str) -> Option<String> {
             "tab" => key = Some("Tab".to_string()),
             "enter" | "return" => key = Some("Enter".to_string()),
             "esc" | "escape" => key = Some("Escape".to_string()),
+            "," => key = Some(",".to_string()),
             _ if part.len() == 1 => {
                 let ch = part.chars().next()?;
                 if ch.is_ascii_alphanumeric() {
@@ -209,6 +212,14 @@ fn open_tmux_debug_window(app: &tauri::AppHandle) {
         1100.0,
         760.0,
     );
+}
+
+#[cfg(feature = "desktop")]
+fn show_settings_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 #[cfg(feature = "desktop")]
@@ -313,6 +324,17 @@ pub fn refresh_shortcut_menu(
     let Some(menu) = app.menu() else {
         return Ok(());
     };
+
+    if let Some(app_menu) = find_submenu(&menu, &app.package_info().name) {
+        let settings_accel = shortcut_binding_to_accelerator(&shortcuts.open_settings);
+        let _ = ensure_shortcut_menu_item(
+            app,
+            &app_menu,
+            MENU_OPEN_SETTINGS,
+            "Settings...",
+            settings_accel.as_deref(),
+        )?;
+    }
 
     let pane_menu = if let Some(existing) = find_submenu(&menu, "Pane") {
         existing
@@ -543,10 +565,7 @@ fn register_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     refresh_tray_usage_menu(app.handle(), None)?;
     tray.on_menu_event(|app, event| match event.id.as_ref() {
         "settings" => {
-            if let Some(window) = app.get_webview_window("settings") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_settings_window(app);
         }
         "quit" => {
             focus::suspend_if_enabled(app, "app quit");
@@ -569,6 +588,8 @@ fn build_app_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
         authors: config.bundle.publisher.clone().map(|p| vec![p]),
         ..Default::default()
     };
+    let settings_item =
+        MenuItem::with_id(app, MENU_OPEN_SETTINGS, "Settings...", true, None::<&str>)?;
     let import_item = MenuItem::with_id(app, "import_cwt", "Import Job...", true, None::<&str>)?;
     let debug_item = MenuItem::with_id(app, "view_debug", "Debug", true, None::<&str>)?;
     let pty_debug_item = MenuItem::with_id(app, "view_pty_debug", "PTY Debug", true, None::<&str>)?;
@@ -583,6 +604,8 @@ fn build_app_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
                 true,
                 &[
                     &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &settings_item,
                     &PredefinedMenuItem::separator(app)?,
                     &PredefinedMenuItem::services(app, None)?,
                     &PredefinedMenuItem::separator(app)?,
@@ -648,7 +671,9 @@ fn register_menu_events(app: &tauri::App) {
     app.on_menu_event(|app, event| {
         log::info!("menu_event: id={:?}", event.id.as_ref());
         let id = event.id.as_ref();
-        if id == "import_cwt" {
+        if id == MENU_OPEN_SETTINGS {
+            show_settings_window(app);
+        } else if id == "import_cwt" {
             if let Some(window) = app.get_webview_window("settings") {
                 let _ = window.emit("import-cwt", ());
             }
@@ -917,6 +942,12 @@ pub fn run() {
                 &settings_for_updater,
             )
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                show_settings_window(_app);
+            }
+        });
 }

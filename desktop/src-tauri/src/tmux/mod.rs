@@ -672,38 +672,84 @@ pub fn capture_pane_activity(
     pane_height: u16,
     cursor_y: u16,
 ) -> Result<String, String> {
-    let end = pane_height.saturating_sub(1).to_string();
-    let output = run(
-        &[
-            "capture-pane",
-            "-t",
-            pane_id,
-            "-p",
-            "-e",
-            "-N",
-            "-S",
-            "0",
-            "-E",
-            &end,
-        ],
-        "tmux::capture_pane_activity",
-    )
-    .map_err(|e| format!("Failed to capture pane activity: {}", e))?;
+    capture_pane_activities(&[(pane_id, pane_height, cursor_y)])
+        .map(|mut captures| captures.pop().unwrap_or_default())
+}
+
+/// Capture visible activity for many panes through one tmux client. Starting a
+/// tmux process per pane is expensive when the question detector is monitoring
+/// many fallback agents, while tmux can execute the same command queue in one
+/// connection.
+pub fn capture_pane_activities(panes: &[(&str, u16, u16)]) -> Result<Vec<String>, String> {
+    if panes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut owned_args = Vec::with_capacity(panes.len() * 15 + 5);
+    for (index, (pane_id, pane_height, _cursor_y)) in panes.iter().enumerate() {
+        if index > 0 {
+            owned_args.push(";".to_string());
+        }
+        owned_args.extend([
+            "display-message".to_string(),
+            "-p".to_string(),
+            format!("__CLAWTAB_CAPTURE_{index}__"),
+            ";".to_string(),
+            "capture-pane".to_string(),
+            "-t".to_string(),
+            (*pane_id).to_string(),
+            "-p".to_string(),
+            "-e".to_string(),
+            "-N".to_string(),
+            "-S".to_string(),
+            "0".to_string(),
+            "-E".to_string(),
+            pane_height.saturating_sub(1).to_string(),
+        ]);
+    }
+    owned_args.extend([
+        ";".to_string(),
+        "display-message".to_string(),
+        "-p".to_string(),
+        format!("__CLAWTAB_CAPTURE_{}__", panes.len()),
+    ]);
+    let args: Vec<&str> = owned_args.iter().map(String::as_str).collect();
+    let output = run(&args, "tmux::capture_pane_activities")
+        .map_err(|e| format!("Failed to capture pane activity: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("tmux error: {}", stderr.trim()));
     }
 
-    let cursor_line = usize::from(cursor_y);
-    let captured = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = captured.lines().collect();
-    Ok(lines
+    let mut raw_captures = vec![String::new(); panes.len()];
+    let mut current = None;
+    for line in String::from_utf8_lossy(&output.stdout).split_inclusive('\n') {
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if let Some(index) = trimmed
+            .strip_prefix("__CLAWTAB_CAPTURE_")
+            .and_then(|value| value.strip_suffix("__"))
+            .and_then(|value| value.parse::<usize>().ok())
+        {
+            current = (index < panes.len()).then_some(index);
+        } else if let Some(index) = current {
+            raw_captures[index].push_str(line);
+        }
+    }
+
+    Ok(raw_captures
         .into_iter()
-        .enumerate()
-        .filter_map(|(index, line)| (index != cursor_line).then_some(line))
-        .collect::<Vec<_>>()
-        .join("\n"))
+        .zip(panes)
+        .map(|(captured, (_, _, cursor_y))| {
+            let cursor_line = usize::from(*cursor_y);
+            captured
+                .lines()
+                .enumerate()
+                .filter_map(|(index, line)| (index != cursor_line).then_some(line))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect())
 }
 
 /// List pane IDs in a specific window. Returns panes like `%12`, `%13`.

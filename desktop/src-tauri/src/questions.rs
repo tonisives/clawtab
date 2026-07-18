@@ -30,6 +30,7 @@ type DetectedAgent = (
 );
 
 const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(8);
+const PROCESS_SNAPSHOT_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Strip ANSI escape sequences from text.
 fn strip_ansi(text: &str) -> String {
@@ -479,9 +480,16 @@ pub async fn question_detection_loop(
     let mut auto_answered_ids: HashMap<String, u32> = HashMap::new();
     let mut local_notifications_initialized = false;
     let mut question_signature = String::new();
+    let mut process_snapshot = ProcessSnapshot::capture();
+    let mut process_snapshot_at = Instant::now();
 
     loop {
-        let detection = detect_question_processes(&jobs_config, &job_status, &hook_runtime);
+        if process_snapshot_at.elapsed() >= PROCESS_SNAPSHOT_INTERVAL {
+            process_snapshot = ProcessSnapshot::capture();
+            process_snapshot_at = Instant::now();
+        }
+        let detection =
+            detect_question_processes(&jobs_config, &job_status, &hook_runtime, &process_snapshot);
         let processes = detection.processes;
         log::debug!("[questions] detected {} claude processes", processes.len());
 
@@ -1322,8 +1330,8 @@ fn detect_question_processes(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
     hook_runtime: &HookRuntime,
+    process_snapshot: &ProcessSnapshot,
 ) -> DetectionResult {
-    let process_snapshot = ProcessSnapshot::capture();
     let Some(stdout) = list_panes_for_questions() else {
         return DetectionResult {
             processes: vec![],
@@ -1337,6 +1345,7 @@ fn detect_question_processes(
     let mut all_pane_ids = HashSet::new();
     let mut seen = HashSet::new();
     let mut results = Vec::new();
+    let mut capture_requests = Vec::new();
 
     for line in stdout.lines() {
         let parts: Vec<&str> = line.splitn(10, DETECT_QUESTIONS_SEP).collect();
@@ -1364,10 +1373,10 @@ fn detect_question_processes(
             continue;
         }
 
-        let Some(provider) = detect_process_provider(pane_pid, Some(&process_snapshot)) else {
+        let Some(provider) = detect_process_provider(pane_pid, Some(process_snapshot)) else {
             continue;
         };
-        hook_runtime.bind_process_to_pane(pane_id, pane_pid, provider, &process_snapshot);
+        hook_runtime.bind_process_to_pane(pane_id, pane_pid, provider, process_snapshot);
         log::debug!(
             "[questions] pane {} pid {} detected as {:?}",
             pane_id,
@@ -1382,42 +1391,58 @@ fn detect_question_processes(
         let (matched_group, matched_job) =
             resolve_q_group_job(pane_id, cwd, &running_panes, &match_entries);
 
-        let log_lines = crate::tmux::capture_pane(session, pane_id, 16)
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-        let hook_backed = hook_runtime.pane_state(pane_id, provider).is_some();
-        let activity_history = if hook_backed {
-            String::new()
-        } else {
-            crate::tmux::capture_pane_history(pane_id, 64).unwrap_or_default()
-        };
         let history_size = history_size.parse().unwrap_or_default();
         let pane_width = pane_width.parse().unwrap_or_default();
         let pane_height = pane_height.parse().unwrap_or_default();
         let cursor_y = cursor_y.parse().unwrap_or_default();
-        let activity_visible = if hook_backed {
-            String::new()
-        } else {
-            crate::tmux::capture_pane_activity(pane_id, pane_height, cursor_y).unwrap_or_default()
-        };
+        let hook_state = hook_runtime.pane_state(pane_id, provider);
+        let hook_backed = hook_state.is_some();
+        let should_capture = hook_state.as_ref().is_none_or(|state| {
+            state.state == HookAgentState::Waiting || state.attention.is_some()
+        });
+        if should_capture {
+            capture_requests.push((results.len(), pane_id.to_string(), pane_height, cursor_y));
+        }
 
         results.push((
             pane_id.to_string(),
             cwd.to_string(),
             session.to_string(),
             window.to_string(),
-            log_lines,
+            String::new(),
             matched_group,
             matched_job,
-            activity_history,
-            activity_visible,
+            String::new(),
+            String::new(),
             history_size,
             pane_width,
             pane_height,
             provider,
             hook_backed,
         ));
+    }
+
+    let tmux_requests: Vec<(&str, u16, u16)> = capture_requests
+        .iter()
+        .map(|(_, pane_id, pane_height, cursor_y)| (pane_id.as_str(), *pane_height, *cursor_y))
+        .collect();
+    let captures = crate::tmux::capture_pane_activities(&tmux_requests).unwrap_or_else(|error| {
+        log::debug!("[questions] batched pane capture failed: {}", error);
+        tmux_requests
+            .iter()
+            .map(|(pane_id, pane_height, cursor_y)| {
+                crate::tmux::capture_pane_activity(pane_id, *pane_height, *cursor_y)
+                    .unwrap_or_default()
+            })
+            .collect()
+    });
+    for ((result_index, _, _, _), activity_visible) in capture_requests.into_iter().zip(captures) {
+        // The visible screen contains interactive prompts and TUI repaint
+        // activity. Scrollback growth is already available through
+        // `history_size`, so a separate history capture would only duplicate
+        // work in the hot polling loop.
+        results[result_index].4 = activity_visible.trim().to_string();
+        results[result_index].8 = activity_visible;
     }
 
     DetectionResult {

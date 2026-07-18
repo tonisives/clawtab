@@ -337,7 +337,14 @@ where
                 let handler = handler.clone();
                 tokio::spawn(async move {
                     if let Err(e) = handle_client::<C, R, F, Fut>(stream, handler).await {
-                        log::error!("Error handling IPC client: {}", e);
+                        if e.contains("Broken pipe") || e.contains("Connection reset by peer") {
+                            log::debug!(
+                                "IPC client disconnected before receiving its response: {}",
+                                e
+                            );
+                        } else {
+                            log::error!("Error handling IPC client: {}", e);
+                        }
                     }
                 });
             }

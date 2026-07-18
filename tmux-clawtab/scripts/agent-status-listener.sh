@@ -40,6 +40,9 @@ fi
 [ -n "$lock_key" ] || lock_key="default"
 LOCK_DIR="/tmp/clawtab/tmux-agent-status-${lock_key}.lock"
 EVENT_PIPE="$LOCK_DIR/events"
+ACTIVITY_TSV="$LOCK_DIR/activity.tsv"
+PANE_STATE_FILE="$LOCK_DIR/pane-state"
+OPTION_CHANGES_FILE="$LOCK_DIR/option-changes.tsv"
 
 JQ_BIN="$(command -v jq 2>/dev/null || true)"
 if [ -z "$JQ_BIN" ]; then
@@ -98,7 +101,7 @@ cleanup() {
     fi
     lock_pid="$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null || true)"
     if [ "$lock_pid" = "$$" ]; then
-        rm -f "$EVENT_PIPE" 2>/dev/null || true
+        rm -f "$EVENT_PIPE" "$ACTIVITY_TSV" "$PANE_STATE_FILE" "$OPTION_CHANGES_FILE" 2>/dev/null || true
         rm -f "$LOCK_DIR/pid"
         rmdir "$LOCK_DIR" 2>/dev/null || true
     fi
@@ -136,81 +139,86 @@ clear_agent_pane_title() {
     tmux set-option -pqu -t "$pane_id" @clawtab-display-name 2>/dev/null || true
 }
 
-stage_agent_pane_options() {
-    tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r pane_id; do
-        [ -n "$pane_id" ] || continue
-        tmux set-option -pq -t "$pane_id" @clawtab-agent-pane-present-next 0 2>/dev/null || true
-    done
-}
-
-commit_agent_pane_options() {
-    tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r pane_id; do
-        [ -n "$pane_id" ] || continue
-        was_present="$(tmux show-option -pqv -t "$pane_id" @clawtab-agent-pane-present 2>/dev/null || true)"
-        is_present="$(tmux show-option -pqv -t "$pane_id" @clawtab-agent-pane-present-next 2>/dev/null || true)"
-        if [ "$was_present" = "1" ] && [ "$is_present" != "1" ]; then
-            clear_agent_pane_title "$pane_id"
-        fi
-        tmux set-option -pq -t "$pane_id" @clawtab-agent-pane-present "${is_present:-0}" 2>/dev/null || true
-    done
-}
-
-stage_activity_options() {
-    tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r window_id; do
-        [ -n "$window_id" ] || continue
-        tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 0 2>/dev/null || true
-        tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 0 2>/dev/null || true
-        tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 0 2>/dev/null || true
-        tmux set-window-option -q -t "$window_id" @clawtab-agent-question-next 0 2>/dev/null || true
-    done
-}
-
-commit_staged_activity_options() {
-    tmux list-windows -a -F '#{window_id}' 2>/dev/null | while IFS= read -r window_id; do
-        [ -n "$window_id" ] || continue
-        seen="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-seen}' 2>/dev/null || true)"
-        if [ "$seen" = "1" ]; then
-            present="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-present-next}' 2>/dev/null || true)"
-            working="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-working-next}' 2>/dev/null || true)"
-            asking="$(tmux display-message -p -t "$window_id" '#{@clawtab-agent-question-next}' 2>/dev/null || true)"
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-present "${present:-0}" 2>/dev/null || true
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-working "${working:-0}" 2>/dev/null || true
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-question "${asking:-0}" 2>/dev/null || true
-        else
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-present 0 2>/dev/null || true
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-working 0 2>/dev/null || true
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-question 0 2>/dev/null || true
-        fi
-    done
-}
-
 apply_snapshot() {
     snapshot="$1"
     if ! printf '%s\n' "$snapshot" | "$JQ_BIN" -e 'has("AgentActivity")' >/dev/null 2>&1; then
         return 1
     fi
 
-    stage_activity_options
-    stage_agent_pane_options
+    # Keep a non-empty first input so the portable awk FNR == NR idiom also
+    # works when there are no agents in the snapshot.
+    printf '__header__\tfalse\tfalse\n' >"$ACTIVITY_TSV"
     printf '%s\n' "$snapshot" | "$JQ_BIN" -r \
         '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring)] | @tsv' \
-        2>/dev/null | while IFS=$'\t' read -r pane_id working asking; do
-        [ -n "$pane_id" ] || continue
-        window_id="$(tmux display-message -p -t "$pane_id" '#{window_id}' 2>/dev/null || true)"
-        [ -n "$window_id" ] || continue
+        2>/dev/null >>"$ACTIVITY_TSV" || return 1
 
-        tmux set-option -pq -t "$pane_id" @clawtab-agent-pane-present-next 1 2>/dev/null || true
-        tmux set-window-option -q -t "$window_id" @clawtab-agent-seen 1 2>/dev/null || true
-        tmux set-window-option -q -t "$window_id" @clawtab-agent-present-next 1 2>/dev/null || true
-        if [ "$working" = "true" ]; then
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 1 2>/dev/null || true
-        fi
-        if [ "$asking" = "true" ]; then
-            tmux set-window-option -q -t "$window_id" @clawtab-agent-question-next 1 2>/dev/null || true
-        fi
-    done
-    commit_staged_activity_options
-    commit_agent_pane_options
+    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}' \
+        >"$PANE_STATE_FILE" 2>/dev/null || return 1
+
+    awk -F '\t' '
+        FNR == NR {
+            if ($1 != "__header__") {
+                desired_pane[$1] = 1
+                desired_working[$1] = ($2 == "true")
+                desired_asking[$1] = ($3 == "true")
+            }
+            next
+        }
+        {
+            split($0, field, /\|\|\|/)
+            pane = field[1]
+            window = field[2]
+            panes[pane] = 1
+            pane_current[pane] = (field[3] == "1")
+            windows[window] = 1
+            if (!(window in window_initialized)) {
+                window_initialized[window] = 1
+                window_present_current[window] = (field[4] == "1")
+                window_working_current[window] = (field[5] == "1")
+                window_asking_current[window] = (field[6] == "1")
+            }
+            if (desired_pane[pane]) {
+                window_present[window] = 1
+                if (desired_working[pane]) window_working[window] = 1
+                if (desired_asking[pane]) window_asking[window] = 1
+            }
+        }
+        END {
+            for (pane in panes) {
+                wanted = desired_pane[pane] ? 1 : 0
+                if (pane_current[pane] != wanted) {
+                    print "pane", pane, wanted
+                }
+            }
+            for (window in windows) {
+                present = window_present[window] ? 1 : 0
+                working = window_working[window] ? 1 : 0
+                asking = window_asking[window] ? 1 : 0
+                if (window_present_current[window] != present ||
+                    window_working_current[window] != working ||
+                    window_asking_current[window] != asking) {
+                    print "window", window, present, working, asking
+                }
+            }
+        }
+    ' "$ACTIVITY_TSV" "$PANE_STATE_FILE" >"$OPTION_CHANGES_FILE" || return 1
+
+    while IFS=$'\t' read -r kind target first second third; do
+        case "$kind" in
+            pane)
+                if [ "$first" = "0" ]; then
+                    clear_agent_pane_title "$target"
+                fi
+                tmux set-option -pq -t "$target" @clawtab-agent-pane-present "$first" 2>/dev/null || true
+                ;;
+            window)
+                tmux set-window-option -q -t "$target" @clawtab-agent-present "$first" \
+                    \; set-window-option -q -t "$target" @clawtab-agent-working "$second" \
+                    \; set-window-option -q -t "$target" @clawtab-agent-question "$third" \
+                    2>/dev/null || true
+                ;;
+        esac
+    done <"$OPTION_CHANGES_FILE"
 }
 
 fetch_snapshot() {
