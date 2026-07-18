@@ -25,9 +25,11 @@ fi
 tmux_server_identity="${tmux_server_socket}:${tmux_server_pid}"
 
 tmux_server_is_alive() {
-    current_socket="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
-    current_pid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
-    [ "${current_socket}:${current_pid}" = "$tmux_server_identity" ]
+    current_identity="$(
+        tmux -S "$tmux_server_socket" display-message -p '#{socket_path}:#{pid}' \
+            2>/dev/null || true
+    )"
+    [ "$current_identity" = "$tmux_server_identity" ]
 }
 
 if command -v shasum >/dev/null 2>&1; then
@@ -83,6 +85,7 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
             kill -KILL "$existing_pid" 2>/dev/null || true
         fi
     fi
+    rm -f "$EVENT_PIPE" 2>/dev/null || true
     rm -f "$LOCK_DIR/pid" 2>/dev/null || true
     rmdir "$LOCK_DIR" 2>/dev/null || true
     mkdir "$LOCK_DIR" 2>/dev/null || exit 0
@@ -93,9 +96,12 @@ cleanup() {
     if [ -n "$event_nc_pid" ]; then
         kill -TERM "$event_nc_pid" 2>/dev/null || true
     fi
-    rm -f "$EVENT_PIPE" 2>/dev/null || true
-    rm -f "$LOCK_DIR/pid"
-    rmdir "$LOCK_DIR" 2>/dev/null || true
+    lock_pid="$(sed -n '1p' "$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [ "$lock_pid" = "$$" ]; then
+        rm -f "$EVENT_PIPE" 2>/dev/null || true
+        rm -f "$LOCK_DIR/pid"
+        rmdir "$LOCK_DIR" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
 trap 'exit 0' INT TERM
@@ -250,9 +256,8 @@ snapshot_action_for_event() {
 }
 
 while true; do
-    # A listener can outlive the tmux server that launched it because it blocks
-    # on the shared event socket. The timed event read below brings us back here
-    # so stale listeners terminate instead of accumulating forever.
+    # A listener can outlive the tmux server that launched it, so check the
+    # exact server socket and generation before connecting to the event stream.
     if ! tmux_server_is_alive; then
         exit 0
     fi
@@ -278,7 +283,19 @@ while true; do
     fi
     nc -U "$EVENT_SOCKET" >"$EVENT_PIPE" 2>/dev/null &
     event_nc_pid=$!
-    while IFS= read -r -t 15 event; do
+    while true; do
+        if ! IFS= read -r -t 15 event; then
+            # An idle event stream is normal. Keep the existing subscription
+            # and avoid rebuilding every pane/window option on each timeout.
+            if ! tmux_server_is_alive; then
+                exit 0
+            fi
+            if ! kill -0 "$event_nc_pid" 2>/dev/null; then
+                break
+            fi
+            continue
+        fi
+
         action="$(snapshot_action_for_event "$event")"
         [ -n "$action" ] || continue
 
