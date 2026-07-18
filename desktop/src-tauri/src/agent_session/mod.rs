@@ -18,7 +18,7 @@ pub struct SessionInfo {
     pub token_count: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessProvider {
     Claude,
@@ -43,6 +43,17 @@ impl ProcessProvider {
         match self {
             ProcessProvider::Antigravity => "agy",
             _ => self.as_str(),
+        }
+    }
+
+    pub fn from_name(value: &str) -> Option<Self> {
+        match value {
+            "claude" => Some(Self::Claude),
+            "codex" => Some(Self::Codex),
+            "opencode" => Some(Self::Opencode),
+            "antigravity" => Some(Self::Antigravity),
+            "shell" => Some(Self::Shell),
+            _ => None,
         }
     }
 

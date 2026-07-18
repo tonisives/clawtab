@@ -3,22 +3,27 @@
 # clawtab-daemon binary (placed inside the bundle as "ClawTab Daemon"). Used by
 # the Tauri build hook so the .app gets nested inside ClawTab.app.
 #
-# Usage: build-engine-app.sh <daemon-binary-path> <output-app-path>
+# Usage: build-engine-app.sh <daemon-binary-path> <hook-binary-path> <output-app-path>
 
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "usage: $0 <daemon-binary> <output-app-path>" >&2
+if [[ $# -ne 3 ]]; then
+  echo "usage: $0 <daemon-binary> <hook-binary> <output-app-path>" >&2
   exit 1
 fi
 
 DAEMON_BIN="$1"
-APP_PATH="$2"
+HOOK_BIN="$2"
+APP_PATH="$3"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATE_DIR="$SCRIPT_DIR/../engine-app"
 
 if [[ ! -f "$DAEMON_BIN" ]]; then
   echo "daemon binary not found: $DAEMON_BIN" >&2
+  exit 1
+fi
+if [[ ! -f "$HOOK_BIN" ]]; then
+  echo "hook binary not found: $HOOK_BIN" >&2
   exit 1
 fi
 if [[ ! -f "$TEMPLATE_DIR/Info.plist" ]]; then
@@ -37,6 +42,8 @@ cp "$TEMPLATE_DIR/Info.plist" "$APP_PATH/Contents/Info.plist"
 # the template Info.plist must match this filename.
 cp "$DAEMON_BIN" "$APP_PATH/Contents/MacOS/ClawTab Daemon"
 chmod +x "$APP_PATH/Contents/MacOS/ClawTab Daemon"
+cp "$HOOK_BIN" "$APP_PATH/Contents/MacOS/clawtab-hook"
+chmod +x "$APP_PATH/Contents/MacOS/clawtab-hook"
 
 # Bundle the app icon so Activity Monitor and System Settings show it. The
 # icon lives next to the desktop app's icons; CFBundleIconFile in the template

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
+import type { ProcessProvider } from "@clawtab/shared"
 import type { AppSettings } from "../types"
 import { ToolsPanel } from "./ToolsPanel"
 import { TelegramPanel } from "./TelegramPanel"
@@ -31,6 +32,23 @@ const subTabs: { id: SettingsSubTab; label: string }[] = [
   { id: "models", label: "Models" },
   { id: "daemon", label: "Daemon" },
 ]
+
+type AgentIntegrationStatus = {
+  provider: ProcessProvider
+  detected: boolean
+  configured: boolean
+  active: boolean
+  needs_repair: boolean
+  needs_restart: boolean
+  capabilities: string[]
+  detail: string
+}
+
+const integrationLabel = (provider: ProcessProvider): string => {
+  if (provider === "opencode") return "OpenCode"
+  if (provider === "antigravity") return "Antigravity"
+  return provider.charAt(0).toUpperCase() + provider.slice(1)
+}
 
 export function readStoredSettingsSubTab(): SettingsSubTab {
   if (typeof localStorage === "undefined") return "general"
@@ -135,13 +153,35 @@ function GeneralSettingsContent() {
   >("idle")
   const [updateVersion, setUpdateVersion] = useState<string | null>(null)
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  const [agentIntegrations, setAgentIntegrations] = useState<AgentIntegrationStatus[]>([])
+  const [integrationBusy, setIntegrationBusy] = useState<ProcessProvider | null>(null)
+  const [integrationError, setIntegrationError] = useState<string | null>(null)
 
   useEffect(() => {
     invoke<AppSettings>("get_settings")
       .then(setSettings)
       .catch((e) => console.error("Failed to load settings:", e))
     invoke<string>("get_version").then(setVersion)
+    invoke<AgentIntegrationStatus[]>("get_agent_integrations")
+      .then(setAgentIntegrations)
+      .catch((e) => setIntegrationError(String(e)))
   }, [])
+
+  const changeAgentIntegration = async (
+    provider: ProcessProvider,
+    action: "install_agent_integration" | "remove_agent_integration",
+  ) => {
+    setIntegrationBusy(provider)
+    setIntegrationError(null)
+    try {
+      const statuses = await invoke<AgentIntegrationStatus[]>(action, { provider })
+      setAgentIntegrations(statuses)
+    } catch (error) {
+      setIntegrationError(String(error))
+    } finally {
+      setIntegrationBusy(null)
+    }
+  }
 
   const update = async (updates: Partial<AppSettings>) => {
     if (!settings) return
@@ -256,6 +296,63 @@ function GeneralSettingsContent() {
           </label>
           <span className="hint">Send question notifications to connected remote clients</span>
         </div>
+      </div>
+
+      <div className="field-group">
+        <span className="field-group-title">Agent integrations</span>
+        <p className="section-description agent-integration-description">
+          Hooks provide immediate activity and permission signals. ClawTab keeps terminal detection as a fallback.
+        </p>
+        <div className="agent-integration-list">
+          {agentIntegrations.map((integration) => (
+            <div className="agent-integration-row" key={integration.provider}>
+              <div className="agent-integration-main">
+                <div className="agent-integration-heading">
+                  <strong>{integrationLabel(integration.provider)}</strong>
+                  <span className={`agent-integration-status ${integration.active ? "active" : integration.configured ? "configured" : "available"}`}>
+                    {integration.active ? "Active" : integration.configured ? "Configured" : integration.detected ? "Available" : "Not detected"}
+                  </span>
+                </div>
+                <span className="hint">{integration.detail}</span>
+                <span className="agent-integration-capabilities">
+                  {integration.capabilities.join(" · ")}
+                </span>
+              </div>
+              <div className="btn-group">
+                {integration.configured ? (
+                  <>
+                    <button
+                      className="btn btn-sm"
+                      disabled={integrationBusy !== null}
+                      onClick={() => changeAgentIntegration(integration.provider, "install_agent_integration")}
+                    >
+                      {integrationBusy === integration.provider ? "Working..." : "Repair"}
+                    </button>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      disabled={integrationBusy !== null}
+                      onClick={() => changeAgentIntegration(integration.provider, "remove_agent_integration")}
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={integrationBusy !== null || !integration.detected}
+                    onClick={() => changeAgentIntegration(integration.provider, "install_agent_integration")}
+                  >
+                    {integrationBusy === integration.provider ? "Installing..." : "Install"}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {integrationError && <span className="agent-integration-error">{integrationError}</span>}
+        <span className="hint">
+          Restart running agent sessions after setup. Codex also requires approving the installed commands in /hooks.
+        </span>
       </div>
 
       <div className="field-group">

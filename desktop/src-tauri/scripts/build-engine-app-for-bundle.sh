@@ -20,8 +20,8 @@ export CARGO_TARGET_DIR
 
 cd "$SRC_TAURI_DIR"
 
-echo "[engine-bundle] building clawtab-daemon (release, no default features)"
-cargo build --release --bin clawtab-daemon --no-default-features
+echo "[engine-bundle] building daemon and hook helper (release, no default features)"
+cargo build --release --bin clawtab-daemon --bin clawtab-hook --no-default-features
 
 # rust-analyzer / shared target dir sometimes puts output under a hashed
 # workspace subfolder (e.g. src-tauri-79532e). Pick the freshest copy.
@@ -35,10 +35,20 @@ if [[ -z "$DAEMON_BIN" ]] || [[ ! -f "$DAEMON_BIN" ]]; then
   exit 1
 fi
 
+HOOK_BIN="$(ls -t \
+  "$CARGO_TARGET_DIR/release/clawtab-hook" \
+  "$CARGO_TARGET_DIR"/*/release/clawtab-hook \
+  2>/dev/null | head -1)"
+
+if [[ -z "$HOOK_BIN" ]] || [[ ! -f "$HOOK_BIN" ]]; then
+  echo "[engine-bundle] error: clawtab-hook binary not found under $CARGO_TARGET_DIR" >&2
+  exit 1
+fi
+
 OUT_DIR="$SRC_TAURI_DIR/../target/engine-bundle"
 APP_PATH="$OUT_DIR/ClawTab Daemon.app"
 
 mkdir -p "$OUT_DIR"
-bash "$SCRIPT_DIR/build-engine-app.sh" "$DAEMON_BIN" "$APP_PATH"
+bash "$SCRIPT_DIR/build-engine-app.sh" "$DAEMON_BIN" "$HOOK_BIN" "$APP_PATH"
 
 echo "[engine-bundle] staged at $APP_PATH"

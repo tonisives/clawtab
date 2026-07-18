@@ -127,6 +127,7 @@ fn main() {
         Arc::new(IpcBroadcastEventSink::new(event_subscribers.clone()));
     let notifier: Arc<dyn clawtab_lib::notifications::Notifier> =
         Arc::new(IpcNotifier::new(event_subscribers.clone()));
+    let hook_runtime = clawtab_lib::agent_hooks::HookRuntime::default();
 
     let ctx = clawtab_lib::job_context::JobContext {
         secrets: Arc::clone(&secrets),
@@ -143,6 +144,20 @@ fn main() {
 
     let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
     rt.block_on(async {
+        {
+            let hook_runtime = hook_runtime.clone();
+            let agent_activity = Arc::clone(&agent_activity);
+            let event_sink = Arc::clone(&event_sink);
+            tokio::spawn(async move {
+                clawtab_lib::agent_hooks::run_event_watcher(
+                    hook_runtime,
+                    agent_activity,
+                    event_sink,
+                )
+                .await;
+            });
+        }
+
         // IPC event push server
         {
             let subs = event_subscribers.clone();
@@ -206,6 +221,7 @@ fn main() {
             let notification_state = Arc::clone(&notification_state);
             let settings = Arc::clone(&settings);
             let event_sink = Arc::clone(&event_sink);
+            let hook_runtime = hook_runtime.clone();
             tokio::spawn(async move {
                 clawtab_lib::questions::question_detection_loop(
                     settings,
@@ -218,6 +234,7 @@ fn main() {
                     notifier,
                     notification_state,
                     event_sink,
+                    hook_runtime,
                 )
                 .await;
             });

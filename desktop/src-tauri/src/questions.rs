@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
-use crate::agent_session::{detect_process_provider, ProcessSnapshot};
+use crate::agent_hooks::{HookAgentState, HookRuntime};
+use crate::agent_session::{detect_process_provider, ProcessProvider, ProcessSnapshot};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
 use crate::ipc::AgentActivity;
@@ -24,6 +25,8 @@ type DetectedAgent = (
     u64,
     u16,
     u16,
+    ProcessProvider,
+    bool,
 );
 
 const RECENT_ACTIVITY_WINDOW: Duration = Duration::from_secs(8);
@@ -455,6 +458,7 @@ fn find_yes_option(options: &[QuestionOption]) -> Option<String> {
 /// Runs the question detection loop. The idle path is intentionally conservative:
 /// question detection is expensive because it scans tmux panes and captures output,
 /// so we back off heavily when there are no active prompts to watch.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn question_detection_loop(
     settings: Arc<Mutex<AppSettings>>,
     jobs_config: Arc<Mutex<JobsConfig>>,
@@ -466,6 +470,7 @@ pub async fn question_detection_loop(
     notifier: Arc<dyn crate::notifications::Notifier>,
     notification_state: Arc<Mutex<crate::notifications::NotificationState>>,
     event_sink: Arc<dyn crate::events::EventSink>,
+    hook_runtime: HookRuntime,
 ) {
     let mut question_cache: HashMap<String, CachedQuestion> = HashMap::new();
     let mut activity_tracker = ActivityTracker::default();
@@ -473,11 +478,14 @@ pub async fn question_detection_loop(
     let mut ticks_since_send: u32 = 0;
     let mut auto_answered_ids: HashMap<String, u32> = HashMap::new();
     let mut local_notifications_initialized = false;
+    let mut question_signature = String::new();
 
     loop {
-        let detection = detect_question_processes(&jobs_config, &job_status);
+        let detection = detect_question_processes(&jobs_config, &job_status, &hook_runtime);
         let processes = detection.processes;
         log::debug!("[questions] detected {} claude processes", processes.len());
+
+        hook_runtime.retain_live_panes(&detection.all_pane_ids);
 
         prune_stale_auto_yes_panes(&auto_yes_panes, &detection.all_pane_ids);
 
@@ -493,13 +501,23 @@ pub async fn question_detection_loop(
         retain_auto_answered_for_present(&questions, &mut auto_answered_ids);
 
         log::debug!("[questions] storing {} active questions", questions.len());
+        let next_question_signature = serde_json::to_string(&questions).unwrap_or_default();
         *active_questions.lock() = questions.clone();
+        if next_question_signature != question_signature {
+            question_signature = next_question_signature;
+            event_sink.emit_questions_changed();
+        }
 
         let asking_panes: HashSet<String> = questions
             .iter()
             .map(|question| question.pane_id.clone())
             .collect();
-        let activity = activity_tracker.update(&processes, &asking_panes, Instant::now());
+        let activity = activity_tracker.update_with_hooks(
+            &processes,
+            &asking_panes,
+            Instant::now(),
+            &hook_runtime,
+        );
         let activity_changed = {
             let mut stored_activity = agent_activity.lock();
             if *stored_activity != activity {
@@ -545,8 +563,11 @@ pub async fn question_detection_loop(
             &mut ticks_since_send,
         );
 
-        let sleep_ms = pick_sleep_ms(&auto_yes_panes, &question_cache, &processes);
-        tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
+        let sleep_ms = pick_sleep_ms(&auto_yes_panes, &question_cache, &processes, &hook_runtime);
+        tokio::select! {
+            () = tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)) => {}
+            () = hook_runtime.notified() => {}
+        }
     }
 }
 
@@ -686,6 +707,8 @@ fn update_question_cache(
         _history_size,
         _pane_width,
         _pane_height,
+        _provider,
+        _hook_backed,
     ) in processes
     {
         if try_numbered_question(
@@ -988,14 +1011,24 @@ fn pick_sleep_ms(
     auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
     question_cache: &HashMap<String, CachedQuestion>,
     processes: &[DetectedAgent],
+    hook_runtime: &HookRuntime,
 ) -> u64 {
     let has_auto_yes = !auto_yes_panes.lock().is_empty();
-    if has_auto_yes {
+    if hook_runtime.recent_attention(Duration::from_secs(1)) {
+        250
+    } else if has_auto_yes {
         750
-    } else if !question_cache.is_empty() {
+    } else if !question_cache.is_empty()
+        || processes.iter().any(|process| !process.13)
+        || processes.iter().any(|process| {
+            hook_runtime
+                .pane_state(&process.0, process.12)
+                .is_some_and(|state| state.state == HookAgentState::Working)
+        })
+    {
         2000
     } else if !processes.is_empty() {
-        2000
+        5000
     } else {
         15000
     }
@@ -1069,11 +1102,23 @@ fn normalize_activity_visible(text: &str) -> String {
 }
 
 impl ActivityTracker {
+    #[cfg(test)]
     fn update(
         &mut self,
         processes: &[DetectedAgent],
         asking_panes: &HashSet<String>,
         now: Instant,
+    ) -> Vec<AgentActivity> {
+        self.update_with_hooks(processes, asking_panes, now, &HookRuntime::default())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn update_with_hooks(
+        &mut self,
+        processes: &[DetectedAgent],
+        asking_panes: &HashSet<String>,
+        now: Instant,
+        hook_runtime: &HookRuntime,
     ) -> Vec<AgentActivity> {
         let mut seen_panes = HashSet::new();
         let mut activity = Vec::with_capacity(processes.len());
@@ -1091,9 +1136,20 @@ impl ActivityTracker {
             history_size,
             pane_width,
             pane_height,
+            provider,
+            _hook_backed,
         ) in processes
         {
             seen_panes.insert(pane_id.clone());
+            if let Some(hook_state) = hook_runtime.pane_state(pane_id, *provider) {
+                let asking = asking_panes.contains(pane_id) || hook_state.attention.is_some();
+                activity.push(AgentActivity {
+                    pane_id: pane_id.clone(),
+                    working: hook_state.state == HookAgentState::Working && !asking,
+                    asking,
+                });
+                continue;
+            }
             let normalized_history = normalize_activity_history(activity_history);
             let normalized_visible = normalize_activity_visible(activity_visible);
             let visible_text = normalize_activity_history(&normalized_visible);
@@ -1261,9 +1317,11 @@ fn resolve_q_group_job(
 }
 
 /// Detect Claude processes and return their details for question parsing.
+#[allow(clippy::too_many_lines)]
 fn detect_question_processes(
     jobs_config: &Arc<Mutex<JobsConfig>>,
     job_status: &Arc<Mutex<HashMap<String, JobStatus>>>,
+    hook_runtime: &HookRuntime,
 ) -> DetectionResult {
     let process_snapshot = ProcessSnapshot::capture();
     let Some(stdout) = list_panes_for_questions() else {
@@ -1306,10 +1364,10 @@ fn detect_question_processes(
             continue;
         }
 
-        let provider = detect_process_provider(pane_pid, Some(&process_snapshot));
-        if provider.is_none() {
+        let Some(provider) = detect_process_provider(pane_pid, Some(&process_snapshot)) else {
             continue;
-        }
+        };
+        hook_runtime.bind_process_to_pane(pane_id, pane_pid, provider, &process_snapshot);
         log::debug!(
             "[questions] pane {} pid {} detected as {:?}",
             pane_id,
@@ -1328,13 +1386,21 @@ fn detect_question_processes(
             .unwrap_or_default()
             .trim()
             .to_string();
-        let activity_history = crate::tmux::capture_pane_history(pane_id, 64).unwrap_or_default();
+        let hook_backed = hook_runtime.pane_state(pane_id, provider).is_some();
+        let activity_history = if hook_backed {
+            String::new()
+        } else {
+            crate::tmux::capture_pane_history(pane_id, 64).unwrap_or_default()
+        };
         let history_size = history_size.parse().unwrap_or_default();
         let pane_width = pane_width.parse().unwrap_or_default();
         let pane_height = pane_height.parse().unwrap_or_default();
         let cursor_y = cursor_y.parse().unwrap_or_default();
-        let activity_visible =
-            crate::tmux::capture_pane_activity(pane_id, pane_height, cursor_y).unwrap_or_default();
+        let activity_visible = if hook_backed {
+            String::new()
+        } else {
+            crate::tmux::capture_pane_activity(pane_id, pane_height, cursor_y).unwrap_or_default()
+        };
 
         results.push((
             pane_id.to_string(),
@@ -1349,6 +1415,8 @@ fn detect_question_processes(
             history_size,
             pane_width,
             pane_height,
+            provider,
+            hook_backed,
         ));
     }
 
@@ -1362,7 +1430,7 @@ fn detect_question_processes(
 mod tests {
     use super::{
         find_yes_option, parse_numbered_options, parse_opencode_buttons, ActivityTracker,
-        DetectedAgent,
+        DetectedAgent, ProcessProvider,
     };
     use clawtab_protocol::QuestionOption;
     use std::collections::HashSet;
@@ -1409,6 +1477,8 @@ mod tests {
             history_size,
             pane_width,
             pane_height,
+            ProcessProvider::Claude,
+            false,
         )
     }
 

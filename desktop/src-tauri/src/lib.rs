@@ -5,6 +5,7 @@
 
 mod aerospace;
 pub mod agent;
+pub mod agent_hooks;
 pub mod agent_session;
 #[cfg(feature = "desktop")]
 mod browser;
@@ -756,6 +757,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            commands::agent_hooks::get_agent_integrations,
+            commands::agent_hooks::install_agent_integration,
+            commands::agent_hooks::remove_agent_integration,
             commands::jobs::get_jobs,
             commands::jobs::get_cached_jobs_snapshot,
             commands::jobs::save_cached_jobs_snapshot,

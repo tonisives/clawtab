@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { ClaudeQuestion, DetectedProcess } from "@clawtab/shared";
 import type { Job } from "../types";
 
@@ -40,9 +41,20 @@ export function useQuestionPolling(options?: { onTick?: () => void }) {
 
   useEffect(() => {
     console.log("[nfn] mounting, calling loadQuestions immediately");
+    let disposed = false;
+    let removeListener: (() => void) | null = null;
     loadQuestions();
-    questionPollRef.current = setInterval(loadQuestions, 5000);
+    questionPollRef.current = setInterval(loadQuestions, 30000);
+    listen("questions-changed", loadQuestions).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+      } else {
+        removeListener = unlisten;
+      }
+    }).catch((error) => console.error("[nfn] questions-changed listener error", error));
     return () => {
+      disposed = true;
+      removeListener?.();
       if (questionPollRef.current) clearInterval(questionPollRef.current);
       if (fastPollTimerRef.current) clearTimeout(fastPollTimerRef.current);
     };
@@ -54,7 +66,7 @@ export function useQuestionPolling(options?: { onTick?: () => void }) {
     questionPollRef.current = setInterval(loadQuestions, 500);
     fastPollTimerRef.current = setTimeout(() => {
       if (questionPollRef.current) clearInterval(questionPollRef.current);
-      questionPollRef.current = setInterval(loadQuestions, 5000);
+      questionPollRef.current = setInterval(loadQuestions, 30000);
     }, 5000);
   }, [loadQuestions]);
 
