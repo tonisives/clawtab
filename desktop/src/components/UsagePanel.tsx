@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
-import type { AppSettings, ProviderUsageSnapshot, SecretEntry, UsageSnapshot } from "../types"
+import type { ProviderUsageSnapshot, SecretEntry, UsageSnapshot } from "../types"
 
 export function UsagePanel() {
-  const [settings, setSettings] = useState<AppSettings | null>(null)
   const [usage, setUsage] = useState<UsageSnapshot | null>(null)
   const [usageLoading, setUsageLoading] = useState(false)
   const [usageError, setUsageError] = useState<string | null>(null)
@@ -15,19 +14,9 @@ export function UsagePanel() {
   const hasStoredZaiKey = secretKeys.includes("Z_AI_API_KEY")
 
   useEffect(() => {
-    void loadSettings()
     void loadSecretKeys()
     void refreshUsage()
   }, [])
-
-  const loadSettings = async () => {
-    try {
-      const nextSettings = await invoke<AppSettings>("get_settings")
-      setSettings(nextSettings)
-    } catch (e) {
-      console.error("Failed to load settings:", e)
-    }
-  }
 
   const loadSecretKeys = async () => {
     try {
@@ -49,26 +38,6 @@ export function UsagePanel() {
       setUsageError(message)
     } finally {
       setUsageLoading(false)
-    }
-  }
-
-  const saveSettings = async (updates: Partial<AppSettings>) => {
-    if (!settings) return
-    const nextSettings = { ...settings, ...updates }
-    setSettings(nextSettings)
-    try {
-      await invoke("set_settings", { newSettings: nextSettings })
-    } catch (e) {
-      console.error("Failed to save settings:", e)
-    }
-  }
-
-  const toggleTrayIcon = async (visible: boolean) => {
-    await saveSettings({ show_tray_icon: visible })
-    try {
-      await invoke("set_tray_icon_visibility", { visible })
-    } catch (e) {
-      console.error("Failed to set tray icon visibility:", e)
     }
   }
 
@@ -188,21 +157,6 @@ export function UsagePanel() {
         </div>
       </div>
 
-      <div className="field-group">
-        <span className="field-group-title">Tray</span>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={settings?.show_tray_icon ?? true}
-              disabled={!settings}
-              onChange={(e) => void toggleTrayIcon(e.target.checked)}
-            />
-            Show tray icon
-          </label>
-          <span className="hint">Usage refreshes update the tray menu from this same snapshot.</span>
-        </div>
-      </div>
     </div>
   )
 }
