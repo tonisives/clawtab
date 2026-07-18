@@ -233,10 +233,13 @@ jobs:
           NESTED_DAEMON_APP="${{ steps.find-app.outputs.app_path }}/Contents/Resources/ClawTab Daemon.app"
           if [ -d "$NESTED_DAEMON_APP" ]; then
             echo "Signing nested daemon app at: $NESTED_DAEMON_APP"
-            chmod +x "$NESTED_DAEMON_APP/Contents/MacOS/"*
-            codesign --force --options runtime --timestamp \
-              --sign "$APPLE_SIGNING_IDENTITY" \
-              "$NESTED_DAEMON_APP/Contents/MacOS/ClawTab Daemon"
+            for nested_executable in "$NESTED_DAEMON_APP/Contents/MacOS/"*; do
+              [ -f "$nested_executable" ] || continue
+              chmod +x "$nested_executable"
+              codesign --force --options runtime --timestamp \
+                --sign "$APPLE_SIGNING_IDENTITY" \
+                "$nested_executable"
+            done
             codesign --force --options runtime --timestamp \
               --sign "$APPLE_SIGNING_IDENTITY" \
               "$NESTED_DAEMON_APP"

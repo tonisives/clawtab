@@ -159,7 +159,7 @@ apply_snapshot() {
     tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}' \
         >"$PANE_STATE_FILE" 2>/dev/null || return 1
 
-    awk -F '\t' '
+    awk -F '\t' 'BEGIN { OFS = "\t" }
         FNR == NR {
             if ($1 != "__header__") {
                 desired_pane[$1] = 1
