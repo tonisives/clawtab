@@ -19,9 +19,9 @@ pub async fn detect_processes_snapshot(
         tokio::task::spawn_blocking(move || detect_processes(&jc, &js, live_viewer_panes))
             .await
             .unwrap_or_default();
-    log::info!("DetectProcesses: returning {} processes", processes.len());
+    log::trace!("DetectProcesses: returning {} processes", processes.len());
     for p in &processes {
-        log::info!(
+        log::trace!(
             "  - pane={} provider={} cmd_version={} session={} window={} group={:?} job={:?} cwd={}",
             p.pane_id, p.provider, p.version, p.tmux_session, p.window_name,
             p.matched_group, p.matched_job, p.cwd
@@ -46,13 +46,13 @@ fn detect_processes(
             .take(80)
             .map(|b| format!("{:02x} ", b))
             .collect();
-        log::info!(
+        log::trace!(
             "detect_processes: tmux returned {} pane lines. first_line_hex(80)={}",
             pane_lines,
             hex
         );
     } else {
-        log::info!("detect_processes: tmux returned 0 pane lines");
+        log::trace!("detect_processes: tmux returned 0 pane lines");
     }
 
     let running_panes = collect_running_panes(jobs_config, job_status);
@@ -93,7 +93,7 @@ fn detect_processes(
         ));
     }
 
-    log::info!(
+    log::trace!(
         "detect_processes: summary: total_lines={} skipped_short={} skipped_view={} skipped_placeholder={} kept={}",
         pane_lines, counters.short, counters.view, counters.placeholder, results.len()
     );

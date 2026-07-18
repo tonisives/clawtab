@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicI64, Ordering};
 use tauri::State;
 
-use crate::telegram::TelegramConfig;
+use crate::telegram::{telegram_request_error, TelegramConfig};
 use crate::AppState;
 
 /// Tracks the getUpdates offset so each poll call acknowledges previous updates.
@@ -52,7 +52,7 @@ pub async fn validate_bot_token(bot_token: String) -> Result<BotInfo, String> {
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(|e| telegram_request_error("getMe", &e))?;
 
     if !resp.status().is_success() {
         return Err("Invalid bot token".to_string());
@@ -61,7 +61,7 @@ pub async fn validate_bot_token(bot_token: String) -> Result<BotInfo, String> {
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| telegram_request_error("decode getMe response", &e))?;
 
     let ok = body.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
     if !ok {
@@ -111,7 +111,7 @@ pub async fn poll_telegram_updates(bot_token: String) -> Result<Option<i64>, Str
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(|e| telegram_request_error("getUpdates", &e))?;
 
     if !resp.status().is_success() {
         return Err("Failed to poll updates".to_string());
@@ -120,7 +120,7 @@ pub async fn poll_telegram_updates(bot_token: String) -> Result<Option<i64>, Str
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| telegram_request_error("decode getUpdates response", &e))?;
 
     let updates = body
         .get("result")

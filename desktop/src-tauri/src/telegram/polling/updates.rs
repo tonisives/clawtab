@@ -3,6 +3,7 @@
 
 use super::lock_or_log;
 use super::AgentState;
+use crate::telegram::telegram_request_error;
 use crate::telegram::types::{TelegramResponse, Update};
 
 /// Eat any pending updates from a previous instance so we don't replay them,
@@ -52,12 +53,12 @@ pub(super) async fn get_updates(
         .timeout(std::time::Duration::from_secs(timeout_secs + 5))
         .send()
         .await
-        .map_err(|e| format!("Telegram request failed: {}", e))?;
+        .map_err(|e| telegram_request_error("getUpdates", &e))?;
 
     let body: TelegramResponse<Vec<Update>> = resp
         .json()
         .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+        .map_err(|e| telegram_request_error("decode getUpdates response", &e))?;
 
     if !body.ok {
         let desc = body

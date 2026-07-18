@@ -443,6 +443,33 @@ async fn handle_ipc_command(
                 Err(error) => IpcResponse::Error(error),
             }
         }
+        IpcCommand::GetAgentIntegration { provider } => {
+            match clawtab_lib::agent_hooks::integration_statuses()
+                .into_iter()
+                .find(|status| status.provider == provider)
+            {
+                Some(status) => IpcResponse::AgentIntegration(status),
+                None => IpcResponse::Error("This provider does not support hooks".to_string()),
+            }
+        }
+        IpcCommand::InstallAgentIntegration { provider } => {
+            let helper = std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(|parent| parent.join("clawtab-hook")))
+                .filter(|path| path.is_file());
+            match clawtab_lib::agent_hooks::install_provider(provider, helper.as_deref()) {
+                Ok(()) => match clawtab_lib::agent_hooks::integration_statuses()
+                    .into_iter()
+                    .find(|status| status.provider == provider)
+                {
+                    Some(status) => IpcResponse::AgentIntegration(status),
+                    None => IpcResponse::Error(
+                        "Hook installation completed but status was unavailable".to_string(),
+                    ),
+                },
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
         IpcCommand::RunJobCli { name } => {
             let job = {
                 let jobs = jobs_config.lock();

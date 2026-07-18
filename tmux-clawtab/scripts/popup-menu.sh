@@ -319,6 +319,9 @@ USAGE_DONE_FILE=""
 USAGE_PID=""
 USAGE_LOADING=0
 
+# Agent hook setup is checked once after the pane provider has been resolved.
+HOOK_PROMPTED=0
+
 relative_time() {
     local epoch=$1
     local now
@@ -636,6 +639,123 @@ draw_usage_line() {
         printf "${C_NORMAL}%s${C_RESET}" "$line" >&3
     fi
     draw_row_end "$row"
+}
+
+hook_provider_for_agent() {
+    case "$AGENT_LABEL" in
+        "Claude Code") printf 'claude' ;;
+        Codex) printf 'codex' ;;
+        OpenCode) printf 'opencode' ;;
+        Antigravity) printf 'antigravity' ;;
+    esac
+}
+
+draw_hook_footer() {
+    local text="$1"
+    local fill=$((TERM_COLS - 5 - ${#text}))
+    [ $fill -lt 0 ] && fill=0
+    move_to "$TERM_ROWS" 1
+    clear_line
+    printf "${C_BORDER}${BOX_BL}${BOX_H} ${C_STATUS}%s${C_RESET}${C_BORDER} %s%s${C_RESET}" \
+        "$text" "$(hfill "$fill")" "$BOX_BR" >&3
+}
+
+draw_hook_screen() {
+    local title="$1"
+    local first_line="$2"
+    local second_line="$3"
+    local footer="$4"
+    local row
+
+    get_size
+    draw_tabs
+    draw_section_header 2 "$title"
+    for ((row=3; row<TERM_ROWS; row++)); do
+        draw_empty_row "$row"
+    done
+    if [ $TERM_ROWS -gt 4 ]; then
+        draw_row_start 4
+        printf "${C_NORMAL}%s${C_RESET}" "$(trim_for_row "$first_line")" >&3
+        draw_row_end 4
+    fi
+    if [ -n "$second_line" ] && [ $TERM_ROWS -gt 5 ]; then
+        draw_row_start 5
+        printf "${C_DIM}%s${C_RESET}" "$(trim_for_row "$second_line")" >&3
+        draw_row_end 5
+    fi
+    draw_hook_footer "$footer"
+}
+
+maybe_prompt_hook_install() {
+    [ "$HOOK_PROMPTED" -eq 0 ] || return 0
+    HOOK_PROMPTED=1
+
+    local provider status action action_label prompt_key result restart_hint confirmed
+    provider=$(hook_provider_for_agent)
+    [ -n "$provider" ] || return 0
+    command -v cwtctl &>/dev/null || return 0
+
+    status=$(cwtctl agent hooks status "$provider" 2>/dev/null) || return 0
+    if [[ "$status" == *"configured=true"* ]] && [[ "$status" != *"needs_repair=true"* ]]; then
+        return 0
+    fi
+
+    action="Install"
+    action_label="install"
+    if [[ "$status" == *"needs_repair=true"* ]]; then
+        action="Repair"
+        action_label="repair"
+    fi
+    draw_hook_screen \
+        "${action} agent hooks" \
+        "${AGENT_LABEL} hooks are not ready. ${action} them now?" \
+        "Hooks make activity and permission detection immediate." \
+        "enter ${action_label}   n not now"
+
+    confirmed=0
+    while IFS= read -rsn1 prompt_key; do
+        case "$prompt_key" in
+            y|Y|"") confirmed=1; break ;;
+            n|N|q|Q|$'\x1b') return 0 ;;
+        esac
+    done
+    [ "$confirmed" -eq 1 ] || return 0
+
+    draw_hook_screen \
+        "${action} agent hooks" \
+        "${action}ing ${AGENT_LABEL} hooks..." \
+        "" \
+        "please wait"
+    result=$(cwtctl agent hooks install "$provider" 2>&1) || {
+        draw_hook_screen \
+            "Hook setup failed" \
+            "Could not set up ${AGENT_LABEL} hooks." \
+            "Open ClawTab Settings for details or try again." \
+            "press any key to continue"
+        IFS= read -rsn1 _ || true
+        return 0
+    }
+
+    if [[ "$result" != *"configured=true"* ]] || [[ "$result" == *"needs_repair=true"* ]]; then
+        draw_hook_screen \
+            "Hook setup failed" \
+            "${AGENT_LABEL} hooks still need repair." \
+            "Open ClawTab Settings for details or try again." \
+            "press any key to continue"
+        IFS= read -rsn1 _ || true
+        return 0
+    fi
+
+    restart_hint="Restart running ${AGENT_LABEL} sessions to activate hooks."
+    if [ "$provider" = "codex" ]; then
+        restart_hint="Approve ClawTab in /hooks, then fully relaunch Codex."
+    fi
+    draw_hook_screen \
+        "Agent hooks installed" \
+        "${AGENT_LABEL} hooks are configured." \
+        "$restart_hint" \
+        "press any key to continue"
+    IFS= read -rsn1 _ || true
 }
 
 # Draw shortcuts (Home) tab
@@ -1178,6 +1298,7 @@ draw
 max=0
 while true; do
     if finish_data_load; then
+        maybe_prompt_hook_install
         draw_tabs
         case $TAB in
             0) draw_shortcuts ;;

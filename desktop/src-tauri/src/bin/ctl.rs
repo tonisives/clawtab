@@ -38,6 +38,7 @@ fn print_usage() {
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
+    eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
     eprintln!();
     eprintln!("Pane (require desktop app):");
     eprintln!(
@@ -83,10 +84,14 @@ fn print_agent_usage() {
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
+    eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
 }
 
 fn is_agent_subcommand(command: &str) -> bool {
-    matches!(command, "auto-yes" | "info" | "rename" | "ai-rename")
+    matches!(
+        command,
+        "auto-yes" | "info" | "rename" | "ai-rename" | "hooks"
+    )
 }
 
 fn require_job_reference(args: &[String], command: &str) -> String {
@@ -391,6 +396,30 @@ async fn main() {
             }
             return;
         }
+        "hooks" => {
+            let action = args.get(2).map(String::as_str).unwrap_or("");
+            let provider_name = args.get(3).map(String::as_str).unwrap_or("");
+            let provider = clawtab_lib::agent_session::ProcessProvider::from_name(provider_name)
+                .filter(|provider| {
+                    *provider != clawtab_lib::agent_session::ProcessProvider::Shell
+                })
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity>"
+                    );
+                    std::process::exit(1);
+                });
+            match action {
+                "status" => Target::Daemon(IpcCommand::GetAgentIntegration { provider }),
+                "install" => Target::Daemon(IpcCommand::InstallAgentIntegration { provider }),
+                _ => {
+                    eprintln!(
+                        "Usage: cwtctl agent hooks <status|install> <claude|codex|opencode|antigravity>"
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
         "telegram" => {
             if args.len() >= 3 && args[2] == "send" {
                 if args.len() < 4 {
@@ -570,6 +599,15 @@ async fn main() {
             IpcResponse::AgentActivity(_) => {
                 eprintln!("Error: agent activity is available through the tmux IPC integration");
                 std::process::exit(1);
+            }
+            IpcResponse::AgentIntegration(status) => {
+                println!("provider={}", status.provider.as_str());
+                println!("detected={}", status.detected);
+                println!("configured={}", status.configured);
+                println!("active={}", status.active);
+                println!("needs_repair={}", status.needs_repair);
+                println!("needs_restart={}", status.needs_restart);
+                println!("detail={}", status.detail);
             }
             IpcResponse::RelayStatus(status) => {
                 println!(

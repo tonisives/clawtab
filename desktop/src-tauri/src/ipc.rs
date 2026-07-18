@@ -56,6 +56,14 @@ pub enum IpcCommand {
     /// This is intentionally an IPC-only command. It is consumed by the tmux
     /// plugin and is not exposed as a cwtctl subcommand.
     GetAgentActivity,
+    /// Return hook installation state for one recognized agent provider.
+    GetAgentIntegration {
+        provider: crate::agent_session::ProcessProvider,
+    },
+    /// Install or repair hooks for one recognized agent provider.
+    InstallAgentIntegration {
+        provider: crate::agent_session::ProcessProvider,
+    },
     ListSecretKeys,
     GetSecretValues {
         keys: Vec<String>,
@@ -216,6 +224,7 @@ pub enum IpcResponse {
     ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),
     ProviderUsage(crate::usage::ProviderUsageSnapshot),
     AgentActivity(Vec<AgentActivity>),
+    AgentIntegration(crate::agent_hooks::AgentIntegrationStatus),
     SecretKeys(Vec<String>),
     SecretValues(Vec<(String, String)>),
     PaneInfo {

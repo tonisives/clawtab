@@ -18,6 +18,27 @@ pub struct ActiveAgent {
 
 const MAX_MESSAGE_LEN: usize = 4096;
 
+/// Describe Telegram transport failures without formatting reqwest's URL,
+/// which contains the bot token in its path.
+pub(crate) fn telegram_request_error(operation: &str, error: &reqwest::Error) -> String {
+    let reason = if error.is_timeout() {
+        "timed out"
+    } else if error.is_connect() {
+        "connection failed"
+    } else if error.is_decode() {
+        "response decode failed"
+    } else if error.is_body() {
+        "request or response body failed"
+    } else {
+        "request failed"
+    };
+
+    match error.status() {
+        Some(status) => format!("Telegram {} {} with status {}", operation, reason, status),
+        None => format!("Telegram {} {}", operation, reason),
+    }
+}
+
 /// When true, the agent poller yields to the setup poller so they don't compete
 /// for getUpdates from the same bot.
 static SETUP_POLLING_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -82,7 +103,7 @@ pub async fn send_message(bot_token: &str, chat_id: i64, text: &str) -> Result<(
             }))
             .send()
             .await
-            .map_err(|e| format!("Telegram request failed: {}", e))?;
+            .map_err(|e| telegram_request_error("sendMessage", &e))?;
 
         if !resp.status().is_success() {
             let body = resp.text().await.unwrap_or_default();
@@ -206,12 +227,12 @@ pub async fn send_message_returning_id(
         }))
         .send()
         .await
-        .map_err(|e| format!("Telegram request failed: {}", e))?;
+        .map_err(|e| telegram_request_error("sendMessage", &e))?;
 
     let body = resp
         .text()
         .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+        .map_err(|e| telegram_request_error("read sendMessage response", &e))?;
 
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse response: {}", e))?;
@@ -245,7 +266,7 @@ pub async fn edit_message_text(
         }))
         .send()
         .await
-        .map_err(|e| format!("Telegram editMessageText failed: {}", e))?;
+        .map_err(|e| telegram_request_error("editMessageText", &e))?;
 
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -272,7 +293,7 @@ pub async fn delete_message(bot_token: &str, chat_id: i64, message_id: i64) -> R
         }))
         .send()
         .await
-        .map_err(|e| format!("Telegram deleteMessage failed: {}", e))?;
+        .map_err(|e| telegram_request_error("deleteMessage", &e))?;
 
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -299,7 +320,7 @@ pub async fn send_chat_action(bot_token: &str, chat_id: i64, action: &str) -> Re
         }))
         .send()
         .await
-        .map_err(|e| format!("Telegram sendChatAction failed: {}", e))?;
+        .map_err(|e| telegram_request_error("sendChatAction", &e))?;
 
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
@@ -328,7 +349,7 @@ pub async fn answer_callback_query(bot_token: &str, callback_query_id: &str) -> 
         }))
         .send()
         .await
-        .map_err(|e| format!("Telegram answerCallbackQuery failed: {}", e))?;
+        .map_err(|e| telegram_request_error("answerCallbackQuery", &e))?;
 
     Ok(())
 }

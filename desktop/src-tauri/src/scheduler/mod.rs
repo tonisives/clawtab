@@ -107,7 +107,7 @@ fn log_startup_cron(jobs_config: &Arc<Mutex<JobsConfig>>) {
                 .filter_map(|s| s.upcoming(Local).next())
                 .map(|t| t.to_rfc3339())
                 .collect();
-            log::info!("  '{}' cron='{}' next={:?}", job.name, job.cron, next);
+            log::trace!("  '{}' cron='{}' next={:?}", job.name, job.cron, next);
         } else {
             log::warn!("  '{}' cron='{}' FAILED TO PARSE", job.name, job.cron);
         }

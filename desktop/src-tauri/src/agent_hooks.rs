@@ -276,7 +276,7 @@ impl HookRuntime {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentIntegrationStatus {
     pub provider: ProcessProvider,
     pub detected: bool,
@@ -306,7 +306,8 @@ pub fn integration_statuses() -> Vec<AgentIntegrationStatus> {
                 "Hook helper is missing or outdated".to_string()
             } else if configured {
                 if provider == ProcessProvider::Codex {
-                    "Configured; restart Codex and approve it in /hooks".to_string()
+                    "Enabled in Codex, but no events received; approve it in /hooks, then fully relaunch Codex"
+                        .to_string()
                 } else {
                     "Configured; restart running agent sessions".to_string()
                 }
