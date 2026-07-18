@@ -75,14 +75,25 @@ tmux source-file ~/.tmux.conf
 
 | Key | Action |
 |-----|--------|
-| `prefix + E` | Open the ClawTab popup with Home, Secrets, and Skills tabs |
+| `prefix + E` | Open a floating ClawTab menu over the current pane |
 | `prefix + y` | Toggle auto-yes for the current agent pane |
 | `prefix + o` | Open the current pane in the ClawTab desktop app |
 | `prefix + s` | Search skills and insert a skill command |
 | `prefix + f` | Fork the current agent session into a new pane |
 | `` prefix + ` `` | Open the ClawTab terminal sidebar |
 
-The popup also shows provider usage, session start time, first and latest queries, session ID, and restore context. All keys can be customized through tmux options.
+The floating menu has Home, Secrets, and Skills tabs. It also shows provider usage, session start time, first and latest queries, session ID, and restore context. Each agent pane can have its own floating menu, and the rest of tmux remains interactive while it is open. Opening the menu again from the same agent focuses its existing floating pane.
+
+The floating menu uses 95% of its target pane by default. Customize its size or restore the original client-modal popup in `.tmux.conf`:
+
+```tmux
+set -g @clawtab-menu-size 85
+# set -g @clawtab-menu-mode popup
+```
+
+Floating panes require tmux 3.7 or newer. Older versions fall back to the original popup.
+
+All keys can be customized through tmux options.
 
 ## Control from the CLI
 

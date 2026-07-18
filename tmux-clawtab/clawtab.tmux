@@ -5,7 +5,7 @@
 #   run-shell /path/to/clawtab.tmux
 #
 # Keybindings:
-#   prefix + E   ClawTab menu (auto-yes, secrets, skills) with [ ] tab switching
+#   prefix + E   Floating ClawTab menu (auto-yes, secrets, skills)
 #   prefix + y   Toggle auto-yes for current pane
 #   prefix + o   Open current pane in ClawTab desktop
 #   prefix + s   Search skills with fzf and insert /skill-name
@@ -39,7 +39,7 @@ menu_key=$(tmux show-option -gqv @clawtab-menu-key)
 sidebar_key=$(tmux show-option -gqv @clawtab-sidebar-key)
 : "${sidebar_key:=\`}"
 
-tmux bind-key "$menu_key" run-shell "$CURRENT_DIR/scripts/popup-menu-launcher.sh '#{pane_id}'"
+tmux bind-key "$menu_key" run-shell "$CURRENT_DIR/scripts/menu-launcher.sh '#{pane_id}'"
 tmux bind-key "$auto_yes_key" run-shell "$CURRENT_DIR/scripts/toggle-auto-yes.sh"
 tmux bind-key "$open_key" run-shell "$CURRENT_DIR/scripts/open-clawtab.sh"
 tmux bind-key "$skills_key" run-shell "$CURRENT_DIR/scripts/search-skills-launcher.sh '#{pane_id}'"
