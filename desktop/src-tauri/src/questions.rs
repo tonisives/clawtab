@@ -1090,6 +1090,20 @@ struct ActivityTracker {
     last_changed: HashMap<String, Instant>,
 }
 
+/// Codex emits `PermissionRequest`, but no matching permission-resolved event
+/// while an approved tool keeps running. Treat a hook's waiting state as asking
+/// only while terminal parsing still sees the prompt; afterwards the session is
+/// working until Codex emits its normal stop/idle lifecycle event.
+fn resolved_hook_activity(state: HookAgentState, asking: bool) -> (bool, bool) {
+    if asking {
+        return (false, true);
+    }
+    match state {
+        HookAgentState::Working | HookAgentState::Waiting => (true, false),
+        HookAgentState::Idle => (false, false),
+    }
+}
+
 fn normalize_activity_history(text: &str) -> String {
     strip_ansi(text)
         .lines()
@@ -1150,10 +1164,11 @@ impl ActivityTracker {
         {
             seen_panes.insert(pane_id.clone());
             if let Some(hook_state) = hook_runtime.pane_state(pane_id, *provider) {
-                let asking = asking_panes.contains(pane_id) || hook_state.attention.is_some();
+                let asking = asking_panes.contains(pane_id);
+                let (working, asking) = resolved_hook_activity(hook_state.state, asking);
                 activity.push(AgentActivity {
                     pane_id: pane_id.clone(),
-                    working: hook_state.state == HookAgentState::Working && !asking,
+                    working,
                     asking,
                 });
                 continue;
@@ -1454,8 +1469,8 @@ fn detect_question_processes(
 #[cfg(test)]
 mod tests {
     use super::{
-        find_yes_option, parse_numbered_options, parse_opencode_buttons, ActivityTracker,
-        DetectedAgent, ProcessProvider,
+        find_yes_option, parse_numbered_options, parse_opencode_buttons, resolved_hook_activity,
+        ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
     };
     use clawtab_protocol::QuestionOption;
     use std::collections::HashSet;
@@ -1685,6 +1700,18 @@ mod tests {
 
         let cleared = tracker.update(&[], &HashSet::new(), now);
         assert!(cleared.is_empty());
+    }
+
+    #[test]
+    fn waiting_hook_only_asks_while_a_terminal_question_exists() {
+        assert_eq!(
+            resolved_hook_activity(HookAgentState::Waiting, true),
+            (false, true)
+        );
+        assert_eq!(
+            resolved_hook_activity(HookAgentState::Waiting, false),
+            (true, false)
+        );
     }
 
     #[test]

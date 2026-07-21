@@ -125,10 +125,18 @@ export function DaemonPanel() {
             </span>
           </div>
         )}
-        {!status.installed && (
+        {!status.installed && status.running && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <span className="hint">
+              Daemon is running for this development session, but is not installed as a login
+              service. It will stop when the development process stops.
+            </span>
+          </div>
+        )}
+        {!status.installed && !status.running && (
           <div className="form-group" style={{ marginBottom: 0 }}>
             <span className="hint" style={{ color: "var(--danger-color)" }}>
-              Daemon is not installed. Enable it below to run background tasks.
+              Daemon is not running or installed. Enable it below to run background tasks.
             </span>
           </div>
         )}

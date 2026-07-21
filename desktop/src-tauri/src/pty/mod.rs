@@ -55,8 +55,29 @@ impl PtyManager {
         }
     }
 
-    pub fn active_pane_ids(&self) -> std::collections::HashSet<String> {
+    pub fn active_pane_ids(&mut self) -> std::collections::HashSet<String> {
+        self.reap_dead_viewers();
         self.sessions.keys().cloned().collect()
+    }
+
+    /// Remove viewers whose PTY reader has exited. Process discovery calls this
+    /// regularly, so grouped view sessions are cleaned up even when frontend
+    /// teardown was interrupted or the tmux attach process died unexpectedly.
+    fn reap_dead_viewers(&mut self) {
+        let dead_panes: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|(_, viewer)| !viewer.alive.load(Ordering::Relaxed))
+            .map(|(pane_id, _)| pane_id.clone())
+            .collect();
+
+        for pane_id in dead_panes {
+            log::info!("[pty {}] reaping dead viewer during process scan", pane_id);
+            if let Some(viewer) = self.sessions.remove(&pane_id) {
+                viewer.stop.store(true, Ordering::Relaxed);
+                let _ = crate::tmux::kill_session(&viewer.view_session);
+            }
+        }
     }
 
     /// Re-assert each viewer session's intended active window. Required after

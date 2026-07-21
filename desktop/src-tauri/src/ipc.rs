@@ -2,6 +2,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::Semaphore;
+
+const MAX_CONCURRENT_IPC_CONNECTIONS: usize = 64;
+const IPC_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const IPC_ACCEPT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_millis(100);
 use tokio::sync::Mutex as AsyncMutex;
 
 pub fn daemon_socket_path() -> PathBuf {
@@ -330,26 +335,44 @@ where
     log::info!("IPC server listening on {:?}", path);
 
     let handler = std::sync::Arc::new(handler);
+    let connection_slots = std::sync::Arc::new(Semaphore::new(MAX_CONCURRENT_IPC_CONNECTIONS));
 
     loop {
+        let permit = connection_slots
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| "IPC connection limiter closed".to_string())?;
         match listener.accept().await {
             Ok((stream, _)) => {
                 let handler = handler.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client::<C, R, F, Fut>(stream, handler).await {
-                        if e.contains("Broken pipe") || e.contains("Connection reset by peer") {
-                            log::debug!(
-                                "IPC client disconnected before receiving its response: {}",
-                                e
-                            );
-                        } else {
-                            log::error!("Error handling IPC client: {}", e);
+                    let result = tokio::time::timeout(
+                        IPC_REQUEST_TIMEOUT,
+                        handle_client::<C, R, F, Fut>(stream, handler),
+                    )
+                    .await;
+                    match result {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => {
+                            if e.contains("Broken pipe") || e.contains("Connection reset by peer") {
+                                log::debug!(
+                                    "IPC client disconnected before receiving its response: {}",
+                                    e
+                                );
+                            } else {
+                                log::error!("Error handling IPC client: {}", e);
+                            }
                         }
+                        Err(_) => log::warn!("IPC request timed out after 30s"),
                     }
+                    drop(permit);
                 });
             }
             Err(e) => {
+                drop(permit);
                 log::error!("Error accepting IPC connection: {}", e);
+                tokio::time::sleep(IPC_ACCEPT_ERROR_BACKOFF).await;
             }
         }
     }
@@ -411,7 +434,7 @@ where
     let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
-    while reader
+    if reader
         .read_line(&mut line)
         .await
         .map_err(|e| e.to_string())?
@@ -419,8 +442,7 @@ where
     {
         let trimmed = line.trim();
         if trimmed.is_empty() {
-            line.clear();
-            continue;
+            return Err("Empty IPC command".to_string());
         }
 
         let cmd: C =
@@ -435,8 +457,6 @@ where
             .map_err(|e| e.to_string())?;
         writer.write_all(b"\n").await.map_err(|e| e.to_string())?;
         writer.flush().await.map_err(|e| e.to_string())?;
-
-        line.clear();
     }
 
     Ok(())
@@ -444,6 +464,16 @@ where
 
 /// Generic single-shot client send. Used by both daemon and desktop wrappers.
 async fn send<C, R>(path: PathBuf, cmd: C) -> Result<R, String>
+where
+    C: serde::Serialize,
+    R: serde::de::DeserializeOwned,
+{
+    tokio::time::timeout(IPC_REQUEST_TIMEOUT, send_inner(path, cmd))
+        .await
+        .map_err(|_| "IPC request timed out after 30s".to_string())?
+}
+
+async fn send_inner<C, R>(path: PathBuf, cmd: C) -> Result<R, String>
 where
     C: serde::Serialize,
     R: serde::de::DeserializeOwned,
@@ -462,6 +492,7 @@ where
         .map_err(|e| e.to_string())?;
     writer.write_all(b"\n").await.map_err(|e| e.to_string())?;
     writer.flush().await.map_err(|e| e.to_string())?;
+    writer.shutdown().await.map_err(|e| e.to_string())?;
 
     let mut line = String::new();
     reader
