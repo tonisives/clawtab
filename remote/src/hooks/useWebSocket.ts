@@ -26,6 +26,7 @@ export function useWebSocket() {
 
   const backoffRef = useRef(1000);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const connectingRef = useRef(false);
   const mountedRef = useRef(true);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const appStateRef = useRef(RNAppState.currentState);
@@ -37,6 +38,7 @@ export function useWebSocket() {
   const scheduleReconnect = useCallback(() => {
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     reconnectTimer.current = setTimeout(() => {
+      reconnectTimer.current = undefined;
       if (mountedRef.current && isAuthenticatedRef.current) {
         connectRef.current();
       }
@@ -45,24 +47,51 @@ export function useWebSocket() {
   }, []);
 
   const doConnect = useCallback(async () => {
+    if (connectingRef.current) return;
     const existingWs = getWs();
     if (existingWs && existingWs.readyState <= WebSocket.OPEN) return;
+    connectingRef.current = true;
 
     let url: string;
     try {
       url = await getWsUrl();
     } catch (e) {
       console.log("[ws] failed to get URL:", e);
+      connectingRef.current = false;
+      if (mountedRef.current && isAuthenticatedRef.current) scheduleReconnect();
+      return;
+    }
+
+    if (!mountedRef.current || !isAuthenticatedRef.current) {
+      connectingRef.current = false;
+      return;
+    }
+
+    const currentWs = getWs();
+    if (currentWs && currentWs.readyState <= WebSocket.OPEN) {
+      connectingRef.current = false;
       return;
     }
 
     console.log("[ws] connecting to:", url.replace(/token=.*/, "token=***"));
-    const ws = new WebSocket(url);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      connectingRef.current = false;
+      console.log("[ws] failed to create socket:", e);
+      scheduleReconnect();
+      return;
+    }
     setWs(ws);
+    connectingRef.current = false;
 
     ws.onopen = () => {
       console.log("[ws] connected");
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || getWs() !== ws) {
+        ws.close();
+        return;
+      }
       setConnected(true);
       backoffRef.current = 1000;
 
@@ -72,12 +101,12 @@ export function useWebSocket() {
 
       // Flush any answers queued while offline
       flushPendingAnswers((msg) => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+        if (getWs() === ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
       });
 
       // Register push token
       getPushToken().then((token) => {
-        if (token && ws.readyState === WebSocket.OPEN) {
+        if (token && getWs() === ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: "register_push_token",
             id: nextId(),
@@ -89,7 +118,7 @@ export function useWebSocket() {
     };
 
     ws.onmessage = (event) => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || getWs() !== ws) return;
       let msg: IncomingMessage;
       try {
         msg = JSON.parse(event.data);
@@ -173,6 +202,7 @@ export function useWebSocket() {
 
     ws.onclose = (e) => {
       console.log("[ws] closed, code:", e.code, "reason:", e.reason);
+      if (getWs() !== ws) return;
       setWs(null);
       setWsSend(null);
       clearRegisteredSend();
@@ -202,7 +232,7 @@ export function useWebSocket() {
       if (Platform.OS === "web" && e.code === 1006 && !e.reason) {
         getSubscriptionStatus()
           .then((sub) => {
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || getWs()) return;
             if (!sub.subscribed) {
               // No subscription - relay is reachable but rejecting, stop reconnecting
               setConnected(true);
@@ -211,7 +241,7 @@ export function useWebSocket() {
             }
           })
           .catch(() => {
-            if (!mountedRef.current) return;
+            if (!mountedRef.current || getWs()) return;
             refreshToken().then((ok) => {
               if (ok) {
                 backoffRef.current = 1000;
@@ -235,7 +265,7 @@ export function useWebSocket() {
     };
 
     setWsSend((msg: ClientMessage) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (getWs() === ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
       }
     });
@@ -286,6 +316,7 @@ export function useWebSocket() {
       sub.remove();
       clearInterval(processInterval);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = undefined;
       const ws = getWs();
       if (ws) {
         ws.close();

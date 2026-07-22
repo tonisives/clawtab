@@ -28,6 +28,8 @@ pub struct MobileConnection {
 pub struct Hub {
     desktops: HashMap<Uuid, Vec<DesktopConnection>>,
     mobiles: HashMap<Uuid, Vec<MobileConnection>>,
+    /// Mobile connection IDs currently consuming each desktop PTY stream.
+    pty_subscribers: HashMap<(Uuid, String), HashSet<Uuid>>,
     /// Cached questions per user, replayed to newly connecting mobiles
     /// and to guests of shared workspaces.
     last_questions: HashMap<Uuid, Vec<ClaudeQuestion>>,
@@ -44,6 +46,7 @@ impl Hub {
         Self {
             desktops: HashMap::new(),
             mobiles: HashMap::new(),
+            pty_subscribers: HashMap::new(),
             last_questions: HashMap::new(),
             auto_yes_panes: HashMap::new(),
             last_auto_yes_panes: HashMap::new(),
@@ -162,6 +165,36 @@ impl Hub {
         if conns.is_empty() {
             self.mobiles.remove(&user_id);
         }
+    }
+
+    pub fn add_pty_subscription(
+        &mut self,
+        desktop_user_id: Uuid,
+        pane_id: &str,
+        connection_id: Uuid,
+    ) {
+        self.pty_subscribers
+            .entry((desktop_user_id, pane_id.to_string()))
+            .or_default()
+            .insert(connection_id);
+    }
+
+    /// Returns true only when the removed connection was the final consumer.
+    pub fn remove_pty_subscription(
+        &mut self,
+        desktop_user_id: Uuid,
+        pane_id: &str,
+        connection_id: Uuid,
+    ) -> bool {
+        let key = (desktop_user_id, pane_id.to_string());
+        let Some(subscribers) = self.pty_subscribers.get_mut(&key) else {
+            return false;
+        };
+        if !subscribers.remove(&connection_id) || !subscribers.is_empty() {
+            return false;
+        }
+        self.pty_subscribers.remove(&key);
+        true
     }
 
     /// Forward a client (mobile) message to the user's desktop app(s).
@@ -537,5 +570,33 @@ mod tests {
 
         hub.set_auto_yes_panes(user, HashSet::new());
         assert!(!hub.is_auto_yes_pane(user, "pane-1"));
+    }
+
+    #[test]
+    fn pty_stream_is_released_only_after_last_mobile_unsubscribes() {
+        let mut hub = Hub::new();
+        let desktop_user = Uuid::new_v4();
+        let first_mobile = Uuid::new_v4();
+        let second_mobile = Uuid::new_v4();
+
+        hub.add_pty_subscription(desktop_user, "%10", first_mobile);
+        hub.add_pty_subscription(desktop_user, "%10", second_mobile);
+
+        assert!(!hub.remove_pty_subscription(desktop_user, "%10", first_mobile));
+        assert!(hub.remove_pty_subscription(desktop_user, "%10", second_mobile));
+        assert!(!hub.remove_pty_subscription(desktop_user, "%10", second_mobile));
+    }
+
+    #[test]
+    fn pty_subscriptions_are_tracked_per_pane() {
+        let mut hub = Hub::new();
+        let desktop_user = Uuid::new_v4();
+        let mobile = Uuid::new_v4();
+
+        hub.add_pty_subscription(desktop_user, "%10", mobile);
+        hub.add_pty_subscription(desktop_user, "%11", mobile);
+
+        assert!(hub.remove_pty_subscription(desktop_user, "%10", mobile));
+        assert!(hub.remove_pty_subscription(desktop_user, "%11", mobile));
     }
 }

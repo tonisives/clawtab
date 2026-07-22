@@ -27,11 +27,12 @@ pub(super) async fn run(state: AppState, socket: WebSocket, user_id: Uuid) {
         socket,
         rx,
         user_id,
+        connection_id,
         Arc::clone(&pty_subscriptions),
     )
     .await;
 
-    release_pty_subscriptions(&state, Arc::clone(&pty_subscriptions)).await;
+    release_pty_subscriptions(&state, connection_id, Arc::clone(&pty_subscriptions)).await;
 
     {
         let mut hub = state.hub.write().await;
@@ -46,13 +47,14 @@ async fn drive_session(
     socket: WebSocket,
     rx: mpsc::UnboundedReceiver<String>,
     user_id: Uuid,
+    connection_id: Uuid,
     pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
 ) -> LoopExit {
     run_session_loop(socket, rx, move |text| {
         let state = state.clone();
         let pty_subscriptions = Arc::clone(&pty_subscriptions);
         async move {
-            handle_message(&state, user_id, &text, pty_subscriptions).await;
+            handle_message(&state, user_id, connection_id, &text, pty_subscriptions).await;
         }
     })
     .await
@@ -60,6 +62,7 @@ async fn drive_session(
 
 async fn release_pty_subscriptions(
     state: &AppState,
+    connection_id: Uuid,
     pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
 ) {
     let subscriptions = {
@@ -69,9 +72,11 @@ async fn release_pty_subscriptions(
     if subscriptions.is_empty() {
         return;
     }
-    let hub = state.hub.read().await;
+    let mut hub = state.hub.write().await;
     for (pane_id, target) in subscriptions {
-        hub.forward_to_desktop(target, &ClientMessage::UnsubscribePty { pane_id });
+        if hub.remove_pty_subscription(target, &pane_id, connection_id) {
+            hub.forward_to_desktop(target, &ClientMessage::UnsubscribePty { pane_id });
+        }
     }
 }
 
@@ -138,6 +143,7 @@ fn send_welcome(tx: &mpsc::UnboundedSender<String>, connection_id: Uuid) {
 async fn handle_message(
     state: &AppState,
     user_id: Uuid,
+    connection_id: Uuid,
     text: &str,
     pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
 ) {
@@ -163,6 +169,17 @@ async fn handle_message(
         ClientMessage::SetAutoYesPanes { .. } => {
             let hub = state.hub.read().await;
             hub.forward_to_desktop(user_id, &msg);
+            return;
+        }
+        ClientMessage::UnsubscribePty { pane_id } => {
+            handle_pty_unsubscribe(
+                state,
+                connection_id,
+                pane_id,
+                &msg,
+                Arc::clone(&pty_subscriptions),
+            )
+            .await;
             return;
         }
         _ => {}
@@ -200,18 +217,7 @@ async fn handle_message(
         return;
     }
 
-    match &msg {
-        ClientMessage::SubscribePty { pane_id, .. } => {
-            pty_subscriptions
-                .lock()
-                .await
-                .insert(pane_id.clone(), target);
-        }
-        ClientMessage::UnsubscribePty { pane_id } => {
-            pty_subscriptions.lock().await.remove(pane_id);
-        }
-        _ => {}
-    }
+    track_pty_subscription(state, target, connection_id, &msg, pty_subscriptions).await;
 
     let hub = state.hub.read().await;
     if let ClientMessage::AnswerQuestion {
@@ -234,6 +240,43 @@ async fn handle_message(
     }
 
     hub.forward_to_desktop(target, &msg);
+}
+
+async fn handle_pty_unsubscribe(
+    state: &AppState,
+    connection_id: Uuid,
+    pane_id: &str,
+    msg: &ClientMessage,
+    pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
+) {
+    let Some(target) = pty_subscriptions.lock().await.remove(pane_id) else {
+        return;
+    };
+    let mut hub = state.hub.write().await;
+    if hub.remove_pty_subscription(target, pane_id, connection_id) {
+        hub.forward_to_desktop(target, msg);
+    }
+}
+
+async fn track_pty_subscription(
+    state: &AppState,
+    target: Uuid,
+    connection_id: Uuid,
+    msg: &ClientMessage,
+    pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
+) {
+    let ClientMessage::SubscribePty { pane_id, .. } = msg else {
+        return;
+    };
+    pty_subscriptions
+        .lock()
+        .await
+        .insert(pane_id.clone(), target);
+    state
+        .hub
+        .write()
+        .await
+        .add_pty_subscription(target, pane_id, connection_id);
 }
 
 async fn filter_detected_processes_for_mobile(

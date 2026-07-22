@@ -34,26 +34,17 @@ pub(super) fn emit_initial_snapshot(
     pane_id: &str,
 ) {
     let started = Instant::now();
-    // Clear the terminal before sending a fresh full-screen snapshot.
-    let clear = b"\x1bc".to_vec();
-    recent.lock().append(pane_id, &clear);
-    emit_bytes(sink, pane_id, clear);
-    log::debug!(
-        "[pty {}] initial snapshot clear emitted after {}ms",
-        pane_id,
-        started.elapsed().as_millis()
-    );
+    // Keep reset and redraw in one write so clients never render the cleared
+    // terminal between two relay messages.
+    let mut snapshot = b"\x1bc".to_vec();
 
     match crate::tmux::capture_pane_escaped(pane_id) {
         Ok(content) => {
             let bytes = content.into_bytes();
             let byte_len = bytes.len();
-            if !bytes.is_empty() {
-                recent.lock().append(pane_id, &bytes);
-                emit_bytes(sink, pane_id, bytes);
-            }
+            snapshot.extend_from_slice(&bytes);
             log::info!(
-                "[pty {}] initial snapshot capture emitted {} bytes after {}ms",
+                "[pty {}] initial snapshot captured {} bytes after {}ms",
                 pane_id,
                 byte_len,
                 started.elapsed().as_millis()
@@ -66,6 +57,9 @@ pub(super) fn emit_initial_snapshot(
             err
         ),
     }
+
+    recent.lock().append(pane_id, &snapshot);
+    emit_bytes(sink, pane_id, snapshot);
 }
 
 pub(super) fn refresh_attached_pane(
