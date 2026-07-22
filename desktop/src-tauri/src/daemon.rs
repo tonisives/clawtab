@@ -1,11 +1,14 @@
+use std::fs::OpenOptions;
 use std::io::{BufRead, Write};
-use std::path::PathBuf;
+use std::os::fd::AsRawFd;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::ipc::{self, IpcCommand, IpcResponse};
 
 pub const PLIST_LABEL: &str = "com.clawtab.daemon";
 pub const ENGINE_EXECUTABLE_PATH: &str = "/usr/local/bin/clawtab-daemon";
+pub const DAEMON_LOCK_PATH: &str = "/tmp/clawtab/daemon.lock";
 
 pub const PLIST_CONTENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -50,38 +53,66 @@ pub fn is_installed() -> bool {
     plist_dest().exists()
 }
 
-fn ping_daemon_socket() -> bool {
-    let stream = std::os::unix::net::UnixStream::connect(ipc::daemon_socket_path());
-    let mut stream = match stream {
-        Ok(stream) => stream,
-        Err(_) => return false,
-    };
+fn ping_daemon_socket() -> Result<bool, std::io::ErrorKind> {
+    let mut stream = std::os::unix::net::UnixStream::connect(ipc::daemon_socket_path())
+        .map_err(|error| error.kind())?;
 
     let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(750)));
 
     let cmd = match serde_json::to_string(&IpcCommand::Ping) {
         Ok(cmd) => cmd,
-        Err(_) => return false,
+        Err(_) => return Ok(false),
     };
 
-    if stream.write_all(cmd.as_bytes()).is_err()
-        || stream.write_all(b"\n").is_err()
-        || stream.flush().is_err()
-    {
-        return false;
-    }
+    stream
+        .write_all(cmd.as_bytes())
+        .map_err(|error| error.kind())?;
+    stream.write_all(b"\n").map_err(|error| error.kind())?;
+    stream.flush().map_err(|error| error.kind())?;
 
     let mut reader = std::io::BufReader::new(stream);
     let mut line = String::new();
-    if reader.read_line(&mut line).is_err() {
-        return false;
-    }
+    reader.read_line(&mut line).map_err(|error| error.kind())?;
 
-    matches!(
+    Ok(matches!(
         serde_json::from_str::<IpcResponse>(line.trim()),
         Ok(IpcResponse::Pong)
-    )
+    ))
+}
+
+fn locked_daemon_pid_at(path: &Path) -> Option<u32> {
+    let file = OpenOptions::new().read(true).open(path).ok()?;
+    let lock_result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) };
+
+    if lock_result == 0 {
+        return None;
+    }
+
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() != Some(libc::EWOULDBLOCK) && error.raw_os_error() != Some(libc::EAGAIN)
+    {
+        return None;
+    }
+
+    let mut pid = String::new();
+    std::io::BufReader::new(file).read_line(&mut pid).ok()?;
+    pid.trim().parse::<u32>().ok()
+}
+
+fn locked_daemon_pid() -> Option<u32> {
+    locked_daemon_pid_at(Path::new(DAEMON_LOCK_PATH))
+}
+
+fn daemon_is_running(
+    socket_probe: Result<bool, std::io::ErrorKind>,
+    fallback_pid: Option<u32>,
+) -> bool {
+    match socket_probe {
+        Ok(responsive) => responsive,
+        Err(std::io::ErrorKind::PermissionDenied) => fallback_pid.is_some(),
+        Err(_) => false,
+    }
 }
 
 fn launchctl_pid() -> Option<u32> {
@@ -100,9 +131,15 @@ fn launchctl_pid() -> Option<u32> {
     }
 }
 
-/// Check if the daemon is running via its IPC socket. Returns (running, pid).
+/// Check if the daemon is running. Returns (running, pid).
+///
+/// The socket ping is authoritative unless sandboxing denies access to the
+/// socket. In that case, fall back to launchd or the daemon's held lock. A
+/// stale lock file is ignored because it no longer has a kernel lock.
 pub fn is_running() -> (bool, Option<u32>) {
-    (ping_daemon_socket(), launchctl_pid())
+    let socket_probe = ping_daemon_socket();
+    let pid = launchctl_pid().or_else(locked_daemon_pid);
+    (daemon_is_running(socket_probe, pid), pid)
 }
 
 pub fn install() -> Result<String, String> {
@@ -191,4 +228,59 @@ pub fn uninstall() -> Result<String, String> {
     std::fs::remove_file(&dest).map_err(|e| format!("Failed to remove plist: {}", e))?;
 
     Ok("Daemon uninstalled".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn held_daemon_lock_reports_its_pid() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let lock_path = directory.path().join("daemon.lock");
+        let mut lock_file = OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .expect("open lock file");
+        writeln!(lock_file, "42").expect("write pid");
+
+        let lock_result =
+            unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        assert_eq!(lock_result, 0);
+        assert_eq!(locked_daemon_pid_at(&lock_path), Some(42));
+    }
+
+    #[test]
+    fn stale_daemon_lock_is_ignored() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let lock_path = directory.path().join("daemon.lock");
+        std::fs::write(&lock_path, "42\n").expect("write stale lock");
+
+        assert_eq!(locked_daemon_pid_at(&lock_path), None);
+    }
+
+    #[test]
+    fn permission_denied_uses_validated_fallback_pid() {
+        assert!(daemon_is_running(
+            Err(std::io::ErrorKind::PermissionDenied),
+            Some(42)
+        ));
+        assert!(!daemon_is_running(
+            Err(std::io::ErrorKind::PermissionDenied),
+            None
+        ));
+    }
+
+    #[test]
+    fn other_socket_failures_do_not_use_fallback_pid() {
+        assert!(!daemon_is_running(
+            Err(std::io::ErrorKind::ConnectionRefused),
+            Some(42)
+        ));
+        assert!(!daemon_is_running(Ok(false), Some(42)));
+        assert!(daemon_is_running(Ok(true), None));
+    }
 }

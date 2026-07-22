@@ -15,6 +15,7 @@ use crate::AppState;
 
 pub(super) const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 pub(super) const CLIENT_TIMEOUT: Duration = Duration::from_secs(90);
+const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Deserialize)]
 pub struct WsQuery {
@@ -120,7 +121,10 @@ where
     loop {
         tokio::select! {
             Some(msg) = rx.recv() => {
-                if sink.send(Message::Text(msg.into())).await.is_err() {
+                if !matches!(
+                    tokio::time::timeout(SEND_TIMEOUT, sink.send(Message::Text(msg.into()))).await,
+                    Ok(Ok(()))
+                ) {
                     return LoopExit::SendError;
                 }
             }
@@ -140,7 +144,10 @@ where
                 if last_pong.elapsed() > CLIENT_TIMEOUT {
                     return LoopExit::Timeout;
                 }
-                if sink.send(Message::Ping(vec![].into())).await.is_err() {
+                if !matches!(
+                    tokio::time::timeout(SEND_TIMEOUT, sink.send(Message::Ping(vec![].into()))).await,
+                    Ok(Ok(()))
+                ) {
                     return LoopExit::SendError;
                 }
             }

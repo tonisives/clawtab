@@ -16,6 +16,8 @@ use crate::pty::SharedPtyManager;
 
 pub use crate::process_snapshot::detect_processes_snapshot;
 
+const RELAY_SEND_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Relay connection state, shared via Arc<Mutex<..>> in AppState.
 pub struct RelayHandle {
     tx: mpsc::UnboundedSender<String>,
@@ -456,7 +458,7 @@ async fn run_session<S, R>(
     loop {
         tokio::select! {
             Some(msg) = rx.recv() => {
-                if ws_sink.send(Message::Text(msg.into())).await.is_err() {
+                if !send_ws_message(&mut ws_sink, Message::Text(msg.into())).await {
                     break;
                 }
             }
@@ -475,7 +477,9 @@ async fn run_session<S, R>(
                         }
                     }
                     Ok(Message::Ping(data)) => {
-                        let _ = ws_sink.send(Message::Pong(data)).await;
+                        if !send_ws_message(&mut ws_sink, Message::Pong(data)).await {
+                            break;
+                        }
                     }
                     Ok(Message::Pong(_)) => {
                         last_pong = tokio::time::Instant::now();
@@ -489,11 +493,31 @@ async fn run_session<S, R>(
                     log::warn!("Relay: no pong received in {:?}, reconnecting", last_pong.elapsed());
                     break;
                 }
-                if ws_sink.send(Message::Ping(vec![].into())).await.is_err() {
+                if !send_ws_message(&mut ws_sink, Message::Ping(vec![].into())).await {
                     break;
                 }
             }
             _ = cancel.cancelled() => break,
+        }
+    }
+}
+
+async fn send_ws_message<S>(ws_sink: &mut S, message: Message) -> bool
+where
+    S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+{
+    match tokio::time::timeout(RELAY_SEND_TIMEOUT, ws_sink.send(message)).await {
+        Ok(Ok(())) => true,
+        Ok(Err(error)) => {
+            log::warn!("Relay: websocket send failed: {error}");
+            false
+        }
+        Err(_) => {
+            log::warn!(
+                "Relay: websocket send timed out after {:?}, reconnecting",
+                RELAY_SEND_TIMEOUT
+            );
+            false
         }
     }
 }
