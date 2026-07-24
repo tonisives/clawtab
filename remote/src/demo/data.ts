@@ -391,6 +391,8 @@ export const DEMO_PROCESSES: DetectedProcess[] = [
     last_query: "I need approval before posting the review comment.",
     session_started_at: ago(3),
     token_count: 42300,
+    _agent_state: "asking",
+    _last_activity: Date.parse(ago(1)),
   },
   {
     pane_id: "demo-pane-codex",
@@ -411,6 +413,8 @@ export const DEMO_PROCESSES: DetectedProcess[] = [
     last_query: "The test compares local midnight against a UTC timestamp.",
     session_started_at: ago(7),
     token_count: 31800,
+    _agent_state: "working",
+    _last_activity: Date.parse(ago(2)),
   },
   {
     pane_id: "demo-pane-opencode",
@@ -431,6 +435,8 @@ export const DEMO_PROCESSES: DetectedProcess[] = [
     last_query: "I am reducing chrome before touching the terminal viewport.",
     session_started_at: ago(11),
     token_count: 26700,
+    _agent_state: "finished",
+    _last_activity: Date.parse(ago(6)),
   },
 ];
 

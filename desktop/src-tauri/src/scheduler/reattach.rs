@@ -323,6 +323,7 @@ fn spawn_reattach_monitor(
         pane_id: pane_id.to_string(),
         run_id,
         job_id: job.name.clone(),
+        group_name: crate::config::jobs::job_group(job).to_string(),
         slug: job.slug.clone(),
         agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),

@@ -224,6 +224,22 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
                 forward_detected_processes(&hub, guest, text, id, processes);
             }
         }
+        DesktopMessage::AgentActivity { activity } => {
+            let mut hub = state.hub.write().await;
+            hub.set_cached_agent_activity(user_id, activity.clone());
+            hub.send_raw_to_mobiles(user_id, text);
+            for guest in &guests {
+                let Some(groups) = guest.allowed_groups.as_deref() else {
+                    hub.send_raw_to_mobiles(guest.guest_id, text);
+                    continue;
+                };
+                let activity = hub.cached_agent_activity(user_id, Some(groups));
+                hub.broadcast_to_mobiles(
+                    guest.guest_id,
+                    &DesktopMessage::AgentActivity { activity },
+                );
+            }
+        }
         DesktopMessage::TriggerResult {
             trigger_id,
             status,

@@ -152,10 +152,14 @@ export function useWebSocket() {
             ws.send(JSON.stringify({ type: "list_jobs", id: nextId() }));
           }
           break;
+        case "agent_activity":
+          useJobsStore.getState().setAgentActivity(msg.activity);
+          break;
         case "settings_response":
           useJobsStore.getState().setDesktopSettings(msg.enabled_models, msg.default_provider, msg.default_model);
           break;
         case "claude_questions":
+          useJobsStore.getState().setQuestionPanes(msg.questions.map((question) => question.pane_id));
           useNotificationStore.getState().setQuestions(msg.questions);
           saveQuestionsCache(msg.questions);
           break;
@@ -266,6 +270,9 @@ export function useWebSocket() {
 
     setWsSend((msg: ClientMessage) => {
       if (getWs() === ws && ws.readyState === WebSocket.OPEN) {
+        if (msg.type === "send_detected_process_input" || msg.type === "answer_question") {
+          useJobsStore.getState().markProcessActivity(msg.pane_id);
+        }
         ws.send(JSON.stringify(msg));
       }
     });

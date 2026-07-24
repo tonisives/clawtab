@@ -128,6 +128,13 @@ pub struct DetectedProcess {
     pub token_count: Option<u64>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentActivity {
+    pub pane_id: String,
+    pub working: bool,
+    pub asking: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunRecord {
     pub id: String,

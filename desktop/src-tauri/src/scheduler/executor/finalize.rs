@@ -132,6 +132,7 @@ fn build_monitor_params(rc: &RunCtx<'_>, handle: TmuxHandle) -> MonitorParams {
         pane_id: handle.pane_id,
         run_id: rc.run_id.to_string(),
         job_id: job.name.clone(),
+        group_name: crate::config::jobs::job_group(job).to_string(),
         slug: job.slug.clone(),
         agent_group: (job.group == "agent").then(|| crate::agent::agent_group_from_slug(&job.slug)),
         agent_prompt_path: (job.group == "agent").then(|| std::path::PathBuf::from(&job.path)),
@@ -157,7 +158,7 @@ pub(super) struct RunOutcome<'a> {
     pub exit_code: Option<i32>,
     pub stdout: &'a str,
     pub stderr: &'a str,
-    /// When the job errored, the stringified error (used as stderr in the notification).
+    /// When the job errored, the stringified error persisted as stderr.
     pub error: Option<&'a str>,
 }
 
@@ -227,16 +228,17 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
     let ctx = rc.ctx;
     match job.notify_target {
         NotifyTarget::Telegram => {
-            if let Some(ref tg) = rc.telegram_config {
-                let stderr_for_msg = outcome.error.unwrap_or(outcome.stderr);
+            if job.telegram_notify.finish {
+                let Some(ref tg) = rc.telegram_config else {
+                    return;
+                };
                 send_job_notification(
                     tg,
                     job.telegram_chat_id,
+                    crate::config::jobs::job_group(job),
                     &job.name,
                     outcome.exit_code,
                     outcome.success,
-                    outcome.stdout,
-                    stderr_for_msg,
                 )
                 .await;
             }

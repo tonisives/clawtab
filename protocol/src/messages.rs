@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::job::{DetectedProcess, ClaudeQuestion, JobStatus, RemoteJob, RunDetail, RunRecord};
+use crate::job::{
+    AgentActivity, ClaudeQuestion, DetectedProcess, JobStatus, RemoteJob, RunDetail, RunRecord,
+};
 
 /// Messages sent by mobile/web clients to the relay server.
 /// The relay forwards these to the appropriate desktop app.
@@ -260,6 +262,8 @@ pub enum DesktopMessage {
         id: String,
         processes: Vec<DetectedProcess>,
     },
+    /// Authoritative per-pane agent state used by tmux and remote clients.
+    AgentActivity { activity: Vec<AgentActivity> },
     /// Response to get_settings
     SettingsResponse {
         id: String,

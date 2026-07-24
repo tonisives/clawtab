@@ -5,15 +5,12 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
-use crate::telegram::{self, ActiveAgent, TelegramConfig};
+use crate::telegram::ActiveAgent;
 use crate::tmux;
 
 use super::lock_or_log;
 
-pub(super) async fn cleanup_stale_agents(
-    active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>,
-    config: &TelegramConfig,
-) {
+pub(super) fn cleanup_stale_agents(active_agents: &Arc<Mutex<HashMap<i64, ActiveAgent>>>) {
     let stale: Vec<(i64, String)> = match lock_or_log(active_agents, "active_agents") {
         Some(agents) => agents
             .iter()
@@ -27,8 +24,6 @@ pub(super) async fn cleanup_stale_agents(
         if let Some(mut agents) = lock_or_log(active_agents, "active_agents") {
             agents.remove(&chat_id);
         }
-        let msg = format!("<b>ClawTab</b>: Job <code>{}</code> session ended.", job_id);
-        let _ = telegram::send_message(&config.bot_token, chat_id, &msg).await;
         log::info!(
             "Cleaned up stale session for job '{}' chat {}",
             job_id,

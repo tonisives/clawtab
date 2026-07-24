@@ -56,7 +56,7 @@ pub async fn start_polling(state: AgentState) {
             continue;
         }
 
-        cleanup::cleanup_stale_agents(&state.active_agents, &config).await;
+        cleanup::cleanup_stale_agents(&state.active_agents);
 
         log::debug!("Polling getUpdates (offset={:?})", offset);
         match updates::get_updates(&config.bot_token, offset, 30).await {

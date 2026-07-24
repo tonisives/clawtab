@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use clawtab_protocol::{
-    ClaudeQuestion, ClientMessage, DesktopMessage, DetectedProcess, ServerMessage,
+    AgentActivity, ClaudeQuestion, ClientMessage, DesktopMessage, DetectedProcess, ServerMessage,
 };
 
 pub struct DesktopConnection {
@@ -39,6 +39,8 @@ pub struct Hub {
     last_auto_yes_panes: HashMap<Uuid, String>,
     /// Last daemon/Desktop process snapshot per user, replayed to mobiles.
     last_detected_processes: HashMap<Uuid, Vec<DetectedProcess>>,
+    /// Last authoritative per-pane agent activity snapshot per user.
+    last_agent_activity: HashMap<Uuid, Vec<AgentActivity>>,
 }
 
 impl Hub {
@@ -51,6 +53,7 @@ impl Hub {
             auto_yes_panes: HashMap::new(),
             last_auto_yes_panes: HashMap::new(),
             last_detected_processes: HashMap::new(),
+            last_agent_activity: HashMap::new(),
         }
     }
 
@@ -89,6 +92,7 @@ impl Hub {
             self.desktops.remove(&user_id);
             self.last_questions.remove(&user_id);
             self.last_detected_processes.remove(&user_id);
+            self.last_agent_activity.remove(&user_id);
             self.broadcast_to_mobiles(
                 user_id,
                 &DesktopMessage::ClaudeQuestions {
@@ -103,6 +107,7 @@ impl Hub {
                     processes: vec![],
                 },
             );
+            self.broadcast_to_mobiles(user_id, &DesktopMessage::AgentActivity { activity: vec![] });
         }
 
         self.broadcast_to_mobiles(
@@ -150,6 +155,15 @@ impl Hub {
                 &DesktopMessage::DetectedProcesses {
                     id: "cached_processes".to_string(),
                     processes: processes.clone(),
+                },
+            );
+        }
+
+        if let Some(activity) = self.last_agent_activity.get(&user_id) {
+            send_serialized(
+                &conn.tx,
+                &DesktopMessage::AgentActivity {
+                    activity: activity.clone(),
                 },
             );
         }
@@ -268,6 +282,42 @@ impl Hub {
             .unwrap_or_default()
     }
 
+    pub fn set_cached_agent_activity(&mut self, user_id: Uuid, activity: Vec<AgentActivity>) {
+        self.last_agent_activity.insert(user_id, activity);
+    }
+
+    pub fn cached_agent_activity(
+        &self,
+        user_id: Uuid,
+        allowed_groups: Option<&[String]>,
+    ) -> Vec<AgentActivity> {
+        let activity = self
+            .last_agent_activity
+            .get(&user_id)
+            .cloned()
+            .unwrap_or_default();
+        let Some(groups) = allowed_groups else {
+            return activity;
+        };
+        let allowed_panes: HashSet<&str> = self
+            .last_detected_processes
+            .get(&user_id)
+            .into_iter()
+            .flatten()
+            .filter(|process| {
+                process
+                    .matched_group
+                    .as_ref()
+                    .is_some_and(|group| groups.contains(group))
+            })
+            .map(|process| process.pane_id.as_str())
+            .collect();
+        activity
+            .into_iter()
+            .filter(|item| allowed_panes.contains(item.pane_id.as_str()))
+            .collect()
+    }
+
     pub fn set_auto_yes_panes(&mut self, user_id: Uuid, pane_ids: HashSet<String>) {
         if pane_ids.is_empty() {
             self.auto_yes_panes.remove(&user_id);
@@ -326,6 +376,10 @@ impl Hub {
         if let Some(json) = self.last_auto_yes_panes.get(&owner_id) {
             let _ = tx.send(json.clone());
         }
+        let activity = self.cached_agent_activity(owner_id, allowed_groups);
+        if !activity.is_empty() {
+            send_serialized(tx, &DesktopMessage::AgentActivity { activity });
+        }
     }
 }
 
@@ -365,6 +419,27 @@ mod tests {
             button_row: 0,
             matched_group: None,
             matched_job: None,
+        }
+    }
+
+    fn mk_process(pane: &str, group: &str) -> DetectedProcess {
+        DetectedProcess {
+            pane_id: pane.to_string(),
+            cwd: "/tmp".to_string(),
+            version: String::new(),
+            provider: "codex".to_string(),
+            can_fork_session: false,
+            can_send_skills: false,
+            can_inject_secrets: false,
+            tmux_session: String::new(),
+            window_name: String::new(),
+            matched_group: Some(group.to_string()),
+            matched_job: None,
+            log_lines: String::new(),
+            first_query: None,
+            last_query: None,
+            session_started_at: None,
+            token_count: None,
         }
     }
 
@@ -455,6 +530,41 @@ mod tests {
         let questions = rx.try_recv().unwrap_or_default();
         assert!(questions.contains("q-allowed"), "got {questions}");
         assert!(!questions.contains("q-denied"), "got {questions}");
+    }
+
+    #[test]
+    fn replay_desktop_state_filters_agent_activity_by_group() {
+        let mut hub = Hub::new();
+        let owner = Uuid::new_v4();
+        hub.set_cached_detected_processes(
+            owner,
+            vec![
+                mk_process("allowed", "work"),
+                mk_process("denied", "private"),
+            ],
+        );
+        hub.set_cached_agent_activity(
+            owner,
+            vec![
+                AgentActivity {
+                    pane_id: "allowed".into(),
+                    working: true,
+                    asking: false,
+                },
+                AgentActivity {
+                    pane_id: "denied".into(),
+                    working: false,
+                    asking: true,
+                },
+            ],
+        );
+
+        let (tx, mut rx) = mk_channel();
+        hub.replay_desktop_state_to(owner, &tx, Some(&["work".into()]));
+
+        let activity = rx.try_recv().unwrap_or_default();
+        assert!(activity.contains("allowed"), "got {activity}");
+        assert!(!activity.contains("denied"), "got {activity}");
     }
 
     #[test]

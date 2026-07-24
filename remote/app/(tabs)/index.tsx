@@ -719,9 +719,10 @@ export default function JobsScreen() {
         hiddenGroups={hiddenGroups}
         onHideGroup={hideGroup}
         onUnhideGroup={unhideGroup}
+        interactiveHiddenGroups
         onRefresh={handleRefresh}
         sortMode={sortMode}
-        onSortChange={undefined}
+        onSortChange={setSortMode}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
         pinnedItems={pinnedItems}
@@ -754,9 +755,10 @@ export default function JobsScreen() {
       hiddenGroups={hiddenGroups}
       onHideGroup={hideGroup}
       onUnhideGroup={unhideGroup}
+      interactiveHiddenGroups
       onRefresh={handleRefresh}
       sortMode={sortMode}
-      onSortChange={undefined}
+      onSortChange={setSortMode}
       onSelectJob={handleSelectJob}
       onSelectProcess={handleSelectProcess}
       pinnedItems={pinnedItems}
@@ -1091,9 +1093,10 @@ export default function JobsScreen() {
             hiddenGroups={hiddenGroups}
             onHideGroup={hideGroup}
             onUnhideGroup={unhideGroup}
+            interactiveHiddenGroups
             onRefresh={handleRefresh}
             sortMode={sortMode}
-            onSortChange={isIosPad ? undefined : setSortMode}
+            onSortChange={setSortMode}
             onSelectJob={handleSelectJobWithTree}
             onSelectProcess={handleSelectProcessWithTree}
             pinnedItems={pinnedItems}

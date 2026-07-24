@@ -40,11 +40,12 @@ export function JobListScrollContent({ hook }: JobListScrollContentProps) {
       {hook.headerContent}
       <JobListToolbar hook={hook} />
       <JobListItems hook={hook} />
-      {hook.groupMenu && (hook.onAddJob || hook.onHideGroup) && (
+      {hook.groupMenu && (hook.onAddJob || hook.onHideGroup || hook.onUnhideGroup) && (
         <PopupMenu
           items={[
             ...(hook.onAddJob ? [{ type: "item" as const, label: "Add Job", onPress: () => hook.onAddJob?.(hook.groupMenu!.group, hook.groupMenu!.folderPath) }] : []),
-            ...(hook.onHideGroup ? [{ type: "item" as const, label: "Hide Group", onPress: () => hook.onHideGroup?.(hook.groupMenu!.group) }] : []),
+            ...(hook.groupMenu.hidden && hook.onUnhideGroup ? [{ type: "item" as const, label: "Show Group", onPress: () => hook.onUnhideGroup?.(hook.groupMenu!.group) }] : []),
+            ...(!hook.groupMenu.hidden && hook.onHideGroup ? [{ type: "item" as const, label: "Hide Group", onPress: () => hook.onHideGroup?.(hook.groupMenu!.group) }] : []),
           ]}
           position={hook.groupMenuPos}
           dropdownRef={hook.groupMenuDropdownRef}

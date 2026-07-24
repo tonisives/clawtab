@@ -11,7 +11,7 @@ export type {
   TelegramLogMode,
   TelegramNotify,
 } from "./types/job";
-export type { DetectedProcess, ProcessProvider, ShellPane, QuestionOption, ClaudeQuestion, AgentModelOption } from "./types/process";
+export type { DetectedProcess, ProcessProvider, ShellPane, QuestionOption, ClaudeQuestion, AgentModelOption, AgentActivity, ProcessAgentState } from "./types/process";
 export type { PaneContent, SplitNode, SplitTreeState, SplitDirection } from "./types/splitTree";
 export type { Transport } from "./transport";
 

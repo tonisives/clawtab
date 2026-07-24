@@ -8,6 +8,7 @@ export const IDLE_STATUS: JobStatus = { state: "idle" };
 
 export const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
   { value: "name", label: "Name" },
+  { value: "activity", label: "Last activity" },
   { value: "recent", label: "Recent" },
   { value: "added", label: "Added" },
 ];
@@ -56,6 +57,9 @@ export interface JobListViewProps {
   hiddenGroups?: Set<string>;
   onHideGroup?: (group: string) => void;
   onUnhideGroup?: (group: string) => void;
+  /** Keep hidden groups in their separate section while rendering their normal,
+   * interactive contents. */
+  interactiveHiddenGroups?: boolean;
   // Header content (for banners, notifications, etc.)
   headerContent?: React.ReactNode;
   // Show empty state
@@ -128,7 +132,7 @@ export interface JobListViewProps {
 }
 
 export type ListItem =
-  | { kind: "header"; group: string; displayGroup: string; folderPath?: string; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean; tabCount: number; jobCount: number } }
+  | { kind: "header"; group: string; displayGroup: string; folderPath?: string; hidden?: boolean; tabsToggle?: { group: string; view: "tabs" | "jobs"; hasTabs: boolean; hasJobs: boolean; tabCount: number; jobCount: number } }
   | { kind: "group-footer"; group: string; folderPath: string }
   | { kind: "job"; job: RemoteJob; idx: number }
   | { kind: "process"; process: DetectedProcess; inGroup?: boolean }

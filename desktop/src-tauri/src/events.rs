@@ -1,5 +1,7 @@
 use crate::ipc::{self, EventSubscribers, IpcEvent};
 
+type SharedRelayHandle = std::sync::Arc<parking_lot::Mutex<Option<crate::relay::RelayHandle>>>;
+
 /// Trait for emitting UI events. Abstracts over Tauri event emission so that
 /// background modules (scheduler, relay handler, watcher, reattach) can notify
 /// a connected frontend without depending on Tauri directly.
@@ -73,11 +75,22 @@ impl EventSink for TauriEventSink {
 /// Broadcasts events to all IPC event subscribers. Used by the daemon.
 pub struct IpcBroadcastEventSink {
     subscribers: EventSubscribers,
+    relay: Option<SharedRelayHandle>,
 }
 
 impl IpcBroadcastEventSink {
     pub fn new(subscribers: EventSubscribers) -> Self {
-        Self { subscribers }
+        Self {
+            subscribers,
+            relay: None,
+        }
+    }
+
+    pub fn with_relay(subscribers: EventSubscribers, relay: SharedRelayHandle) -> Self {
+        Self {
+            subscribers,
+            relay: Some(relay),
+        }
     }
 
     fn spawn_broadcast(&self, event: IpcEvent) {
@@ -110,7 +123,21 @@ impl EventSink for IpcBroadcastEventSink {
     }
 
     fn emit_agent_activity_changed(&self, activity: Vec<ipc::AgentActivity>) {
-        self.spawn_broadcast(IpcEvent::AgentActivityChanged(activity));
+        self.spawn_broadcast(IpcEvent::AgentActivityChanged(activity.clone()));
+        let Some(relay) = self.relay.as_ref() else {
+            return;
+        };
+        let activity = activity
+            .into_iter()
+            .map(|item| clawtab_protocol::AgentActivity {
+                pane_id: item.pane_id,
+                working: item.working,
+                asking: item.asking,
+            })
+            .collect();
+        if let Some(handle) = relay.lock().as_ref() {
+            handle.send_message(&clawtab_protocol::DesktopMessage::AgentActivity { activity });
+        }
     }
 
     fn emit_relay_status_changed(&self, status: ipc::IpcRelayStatus) {

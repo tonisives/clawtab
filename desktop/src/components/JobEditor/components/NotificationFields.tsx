@@ -81,7 +81,7 @@ export function NotificationFields({ form, setForm, telegramChats }: Notificatio
                   { key: "start" as const, label: "Job started", hint: "Notify when the job begins" },
                   { key: "working" as const, label: "Working timer", hint: "Live elapsed time counter" },
                   { key: "logs" as const, label: "Log output", hint: "Stream pane output while running" },
-                  { key: "finish" as const, label: "Job finished", hint: "Final snapshot and completion message" },
+                  { key: "finish" as const, label: "Job finished", hint: "Send a completion message" },
                 ] as const).map(({ key, label, hint }) => (
                   <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer" }}>
                     <input

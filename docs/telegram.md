@@ -48,9 +48,12 @@ telegram:
 Job notifications are sent automatically when jobs complete:
 
 ```
-ClawTab: Job daily-backup completed
-ClawTab: Job deploy failed (exit 1)
+ops: Job daily-backup finished
+production: Job deploy failed (exit 1)
 ```
+
+The job group prefixes each notification. Completion notifications contain only
+the final status, not the job's log output.
 
 Toggle `Notify on job success` and `Notify on job failure` checkboxes in the Notifications section after setup.
 

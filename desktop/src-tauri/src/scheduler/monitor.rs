@@ -23,6 +23,7 @@ pub struct MonitorParams {
     pub pane_id: String,
     pub run_id: String,
     pub job_id: String,
+    pub group_name: String,
     pub slug: String,
     pub agent_group: Option<String>,
     pub agent_prompt_path: Option<std::path::PathBuf>,
@@ -127,7 +128,12 @@ async fn notify_start(params: &MonitorParams, use_telegram: bool, use_app: bool)
     }
     if use_telegram {
         if let Some(ref tg) = params.telegram {
-            let text = format!("<b>ClawTab</b>: Job <code>{}</code> started", params.job_id);
+            let text = crate::telegram::format_job_status_message(
+                &params.group_name,
+                &params.job_id,
+                "started",
+                None,
+            );
             if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await {
                 log::error!(
                     "[{}] Failed to send start notification: {}",
@@ -382,33 +388,6 @@ async fn finalize_telegram(
             );
         }
     }
-    if params.telegram_notify.finish {
-        send_final_snapshot(params).await;
-    }
-}
-
-async fn send_final_snapshot(params: &MonitorParams) {
-    let Some(tg) = params.telegram.as_ref() else {
-        return;
-    };
-    let final_trimmed = capture_trimmed(&params.tmux_session, &params.pane_id);
-    if final_trimmed.is_empty() {
-        return;
-    }
-    let lines: Vec<&str> = final_trimmed.lines().collect();
-    let start = lines.len().saturating_sub(MAX_LOG_LINES);
-    let snippet = lines[start..].join("\n");
-    if snippet.trim().is_empty() {
-        return;
-    }
-    let msg = format!("<pre>{}</pre>", html_escape(&snippet));
-    if let Err(e) = crate::telegram::send_message(&tg.bot_token, tg.chat_id, &msg).await {
-        log::error!(
-            "[{}] Failed to send final log snapshot: {}",
-            params.run_id,
-            e
-        );
-    }
 }
 
 fn compute_full_output(params: &MonitorParams, accumulated_log: String) -> String {
@@ -473,9 +452,11 @@ async fn notify_finish(params: &MonitorParams, use_telegram: bool, use_app: bool
     if use_telegram {
         if let Some(ref tg) = params.telegram {
             if params.notify_on_success {
-                let text = format!(
-                    "<b>ClawTab</b>: Job <code>{}</code> completed",
-                    params.job_id
+                let text = crate::telegram::format_job_status_message(
+                    &params.group_name,
+                    &params.job_id,
+                    "finished",
+                    None,
                 );
                 if let Err(e) =
                     crate::telegram::send_message(&tg.bot_token, tg.chat_id, &text).await

@@ -1,3 +1,4 @@
+import type { AgentActivity } from "@clawtab/shared";
 import type { DetectedProcess, ClaudeQuestion, JobStatus, NotificationHistoryItem, RemoteJob, RunDetail, RunRecord } from "./job";
 
 // Messages sent by this client to the relay server
@@ -73,6 +74,7 @@ export type DesktopMessage =
     }
   | { type: "create_job_ack"; id: string; success: boolean; error?: string }
   | { type: "detected_processes"; id: string; processes: DetectedProcess[] }
+  | { type: "agent_activity"; activity: AgentActivity[] }
   | { type: "settings_response"; id: string; enabled_models: Record<string, string[]>; default_provider: string; default_model?: string }
   | { type: "run_detail_response"; id: string; detail?: RunDetail }
   | { type: "detected_process_logs"; id: string; logs: string }

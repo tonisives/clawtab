@@ -2,7 +2,7 @@ import type { ProcessProvider } from "./process";
 
 export type JobType = "binary" | "claude" | "job";
 
-export type JobSortMode = "name" | "recent" | "added";
+export type JobSortMode = "name" | "activity" | "recent" | "added";
 
 export interface JobParam {
   name: string;

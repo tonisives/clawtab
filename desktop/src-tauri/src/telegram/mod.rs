@@ -127,9 +127,28 @@ pub async fn notify(config: &TelegramConfig, text: &str) {
     }
 }
 
+pub(crate) fn format_job_status_message(
+    group_name: &str,
+    job_id: &str,
+    status: &str,
+    exit_code: Option<i32>,
+) -> String {
+    let code_str = exit_code
+        .map(|code| format!(" (exit {})", code))
+        .unwrap_or_default();
+    format!(
+        "<b>{}</b>: Job <code>{}</code> {}{}",
+        html_escape(group_name),
+        html_escape(job_id),
+        status,
+        code_str
+    )
+}
+
 /// Send a job completion notification
 pub async fn notify_job_result(
     config: &TelegramConfig,
+    group_name: &str,
     job_id: &str,
     exit_code: Option<i32>,
     success: bool,
@@ -145,15 +164,8 @@ pub async fn notify_job_result(
         return;
     }
 
-    let status = if success { "completed" } else { "failed" };
-    let code_str = exit_code
-        .map(|c| format!(" (exit {})", c))
-        .unwrap_or_default();
-
-    let text = format!(
-        "<b>ClawTab</b>: Job <code>{}</code> {}{}",
-        job_id, status, code_str
-    );
+    let status = if success { "finished" } else { "failed" };
+    let text = format_job_status_message(group_name, job_id, status, exit_code);
 
     notify(config, &text).await;
 }
@@ -383,6 +395,12 @@ pub fn strip_ansi(s: &str) -> String {
     out
 }
 
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 fn split_message(text: &str) -> Vec<String> {
     if text.len() <= MAX_MESSAGE_LEN {
         return vec![text.to_string()];
@@ -407,4 +425,25 @@ fn split_message(text: &str) -> Vec<String> {
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_job_status_message;
+
+    #[test]
+    fn job_status_message_uses_group_prefix() {
+        assert_eq!(
+            format_job_status_message("backend", "daily-backup", "finished", None),
+            "<b>backend</b>: Job <code>daily-backup</code> finished"
+        );
+    }
+
+    #[test]
+    fn job_status_message_escapes_names_and_includes_failure_code() {
+        assert_eq!(
+            format_job_status_message("api & web", "deploy <prod>", "failed", Some(1)),
+            "<b>api &amp; web</b>: Job <code>deploy &lt;prod&gt;</code> failed (exit 1)"
+        );
+    }
 }

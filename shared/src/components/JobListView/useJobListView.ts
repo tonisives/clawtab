@@ -12,7 +12,7 @@ export function useJobListView(props: JobListViewProps) {
   const [sortOpen, setSortOpen] = useState(false);
   const [collapsedJobPanes, setCollapsedJobPanes] = useState<Set<string>>(() => new Set());
   const [hiddenSectionCollapsed, setHiddenSectionCollapsed] = useState(true);
-  const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string } | null>(null);
+  const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string; hidden?: boolean } | null>(null);
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const data = {
@@ -31,6 +31,7 @@ export function useJobListView(props: JobListViewProps) {
     groupTabView: props.groupTabView,
     hiddenGroups: props.hiddenGroups,
     hiddenSectionCollapsed,
+    interactiveHiddenGroups: props.interactiveHiddenGroups,
     pinnedItems: props.pinnedItems,
   };
   const agent = {

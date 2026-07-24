@@ -12,6 +12,27 @@ import {
   sortGroupKeys,
 } from "./helpers";
 
+const processActivityTimestamp = (process: DetectedProcess): number => (
+  process._last_activity
+  ?? process._last_log_change
+  ?? (process.session_started_at ? Date.parse(process.session_started_at) || 0 : 0)
+);
+
+const jobActivityTimestamp = (status: JobStatus | undefined): number => {
+  if (status?.state === "running") return Date.parse(status.started_at) || 0;
+  if (status?.state === "success" || status?.state === "failed") {
+    return Date.parse(status.last_run) || 0;
+  }
+  return 0;
+};
+
+const compareProcessActivity = (left: DetectedProcess, right: DetectedProcess): number => (
+  processActivityTimestamp(right) - processActivityTimestamp(left)
+  || (left.display_name ?? left.first_query ?? left.cwd).localeCompare(
+    right.display_name ?? right.first_query ?? right.cwd,
+  )
+);
+
 interface UseJobListDerivedItemsParams {
   data: {
     detectedProcesses: DetectedProcess[];
@@ -29,6 +50,7 @@ interface UseJobListDerivedItemsParams {
     groupTabView?: Record<string, "tabs" | "jobs">;
     hiddenGroups?: Set<string>;
     hiddenSectionCollapsed: boolean;
+    interactiveHiddenGroups?: boolean;
     pinnedItems?: string[];
   };
   filters: {
@@ -48,7 +70,7 @@ export function useJobListDerivedItems({
 }: UseJobListDerivedItemsParams) {
   const { detectedProcesses, jobs, shellPanes, statuses } = data;
   const { jobOrder, processOrder, sortMode } = ordering;
-  const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed, pinnedItems } = grouping;
+  const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, pinnedItems } = grouping;
   const { query } = filters;
   const { onRunAgent } = agent;
   const inferredJobSlugByPaneId = useMemo(() => {
@@ -128,9 +150,16 @@ export function useJobListDerivedItems({
           return a.name.localeCompare(b.name);
         });
       }
+    } else if (sortMode === "activity") {
+      for (const groupJobs of map.values()) {
+        groupJobs.sort((left, right) => (
+          jobActivityTimestamp(statuses[right.slug]) - jobActivityTimestamp(statuses[left.slug])
+          || left.name.localeCompare(right.name)
+        ));
+      }
     }
     return map;
-  }, [jobOrder, jobs, query, sortMode, tabSearchMatches]);
+  }, [jobOrder, jobs, query, sortMode, statuses, tabSearchMatches]);
 
   const sortedGroupKeys = useMemo(
     () => sortGroupKeys([...grouped.keys()], grouped, sortMode, statuses),
@@ -165,6 +194,10 @@ export function useJobListDerivedItems({
       }
     }
     for (const [group, list] of map) {
+      if (sortMode === "activity") {
+        list.sort(compareProcessActivity);
+        continue;
+      }
       const manualOrder = processOrder[group] ?? [];
       const manualIndex = new Map(manualOrder.map((paneId, index) => [paneId, index]));
       list.sort((a, b) => {
@@ -177,7 +210,7 @@ export function useJobListDerivedItems({
       });
     }
     return map;
-  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, processOrder, query, statuses]);
+  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, processOrder, query, sortMode, statuses]);
 
   const matchedProcessesByJob = useMemo(() => {
     const map = new Map<string, DetectedProcess[]>();
@@ -206,6 +239,10 @@ export function useJobListDerivedItems({
       map.set(matchedJobSlug, list);
     }
     for (const [slug, list] of map) {
+      if (sortMode === "activity") {
+        list.sort(compareProcessActivity);
+        continue;
+      }
       const job = jobs.find((item) => item.slug === slug);
       const manualOrder = job ? processOrder[job.group || "default"] ?? [] : [];
       const manualIndex = new Map(manualOrder.map((paneId, index) => [paneId, index]));
@@ -219,7 +256,7 @@ export function useJobListDerivedItems({
       });
     }
     return map;
-  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, processOrder, query, statuses]);
+  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, processOrder, query, sortMode, statuses]);
 
   const matchedShellsByGroup = useMemo(() => {
     const map = new Map<string, ShellPane[]>();
@@ -285,8 +322,11 @@ export function useJobListDerivedItems({
     const detFolderGroups: [string, DetectedProcess[]][] = [];
     const detUngrouped: DetectedProcess[] = [];
     if (unmatchedProcesses.length > 0) {
+      const orderedProcesses = sortMode === "activity"
+        ? [...unmatchedProcesses].sort(compareProcessActivity)
+        : unmatchedProcesses;
       const byFolder = new Map<string, DetectedProcess[]>();
-      for (const proc of unmatchedProcesses) {
+      for (const proc of orderedProcesses) {
         const list = byFolder.get(proc.cwd) ?? [];
         list.push(proc);
         byFolder.set(proc.cwd, list);
@@ -331,6 +371,7 @@ export function useJobListDerivedItems({
       );
       if (existing && existing.type === "job") {
         existing.procs = [...existing.procs, ...procs];
+        if (sortMode === "activity") existing.procs.sort(compareProcessActivity);
       } else {
         const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
         allGroups.push({
@@ -343,6 +384,10 @@ export function useJobListDerivedItems({
       }
     }
 
+    if (detUngrouped.length > 0 && sortMode === "activity") {
+      allGroups.push({ type: "ungrouped", procs: detUngrouped });
+    }
+
     // When sorting by name, interleave all groups alphabetically
     if (sortMode === "name") {
       allGroups.sort((a, b) => {
@@ -350,9 +395,25 @@ export function useJobListDerivedItems({
         const db = "displayGroup" in b ? b.displayGroup : "";
         return da.localeCompare(db, undefined, { sensitivity: "base" });
       });
+    } else if (sortMode === "activity") {
+      const groupActivityTimestamp = (entry: GroupEntry) => {
+        const processTimestamp = Math.max(0, ...entry.procs.map(processActivityTimestamp));
+        if (entry.type !== "job") return processTimestamp;
+        const jobTimestamp = Math.max(
+          0,
+          ...entry.jobs.map((job) => jobActivityTimestamp(statuses[job.slug])),
+        );
+        return Math.max(processTimestamp, jobTimestamp);
+      };
+      allGroups.sort((left, right) => (
+        groupActivityTimestamp(right) - groupActivityTimestamp(left)
+        || ("displayGroup" in left ? left.displayGroup : "").localeCompare(
+          "displayGroup" in right ? right.displayGroup : "",
+        )
+      ));
     }
 
-    if (detUngrouped.length > 0) {
+    if (detUngrouped.length > 0 && sortMode !== "activity") {
       allGroups.push({ type: "ungrouped", procs: detUngrouped });
     }
 
@@ -367,83 +428,91 @@ export function useJobListDerivedItems({
     const hiddenEntries = allGroups.filter((e) => isGroupHidden(e));
     const hasMultipleGroups = visibleGroups.length > 1;
 
-    for (const entry of visibleGroups) {
-      if (entry.type === "job") {
-        const groupShells = matchedShellsByGroup.get(entry.group) ?? [];
-        const tabCount = entry.procs.length + groupShells.length;
-        const jobCount = entry.jobs.length;
-        const hasTabsContent = tabCount > 0;
-        const hasJobs = jobCount > 0;
-        const persisted = groupTabView?.[entry.group];
-        const defaultView: "tabs" | "jobs" = !hasTabsContent && hasJobs ? "jobs" : "tabs";
-        let view: "tabs" | "jobs" = persisted ?? defaultView;
-        if (view === "jobs" && !hasJobs) view = "tabs";
-        const expanded = !collapsedGroups.has(entry.displayGroup);
-        const tabsToggle = { group: entry.group, view, hasTabs: hasTabsContent, hasJobs, tabCount, jobCount };
-        if (hasMultipleGroups || result.length > 0 || query) {
-          result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, tabsToggle });
-        }
-        if (expanded) {
-          if (view === "jobs") {
-            let jobIdx = 0;
-            for (const job of entry.jobs) {
-              result.push({ kind: "job", job, idx: jobIdx++ });
-            }
-            if (onRunAgent) {
-              const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
-              if (groupWorkDir) {
-                result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
+    const appendGroupEntries = (entries: GroupEntry[], hidden = false) => {
+      for (const entry of entries) {
+        if (entry.type === "job") {
+          const groupShells = matchedShellsByGroup.get(entry.group) ?? [];
+          const tabCount = entry.procs.length + groupShells.length;
+          const jobCount = entry.jobs.length;
+          const hasTabsContent = tabCount > 0;
+          const hasJobs = jobCount > 0;
+          const persisted = groupTabView?.[entry.group];
+          const defaultView: "tabs" | "jobs" = !hasTabsContent && hasJobs ? "jobs" : "tabs";
+          let view: "tabs" | "jobs" = persisted ?? defaultView;
+          if (view === "jobs" && !hasJobs) view = "tabs";
+          const expanded = !collapsedGroups.has(entry.displayGroup);
+          const tabsToggle = { group: entry.group, view, hasTabs: hasTabsContent, hasJobs, tabCount, jobCount };
+          if (hasMultipleGroups || result.length > 0 || query) {
+            result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden, tabsToggle });
+          }
+          if (expanded) {
+            if (view === "jobs") {
+              let jobIdx = 0;
+              for (const job of entry.jobs) {
+                result.push({ kind: "job", job, idx: jobIdx++ });
+              }
+              if (onRunAgent) {
+                const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
+                if (groupWorkDir) {
+                  result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
+                }
+              }
+            } else {
+              for (const proc of entry.procs) {
+                result.push({ kind: "process", process: proc, inGroup: true });
+              }
+              for (const shell of groupShells) {
+                result.push({ kind: "shell", shell });
+              }
+              if (onRunAgent) {
+                const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
+                if (groupWorkDir) {
+                  result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
+                }
               }
             }
-          } else {
+            if (entry.folderPath && !onRunAgent) {
+              result.push({ kind: "group-footer", group: entry.displayGroup, folderPath: entry.folderPath });
+            }
+          }
+        } else if (entry.type === "detected") {
+          result.push({ kind: "header", group: entry.groupKey, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden });
+          if (!collapsedGroups.has(entry.groupKey)) {
             for (const proc of entry.procs) {
-              result.push({ kind: "process", process: proc, inGroup: true });
+              result.push({ kind: "process", process: proc });
             }
-            for (const shell of groupShells) {
-              result.push({ kind: "shell", shell });
+            if (onRunAgent && entry.folderPath) {
+              result.push({ kind: "group-agent", workDir: entry.folderPath, footerPath: entry.folderPath });
             }
-            if (onRunAgent) {
-              const groupWorkDir = entry.jobs[0]?.folder_path ?? entry.jobs[0]?.work_dir;
-              if (groupWorkDir) {
-                result.push({ kind: "group-agent", workDir: groupWorkDir, footerPath: entry.folderPath });
-              }
+            if (entry.folderPath && !onRunAgent) {
+              result.push({ kind: "group-footer", group: entry.groupKey, folderPath: entry.folderPath });
             }
           }
-          if (entry.folderPath && !onRunAgent) {
-            result.push({ kind: "group-footer", group: entry.displayGroup, folderPath: entry.folderPath });
-          }
-        }
-      } else if (entry.type === "detected") {
-        result.push({ kind: "header", group: entry.groupKey, displayGroup: entry.displayGroup, folderPath: entry.folderPath });
-        if (!collapsedGroups.has(entry.groupKey)) {
-          for (const proc of entry.procs) {
-            result.push({ kind: "process", process: proc });
-          }
-          if (onRunAgent && entry.folderPath) {
-            result.push({ kind: "group-agent", workDir: entry.folderPath, footerPath: entry.folderPath });
-          }
-          if (entry.folderPath && !onRunAgent) {
-            result.push({ kind: "group-footer", group: entry.groupKey, folderPath: entry.folderPath });
-          }
-        }
-      } else {
-        result.push({ kind: "header", group: "detected", displayGroup: "Detected" });
-        if (!collapsedGroups.has("detected")) {
-          for (const proc of entry.procs) {
-            result.push({ kind: "process", process: proc });
+        } else {
+          result.push({ kind: "header", group: "detected", displayGroup: "Detected", hidden });
+          if (!collapsedGroups.has("detected")) {
+            for (const proc of entry.procs) {
+              result.push({ kind: "process", process: proc });
+            }
           }
         }
       }
-    }
+    };
+
+    appendGroupEntries(visibleGroups);
 
     // Add hidden groups section at the bottom
     if (hiddenEntries.length > 0) {
       result.push({ kind: "hidden-section" });
       if (!hiddenSectionCollapsed) {
-        for (const entry of hiddenEntries) {
-          const displayGroup = "displayGroup" in entry ? entry.displayGroup : "Detected";
-          const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" ? entry.groupKey : "detected";
-          result.push({ kind: "hidden-header", group, displayGroup });
+        if (interactiveHiddenGroups) {
+          appendGroupEntries(hiddenEntries, true);
+        } else {
+          for (const entry of hiddenEntries) {
+            const displayGroup = "displayGroup" in entry ? entry.displayGroup : "Detected";
+            const group = entry.type === "job" ? entry.displayGroup : entry.type === "detected" ? entry.groupKey : "detected";
+            result.push({ kind: "hidden-header", group, displayGroup });
+          }
         }
       }
     }
@@ -466,7 +535,7 @@ export function useJobListDerivedItems({
     }
 
     return result;
-  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, hiddenSectionCollapsed, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, query, shellPanes, groupTabView, pinnedItems, jobs, detectedProcesses]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, query, shellPanes, groupTabView, pinnedItems, jobs, detectedProcesses, sortMode, statuses]);
 
 
   return {

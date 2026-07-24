@@ -45,8 +45,9 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
     (document.activeElement as HTMLElement)?.blur();
   }, [hook]);
 
+  const sortableItemCount = hook.jobs.length + hook.detectedProcesses.length + hook.shellPanes.length;
   const shouldShowToolbar =
-    (hook.onSortChange && hook.jobs.length > 1) ||
+    (hook.onSortChange && sortableItemCount > 1) ||
     hook.jobs.length > 0 ||
     (hook.onSetAllGroupTabView && globalTabsView.anyHeader);
   if (!shouldShowToolbar) return null;
@@ -80,7 +81,7 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
           )}
         </View>
       )}
-      {hook.onSortChange && hook.jobs.length > 1 && (
+      {hook.onSortChange && sortableItemCount > 1 && (
         <View style={styles.sortControl}>
           <TouchableOpacity
             ref={hook.sortTriggerRef}

@@ -6,6 +6,14 @@ export interface AgentModelOption {
   label: string;
 }
 
+export type AgentActivity = {
+  pane_id: string;
+  working: boolean;
+  asking: boolean;
+};
+
+export type ProcessAgentState = "working" | "asking" | "finished";
+
 export interface DetectedProcess {
   pane_id: string;
   cwd: string;
@@ -28,6 +36,10 @@ export interface DetectedProcess {
   _transient_state?: "starting" | "stopping";
   /** Timestamp (ms) when log_lines last changed, set client-side */
   _last_log_change?: number;
+  /** Authoritative agent state received from the daemon. */
+  _agent_state?: ProcessAgentState;
+  /** Timestamp (ms) of the latest observed user or agent activity. */
+  _last_activity?: number;
 }
 
 export interface ShellPane {

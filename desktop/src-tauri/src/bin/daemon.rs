@@ -124,8 +124,9 @@ fn main() {
     let active_agents_notify = Arc::new(tokio::sync::Notify::new());
 
     let event_subscribers = ipc::new_event_subscribers();
-    let event_sink: Arc<dyn clawtab_lib::events::EventSink> =
-        Arc::new(IpcBroadcastEventSink::new(event_subscribers.clone()));
+    let event_sink: Arc<dyn clawtab_lib::events::EventSink> = Arc::new(
+        IpcBroadcastEventSink::with_relay(event_subscribers.clone(), Arc::clone(&relay_handle)),
+    );
     let notifier: Arc<dyn clawtab_lib::notifications::Notifier> =
         Arc::new(IpcNotifier::new(event_subscribers.clone()));
     let hook_runtime = clawtab_lib::agent_hooks::HookRuntime::default();
@@ -318,10 +319,14 @@ fn main() {
             let job_status = Arc::clone(&job_status);
             let pty_manager = Arc::clone(&pty_manager);
             let relay = Arc::clone(&relay_handle);
+            let agent_activity = Arc::clone(&agent_activity);
             tokio::spawn(async move {
                 let mut last_snapshot_json = String::new();
+                let mut last_activity_json = String::new();
                 loop {
                     if relay.lock().is_none() {
+                        last_snapshot_json.clear();
+                        last_activity_json.clear();
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                         continue;
                     }
@@ -342,6 +347,25 @@ fn main() {
                                     processes,
                                 },
                             );
+                        }
+                    }
+                    let activity: Vec<clawtab_protocol::AgentActivity> = agent_activity
+                        .lock()
+                        .iter()
+                        .map(|item| clawtab_protocol::AgentActivity {
+                            pane_id: item.pane_id.clone(),
+                            working: item.working,
+                            asking: item.asking,
+                        })
+                        .collect();
+                    let activity_json = serde_json::to_string(&activity).unwrap_or_default();
+                    if activity_json != last_activity_json {
+                        last_activity_json = activity_json;
+                        let guard = relay.lock();
+                        if let Some(handle) = guard.as_ref() {
+                            handle.send_message(&clawtab_protocol::DesktopMessage::AgentActivity {
+                                activity,
+                            });
                         }
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;

@@ -16,7 +16,9 @@ interface JobListHeaderItemProps {
 
 export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }: JobListHeaderItemProps) {
   const isCollapsed = hook.collapsedGroups.has(item.group);
-  const allowGroupMenu = item.group !== "Shells" && (hook.onAddJob || hook.onHideGroup);
+  const allowGroupMenu = item.group !== "Shells" && (
+    hook.onAddJob || (item.hidden ? hook.onUnhideGroup : hook.onHideGroup)
+  );
   const isWorkspaceHeader = hook.activeWorkspaceId != null && item.group !== "Shells";
   const isActiveWorkspace = isWorkspaceHeader && item.group === hook.activeWorkspaceId;
   const isInactiveWorkspace = isWorkspaceHeader && !isActiveWorkspace;
@@ -68,7 +70,7 @@ export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }:
             hook.setGroupMenuPos({ top: rect.bottom + 4, left: rect.right });
           }
         }
-        hook.setGroupMenu({ group: item.group, folderPath: item.folderPath });
+        hook.setGroupMenu({ group: item.group, folderPath: item.folderPath, hidden: item.hidden });
       }}
       style={styles.addJobBtn}
       activeOpacity={0.6}

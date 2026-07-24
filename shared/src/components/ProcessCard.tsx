@@ -9,6 +9,7 @@ import { radius, spacing } from "../theme/spacing";
 import { JobKindIcon, kindForProcess } from "./JobKindIcon";
 
 const isWeb = Platform.OS === "web";
+const AGENT_ACTIVITY_WINDOW_MS = 8_000;
 type GroupedRowPosition = "single" | "first" | "middle" | "last";
 
 function groupedCardStyle(position?: GroupedRowPosition) {
@@ -62,12 +63,33 @@ export function ProcessCard({
   const subtitle = inGroup
     ? (process.last_query && process.last_query !== process.first_query ? process.last_query : null)
     : (displayName !== firstQueryTitle ? process.first_query ?? null : null);
-
   const transient = process._transient_state;
-  const TEN_MINUTES = 10 * 60 * 1000;
+  const listItemSubtitle = transient
+    ? (transient === "starting" ? "Starting..." : "Stopping...")
+    : subtitle;
+
+  const agentState = process._agent_state;
+  const [activityClock, setActivityClock] = useState(() => Date.now());
   const recentActivity = !transient && (
-    !process._last_log_change || (Date.now() - process._last_log_change < TEN_MINUTES)
+    !process._last_log_change
+    || activityClock - process._last_log_change < AGENT_ACTIVITY_WINDOW_MS
   );
+  const effectiveAgentState = agentState === "asking"
+    ? "asking"
+    : agentState === "working" || recentActivity
+      ? "working"
+      : "finished";
+  const agentStatusLabel = effectiveAgentState === "asking"
+    ? "Question"
+    : effectiveAgentState === "working"
+      ? "Working"
+      : "Finished";
+  const agentStatusIcon = effectiveAgentState === "asking" ? "!" : effectiveAgentState === "working" ? "*" : "\u2713";
+  const agentStatusStyle = effectiveAgentState === "asking"
+    ? styles.statusIconQuestion
+    : effectiveAgentState === "working"
+      ? styles.statusIconWorking
+      : styles.statusIconFinished;
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -77,6 +99,13 @@ export function ProcessCard({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const canRename = !!(onRename || onSaveName) && !transient;
+
+  useEffect(() => {
+    if (agentState === "asking" || agentState === "working" || transient) return;
+    setActivityClock(Date.now());
+    const timer = setInterval(() => setActivityClock(Date.now()), 2_000);
+    return () => clearInterval(timer);
+  }, [agentState, process._last_log_change, transient]);
 
   const startEditing = useCallback(() => {
     if (!canRename) return;
@@ -137,14 +166,19 @@ export function ProcessCard({
     };
   }, [cancelEdit, editing]);
 
-  const statusDot = transient ? (
+  const statusIndicator = transient ? (
     <View style={[
       styles.statusDot,
       transient === "starting" ? styles.statusDotStarting : styles.statusDotStopping,
     ]} />
   ) : (
-    <Tooltip label={recentActivity ? "Running" : "Idle"}>
-      <View style={[styles.statusDot, !recentActivity && styles.statusDotIdle]} />
+    <Tooltip label={agentStatusLabel}>
+      <Text
+        accessibilityLabel={agentStatusLabel}
+        style={[styles.statusIcon, agentStatusStyle]}
+      >
+        {agentStatusIcon}
+      </Text>
     </Tooltip>
   );
 
@@ -201,15 +235,12 @@ export function ProcessCard({
               {displayName}
             </Text>
           )}
-          {!editing && (transient ? (
-            <Text style={[styles.queryPreview, { fontStyle: "italic" }]} numberOfLines={1}>
-              {transient === "starting" ? "Starting..." : "Stopping..."}
+          {!editing ? (
+            <Text style={[styles.queryPreview, transient ? styles.transientPreview : null]} numberOfLines={1}>
+              <Text style={styles.paneId}>{process.pane_id}</Text>
+              {listItemSubtitle ? ` \u00b7 ${listItemSubtitle}` : null}
             </Text>
-          ) : subtitle ? (
-            <Text style={styles.queryPreview} numberOfLines={1}>
-              {subtitle}
-            </Text>
-          ) : null)}
+          ) : null}
         </View>
         <View style={[styles.rightCol, (showMenu || (autoYesActive && !transient)) && styles.rightColExpanded]}>
           {showMenu && !editing ? (
@@ -227,7 +258,7 @@ export function ProcessCard({
               <Text style={styles.moreBtnText}>{"\u2026"}</Text>
             </TouchableOpacity>
           ) : (autoYesActive && !transient) ? <View style={styles.spacer} /> : null}
-          {statusDot}
+          {statusIndicator}
           {autoYesActive && !transient ? (
             <View style={styles.autoYesDot} />
           ) : showMenu ? <View style={styles.spacer} /> : null}
@@ -301,6 +332,14 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
   },
+  paneId: {
+    color: colors.textMuted,
+    fontFamily: "monospace",
+    fontStyle: "normal",
+  },
+  transientPreview: {
+    fontStyle: "italic",
+  },
   statusDot: {
     width: 8,
     height: 8,
@@ -316,8 +355,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textMuted,
     opacity: 0.5,
   },
-  statusDotIdle: {
-    backgroundColor: colors.statusIdle,
+  statusIcon: {
+    width: 10,
+    fontSize: 14,
+    lineHeight: 16,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  statusIconWorking: {
+    color: "#64d2ff",
+  },
+  statusIconQuestion: {
+    color: colors.warning,
+  },
+  statusIconFinished: {
+    color: colors.success,
   },
   rightCol: {
     alignItems: "center",
