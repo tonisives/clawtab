@@ -217,15 +217,16 @@ export async function getWsUrl(): Promise<string> {
   return `${wsUrl}/ws?token=${token}`;
 }
 
-function isTokenExpiringSoon(token: string): boolean {
+export const isTokenExpiringSoon = (token: string): boolean => {
   try {
     const payload = JSON.parse(atob(token.split(".")[1]));
     // refresh if less than 2 minutes remaining
     return payload.exp * 1000 - Date.now() < 120_000;
   } catch {
-    return false;
+    // Malformed tokens are unusable and should go through refresh recovery.
+    return true;
   }
-}
+};
 
 export async function storeTokens(accessToken: string, refreshToken: string, userId: string) {
   await storage.setItem(KEYS.accessToken, accessToken);

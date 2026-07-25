@@ -62,6 +62,19 @@ pub async fn register(
 }
 
 pub async fn create_refresh_token(user_id: Uuid, state: &AppState) -> Result<String, AppError> {
+    let (token, token_hash, expires_at) = new_refresh_token();
+
+    sqlx::query("INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)")
+        .bind(user_id)
+        .bind(&token_hash)
+        .bind(expires_at)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(token)
+}
+
+pub(super) fn new_refresh_token() -> (String, String, chrono::DateTime<chrono::Utc>) {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine;
     use rand::RngCore;
@@ -73,16 +86,7 @@ pub async fn create_refresh_token(user_id: Uuid, state: &AppState) -> Result<Str
     let token_hash = hash_token(&token);
     let expires_at = chrono::Utc::now() + chrono::Duration::days(30);
 
-    sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)"
-    )
-    .bind(user_id)
-    .bind(&token_hash)
-    .bind(expires_at)
-    .execute(&state.pool)
-    .await?;
-
-    Ok(token)
+    (token, token_hash, expires_at)
 }
 
 /// Hash a refresh token for storage using SHA-256.

@@ -74,9 +74,7 @@ async fn release_pty_subscriptions(
     }
     let mut hub = state.hub.write().await;
     for (pane_id, target) in subscriptions {
-        if hub.remove_pty_subscription(target, &pane_id, connection_id) {
-            hub.forward_to_desktop(target, &ClientMessage::UnsubscribePty { pane_id });
-        }
+        hub.release_pty_subscription(target, &pane_id, connection_id);
     }
 }
 
@@ -176,7 +174,6 @@ async fn handle_message(
                 state,
                 connection_id,
                 pane_id,
-                &msg,
                 Arc::clone(&pty_subscriptions),
             )
             .await;
@@ -246,16 +243,13 @@ async fn handle_pty_unsubscribe(
     state: &AppState,
     connection_id: Uuid,
     pane_id: &str,
-    msg: &ClientMessage,
     pty_subscriptions: Arc<tokio::sync::Mutex<HashMap<String, Uuid>>>,
 ) {
     let Some(target) = pty_subscriptions.lock().await.remove(pane_id) else {
         return;
     };
     let mut hub = state.hub.write().await;
-    if hub.remove_pty_subscription(target, pane_id, connection_id) {
-        hub.forward_to_desktop(target, msg);
-    }
+    hub.release_pty_subscription(target, pane_id, connection_id);
 }
 
 async fn track_pty_subscription(

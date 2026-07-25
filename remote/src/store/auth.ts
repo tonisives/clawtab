@@ -33,8 +33,19 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   init: async () => {
     try {
-      const { accessToken, userId } = await api.getStoredTokens()
+      let { accessToken, userId } = await api.getStoredTokens()
       if (accessToken && userId) {
+        if (api.isTokenExpiringSoon(accessToken)) {
+          try {
+            let refreshed = await api.refreshToken()
+            accessToken = refreshed.access_token
+          } catch {
+            await api.clearTokens()
+            await clearCache()
+            set({ isAuthenticated: false, userId: null, email: null, loading: false })
+            return
+          }
+        }
         set({ isAuthenticated: true, userId, email: emailFromToken(accessToken), loading: false })
       } else {
         set({ loading: false })
@@ -72,6 +83,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       await api.refreshToken()
       return true
     } catch {
+      await api.clearTokens()
+      await clearCache()
       set({ isAuthenticated: false, userId: null, email: null })
       return false
     }

@@ -30,6 +30,9 @@ pub struct Hub {
     mobiles: HashMap<Uuid, Vec<MobileConnection>>,
     /// Mobile connection IDs currently consuming each desktop PTY stream.
     pty_subscribers: HashMap<(Uuid, String), HashSet<Uuid>>,
+    /// Final PTY unsubscriptions that could not be delivered because the
+    /// desktop was offline. Replayed when that desktop reconnects.
+    pending_pty_releases: HashMap<Uuid, HashSet<String>>,
     /// Cached questions per user, replayed to newly connecting mobiles
     /// and to guests of shared workspaces.
     last_questions: HashMap<Uuid, Vec<ClaudeQuestion>>,
@@ -49,6 +52,7 @@ impl Hub {
             desktops: HashMap::new(),
             mobiles: HashMap::new(),
             pty_subscribers: HashMap::new(),
+            pending_pty_releases: HashMap::new(),
             last_questions: HashMap::new(),
             auto_yes_panes: HashMap::new(),
             last_auto_yes_panes: HashMap::new(),
@@ -60,6 +64,24 @@ impl Hub {
     pub fn add_desktop(&mut self, user_id: Uuid, conn: DesktopConnection) {
         let device_id = conn.device_id;
         let device_name = conn.device_name.clone();
+
+        if let Some(pane_ids) = self.pending_pty_releases.remove(&user_id) {
+            let mut undelivered = HashSet::new();
+            for pane_id in pane_ids {
+                let msg = ClientMessage::UnsubscribePty {
+                    pane_id: pane_id.clone(),
+                };
+                let delivered = serde_json::to_string(&msg)
+                    .ok()
+                    .is_some_and(|json| conn.tx.send(json).is_ok());
+                if !delivered {
+                    undelivered.insert(pane_id);
+                }
+            }
+            if !undelivered.is_empty() {
+                self.pending_pty_releases.insert(user_id, undelivered);
+            }
+        }
 
         let conns = self.desktops.entry(user_id).or_default();
         conns.retain(|existing| existing.device_id != device_id);
@@ -187,6 +209,12 @@ impl Hub {
         pane_id: &str,
         connection_id: Uuid,
     ) {
+        if let Some(pane_ids) = self.pending_pty_releases.get_mut(&desktop_user_id) {
+            pane_ids.remove(pane_id);
+            if pane_ids.is_empty() {
+                self.pending_pty_releases.remove(&desktop_user_id);
+            }
+        }
         self.pty_subscribers
             .entry((desktop_user_id, pane_id.to_string()))
             .or_default()
@@ -208,6 +236,31 @@ impl Hub {
             return false;
         }
         self.pty_subscribers.remove(&key);
+        true
+    }
+
+    /// Release one mobile subscription and notify the desktop once its final
+    /// consumer is gone. If no desktop can receive the notification now,
+    /// retain it for the next desktop connection.
+    pub fn release_pty_subscription(
+        &mut self,
+        desktop_user_id: Uuid,
+        pane_id: &str,
+        connection_id: Uuid,
+    ) -> bool {
+        if !self.remove_pty_subscription(desktop_user_id, pane_id, connection_id) {
+            return false;
+        }
+
+        let msg = ClientMessage::UnsubscribePty {
+            pane_id: pane_id.to_string(),
+        };
+        if !self.forward_to_desktop(desktop_user_id, &msg) {
+            self.pending_pty_releases
+                .entry(desktop_user_id)
+                .or_default()
+                .insert(pane_id.to_string());
+        }
         true
     }
 
@@ -708,5 +761,55 @@ mod tests {
 
         assert!(hub.remove_pty_subscription(desktop_user, "%10", mobile));
         assert!(hub.remove_pty_subscription(desktop_user, "%11", mobile));
+    }
+
+    #[test]
+    fn pty_release_is_replayed_when_desktop_reconnects() {
+        let mut hub = Hub::new();
+        let desktop_user = Uuid::new_v4();
+        let mobile = Uuid::new_v4();
+
+        hub.add_pty_subscription(desktop_user, "%10", mobile);
+        assert!(hub.release_pty_subscription(desktop_user, "%10", mobile));
+
+        let (desktop_tx, mut desktop_rx) = mk_channel();
+        hub.add_desktop(
+            desktop_user,
+            DesktopConnection {
+                connection_id: Uuid::new_v4(),
+                device_id: Uuid::new_v4(),
+                device_name: "laptop".into(),
+                tx: desktop_tx,
+            },
+        );
+
+        let release = desktop_rx.try_recv().unwrap_or_default();
+        assert!(release.contains("unsubscribe_pty"), "got {release}");
+        assert!(release.contains("%10"), "got {release}");
+    }
+
+    #[test]
+    fn new_pty_subscription_cancels_pending_release() {
+        let mut hub = Hub::new();
+        let desktop_user = Uuid::new_v4();
+        let first_mobile = Uuid::new_v4();
+
+        hub.add_pty_subscription(desktop_user, "%10", first_mobile);
+        assert!(hub.release_pty_subscription(desktop_user, "%10", first_mobile));
+
+        hub.add_pty_subscription(desktop_user, "%10", Uuid::new_v4());
+
+        let (desktop_tx, mut desktop_rx) = mk_channel();
+        hub.add_desktop(
+            desktop_user,
+            DesktopConnection {
+                connection_id: Uuid::new_v4(),
+                device_id: Uuid::new_v4(),
+                device_name: "laptop".into(),
+                tx: desktop_tx,
+            },
+        );
+
+        assert!(desktop_rx.try_recv().is_err());
     }
 }
