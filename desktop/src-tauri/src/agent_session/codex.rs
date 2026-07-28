@@ -34,6 +34,8 @@ struct CachedRollout {
     first: Option<String>,
     last: Option<String>,
     token_count: Option<u64>,
+    model_id: Option<String>,
+    agent_effort: Option<String>,
 }
 
 #[derive(Clone)]
@@ -103,6 +105,8 @@ pub(super) fn resolve_session_info(
         let needs_messages = info.first_query.is_none() || info.last_query.is_none();
         let rollout = read_codex_rollout(&PathBuf::from(rollout_path), needs_messages);
         info.token_count = rollout.token_count;
+        info.model_id = rollout.model_id;
+        info.agent_effort = rollout.agent_effort;
         if info.first_query.is_none() {
             info.first_query = rollout.first;
         }
@@ -307,6 +311,8 @@ fn read_codex_rollout(path: &PathBuf, include_messages: bool) -> CachedRollout {
                 first: None,
                 last: None,
                 token_count: None,
+                model_id: None,
+                agent_effort: None,
             }
         }
     };
@@ -331,6 +337,11 @@ fn read_codex_rollout(path: &PathBuf, include_messages: bool) -> CachedRollout {
     } else {
         read_codex_rollout_token_count(path)
     };
+    let (model_id, agent_effort) = if let Some(cached) = existing.as_ref() {
+        (cached.model_id.clone(), cached.agent_effort.clone())
+    } else {
+        read_codex_rollout_selection(path)
+    };
 
     let (first, last) = if include_messages {
         read_codex_rollout_messages(path)
@@ -351,12 +362,57 @@ fn read_codex_rollout(path: &PathBuf, include_messages: bool) -> CachedRollout {
         first,
         last,
         token_count,
+        model_id,
+        agent_effort,
     };
     {
         let mut cache = rollout_cache().lock();
         cache.insert(path.clone(), cached.clone());
     }
     cached
+}
+
+fn read_codex_rollout_selection(path: &PathBuf) -> (Option<String>, Option<String>) {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return (None, None),
+    };
+    let len = match file.metadata() {
+        Ok(metadata) => metadata.len(),
+        Err(_) => return (None, None),
+    };
+    let start = len.saturating_sub(512 * 1024);
+    if file.seek(SeekFrom::Start(start)).is_err() {
+        return (None, None);
+    }
+    let mut bytes = Vec::with_capacity((len - start) as usize);
+    if file.read_to_end(&mut bytes).is_err() {
+        return (None, None);
+    }
+    let text = String::from_utf8_lossy(&bytes);
+
+    for line in text.lines().rev() {
+        let value: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if value.get("type").and_then(|value| value.as_str()) == Some("turn_context") {
+            let payload = value.get("payload");
+            if let Some(model) = payload
+                .and_then(|payload| payload.get("model"))
+                .and_then(|value| value.as_str())
+            {
+                let effort = payload
+                    .and_then(|payload| payload.get("effort"))
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string);
+                return (Some(model.to_string()), effort);
+            }
+        }
+    }
+    (None, None)
 }
 
 fn read_codex_rollout_token_count(path: &PathBuf) -> Option<u64> {

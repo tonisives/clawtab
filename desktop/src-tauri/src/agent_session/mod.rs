@@ -11,6 +11,8 @@ use std::process::Command;
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct SessionInfo {
     pub session_id: Option<String>,
+    pub model_id: Option<String>,
+    pub agent_effort: Option<String>,
     pub first_query: Option<String>,
     pub last_query: Option<String>,
     pub session_started_at: Option<String>,
@@ -192,13 +194,100 @@ pub fn resolve_session_info_for_provider_with_cwd(
     snapshot: Option<&ProcessSnapshot>,
     cwd: Option<&str>,
 ) -> SessionInfo {
-    match provider {
+    let mut info = match provider {
         Some(ProcessProvider::Claude) => claude::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Codex) => codex::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Opencode) => opencode::resolve_session_info(pane_pid, snapshot, cwd),
         Some(ProcessProvider::Antigravity) => antigravity::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Shell) | None => SessionInfo::default(),
+    };
+    if info.model_id.is_none() {
+        info.model_id = provider.and_then(|provider| {
+            detect_model_from_process_tree(pane_pid, provider, snapshot)
+        });
     }
+    if info.agent_effort.is_none() {
+        info.agent_effort = provider.and_then(|provider| {
+            detect_effort_from_process_tree(pane_pid, provider, snapshot)
+        });
+    }
+    info
+}
+
+fn detect_model_from_process_tree(
+    pane_pid: &str,
+    provider: ProcessProvider,
+    snapshot: Option<&ProcessSnapshot>,
+) -> Option<String> {
+    let snapshot = snapshot?;
+    let mut pids = vec![pane_pid];
+    pids.extend(snapshot.child_pids(pane_pid).iter().map(String::as_str));
+    for child in snapshot.child_pids(pane_pid) {
+        pids.extend(snapshot.child_pids(child).iter().map(String::as_str));
+    }
+    pids.into_iter().find_map(|pid| {
+        let command = snapshot.command_for_pid(pid)?;
+        if provider_for_command(Some(command)) != Some(provider) {
+            return None;
+        }
+        model_from_command(command)
+    })
+}
+
+fn model_from_command(command: &str) -> Option<String> {
+    let parts = command.split_whitespace().collect::<Vec<_>>();
+    for (index, part) in parts.iter().enumerate() {
+        if let Some(model) = part.strip_prefix("--model=") {
+            return (!model.is_empty()).then(|| model.trim_matches(['\'', '"']).to_string());
+        }
+        if (*part == "--model" || *part == "-m") && index + 1 < parts.len() {
+            let model = parts[index + 1].trim_matches(['\'', '"']);
+            return (!model.is_empty()).then(|| model.to_string());
+        }
+    }
+    None
+}
+
+fn detect_effort_from_process_tree(
+    pane_pid: &str,
+    provider: ProcessProvider,
+    snapshot: Option<&ProcessSnapshot>,
+) -> Option<String> {
+    let snapshot = snapshot?;
+    let mut pids = vec![pane_pid];
+    pids.extend(snapshot.child_pids(pane_pid).iter().map(String::as_str));
+    for child in snapshot.child_pids(pane_pid) {
+        pids.extend(snapshot.child_pids(child).iter().map(String::as_str));
+    }
+    pids.into_iter().find_map(|pid| {
+        let command = snapshot.command_for_pid(pid)?;
+        if provider_for_command(Some(command)) != Some(provider) {
+            return None;
+        }
+        effort_from_command(command)
+    })
+}
+
+fn effort_from_command(command: &str) -> Option<String> {
+    let parts = command.split_whitespace().collect::<Vec<_>>();
+    for (index, part) in parts.iter().enumerate() {
+        if let Some(effort) = part.strip_prefix("model_reasoning_effort=") {
+            return valid_effort(effort.trim_matches(['\'', '"']));
+        }
+        if (*part == "--effort" || *part == "-c") && index + 1 < parts.len() {
+            let value = parts[index + 1].trim_matches(['\'', '"']);
+            let effort = value.strip_prefix("model_reasoning_effort=").unwrap_or(value);
+            if let Some(effort) = valid_effort(effort) {
+                return Some(effort);
+            }
+        }
+    }
+    None
+}
+
+fn valid_effort(value: &str) -> Option<String> {
+    matches!(value, "low" | "medium" | "high" | "xhigh" | "max")
+        .then(|| value.to_string())
 }
 
 pub fn detect_process_provider(

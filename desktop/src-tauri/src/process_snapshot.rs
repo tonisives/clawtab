@@ -298,6 +298,8 @@ fn build_remote(
             String::new()
         },
         provider: provider.as_str().to_string(),
+        model_id: session_info.model_id,
+        agent_effort: session_info.agent_effort,
         can_fork_session,
         can_send_skills,
         can_inject_secrets,

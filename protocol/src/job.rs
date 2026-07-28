@@ -213,6 +213,10 @@ pub struct DetectedProcess {
     pub cwd: String,
     pub version: String,
     pub provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_effort: Option<String>,
     pub can_fork_session: bool,
     pub can_send_skills: bool,
     pub can_inject_secrets: bool,

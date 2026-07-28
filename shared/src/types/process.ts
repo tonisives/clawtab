@@ -79,6 +79,8 @@ export interface DetectedProcess {
   display_name?: string | null;
   pane_title?: string | null;
   provider: ProcessProvider;
+  model_id?: string | null;
+  agent_effort?: AgentEffort | null;
   can_fork_session: boolean;
   can_send_skills: boolean;
   can_inject_secrets: boolean;
