@@ -847,6 +847,17 @@ fn update_job(
             Some(other) => return Err(format!("unsupported notification target '{}'", other)),
         };
     }
+    if let Some(telegram_chat_id) = &update.telegram_chat_id {
+        job.telegram_chat_id = *telegram_chat_id;
+    }
+    if let Some(telegram_notify) = &update.telegram_notify {
+        job.telegram_notify = crate::config::jobs::TelegramNotify {
+            start: telegram_notify.start,
+            working: telegram_notify.working,
+            logs: telegram_notify.logs,
+            finish: telegram_notify.finish,
+        };
+    }
     if let Some(kill_on_end) = update.kill_on_end {
         job.kill_on_end = kill_on_end;
     }

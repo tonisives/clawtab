@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentModelOption, JobUpdate, RemoteJob, JobStatus, ProcessProvider } from "@clawtab/shared";
+import type {
+  AgentModelOption,
+  JobUpdate,
+  RemoteJob,
+  JobStatus,
+  ProcessProvider,
+  TelegramNotify,
+} from "@clawtab/shared";
 import { AgentSelector, agentSelectionLabel, JobDetailView, useJobDetail, useLogBuffer } from "@clawtab/shared";
 import type { AppSettings, Job } from "../types";
 import { EDITOR_LABELS } from "../constants";
@@ -160,6 +167,96 @@ function InlineSelectField({
   );
 }
 
+const InlineToggleField = ({
+  value,
+  ariaLabel,
+  onSave,
+}: {
+  value: boolean;
+  ariaLabel: string;
+  onSave: (value: boolean) => void | Promise<void>;
+}) => {
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = async (nextValue: boolean) => {
+    setSaving(true);
+    try {
+      await onSave(nextValue);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <input
+      type="checkbox"
+      className="toggle-switch"
+      checked={value}
+      disabled={saving}
+      aria-label={ariaLabel}
+      onChange={(event) => { void handleChange(event.target.checked); }}
+    />
+  );
+};
+
+type InlineNotificationKey = keyof TelegramNotify;
+
+const INLINE_NOTIFICATION_OPTIONS: { key: InlineNotificationKey; label: string; hint: string }[] = [
+  { key: "start", label: "Job started", hint: "Notify when the job begins" },
+  { key: "working", label: "Working timer", hint: "Live elapsed time counter" },
+  { key: "logs", label: "Log output", hint: "Stream pane output while running" },
+  { key: "finish", label: "Job finished", hint: "Send a completion message" },
+];
+
+const InlineNotificationCheckboxes = ({
+  job,
+  label,
+  onUpdateJob,
+}: {
+  job: Job;
+  label: string;
+  onUpdateJob: (patch: JobUpdate) => void | Promise<void>;
+}) => {
+  const [savingKey, setSavingKey] = useState<InlineNotificationKey | null>(null);
+
+  const handleChange = async (key: InlineNotificationKey, enabled: boolean) => {
+    setSavingKey(key);
+    try {
+      await onUpdateJob({ telegram_notify: { ...job.telegram_notify, [key]: enabled } });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-light)" }}>
+      <span className="field-group-title">{label}</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "4px 0" }}>
+        {INLINE_NOTIFICATION_OPTIONS.map(({ key, label: optionLabel, hint }) => (
+          <label key={key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: savingKey ? "wait" : "pointer" }}>
+            <input
+              type="checkbox"
+              checked={job.telegram_notify[key]}
+              disabled={savingKey !== null}
+              onChange={(event) => { void handleChange(key, event.target.checked); }}
+              style={{ margin: 0 }}
+            />
+            <span>{optionLabel}</span>
+            <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>{hint}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const notificationSummary = (notify: TelegramNotify) => [
+  notify.start && "start",
+  notify.working && "working",
+  notify.logs && "logs",
+  notify.finish && "finish",
+].filter(Boolean).join(", ") || "none";
+
 function AgentConfigSection({
   job,
   defaultAgentProvider = "claude",
@@ -302,6 +399,7 @@ export function DesktopDetailSections({
   const [savedContent, setSavedContent] = useState("");
   const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
+  const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
   const savedContentRef = useRef(savedContent);
   savedContentRef.current = savedContent;
 
@@ -310,6 +408,10 @@ export function DesktopDetailSections({
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
       setPreferredEditor(s.preferred_editor);
+      setTelegramChats(s.telegram?.chat_ids.map((id) => ({
+        id,
+        name: s.telegram?.chat_names[String(id)] ?? "",
+      })) ?? []);
     }).catch(() => {});
   }, []);
 
@@ -365,6 +467,14 @@ export function DesktopDetailSections({
   };
 
   const displayJobType = job.job_type;
+  const telegramChatOptions = useMemo(() => {
+    const selectedChatId = job.telegram_chat_id;
+    const hasSavedChat = selectedChatId != null && telegramChats.some((chat) => chat.id === selectedChatId);
+    return selectedChatId != null && !hasSavedChat
+      ? [{ id: selectedChatId, name: "Saved chat" }, ...telegramChats]
+      : telegramChats;
+  }, [job.telegram_chat_id, telegramChats]);
+  const telegramChatValue = job.telegram_chat_id == null ? "" : String(job.telegram_chat_id);
 
   return (
     <>
@@ -454,13 +564,10 @@ export function DesktopDetailSections({
             <DetailRow
               label="Enabled"
               value={onUpdateJob ? (
-                <InlineSelectField
-                  value={job.enabled ? "true" : "false"}
-                  options={[
-                    { value: "true", label: "Enabled" },
-                    { value: "false", label: "Disabled" },
-                  ]}
-                  onSave={(value) => onUpdateJob({ enabled: value === "true" })}
+                <InlineToggleField
+                  value={job.enabled}
+                  ariaLabel="Enable job"
+                  onSave={(enabled) => onUpdateJob({ enabled })}
                 />
               ) : job.enabled ? "Enabled" : "Disabled"}
             />
@@ -511,26 +618,20 @@ export function DesktopDetailSections({
             <DetailRow
               label="Kill on end"
               value={onUpdateJob ? (
-                <InlineSelectField
-                  value={(job.kill_on_end ?? true) ? "true" : "false"}
-                  options={[
-                    { value: "true", label: "Yes" },
-                    { value: "false", label: "No" },
-                  ]}
-                  onSave={(value) => onUpdateJob({ kill_on_end: value === "true" })}
+                <InlineToggleField
+                  value={job.kill_on_end ?? true}
+                  ariaLabel="Kill job when it ends"
+                  onSave={(killOnEnd) => onUpdateJob({ kill_on_end: killOnEnd })}
                 />
               ) : (job.kill_on_end ?? true) ? "Yes" : "No"}
             />
             <DetailRow
               label="Auto-yes on start"
               value={onUpdateJob ? (
-                <InlineSelectField
-                  value={job.auto_yes ? "true" : "false"}
-                  options={[
-                    { value: "true", label: "Yes" },
-                    { value: "false", label: "No" },
-                  ]}
-                  onSave={(value) => onUpdateJob({ auto_yes: value === "true" })}
+                <InlineToggleField
+                  value={job.auto_yes}
+                  ariaLabel="Enable auto-yes on start"
+                  onSave={(autoYes) => onUpdateJob({ auto_yes: autoYes })}
                 />
               ) : job.auto_yes ? "Yes" : "No"}
             />
@@ -552,7 +653,7 @@ export function DesktopDetailSections({
       </div>
 
       {/* Runtime */}
-      {(onUpdateJob || job.telegram_chat_id || job.notify_target === "telegram" || job.tmux_session || job.aerospace_workspace || job.notify_target !== "none") && (
+      {(onUpdateJob || job.telegram_chat_id || job.notify_target === "telegram" || job.tmux_session || job.notify_target !== "none") && (
         <div className="field-group">
           <span className="field-group-title">Runtime</span>
           <DetailRow
@@ -565,16 +666,6 @@ export function DesktopDetailSections({
                 onSave={(tmuxSession) => onUpdateJob({ tmux_session: tmuxSession || null })}
               />
             ) : job.tmux_session || "Default"}
-          />
-          <DetailRow
-            label="Aerospace workspace"
-            value={onUpdateJob ? (
-              <InlineTextField
-                value={job.aerospace_workspace}
-                placeholder="None"
-                onSave={(workspace) => onUpdateJob({ aerospace_workspace: workspace || null })}
-              />
-            ) : job.aerospace_workspace || "None"}
           />
           <DetailRow
             label="Notify target"
@@ -590,21 +681,63 @@ export function DesktopDetailSections({
               />
             ) : job.notify_target === "telegram" ? "Telegram" : job.notify_target === "app" ? "App" : "None"}
           />
-          {job.notify_target === "telegram" && job.telegram_chat_id && (
+          {job.notify_target === "telegram" && (
             <>
-              <DetailRow label="Telegram chat" value={String(job.telegram_chat_id)} mono />
               <DetailRow
-                label="Notifications"
-                value={
-                  [
-                    job.telegram_notify.start && "start",
-                    job.telegram_notify.working && "working",
-                    job.telegram_notify.logs && "logs",
-                    job.telegram_notify.finish && "finish",
-                  ].filter(Boolean).join(", ") || "none"
-                }
+                label="Telegram chat"
+                value={onUpdateJob ? (
+                  telegramChatOptions.length > 0 ? (
+                    <InlineSelectField
+                      value={telegramChatValue}
+                      options={[
+                        { value: "", label: "Default chat" },
+                        ...telegramChatOptions.map((chat) => ({
+                          value: String(chat.id),
+                          label: chat.name ? `${chat.name} (${chat.id})` : String(chat.id),
+                        })),
+                      ]}
+                      onSave={(value) => onUpdateJob({
+                        telegram_chat_id: value ? Number.parseInt(value, 10) : null,
+                      })}
+                    />
+                  ) : (
+                    <InlineTextField
+                      value={telegramChatValue}
+                      placeholder="Chat ID or default"
+                      mono
+                      onSave={(value) => {
+                        const trimmed = value.trim();
+                        const parsed = trimmed ? Number.parseInt(trimmed, 10) : null;
+                        return onUpdateJob({
+                          telegram_chat_id: parsed != null && Number.isFinite(parsed) ? parsed : null,
+                        });
+                      }}
+                    />
+                  )
+                ) : job.telegram_chat_id == null ? "Default chat" : String(job.telegram_chat_id)}
+                mono={!onUpdateJob}
               />
+              {onUpdateJob ? (
+                <InlineNotificationCheckboxes
+                  job={job}
+                  label="Telegram notifications"
+                  onUpdateJob={onUpdateJob}
+                />
+              ) : (
+                <DetailRow label="Notifications" value={notificationSummary(job.telegram_notify)} />
+              )}
             </>
+          )}
+          {job.notify_target === "app" && (
+            onUpdateJob ? (
+              <InlineNotificationCheckboxes
+                job={job}
+                label="App notifications"
+                onUpdateJob={onUpdateJob}
+              />
+            ) : (
+              <DetailRow label="Notifications" value={notificationSummary(job.telegram_notify)} />
+            )
           )}
         </div>
       )}
@@ -628,9 +761,7 @@ export function DesktopJobDetail({
   job,
   status,
   onBack,
-  onEdit,
   onOpen,
-  onToggle,
   onDuplicate,
   onDuplicateToFolder,
   onDelete,
@@ -667,9 +798,7 @@ export function DesktopJobDetail({
   job: Job;
   status: JobStatus;
   onBack: () => void;
-  onEdit: () => void;
   onOpen: () => void;
-  onToggle: () => void;
   onDuplicate: (group: string) => void;
   onDuplicateToFolder: () => void;
   onDelete: () => void;
@@ -771,9 +900,7 @@ export function DesktopJobDetail({
         showBackButton={showBackButton}
         hidePath={hidePath}
         onReloadRuns={reloadRuns}
-        onEdit={onEdit}
         onOpen={onOpen}
-        onToggleEnabled={onToggle}
         onDuplicate={onDuplicate}
         onDuplicateToFolder={onDuplicateToFolder}
         groups={groups}

@@ -46,10 +46,8 @@ export function useJobsTabHandlers({
 }: UseJobsTabHandlersParams) {
   const mgr = useWorkspaceManager();
   const {
-    editingJob,
     paramsDialog,
     setCreateForGroup,
-    setEditingJob,
     setIsCreating,
     setParamsDialog,
     setPickerTemplateId,
@@ -68,16 +66,9 @@ export function useJobsTabHandlers({
   const handleSave = useCallback(async (job: Job) => {
     setSaveError(null);
     try {
-      const wasEditing = editingJob;
-      const renamed = editingJob && job.name !== editingJob.name;
-      if (renamed) {
-        await invoke("rename_job", { oldName: editingJob.slug, job: { ...job, slug: "" } });
-      } else {
-        await invoke("save_job", { job });
-      }
+      await invoke("save_job", { job });
       const savedJobs = await invoke<Job[]>("get_jobs");
       const savedJob = savedJobs.find((candidate) => {
-        if (wasEditing && candidate.slug === wasEditing.slug) return true;
         return (
           candidate.name === job.name &&
           candidate.job_type === job.job_type &&
@@ -87,7 +78,6 @@ export function useJobsTabHandlers({
         );
       }) ?? savedJobs.find((candidate) => candidate.name === job.name);
       await core.reload();
-      setEditingJob(null);
       setIsCreating(false);
       setCreateForGroup(null);
       if (savedJob) setViewingJob(savedJob);
@@ -96,7 +86,7 @@ export function useJobsTabHandlers({
       setSaveError(msg);
       console.error("Failed to save job:", e);
     }
-  }, [core, editingJob, setCreateForGroup, setEditingJob, setIsCreating, setSaveError, setViewingJob]);
+  }, [core, setCreateForGroup, setIsCreating, setSaveError, setViewingJob]);
 
   const handleDuplicate = useCallback(async (job: Job, targetGroup: string) => {
     const allJobs = await invoke<Job[]>("get_jobs");
@@ -278,12 +268,10 @@ export function useJobsTabHandlers({
   }, []);
 
   const handleCancelEditor = useCallback(() => {
-    if (editingJob) setViewingJob(editingJob);
-    setEditingJob(null);
     setIsCreating(false);
     setCreateForGroup(null);
     setSaveError(null);
-  }, [editingJob, setCreateForGroup, setEditingJob, setIsCreating, setSaveError, setViewingJob]);
+  }, [setCreateForGroup, setIsCreating, setSaveError]);
 
   const handlePickTemplate = useCallback((templateId: string) => {
     setIsCreating(false);

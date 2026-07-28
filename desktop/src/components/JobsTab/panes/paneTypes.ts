@@ -15,7 +15,6 @@ import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
 import type { useQuestionPolling } from "../../../hooks/useQuestionPolling";
 import type { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
-import type { useLeafJobEditing } from "./useLeafJobEditing";
 
 export type PaneMode =
   | { kind: "leaf"; leafId: string }
@@ -34,7 +33,6 @@ export interface PaneCallbacks {
   buildJobPaneActions: (job: Job, jobQuestion: ClaudeQuestion | undefined) => Record<string, unknown>;
   buildJobTitlePath: (job: Job, jobQuestion: ClaudeQuestion | undefined) => string | undefined;
   buildProcessTitlePath: (process: DetectedProcess) => string;
-  setEditingJob: (job: Job | null) => void;
   setSkillSearchPaneId: (paneId: string | null) => void;
   setInjectSecretsPaneId: (paneId: string | null) => void;
   processRenameDrafts: Record<string, string | null>;
@@ -63,5 +61,4 @@ export interface PaneContext {
   callbacks: PaneCallbacks;
   sidebarFocusRef: RefObject<{ focus: () => void } | null>;
   mgr: ReturnType<typeof useWorkspaceManager>;
-  leafJobEditing: ReturnType<typeof useLeafJobEditing>;
 }

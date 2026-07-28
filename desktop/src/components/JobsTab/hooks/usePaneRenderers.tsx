@@ -2,7 +2,7 @@ import { useCallback, type RefObject } from "react";
 import type { ClaudeQuestion, DetectedProcess, PaneContent, ProcessProvider, RemoteJob, Transport } from "@clawtab/shared";
 import { useJobsCore, useJobActions, useSplitTree } from "@clawtab/shared";
 import { useWorkspaceManager } from "../../../workspace/WorkspaceManager";
-import { PaneRouter, useLeafJobEditing, type PaneCallbacks, type PaneContext } from "../panes";
+import { PaneRouter, type PaneCallbacks, type PaneContext } from "../panes";
 import type { useViewingState } from "./useViewingState";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
 import type { useAutoYes } from "../../../hooks/useAutoYes";
@@ -43,7 +43,6 @@ export function usePaneRenderers(params: UsePaneRenderersParams) {
     sidebarFocusRef,
   } = params;
   const mgr = useWorkspaceManager();
-  const leafJobEditing = useLeafJobEditing(core, split);
 
   const buildCtx = useCallback((mode: PaneContext["mode"], headerLeftInset: number): PaneContext => ({
     mode,
@@ -57,13 +56,12 @@ export function usePaneRenderers(params: UsePaneRenderersParams) {
     callbacks,
     sidebarFocusRef,
     mgr,
-    leafJobEditing,
   }), [
     core, split, viewing, lifecycle, actions,
     questions, questionPolling, autoYes, transport,
     agentJob, agentProcess, isWide,
     defaultProvider, defaultModel, enabledModels,
-    autoYesShortcut, callbacks, sidebarFocusRef, mgr, leafJobEditing,
+    autoYesShortcut, callbacks, sidebarFocusRef, mgr,
   ]);
 
   const renderLeaf = useCallback((content: PaneContent, leafId: string) => {

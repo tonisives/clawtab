@@ -62,11 +62,9 @@ export interface JobDetailViewProps {
   onBack: () => void;
   onReloadRuns?: () => void;
   // Desktop-only slots
-  onEdit?: () => void;
   /** @deprecated No longer rendered, kept for caller compat */
   onOpen?: () => void;
   onDuplicate?: (group: string) => void;
-  onToggleEnabled?: () => void;
   onDelete?: () => void;
   groups?: string[];
   currentGroup?: string;
@@ -156,10 +154,8 @@ export function JobDetailView({
   runsLoading,
   onBack,
   onReloadRuns,
-  onEdit,
   onOpen: _onOpen,
   onDuplicate,
-  onToggleEnabled,
   onDelete,
   groups,
   currentGroup,
@@ -651,7 +647,7 @@ export function JobDetailView({
             </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
-          {(onEdit || onDuplicate || onDelete || isRunning || (onToggleEnabled && !isManual) || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (
+          {(onDuplicate || onDelete || isRunning || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}
@@ -680,9 +676,7 @@ export function JobDetailView({
                   position={menuPos}
                   onClose={() => setShowSettingsMenu(false)}
                   items={[
-                    ...(onEdit ? [{ type: "item" as const, label: "Edit", onPress: () => onEdit() }] : []),
-                    ...(onToggleEnabled && !isManual ? [{ type: "item" as const, label: job.enabled ? "Disable" : "Enable", onPress: () => onToggleEnabled() }] : []),
-                    ...((onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRelease) && (onEdit || onDuplicate || (onToggleEnabled && !isManual)) ? [{ type: "separator" as const }] : []),
+                    ...((onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRelease) && onDuplicate ? [{ type: "separator" as const }] : []),
                     ...(onFork ? [{ type: "submenu" as const, label: "Fork Session", items: [
                       { type: "item" as const, label: "Right", onPress: () => onFork("right") },
                       { type: "item" as const, label: "Down", onPress: () => onFork("down") },

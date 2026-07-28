@@ -110,6 +110,14 @@ pub struct RemoteJob {
 
 /// Fields that may be changed directly from a job detail view.
 /// Nested options distinguish an omitted field from an explicit clear (`null`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationEvents {
+    pub start: bool,
+    pub working: bool,
+    pub logs: bool,
+    pub finish: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct JobUpdate {
     #[serde(default)]
@@ -126,6 +134,10 @@ pub struct JobUpdate {
     pub aerospace_workspace: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_optional_optional")]
     pub notify_target: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub telegram_chat_id: Option<Option<i64>>,
+    #[serde(default)]
+    pub telegram_notify: Option<NotificationEvents>,
     #[serde(default)]
     pub kill_on_end: Option<bool>,
     #[serde(default)]

@@ -41,7 +41,7 @@ impl Default for NotifyTarget {
     }
 }
 
-/// Per-job notification flags controlling what gets sent to Telegram.
+/// Per-job notification flags shared by the configured notification targets.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TelegramNotify {
     #[serde(default = "bool_true")]

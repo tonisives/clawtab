@@ -65,11 +65,6 @@ export function MindMapJobBody({
     void actions.runJob(slug);
   }, [actions, slug]);
 
-  const handleToggle = useCallback(() => {
-    void actions.toggleJob(slug);
-    core.reload();
-  }, [actions, core, slug]);
-
   const handleDelete = useCallback(() => {
     void actions.deleteJob(slug);
     core.reload();
@@ -109,9 +104,7 @@ export function MindMapJobBody({
       lastQuery={matchedProcess?.last_query ?? undefined}
       tokenCount={matchedProcess?.token_count}
       onBack={onClose}
-      onEdit={goToJobsTab}
       onOpen={handleOpen}
-      onToggle={handleToggle}
       onDuplicate={goToJobsTab}
       onDuplicateToFolder={goToJobsTab}
       onDelete={handleDelete}

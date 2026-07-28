@@ -41,6 +41,8 @@ export interface JobUpdate {
   tmux_session?: string | null;
   aerospace_workspace?: string | null;
   notify_target?: "none" | "app" | "telegram" | string | null;
+  telegram_chat_id?: number | null;
+  telegram_notify?: TelegramNotify;
   kill_on_end?: boolean;
   auto_yes?: boolean;
   max_history?: number;

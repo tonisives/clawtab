@@ -41,8 +41,7 @@ interface UseViewingStateParams {
 }
 
 export function useViewingState({ core, onJobSelected }: UseViewingStateParams) {
-  // Editor state
-  const [editingJob, setEditingJob] = useState<Job | null>(null);
+  // Creation state
   const [isCreating, setIsCreating] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerTemplateId, setPickerTemplateId] = useState<string | null>(null);
@@ -124,7 +123,6 @@ export function useViewingState({ core, onJobSelected }: UseViewingStateParams) 
   }, [onJobSelected]);
 
   const triggerFocusAgentInput = useCallback(() => {
-    setEditingJob(null);
     setIsCreating(false);
     setShowPicker(false);
     setPickerTemplateId(null);
@@ -157,8 +155,7 @@ export function useViewingState({ core, onJobSelected }: UseViewingStateParams) 
   }, []);
 
   return {
-    // Editor state
-    editingJob, setEditingJob,
+    // Creation state
     isCreating, setIsCreating,
     showPicker, setShowPicker,
     pickerTemplateId, setPickerTemplateId,

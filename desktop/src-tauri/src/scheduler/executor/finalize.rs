@@ -244,6 +244,9 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
             }
         }
         NotifyTarget::App => {
+            if !job.telegram_notify.finish {
+                return;
+            }
             let event = if outcome.success {
                 "completed"
             } else {

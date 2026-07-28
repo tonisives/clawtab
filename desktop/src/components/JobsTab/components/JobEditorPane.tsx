@@ -4,7 +4,6 @@ import type { Job } from "../../../types";
 
 interface JobEditorPaneProps {
   createForGroup: { group: string; folderPath: string | null } | null;
-  editingJob: Job | null;
   headerMode: "back" | "close";
   onCancel: () => void;
   onPickTemplate: (templateId: string) => void;
@@ -15,7 +14,6 @@ interface JobEditorPaneProps {
 
 export function JobEditorPane({
   createForGroup,
-  editingJob,
   headerMode,
   onCancel,
   onPickTemplate,
@@ -31,7 +29,7 @@ export function JobEditorPane({
         </div>
       )}
       <JobEditor
-        job={editingJob}
+        job={null}
         onSave={onSave}
         onCancel={onCancel}
         headerMode={headerMode}

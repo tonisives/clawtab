@@ -66,7 +66,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const {
     viewingJob, viewingProcess,
     viewingShell, viewingAgent,
-    editingJob, setEditingJob, isCreating,
+    isCreating,
     showPicker, pickerTemplateId,
     saveError, createForGroup,
     showFolderRunner,
@@ -161,7 +161,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   });
   const { sidebarCollapsed } = keyboard;
 
-  const isFullScreenView = !isWide && !!(editingJob || isCreating || showPicker);
+  const isFullScreenView = !isWide && !!(isCreating || showPicker);
   const trafficLightInset = isWide && sidebarCollapsed ? 84 : 0;
   const topLeftLeafId = useMemo(() => findTopLeftLeafId(split.tree), [split.tree]);
   const { recentSinglePaneContents } = useJobsTabEffects({
@@ -261,7 +261,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
       handleRunAgent, handleGetAgentProviders,
       selectAdjacentItem, openRenameProcessDialog,
       buildJobPaneActions, buildJobTitlePath, buildProcessTitlePath,
-      setEditingJob, setSkillSearchPaneId, setInjectSecretsPaneId,
+      setSkillSearchPaneId, setInjectSecretsPaneId,
       processRenameDrafts, folderRunGroups,
     },
   });
@@ -287,7 +287,7 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
 
   // --- Render ---
 
-  const isEditorVisible = !!(editingJob || isCreating);
+  const isEditorVisible = isCreating;
   const isPickerVisible = showPicker && !isEditorVisible;
   const isMainVisible = isWide || (!isEditorVisible && !isPickerVisible);
   const panelContentStyle: CSSProperties = {
@@ -440,7 +440,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const editorPaneMobile = (
     <JobEditorPane
       createForGroup={createForGroup}
-      editingJob={editingJob}
       headerMode="back"
       onCancel={handleCancelEditor}
       onPickTemplate={handlePickTemplate}
@@ -453,7 +452,6 @@ export function JobsTab({ pendingTemplateId, onTemplateHandled, createJobKey, im
   const editorPaneClose = (
     <JobEditorPane
       createForGroup={createForGroup}
-      editingJob={editingJob}
       headerMode="close"
       onCancel={handleCancelEditor}
       onPickTemplate={handlePickTemplate}
