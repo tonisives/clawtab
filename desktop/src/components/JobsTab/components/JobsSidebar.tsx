@@ -206,7 +206,7 @@ export function JobsSidebar({
   );
 
   const renderDraggableProcessCard = useCallback(
-    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string; groupedPosition?: GroupedRowPosition }) => {
+    (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string; agentLabel?: string | null; groupedPosition?: GroupedRowPosition }) => {
       const target = moveToWorkspaceForCwd(props.process.cwd, props.process.matched_group);
       const pinKey = `process:${props.process.pane_id}`;
       return (

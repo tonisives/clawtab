@@ -17,7 +17,7 @@ import {
   useJobDetail,
   useLogBuffer,
 } from "@clawtab/shared";
-import type { AppSettings, Job } from "../types";
+import type { AppSettings, Job, SecretEntry } from "../types";
 import { EDITOR_LABELS } from "../constants";
 import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -512,6 +512,9 @@ export function DesktopDetailSections({
   const [cwtContextPreview, setCwtContextPreview] = useState<string | null>(null);
   const [preferredEditor, setPreferredEditor] = useState("nvim");
   const [telegramChats, setTelegramChats] = useState<{ id: number; name: string }[]>([]);
+  const [availableSecrets, setAvailableSecrets] = useState<SecretEntry[]>([]);
+  const [selectedSecret, setSelectedSecret] = useState("");
+  const [secretsSaving, setSecretsSaving] = useState(false);
   const savedContentRef = useRef(savedContent);
   savedContentRef.current = savedContent;
 
@@ -526,6 +529,26 @@ export function DesktopDetailSections({
       })) ?? []);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!onUpdateJob) return;
+    invoke<SecretEntry[]>("list_secrets").then(setAvailableSecrets).catch(() => {});
+  }, [onUpdateJob]);
+
+  const unassignedSecrets = availableSecrets.filter(
+    (secret) => !job.secret_keys.includes(secret.key),
+  );
+
+  const updateSecrets = async (secretKeys: string[]) => {
+    if (!onUpdateJob || secretsSaving) return;
+    setSecretsSaving(true);
+    try {
+      await onUpdateJob({ secret_keys: secretKeys });
+      setSelectedSecret("");
+    } finally {
+      setSecretsSaving(false);
+    }
+  };
 
   const reloadDirections = useCallback(() => {
     if (job.job_type !== "job" || !job.folder_path) return;
@@ -850,12 +873,52 @@ export function DesktopDetailSections({
       )}
 
       {/* Secrets */}
-      {job.secret_keys.length > 0 && (
+      {(job.secret_keys.length > 0 || onUpdateJob) && (
         <div className="field-group">
           <span className="field-group-title">Secrets</span>
           {job.secret_keys.map((key) => (
-            <DetailRow key={key} label={key} value="(set)" mono />
+            <div
+              key={key}
+              style={{ display: "flex", alignItems: "center", gap: 8 }}
+            >
+              <DetailRow label={key} value="(set)" mono />
+              {onUpdateJob && (
+                <button
+                  className="btn btn-sm"
+                  onClick={() => updateSecrets(job.secret_keys.filter((item) => item !== key))}
+                  disabled={secretsSaving}
+                  title={`Remove ${key} from this job`}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
           ))}
+          {onUpdateJob && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <select
+                value={selectedSecret}
+                onChange={(event) => setSelectedSecret(event.target.value)}
+                disabled={secretsSaving || unassignedSecrets.length === 0}
+                style={{ ...inlineFieldStyle, flex: 1 }}
+                aria-label="Secret to add"
+              >
+                <option value="">
+                  {unassignedSecrets.length === 0 ? "No more secrets available" : "Select a secret"}
+                </option>
+                {unassignedSecrets.map((secret) => (
+                  <option key={secret.key} value={secret.key}>{secret.key}</option>
+                ))}
+              </select>
+              <button
+                className="btn btn-sm"
+                onClick={() => updateSecrets([...job.secret_keys, selectedSecret])}
+                disabled={!selectedSecret || secretsSaving}
+              >
+                Add secret
+              </button>
+            </div>
+          )}
         </div>
       )}
     </>

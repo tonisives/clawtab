@@ -82,6 +82,18 @@ export let describeCalendarSchedule = (schedule: CalendarSchedule): string => {
   return `${cadence} from ${anchor}`;
 };
 
+export let compactCalendarSchedule = (schedule: CalendarSchedule): string => {
+  let start = parseLocalStart(schedule.start);
+  let every = schedule.repeat.every;
+  if (!start || schedule.repeat.unit !== "week" || every < 1) {
+    return "Invalid schedule";
+  }
+
+  let cadence = every === 1 ? "Weekly" : `Every ${every} weeks`;
+  let weekday = start.toLocaleDateString(undefined, { weekday: "short" });
+  return `${cadence} on ${weekday}`;
+};
+
 export let calendarScheduleTooltip = (schedule: CalendarSchedule): string => {
   let description = describeCalendarSchedule(schedule);
   let next = nextCalendarDate(schedule);

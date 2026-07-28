@@ -37,6 +37,7 @@ export function ProcessCard({
   renameShortcutHint = "Cmd+R",
   onMoveToWorkspace,
   moveToWorkspaceLabel,
+  agentLabel,
   groupedPosition,
 }: {
   process: DetectedProcess;
@@ -56,6 +57,7 @@ export function ProcessCard({
   renameShortcutHint?: string;
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
+  agentLabel?: string | null;
   groupedPosition?: GroupedRowPosition;
 }) {
   const displayName = processDisplayTitle(process);
@@ -212,56 +214,59 @@ export function ProcessCard({
       >
         <JobKindIcon kind={kind} />
         <View style={styles.processInfo}>
-          {editing ? (
-            <TextInput
-              ref={editInputRef}
-              value={editValue}
-              onChangeText={(value) => {
-                setEditValue(value);
-                onRenameDraftChange?.(value);
-              }}
-              onSubmitEditing={commitEdit}
-              onBlur={cancelEdit}
-              onKeyPress={(e: any) => {
-                if (e?.key === "Escape") cancelEdit();
-              }}
-              style={styles.editInput}
-              placeholder={shortenPath(process.cwd)}
-              placeholderTextColor={colors.textMuted}
-              selectTextOnFocus
-            />
-          ) : (
-            <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
-              {displayName}
-            </Text>
-          )}
+          <View style={styles.titleRow}>
+            {editing ? (
+              <TextInput
+                ref={editInputRef}
+                value={editValue}
+                onChangeText={(value) => {
+                  setEditValue(value);
+                  onRenameDraftChange?.(value);
+                }}
+                onSubmitEditing={commitEdit}
+                onBlur={cancelEdit}
+                onKeyPress={(e: any) => {
+                  if (e?.key === "Escape") cancelEdit();
+                }}
+                style={styles.editInput}
+                placeholder={shortenPath(process.cwd)}
+                placeholderTextColor={colors.textMuted}
+                selectTextOnFocus
+              />
+            ) : (
+              <Text style={[styles.processName, transient === "stopping" && { opacity: 0.5 }]} numberOfLines={1}>
+                {displayName}
+              </Text>
+            )}
+            <View style={styles.titleControls}>
+              {showMenu && !editing ? (
+                <TouchableOpacity
+                  ref={menuBtnRef}
+                  onPress={(e: any) => {
+                    e.stopPropagation();
+                    if (menuOpen) setMenuOpen(false);
+                    else openMenu(e);
+                  }}
+                  style={styles.moreBtn}
+                  activeOpacity={0.6}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+                </TouchableOpacity>
+              ) : null}
+              {statusIndicator}
+              {autoYesActive && !transient ? <View style={styles.autoYesDot} /> : null}
+            </View>
+          </View>
           {!editing ? (
-            <Text style={[styles.queryPreview, transient ? styles.transientPreview : null]} numberOfLines={1}>
-              <Text style={styles.paneId}>{process.pane_id}</Text>
-              {listItemSubtitle ? ` \u00b7 ${listItemSubtitle}` : null}
-            </Text>
+            <View style={styles.processMeta}>
+              <Text style={[styles.queryPreview, transient ? styles.transientPreview : null]} numberOfLines={1}>
+                <Text style={styles.paneId}>{process.pane_id}</Text>
+                {listItemSubtitle ? ` \u00b7 ${listItemSubtitle}` : null}
+              </Text>
+              {agentLabel ? <Text style={styles.agentText} numberOfLines={1}>{agentLabel}</Text> : null}
+            </View>
           ) : null}
-        </View>
-        <View style={[styles.rightCol, (showMenu || (autoYesActive && !transient)) && styles.rightColExpanded]}>
-          {showMenu && !editing ? (
-            <TouchableOpacity
-              ref={menuBtnRef}
-              onPress={(e: any) => {
-                e.stopPropagation();
-                if (menuOpen) setMenuOpen(false);
-                else openMenu(e);
-              }}
-              style={styles.moreBtn}
-              activeOpacity={0.6}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Text style={styles.moreBtnText}>{"\u2026"}</Text>
-            </TouchableOpacity>
-          ) : (autoYesActive && !transient) ? <View style={styles.spacer} /> : null}
-          {statusIndicator}
-          {autoYesActive && !transient ? (
-            <View style={styles.autoYesDot} />
-          ) : showMenu ? <View style={styles.spacer} /> : null}
         </View>
       </TouchableOpacity>
       {menuOpen && (onStop || onRename || onSaveName || onTogglePin || canMoveToWorkspace) && (
@@ -316,7 +321,18 @@ const styles = StyleSheet.create({
   },
   processRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   processInfo: { flex: 1, gap: 2, minWidth: 0 },
-  processName: { color: colors.text, fontSize: 16, fontWeight: "500", flexShrink: 1 },
+  processName: { color: colors.text, fontSize: 16, fontWeight: "500", flex: 1 },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+  },
+  titleControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginLeft: spacing.sm,
+  },
   editInput: {
     color: colors.text,
     fontSize: 16,
@@ -327,10 +343,26 @@ const styles = StyleSheet.create({
     outlineStyle: "none" as any,
     backgroundColor: "transparent",
     minWidth: 0,
+    flex: 1,
   },
   queryPreview: {
     color: colors.textSecondary,
     fontSize: 13,
+    flexShrink: 1,
+  },
+  processMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  agentText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontFamily: "monospace",
+    marginLeft: "auto",
+    flexShrink: 0,
+    maxWidth: 130,
   },
   paneId: {
     color: colors.textMuted,
@@ -370,21 +402,6 @@ const styles = StyleSheet.create({
   },
   statusIconFinished: {
     color: colors.success,
-  },
-  rightCol: {
-    alignItems: "center",
-    justifyContent: "center",
-    height: 32,
-  },
-  rightColExpanded: {
-    justifyContent: "space-between",
-    height: 44,
-    marginTop: -10,
-    marginBottom: -3,
-    marginRight: -6,
-  },
-  spacer: {
-    height: 8,
   },
   autoYesDot: {
     width: 8,

@@ -2,6 +2,7 @@ import { Platform, View } from "react-native";
 
 import type { DetectedProcess } from "../../types/process";
 import { ProcessCard } from "../ProcessCard";
+import { compactAgentSelectionLabel, labelForProvider } from "../../util/agent";
 import { styles } from "./styles";
 import type { GroupedRowPosition } from "./sign";
 import type { JobListViewHook } from "./useJobListView";
@@ -43,6 +44,19 @@ export function JobListProcessItem({
   const onStop = hook.onStopProcess ? () => hook.onStopProcess?.(process.pane_id) : undefined;
   const onRename = hook.onRenameProcess ? () => hook.onRenameProcess?.(process) : undefined;
   const onSaveName = hook.onSaveProcessName ? (name: string) => hook.onSaveProcessName?.(process, name) : undefined;
+  const matchedJob = process.matched_job
+    ? hook.jobs.find((job) => job.slug === process.matched_job)
+    : undefined;
+  const processModelLabel = matchedJob
+    ? compactAgentSelectionLabel(
+        matchedJob.agent_provider ?? process.provider,
+        matchedJob.agent_model
+          ?? ((matchedJob.agent_provider ?? process.provider) === hook.defaultAgentProvider
+            ? hook.defaultAgentModel
+            : null),
+        matchedJob.agent_effort,
+      )
+    : labelForProvider(process.provider);
   const resolvedSortGroup = sortGroup ?? process.matched_group ?? `cwd:${process.cwd}`;
   const card = hook.customRenderProcessCard
     ? hook.customRenderProcessCard({
@@ -64,6 +78,7 @@ export function JobListProcessItem({
       onRenameDraftChange: (value: string | null) => hook.onProcessRenameDraftChange?.(process.pane_id, value),
       onRenameStateChange: (editing: boolean) => hook.onProcessRenameStateChange?.(process.pane_id, editing),
       renameShortcutHint: hook.renameShortcutHint,
+      agentLabel: processModelLabel,
       groupedPosition,
     })
     : (
@@ -83,6 +98,7 @@ export function JobListProcessItem({
         onRenameDraftChange={(value) => hook.onProcessRenameDraftChange?.(process.pane_id, value)}
         onRenameStateChange={(editing) => hook.onProcessRenameStateChange?.(process.pane_id, editing)}
         renameShortcutHint={hook.renameShortcutHint}
+        agentLabel={processModelLabel}
         groupedPosition={groupedPosition}
       />
     );

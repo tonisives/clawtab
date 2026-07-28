@@ -63,6 +63,7 @@ export interface JobUpdate {
   agent_provider?: ProcessProvider | null;
   agent_model?: string | null;
   agent_effort?: AgentEffort | null;
+  secret_keys?: string[];
 }
 
 export type TelegramLogMode = "off" | "on_prompt" | "always";

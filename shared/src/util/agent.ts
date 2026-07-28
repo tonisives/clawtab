@@ -44,3 +44,12 @@ export function agentSelectionLabel(
   const effectiveEffort = effort ?? embeddedEffort ?? defaultAgentEffort(provider, modelId);
   return effectiveEffort ? `${base}-${effectiveEffort}` : base;
 }
+
+export function compactAgentSelectionLabel(
+  provider: ProcessProvider | null | undefined,
+  modelId: string | null | undefined,
+  effort?: AgentEffort | string | null,
+): string {
+  return agentSelectionLabel(provider, modelId, effort)
+    .replace(/-medium$/, "-med");
+}

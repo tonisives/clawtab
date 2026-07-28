@@ -1,22 +1,20 @@
 import { memo, useCallback, useRef, useState } from "react";
 import { TouchableOpacity, View, Text, StyleSheet, Platform } from "react-native";
 import type { RemoteJob, JobStatus } from "../types/job";
-import { StatusBadge } from "./StatusBadge";
 import { Tooltip } from "./Tooltip";
 import { PopupMenu } from "./PopupMenu";
 import type { ProcessProvider } from "../types/process";
-import { agentSelectionLabel } from "../util/agent";
+import { compactAgentSelectionLabel } from "../util/agent";
 import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import {
   calendarScheduleTooltip,
-  describeCalendarSchedule,
+  compactCalendarSchedule,
   isJobScheduled,
-  nextCalendarDate,
 } from "../util/schedule";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
-import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
+import { JobKindIcon, scheduledProviderKindForJob } from "./JobKindIcon";
 
 type GroupedRowPosition = "single" | "first" | "middle" | "last";
 
@@ -60,11 +58,12 @@ export const JobCard = memo(function JobCard({
           : null;
 
   const scheduled = isJobScheduled(job);
-  const kind = scheduled ? "cron" : kindForJob(job);
-  const providerKind = scheduled ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
+  const kind = scheduled ? "cron" : "manual";
+  const providerKind = scheduledProviderKindForJob(job, defaultAgentProvider);
   const agentProvider = job.agent_provider ?? scheduledProviderKindForJob(job, defaultAgentProvider);
-  const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
-  const agentLabel = agentProvider ? agentSelectionLabel(agentProvider, agentModel, job.agent_effort) : null;
+  const agentModel = job.agent_model
+    ?? (agentProvider === defaultAgentProvider ? defaultAgentModel : null);
+  const agentLabel = agentProvider ? compactAgentSelectionLabel(agentProvider, agentModel, job.agent_effort) : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<any>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -104,21 +103,37 @@ export const JobCard = memo(function JobCard({
             ) : null}
           </View>
           <View style={styles.info}>
-            <Text style={styles.name} numberOfLines={1}>
-              {job.name}
-            </Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.name} numberOfLines={1}>
+                {job.name}
+              </Text>
+              {onTogglePin ? (
+                <TouchableOpacity
+                  ref={menuBtnRef}
+                  onPress={(event: any) => {
+                    event.stopPropagation();
+                    if (menuOpen) setMenuOpen(false);
+                    else openMenu(event);
+                  }}
+                  style={styles.moreBtn}
+                  activeOpacity={0.6}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.moreBtnText}>{"\u2026"}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
             <View style={styles.meta}>
-              {scheduled && job.enabled ? (() => {
-                const next = job.schedule
-                  ? nextCalendarDate(job.schedule)
-                  : nextCronDate(job.cron);
+              <View style={styles.metaLeft}>
+              {scheduled && job.enabled && !job.schedule ? (() => {
+                const next = nextCronDate(job.cron);
                 return next ? <Text style={styles.nextRunText} numberOfLines={1}>{formatNextRun(next)}</Text> : null;
               })() : null}
               {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
               {job.schedule ? (
                 <Tooltip label={calendarScheduleTooltip(job.schedule)}>
                   <Text style={styles.cronText} numberOfLines={1}>
-                    {describeCalendarSchedule(job.schedule)}
+                    {compactCalendarSchedule(job.schedule)}
                   </Text>
                 </Tooltip>
               ) : job.cron ? (
@@ -126,10 +141,10 @@ export const JobCard = memo(function JobCard({
                   <Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text>
                 </Tooltip>
               ) : null}
+              </View>
               {agentLabel ? <Text style={styles.agentText} numberOfLines={1}>{agentLabel}</Text> : null}
             </View>
           </View>
-          <StatusBadge status={status} />
         </View>
       </TouchableOpacity>
       {menuOpen && onTogglePin ? (
@@ -211,12 +226,27 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontWeight: "500",
+    flex: 1,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
   },
   meta: {
     flexDirection: "row",
     flexWrap: "nowrap",
     gap: spacing.sm,
     alignItems: "center",
+    overflow: "hidden",
+    justifyContent: "space-between",
+  },
+  metaLeft: {
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: spacing.sm,
+    alignItems: "center",
+    minWidth: 0,
     overflow: "hidden",
   },
   cronText: {
@@ -242,5 +272,16 @@ const styles = StyleSheet.create({
     marginLeft: "auto",
     flexShrink: 0,
     maxWidth: 130,
+  },
+  moreBtn: {
+    width: 20,
+    alignSelf: "stretch",
+    justifyContent: "flex-start",
+    alignItems: "center",
+  },
+  moreBtnText: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 14,
   },
 });

@@ -197,6 +197,8 @@ export function DraggableJobCard({
           defaultAgentProvider={defaultAgentProvider}
           defaultAgentModel={defaultAgentModel}
           onStop={onStop}
+          onTogglePin={onTogglePin}
+          pinned={pinned}
           autoYesActive={autoYesActive}
           stopping={stopping}
           groupedPosition={groupedPosition}
@@ -210,10 +212,11 @@ export function DraggableJobCard({
           softBorder={softBorder}
           defaultAgentProvider={defaultAgentProvider}
           defaultAgentModel={defaultAgentModel}
+          onTogglePin={onTogglePin}
+          pinned={pinned}
           groupedPosition={groupedPosition}
         />
       )}
-      {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
     </div>
   );
 }
@@ -238,6 +241,7 @@ export function DraggableProcessCard({
   dataProcessId,
   onMoveToWorkspace,
   moveToWorkspaceLabel,
+  agentLabel,
   pinned,
   onTogglePin,
   groupedPosition,
@@ -261,6 +265,7 @@ export function DraggableProcessCard({
   dataProcessId?: string;
   onMoveToWorkspace?: () => void;
   moveToWorkspaceLabel?: string;
+  agentLabel?: string | null;
   pinned?: boolean;
   onTogglePin?: () => void;
   groupedPosition?: GroupedRowPosition;
@@ -331,9 +336,11 @@ export function DraggableProcessCard({
         renameShortcutHint={renameShortcutHint}
         onMoveToWorkspace={onMoveToWorkspace}
         moveToWorkspaceLabel={moveToWorkspaceLabel}
+        agentLabel={agentLabel}
+        onTogglePin={onTogglePin}
+        pinned={pinned}
         groupedPosition={groupedPosition}
       />
-      {onTogglePin ? <PinButton pinned={!!pinned} onToggle={onTogglePin} /> : null}
     </div>
   );
 }

@@ -30,6 +30,11 @@ export function ScheduleFields({
   setWeeklyTimeAtIndex, addWeeklyTime, removeWeeklyTime,
   updateCalendarStart, updateCalendarEvery,
 }: ScheduleFieldsProps) {
+  const [calendarDate, calendarTime = "09:00"] = calendarStart.split("T");
+  const updateCalendarPart = (date: string, time: string) => {
+    if (date && time) updateCalendarStart(`${date}T${time}`);
+  };
+
   return (
     <div className="form-group">
       {hasParams && (
@@ -127,14 +132,20 @@ export function ScheduleFields({
             </label>
             <div style={{ opacity: scheduleMode === "calendar" ? 1 : 0.4, pointerEvents: scheduleMode === "calendar" ? "auto" : "none", paddingLeft: 24 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <label style={{ margin: 0, fontSize: 13 }} htmlFor="calendar-schedule-start">
+                <label style={{ margin: 0, fontSize: 13 }} htmlFor="calendar-schedule-date">
                   Starts
                 </label>
                 <input
-                  id="calendar-schedule-start"
-                  type="datetime-local"
-                  value={calendarStart}
-                  onChange={(event) => updateCalendarStart(event.target.value)}
+                  id="calendar-schedule-date"
+                  type="date"
+                  value={calendarDate}
+                  onChange={(event) => updateCalendarPart(event.target.value, calendarTime)}
+                />
+                <input
+                  aria-label="Schedule start time"
+                  type="time"
+                  value={calendarTime}
+                  onChange={(event) => updateCalendarPart(calendarDate, event.target.value)}
                 />
                 <label style={{ margin: 0, fontSize: 13 }} htmlFor="calendar-schedule-repeat">
                   Repeat
