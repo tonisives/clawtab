@@ -24,7 +24,6 @@ export function IdentityFields({ form, setForm, isNew, argsText, setArgsText, pi
             }
           >
             <option value="job">Job</option>
-            <option value="claude">Claude</option>
             <option value="binary">Binary</option>
           </select>
         </div>

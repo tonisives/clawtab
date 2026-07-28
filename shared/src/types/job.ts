@@ -49,6 +49,7 @@ export interface RemoteJob {
 export interface JobUpdate {
   enabled?: boolean;
   cron?: string;
+  schedule?: CalendarSchedule | null;
   group?: string;
   work_dir?: string | null;
   tmux_session?: string | null;

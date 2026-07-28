@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AgentModelOption,
@@ -22,6 +23,8 @@ import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { XtermPane } from "./XtermPane";
 import type { Transport } from "@clawtab/shared";
+import { ScheduleFields } from "./JobEditor/components/ScheduleFields";
+import { useScheduleState } from "./JobEditor/hooks/useScheduleState";
 
 const cardSectionStyle = {
   backgroundColor: "var(--bg-primary)",
@@ -171,6 +174,108 @@ function InlineSelectField({
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}
     </select>
+  );
+}
+
+function ScheduleDialog({
+  job,
+  onSave,
+  onCancel,
+}: {
+  job: Job;
+  onSave: (patch: JobUpdate) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [draft, setDraft] = useState<Job>(job);
+  const [saving, setSaving] = useState(false);
+  const schedule = useScheduleState({ form: draft, setForm: setDraft, isNew: false });
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (dialog && !dialog.open) dialog.showModal();
+    return () => {
+      if (dialog?.open) dialog.close();
+    };
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave({
+        cron: draft.cron,
+        schedule: draft.schedule ?? null,
+      });
+      onCancel();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      className="confirm-overlay"
+      onCancel={(event) => {
+        event.preventDefault();
+        onCancel();
+      }}
+      onClick={(event) => {
+        if (event.target === dialogRef.current) onCancel();
+      }}
+    >
+      <div
+        className="confirm-dialog"
+        onClick={(event) => event.stopPropagation()}
+        style={{ width: 560, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 48px)", overflowY: "auto" }}
+      >
+        <h3 style={{ margin: "0 0 16px", fontSize: 15 }}>Schedule</h3>
+        <ScheduleFields form={draft} setForm={setDraft} {...schedule} />
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <button className="btn btn-sm" disabled={saving} onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn btn-primary btn-sm" disabled={saving} onClick={() => void save()}>
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </dialog>,
+    document.body,
+  );
+}
+
+function InlineScheduleField({
+  job,
+  onSave,
+}: {
+  job: Job;
+  onSave: (patch: JobUpdate) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = job.schedule
+    ? describeCalendarSchedule(job.schedule)
+    : job.cron || "Manual";
+
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => setOpen(true)}
+        style={{ width: "100%", minHeight: 28, justifyContent: "flex-start", textAlign: "left" }}
+        title="Edit schedule"
+      >
+        {label}
+      </button>
+      {open && (
+        <ScheduleDialog
+          job={job}
+          onSave={onSave}
+          onCancel={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -580,20 +685,10 @@ export function DesktopDetailSections({
             />
             <DetailRow
               label="Schedule"
-              value={job.schedule ? (
-                describeCalendarSchedule(job.schedule)
-              ) : onUpdateJob ? (
-                <InlineTextField
-                  value={job.cron}
-                  placeholder="Manual"
-                  mono
-                  onSave={(cron) => onUpdateJob({ cron })}
-                />
-              ) : job.cron || "Manual"}
+              value={onUpdateJob ? (
+                <InlineScheduleField job={job} onSave={onUpdateJob} />
+              ) : job.schedule ? describeCalendarSchedule(job.schedule) : job.cron || "Manual"}
             />
-            {job.schedule ? (
-              <DetailRow label="Anchor" value={job.schedule.start} mono />
-            ) : null}
             <DetailRow
               label="Group"
               value={onUpdateJob ? (
