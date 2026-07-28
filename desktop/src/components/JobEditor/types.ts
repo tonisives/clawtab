@@ -49,6 +49,8 @@ export const emptyJob: Job = {
   kill_on_end: false,
   auto_yes: false,
   agent_provider: null,
+  agent_model: null,
+  agent_effort: null,
   aerospace_workspace: null,
   max_history: 3,
 };

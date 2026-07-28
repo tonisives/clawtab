@@ -5,6 +5,7 @@ import { StatusBadge } from "./StatusBadge";
 import { Tooltip } from "./Tooltip";
 import { PopupMenu } from "./PopupMenu";
 import type { ProcessProvider } from "../types/process";
+import { agentSelectionLabel } from "../util/agent";
 import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
 import { colors } from "../theme/colors";
@@ -29,6 +30,7 @@ export const JobCard = memo(function JobCard({
   selected,
   softBorder,
   defaultAgentProvider,
+  defaultAgentModel,
   groupedPosition,
 }: {
   job: RemoteJob;
@@ -39,6 +41,7 @@ export const JobCard = memo(function JobCard({
   selected?: boolean | string;
   softBorder?: boolean;
   defaultAgentProvider?: ProcessProvider;
+  defaultAgentModel?: string | null;
   groupedPosition?: GroupedRowPosition;
 }) {
   const lastRun =
@@ -52,6 +55,9 @@ export const JobCard = memo(function JobCard({
 
   const kind = job.cron ? "cron" : kindForJob(job);
   const providerKind = job.cron ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
+  const agentProvider = job.agent_provider ?? scheduledProviderKindForJob(job, defaultAgentProvider);
+  const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
+  const agentLabel = agentProvider ? agentSelectionLabel(agentProvider, agentModel, job.agent_effort) : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const menuBtnRef = useRef<any>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -101,6 +107,7 @@ export const JobCard = memo(function JobCard({
               })() : null}
               {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
               {job.cron ? <Tooltip label={cronTooltip(job.cron)}><Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text></Tooltip> : null}
+              {agentLabel ? <Text style={styles.agentText} numberOfLines={1}>{agentLabel}</Text> : null}
             </View>
           </View>
           <StatusBadge status={status} />
@@ -208,5 +215,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
     flexShrink: 0,
+  },
+  agentText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontFamily: "monospace",
+    marginLeft: "auto",
+    flexShrink: 0,
+    maxWidth: 130,
   },
 });

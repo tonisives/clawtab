@@ -1,7 +1,7 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { colors, JobKindIcon, PopupMenu } from "@clawtab/shared";
-import type { ProcessProvider } from "@clawtab/shared";
+import { AgentSelector, colors, PopupMenu } from "@clawtab/shared";
+import type { AgentEffort, ProcessProvider } from "@clawtab/shared";
 import {
   buildModelOptions,
 } from "./JobEditor/utils";
@@ -9,7 +9,7 @@ import {
 const LAST_RUN_AGENT_FOLDER_KEY = "clawtab_last_run_agent_folder";
 
 interface EmptyDetailAgentProps {
-  onRunAgent: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) => void | Promise<void>;
+  onRunAgent: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string, effort?: AgentEffort | null) => void | Promise<void>;
   getAgentProviders: () => Promise<ProcessProvider[]>;
   defaultProvider: ProcessProvider;
   defaultModel?: string | null;
@@ -19,7 +19,7 @@ interface EmptyDetailAgentProps {
   activeWorkspaceId?: string;
 }
 
-export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, enabledModels = {}, folderGroups = [], activeWorkspaceId }: EmptyDetailAgentProps) {
+export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvider, defaultModel, enabledModels = {}, folderGroups = [], activeWorkspaceId }: EmptyDetailAgentProps) {
   const [providers, setProviders] = useState<ProcessProvider[]>([defaultProvider]);
   const [workDir, setWorkDirState] = useState<string | null>(() => {
     if (typeof localStorage === "undefined") return null;
@@ -93,19 +93,17 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
     }
   }, [setWorkDir]);
 
-  const launch = useCallback(async (provider: ProcessProvider, modelId: string | null) => {
+  const launch = useCallback(async (provider: ProcessProvider, modelId: string | null, effort: AgentEffort | null) => {
     if (sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
     try {
-      await onRunAgent("", workDir ?? undefined, provider, modelId ?? undefined);
+      await onRunAgent("", workDir ?? undefined, provider, modelId ?? undefined, effort);
     } finally {
       sendingRef.current = false;
       setSending(false);
     }
   }, [onRunAgent, workDir]);
-
-  const launchableOptions = modelOptions.filter((opt) => opt.provider !== "shell");
 
   return (
     <div style={{ display: "flex", flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -148,45 +146,17 @@ export function EmptyDetailAgent({ onRunAgent, getAgentProviders, defaultProvide
           </button>
         </div>
         <div style={launchListStyle}>
-          {launchableOptions.map((opt, index) => (
-            <Fragment key={`${opt.provider}:${opt.modelId ?? ""}`}>
-              <div
-                role="button"
-                tabIndex={sending ? -1 : 0}
-                aria-disabled={sending}
-                onClick={() => { if (!sending) void launch(opt.provider, opt.modelId); }}
-                onKeyDown={(e) => {
-                  if (sending || (e.key !== "Enter" && e.key !== " ")) return;
-                  e.preventDefault();
-                  void launch(opt.provider, opt.modelId);
-                }}
-                style={launchItemStyle(sending)}
-              >
-                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18 }}>
-                  <JobKindIcon kind={opt.provider} size={16} compact bare />
-                </span>
-                <span style={{ flex: 1, textAlign: "left" }}>{opt.label}</span>
-              </div>
-              {index < launchableOptions.length ? <div style={launchSeparatorStyle} /> : null}
-            </Fragment>
-          ))}
-          <div
-            role="button"
-            tabIndex={sending ? -1 : 0}
-            aria-disabled={sending}
-            onClick={() => { if (!sending) void launch("shell", null); }}
-            onKeyDown={(e) => {
-              if (sending || (e.key !== "Enter" && e.key !== " ")) return;
-              e.preventDefault();
-              void launch("shell", null);
-            }}
-            style={launchItemStyle(sending)}
-          >
-            <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 18 }}>
-              <JobKindIcon kind="shell" size={16} compact bare />
-            </span>
-            <span style={{ flex: 1, textAlign: "left" }}>Terminal</span>
-          </div>
+          <AgentSelector
+            modelOptions={modelOptions}
+            provider={defaultProvider}
+            model={defaultModel}
+            includeShell
+            mode="button"
+            label="Choose agent"
+            fullWidth
+            disabled={sending}
+            onChange={(selection) => launch(selection.provider, selection.modelId, selection.effort)}
+          />
         </div>
       </div>
       {folderMenuOpen && (
@@ -227,34 +197,3 @@ const launchListStyle: CSSProperties = {
   overflow: "hidden",
   background: colors.groupedSurface,
 };
-
-const launchSeparatorStyle: CSSProperties = {
-  height: 1,
-  background: colors.border,
-  flexShrink: 0,
-};
-
-function launchItemStyle(disabled: boolean): CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "8px 12px",
-    borderRadius: 0,
-    background: "transparent",
-    backgroundColor: "transparent",
-    border: "none",
-    appearance: "none",
-    WebkitAppearance: "none",
-    boxShadow: "none",
-    cursor: disabled ? "default" : "pointer",
-    color: colors.text,
-    fontSize: 13,
-    fontFamily: "inherit",
-    margin: 0,
-    outline: "none",
-    opacity: disabled ? 0.5 : 1,
-    width: "100%",
-    textAlign: "left",
-  };
-}

@@ -540,12 +540,26 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         group: job.group.clone(),
         slug: job.slug.clone(),
         work_dir,
+        tmux_session: job.tmux_session.clone(),
+        aerospace_workspace: job.aerospace_workspace.clone(),
+        notify_target: Some(
+            match job.notify_target {
+                crate::config::jobs::NotifyTarget::None => "none",
+                crate::config::jobs::NotifyTarget::Telegram => "telegram",
+                crate::config::jobs::NotifyTarget::App => "app",
+            }
+            .to_string(),
+        ),
+        kill_on_end: Some(job.kill_on_end),
+        auto_yes: Some(job.auto_yes),
+        max_history: Some(job.max_history),
         path: Some(job.path.clone()),
         params: job.params.clone(),
         agent_provider: job
             .agent_provider
             .map(|provider| provider.as_str().to_string()),
         agent_model: job.agent_model.clone(),
+        agent_effort: job.agent_effort.clone(),
         added_at: job.added_at.clone(),
     }
 }

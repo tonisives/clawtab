@@ -24,6 +24,7 @@ export function DraggableJobCard({
   autoYesActive,
   stopping,
   defaultAgentProvider,
+  defaultAgentModel,
   groupedPosition,
 }: {
   job: RemoteJob
@@ -37,6 +38,7 @@ export function DraggableJobCard({
   autoYesActive?: boolean
   stopping?: boolean
   defaultAgentProvider?: ProcessProvider
+  defaultAgentModel?: string | null
   groupedPosition?: "single" | "first" | "middle" | "last"
 }) {
   if (Platform.OS !== "web") {
@@ -53,6 +55,7 @@ export function DraggableJobCard({
         autoYesActive={autoYesActive}
         stopping={stopping}
         defaultAgentProvider={defaultAgentProvider}
+        defaultAgentModel={defaultAgentModel}
         groupedPosition={groupedPosition}
       />
     ) : (
@@ -65,6 +68,7 @@ export function DraggableJobCard({
         selected={selected}
         softBorder={softBorder}
         defaultAgentProvider={defaultAgentProvider}
+        defaultAgentModel={defaultAgentModel}
         groupedPosition={groupedPosition}
       />
     )
@@ -97,6 +101,7 @@ export function DraggableJobCard({
           autoYesActive={autoYesActive}
           stopping={stopping}
           defaultAgentProvider={defaultAgentProvider}
+          defaultAgentModel={defaultAgentModel}
           groupedPosition={groupedPosition}
         />
       ) : (
@@ -109,6 +114,7 @@ export function DraggableJobCard({
           selected={selected}
           softBorder={softBorder}
           defaultAgentProvider={defaultAgentProvider}
+          defaultAgentModel={defaultAgentModel}
           groupedPosition={groupedPosition}
         />
       )}

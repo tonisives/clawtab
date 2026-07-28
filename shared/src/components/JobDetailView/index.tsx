@@ -1,8 +1,12 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Modal,
+  Pressable,
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   ScrollView,
   Platform,
@@ -12,7 +16,9 @@ import { PopupMenu } from "../PopupMenu";
 const isWeb = Platform.OS === "web";
 import type { Transport } from "../../transport";
 import type { RemoteJob, JobStatus, RunRecord } from "../../types/job";
-import type { ProcessProvider, ShellPane } from "../../types/process";
+import type { AgentModelOption, ProcessProvider, ShellPane } from "../../types/process";
+import { defaultAgentEffort, isSyntheticAgentModel } from "../../types/process";
+import type { JobUpdate } from "../../types/job";
 import { StatusBadge } from "../StatusBadge";
 import { ReadOnlyXterm } from "../ReadOnlyXterm";
 import { MessageInput } from "../MessageInput";
@@ -22,6 +28,8 @@ import { nextCronDate, formatNextRun, cronTooltip } from "../../util/cron";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "../JobKindIcon";
+import { agentSelectionLabel } from "../../util/agent";
+import { AgentSelector } from "../AgentSelector";
 import { ActionButton } from "./ActionButton";
 import { OptionButtons } from "./Options";
 import { RunRow } from "./RunRow";
@@ -131,6 +139,11 @@ export interface JobDetailViewProps {
   renderRunTerminal?: (paneId: string, tmuxSession: string) => ReactNode;
   onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
   defaultAgentProvider?: ProcessProvider;
+  defaultAgentModel?: string | null;
+  agentModelOptions?: AgentModelOption[];
+  onUpdateJob?: (patch: JobUpdate) => void | Promise<void>;
+  editHeaderFields?: boolean;
+  showHeaderAgent?: boolean;
   extraMenuItems?: { label: string; onPress: () => void }[];
 }
 
@@ -189,6 +202,11 @@ export function JobDetailView({
   renderRunTerminal,
   onSplitRunPane,
   defaultAgentProvider = "claude",
+  defaultAgentModel = null,
+  agentModelOptions,
+  onUpdateJob,
+  editHeaderFields = true,
+  showHeaderAgent = true,
   extraMenuItems,
 }: JobDetailViewProps) {
   const state = status.state;
@@ -200,6 +218,10 @@ export function JobDetailView({
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   const [showParamsModal, setShowParamsModal] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleDraft, setScheduleDraft] = useState(job.cron ?? "");
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [showDuplicateMenu, setShowDuplicateMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -215,6 +237,39 @@ export function JobDetailView({
   const [freetextOptionNumber, setFreetextOptionNumber] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const [headerWidth, setHeaderWidth] = useState(0);
+
+  useEffect(() => {
+    if (!showScheduleModal) setScheduleDraft(job.cron ?? "");
+  }, [job.cron, showScheduleModal]);
+
+  const openScheduleEditor = useCallback(() => {
+    setScheduleDraft(job.cron ?? "");
+    setScheduleError(null);
+    setShowScheduleModal(true);
+  }, [job.cron]);
+
+  const saveSchedule = useCallback(async () => {
+    if (!onUpdateJob) return;
+    setScheduleSaving(true);
+    setScheduleError(null);
+    try {
+      await onUpdateJob({ cron: scheduleDraft.trim() });
+      setShowScheduleModal(false);
+    } catch (error) {
+      setScheduleError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setScheduleSaving(false);
+    }
+  }, [onUpdateJob, scheduleDraft]);
+
+  const toggleEnabledInline = useCallback(async () => {
+    if (!onUpdateJob || isManual) return;
+    try {
+      await onUpdateJob({ enabled: !job.enabled });
+    } catch (error) {
+      console.error("Failed to update job:", error);
+    }
+  }, [isManual, job.enabled, onUpdateJob]);
 
   // Clear run-pending spinner once the job actually starts (or timeout after 1s)
   useEffect(() => {
@@ -347,6 +402,24 @@ export function JobDetailView({
   const providerBadgeSize = compactLeadingPills ? 12 : 14;
   const jobTypeIcon = job.cron ? "cron" : kindForJob(job);
   const providerIcon = job.cron ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
+  const agentProvider = job.agent_provider ?? scheduledProviderKindForJob(job, defaultAgentProvider);
+  const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
+  const agentEffort = job.agent_effort ?? defaultAgentEffort(agentProvider, agentModel);
+  const agentLabel = agentProvider ? agentSelectionLabel(agentProvider, agentModel, agentEffort) : null;
+  const detailModelOptions = useMemo(() => {
+    const options = [...(agentModelOptions ?? [])];
+    if (agentProvider && !isSyntheticAgentModel(agentModel) && !options.some((option) => option.provider === agentProvider && (option.modelId ?? null) === (agentModel ?? null))) {
+      options.push({ provider: agentProvider, modelId: agentModel ?? null, label: agentLabel ?? agentProvider });
+    }
+    return options;
+  }, [agentModelOptions, agentProvider, agentModel, agentLabel]);
+  const handleAgentUpdate = useCallback(async (patch: JobUpdate) => {
+    try {
+      await onUpdateJob?.(patch);
+    } catch (e) {
+      console.error("Failed to update job agent:", e);
+    }
+  }, [onUpdateJob]);
   const showModePill = !(isManual && expandOutput);
   const modeLabel = isManual ? (expandOutput ? "detected" : "manual") : job.enabled ? "enabled" : "disabled";
   const modeCompactLabel = isManual ? (expandOutput ? "D" : "M") : job.enabled ? "E" : "X";
@@ -418,7 +491,16 @@ export function JobDetailView({
               <span style={{ fontSize: 11, lineHeight: 1, letterSpacing: 1 }}>⋮⋮</span>
             </div>
           ) : null}
-          {job.cron ? (
+          {job.cron && onUpdateJob && editHeaderFields ? (
+            <TouchableOpacity
+              style={styles.infoPill}
+              onPress={openScheduleEditor}
+              activeOpacity={0.65}
+              {...(isWeb ? { title: `${cronTooltip(job.cron)}. Click to edit.` } as any : {})}
+            >
+              <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
+            </TouchableOpacity>
+          ) : job.cron ? (
             <View style={styles.infoPill} {...(isWeb ? { title: cronTooltip(job.cron) } as any : {})}>
               <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
             </View>
@@ -431,7 +513,42 @@ export function JobDetailView({
               </View>
             ) : null;
           })() : null}
-          {showModePill && isManual ? (
+          {showHeaderAgent && agentLabel && onUpdateJob && editHeaderFields && agentProvider !== "shell" && detailModelOptions.length > 0 ? (
+            <AgentSelector
+              modelOptions={detailModelOptions}
+              provider={job.agent_provider}
+              model={job.agent_model}
+              effort={job.agent_provider ? agentEffort : null}
+              includeDefault
+              defaultLabel={`${agentLabel} (default)`}
+              label={agentLabel}
+              nativeBottomInset={optionBarBottomInset}
+              onSelectDefault={() => handleAgentUpdate({ agent_provider: null, agent_model: null, agent_effort: null })}
+              onChange={(selection) => handleAgentUpdate({
+                agent_provider: selection.provider,
+                agent_model: selection.modelId,
+                agent_effort: selection.effort,
+              })}
+            />
+          ) : showHeaderAgent && agentLabel ? (
+            <View style={styles.infoPill}>
+              <Text style={styles.agentText} numberOfLines={1}>{agentLabel}</Text>
+            </View>
+          ) : null}
+          {showModePill && isManual && onUpdateJob && editHeaderFields ? (
+            <TouchableOpacity
+              style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]}
+              onPress={openScheduleEditor}
+              activeOpacity={0.65}
+              {...(isWeb ? { title: "Manual schedule. Click to set cron." } as any : {})}
+            >
+              {compactLeadingPills ? (
+                <Text style={styles.infoLabel}>{modeCompactLabel}</Text>
+              ) : (
+                <Text style={styles.infoLabel}>{modeLabel}</Text>
+              )}
+            </TouchableOpacity>
+          ) : showModePill && isManual ? (
             <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: modeLabel } as any : {})}>
               {compactLeadingPills ? (
                 <Text style={styles.infoLabel}>{modeCompactLabel}</Text>
@@ -439,6 +556,17 @@ export function JobDetailView({
                 <Text style={styles.infoLabel}>{modeLabel}</Text>
               )}
             </View>
+          ) : showModePill && onUpdateJob && editHeaderFields ? (
+            <TouchableOpacity
+              style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]}
+              onPress={toggleEnabledInline}
+              activeOpacity={0.65}
+              {...(isWeb ? { title: `${modeLabel}. Click to ${job.enabled ? "disable" : "enable"}.` } as any : {})}
+            >
+              <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
+                {compactLeadingPills ? modeCompactLabel : modeLabel}
+              </Text>
+            </TouchableOpacity>
           ) : showModePill ? (
             <View style={[styles.infoPill, compactLeadingPills && styles.infoPillIcon]} {...(isWeb ? { title: modeLabel } as any : {})}>
               <Text style={[styles.infoLabel, { color: job.enabled ? colors.success : colors.textMuted }]}>
@@ -825,6 +953,59 @@ export function JobDetailView({
           onCancel={() => setShowParamsModal(false)}
         />
       )}
+
+      <Modal
+        visible={showScheduleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!scheduleSaving) setShowScheduleModal(false);
+        }}
+      >
+        <KeyboardAvoidingView
+          style={styles.inlineModalRoot}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <Pressable
+            style={styles.inlineModalBackdrop}
+            onPress={() => {
+              if (!scheduleSaving) setShowScheduleModal(false);
+            }}
+          />
+          <View style={styles.inlineModalCard}>
+            <Text style={styles.inlineModalTitle}>Schedule</Text>
+            <Text style={styles.inlineModalHint}>Leave empty for a manual-only job.</Text>
+            <TextInput
+              value={scheduleDraft}
+              onChangeText={setScheduleDraft}
+              placeholder="0 9 * * 1-5"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+              style={styles.inlineModalInput}
+              onSubmitEditing={() => void saveSchedule()}
+            />
+            {scheduleError ? <Text style={styles.inlineModalError}>{scheduleError}</Text> : null}
+            <View style={styles.inlineModalActions}>
+              <TouchableOpacity
+                style={styles.inlineModalButton}
+                onPress={() => setShowScheduleModal(false)}
+                disabled={scheduleSaving}
+              >
+                <Text style={styles.inlineModalButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.inlineModalButton, styles.inlineModalSaveButton]}
+                onPress={() => void saveSchedule()}
+                disabled={scheduleSaving}
+              >
+                <Text style={styles.inlineModalSaveText}>{scheduleSaving ? "Saving..." : "Save"}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Fullscreen log zoom modal */}
       {zoomRun && (

@@ -1,4 +1,4 @@
-import type { ProcessProvider } from "@clawtab/shared";
+import type { AgentEffort, ProcessProvider } from "@clawtab/shared";
 
 export type JobType = "binary" | "claude" | "job";
 export type TelegramLogMode = "off" | "on_prompt" | "always";
@@ -42,6 +42,7 @@ export interface Job {
   auto_yes: boolean;
   agent_provider?: ProcessProvider | null;
   agent_model?: string | null;
+  agent_effort?: AgentEffort | null;
   added_at?: string;
   max_history: number;
 }

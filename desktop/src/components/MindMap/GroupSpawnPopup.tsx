@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { JobKindIcon } from "@clawtab/shared";
-import type { ProcessProvider, Transport } from "@clawtab/shared";
+import { AgentSelector } from "@clawtab/shared";
+import type { AgentEffort, ProcessProvider, Transport } from "@clawtab/shared";
 import { buildModelOptions } from "../JobEditor/utils";
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
   folderPath?: string;
   anchor: { x: number; y: number };
   transport: Transport;
-  onSpawn: (provider: ProcessProvider | "shell", modelId: string | null, workDir: string, group: string) => void | Promise<void>;
+  onSpawn: (provider: ProcessProvider, modelId: string | null, effort: AgentEffort | null, workDir: string, group: string) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -30,7 +30,9 @@ export function GroupSpawnPopup({ group, folderPath, anchor, transport, onSpawn,
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as HTMLElement;
+      if (target.closest?.("[data-popup-menu='true']")) return;
+      if (!ref.current.contains(target)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -44,9 +46,8 @@ export function GroupSpawnPopup({ group, folderPath, anchor, transport, onSpawn,
   }, [onClose]);
 
   const modelOptions = useMemo(() => buildModelOptions(providers, {}), [providers]);
-  const launchable = modelOptions.filter((opt) => opt.provider !== "shell");
 
-  const handlePick = useCallback(async (provider: ProcessProvider | "shell", modelId: string | null) => {
+  const handlePick = useCallback(async (provider: ProcessProvider, modelId: string | null, effort: AgentEffort | null) => {
     if (sending) return;
     if (!folderPath) {
       onClose();
@@ -54,7 +55,7 @@ export function GroupSpawnPopup({ group, folderPath, anchor, transport, onSpawn,
     }
     setSending(true);
     try {
-      await onSpawn(provider, modelId, folderPath, group);
+      await onSpawn(provider, modelId, effort, folderPath, group);
     } finally {
       setSending(false);
     }
@@ -88,25 +89,14 @@ export function GroupSpawnPopup({ group, folderPath, anchor, transport, onSpawn,
         </div>
       ) : (
         <div className="mindmap-spawn-popup-items">
-          {launchable.map((opt) => (
-            <button
-              key={`${opt.provider}:${opt.modelId ?? ""}`}
-              className="mindmap-spawn-item"
-              disabled={sending}
-              onClick={() => { void handlePick(opt.provider, opt.modelId); }}
-            >
-              <span className="ic"><JobKindIcon kind={opt.provider} size={16} compact bare /></span>
-              <span className="lb">{opt.label}</span>
-            </button>
-          ))}
-          <button
-            className="mindmap-spawn-item"
+          <AgentSelector
+            modelOptions={modelOptions}
+            includeShell
+            fullWidth
+            label="Choose agent"
             disabled={sending}
-            onClick={() => { void handlePick("shell", null); }}
-          >
-            <span className="ic"><JobKindIcon kind="shell" size={16} compact bare /></span>
-            <span className="lb">Terminal</span>
-          </button>
+            onChange={(selection) => handlePick(selection.provider, selection.modelId, selection.effort)}
+          />
         </div>
       )}
     </div>

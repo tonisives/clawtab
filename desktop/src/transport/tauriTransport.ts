@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
-import type { DetectedProcess, ProcessProvider, ShellPane } from "@clawtab/shared";
+import type { AgentEffort, DetectedProcess, ProcessProvider, ShellPane } from "@clawtab/shared";
 
 export function createTauriTransport(): Transport {
   return {
@@ -109,8 +109,8 @@ export function createTauriTransport(): Transport {
       };
     },
 
-    async runAgent(prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) {
-      return await invoke<{ pane_id: string; tmux_session: string } | null>("run_agent", { prompt, workDir, provider, model });
+    async runAgent(prompt: string, workDir?: string, provider?: ProcessProvider, model?: string, effort?: AgentEffort) {
+      return await invoke<{ pane_id: string; tmux_session: string } | null>("run_agent", { prompt, workDir, provider, model, effort });
     },
 
     async listAgentProviders() {

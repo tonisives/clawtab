@@ -1,3 +1,4 @@
+import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel } from "@clawtab/shared";
 import type { ProcessProvider, AgentModelOption } from "@clawtab/shared";
 
 function labelForProvider(provider: ProcessProvider): string {
@@ -29,14 +30,20 @@ export function buildModelOptions(
 ): AgentModelOption[] {
   const options: AgentModelOption[] = [];
   for (const provider of availableProviders) {
-    const enabled = enabledModels[provider] ?? [];
-    if (enabled.length === 0) {
+    const enabled = (enabledModels[provider] ?? []).filter((modelId) => !isSyntheticAgentModel(modelId));
+    const current = CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider);
+    const modelIds = Array.from(new Set([
+      ...current.map((option) => option.modelId).filter((model): model is string => !!model),
+      ...enabled,
+    ]));
+    if (modelIds.length === 0) {
       const bare = BARE_PROVIDER_OPTIONS.find((b) => b.provider === provider);
       options.push(bare ?? { provider, modelId: null, label: labelForProvider(provider) });
       continue;
     }
-    for (const modelId of enabled) {
-      options.push({ provider, modelId, label: labelForProviderModel(provider, modelId) });
+    for (const modelId of modelIds) {
+      const known = current.find((option) => option.modelId === modelId);
+      options.push({ provider, modelId, label: known?.label ?? labelForProviderModel(provider, modelId) });
     }
   }
   return options;

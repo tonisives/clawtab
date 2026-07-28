@@ -1,7 +1,7 @@
 import { useCallback, useMemo, type ReactNode, type RefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import type { DetectedProcess, JobStatus, ProcessProvider, RemoteJob, ShellPane, SidebarSelectableItem, Transport, useJobsCore, useSplitTree } from "@clawtab/shared";
+import type { AgentEffort, DetectedProcess, JobStatus, ProcessProvider, RemoteJob, ShellPane, SidebarSelectableItem, Transport, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { JobListView, JobCard, RunningJobCard, ProcessCard, ShellCard, collectLeaves, leafContentKey, colors, spacing } from "@clawtab/shared";
 import { buildModelOptions } from "../../JobEditor/utils";
 import { DraggableJobCard, DraggableProcessCard, DraggableShellCard } from "../../DraggableCards";
@@ -189,13 +189,14 @@ export function JobsSidebar({
   const togglePin = settings.togglePin;
 
   const renderDraggableJobCard = useCallback(
-    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider; groupedPosition?: GroupedRowPosition }) => {
+    (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider; defaultAgentModel?: string | null; groupedPosition?: GroupedRowPosition }) => {
       const pinKey = `job:${props.job.slug}`;
       return (
         <DraggableJobCard
           {...props}
           reorderEnabled={sortMode === "name"}
           defaultAgentProvider={defaultProvider}
+          defaultAgentModel={defaultModel}
           pinned={pinnedSet.has(pinKey)}
           onTogglePin={() => togglePin(pinKey)}
         />
@@ -260,8 +261,8 @@ export function JobsSidebar({
   ), []);
 
   const handleRunAgent = useCallback(
-    (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) =>
-      agentRunner.handleRunAgent(prompt, workDir, provider, model ?? undefined),
+    (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) =>
+      agentRunner.handleRunAgent(prompt, workDir, provider, model ?? undefined, effort),
     [agentRunner],
   );
 
@@ -317,6 +318,7 @@ export function JobsSidebar({
                 autoYesActive={(status as any).pane_id ? autoYes.autoYesPaneIds?.has((status as any).pane_id) : false}
                 stopping={isStopping}
                 defaultAgentProvider={defaultProvider}
+                defaultAgentModel={defaultModel}
               />
             ) : (
               <JobCard
@@ -325,6 +327,7 @@ export function JobsSidebar({
                 onPress={() => onSelectJob(job)}
                 selected={selected}
                 defaultAgentProvider={defaultProvider}
+                defaultAgentModel={defaultModel}
               />
             )}
             <PinOverlay onUnpin={() => settings.togglePin(key)} />

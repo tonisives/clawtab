@@ -312,6 +312,7 @@ pub fn build_agent_job(
     target_dir: Option<&str>,
     provider: Option<ProcessProvider>,
     model: Option<String>,
+    effort: Option<String>,
 ) -> Result<Job, String> {
     let agent_dir = agent_dir_path();
     std::fs::create_dir_all(&agent_dir)
@@ -400,6 +401,7 @@ pub fn build_agent_job(
         auto_yes: false,
         agent_provider: provider,
         agent_model: model,
+        agent_effort: effort,
         added_at: Some(chrono::Utc::now().to_rfc3339()),
         max_history: 3,
     })

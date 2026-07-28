@@ -120,6 +120,7 @@ export function useJobListView(props: JobListViewProps) {
     customRenderProcessCard: props.renderProcessCard,
     customRenderShellCard: props.renderShellCard,
     defaultAgentProvider: agent.defaultAgentProvider,
+    defaultAgentModel: agent.defaultAgentModel,
     detectedProcesses: data.detectedProcesses,
     dragActive: props.dragActive,
     emptyMessage: props.emptyMessage ?? "No jobs found.",

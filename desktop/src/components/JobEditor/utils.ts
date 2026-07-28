@@ -1,3 +1,4 @@
+import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel } from "@clawtab/shared";
 import type { ProcessProvider } from "@clawtab/shared";
 import { DAYS, CRON_DAY_MAP, DAY_CRON_MAP, JOB_NAME_MAX_LENGTH } from "./types";
 
@@ -61,23 +62,28 @@ export function decodeProviderModel(value: string): { provider: ProcessProvider;
   return { provider, model };
 }
 
-/** Build the list of model options for a dropdown, given available providers and user-enabled models.
- *  Only models present in enabledModels are shown. Providers without any enabled models
- *  get a bare fallback entry (no specific model). */
+/** Build the list of model options for a dropdown, merging current and user-enabled models.
+ * Providers without any known model get a bare fallback entry (no specific model). */
 export function buildModelOptions(
   availableProviders: ProcessProvider[],
   enabledModels: Record<string, string[]>,
 ): ModelOption[] {
   const options: ModelOption[] = [];
   for (const provider of availableProviders) {
-    const enabled = enabledModels[provider] ?? [];
-    if (enabled.length === 0) {
+    const enabled = (enabledModels[provider] ?? []).filter((modelId) => !isSyntheticAgentModel(modelId));
+    const current = CURRENT_AGENT_MODEL_OPTIONS.filter((option) => option.provider === provider);
+    const modelIds = Array.from(new Set([
+      ...current.map((option) => option.modelId).filter((model): model is string => !!model),
+      ...enabled,
+    ]));
+    if (modelIds.length === 0) {
       const bare = BARE_PROVIDER_OPTIONS.find((b) => b.provider === provider);
       options.push(bare ?? { provider, modelId: null, label: labelForProvider(provider) });
       continue;
     }
-    for (const modelId of enabled) {
-      options.push({ provider, modelId, label: labelForProviderModel(provider, modelId) });
+    for (const modelId of modelIds) {
+      const known = current.find((option) => option.modelId === modelId);
+      options.push({ provider, modelId, label: known?.label ?? labelForProviderModel(provider, modelId) });
     }
   }
   return options;

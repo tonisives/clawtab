@@ -1,4 +1,4 @@
-import type { AgentActivity } from "@clawtab/shared";
+import type { AgentActivity, AgentEffort, JobUpdate } from "@clawtab/shared";
 import type { DetectedProcess, ClaudeQuestion, JobStatus, NotificationHistoryItem, RemoteJob, RunDetail, RunRecord } from "./job";
 
 // Messages sent by this client to the relay server
@@ -12,7 +12,7 @@ export type ClientMessage =
   | { type: "subscribe_logs"; id: string; name: string }
   | { type: "unsubscribe_logs"; name: string }
   | { type: "get_run_history"; id: string; name: string; limit: number }
-  | { type: "run_agent"; id: string; prompt: string; work_dir?: string; provider?: string; model?: string }
+  | { type: "run_agent"; id: string; prompt: string; work_dir?: string; provider?: string; model?: string; effort?: AgentEffort }
   | {
       type: "create_job";
       id: string;
@@ -23,6 +23,7 @@ export type ClientMessage =
       cron?: string;
       group?: string;
     }
+  | { type: "update_job"; id: string; name: string; update: JobUpdate }
   | { type: "detect_processes"; id: string }
   | { type: "get_settings"; id: string }
   | { type: "get_run_detail"; id: string; run_id: string }
@@ -73,6 +74,7 @@ export type DesktopMessage =
       error?: string;
     }
   | { type: "create_job_ack"; id: string; success: boolean; error?: string }
+  | { type: "update_job_ack"; id: string; success: boolean; error?: string }
   | { type: "detected_processes"; id: string; processes: DetectedProcess[] }
   | { type: "agent_activity"; activity: AgentActivity[] }
   | { type: "settings_response"; id: string; enabled_models: Record<string, string[]>; default_provider: string; default_model?: string }

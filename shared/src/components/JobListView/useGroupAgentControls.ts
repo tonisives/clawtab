@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Platform } from "react-native";
 
-import type { AgentModelOption, ProcessProvider } from "../../types/process";
+import type { AgentEffort, AgentModelOption, ProcessProvider } from "../../types/process";
 import { GROUP_AGENT_PROVIDER_STORAGE_KEY } from "./sign";
 
 const isWeb = Platform.OS === "web";
@@ -36,6 +36,7 @@ export function useGroupAgentControls({
     }
   });
   const [groupAgentModels, setGroupAgentModels] = useState<Record<string, string | null>>({});
+  const [groupAgentEfforts, setGroupAgentEfforts] = useState<Record<string, AgentEffort | null>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -99,9 +100,12 @@ export function useGroupAgentControls({
       if (stored === nextModel) return prev;
       return { ...prev, [workDir]: nextModel };
     });
+    setGroupAgentEfforts((prev) => (prev[workDir] == null ? prev : { ...prev, [workDir]: null }));
   }, [agentModelOptions]);
 
-  const handleSetGroupAgentModel = useCallback((workDir: string, provider: ProcessProvider, modelId: string | null) => {
+  const resolveGroupAgentEffort = useCallback((workDir: string) => groupAgentEfforts[workDir] ?? null, [groupAgentEfforts]);
+
+  const handleSetGroupAgentModel = useCallback((workDir: string, provider: ProcessProvider, modelId: string | null, effort: AgentEffort | null) => {
     setGroupAgentProviders((prev) => {
       if (prev[workDir] === provider) return prev;
       return { ...prev, [workDir]: provider };
@@ -110,12 +114,17 @@ export function useGroupAgentControls({
       if (prev[workDir] === modelId) return prev;
       return { ...prev, [workDir]: modelId };
     });
+    setGroupAgentEfforts((prev) => {
+      if (prev[workDir] === effort) return prev;
+      return { ...prev, [workDir]: effort };
+    });
   }, []);
 
   return {
     handleSetGroupAgentModel,
     handleSetGroupAgentProvider,
     resolveGroupAgentModel,
+    resolveGroupAgentEffort,
     resolveGroupAgentProvider,
     resolvedAgentProviders,
   };

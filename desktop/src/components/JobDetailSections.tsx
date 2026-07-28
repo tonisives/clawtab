@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { RemoteJob, JobStatus, ProcessProvider } from "@clawtab/shared";
-import { JobDetailView, useJobDetail, useLogBuffer } from "@clawtab/shared";
+import type { AgentModelOption, JobUpdate, RemoteJob, JobStatus, ProcessProvider } from "@clawtab/shared";
+import { AgentSelector, agentSelectionLabel, JobDetailView, useJobDetail, useLogBuffer } from "@clawtab/shared";
 import type { AppSettings, Job } from "../types";
 import { EDITOR_LABELS } from "../constants";
 import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { XtermPane } from "./XtermPane";
-import { describeCron } from "./CronInput";
-import { labelForProviderModel } from "./JobEditor/utils";
 import type { Transport } from "@clawtab/shared";
 
 const cardSectionStyle = {
@@ -71,25 +69,145 @@ export function DetailRow({ label, value, mono }: { label: string; value: React.
   );
 }
 
+const inlineFieldStyle = {
+  width: "100%",
+  minWidth: 0,
+  height: 28,
+  padding: "3px 8px",
+  color: "var(--text-primary)",
+  background: "var(--bg-secondary)",
+  border: "1px solid var(--border-color)",
+  borderRadius: 6,
+  fontSize: 12,
+  boxSizing: "border-box",
+} as const;
+
+function InlineTextField({
+  value,
+  placeholder,
+  mono,
+  onSave,
+}: {
+  value: string | null | undefined;
+  placeholder?: string;
+  mono?: boolean;
+  onSave: (value: string) => void | Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value ?? "");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setDraft(value ?? ""), [value]);
+
+  const save = useCallback(async () => {
+    const nextValue = draft.trim();
+    if (nextValue === (value ?? "")) return;
+    setSaving(true);
+    try {
+      await onSave(nextValue);
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, onSave, value]);
+
+  return (
+    <input
+      value={draft}
+      placeholder={placeholder}
+      disabled={saving}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => void save()}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(value ?? "");
+          event.currentTarget.blur();
+        }
+      }}
+      style={{ ...inlineFieldStyle, fontFamily: mono ? "monospace" : undefined }}
+    />
+  );
+}
+
+function InlineSelectField({
+  value,
+  options,
+  onSave,
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onSave: (value: string) => void | Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+
+  return (
+    <select
+      value={value}
+      disabled={saving}
+      onChange={async (event) => {
+        setSaving(true);
+        try {
+          await onSave(event.target.value);
+        } finally {
+          setSaving(false);
+        }
+      }}
+      style={inlineFieldStyle}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>{option.label}</option>
+      ))}
+    </select>
+  );
+}
+
 function AgentConfigSection({
   job,
   defaultAgentProvider = "claude",
   defaultAgentModel = null,
+  agentModelOptions = [],
+  onUpdateJob,
 }: {
   job: Job;
   defaultAgentProvider?: ProcessProvider;
   defaultAgentModel?: string | null;
+  agentModelOptions?: AgentModelOption[];
+  onUpdateJob?: (patch: JobUpdate) => void | Promise<void>;
 }) {
   if (job.job_type !== "claude" && job.job_type !== "job") return null;
 
   const agentProvider = job.agent_provider ?? defaultAgentProvider;
   const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
-  const agentLabel = `${labelForProviderModel(agentProvider, agentModel)}${job.agent_provider ? "" : " (default)"}`;
+  const agentLabel = agentSelectionLabel(agentProvider, agentModel, job.agent_effort);
+  const displayedAgentLabel = `${agentLabel}${job.agent_provider ? "" : " (default)"}`;
 
   return (
     <div className="field-group">
       <span className="field-group-title">Agent</span>
-      <DetailRow label="Agent" value={agentLabel} />
+      <DetailRow
+        label="Agent"
+        value={onUpdateJob && agentModelOptions.length > 0 ? (
+          <AgentSelector
+            modelOptions={agentModelOptions}
+            provider={job.agent_provider}
+            model={job.agent_model}
+            effort={job.agent_effort}
+            includeDefault
+            defaultLabel={`${agentLabel} (default)`}
+            label={agentLabel}
+            fullWidth
+            onSelectDefault={() => onUpdateJob({
+              agent_provider: null,
+              agent_model: null,
+              agent_effort: null,
+            })}
+            onChange={(selection) => onUpdateJob({
+              agent_provider: selection.provider,
+              agent_model: selection.modelId,
+              agent_effort: selection.effort,
+            })}
+          />
+        ) : displayedAgentLabel}
+      />
     </div>
   );
 }
@@ -166,10 +284,16 @@ export function DesktopDetailSections({
   job,
   defaultAgentProvider = "claude",
   defaultAgentModel = null,
+  agentModelOptions = [],
+  groups = [],
+  onUpdateJob,
 }: {
   job: Job;
   defaultAgentProvider?: ProcessProvider;
   defaultAgentModel?: string | null;
+  agentModelOptions?: AgentModelOption[];
+  groups?: string[];
+  onUpdateJob?: (patch: JobUpdate) => void | Promise<void>;
 }) {
   const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
   const [configCollapsed, setConfigCollapsed] = useState(false);
@@ -248,6 +372,8 @@ export function DesktopDetailSections({
         job={job}
         defaultAgentProvider={defaultAgentProvider}
         defaultAgentModel={defaultAgentModel}
+        agentModelOptions={agentModelOptions}
+        onUpdateJob={onUpdateJob}
       />
 
       {/* Directions (folder jobs only) */}
@@ -325,47 +451,145 @@ export function DesktopDetailSections({
         {!configCollapsed && (
           <>
             <DetailRow label="Type" value={displayJobType} />
-            <DetailRow label="Enabled" value={job.enabled ? "Yes" : "No"} />
-            {job.cron ? (
-              <>
-                <DetailRow label="Schedule" value={describeCron(job.cron)} />
-                <DetailRow label="Cron" value={job.cron} mono />
-              </>
-            ) : (
-              <DetailRow label="Schedule" value="Manual" />
-            )}
-            {job.group && job.group !== "default" && (
-              <DetailRow label="Group" value={job.group} />
-            )}
+            <DetailRow
+              label="Enabled"
+              value={onUpdateJob ? (
+                <InlineSelectField
+                  value={job.enabled ? "true" : "false"}
+                  options={[
+                    { value: "true", label: "Enabled" },
+                    { value: "false", label: "Disabled" },
+                  ]}
+                  onSave={(value) => onUpdateJob({ enabled: value === "true" })}
+                />
+              ) : job.enabled ? "Enabled" : "Disabled"}
+            />
+            <DetailRow
+              label="Schedule"
+              value={onUpdateJob ? (
+                <InlineTextField
+                  value={job.cron}
+                  placeholder="Manual"
+                  mono
+                  onSave={(cron) => onUpdateJob({ cron })}
+                />
+              ) : job.cron || "Manual"}
+            />
+            <DetailRow
+              label="Group"
+              value={onUpdateJob ? (
+                <InlineSelectField
+                  value={job.group || "default"}
+                  options={[...new Set([job.group || "default", "default", ...groups])].map((group) => ({
+                    value: group,
+                    label: group,
+                  }))}
+                  onSave={(group) => onUpdateJob({ group })}
+                />
+              ) : job.group || "default"}
+            />
             {job.job_type === "job" && job.folder_path && (
-              <DetailRow label="Working directory" value={job.folder_path} mono />
+              <DetailRow label="Job folder" value={job.folder_path} mono />
             )}
+            <DetailRow
+              label="Working directory"
+              value={onUpdateJob ? (
+                <InlineTextField
+                  value={job.work_dir}
+                  placeholder="Default"
+                  mono
+                  onSave={(workDir) => onUpdateJob({ work_dir: workDir || null })}
+                />
+              ) : job.work_dir || "Default"}
+            />
             {job.job_type === "binary" && (
               <DetailRow label="Path" value={job.path} mono />
             )}
             {job.args.length > 0 && (
               <DetailRow label="Args" value={job.args.join(" ")} mono />
             )}
-            {job.work_dir && (
-              <DetailRow label="Work dir" value={job.work_dir} mono />
-            )}
+            <DetailRow
+              label="Kill on end"
+              value={onUpdateJob ? (
+                <InlineSelectField
+                  value={(job.kill_on_end ?? true) ? "true" : "false"}
+                  options={[
+                    { value: "true", label: "Yes" },
+                    { value: "false", label: "No" },
+                  ]}
+                  onSave={(value) => onUpdateJob({ kill_on_end: value === "true" })}
+                />
+              ) : (job.kill_on_end ?? true) ? "Yes" : "No"}
+            />
+            <DetailRow
+              label="Auto-yes on start"
+              value={onUpdateJob ? (
+                <InlineSelectField
+                  value={job.auto_yes ? "true" : "false"}
+                  options={[
+                    { value: "true", label: "Yes" },
+                    { value: "false", label: "No" },
+                  ]}
+                  onSave={(value) => onUpdateJob({ auto_yes: value === "true" })}
+                />
+              ) : job.auto_yes ? "Yes" : "No"}
+            />
+            <DetailRow
+              label="Max history"
+              value={onUpdateJob ? (
+                <InlineSelectField
+                  value={String(job.max_history ?? 3)}
+                  options={[...new Set([job.max_history ?? 3, 1, 3, 5, 10, 25, 50])].map((count) => ({
+                    value: String(count),
+                    label: String(count),
+                  }))}
+                  onSave={(value) => onUpdateJob({ max_history: Number(value) })}
+                />
+              ) : String(job.max_history ?? 3)}
+            />
           </>
         )}
       </div>
 
       {/* Runtime */}
-      {(job.tmux_session || job.aerospace_workspace || job.notify_target !== "none") && (
+      {(onUpdateJob || job.telegram_chat_id || job.notify_target === "telegram" || job.tmux_session || job.aerospace_workspace || job.notify_target !== "none") && (
         <div className="field-group">
           <span className="field-group-title">Runtime</span>
-          {job.tmux_session && (
-            <DetailRow label="Tmux session" value={job.tmux_session} mono />
-          )}
-          {job.aerospace_workspace && (
-            <DetailRow label="Aerospace workspace" value={job.aerospace_workspace} />
-          )}
-          {job.notify_target !== "none" && (
-            <DetailRow label="Notify target" value={job.notify_target === "telegram" ? "Telegram" : "App"} />
-          )}
+          <DetailRow
+            label="Tmux session"
+            value={onUpdateJob ? (
+              <InlineTextField
+                value={job.tmux_session}
+                placeholder="Default"
+                mono
+                onSave={(tmuxSession) => onUpdateJob({ tmux_session: tmuxSession || null })}
+              />
+            ) : job.tmux_session || "Default"}
+          />
+          <DetailRow
+            label="Aerospace workspace"
+            value={onUpdateJob ? (
+              <InlineTextField
+                value={job.aerospace_workspace}
+                placeholder="None"
+                onSave={(workspace) => onUpdateJob({ aerospace_workspace: workspace || null })}
+              />
+            ) : job.aerospace_workspace || "None"}
+          />
+          <DetailRow
+            label="Notify target"
+            value={onUpdateJob ? (
+              <InlineSelectField
+                value={job.notify_target || "none"}
+                options={[
+                  { value: "none", label: "None" },
+                  { value: "app", label: "App" },
+                  { value: "telegram", label: "Telegram" },
+                ]}
+                onSave={(notifyTarget) => onUpdateJob({ notify_target: notifyTarget })}
+              />
+            ) : job.notify_target === "telegram" ? "Telegram" : job.notify_target === "app" ? "App" : "None"}
+          />
           {job.notify_target === "telegram" && job.telegram_chat_id && (
             <>
               <DetailRow label="Telegram chat" value={String(job.telegram_chat_id)} mono />
@@ -436,6 +660,8 @@ export function DesktopJobDetail({
   dragHandleProps,
   defaultAgentProvider,
   defaultAgentModel,
+  agentModelOptions,
+  onUpdateJob,
 }: {
   transport: Transport;
   job: Job;
@@ -472,6 +698,8 @@ export function DesktopJobDetail({
   titlePath?: string;
   defaultAgentProvider?: ProcessProvider;
   defaultAgentModel?: string | null;
+  agentModelOptions?: AgentModelOption[];
+  onUpdateJob?: (patch: JobUpdate) => void | Promise<void>;
   dragHandleProps?: {
     ref?: (node: HTMLElement | null) => void;
     attributes?: Record<string, unknown>;
@@ -495,9 +723,12 @@ export function DesktopJobDetail({
         job={job}
         defaultAgentProvider={defaultAgentProvider}
         defaultAgentModel={defaultAgentModel}
+        agentModelOptions={agentModelOptions}
+        groups={groups}
+        onUpdateJob={onUpdateJob}
       />
     ) : null,
-    [job, ready, defaultAgentProvider, defaultAgentModel],
+    [job, ready, defaultAgentProvider, defaultAgentModel, agentModelOptions, groups, onUpdateJob],
   );
 
   // Extract pane info for interactive terminal when job is running
@@ -577,6 +808,11 @@ export function DesktopJobDetail({
         dragHandleProps={dragHandleProps}
         renderRunTerminal={renderRunTerminal}
         defaultAgentProvider={defaultAgentProvider}
+        defaultAgentModel={defaultAgentModel}
+        agentModelOptions={agentModelOptions}
+        onUpdateJob={onUpdateJob}
+        editHeaderFields={false}
+        showHeaderAgent={false}
       />
       {showConfirm && (
         <ConfirmDialog

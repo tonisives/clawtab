@@ -147,6 +147,7 @@ pub async fn run(
             work_dir: work_dir.clone(),
             provider: None,
             model: None,
+            effort: None,
             trigger_id: Some(trigger_id.to_string()),
         },
     };

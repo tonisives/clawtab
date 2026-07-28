@@ -76,6 +76,7 @@ export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobList
             dimmed,
             dataJobSlug: item.job.slug,
             defaultAgentProvider: hook.defaultAgentProvider,
+            defaultAgentModel: hook.defaultAgentModel,
             groupedPosition,
           })
         ) : (
@@ -99,6 +100,7 @@ export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobList
                 autoYesActive={autoYesActive}
                 stopping={stopping}
                 defaultAgentProvider={hook.defaultAgentProvider}
+                defaultAgentModel={hook.defaultAgentModel}
                 groupedPosition={groupedPosition}
               />
             ) : (
@@ -111,6 +113,7 @@ export function JobListJobItem({ hook, item, itemKey, groupedPosition }: JobList
                 selected={selected}
                 softBorder={softBorder}
                 defaultAgentProvider={hook.defaultAgentProvider}
+                defaultAgentModel={hook.defaultAgentModel}
                 groupedPosition={groupedPosition}
               />
             )}

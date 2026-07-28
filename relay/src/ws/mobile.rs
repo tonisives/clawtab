@@ -471,6 +471,7 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::GetRunHistory { id, .. }
         | ClientMessage::RunAgent { id, .. }
         | ClientMessage::CreateJob { id, .. }
+        | ClientMessage::UpdateJob { id, .. }
         | ClientMessage::DetectProcesses { id, .. }
         | ClientMessage::GetSettings { id, .. }
         | ClientMessage::GetRunDetail { id, .. }

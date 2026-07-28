@@ -85,9 +85,9 @@ pub async fn detect_claude_models() -> Result<Vec<(String, String)>, String> {
         .await
         .map_err(|e| format!("parse error: {}", e))?;
     // The /v1/models endpoint returns the full Anthropic API catalog, but Claude Code's
-    // /model command only allows the current latest of each family (opus, sonnet, haiku).
-    // Older revisions like opus-4-6, opus-4-1, sonnet-4-5 are listed by the API but cannot
-    // actually be selected in Claude Code, so filter to the highest version per family.
+    // /model command only allows the current latest of each family. Older revisions are
+    // listed by the API but cannot be selected in Claude Code, so keep the highest version
+    // for each family while still recognizing newly introduced families.
     let mut entries: Vec<(String, String, String, u32, u32)> = body["data"]
         .as_array()
         .ok_or_else(|| "unexpected response shape".to_string())?
@@ -120,19 +120,20 @@ pub async fn detect_claude_models() -> Result<Vec<(String, String)>, String> {
 /// Returns None for ids that don't match the family pattern.
 fn parse_claude_family(id: &str) -> Option<(&'static str, u32, u32)> {
     let stripped = id.strip_prefix("claude-")?;
-    let (family_token, family) = if stripped.starts_with("opus-") {
-        ("opus-", "opus")
-    } else if stripped.starts_with("sonnet-") {
-        ("sonnet-", "sonnet")
-    } else if stripped.starts_with("haiku-") {
-        ("haiku-", "haiku")
-    } else {
-        return None;
-    };
-    let rest = stripped.strip_prefix(family_token)?;
+    let (family, rest) = ["fable", "mythos", "opus", "sonnet", "haiku"]
+        .iter()
+        .find_map(|family| {
+            stripped
+                .strip_prefix(&format!("{}-", family))
+                .map(|rest| (*family, rest))
+        })?;
     let mut parts = rest.split('-');
     let major: u32 = parts.next()?.parse().ok()?;
-    let minor: u32 = parts.next().unwrap_or("0").parse().ok()?;
+    let minor = parts
+        .next()
+        .filter(|part| part.len() <= 2)
+        .and_then(|part| part.parse().ok())
+        .unwrap_or(0);
     Some((family, major, minor))
 }
 
@@ -315,7 +316,21 @@ fn default_antigravity_models() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_antigravity_models, parse_antigravity_models_output};
+    use super::{default_antigravity_models, parse_antigravity_models_output, parse_claude_family};
+
+    #[test]
+    fn parses_current_claude_model_families() {
+        assert_eq!(parse_claude_family("claude-opus-5"), Some(("opus", 5, 0)));
+        assert_eq!(
+            parse_claude_family("claude-sonnet-5"),
+            Some(("sonnet", 5, 0))
+        );
+        assert_eq!(parse_claude_family("claude-fable-5"), Some(("fable", 5, 0)));
+        assert_eq!(
+            parse_claude_family("claude-haiku-4-5-20251001"),
+            Some(("haiku", 4, 5))
+        );
+    }
 
     #[test]
     fn parses_display_only_antigravity_models() {

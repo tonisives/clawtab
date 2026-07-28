@@ -345,6 +345,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
       style={menuStyle}
       onLayout={isWeb ? undefined : (event) => setNativeMenuHeight(event.nativeEvent.layout.height)}
       {...(isWeb ? {
+        dataSet: { popupMenu: "true" },
         tabIndex: -1,
         onKeyDown: handleKeyDown,
       } : {})}

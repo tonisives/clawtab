@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import type { ProcessProvider } from "@clawtab/shared";
+import type { AgentEffort, ProcessProvider } from "@clawtab/shared";
 import type { Job } from "../../../types";
 import { DEFAULT_SHELL_TEMPLATE, DEFAULT_TEMPLATE } from "../types";
 import { IMAGE_RE } from "../utils";
@@ -112,10 +112,10 @@ export function useContentEditor({ form, setForm, isNew, isShellJob, defaultDire
     }
   };
 
-  const handleProviderChange = (provider: ProcessProvider | null, model?: string | null) => {
+  const handleProviderChange = (provider: ProcessProvider | null, model?: string | null, effort?: AgentEffort | null) => {
     const previousTemplate = defaultDirectionsTemplate.trim();
     const nextTemplate = provider === "shell" ? DEFAULT_SHELL_TEMPLATE : DEFAULT_TEMPLATE;
-    setForm((prev) => ({ ...prev, agent_provider: provider, agent_model: model ?? null }));
+    setForm((prev) => ({ ...prev, agent_provider: provider, agent_model: model ?? null, agent_effort: effort ?? null }));
     if (provider === "shell") {
       setPreviewFile("job.md");
     }

@@ -1,4 +1,4 @@
-import type { ProcessProvider } from "./process";
+import type { AgentEffort, ProcessProvider } from "./process";
 
 export type JobType = "binary" | "claude" | "job";
 
@@ -17,12 +17,36 @@ export interface RemoteJob {
   group: string;
   slug: string;
   work_dir?: string;
+  tmux_session?: string | null;
+  aerospace_workspace?: string | null;
+  notify_target?: "none" | "app" | "telegram" | string | null;
+  kill_on_end?: boolean;
+  auto_yes?: boolean;
+  max_history?: number;
   path?: string;
   folder_path?: string;
   params?: JobParam[];
   agent_provider?: ProcessProvider | null;
   agent_model?: string | null;
+  agent_effort?: AgentEffort | null;
   added_at?: string;
+}
+
+/** Fields that can be changed directly from the job detail view. */
+export interface JobUpdate {
+  enabled?: boolean;
+  cron?: string;
+  group?: string;
+  work_dir?: string | null;
+  tmux_session?: string | null;
+  aerospace_workspace?: string | null;
+  notify_target?: "none" | "app" | "telegram" | string | null;
+  kill_on_end?: boolean;
+  auto_yes?: boolean;
+  max_history?: number;
+  agent_provider?: ProcessProvider | null;
+  agent_model?: string | null;
+  agent_effort?: AgentEffort | null;
 }
 
 export type TelegramLogMode = "off" | "on_prompt" | "always";
@@ -48,6 +72,7 @@ export interface DesktopJob extends RemoteJob {
   skill_paths: string[];
   agent_provider?: ProcessProvider | null;
   agent_model?: string | null;
+  agent_effort?: AgentEffort | null;
 }
 
 export type JobStatus =

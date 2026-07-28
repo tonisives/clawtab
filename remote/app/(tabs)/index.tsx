@@ -59,7 +59,7 @@ import { NotificationsMenuButton } from "../../src/components/NotificationsMenuB
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
-import type { RemoteJob, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
+import type { AgentEffort, RemoteJob, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
 import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 import { buildModelOptions } from "../../src/lib/agentModels"
 
@@ -211,6 +211,8 @@ export default function JobsScreen() {
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses)
   const loaded = useJobsStore((s) => s.loaded)
   const enabledModels = useJobsStore((s) => s.enabledModels)
+  const defaultProvider = useJobsStore((s) => s.defaultProvider)
+  const defaultModel = useJobsStore((s) => s.defaultModel)
   const connected = useWsStore((s) => s.connected)
   const desktopOnline = useWsStore((s) => s.desktopOnline)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() =>
@@ -264,18 +266,14 @@ export default function JobsScreen() {
     })
   }, [statuses])
 
-  const DEFAULT_ENABLED = {
-    claude: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-8"],
-    codex: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-    opencode: [] as string[],
-    antigravity: [] as string[],
-  }
-  const resolvedModels =
-    !enabledModels || Object.keys(enabledModels).length === 0 ? DEFAULT_ENABLED : enabledModels
+  const resolvedModels = enabledModels ?? {}
   const agentModelOptions: AgentModelOption[] = buildModelOptions(
     ["claude", "codex", "opencode", "antigravity"],
     resolvedModels,
   )
+  const defaultAgentProvider: ProcessProvider | undefined = isProcessProvider(defaultProvider ?? undefined)
+    ? defaultProvider as ProcessProvider
+    : undefined
 
   const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups((prev) => {
@@ -512,7 +510,7 @@ export default function JobsScreen() {
   )
 
   const handleRunAgent = useCallback(
-    (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => {
+    (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) => {
       const send = getWsSend()
       if (!send) return
       const id = nextId()
@@ -523,6 +521,7 @@ export default function JobsScreen() {
         work_dir: workDir,
         ...(provider ? { provider } : {}),
         ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
       })
       registerRequest<{
         success?: boolean
@@ -652,6 +651,7 @@ export default function JobsScreen() {
       autoYesActive?: boolean
       stopping?: boolean
       defaultAgentProvider?: ProcessProvider
+      defaultAgentModel?: string | null
       groupedPosition?: "single" | "first" | "middle" | "last"
     }) => <DraggableJobCard {...props} />,
     [],
@@ -732,6 +732,8 @@ export default function JobsScreen() {
         stoppingSlugs={stoppingJobSlugs}
         onRunAgent={runAgentHandler}
         agentModelOptions={agentModelOptions}
+        defaultAgentProvider={defaultAgentProvider}
+        defaultAgentModel={defaultModel}
         groupTabView={groupTabView}
         onGroupTabViewChange={handleGroupTabViewChange}
         onSetAllGroupTabView={handleSetAllGroupTabView}
@@ -768,6 +770,8 @@ export default function JobsScreen() {
       stoppingSlugs={stoppingJobSlugs}
       onRunAgent={runAgentHandler}
       agentModelOptions={agentModelOptions}
+      defaultAgentProvider={defaultAgentProvider}
+      defaultAgentModel={defaultModel}
       groupTabView={groupTabView}
       onGroupTabViewChange={handleGroupTabViewChange}
       onSetAllGroupTabView={handleSetAllGroupTabView}
@@ -992,9 +996,9 @@ export default function JobsScreen() {
           (() => {
             const s = statuses[data.slug] ?? { state: "idle" as const }
             return s.state === "running" ? (
-              <RunningJobCard job={data.job} status={s} />
+              <RunningJobCard job={data.job} status={s} defaultAgentProvider={defaultAgentProvider} defaultAgentModel={defaultModel} />
             ) : (
-              <JobCard job={data.job} status={s} />
+              <JobCard job={data.job} status={s} defaultAgentProvider={defaultAgentProvider} defaultAgentModel={defaultModel} />
             )
           })()
         ) : (
@@ -1108,6 +1112,8 @@ export default function JobsScreen() {
             focusedItemKey={split.focusedItemKey}
             onRunAgent={runAgentHandler}
             agentModelOptions={agentModelOptions}
+            defaultAgentProvider={defaultAgentProvider}
+            defaultAgentModel={defaultModel}
             groupTabView={groupTabView}
             onGroupTabViewChange={handleGroupTabViewChange}
             onSetAllGroupTabView={handleSetAllGroupTabView}

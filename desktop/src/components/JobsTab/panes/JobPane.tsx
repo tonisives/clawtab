@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { PaneContent } from "@clawtab/shared";
 import { DesktopJobDetail } from "../../JobDetailSections";
+import { buildModelOptions } from "../../JobEditor/utils";
 import { DraggableSplitPane } from "../../DraggableCards";
 import { JobEditorPane } from "../components/JobEditorPane";
 import { ErrorPlaceholder } from "./ErrorPlaceholder";
@@ -25,7 +27,7 @@ export function JobPane({ content, ctx }: Props) {
     core, split, viewing, lifecycle, actions,
     questions, transport, autoYesShortcut,
     isWide, headerLeftInset, mode, mgr, callbacks,
-    defaultProvider, defaultModel, sidebarFocusRef, leafJobEditing,
+    defaultProvider, defaultModel, enabledModels, sidebarFocusRef, leafJobEditing,
   } = ctx;
 
   const job = (core.jobs as Job[]).find((j) => j.slug === content.slug);
@@ -82,6 +84,16 @@ export function JobPane({ content, ctx }: Props) {
     ? () => { split.handleClosePane(mode.leafId); actions.deleteJob(job.slug); core.reload(); }
     : () => { const slug = job.slug; callbacks.selectAdjacentItem(slug); actions.deleteJob(slug); core.reload(); };
 
+  const modelOptions = buildModelOptions(
+    ["claude", "codex", "opencode", "antigravity", "shell"],
+    enabledModels ?? {},
+  );
+
+  const onUpdateJob = async (patch: import("@clawtab/shared").JobUpdate) => {
+    await invoke("save_job", { job: { ...job, ...patch } });
+    await core.reload();
+  };
+
   const onStopping = () => {
     lifecycle.setStoppingJobSlugs((prev) => new Set(prev).add(job.slug));
     core.requestFastPoll(`job:${job.slug}`);
@@ -131,6 +143,8 @@ export function JobPane({ content, ctx }: Props) {
       dragHandleProps={dragHandleProps}
       defaultAgentProvider={defaultProvider}
       defaultAgentModel={defaultModel}
+      agentModelOptions={modelOptions}
+      onUpdateJob={onUpdateJob}
     />
   );
 

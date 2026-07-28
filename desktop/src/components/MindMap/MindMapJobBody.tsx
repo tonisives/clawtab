@@ -1,5 +1,7 @@
 import { useCallback, useMemo } from "react";
-import type { Transport, useJobsCore, useJobActions } from "@clawtab/shared";
+import { invoke } from "@tauri-apps/api/core";
+import { CURRENT_AGENT_MODEL_OPTIONS } from "@clawtab/shared";
+import type { JobUpdate, Transport, useJobsCore, useJobActions } from "@clawtab/shared";
 import { DesktopJobDetail } from "../JobDetailSections";
 import type { Job } from "../../types";
 import type { MindItem } from "./useRecencyLayout";
@@ -78,6 +80,12 @@ export function MindMapJobBody({
     core.requestFastPoll(`job:${slug}`);
   }, [core, slug]);
 
+  const handleUpdateJob = useCallback(async (patch: JobUpdate) => {
+    if (!job) return;
+    await invoke("save_job", { job: { ...job, ...patch } });
+    await core.reload();
+  }, [core, job]);
+
   if (!job) {
     return (
       <div className="mindmap-modal-meta">
@@ -116,6 +124,8 @@ export function MindMapJobBody({
       dragHandleProps={dragHandleProps}
       defaultAgentProvider={job.agent_provider ?? undefined}
       defaultAgentModel={job.agent_model ?? undefined}
+      agentModelOptions={CURRENT_AGENT_MODEL_OPTIONS}
+      onUpdateJob={handleUpdateJob}
     />
   );
 }

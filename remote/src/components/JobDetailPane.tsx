@@ -15,9 +15,11 @@ import { registerRequest } from "../lib/useRequestMap"
 import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../demo/data"
 import { colors, spacing } from "@clawtab/shared"
 import type { Transport } from "@clawtab/shared"
-import type { RemoteJob, RunRecord } from "@clawtab/shared"
+import type { AgentModelOption, JobUpdate, ProcessProvider, RemoteJob, RunRecord } from "@clawtab/shared"
+import { buildModelOptions } from "../lib/agentModels"
 
 const wsTransport = createWsTransport()
+const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"]
 
 const noop = async () => {}
 const noopRunJob = async () => null
@@ -60,11 +62,18 @@ interface JobDetailPaneProps {
 export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDetailPaneProps) {
   const insets = useSafeAreaInsets()
   const storeJob = useJob(jobName)
+  const defaultAgentProvider = useJobsStore((s) => s.defaultProvider)
+  const defaultAgentModel = useJobsStore((s) => s.defaultModel)
+  const enabledModels = useJobsStore((s) => s.enabledModels)
   const isAgent = !storeJob && jobName.startsWith("agent-")
   const isDemo = parentIsDemo || (!storeJob && !isAgent && isDemoJob(jobName))
   const demoJob = isDemo ? DEMO_JOBS.find((j) => j.name === jobName || j.slug === jobName) : undefined
   const job = storeJob ?? (isAgent ? agentJobFromSlug(jobName) : demoJob)
   const slug = job?.slug ?? jobName
+  const modelOptions: AgentModelOption[] = buildModelOptions(AGENT_PROVIDERS, enabledModels ?? {})
+  const onUpdateJob = useCallback(async (patch: JobUpdate) => {
+    if (wsTransport.updateJob) await wsTransport.updateJob(slug, patch)
+  }, [slug])
   const realStatus = useJobStatus(jobName)
   const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus
   const { logs } = useLogs(slug)
@@ -218,6 +227,10 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
         onToggleAutoYes={isDemo ? undefined : (jobQuestion ? handleToggleAutoYes : undefined)}
         renderTerminal={isRunningWithPty ? renderTerminal : undefined}
         hideMessageInput={isRunningWithPty}
+        defaultAgentProvider={(defaultAgentProvider ?? undefined) as import("@clawtab/shared").ProcessProvider | undefined}
+        defaultAgentModel={defaultAgentModel}
+        agentModelOptions={modelOptions}
+        onUpdateJob={!isDemo && !isAgent ? onUpdateJob : undefined}
       />
     </View>
   )

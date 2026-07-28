@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
+import { isSyntheticAgentModel } from "@clawtab/shared"
 import type { ProcessProvider } from "@clawtab/shared"
 import type { AppSettings } from "../types"
 import {
@@ -24,7 +25,7 @@ function buildAllModels(
   const entries: ModelEntry[] = []
   const enabledSets: Record<string, Set<string>> = {}
   for (const [provider, list] of Object.entries(enabledModels)) {
-    enabledSets[provider] = new Set(list)
+    enabledSets[provider] = new Set(list.filter((modelId) => !isSyntheticAgentModel(modelId)))
   }
 
   for (const provider of PROVIDERS_WITH_MODELS) {
@@ -41,7 +42,7 @@ function buildAllModels(
   }
 
   for (const provider of PROVIDERS_WITH_MODELS) {
-    const custom = enabledModels[provider] ?? []
+    const custom = (enabledModels[provider] ?? []).filter((modelId) => !isSyntheticAgentModel(modelId))
     for (const modelId of custom) {
       if (entries.some((e) => e.provider === provider && e.modelId === modelId)) continue
       entries.push({

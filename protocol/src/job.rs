@@ -33,6 +33,16 @@ where
         .collect())
 }
 
+/// Preserve the difference between an omitted optional update and an explicit
+/// `null` that clears the stored value.
+fn deserialize_optional_optional<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(deserializer)?))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuestionOption {
     pub number: String,
@@ -72,6 +82,18 @@ pub struct RemoteJob {
     pub slug: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub work_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tmux_session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aerospace_workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify_target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kill_on_end: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_yes: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_history: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, deserialize_with = "deserialize_job_params")]
@@ -80,8 +102,59 @@ pub struct RemoteJob {
     pub agent_provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub added_at: Option<String>,
+}
+
+/// Fields that may be changed directly from a job detail view.
+/// Nested options distinguish an omitted field from an explicit clear (`null`).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct JobUpdate {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub cron: Option<String>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub work_dir: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub tmux_session: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub aerospace_workspace: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub notify_target: Option<Option<String>>,
+    #[serde(default)]
+    pub kill_on_end: Option<bool>,
+    #[serde(default)]
+    pub auto_yes: Option<bool>,
+    #[serde(default)]
+    pub max_history: Option<u32>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub agent_provider: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub agent_model: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_optional_optional")]
+    pub agent_effort: Option<Option<String>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JobUpdate;
+
+    #[test]
+    fn job_update_preserves_omitted_and_cleared_optional_fields() {
+        let omitted: JobUpdate = serde_json::from_str("{}").unwrap();
+        assert_eq!(omitted.tmux_session, None);
+
+        let cleared: JobUpdate = serde_json::from_str(r#"{"tmux_session":null}"#).unwrap();
+        assert_eq!(cleared.tmux_session, Some(None));
+
+        let set: JobUpdate = serde_json::from_str(r#"{"tmux_session":"cwt"}"#).unwrap();
+        assert_eq!(set.tmux_session, Some(Some("cwt".to_string())));
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -12,6 +12,7 @@ pub(super) struct SpawnArgs<'a> {
     pub provider: ProcessProvider,
     pub agent_command: String,
     pub model: Option<String>,
+    pub effort: Option<String>,
     pub prompt_content: String,
     pub slug: &'a str,
     pub aerospace_workspace: Option<&'a str>,
@@ -31,6 +32,7 @@ pub(super) async fn spawn_agent_pane(
         provider,
         agent_command,
         model,
+        effort,
         prompt_content,
         slug,
         aerospace_workspace,
@@ -54,6 +56,7 @@ pub(super) async fn spawn_agent_pane(
         &work_dir,
         &agent_command,
         model.as_deref(),
+        effort.as_deref(),
         &prompt_content,
     );
     tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
@@ -78,26 +81,31 @@ fn build_send_cmd(
     work_dir: &str,
     agent_command: &str,
     model: Option<&str>,
+    effort: Option<&str>,
     prompt_content: &str,
 ) -> String {
     let model_flag = model
         .filter(|_| provider.supports_model_flag())
         .map(|m| provider.model_flag_format(m))
         .unwrap_or_default();
+    let effort_flag = effort
+        .filter(|value| matches!(*value, "low" | "medium" | "high" | "xhigh" | "max"))
+        .map(|value| provider.effort_flag_format(value))
+        .unwrap_or_default();
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
 
     match provider {
         ProcessProvider::Claude | ProcessProvider::Codex => format!(
-            "cd {} && {}{} $'{}'",
-            work_dir, agent_command, model_flag, escaped_prompt
+            "cd {} && {}{}{} $'{}'",
+            work_dir, agent_command, model_flag, effort_flag, escaped_prompt
         ),
         ProcessProvider::Opencode => format!(
-            "cd {} && {}{} --prompt $'{}'",
-            work_dir, agent_command, model_flag, escaped_prompt
+            "cd {} && {}{}{} --prompt $'{}'",
+            work_dir, agent_command, model_flag, effort_flag, escaped_prompt
         ),
         ProcessProvider::Antigravity => format!(
-            "cd {} && {}{} --prompt-interactive $'{}'",
-            work_dir, agent_command, model_flag, escaped_prompt
+            "cd {} && {}{}{} --prompt-interactive $'{}'",
+            work_dir, agent_command, model_flag, effort_flag, escaped_prompt
         ),
         ProcessProvider::Shell => {
             if escaped_prompt.is_empty() {

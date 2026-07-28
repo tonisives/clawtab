@@ -6,12 +6,26 @@ export type {
   JobStatus,
   JobSortMode,
   JobParam,
+  JobUpdate,
   RunRecord,
   RunDetail,
   TelegramLogMode,
   TelegramNotify,
 } from "./types/job";
-export type { DetectedProcess, ProcessProvider, ShellPane, QuestionOption, ClaudeQuestion, AgentModelOption, AgentActivity, ProcessAgentState } from "./types/process";
+export type {
+  DetectedProcess,
+  ProcessProvider,
+  ShellPane,
+  QuestionOption,
+  ClaudeQuestion,
+  AgentModelOption,
+  AgentActivity,
+  ProcessAgentState,
+  AgentEffort,
+  AgentEffortOption,
+  AgentSelection,
+} from "./types/process";
+export { AGENT_EFFORT_OPTIONS, CURRENT_AGENT_MODEL_OPTIONS, defaultAgentEffort, isSyntheticAgentModel } from "./types/process";
 export type { PaneContent, SplitNode, SplitTreeState, SplitDirection } from "./types/splitTree";
 export type { Transport } from "./transport";
 
@@ -22,6 +36,7 @@ export { PANE_COLORS, assignPaneColors } from "./theme/paneColors";
 
 // Utils
 export { formatTime, formatDuration, timeAgo, shortenPath, compactPath, fitPath, compactCron, compactProcessQuery, processDisplayTitle } from "./util/format";
+export { agentSelectionLabel, compactModelLabel, labelForProvider, modelPickerLabel } from "./util/agent";
 export { nextCronDate, formatNextRun, describeCron, cronTooltip } from "./util/cron";
 export { groupJobs, sortGroupNames, findYesOption, isFreetextOption, typeIcon } from "./util/jobs";
 export { collapseSeparators, stripSeparators, truncateLogLines } from "./util/logs";
@@ -85,6 +100,8 @@ export type { TerminalTheme } from "./theme/terminal";
 export { ShareSection } from "./components/ShareSection";
 export type { ShareInfo, SharedWithMeInfo, ShareSectionProps } from "./components/ShareSection";
 export { PopupMenu } from "./components/PopupMenu";
+export { AgentSelector } from "./components/AgentSelector";
+export type { AgentSelectorProps } from "./components/AgentSelector";
 export { SplitDetailArea } from "./components/SplitDetailArea";
 export type { SplitDetailAreaProps } from "./components/SplitDetailArea";
 export { DropZoneOverlay, computeDropZone } from "./components/DropZoneOverlay";

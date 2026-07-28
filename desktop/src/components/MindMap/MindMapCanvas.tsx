@@ -28,7 +28,7 @@ import {
   type LayoutPosition,
 } from "./useRecencyLayout";
 import type { useAutoYes } from "../../hooks/useAutoYes";
-import type { ClaudeQuestion, DetectedProcess, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore } from "@clawtab/shared";
+import type { AgentEffort, ClaudeQuestion, DetectedProcess, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore } from "@clawtab/shared";
 import { shortenPath } from "@clawtab/shared";
 import {
   DEFAULT_SHORTCUTS,
@@ -919,9 +919,9 @@ function CanvasInner({
     draggingRef.current = new Set();
   }, [kind]);
 
-  const handleSpawn = useCallback(async (provider: ProcessProvider | "shell", modelId: string | null, workDir: string, group: string) => {
+  const handleSpawn = useCallback(async (provider: ProcessProvider, modelId: string | null, effort: AgentEffort | null, workDir: string, group: string) => {
     setSpawnPopup(null);
-    const result = await transport.runAgent("", workDir, provider, modelId ?? undefined);
+    const result = await transport.runAgent("", workDir, provider, modelId ?? undefined, effort ?? undefined);
     if (!result) return;
     const paneId = result.pane_id;
     const shell: ShellPane = {

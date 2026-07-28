@@ -8,7 +8,7 @@ use crate::secrets::SecretsManager;
 
 use super::params::{apply_params, collect_env_vars};
 use super::tmux_spawn::{spawn_agent_pane, SpawnArgs};
-use super::{project_window_name, resolve_agent_model, TmuxHandle};
+use super::{project_window_name, resolve_agent_effort, resolve_agent_model, TmuxHandle};
 
 pub(super) async fn execute_folder_job(
     job: &Job,
@@ -44,10 +44,11 @@ pub(super) async fn execute_folder_job(
         .map_err(|e| format!("Failed to read {}: {}", central_job_md.display(), e))?;
     let raw_prompt = apply_params(raw_prompt, params);
 
-    let (provider, model, tmux_session, work_dir, agent_command) = {
+    let (provider, model, effort, tmux_session, work_dir, agent_command) = {
         let s = settings.lock();
         let provider = job.agent_provider.unwrap_or(s.default_provider);
         let model = resolve_agent_model(job, &s, provider);
+        let effort = resolve_agent_effort(provider, job.agent_effort.clone());
         let session = job
             .tmux_session
             .clone()
@@ -61,7 +62,14 @@ pub(super) async fn execute_folder_job(
             }
             crate::agent_session::ProcessProvider::Shell => String::new(),
         };
-        (provider, model, session, folder_path.clone(), command)
+        (
+            provider,
+            model,
+            effort,
+            session,
+            folder_path.clone(),
+            command,
+        )
     };
 
     let prompt_content = if provider == crate::agent_session::ProcessProvider::Shell {
@@ -86,6 +94,7 @@ pub(super) async fn execute_folder_job(
         provider,
         agent_command,
         model,
+        effort,
         prompt_content,
         slug: &job.slug,
         aerospace_workspace: job.aerospace_workspace.as_deref(),

@@ -134,6 +134,8 @@ pub struct Job {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<String>,
     #[serde(default = "default_max_history")]
     pub max_history: u32,
@@ -311,6 +313,16 @@ impl JobsConfig {
         Self { jobs }
     }
 
+    /// Returns whether the in-memory list still contains an agent selection
+    /// that should be normalized and persisted. This lets callers that already
+    /// have a live config apply the migration without waiting for a restart.
+    pub fn agent_selection_migration_needed(&self) -> bool {
+        self.jobs.iter().any(|job| {
+            let mut normalized = job.clone();
+            migrate_agent_selection(&mut normalized)
+        })
+    }
+
     fn load_job_yaml(path: &std::path::Path, slug: &str) -> Option<Job> {
         match std::fs::read_to_string(path) {
             Ok(contents) => match serde_yml::from_str::<Job>(&contents) {
@@ -321,9 +333,12 @@ impl JobsConfig {
                     if job.telegram_chat_id.is_some() && job.notify_target == NotifyTarget::None {
                         job.notify_target = NotifyTarget::Telegram;
                     }
-                    if contents.contains("job_type: folder") {
+                    let agent_selection_migrated = migrate_agent_selection(&mut job);
+                    if contents.contains("job_type: folder") || agent_selection_migrated {
                         if let Ok(canonical) = serde_yml::to_string(&job) {
-                            let _ = std::fs::write(path, canonical);
+                            if let Err(e) = std::fs::write(path, canonical) {
+                                log::warn!("Failed to write migrated {}: {}", path.display(), e);
+                            }
                         }
                     }
                     Some(job)
@@ -489,6 +504,109 @@ impl JobsConfig {
         for entry in entries.flatten() {
             migrate_one_flat_slug_dir(&jobs_dir, &entry.path());
         }
+    }
+}
+
+/// Migrate agent selections saved by older versions of the selector.
+///
+/// Older jobs sometimes stored the Codex/Claude effort flag inside
+/// `agent_model` (for example `gpt-5.5 -c model_reasoning_effort=high`).
+/// Effort is now a separate field, so normalize that value and persist the
+/// result while loading the job. Jobs that never had an explicit effort get
+/// Medium as the stable default for agent jobs.
+fn migrate_agent_selection(job: &mut Job) -> bool {
+    let mut changed = false;
+
+    if let Some(model) = job.agent_model.clone() {
+        if let Some((model_without_effort, embedded_effort)) = split_embedded_effort(&model) {
+            let next_model = if model_without_effort.is_empty() {
+                None
+            } else {
+                Some(model_without_effort)
+            };
+            if job.agent_model != next_model {
+                job.agent_model = next_model;
+                changed = true;
+            }
+            if job.agent_effort.is_none() {
+                job.agent_effort = Some(embedded_effort.to_string());
+                changed = true;
+            }
+        } else if let Some((model_without_effort, embedded_effort)) =
+            split_legacy_effort_suffix(&model)
+        {
+            let next_model = model_without_effort.map(str::to_string);
+            if job.agent_model != next_model {
+                job.agent_model = next_model;
+                changed = true;
+            }
+            if job.agent_effort.is_none() {
+                job.agent_effort = Some(embedded_effort.to_string());
+                changed = true;
+            }
+        }
+    }
+
+    let is_agent_job = matches!(job.job_type, JobType::Claude | JobType::Job)
+        || job.agent_provider.is_some()
+        || job.agent_model.is_some();
+    let is_terminal = matches!(job.agent_provider, Some(ProcessProvider::Shell));
+    if is_agent_job && !is_terminal && job.agent_effort.is_none() {
+        job.agent_effort = Some("medium".to_string());
+        changed = true;
+    }
+
+    changed
+}
+
+fn split_embedded_effort(model: &str) -> Option<(String, &'static str)> {
+    for marker in ["model_reasoning_effort=", "--effort"] {
+        let lower = model.to_ascii_lowercase();
+        let Some(marker_start) = lower.find(marker) else {
+            continue;
+        };
+        let value_start = marker_start + marker.len();
+        let value = model[value_start..]
+            .trim_start_matches(|c: char| c == '=' || c.is_ascii_whitespace())
+            .split_whitespace()
+            .next()
+            .map(|value| value.trim_matches(['\'', '"']))
+            .and_then(parse_effort);
+        let Some(effort) = value else {
+            continue;
+        };
+
+        let mut clean = model[..marker_start].trim().to_string();
+        if clean.ends_with("-c") {
+            clean.truncate(clean.len().saturating_sub(2));
+            clean = clean.trim_end().to_string();
+        }
+        return Some((clean, effort));
+    }
+    None
+}
+
+/// Handle legacy values such as `codex-medium` that combined a provider or
+/// model label with effort. Provider-only values are not real model IDs and
+/// are cleared; real model prefixes are retained.
+fn split_legacy_effort_suffix(model: &str) -> Option<(Option<&str>, &'static str)> {
+    let (base, suffix) = model.trim().rsplit_once('-')?;
+    let effort = parse_effort(suffix)?;
+    let model_without_effort = match base.to_ascii_lowercase().as_str() {
+        "codex" | "claude" | "opencode" | "antigravity" | "shell" => None,
+        _ => Some(base),
+    };
+    Some((model_without_effort, effort))
+}
+
+fn parse_effort(value: &str) -> Option<&'static str> {
+    match value.to_ascii_lowercase().as_str() {
+        "low" => Some("low"),
+        "medium" => Some("medium"),
+        "high" => Some("high"),
+        "xhigh" => Some("xhigh"),
+        "max" => Some("max"),
+        _ => None,
     }
 }
 
@@ -981,5 +1099,38 @@ mod tests {
             find_job(&jobs, "general/hello-world").unwrap().slug,
             "hello-world/default"
         );
+    }
+
+    #[test]
+    fn migrates_embedded_codex_effort() {
+        let mut job = test_job("seo-improve", "clawjobs", "clawjobs/seo-improve");
+        job.agent_provider = Some(ProcessProvider::Codex);
+        job.agent_model = Some("gpt-5.5 -c model_reasoning_effort=high".to_string());
+
+        assert!(migrate_agent_selection(&mut job));
+        assert_eq!(job.agent_model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(job.agent_effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn defaults_existing_agent_without_effort_to_medium() {
+        let mut job = test_job("seo-improve", "clawjobs", "clawjobs/seo-improve");
+        job.agent_provider = Some(ProcessProvider::Codex);
+        job.agent_model = Some("gpt-5.5".to_string());
+
+        assert!(migrate_agent_selection(&mut job));
+        assert_eq!(job.agent_model.as_deref(), Some("gpt-5.5"));
+        assert_eq!(job.agent_effort.as_deref(), Some("medium"));
+    }
+
+    #[test]
+    fn removes_provider_effort_alias_model() {
+        let mut job = test_job("seo-improve", "clawjobs", "clawjobs/seo-improve");
+        job.agent_provider = Some(ProcessProvider::Codex);
+        job.agent_model = Some("codex-medium".to_string());
+
+        assert!(migrate_agent_selection(&mut job));
+        assert_eq!(job.agent_model, None);
+        assert_eq!(job.agent_effort.as_deref(), Some("medium"));
     }
 }

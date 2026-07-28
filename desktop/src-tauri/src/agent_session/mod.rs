@@ -75,6 +75,17 @@ impl ProcessProvider {
             _ => format!(" --model {}", model),
         }
     }
+
+    pub fn effort_flag_format(self, effort: &str) -> String {
+        match self {
+            ProcessProvider::Claude => format!(" --effort {}", shell_quote(effort)),
+            ProcessProvider::Codex => format!(
+                " -c {}",
+                shell_quote(&format!("model_reasoning_effort={}", effort))
+            ),
+            _ => String::new(),
+        }
+    }
 }
 
 fn shell_quote(value: &str) -> String {

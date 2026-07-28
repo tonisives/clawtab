@@ -114,6 +114,7 @@ export function DraggableJobCard({
   dimmed,
   dataJobSlug,
   defaultAgentProvider,
+  defaultAgentModel,
   pinned,
   onTogglePin,
   groupedPosition,
@@ -132,6 +133,7 @@ export function DraggableJobCard({
   dimmed?: boolean;
   dataJobSlug?: string;
   defaultAgentProvider?: DetectedProcess["provider"];
+  defaultAgentModel?: string | null;
   pinned?: boolean;
   onTogglePin?: () => void;
   groupedPosition?: GroupedRowPosition;
@@ -192,6 +194,8 @@ export function DraggableJobCard({
           onPress={onPress}
           selected={selected}
           softBorder={softBorder}
+          defaultAgentProvider={defaultAgentProvider}
+          defaultAgentModel={defaultAgentModel}
           onStop={onStop}
           autoYesActive={autoYesActive}
           stopping={stopping}
@@ -205,6 +209,7 @@ export function DraggableJobCard({
           selected={selected}
           softBorder={softBorder}
           defaultAgentProvider={defaultAgentProvider}
+          defaultAgentModel={defaultAgentModel}
           groupedPosition={groupedPosition}
         />
       )}

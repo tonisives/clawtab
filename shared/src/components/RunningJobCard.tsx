@@ -6,6 +6,7 @@ import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
 import { timeAgo } from "../util/format";
+import { agentSelectionLabel } from "../util/agent";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 
@@ -31,6 +32,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   autoYesActive,
   stopping,
   defaultAgentProvider,
+  defaultAgentModel,
   groupedPosition,
 }: {
   job: RemoteJob;
@@ -44,6 +46,7 @@ export const RunningJobCard = memo(function RunningJobCard({
   autoYesActive?: boolean;
   stopping?: boolean;
   defaultAgentProvider?: ProcessProvider;
+  defaultAgentModel?: string | null;
   groupedPosition?: GroupedRowPosition;
 }) {
   const startedAt = status.state === "running" ? status.started_at : null;
@@ -52,6 +55,9 @@ export const RunningJobCard = memo(function RunningJobCard({
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const showMenu = (onStop || onTogglePin) && !stopping;
+  const agentProvider = job.agent_provider ?? scheduledProviderKindForJob(job, defaultAgentProvider);
+  const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
+  const agentLabel = agentProvider ? agentSelectionLabel(agentProvider, agentModel, job.agent_effort) : null;
   const openMenu = useCallback((e?: any) => {
     if (!showMenu) return;
     if (isWeb) {
@@ -92,7 +98,10 @@ export const RunningJobCard = memo(function RunningJobCard({
           {stopping ? (
             <Text style={[styles.metaText, { fontStyle: "italic" }]}>Stopping...</Text>
           ) : startedAt ? (
-            <Text style={styles.metaText}>{timeAgo(startedAt)}</Text>
+            <View style={styles.runningMeta}>
+              <Text style={styles.metaText}>{timeAgo(startedAt)}</Text>
+              {agentLabel ? <Text style={styles.agentText} numberOfLines={1}>{agentLabel}</Text> : null}
+            </View>
           ) : null}
         </View>
         <View style={[styles.rightCol, (showMenu || autoYesActive) && styles.rightColExpanded]}>
@@ -188,6 +197,8 @@ const styles = StyleSheet.create({
   info: { flex: 1, gap: 2, minWidth: 0 },
   name: { color: colors.text, fontSize: 17, fontWeight: "500" },
   metaText: { color: colors.textSecondary, fontSize: 13 },
+  runningMeta: { flexDirection: "row", alignItems: "center", gap: spacing.sm, minWidth: 0 },
+  agentText: { color: colors.accent, fontSize: 12, fontFamily: "monospace", flexShrink: 1 },
   rightCol: {
     alignItems: "center",
     justifyContent: "center",

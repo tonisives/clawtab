@@ -1,11 +1,7 @@
-import type { ProcessProvider } from "@clawtab/shared";
+import type { AgentEffort, ProcessProvider } from "@clawtab/shared";
+import { AgentSelector, agentSelectionLabel, defaultAgentEffort } from "@clawtab/shared";
 import type { Job } from "../../../types";
-import {
-  buildModelOptions,
-  decodeProviderModel,
-  encodeProviderModel,
-  labelForProviderModel,
-} from "../utils";
+import { buildModelOptions } from "../utils";
 
 interface ProviderFieldProps {
   form: Job;
@@ -15,7 +11,7 @@ interface ProviderFieldProps {
   defaultProvider: ProcessProvider;
   defaultModel: string | null;
   enabledModels: Record<string, string[]>;
-  handleProviderChange: (provider: ProcessProvider | null, model?: string | null) => void;
+  handleProviderChange: (provider: ProcessProvider | null, model?: string | null, effort?: AgentEffort | null) => void;
 }
 
 export function ProviderField({
@@ -27,44 +23,30 @@ export function ProviderField({
   const allOptions = buildModelOptions(availableProviders, enabledModels);
   const currentProvider = form.agent_provider ?? null;
   const currentModel = form.agent_model ?? null;
-  const isDefault = currentProvider === null
-    || (currentProvider === defaultProvider && (currentModel ?? null) === (defaultModel ?? null));
-  const selectedValue = isDefault ? "" : encodeProviderModel(currentProvider!, currentModel);
-
-  // Filter: exclude the default combo, and for non-new non-shell jobs exclude shell
-  const options = allOptions.filter((opt) => {
-    if (opt.provider === defaultProvider && (opt.modelId ?? null) === (defaultModel ?? null)) return false;
-    if (!isNew && !startedAsShellJob && opt.provider === "shell") return false;
+  const isDefault = currentProvider === null && currentModel === null && form.agent_effort == null;
+  const options = allOptions.filter((option) => {
+    if (isDefault && option.provider === defaultProvider && (option.modelId ?? null) === (defaultModel ?? null)) return false;
+    if (!isNew && !startedAsShellJob && option.provider === "shell") return false;
     return true;
   });
 
   return (
     <div className="form-group">
       <label>Agent</label>
-      <select
-        value={selectedValue}
-        onChange={(e) => {
-          const val = e.target.value;
-          if (!val) {
-            handleProviderChange(null, null);
-          } else {
-            const { provider, model } = decodeProviderModel(val);
-            handleProviderChange(provider, model);
-          }
-        }}
-      >
-        <option value="">{labelForProviderModel(defaultProvider, defaultModel)} (default)</option>
-        {options.map((opt) => {
-          const val = encodeProviderModel(opt.provider, opt.modelId);
-          return (
-            <option key={val} value={val}>
-              {opt.label}
-            </option>
-          );
-        })}
-      </select>
+      <AgentSelector
+        modelOptions={options}
+        provider={currentProvider}
+        model={currentModel}
+        effort={form.agent_effort ?? defaultAgentEffort(currentProvider, currentModel)}
+        includeDefault
+        defaultLabel={`${agentSelectionLabel(defaultProvider, defaultModel)} (default)`}
+        includeShell={isNew || startedAsShellJob}
+        fullWidth
+        onSelectDefault={() => handleProviderChange(null, null, null)}
+        onChange={(selection) => handleProviderChange(selection.provider, selection.modelId, selection.effort)}
+      />
       <span className="hint">
-        Pick which agent and model runs this job.
+        Pick which agent, model, and effort runs this job.
       </span>
     </div>
   );

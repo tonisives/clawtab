@@ -183,6 +183,7 @@ async fn dispatch_job_msg(
             work_dir,
             provider,
             model,
+            effort,
             trigger_id,
         } => {
             let result = run_agent(
@@ -190,6 +191,7 @@ async fn dispatch_job_msg(
                 work_dir.as_deref(),
                 provider.as_deref(),
                 model.clone(),
+                effort.clone(),
                 trigger_id.clone(),
                 jobs_config,
                 ctx,
@@ -212,6 +214,17 @@ async fn dispatch_job_msg(
                 event_sink.emit_jobs_changed();
             }
             Some(DesktopMessage::CreateJobAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
+        }
+        ClientMessage::UpdateJob { id, name, update } => {
+            let result = update_job(name, update, jobs_config);
+            if result.is_ok() {
+                event_sink.emit_jobs_changed();
+            }
+            Some(DesktopMessage::UpdateJobAck {
                 id: id.clone(),
                 success: result.is_ok(),
                 error: result.err(),
@@ -676,6 +689,7 @@ async fn run_agent(
     work_dir: Option<&str>,
     provider: Option<&str>,
     model: Option<String>,
+    effort: Option<String>,
     trigger_id: Option<String>,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
@@ -686,7 +700,8 @@ async fn run_agent(
         (s, j)
     };
     let provider = parse_process_provider(provider)?;
-    let job = crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, provider, model)?;
+    let job =
+        crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, provider, model, effort)?;
     let job_id = job.name.clone();
     let work_dir = job
         .work_dir
@@ -787,6 +802,73 @@ mod tests {
 fn create_job() -> Result<(), String> {
     // TODO: implement remote job creation
     Err("remote job creation not yet implemented".to_string())
+}
+
+fn update_job(
+    name: &str,
+    update: &clawtab_protocol::JobUpdate,
+    jobs_config: &Arc<Mutex<JobsConfig>>,
+) -> Result<(), String> {
+    let mut config = jobs_config.lock();
+    let job_index = config
+        .jobs
+        .iter()
+        .position(|job| job.slug == name || job.name == name)
+        .ok_or_else(|| format!("Job not found: {}", name))?;
+    let mut job = config.jobs[job_index].clone();
+
+    if let Some(enabled) = update.enabled {
+        job.enabled = enabled;
+    }
+    if let Some(cron) = &update.cron {
+        job.cron = cron.clone();
+    }
+    if let Some(group) = &update.group {
+        job.group = if group.trim().is_empty() {
+            "default".to_string()
+        } else {
+            group.clone()
+        };
+    }
+    if let Some(work_dir) = &update.work_dir {
+        job.work_dir = work_dir.clone();
+    }
+    if let Some(tmux_session) = &update.tmux_session {
+        job.tmux_session = tmux_session.clone();
+    }
+    if let Some(aerospace_workspace) = &update.aerospace_workspace {
+        job.aerospace_workspace = aerospace_workspace.clone();
+    }
+    if let Some(notify_target) = &update.notify_target {
+        job.notify_target = match notify_target.as_deref() {
+            None | Some("none") => crate::config::jobs::NotifyTarget::None,
+            Some("app") => crate::config::jobs::NotifyTarget::App,
+            Some("telegram") => crate::config::jobs::NotifyTarget::Telegram,
+            Some(other) => return Err(format!("unsupported notification target '{}'", other)),
+        };
+    }
+    if let Some(kill_on_end) = update.kill_on_end {
+        job.kill_on_end = kill_on_end;
+    }
+    if let Some(auto_yes) = update.auto_yes {
+        job.auto_yes = auto_yes;
+    }
+    if let Some(max_history) = update.max_history {
+        job.max_history = max_history.max(1);
+    }
+    if let Some(agent_provider) = &update.agent_provider {
+        job.agent_provider = parse_process_provider(agent_provider.as_deref())?;
+    }
+    if let Some(agent_model) = &update.agent_model {
+        job.agent_model = agent_model.clone();
+    }
+    if let Some(agent_effort) = &update.agent_effort {
+        job.agent_effort = agent_effort.clone();
+    }
+
+    config.save_job(&job)?;
+    *config = JobsConfig::load();
+    Ok(())
 }
 
 fn get_run_detail_full(

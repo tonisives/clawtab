@@ -17,13 +17,13 @@ export function JobListGroupAgentItem({ hook, workDir, footerPath, itemKey }: Jo
     <View key={itemKey} style={[styles.groupAgentFooterRow, { marginTop: spacing.sm }]}>
       <GroupAgentRow
         provider={hook.groupAgent.resolveGroupAgentProvider(workDir)}
-        providers={hook.groupAgent.resolvedAgentProviders}
-        onProviderChange={(provider) => hook.groupAgent.handleSetGroupAgentProvider(workDir, provider)}
         model={hook.groupAgent.resolveGroupAgentModel(workDir)}
+        effort={hook.groupAgent.resolveGroupAgentEffort(workDir)}
         modelOptions={hook.agentModelOptions}
-        onModelChange={(provider, modelId) => hook.groupAgent.handleSetGroupAgentModel(workDir, provider, modelId)}
-        onRunAgent={(prompt, provider, model) => hook.onRunAgent?.(prompt, workDir, provider, model)}
-        focusSignal={hook.focusAgentWorkDir === workDir ? hook.focusAgentSignal : undefined}
+        onRunAgent={(prompt, provider, model, effort) => {
+          if (provider) hook.groupAgent.handleSetGroupAgentModel(workDir, provider, model ?? null, effort ?? null);
+          return hook.onRunAgent?.(prompt, workDir, provider, model, effort);
+        }}
         workDir={workDir}
       />
       {footerPath ? (

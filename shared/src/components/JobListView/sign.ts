@@ -2,7 +2,7 @@ import type * as React from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
 
 import type { RemoteJob, JobStatus, JobSortMode } from "../../types/job";
-import type { AgentModelOption, DetectedProcess, ProcessProvider, ShellPane } from "../../types/process";
+import type { AgentEffort, AgentModelOption, DetectedProcess, ProcessProvider, ShellPane } from "../../types/process";
 
 export const IDLE_STATUS: JobStatus = { state: "idle" };
 
@@ -44,7 +44,7 @@ export interface JobListViewProps {
   // Single selection (backward compat with desktop) - uses accent color
   selectedSlug?: string | null;
   // Agent
-  onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null) => void;
+  onRunAgent?: (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string | null, effort?: AgentEffort | null) => void;
   getAgentProviders?: () => Promise<ProcessProvider[]>;
   defaultAgentProvider?: ProcessProvider;
   agentModelOptions?: AgentModelOption[];
@@ -84,7 +84,7 @@ export interface JobListViewProps {
   // Auto-yes pane IDs (for yellow indicator)
   autoYesPaneIds?: Set<string>;
   // Custom card renderers (for drag-and-drop wrappers)
-  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onTogglePin?: () => void; pinned?: boolean; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider; groupedPosition?: GroupedRowPosition }) => React.ReactNode;
+  renderJobCard?: (props: { job: RemoteJob; group: string; indexInGroup: number; status: JobStatus; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onTogglePin?: () => void; pinned?: boolean; autoYesActive?: boolean; stopping?: boolean; marginTop?: number; dimmed?: boolean; dataJobSlug?: string; defaultAgentProvider?: ProcessProvider; defaultAgentModel?: string | null; groupedPosition?: GroupedRowPosition }) => React.ReactNode;
   renderProcessCard?: (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; onTogglePin?: () => void; pinned?: boolean; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string; groupedPosition?: GroupedRowPosition }) => React.ReactNode;
   renderShellCard?: (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string; groupedPosition?: GroupedRowPosition }) => React.ReactNode;
   wrapJobGroup?: (group: string, jobSlugs: string[], children: React.ReactNode) => React.ReactNode;

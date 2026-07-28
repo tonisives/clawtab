@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { PaneContent, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
+import type { AgentEffort, PaneContent, ProcessProvider, ShellPane, Transport, useJobActions, useJobsCore, useSplitTree } from "@clawtab/shared";
 import { requestXtermPaneFocus } from "../../XtermPane";
 import type { Job } from "../../../types";
 import type { useProcessLifecycle } from "../../../hooks/useProcessLifecycle";
@@ -95,9 +95,9 @@ export function useAgentRunner({
     applyPaneOpen(pending.shell, pending.terminalContent);
   }, [mgr.activeId, split.tree, applyPaneOpen]);
 
-  const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) => {
+  const handleRunAgent = useCallback(async (prompt: string, workDir?: string, provider?: ProcessProvider, model?: string, effort?: AgentEffort | null) => {
     if (!workDir) {
-      await actions.runAgent(prompt, workDir, provider, model);
+      await actions.runAgent(prompt, workDir, provider, model, effort ?? undefined);
       return;
     }
 
@@ -105,7 +105,7 @@ export function useAgentRunner({
     const matchedGroup = matchingJob ? (matchingJob.group || null) : null;
     const targetWs = matchingJob ? (matchingJob.group || "default") : DETECTED_WORKSPACE_ID;
 
-    const result = await actions.runAgent(prompt, workDir, provider, model);
+    const result = await actions.runAgent(prompt, workDir, provider, model, effort ?? undefined);
     if (!result) {
       setPendingAgentWorkDir({ dir: workDir, startedAt: Date.now() });
       return;

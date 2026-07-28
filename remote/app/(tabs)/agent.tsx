@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  TouchableOpacity,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -19,35 +18,40 @@ import { registerRequest } from "../../src/lib/useRequestMap";
 import { openUrl } from "../../src/lib/platform";
 import { colors } from "../../src/theme/colors";
 import { radius, spacing } from "../../src/theme/spacing";
-import { JobKindIcon, PopupMenu } from "@clawtab/shared";
-import type { ProcessProvider, AgentModelOption, DetectedProcess } from "@clawtab/shared";
-import { BARE_PROVIDER_OPTIONS, buildModelOptions, labelForProviderModel } from "../../src/lib/agentModels";
+import { AgentSelector } from "@clawtab/shared";
+import type { AgentModelOption, AgentSelection, DetectedProcess, ProcessProvider } from "@clawtab/shared";
+import { BARE_PROVIDER_OPTIONS, buildModelOptions } from "../../src/lib/agentModels";
 
-const STORAGE_KEY = "clawtab_agent_model_v2";
+const STORAGE_KEY = "clawtab_agent_selection_v3";
+const LEGACY_STORAGE_KEY = "clawtab_agent_model_v2";
 
 const DEFAULT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"];
-// Bare claude entry; the actual model gets resolved from server-pushed enabled_models.
+// Start with the provider entry; the shared current catalog and server-pushed models
+// populate the concrete choices in the selector.
 const DEFAULT_MODEL: AgentModelOption =
   BARE_PROVIDER_OPTIONS.find((m) => m.provider === "claude") ?? BARE_PROVIDER_OPTIONS[0];
+const DEFAULT_SELECTION: AgentSelection = { provider: DEFAULT_MODEL.provider, modelId: DEFAULT_MODEL.modelId, effort: null };
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
   return value === "claude" || value === "codex" || value === "opencode" || value === "antigravity" || value === "shell";
 }
 
-function getStoredModel(): AgentModelOption {
-  if (Platform.OS !== "web" || typeof localStorage === "undefined") return DEFAULT_MODEL;
+function getStoredSelection(): AgentSelection {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return DEFAULT_SELECTION;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_MODEL;
-    const parsed = JSON.parse(raw) as AgentModelOption;
-    if (parsed.provider && "modelId" in parsed) return parsed;
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return DEFAULT_SELECTION;
+    const parsed = JSON.parse(raw) as Partial<AgentSelection>;
+    if (parsed.provider && "modelId" in parsed) {
+      return { provider: parsed.provider, modelId: parsed.modelId ?? null, effort: parsed.effort ?? null };
+    }
   } catch { /* ignore */ }
-  return DEFAULT_MODEL;
+  return DEFAULT_SELECTION;
 }
 
-function storeModel(opt: AgentModelOption) {
+function storeSelection(selection: AgentSelection) {
   if (Platform.OS !== "web" || typeof localStorage === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(opt));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(selection));
 }
 
 export default function AgentScreen() {
@@ -58,12 +62,9 @@ export default function AgentScreen() {
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<AgentModelOption>(getStoredModel);
-  const selectedModelRef = useRef(selectedModel);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [selectedSelection, setSelectedSelection] = useState<AgentSelection>(getStoredSelection);
+  const selectedSelectionRef = useRef(selectedSelection);
   const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
-  const providerBtnRef = useRef<any>(null);
   const inputRef = useRef<any>(null);
   const { isWide } = useResponsive();
 
@@ -98,20 +99,12 @@ export default function AgentScreen() {
     adjustHeight();
   }, [prompt, adjustHeight]);
 
-  const DEFAULT_ENABLED = {
-    claude: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-4-8"],
-    codex: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-    opencode: [] as string[],
-    antigravity: [] as string[],
-  };
-  const resolvedModels = (!enabledModels || Object.keys(enabledModels).length === 0) ? DEFAULT_ENABLED : enabledModels;
-  const modelOptions = buildModelOptions(DEFAULT_PROVIDERS, resolvedModels);
+  const modelOptions = buildModelOptions(DEFAULT_PROVIDERS, enabledModels ?? {});
 
-  const handleSelectModel = (opt: AgentModelOption) => {
-    selectedModelRef.current = opt;
-    setSelectedModel(opt);
-    storeModel(opt);
-    setMenuOpen(false);
+  const handleSelectAgent = (selection: AgentSelection) => {
+    selectedSelectionRef.current = selection;
+    setSelectedSelection(selection);
+    storeSelection(selection);
   };
 
   const handleRun = async () => {
@@ -125,9 +118,9 @@ export default function AgentScreen() {
     setSending(true);
     setError(null);
     const promptText = prompt.trim();
-    const launchModel = selectedModelRef.current;
-    const provider = launchModel.provider;
-    const model = launchModel.modelId ?? undefined;
+    const launchSelection = selectedSelectionRef.current;
+    const provider = launchSelection.provider;
+    const model = launchSelection.modelId ?? undefined;
 
     const msgId = nextId();
     send({
@@ -136,6 +129,7 @@ export default function AgentScreen() {
       prompt: promptText,
       provider,
       model,
+      ...(launchSelection.effort ? { effort: launchSelection.effort } : {}),
     });
 
     try {
@@ -196,8 +190,6 @@ export default function AgentScreen() {
     }
   };
 
-  const modelLabel = labelForProviderModel(selectedModel.provider, selectedModel.modelId);
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -237,25 +229,16 @@ export default function AgentScreen() {
             {error && <Text style={styles.error}>{error}</Text>}
 
             <View style={[styles.bottomRow, isWide && styles.bottomRowWide]}>
-              <TouchableOpacity
-                ref={providerBtnRef}
-                style={styles.modelBtn}
-                onPress={(e: any) => {
-                  if (Platform.OS === "web") {
-                    const node = e?.currentTarget ?? e?.target;
-                    if (node?.getBoundingClientRect) {
-                      const rect = node.getBoundingClientRect();
-                      setMenuPos({ top: rect.bottom + 6, left: rect.right });
-                    }
-                  }
-                  setMenuOpen((v) => !v);
-                }}
-                activeOpacity={0.7}
-              >
-                <JobKindIcon kind={selectedModel.provider} size={16} compact bare />
-                <Text style={styles.modelBtnText} numberOfLines={1}>{modelLabel}</Text>
-                <Text style={styles.modelBtnCaret}>{"\u25BE"}</Text>
-              </TouchableOpacity>
+              <AgentSelector
+                modelOptions={modelOptions}
+                provider={selectedSelection.provider}
+                model={selectedSelection.modelId}
+                effort={selectedSelection.effort}
+                mode="button"
+                label="Choose agent"
+                disabled={sending || !desktopOnline}
+                onChange={handleSelectAgent}
+              />
 
               <Pressable
                 style={[styles.btn, (!prompt.trim() || sending || !desktopOnline) && styles.btnDisabled]}
@@ -271,21 +254,6 @@ export default function AgentScreen() {
         </View>
       </ContentContainer>
 
-      {menuOpen && (
-        <PopupMenu
-          triggerRef={providerBtnRef}
-          position={menuPos}
-          onClose={() => setMenuOpen(false)}
-          autoFocus
-          items={modelOptions.map((opt) => ({
-            type: "item" as const,
-            label: opt.label,
-            active: opt.provider === selectedModel.provider && opt.modelId === selectedModel.modelId,
-            icon: <JobKindIcon kind={opt.provider} size={16} compact bare />,
-            onPress: () => handleSelectModel(opt),
-          }))}
-        />
-      )}
     </KeyboardAvoidingView>
   );
 }
@@ -344,27 +312,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
-  },
-  modelBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignSelf: "flex-start",
-  },
-  modelBtnText: {
-    fontSize: 13,
-    color: colors.text,
-    flexShrink: 1,
-  },
-  modelBtnCaret: {
-    color: colors.textMuted,
-    fontSize: 10,
   },
   btn: {
     height: 44,

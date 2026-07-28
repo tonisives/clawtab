@@ -65,6 +65,17 @@ pub(super) fn resolve_agent_model(
     None
 }
 
+/// Older jobs may not have persisted an effort yet. Keep their behavior
+/// consistent with the selector by using medium for every agent provider.
+pub(super) fn resolve_agent_effort(
+    provider: crate::agent_session::ProcessProvider,
+    effort: Option<String>,
+) -> Option<String> {
+    effort.or_else(|| {
+        (provider != crate::agent_session::ProcessProvider::Shell).then(|| "medium".to_string())
+    })
+}
+
 /// Generate a unique tmux window name for a single agent spawn.
 ///
 /// Each spawn gets its own window so clawtab can resize it independently -

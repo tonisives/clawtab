@@ -129,6 +129,7 @@ pub enum IpcCommand {
         work_dir: Option<String>,
         provider: Option<crate::agent_session::ProcessProvider>,
         model: Option<String>,
+        effort: Option<String>,
     },
     SetProtectedPanes {
         pane_ids: Vec<String>,

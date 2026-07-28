@@ -8,7 +8,7 @@ use crate::secrets::SecretsManager;
 
 use super::params::{apply_params, collect_env_vars};
 use super::tmux_spawn::{spawn_agent_pane, SpawnArgs};
-use super::{project_window_name, resolve_agent_model, TmuxHandle};
+use super::{project_window_name, resolve_agent_effort, resolve_agent_model, TmuxHandle};
 
 pub(super) async fn execute_claude_job(
     job: &Job,
@@ -17,10 +17,11 @@ pub(super) async fn execute_claude_job(
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
-    let (provider, model, tmux_session, work_dir, agent_command) = {
+    let (provider, model, effort, tmux_session, work_dir, agent_command) = {
         let s = settings.lock();
         let provider = job.agent_provider.unwrap_or(s.default_provider);
         let model = resolve_agent_model(job, &s, provider);
+        let effort = resolve_agent_effort(provider, job.agent_effort.clone());
         let session = job
             .tmux_session
             .clone()
@@ -38,7 +39,7 @@ pub(super) async fn execute_claude_job(
             }
             crate::agent_session::ProcessProvider::Shell => String::new(),
         };
-        (provider, model, session, wd, command)
+        (provider, model, effort, session, wd, command)
     };
 
     let mut env_vars = collect_env_vars(job, secrets, settings);
@@ -73,6 +74,7 @@ pub(super) async fn execute_claude_job(
         provider,
         agent_command,
         model,
+        effort,
         prompt_content,
         slug: &job.slug,
         aerospace_workspace: job.aerospace_workspace.as_deref(),

@@ -11,6 +11,7 @@ import { useWsStore } from "../../src/store/ws";
 import { JobKindIcon, XtermLog, kindForJob, statusColor } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { JobDetailView, findYesOption } from "@clawtab/shared";
+import type { AgentModelOption, JobUpdate, ProcessProvider } from "@clawtab/shared";
 import { ContentContainer } from "../../src/components/ContentContainer";
 import { DemoBanner } from "../../src/components/DemoOverlay";
 import { useLogs } from "../../src/hooks/useLogs";
@@ -25,10 +26,12 @@ import { useResponsive } from "../../src/hooks/useResponsive";
 import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
+import { buildModelOptions } from "../../src/lib/agentModels";
 
 const KEYBOARD_EXTRA_CLEARANCE = 18;
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const TERMINAL_BG = "#1c1c1e";
+const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"];
 
 function encodeTerminalInput(text: string): string {
   if (typeof btoa === "function") return btoa(text);
@@ -86,11 +89,18 @@ export default function JobDetailScreen() {
   const insets = useSafeAreaInsets();
   const { isWide } = useResponsive();
   const storeJob = useJob(name);
+  const defaultAgentProvider = useJobsStore((s) => s.defaultProvider);
+  const defaultAgentModel = useJobsStore((s) => s.defaultModel);
+  const enabledModels = useJobsStore((s) => s.enabledModels);
   const isAgent = !storeJob && name.startsWith("agent-");
   const isDemo = demo === "1" || (!storeJob && !isAgent && isDemoJob(name));
   const demoJob = isDemo ? DEMO_JOBS.find((j) => j.name === name || j.slug === name) : undefined;
   const job = storeJob ?? (isAgent ? agentJobFromSlug(name) : demoJob);
   const slug = job?.slug ?? name;
+  const modelOptions: AgentModelOption[] = buildModelOptions(AGENT_PROVIDERS, enabledModels ?? {});
+  const onUpdateJob = useCallback(async (patch: JobUpdate) => {
+    if (wsTransport.updateJob) await wsTransport.updateJob(slug, patch);
+  }, [slug]);
   const realStatus = useJobStatus(name);
   const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus;
   const { logs } = useLogs(slug);
@@ -370,6 +380,10 @@ export default function JobDetailScreen() {
           onToggleAutoYes={isDemo ? undefined : (jobQuestion ? handleToggleAutoYes : undefined)}
           renderTerminal={isRunningWithPty ? renderTerminal : undefined}
           hideMessageInput={isRunningWithPty}
+          defaultAgentProvider={(defaultAgentProvider ?? undefined) as import("@clawtab/shared").ProcessProvider | undefined}
+          defaultAgentModel={defaultAgentModel}
+          agentModelOptions={modelOptions}
+          onUpdateJob={!isDemo && !isAgent ? onUpdateJob : undefined}
           optionBarBottomInset={insets.bottom}
         />
       </ContentContainer>

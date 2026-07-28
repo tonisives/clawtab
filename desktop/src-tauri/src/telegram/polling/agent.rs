@@ -32,6 +32,7 @@ pub(super) async fn handle_agent_command(
         None,
         None,
         None,
+        None,
     ) {
         Ok(j) => j,
         Err(e) => return format!("Failed to build agent job: {}", e),

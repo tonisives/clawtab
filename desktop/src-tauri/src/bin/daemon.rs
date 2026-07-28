@@ -948,6 +948,7 @@ async fn handle_ipc_command(
             work_dir,
             provider,
             model,
+            effort,
         } => {
             let (settings_snapshot, jobs_snapshot) = {
                 let s = settings.lock().clone();
@@ -962,6 +963,7 @@ async fn handle_ipc_command(
                 work_dir.as_deref(),
                 provider,
                 model,
+                effort,
             ) {
                 Ok(j) => j,
                 Err(e) => return IpcResponse::Error(e),

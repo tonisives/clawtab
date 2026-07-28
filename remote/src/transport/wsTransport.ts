@@ -1,6 +1,6 @@
 import type { Transport } from "@clawtab/shared";
-import type { RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
-import type { DetectedProcess, ProcessProvider } from "@clawtab/shared";
+import type { JobUpdate, RemoteJob, JobStatus, RunRecord, RunDetail } from "@clawtab/shared";
+import type { AgentEffort, DetectedProcess, ProcessProvider } from "@clawtab/shared";
 import { getWsSend, nextId } from "../lib/wsRuntime";
 import { registerRequest } from "../lib/useRequestMap";
 import { useJobsStore } from "../store/jobs";
@@ -57,6 +57,15 @@ export function createWsTransport(): Transport {
       // Remote doesn't support delete yet - no-op
     },
 
+    async updateJob(name: string, patch: JobUpdate) {
+      const id = nextId();
+      send({ type: "update_job", id, name, update: patch });
+      const ack = await registerRequest<{ success?: boolean; error?: string }>(id);
+      if (ack.success === false) {
+        throw new Error(ack.error ?? "Failed to update job");
+      }
+    },
+
     async getRunHistory(name: string) {
       const id = nextId();
       send({ type: "get_run_history", id, name, limit: 50 });
@@ -106,7 +115,7 @@ export function createWsTransport(): Transport {
       };
     },
 
-    async runAgent(prompt: string, workDir?: string, provider?: ProcessProvider, model?: string) {
+    async runAgent(prompt: string, workDir?: string, provider?: ProcessProvider, model?: string, effort?: AgentEffort) {
       const id = nextId();
       send({
         type: "run_agent",
@@ -115,6 +124,7 @@ export function createWsTransport(): Transport {
         work_dir: workDir,
         ...(provider ? { provider } : {}),
         ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
       });
       const ack = await registerRequest<{
         success?: boolean;

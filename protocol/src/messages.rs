@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::job::{
-    AgentActivity, ClaudeQuestion, DetectedProcess, JobStatus, RemoteJob, RunDetail, RunRecord,
+    AgentActivity, ClaudeQuestion, DetectedProcess, JobStatus, JobUpdate, RemoteJob, RunDetail,
+    RunRecord,
 };
 
 /// Messages sent by mobile/web clients to the relay server.
@@ -65,6 +66,8 @@ pub enum ClientMessage {
         provider: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<String>,
         /// When set, this run was started by a remote trigger (webhook).
         /// The desktop should use this as the run_id and produce a structured
         /// result file at logs/<trigger_id>.json.
@@ -83,6 +86,11 @@ pub enum ClientMessage {
         cron: String,
         #[serde(default)]
         group: String,
+    },
+    UpdateJob {
+        id: String,
+        name: String,
+        update: JobUpdate,
     },
     DetectProcesses {
         id: String,
@@ -252,6 +260,13 @@ pub enum DesktopMessage {
     },
     /// Ack for create_job
     CreateJobAck {
+        id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    /// Ack for update_job
+    UpdateJobAck {
         id: String,
         success: bool,
         #[serde(skip_serializing_if = "Option::is_none")]
