@@ -7,6 +7,9 @@ export type {
   JobSortMode,
   JobParam,
   JobUpdate,
+  CalendarRepeat,
+  CalendarRepeatUnit,
+  CalendarSchedule,
   RunRecord,
   RunDetail,
   TelegramLogMode,
@@ -38,6 +41,12 @@ export { PANE_COLORS, assignPaneColors } from "./theme/paneColors";
 export { formatTime, formatDuration, timeAgo, shortenPath, compactPath, fitPath, compactCron, compactProcessQuery, processDisplayTitle } from "./util/format";
 export { agentSelectionLabel, compactModelLabel, labelForProvider, modelPickerLabel } from "./util/agent";
 export { nextCronDate, formatNextRun, describeCron, cronTooltip } from "./util/cron";
+export {
+  nextCalendarDate,
+  describeCalendarSchedule,
+  calendarScheduleTooltip,
+  isJobScheduled,
+} from "./util/schedule";
 export { groupJobs, sortGroupNames, findYesOption, isFreetextOption, typeIcon } from "./util/jobs";
 export { collapseSeparators, stripSeparators, truncateLogLines } from "./util/logs";
 export {

@@ -90,9 +90,19 @@ pub fn format_jobs(jobs: &[Job]) -> String {
             crate::config::jobs::JobType::Claude => "claude",
             crate::config::jobs::JobType::Job => "job",
         };
+        let schedule = if let Some(calendar) = &job.schedule {
+            format!(
+                "every {} week(s) from {}",
+                calendar.repeat.every, calendar.start
+            )
+        } else if job.cron.is_empty() {
+            "manual".to_string()
+        } else {
+            job.cron.clone()
+        };
         lines.push(format!(
             "  <code>{}</code> [{}] ({}) {}",
-            job.name, jt, job.cron, enabled
+            job.name, jt, schedule, enabled
         ));
     }
     lines.join("\n")

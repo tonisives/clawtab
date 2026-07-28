@@ -1,5 +1,5 @@
 use crate::agent_session::ProcessProvider;
-use clawtab_protocol::{deserialize_job_params, JobParam};
+use clawtab_protocol::{deserialize_job_params, CalendarSchedule, JobParam};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -99,7 +99,10 @@ pub struct Job {
     pub path: String,
     #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub cron: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<CalendarSchedule>,
     #[serde(default)]
     pub secret_keys: Vec<String>,
     #[serde(default)]
@@ -356,6 +359,7 @@ impl JobsConfig {
     }
 
     pub fn save_job(&self, job: &Job) -> Result<(), String> {
+        validate_job_schedule(job)?;
         let jobs_dir = Self::jobs_dir().ok_or("Could not determine config directory")?;
         let slug = if job.slug.is_empty() {
             derive_slug(
@@ -608,6 +612,27 @@ fn parse_effort(value: &str) -> Option<&'static str> {
         "max" => Some("max"),
         _ => None,
     }
+}
+
+fn validate_job_schedule(job: &Job) -> Result<(), String> {
+    let Some(schedule) = &job.schedule else {
+        return Ok(());
+    };
+    if !job.cron.is_empty() {
+        return Err("A job cannot have both cron and calendar schedules".to_string());
+    }
+    if schedule.repeat.every == 0 {
+        return Err("Calendar schedule repeat.every must be at least 1".to_string());
+    }
+    let valid_start = ["%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"]
+        .into_iter()
+        .any(|format| chrono::NaiveDateTime::parse_from_str(&schedule.start, format).is_ok());
+    if !valid_start {
+        return Err(
+            "Calendar schedule start must use local date-time format YYYY-MM-DDTHH:MM".to_string(),
+        );
+    }
+    Ok(())
 }
 
 /// Migrate a single flat-slug directory. No-op when the dir is not a flat slug
@@ -1061,6 +1086,47 @@ mod tests {
         assert_eq!(job.params[0].value, None);
         assert_eq!(job.params[1].name, "bar");
         assert_eq!(job.params[1].value.as_deref(), Some("baz"));
+    }
+
+    #[test]
+    fn calendar_schedule_parses_without_cron() {
+        let yaml = base_yaml("params: []").replace(
+            "cron: '* * * * *'\n",
+            "schedule:\n  start: '2026-08-03T09:00'\n  repeat:\n    every: 2\n    unit: week\n",
+        );
+
+        let job = parse_job(&yaml);
+
+        assert!(job.cron.is_empty());
+        assert_eq!(
+            job.schedule
+                .as_ref()
+                .expect("calendar schedule should be present")
+                .repeat
+                .every,
+            2
+        );
+        assert!(validate_job_schedule(&job).is_ok());
+
+        let serialized = serde_yml::to_string(&job).expect("job should serialize");
+        assert!(serialized.contains("schedule:"));
+        assert!(!serialized.contains("cron:"));
+    }
+
+    #[test]
+    fn cron_and_calendar_schedule_are_mutually_exclusive() {
+        let mut job = parse_job(&base_yaml("params: []"));
+        job.schedule = Some(CalendarSchedule {
+            start: "2026-08-03T09:00".to_string(),
+            repeat: clawtab_protocol::CalendarRepeat {
+                every: 2,
+                unit: clawtab_protocol::CalendarRepeatUnit::Week,
+            },
+        });
+
+        assert!(validate_job_schedule(&job)
+            .expect_err("mixed schedules should be rejected")
+            .contains("both cron and calendar"));
     }
 
     fn test_job(name: &str, group: &str, slug: &str) -> Job {

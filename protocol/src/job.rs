@@ -1,5 +1,23 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarRepeatUnit {
+    Week,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CalendarRepeat {
+    pub every: u32,
+    pub unit: CalendarRepeatUnit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CalendarSchedule {
+    pub start: String,
+    pub repeat: CalendarRepeat,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct JobParam {
     pub name: String,
@@ -78,6 +96,8 @@ pub struct RemoteJob {
     pub job_type: String,
     pub enabled: bool,
     pub cron: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<CalendarSchedule>,
     pub group: String,
     pub slug: String,
     #[serde(skip_serializing_if = "Option::is_none")]

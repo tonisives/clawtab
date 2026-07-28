@@ -1,4 +1,4 @@
-import type { AgentEffort, ProcessProvider } from "@clawtab/shared";
+import type { AgentEffort, CalendarSchedule, ProcessProvider } from "@clawtab/shared";
 
 export type JobType = "binary" | "claude" | "job";
 export type TelegramLogMode = "off" | "on_prompt" | "always";
@@ -23,6 +23,7 @@ export interface Job {
   path: string;
   args: string[];
   cron: string;
+  schedule?: CalendarSchedule | null;
   secret_keys: string[];
   env: Record<string, string>;
   work_dir: string | null;

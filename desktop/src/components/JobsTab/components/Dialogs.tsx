@@ -94,7 +94,7 @@ export function Dialogs({
 
       {missedCronJobs.names.length > 0 && (
         <ConfirmDialog
-          message={`${missedCronJobs.names.length} missed cron job${missedCronJobs.names.length > 1 ? "s" : ""} detected:\n\n${missedCronJobs.names.map((name) => "  - " + name).join("\n")}\n\nRun them now?`}
+          message={`${missedCronJobs.names.length} missed scheduled job${missedCronJobs.names.length > 1 ? "s" : ""} detected:\n\n${missedCronJobs.names.map((name) => "  - " + name).join("\n")}\n\nRun them now?`}
           onConfirm={missedCronJobs.runAll} onCancel={missedCronJobs.clear}
           confirmLabel="Run All" confirmClassName="btn btn-primary btn-sm"
         />

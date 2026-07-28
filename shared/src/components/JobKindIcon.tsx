@@ -4,6 +4,7 @@ import type { RemoteJob } from "../types/job";
 import type { DetectedProcess, ProcessProvider } from "../types/process";
 import { colors } from "../theme/colors";
 import { radius } from "../theme/spacing";
+import { isJobScheduled } from "../util/schedule";
 import claudeIcon from "../assets/claude-icon.png";
 import cronIcon from "../assets/cron-icon.png";
 import manualIcon from "../assets/manual-icon.png";
@@ -22,7 +23,7 @@ export function kindForJob(job: RemoteJob): JobKind {
   if (job.job_type === "claude") return "claude";
   if (job.job_type === "shell") return "shell";
   if (job.agent_provider === "claude") return "claude";
-  return job.cron ? "cron" : "manual";
+  return isJobScheduled(job) ? "cron" : "manual";
 }
 
 export function providerKindForJob(job: RemoteJob): ProcessProvider | null {

@@ -8,7 +8,14 @@ import type {
   ProcessProvider,
   TelegramNotify,
 } from "@clawtab/shared";
-import { AgentSelector, agentSelectionLabel, JobDetailView, useJobDetail, useLogBuffer } from "@clawtab/shared";
+import {
+  AgentSelector,
+  agentSelectionLabel,
+  describeCalendarSchedule,
+  JobDetailView,
+  useJobDetail,
+  useLogBuffer,
+} from "@clawtab/shared";
 import type { AppSettings, Job } from "../types";
 import { EDITOR_LABELS } from "../constants";
 import { MarkdownHighlight, HighlightedTextarea } from "./MarkdownHighlight";
@@ -573,7 +580,9 @@ export function DesktopDetailSections({
             />
             <DetailRow
               label="Schedule"
-              value={onUpdateJob ? (
+              value={job.schedule ? (
+                describeCalendarSchedule(job.schedule)
+              ) : onUpdateJob ? (
                 <InlineTextField
                   value={job.cron}
                   placeholder="Manual"
@@ -582,6 +591,9 @@ export function DesktopDetailSections({
                 />
               ) : job.cron || "Manual"}
             />
+            {job.schedule ? (
+              <DetailRow label="Anchor" value={job.schedule.start} mono />
+            ) : null}
             <DetailRow
               label="Group"
               value={onUpdateJob ? (

@@ -90,3 +90,17 @@ Standard 5-field cron format: `minute hour day month weekday`
 | `30 */2 * * *` | Every 2 hours at :30 |
 
 The scheduler polls every 30 seconds and checks if any scheduled time falls within the last polling window.
+
+### Calendar Recurrences
+
+Use a calendar recurrence when the cadence must stay anchored to a selected date, such as every other Monday. It replaces `cron`; do not set both fields.
+
+```yaml
+schedule:
+  start: '2026-08-03T09:00'
+  repeat:
+    every: 2
+    unit: week
+```
+
+`start` is a local date and time in the Mac's timezone. `every: 1` runs weekly, `every: 2` runs every other week, and larger values preserve the same anchor date and time. The desktop editor uses the native macOS date/time picker and offers weekly intervals from 1 to 12 weeks.

@@ -378,6 +378,7 @@ pub fn build_agent_job(
         path: prompt_path.display().to_string(),
         args: Vec::new(),
         cron: String::new(),
+        schedule: None,
         secret_keys: Vec::new(),
         env: std::collections::HashMap::new(),
         work_dir: Some(work_dir),

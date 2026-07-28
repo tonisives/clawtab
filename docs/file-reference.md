@@ -31,6 +31,7 @@
 |---------|--------|
 | `manual` | GUI "Run Now" button |
 | `cron` | Scheduler match |
+| `calendar` | Calendar recurrence match |
 | `cli` | cwtctl or IPC command |
 | `restart` | Restart command |
 

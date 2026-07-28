@@ -537,6 +537,7 @@ fn job_to_remote(job: &Job) -> RemoteJob {
         },
         enabled: job.enabled,
         cron: job.cron.clone(),
+        schedule: job.schedule.clone(),
         group: job.group.clone(),
         slug: job.slug.clone(),
         work_dir,

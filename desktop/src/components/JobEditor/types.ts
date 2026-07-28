@@ -32,6 +32,7 @@ export const emptyJob: Job = {
   path: "",
   args: [],
   cron: "0 0 * * *",
+  schedule: null,
   secret_keys: [],
   env: {},
   work_dir: null,

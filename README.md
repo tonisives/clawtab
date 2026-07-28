@@ -38,7 +38,7 @@ A headless daemon adds the agent-aware layer: schedules, session metadata, task 
 - **Terminal-native controls** - Use `cwtctl`, `cwttui`, or the tmux popup to manage agents and scheduled jobs.
 - **Session continuity** - Open the same pane in tmux, the desktop app, web Remote, or mobile without starting a new process.
 - **Multiple providers** - Run Claude Code, Codex, OpenCode, Antigravity, and normal shells in one workspace.
-- **Scheduled jobs** - Create prompt, project-folder, and binary jobs with standard cron expressions.
+- **Scheduled jobs** - Create prompt, project-folder, and binary jobs with cron expressions or calendar-anchored weekly recurrences.
 - **Remote answers** - View live output and answer agent questions from web, mobile, push notifications, or Telegram.
 - **Secrets management** - Inject selected macOS Keychain or gopass secrets into jobs without storing them in project files.
 - **Optional visual workspace** - Arrange split panes and use the agent Mind Map in the Tauri desktop app.
@@ -145,7 +145,7 @@ tmux pane <-> ClawTab daemon <-> Relay server <-> Web or mobile client
 
 ## How It Works
 
-1. **Start in tmux** - Run an agent normally or launch a configured job through `cwtctl`, `cwttui`, the desktop app, Telegram, or cron.
+1. **Start in tmux** - Run an agent normally or launch a configured job through `cwtctl`, `cwttui`, the desktop app, Telegram, or a schedule.
 2. **Discover the session** - The daemon associates provider metadata, activity, questions, and a useful task title with the pane ID.
 3. **Keep it alive** - tmux preserves the process and terminal state while the daemon keeps schedules and integrations running.
 4. **Open it anywhere** - Attach through tmux or view the same pane from the desktop, web, or mobile interface.

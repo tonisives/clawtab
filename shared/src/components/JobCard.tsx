@@ -8,6 +8,12 @@ import type { ProcessProvider } from "../types/process";
 import { agentSelectionLabel } from "../util/agent";
 import { timeAgo, compactCron } from "../util/format";
 import { cronTooltip, nextCronDate, formatNextRun } from "../util/cron";
+import {
+  calendarScheduleTooltip,
+  describeCalendarSchedule,
+  isJobScheduled,
+  nextCalendarDate,
+} from "../util/schedule";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
@@ -53,8 +59,9 @@ export const JobCard = memo(function JobCard({
           ? timeAgo(status.started_at)
           : null;
 
-  const kind = job.cron ? "cron" : kindForJob(job);
-  const providerKind = job.cron ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
+  const scheduled = isJobScheduled(job);
+  const kind = scheduled ? "cron" : kindForJob(job);
+  const providerKind = scheduled ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
   const agentProvider = job.agent_provider ?? scheduledProviderKindForJob(job, defaultAgentProvider);
   const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
   const agentLabel = agentProvider ? agentSelectionLabel(agentProvider, agentModel, job.agent_effort) : null;
@@ -101,12 +108,24 @@ export const JobCard = memo(function JobCard({
               {job.name}
             </Text>
             <View style={styles.meta}>
-              {job.cron && job.enabled ? (() => {
-                const next = nextCronDate(job.cron);
+              {scheduled && job.enabled ? (() => {
+                const next = job.schedule
+                  ? nextCalendarDate(job.schedule)
+                  : nextCronDate(job.cron);
                 return next ? <Text style={styles.nextRunText} numberOfLines={1}>{formatNextRun(next)}</Text> : null;
               })() : null}
               {lastRun ? <Text style={styles.metaText}>{lastRun}</Text> : null}
-              {job.cron ? <Tooltip label={cronTooltip(job.cron)}><Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text></Tooltip> : null}
+              {job.schedule ? (
+                <Tooltip label={calendarScheduleTooltip(job.schedule)}>
+                  <Text style={styles.cronText} numberOfLines={1}>
+                    {describeCalendarSchedule(job.schedule)}
+                  </Text>
+                </Tooltip>
+              ) : job.cron ? (
+                <Tooltip label={cronTooltip(job.cron)}>
+                  <Text style={styles.cronText} numberOfLines={1}>{compactCron(job.cron)}</Text>
+                </Tooltip>
+              ) : null}
               {agentLabel ? <Text style={styles.agentText} numberOfLines={1}>{agentLabel}</Text> : null}
             </View>
           </View>

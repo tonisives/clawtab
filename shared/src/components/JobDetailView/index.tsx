@@ -25,6 +25,12 @@ import { MessageInput } from "../MessageInput";
 import { ParamsDialog } from "../ParamsDialog";
 import { formatTime, compactCron, shortenPath } from "../../util/format";
 import { nextCronDate, formatNextRun, cronTooltip } from "../../util/cron";
+import {
+  calendarScheduleTooltip,
+  describeCalendarSchedule,
+  isJobScheduled,
+  nextCalendarDate,
+} from "../../util/schedule";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "../JobKindIcon";
@@ -208,7 +214,8 @@ export function JobDetailView({
   const state = status.state;
   const isRunning = state === "running";
   const isPaused = state === "paused";
-  const isManual = !job.cron;
+  const scheduled = isJobScheduled(job);
+  const isManual = !scheduled;
 
   const [runPending, setRunPending] = useState(false);
   const [outputCollapsed, setOutputCollapsed] = useState(false);
@@ -396,8 +403,8 @@ export function JobDetailView({
   const compactLeadingPills = headerWidth > 0 && headerWidth < 940;
   const leadingIconSize = compactLeadingPills ? 22 : 28;
   const providerBadgeSize = compactLeadingPills ? 12 : 14;
-  const jobTypeIcon = job.cron ? "cron" : kindForJob(job);
-  const providerIcon = job.cron ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
+  const jobTypeIcon = scheduled ? "cron" : kindForJob(job);
+  const providerIcon = scheduled ? scheduledProviderKindForJob(job, defaultAgentProvider) : null;
   const agentProvider = job.agent_provider ?? scheduledProviderKindForJob(job, defaultAgentProvider);
   const agentModel = job.agent_provider ? job.agent_model : defaultAgentModel;
   const agentEffort = job.agent_effort ?? defaultAgentEffort(agentProvider, agentModel);
@@ -452,7 +459,7 @@ export function JobDetailView({
         <View style={styles.infoPills}>
           <View
             style={[styles.infoLeadingIcon, { width: leadingIconSize, height: leadingIconSize }]}
-            {...(isWeb ? { title: job.cron ? `${job.job_type}: ${providerIcon}` : job.job_type } as any : {})}
+            {...(isWeb ? { title: scheduled ? `${job.job_type}: ${providerIcon}` : job.job_type } as any : {})}
           >
             <JobKindIcon kind={jobTypeIcon} size={leadingIconSize} compact bare />
             {providerIcon ? (
@@ -487,7 +494,11 @@ export function JobDetailView({
               <span style={{ fontSize: 11, lineHeight: 1, letterSpacing: 1 }}>⋮⋮</span>
             </div>
           ) : null}
-          {job.cron && onUpdateJob && editHeaderFields ? (
+          {job.schedule ? (
+            <View style={styles.infoPill} {...(isWeb ? { title: calendarScheduleTooltip(job.schedule) } as any : {})}>
+              <Text style={styles.cronText}>{describeCalendarSchedule(job.schedule)}</Text>
+            </View>
+          ) : job.cron && onUpdateJob && editHeaderFields ? (
             <TouchableOpacity
               style={styles.infoPill}
               onPress={openScheduleEditor}
@@ -501,8 +512,10 @@ export function JobDetailView({
               <Text style={styles.cronText}>{compactCron(job.cron)}</Text>
             </View>
           ) : null}
-          {job.cron && job.enabled ? (() => {
-            const next = nextCronDate(job.cron);
+          {scheduled && job.enabled ? (() => {
+            const next = job.schedule
+              ? nextCalendarDate(job.schedule)
+              : nextCronDate(job.cron);
             return next ? (
               <View style={styles.infoPill}>
                 <Text style={styles.nextRunText}>next: {formatNextRun(next)}</Text>
@@ -590,7 +603,7 @@ export function JobDetailView({
           <Text style={styles.headerTitleText} numberOfLines={1}>
             {job.name}
           </Text>
-          {isRunning && !!job.cron ? (
+          {isRunning && scheduled ? (
             <View
               style={styles.activeRunMarker}
               {...(isWeb ? { title: "Running cron job" } as any : {})}

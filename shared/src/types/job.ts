@@ -4,6 +4,18 @@ export type JobType = "binary" | "claude" | "job";
 
 export type JobSortMode = "name" | "activity" | "recent" | "added";
 
+export type CalendarRepeatUnit = "week";
+
+export type CalendarRepeat = {
+  every: number;
+  unit: CalendarRepeatUnit;
+};
+
+export type CalendarSchedule = {
+  start: string;
+  repeat: CalendarRepeat;
+};
+
 export interface JobParam {
   name: string;
   value?: string | null;
@@ -14,6 +26,7 @@ export interface RemoteJob {
   job_type: string;
   enabled: boolean;
   cron: string;
+  schedule?: CalendarSchedule | null;
   group: string;
   slug: string;
   work_dir?: string;

@@ -53,7 +53,7 @@ The wizard auto-detects tools and shows version + path for each. Missing tools c
 2. Click "New Job"
 3. Set type to **Binary**
 4. Set path to your script (e.g., `/path/to/backup.sh`)
-5. Set a cron expression (e.g., `0 0 * * *` for daily at midnight)
+5. Choose a weekly calendar recurrence or set a cron expression (e.g., `0 0 * * *` for daily at midnight)
 6. Save
 
 ### Claude job (run a prompt)
@@ -80,7 +80,7 @@ All job files (config, prompts, context) are stored centrally at `~/.config/claw
 - **CLI**: `cwtctl jobs run <group>/<name>`
 - **TUI**: Select job, press `r`
 - **Telegram**: Send `/run <name>` to your bot
-- **Cron**: Automatically triggered based on the job's cron expression
+- **Schedule**: Automatically triggered by the job's cron expression or calendar recurrence
 
 ## Checking Status
 

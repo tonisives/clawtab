@@ -1,5 +1,5 @@
 import { CURRENT_AGENT_MODEL_OPTIONS, isSyntheticAgentModel } from "@clawtab/shared";
-import type { ProcessProvider } from "@clawtab/shared";
+import type { CalendarSchedule, ProcessProvider } from "@clawtab/shared";
 import { DAYS, CRON_DAY_MAP, DAY_CRON_MAP, JOB_NAME_MAX_LENGTH } from "./types";
 
 export const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg|bmp|tiff?)$/i;
@@ -130,4 +130,24 @@ export function buildWeeklyCron(days: string[], times: string[]): string {
     return `${m ?? 0} ${h ?? 0} * * ${dowList}`;
   });
   return crons.join(" | ");
+}
+
+export function buildCalendarSchedule(start: string, every: number): CalendarSchedule {
+  return {
+    start,
+    repeat: {
+      every: Math.max(1, Math.floor(every)),
+      unit: "week",
+    },
+  };
+}
+
+export function defaultCalendarStart(now: Date = new Date()): string {
+  const start = new Date(now);
+  start.setDate(start.getDate() + 1);
+  start.setHours(9, 0, 0, 0);
+  const year = start.getFullYear();
+  const month = String(start.getMonth() + 1).padStart(2, "0");
+  const day = String(start.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}T09:00`;
 }

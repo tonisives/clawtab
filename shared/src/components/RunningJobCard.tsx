@@ -5,6 +5,7 @@ import type { ProcessProvider } from "../types/process";
 import { StatusBadge } from "./StatusBadge";
 import { PopupMenu } from "./PopupMenu";
 import { JobKindIcon, kindForJob, scheduledProviderKindForJob } from "./JobKindIcon";
+import { isJobScheduled } from "../util/schedule";
 import { timeAgo } from "../util/format";
 import { agentSelectionLabel } from "../util/agent";
 import { colors } from "../theme/colors";
@@ -83,7 +84,7 @@ export const RunningJobCard = memo(function RunningJobCard({
       activeOpacity={0.7}
     >
       <View style={styles.row}>
-        {job.cron ? (
+        {isJobScheduled(job) ? (
           <View style={styles.iconWrap}>
             <JobKindIcon kind="cron" />
             {(() => { const pk = scheduledProviderKindForJob(job, defaultAgentProvider); return pk ? <View style={styles.providerBadge}><JobKindIcon kind={pk} size={14} compact bare /></View> : null; })()}
