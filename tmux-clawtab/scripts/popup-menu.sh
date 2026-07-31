@@ -201,7 +201,7 @@ draw_tabs() {
         label_len=$((label_len + ${#TABS[$i]} + 2))
     done
     label_len=$((label_len + 1))  # trailing space before fill
-    local top_meta="${AGENT_LABEL} ${PANE_ID}"
+    local top_meta="${AGENT_LABEL} ${PANE_ID} (yp yank)"
     local meta_len=$((${#top_meta} + 2))
     local fill=$((TERM_COLS - 2 - label_len - meta_len))
     if [ $fill -lt 0 ]; then
@@ -603,7 +603,8 @@ start_data_load
 
 trim_for_row() {
     local text="$1"
-    local max_len=$((TERM_COLS - 16))
+    local reserved_cols="${2:-16}"
+    local max_len=$((TERM_COLS - reserved_cols))
     [ $max_len -lt 10 ] && max_len=10
     if [ ${#text} -gt $max_len ]; then
         printf "%s..." "${text:0:$((max_len - 3))}"
@@ -778,7 +779,7 @@ draw_shortcuts() {
         # Key hint
         local hint=""
         if [ $i -eq 0 ]; then hint="r / R AI"; fi
-        if [ $i -eq 1 ]; then hint="y"; fi
+        if [ $i -eq 1 ]; then hint="Y"; fi
         if [ $i -eq 2 ]; then hint="f"; fi
 
         if [ $i -eq $SHORTCUT_CURSOR ]; then
@@ -892,7 +893,7 @@ draw_shortcuts() {
 
             if [ $row -lt $((TERM_ROWS - 1)) ]; then
                 draw_row_start $row
-                printf "${C_DIM}Session ID:${C_RESET} ${C_NORMAL}%s${C_RESET}" "$(trim_for_row "$SESSION_ID")" >&3
+                printf "${C_DIM}Session ID:${C_RESET} ${C_NORMAL}%s${C_RESET}  ${C_DIM}(ys yank)${C_RESET}" "$(trim_for_row "$SESSION_ID" 27)" >&3
                 draw_row_end $row
                 ((row++))
             fi
@@ -1243,6 +1244,19 @@ read_escape_key() {
     esac
 }
 
+read_yank_key() {
+    local yank_key=""
+    if ! IFS= read -rsn1 -t 0.5 yank_key; then
+        echo "unknown"
+        return
+    fi
+    case "$yank_key" in
+        "s") echo "shortcut_yank_session" ;;
+        "p") echo "shortcut_yank_pane" ;;
+        *) echo "unknown" ;;
+    esac
+}
+
 # Read a single keypress (handles escape sequences)
 read_key() {
     if ! IFS= read -rsn1 -t 1 key; then
@@ -1259,7 +1273,8 @@ read_key() {
         "q") echo "esc" ;;
         "r") echo "shortcut_r" ;;
         "R") echo "shortcut_ai_rename" ;;
-        "y") echo "shortcut_y" ;;
+        "Y") echo "shortcut_auto_yes" ;;
+        "y") read_yank_key ;;
         "f") echo "shortcut_f" ;;
         "/") echo "search" ;;
         $'\x7f') echo "backspace" ;;
@@ -1501,9 +1516,21 @@ while true; do
                 draw
             fi
             ;;
-        shortcut_y)
+        shortcut_auto_yes)
             "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
             if [ $TAB -eq 0 ]; then draw_shortcuts; draw_status_bar; fi
+            ;;
+        shortcut_yank_session)
+            if [ -n "$SESSION_ID" ]; then
+                tmux set-buffer -w -- "$SESSION_ID"
+                tmux display-message "ClawTab: session ID yanked"
+            else
+                tmux display-message "ClawTab: no session ID available"
+            fi
+            ;;
+        shortcut_yank_pane)
+            tmux set-buffer -w -- "$PANE_ID"
+            tmux display-message "ClawTab: pane ID yanked"
             ;;
         shortcut_f)
             "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
