@@ -10,8 +10,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
 use portable_pty::PtySize;
 
@@ -25,15 +23,60 @@ pub use viewer::{OutputSink, SpawnResult};
 
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
+    /// Session-local `window-size` values from before the first active viewer.
+    /// tmux changes this option to `manual` whenever `resize-window` runs.
+    window_size_options: HashMap<String, Option<String>>,
     recent: Arc<Mutex<RecentPaneCache>>,
 }
 
-pub(super) fn stop_viewer(viewer: PaneViewer) {
-    viewer.stop.store(true, Ordering::Relaxed);
-    let _ = crate::tmux::kill_session(&viewer.view_session);
-    if !viewer.moved {
-        let _ =
-            crate::tmux::resize_window(&viewer.window_id, viewer.native_cols, viewer.native_rows);
+impl PtyManager {
+    fn remember_window_size_option(&mut self, session: &str) {
+        if self.window_size_options.contains_key(session) {
+            return;
+        }
+        match crate::tmux::get_session_window_size(session) {
+            Ok(value) => {
+                self.window_size_options.insert(session.to_string(), value);
+            }
+            Err(error) => {
+                log::warn!(
+                    "failed to read tmux session {} window-size option: {}",
+                    session,
+                    error
+                );
+            }
+        }
+    }
+
+    fn stop_viewer(&mut self, viewer: PaneViewer) {
+        viewer.stop.store(true, Ordering::Relaxed);
+        let _ = crate::tmux::kill_session(&viewer.view_session);
+        if !viewer.moved {
+            let _ = crate::tmux::resize_window(
+                &viewer.window_id,
+                viewer.native_cols,
+                viewer.native_rows,
+            );
+        }
+
+        let session = viewer.tmux_session;
+        let has_active_viewer = self
+            .sessions
+            .values()
+            .any(|active| active.tmux_session == session);
+        if !has_active_viewer {
+            if let Some(original) = self.window_size_options.remove(&session) {
+                if let Err(error) =
+                    crate::tmux::restore_session_window_size(&session, original.as_deref())
+                {
+                    log::warn!(
+                        "failed to restore tmux session {} window-size option: {}",
+                        session,
+                        error
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -60,6 +103,7 @@ impl PtyManager {
         cleanup_orphaned_ct_windows(&protected);
         Self {
             sessions: HashMap::new(),
+            window_size_options: HashMap::new(),
             recent: Arc::new(Mutex::new(RecentPaneCache::new())),
         }
     }
@@ -83,7 +127,7 @@ impl PtyManager {
         for pane_id in dead_panes {
             log::info!("[pty {}] reaping dead viewer during process scan", pane_id);
             if let Some(viewer) = self.sessions.remove(&pane_id) {
-                stop_viewer(viewer);
+                self.stop_viewer(viewer);
             }
         }
     }
@@ -213,7 +257,7 @@ impl PtyManager {
         if let Some(viewer) = self.sessions.remove(pane_id) {
             // Dedicated ct-* captures remain parked for an explicit release.
             // In-place single-pane views return to their desktop size here.
-            stop_viewer(viewer);
+            self.stop_viewer(viewer);
         }
         Ok(())
     }
@@ -224,8 +268,8 @@ impl PtyManager {
         if moved == Some(false) || (moved.is_none() && find_captured_window(pane_id).is_none()) {
             return Ok(());
         }
-        // Give tmux a moment for the PTY to detach before moving the pane.
-        thread::sleep(Duration::from_millis(100));
+        // `kill-session` completes the grouped view-session teardown before it
+        // returns, so the pane can be restored synchronously without a delay.
         release_captured_pane(pane_id)
     }
 

@@ -1180,6 +1180,33 @@ pub fn resize_window(window_id: &str, cols: u16, rows: u16) -> Result<(), String
     )
 }
 
+/// Return the session-local `window-size` value, or `None` when it inherits the
+/// server default.
+pub fn get_session_window_size(session: &str) -> Result<Option<String>, String> {
+    let value = run_capture(
+        &["show-options", "-qv", "-t", session, "window-size"],
+        "tmux::get_session_window_size",
+    )?;
+    let value = value.trim();
+    Ok((!value.is_empty()).then(|| value.to_string()))
+}
+
+/// Restore a session-local `window-size` value captured by
+/// [`get_session_window_size`].
+pub fn restore_session_window_size(session: &str, value: Option<&str>) -> Result<(), String> {
+    if let Some(value) = value {
+        run_ok(
+            &["set-option", "-t", session, "window-size", value],
+            "tmux::restore_session_window_size::set",
+        )
+    } else {
+        run_ok(
+            &["set-option", "-qu", "-t", session, "window-size"],
+            "tmux::restore_session_window_size::unset",
+        )
+    }
+}
+
 /// `break-pane -d -s <pane_id> -t <session>: -n <name>`.
 pub fn break_pane_detached(
     pane_id: &str,

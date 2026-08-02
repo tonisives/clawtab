@@ -75,6 +75,7 @@ pub(super) fn run(
 
     // Resize the captured window to match the viewport so content reflows.
     if cols > 0 && rows > 0 {
+        manager.remember_window_size_option(&captured.session);
         let _ = crate::tmux::resize_window(&captured.window_id, cols, rows);
     }
 
@@ -103,6 +104,7 @@ pub(super) fn run(
             writer: attached.writer,
             master: attached.master,
             window_id: captured.window_id,
+            tmux_session: captured.session,
             view_session,
             attach_generation,
             native_cols,

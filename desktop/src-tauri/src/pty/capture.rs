@@ -57,6 +57,12 @@ fn next_ct_window_name(session: &str, base: &str) -> String {
 /// a new `ct-<orig_window_name>-<N>` window and record its origin for release.
 /// Single-pane windows stay in place and keep their existing name.
 ///
+/// The extraction for multi-pane windows is required by the PTY transport:
+/// `tmux attach-session` renders a complete window, not one pane. Zooming the
+/// target pane in a grouped view session does not isolate it because zoom is a
+/// property of the shared window; it would also zoom the user's desktop window
+/// and would conflict with another viewer for a sibling pane.
+///
 /// `tmux_session` MUST be the real owning session of the pane, supplied by the
 /// caller. Do NOT trust `#{session_name}` from `display-message -t %pane_id`:
 /// when a pane's window is shared across a session group, tmux resolves the

@@ -20,7 +20,7 @@ pub(super) fn reap_dead_viewer(manager: &mut PtyManager, pane_id: &str) {
         pane_id
     );
     if let Some(dead) = manager.sessions.remove(pane_id) {
-        super::super::stop_viewer(dead);
+        manager.stop_viewer(dead);
     }
 }
 

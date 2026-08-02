@@ -9,11 +9,9 @@ use tauri::AppHandle;
 
 use crate::debug_spawn;
 
-/// Pane viewer: captured pane moved into a new `ct-<orig>-<N>` window in its
-/// original tmux session, streamed via a local PTY running `tmux attach-session`
-/// against an ephemeral grouped view session. This gives us independent resize
-/// on the captured window without disturbing other clients of the real tmux
-/// server, while keeping the pane discoverable inside its original session.
+/// Pane viewer streamed via a local PTY running `tmux attach-session` against
+/// an ephemeral grouped view session. Multi-pane captures move into a dedicated
+/// `ct-<orig>-<N>` window; single-pane windows remain in place.
 pub(super) struct PaneViewer {
     pub(super) stop: Arc<AtomicBool>,
     /// Set to `false` by the reader thread just before it exits. Lets
@@ -23,6 +21,8 @@ pub(super) struct PaneViewer {
     pub(super) master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     /// Captured window id (@...) in the original session.
     pub(super) window_id: String,
+    /// Original tmux session whose `window-size` option is changed by resize-window.
+    pub(super) tmux_session: String,
     /// Ephemeral grouped view session (clawtab-view-N); killed on stop.
     pub(super) view_session: String,
     /// Monotonic attachment generation for this pane viewer.
