@@ -16,7 +16,7 @@ use std::time::Duration;
 use portable_pty::PtySize;
 
 use cache::RecentPaneCache;
-use capture::release_captured_pane;
+use capture::{find_captured_window, release_captured_pane};
 use cleanup::{cleanup_orphaned_ct_windows, cleanup_orphaned_view_sessions};
 use emit::emit_initial_snapshot;
 use viewer::PaneViewer;
@@ -26,6 +26,15 @@ pub use viewer::{OutputSink, SpawnResult};
 pub struct PtyManager {
     sessions: HashMap<String, PaneViewer>,
     recent: Arc<Mutex<RecentPaneCache>>,
+}
+
+pub(super) fn stop_viewer(viewer: PaneViewer) {
+    viewer.stop.store(true, Ordering::Relaxed);
+    let _ = crate::tmux::kill_session(&viewer.view_session);
+    if !viewer.moved {
+        let _ =
+            crate::tmux::resize_window(&viewer.window_id, viewer.native_cols, viewer.native_rows);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -74,8 +83,7 @@ impl PtyManager {
         for pane_id in dead_panes {
             log::info!("[pty {}] reaping dead viewer during process scan", pane_id);
             if let Some(viewer) = self.sessions.remove(&pane_id) {
-                viewer.stop.store(true, Ordering::Relaxed);
-                let _ = crate::tmux::kill_session(&viewer.view_session);
+                stop_viewer(viewer);
             }
         }
     }
@@ -203,16 +211,19 @@ impl PtyManager {
         }
 
         if let Some(viewer) = self.sessions.remove(pane_id) {
-            viewer.stop.store(true, Ordering::Relaxed);
-            // Kill only the ephemeral view session. The captured window stays
-            // in clawtab-<group> so the user can re-attach or release later.
-            let _ = crate::tmux::kill_session(&viewer.view_session);
+            // Dedicated ct-* captures remain parked for an explicit release.
+            // In-place single-pane views return to their desktop size here.
+            stop_viewer(viewer);
         }
         Ok(())
     }
 
     pub fn release(&mut self, pane_id: &str) -> Result<(), String> {
+        let moved = self.sessions.get(pane_id).map(|viewer| viewer.moved);
         let _ = self.destroy(pane_id, None);
+        if moved == Some(false) || (moved.is_none() && find_captured_window(pane_id).is_none()) {
+            return Ok(());
+        }
         // Give tmux a moment for the PTY to detach before moving the pane.
         thread::sleep(Duration::from_millis(100));
         release_captured_pane(pane_id)

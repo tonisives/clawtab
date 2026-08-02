@@ -97,6 +97,10 @@ export interface JobDetailViewProps {
   hideRuns?: boolean;
   // Expand live output to fill available space (no fixed height)
   expandOutput?: boolean;
+  // Start the collapsible live output section closed
+  defaultOutputCollapsed?: boolean;
+  // Start run history closed unless a specific run must be expanded
+  defaultRunsCollapsed?: boolean;
   // Optional style override for the container
   containerStyle?: import("react-native").StyleProp<import("react-native").ViewStyle>;
   // Optional style override for the top content area
@@ -178,6 +182,8 @@ export function JobDetailView({
   sectionStyle,
   hideRuns,
   expandOutput,
+  defaultOutputCollapsed = false,
+  defaultRunsCollapsed = false,
   containerStyle,
   contentStyle,
   headerLeftInset,
@@ -218,8 +224,8 @@ export function JobDetailView({
   const isManual = !scheduled;
 
   const [runPending, setRunPending] = useState(false);
-  const [outputCollapsed, setOutputCollapsed] = useState(false);
-  const [runsCollapsed, setRunsCollapsed] = useState(false);
+  const [outputCollapsed, setOutputCollapsed] = useState(defaultOutputCollapsed);
+  const [runsCollapsed, setRunsCollapsed] = useState(defaultRunsCollapsed && !expandRunId);
   const [showParamsModal, setShowParamsModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState(job.cron ?? "");

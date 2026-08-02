@@ -1,6 +1,12 @@
 use super::viewer::is_view_session;
 use crate::tmux as tmux_api;
 
+pub(super) struct CaptureResult {
+    pub(super) session: String,
+    pub(super) window_id: String,
+    pub(super) moved: bool,
+}
+
 pub(super) fn resolve_non_view_session_for_window(window_id: &str, fallback: &str) -> String {
     let rows = match tmux_api::list_all_windows_with_session() {
         Ok(v) => v,
@@ -47,10 +53,9 @@ fn next_ct_window_name(session: &str, base: &str) -> String {
     format!("ct-{}-{}", base, n)
 }
 
-/// Break a pane into a new `ct-<orig_window_name>-<N>` window inside the pane's
-/// original tmux session. Records origin as a window option so release can put
-/// it back. Returns (session, window_id). Idempotent: if already captured,
-/// returns the existing session/window.
+/// Prepare a pane for viewing. Multi-pane windows move the selected pane into
+/// a new `ct-<orig_window_name>-<N>` window and record its origin for release.
+/// Single-pane windows stay in place and keep their existing name.
 ///
 /// `tmux_session` MUST be the real owning session of the pane, supplied by the
 /// caller. Do NOT trust `#{session_name}` from `display-message -t %pane_id`:
@@ -63,11 +68,15 @@ fn next_ct_window_name(session: &str, base: &str) -> String {
 /// target starts with `%`, tmux treats it as the active pane of the session,
 /// NOT the pane with that ID. Pane IDs are globally unique, so the session
 /// prefix adds nothing here and actively breaks pane lookup.
-pub(super) fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String, String), String> {
+pub(super) fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<CaptureResult, String> {
     if let Some((existing_sess, existing_win)) = find_captured_window(pane_id) {
         let pane_count = tmux_api::display_window_pane_count(&existing_win)?;
         if pane_count <= 1 {
-            return Ok((existing_sess, existing_win));
+            return Ok(CaptureResult {
+                session: existing_sess,
+                window_id: existing_win,
+                moved: true,
+            });
         }
 
         // Origin session from @clawtab-origin is authoritative. See the big
@@ -90,7 +99,11 @@ pub(super) fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String,
         );
         let _ = tmux_api::set_window_origin(&new_win, &origin_meta);
 
-        return Ok((origin_session.to_string(), new_win));
+        return Ok(CaptureResult {
+            session: origin_session.to_string(),
+            window_id: new_win,
+            moved: true,
+        });
     }
 
     let origin = tmux_api::display_pane_origin_full(pane_id)?;
@@ -99,19 +112,20 @@ pub(super) fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String,
     let orig_window_name = origin.window_name;
     let orig_window_panes = origin.window_panes;
 
-    let new_name = next_ct_window_name(tmux_session, &orig_window_name);
+    // A single pane can be resized in its existing window. Keep both its
+    // window identity and name unchanged; the viewer records the native size
+    // and restores it when the remote or desktop view closes.
+    if orig_window_panes <= 1 {
+        return Ok(CaptureResult {
+            session: tmux_session.to_string(),
+            window_id: orig_window_id,
+            moved: false,
+        });
+    }
 
-    // If the pane is already alone in its window, skip break-pane and just
-    // rename the window. This avoids the "sessions are grouped" error when
-    // the target session is part of a session group (e.g. because a view
-    // session is attached to it).
-    let new_win = if orig_window_panes <= 1 {
-        tmux_api::rename_window(&orig_window_id, &new_name)?;
-        orig_window_id.clone()
-    } else {
-        tmux_api::break_pane_detached(pane_id, tmux_session, &new_name)?;
-        tmux_api::display_pane_window_id(pane_id)?
-    };
+    let new_name = next_ct_window_name(tmux_session, &orig_window_name);
+    tmux_api::break_pane_detached(pane_id, tmux_session, &new_name)?;
+    let new_win = tmux_api::display_pane_window_id(pane_id)?;
 
     // Origin metadata: session\twindow_id\tpane_index\twindow_name (matches the
     // format release_captured_pane expects).
@@ -121,7 +135,11 @@ pub(super) fn capture_pane(pane_id: &str, tmux_session: &str) -> Result<(String,
     );
     let _ = tmux_api::set_window_origin(&new_win, &origin_meta);
 
-    Ok((tmux_session.to_string(), new_win))
+    Ok(CaptureResult {
+        session: tmux_session.to_string(),
+        window_id: new_win,
+        moved: true,
+    })
 }
 
 /// Release a captured pane back to its original session:window.

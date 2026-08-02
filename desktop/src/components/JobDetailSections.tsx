@@ -1083,6 +1083,8 @@ export function DesktopJobDetail({
         onToggleAutoYes={onToggleAutoYes}
         autoYesShortcut={autoYesShortcut}
         sectionStyle={cardSectionStyle}
+        defaultOutputCollapsed
+        defaultRunsCollapsed
         containerStyle={desktopContainerStyle}
         contentStyle={contentStyle as any}
         headerLeftInset={headerLeftInset}

@@ -43,7 +43,7 @@ pub(super) fn run(
     let (native_cols, native_rows) = prepare::read_native_size(pane_id, spawn_started);
     let tmux_session = prepare::resolve_real_session(pane_id, tmux_session);
 
-    let (base_session, window_id) = capture_pane(pane_id, &tmux_session).map_err(|e| {
+    let captured = capture_pane(pane_id, &tmux_session).map_err(|e| {
         log::warn!(
             "[pty {}] capture_pane failed after {}ms: {}",
             pane_id,
@@ -55,13 +55,17 @@ pub(super) fn run(
     log::info!(
         "[pty {}] captured base_session={} window_id={} after {}ms",
         pane_id,
-        base_session,
-        window_id,
+        captured.session,
+        captured.window_id,
         spawn_started.elapsed().as_millis()
     );
 
-    let view_session =
-        view_session::create_view_session(pane_id, &base_session, &window_id, spawn_started)?;
+    let view_session = view_session::create_view_session(
+        pane_id,
+        &captured.session,
+        &captured.window_id,
+        spawn_started,
+    )?;
 
     let attached = attach::open_pty_and_attach(pane_id, &view_session, cols, rows, spawn_started)?;
 
@@ -71,7 +75,7 @@ pub(super) fn run(
 
     // Resize the captured window to match the viewport so content reflows.
     if cols > 0 && rows > 0 {
-        let _ = crate::tmux::resize_window(&window_id, cols, rows);
+        let _ = crate::tmux::resize_window(&captured.window_id, cols, rows);
     }
 
     // Let attach-session settle, then push a full snapshot and force redraw.
@@ -98,9 +102,12 @@ pub(super) fn run(
             alive: alive_flag,
             writer: attached.writer,
             master: attached.master,
-            window_id,
+            window_id: captured.window_id,
             view_session,
             attach_generation,
+            native_cols,
+            native_rows,
+            moved: captured.moved,
         },
     );
 

@@ -20,8 +20,7 @@ pub(super) fn reap_dead_viewer(manager: &mut PtyManager, pane_id: &str) {
         pane_id
     );
     if let Some(dead) = manager.sessions.remove(pane_id) {
-        dead.stop.store(true, Ordering::Relaxed);
-        let _ = crate::tmux::kill_session(&dead.view_session);
+        super::super::stop_viewer(dead);
     }
 }
 
@@ -42,9 +41,12 @@ pub(super) fn try_reuse_existing_viewer(
     }
 
     let attach_generation = ATTACH_COUNTER.fetch_add(1, Ordering::Relaxed);
-    if let Some(viewer) = manager.sessions.get_mut(pane_id) {
+    let native_size = if let Some(viewer) = manager.sessions.get_mut(pane_id) {
         viewer.attach_generation = attach_generation;
-    }
+        (viewer.native_cols, viewer.native_rows)
+    } else {
+        return Ok(None);
+    };
     manager.resize(pane_id, cols, rows)?;
     log::info!(
         "[pty {}] reused existing viewer generation={} resized after {}ms",
@@ -54,10 +56,9 @@ pub(super) fn try_reuse_existing_viewer(
     );
     refresh_attached_pane(sink, &manager.recent, pane_id);
 
-    let (native_cols, native_rows) = crate::tmux::display_pane_size(pane_id)?;
     let result = SpawnResult {
-        native_cols,
-        native_rows,
+        native_cols: native_size.0,
+        native_rows: native_size.1,
         attach_generation,
     };
     log::debug!(

@@ -27,6 +27,11 @@ pub(super) struct PaneViewer {
     pub(super) view_session: String,
     /// Monotonic attachment generation for this pane viewer.
     pub(super) attach_generation: u64,
+    /// Size before ClawTab resized this window for the viewer.
+    pub(super) native_cols: u16,
+    pub(super) native_rows: u16,
+    /// Whether capture moved the pane into a dedicated ct-* window.
+    pub(super) moved: bool,
 }
 
 /// Where PTY output bytes should be sent.
