@@ -1136,7 +1136,8 @@ async fn generate_pane_title(pane_id: &str) -> Result<String, String> {
     }
 
     let mut provider = settings
-        .title_summary_provider
+        .title_summary
+        .provider
         .or(detected_provider)
         .unwrap_or(settings.default_provider);
     if provider == ProcessProvider::Shell {
@@ -1147,7 +1148,8 @@ async fn generate_pane_title(pane_id: &str) -> Result<String, String> {
     }
 
     let model = settings
-        .title_summary_model
+        .title_summary
+        .model
         .clone()
         .or_else(|| {
             let models = settings.enabled_models.get(provider.as_str())?;
@@ -1158,6 +1160,7 @@ async fn generate_pane_title(pane_id: &str) -> Result<String, String> {
                 .then(|| settings.default_model.clone())
                 .flatten()
         });
+    let effort = settings.title_summary.effort.as_deref();
 
     let context_limit = 6_000;
     let compact_context = |text: &str| -> String {
@@ -1207,6 +1210,9 @@ Do not use tools.\n\n",
             if let Some(model) = model.as_ref() {
                 command.args(["--model", model]);
             }
+            if let Some(effort) = effort {
+                command.args(["--effort", effort]);
+            }
             command.arg(&prompt);
         }
         ProcessProvider::Codex => {
@@ -1219,6 +1225,11 @@ Do not use tools.\n\n",
             ]);
             if let Some(model) = model.as_ref() {
                 command.args(["--model", model]);
+            }
+            if let Some(effort) = effort {
+                command
+                    .arg("-c")
+                    .arg(format!("model_reasoning_effort={effort}"));
             }
             command.arg(&prompt);
         }

@@ -135,8 +135,7 @@ export interface AppSettings {
   default_work_dir: string;
   default_provider: ProcessProvider;
   default_model: string | null;
-  title_summary_provider: ProcessProvider | null;
-  title_summary_model: string | null;
+  title_summary: TitleSummarySettings;
   enabled_models: Record<string, string[]>;
   claude_path: string;
   preferred_editor: string;
@@ -158,6 +157,12 @@ export interface AppSettings {
   notify_questions_local: boolean;
   notify_questions_remote: boolean;
   auto_release_on_blur: boolean;
+}
+
+export interface TitleSummarySettings {
+  provider: ProcessProvider | null;
+  model: string | null;
+  effort: AgentEffort | null;
 }
 
 export interface ToolInfo {

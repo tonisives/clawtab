@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
-import { isSyntheticAgentModel } from "@clawtab/shared"
+import { AGENT_EFFORT_OPTIONS, isSyntheticAgentModel } from "@clawtab/shared"
 import type { ProcessProvider } from "@clawtab/shared"
 import type { AppSettings } from "../types"
 import {
@@ -233,7 +233,8 @@ export function ModelsPanel() {
   })
   const defaultProvider = settings.default_provider
   const defaultModel = settings.default_model ?? null
-  const titleSummaryProvider = settings.title_summary_provider ?? null
+  const titleSummary = settings.title_summary ?? { provider: null, model: null, effort: null }
+  const titleSummaryProvider = titleSummary.provider ?? null
   const titleSummaryModels = titleSummaryProvider
     ? (enabledModels[titleSummaryProvider] ?? [])
     : []
@@ -365,8 +366,12 @@ export function ModelsPanel() {
                 ? event.target.value as ProcessProvider
                 : null
               update({
-                title_summary_provider: provider,
-                title_summary_model: null,
+                title_summary: {
+                  ...titleSummary,
+                  provider,
+                  model: null,
+                  effort: null,
+                },
               })
             }}
           >
@@ -380,9 +385,11 @@ export function ModelsPanel() {
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Model</label>
           <select
-            value={settings.title_summary_model ?? ""}
+            value={titleSummary.model ?? ""}
             disabled={!titleSummaryProvider}
-            onChange={(event) => update({ title_summary_model: event.target.value || null })}
+            onChange={(event) => update({
+              title_summary: { ...titleSummary, model: event.target.value || null },
+            })}
           >
             <option value="">Automatic (middle enabled model)</option>
             {titleSummaryModels.map((modelId) => (
@@ -394,6 +401,29 @@ export function ModelsPanel() {
           <span className="hint">
             Used by the tmux modal&apos;s Shift+R action. Automatic follows the
             pane&apos;s agent and selects the middle enabled model.
+          </span>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Reasoning</label>
+          <select
+            value={titleSummary.effort ?? ""}
+            disabled={!titleSummaryProvider}
+            onChange={(event) => update({
+              title_summary: {
+                ...titleSummary,
+                effort: (event.target.value || null) as AppSettings["title_summary"]["effort"],
+              },
+            })}
+          >
+            <option value="">Automatic (model default)</option>
+            {AGENT_EFFORT_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <span className="hint">
+            Used with providers that support configurable reasoning effort.
           </span>
         </div>
       </div>

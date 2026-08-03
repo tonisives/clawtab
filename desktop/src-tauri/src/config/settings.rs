@@ -148,6 +148,24 @@ pub struct RelaySettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct TitleSummarySettings {
+    pub provider: Option<ProcessProvider>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+impl Default for TitleSummarySettings {
+    fn default() -> Self {
+        Self {
+            provider: None,
+            model: None,
+            effort: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppSettings {
     pub default_tmux_session: String,
     pub default_work_dir: String,
@@ -155,14 +173,16 @@ pub struct AppSettings {
     /// Default model to use when a job doesn't specify one (e.g. "claude-opus-4-6")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_model: Option<String>,
-    /// Provider used to generate concise pane titles. None uses the provider
-    /// detected for the target pane, then falls back to default_provider.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title_summary_provider: Option<ProcessProvider>,
-    /// Model used for pane-title summaries. None selects the middle enabled
-    /// model for the resolved provider.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title_summary_model: Option<String>,
+    /// Provider, model, and reasoning effort used for pane-title summaries.
+    #[serde(default)]
+    pub title_summary: TitleSummarySettings,
+    /// Legacy flat title-summary settings, migrated into `title_summary` on load.
+    #[serde(default, skip_serializing, rename = "title_summary_provider")]
+    legacy_title_summary_provider: Option<ProcessProvider>,
+    #[serde(default, skip_serializing, rename = "title_summary_model")]
+    legacy_title_summary_model: Option<String>,
+    #[serde(default, skip_serializing, rename = "title_summary_effort")]
+    legacy_title_summary_effort: Option<String>,
     /// Per-provider list of enabled model IDs for the quick-select dropdown
     #[serde(default)]
     pub enabled_models: HashMap<String, Vec<String>>,
@@ -221,8 +241,10 @@ impl Default for AppSettings {
             default_work_dir: format!("{}/workspace/tgs/automation", home),
             default_provider: ProcessProvider::Claude,
             default_model: None,
-            title_summary_provider: None,
-            title_summary_model: None,
+            title_summary: TitleSummarySettings::default(),
+            legacy_title_summary_provider: None,
+            legacy_title_summary_model: None,
+            legacy_title_summary_effort: None,
             enabled_models: HashMap::new(),
             claude_path: "claude".to_string(),
             preferred_editor: "nvim".to_string(),
@@ -257,6 +279,7 @@ impl AppSettings {
         if let Some(path) = Self::file_path() {
             if let Ok(contents) = std::fs::read_to_string(&path) {
                 if let Ok(mut settings) = serde_yml::from_str::<Self>(&contents) {
+                    settings.migrate_legacy_title_summary();
                     settings.shortcuts.migrate_legacy_tab_navigation();
                     settings.shortcuts.migrate_missing_fields();
                     return settings;
@@ -264,6 +287,18 @@ impl AppSettings {
             }
         }
         Self::default()
+    }
+
+    fn migrate_legacy_title_summary(&mut self) {
+        if self.title_summary.provider.is_none() {
+            self.title_summary.provider = self.legacy_title_summary_provider.take();
+        }
+        if self.title_summary.model.is_none() {
+            self.title_summary.model = self.legacy_title_summary_model.take();
+        }
+        if self.title_summary.effort.is_none() {
+            self.title_summary.effort = self.legacy_title_summary_effort.take();
+        }
     }
 
     pub fn save(&self) -> Result<(), String> {
