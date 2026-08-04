@@ -327,8 +327,18 @@ async fn main() {
                 }
                 return;
             }
+            println!("pane_id={}", pane_id);
+            if let Some(provider) = provider {
+                println!("provider={}", provider.as_str());
+            }
             if let Some(ref session_id) = info.session_id {
                 println!("session_id={}", session_id);
+            }
+            if let Some(ref model_id) = info.model_id {
+                println!("model_id={}", model_id);
+            }
+            if let Some(ref agent_effort) = info.agent_effort {
+                println!("agent_effort={}", agent_effort);
             }
             if let Some(ref date) = info.session_started_at {
                 println!("started_at={}", date);
