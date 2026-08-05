@@ -396,6 +396,18 @@ jobs:
             { print }
           ' Casks/clawtab.rb > Casks/clawtab.rb.tmp && mv Casks/clawtab.rb.tmp Casks/clawtab.rb
 
+          if ! grep -q 'Contents/Resources/cwtctl' Casks/clawtab.rb; then
+            awk '
+              /^  app "ClawTab.app"/ {
+                print
+                print "  binary \"#{appdir}/ClawTab.app/Contents/Resources/cwtctl\""
+                print "  zsh_completion \"#{appdir}/ClawTab.app/Contents/Resources/_cwtctl\""
+                next
+              }
+              { print }
+            ' Casks/clawtab.rb > Casks/clawtab.rb.tmp && mv Casks/clawtab.rb.tmp Casks/clawtab.rb
+          fi
+
       - name: Commit and push
         run: |
           cd homebrew-tap
