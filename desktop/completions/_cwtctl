@@ -1,0 +1,201 @@
+#compdef cwtctl
+
+_cwtctl_jobs() {
+  local -a jobs groups
+  jobs=(${(f)"$(cwtctl jobs list 2>/dev/null | awk '
+    /^[^[:space:]]/ { group = $0; groups[group] = 1; next }
+    /^[[:space:]]/ {
+      name = $0
+      sub(/^[[:space:]]+/, "", name)
+      if (group != "" && name != "") print group "/" name
+    }
+  ' | sort -u)"})
+  groups=(${jobs%%/*})
+  compadd -a jobs
+  compadd -a groups
+}
+
+_cwtctl_jobs_for_group() {
+  local group="$1"
+  local -a jobs
+  jobs=(${(f)"$(cwtctl jobs list 2>/dev/null | awk -v wanted="$group" '
+    /^[^[:space:]]/ { group = $0; next }
+    /^[[:space:]]/ {
+      name = $0
+      sub(/^[[:space:]]+/, "", name)
+      if (group == wanted && name != "") print name
+    }
+  ' | sort -u)"})
+  compadd -a jobs
+}
+
+_cwtctl_panes() {
+  local -a panes
+  panes=(${(f)"$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null | sort -u)"})
+  compadd -a panes
+}
+
+_cwtctl_secret_keys() {
+  local -a keys
+  keys=(${(f)"$(cwtctl secrets 2>/dev/null | awk 'NF')"})
+  compadd -a keys
+}
+
+_cwtctl() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+
+  local -a top_cmds
+  top_cmds=(
+    'jobs:Job management'
+    'usage:Show local provider quota usage'
+    'agent:Agent pane controls'
+    'secrets:Manage secrets'
+    'telegram:Send a Telegram message'
+    'pane:Pane controls'
+    'daemon:Daemon management'
+  )
+
+  _arguments -C \
+    '1: :->cmd' \
+    '*:: :->args'
+
+  case $state in
+    cmd)
+      _describe -t commands 'cwtctl command' top_cmds
+      ;;
+    args)
+      case $words[1] in
+        jobs)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=(
+              'list:List jobs grouped by group'
+              'ls:List jobs grouped by group'
+              'run:Run a job and follow its output'
+              'pause:Pause a running job'
+              'resume:Resume a paused job'
+              'restart:Restart a job'
+              'status:Show job statuses'
+            )
+            _describe -t subcmd 'jobs subcommand' sub
+          elif (( CURRENT == 3 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart ]]; then
+            _cwtctl_jobs
+          elif (( CURRENT == 4 )) && [[ $words[2] == run || $words[2] == pause || $words[2] == resume || $words[2] == restart ]] && [[ $words[3] != */* ]]; then
+            _cwtctl_jobs_for_group "$words[3]"
+          fi
+          ;;
+        usage)
+          if (( CURRENT == 2 )); then
+            local -a providers
+            providers=(claude codex antigravity zai)
+            compadd -a providers
+          fi
+          ;;
+        agent)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=(
+              'auto-yes:Manage auto-yes for a pane'
+              'info:Show agent session info'
+              'rename:Rename an agent pane'
+              'ai-rename:Generate a concise pane title'
+              'hooks:Manage agent event hooks'
+            )
+            _describe -t subcmd 'agent subcommand' sub
+          elif (( CURRENT == 3 )) && [[ $words[2] == auto-yes ]]; then
+            local -a sub
+            sub=(
+              'toggle:Toggle auto-yes for pane'
+              'check:Check if pane has auto-yes'
+            )
+            _describe -t subcmd 'auto-yes subcommand' sub
+            _cwtctl_panes
+          elif (( CURRENT == 4 )) && [[ $words[2] == auto-yes ]] && [[ $words[3] == toggle || $words[3] == check ]]; then
+            _cwtctl_panes
+          elif (( CURRENT == 3 )) && [[ $words[2] == info ]]; then
+            local -a sub
+            sub=('restore-command:Print an agent restore command')
+            _describe -t subcmd 'info subcommand' sub
+            _cwtctl_panes
+          elif (( CURRENT == 4 )) && [[ $words[2] == info && $words[3] == restore-command ]]; then
+            _cwtctl_panes
+          elif (( CURRENT == 3 )) && [[ $words[2] == rename || $words[2] == ai-rename ]]; then
+            _cwtctl_panes
+          elif (( CURRENT == 3 )) && [[ $words[2] == hooks ]]; then
+            local -a actions
+            actions=(
+              'status:Show hook installation status'
+              'install:Install provider hooks'
+            )
+            _describe -t subcmd 'hooks subcommand' actions
+          elif (( CURRENT == 4 )) && [[ $words[2] == hooks ]] && [[ $words[3] == status || $words[3] == install ]]; then
+            local -a providers
+            providers=(claude codex opencode antigravity)
+            compadd -a providers
+          fi
+          ;;
+        secrets)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=(
+              'get:Get secret value(s)'
+              'insert:Prompt for and store a secret'
+              'delete:Delete a secret'
+            )
+            _describe -t subcmd 'secrets subcommand' sub
+          elif (( CURRENT >= 3 )) && [[ $words[2] == get ]]; then
+            _cwtctl_secret_keys
+          elif (( CURRENT == 3 )) && [[ $words[2] == insert || $words[2] == delete ]]; then
+            compadd -- --yes -y
+            _cwtctl_secret_keys
+          elif (( CURRENT == 4 )) && [[ $words[2] == insert || $words[2] == delete ]] && [[ $words[3] == --yes || $words[3] == -y ]]; then
+            _cwtctl_secret_keys
+          elif (( CURRENT == 4 )) && [[ $words[2] == insert || $words[2] == delete ]]; then
+            compadd -- --yes -y
+          fi
+          ;;
+        pane)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=(
+              'open:Open tmux pane in ClawTab'
+              'focus:Move focus between ClawTab panes'
+            )
+            _describe -t subcmd 'pane subcommand' sub
+          elif (( CURRENT == 3 )) && [[ $words[2] == open ]]; then
+            _cwtctl_panes
+          elif (( CURRENT == 3 )) && [[ $words[2] == focus ]]; then
+            local -a dirs
+            dirs=(left right up down)
+            compadd -a dirs
+          fi
+          ;;
+        daemon)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=(
+              'install:Install launchd service'
+              'stop:Stop daemon but keep launchd service installed'
+              'uninstall:Remove launchd service'
+              'ping:Check if daemon is running'
+              'status:Check if daemon is running'
+              'restart:Restart the daemon'
+              'logs:Show daemon logs'
+            )
+            _describe -t subcmd 'daemon subcommand' sub
+          fi
+          ;;
+        telegram)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=('send:Send a message')
+            _describe -t subcmd 'telegram subcommand' sub
+          fi
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_cwtctl "$@"

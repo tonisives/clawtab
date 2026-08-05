@@ -48,7 +48,9 @@
       "minimumSystemVersion": "10.15"
     },
     "resources": {
-      "../target/engine-bundle/ClawTab Daemon.app": "ClawTab Daemon.app"
+      "../target/engine-bundle/ClawTab Daemon.app": "ClawTab Daemon.app",
+      "../target/engine-bundle/cwtctl": "cwtctl",
+      "../target/engine-bundle/_cwtctl": "_cwtctl"
     }
   },
   "plugins": {
