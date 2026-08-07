@@ -202,14 +202,12 @@ pub fn resolve_session_info_for_provider_with_cwd(
         Some(ProcessProvider::Shell) | None => SessionInfo::default(),
     };
     if info.model_id.is_none() {
-        info.model_id = provider.and_then(|provider| {
-            detect_model_from_process_tree(pane_pid, provider, snapshot)
-        });
+        info.model_id = provider
+            .and_then(|provider| detect_model_from_process_tree(pane_pid, provider, snapshot));
     }
     if info.agent_effort.is_none() {
-        info.agent_effort = provider.and_then(|provider| {
-            detect_effort_from_process_tree(pane_pid, provider, snapshot)
-        });
+        info.agent_effort = provider
+            .and_then(|provider| detect_effort_from_process_tree(pane_pid, provider, snapshot));
     }
     info
 }
@@ -276,7 +274,9 @@ fn effort_from_command(command: &str) -> Option<String> {
         }
         if (*part == "--effort" || *part == "-c") && index + 1 < parts.len() {
             let value = parts[index + 1].trim_matches(['\'', '"']);
-            let effort = value.strip_prefix("model_reasoning_effort=").unwrap_or(value);
+            let effort = value
+                .strip_prefix("model_reasoning_effort=")
+                .unwrap_or(value);
             if let Some(effort) = valid_effort(effort) {
                 return Some(effort);
             }
@@ -286,8 +286,7 @@ fn effort_from_command(command: &str) -> Option<String> {
 }
 
 fn valid_effort(value: &str) -> Option<String> {
-    matches!(value, "low" | "medium" | "high" | "xhigh" | "max")
-        .then(|| value.to_string())
+    matches!(value, "low" | "medium" | "high" | "xhigh" | "max").then(|| value.to_string())
 }
 
 pub fn detect_process_provider(
