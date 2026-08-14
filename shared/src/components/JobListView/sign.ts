@@ -13,6 +13,12 @@ export const SORT_OPTIONS: { value: JobSortMode; label: string }[] = [
   { value: "added", label: "Added" },
 ];
 
+export const LATEST_SORT_OPTIONS: { value: LatestSortMode; label: string }[] = [
+  { value: "message", label: "Latest message" },
+  { value: "activity", label: "Latest activity" },
+  { value: "started", label: "Agent start date" },
+];
+
 export const GROUP_AGENT_PROVIDER_STORAGE_KEY = "clawtab_group_agent_providers";
 
 export type GroupedRowPosition = "single" | "first" | "middle" | "last";
@@ -33,6 +39,8 @@ export interface JobListViewProps {
   onSortChange?: (mode: JobSortMode) => void;
   latestSortMode?: LatestSortMode;
   onLatestSortChange?: (mode: LatestSortMode) => void;
+  groupLatestSortMode?: Record<string, LatestSortMode>;
+  onGroupLatestSortChange?: (group: string, mode: LatestSortMode) => void;
   listMode?: JobListMode;
   onListModeChange?: (mode: JobListMode) => void;
   // Navigation

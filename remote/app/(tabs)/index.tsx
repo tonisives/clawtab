@@ -64,6 +64,7 @@ import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 import { buildModelOptions } from "../../src/lib/agentModels"
 
 type GroupTabView = Record<string, "tabs" | "jobs">
+type GroupLatestSortMode = Record<string, LatestSortMode>
 type SidebarSection = LiquidSidebarSection | "notifications"
 
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
@@ -238,6 +239,7 @@ export default function JobsScreen() {
   )
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
   const [latestSortMode, setLatestSortMode] = useState<LatestSortMode>("message")
+  const [groupLatestSortMode, setGroupLatestSortMode] = useState<GroupLatestSortMode>({})
   const [listMode, setListMode] = useState<JobListMode>(() => readListMode())
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
@@ -420,6 +422,10 @@ export default function JobsScreen() {
   const handleListModeChange = useCallback((mode: JobListMode) => {
     setListMode(mode)
     saveListMode(mode)
+  }, [])
+
+  const handleGroupLatestSortChange = useCallback((group: string, mode: LatestSortMode) => {
+    setGroupLatestSortMode((previous) => ({ ...previous, [group]: mode }))
   }, [])
 
   const handleSelectJob = useCallback(
@@ -795,6 +801,8 @@ export default function JobsScreen() {
       sortMode={sortMode}
       latestSortMode={latestSortMode}
       onLatestSortChange={setLatestSortMode}
+      groupLatestSortMode={groupLatestSortMode}
+      onGroupLatestSortChange={handleGroupLatestSortChange}
       listMode={listMode}
       onListModeChange={handleListModeChange}
       onSelectJob={handleSelectJob}
@@ -1015,19 +1023,31 @@ export default function JobsScreen() {
     </Modal>
   ) : null
 
+  const demoToast = demoToastVisible ? (
+    <View style={styles.toast} pointerEvents="none">
+      <Text style={styles.toastText}>
+        Demo mode: cannot launch agents. Please connect desktop.
+      </Text>
+    </View>
+  ) : null
+
   if (!isSplitView) {
+    if (Platform.OS !== "web" && !isIosPadPortrait) {
+      return (
+        <>
+          {mobileJobList}
+          {searchModal}
+          {demoToast}
+        </>
+      )
+    }
+
     return (
       <View style={styles.screenRoot}>
         {mobileWebSearch}
         {mobileJobList}
         {searchModal}
-        {demoToastVisible ? (
-          <View style={styles.toast} pointerEvents="none">
-            <Text style={styles.toastText}>
-              Demo mode: cannot launch agents. Please connect desktop.
-            </Text>
-          </View>
-        ) : null}
+        {demoToast}
       </View>
     )
   }

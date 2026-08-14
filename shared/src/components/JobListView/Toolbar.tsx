@@ -3,7 +3,7 @@ import { Platform, Text, TextInput, TouchableOpacity, View } from "react-native"
 
 import { colors } from "../../theme/colors";
 import type { LatestSortMode } from "../../types/job";
-import { SORT_OPTIONS } from "./sign";
+import { LATEST_SORT_OPTIONS, SORT_OPTIONS } from "./sign";
 import { styles } from "./styles";
 import type { JobListViewHook } from "./useJobListView";
 import { PopupMenu } from "../PopupMenu";
@@ -11,12 +11,6 @@ import { PopupMenu } from "../PopupMenu";
 interface JobListToolbarProps {
   hook: JobListViewHook;
 }
-
-const LATEST_SORT_OPTIONS: { value: LatestSortMode; label: string }[] = [
-  { value: "message", label: "Latest message" },
-  { value: "activity", label: "Latest activity" },
-  { value: "started", label: "Agent start date" },
-];
 
 export function JobListToolbar({ hook }: JobListToolbarProps) {
   const globalTabsView = useMemo(() => {

@@ -12,7 +12,7 @@ export function useJobListView(props: JobListViewProps) {
   const [sortOpen, setSortOpen] = useState(false);
   const [collapsedJobPanes, setCollapsedJobPanes] = useState<Set<string>>(() => new Set());
   const [hiddenSectionCollapsed, setHiddenSectionCollapsed] = useState(true);
-  const [groupMenu, setGroupMenu] = useState<{ group: string; folderPath?: string; hidden?: boolean } | null>(null);
+  const [groupMenu, setGroupMenu] = useState<{ group: string; sortGroup: string; folderPath?: string; hidden?: boolean } | null>(null);
   const [groupMenuPos, setGroupMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const data = {
@@ -22,6 +22,7 @@ export function useJobListView(props: JobListViewProps) {
     statuses: props.statuses,
   };
   const ordering = {
+    groupLatestSortMode: props.groupLatestSortMode,
     jobOrder: props.jobOrder ?? {},
     latestSortMode: props.latestSortMode,
     processOrder: props.processOrder ?? {},
@@ -135,6 +136,7 @@ export function useJobListView(props: JobListViewProps) {
     groupMenuPos,
     groupMenuTriggerRef: refs.groupMenuTriggerRef,
     groupMenuTriggerRefs: refs.groupMenuTriggerRefs,
+    groupLatestSortMode: props.groupLatestSortMode,
     handleRefresh,
     headerContent: props.headerContent,
     hideSearchBar: props.hideSearchBar ?? false,
@@ -150,6 +152,7 @@ export function useJobListView(props: JobListViewProps) {
     onActivateWorkspace: props.onActivateWorkspace,
     onAddJob: props.onAddJob,
     onGroupTabViewChange: callbacks.onGroupTabViewChange,
+    onGroupLatestSortChange: props.onGroupLatestSortChange,
     onListModeChange: props.onListModeChange,
     onLatestSortChange: props.onLatestSortChange,
     onHideGroup: props.onHideGroup,
