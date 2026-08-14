@@ -163,7 +163,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   const enableAutoYes = useNotificationStore((s) => s.enableAutoYes)
   const disableAutoYes = useNotificationStore((s) => s.disableAutoYes)
   const answerQuestion = useNotificationStore((s) => s.answerQuestion)
-  const autoYesActive = paneQuestion ? autoYesPaneIds.has(paneId) : false
+  const autoYesActive = autoYesPaneIds.has(paneId)
 
   const handleToggleAutoYes = useCallback(() => {
     if (autoYesPaneIds.has(paneId)) {
@@ -289,7 +289,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
         options={paneQuestion?.options}
         questionContext={paneQuestion?.context_lines}
         autoYesActive={autoYesActive}
-        onToggleAutoYes={paneQuestion ? handleToggleAutoYes : undefined}
+        onToggleAutoYes={handleToggleAutoYes}
         firstQuery={activeProcess?.first_query ?? undefined}
         lastQuery={activeProcess?.last_query ?? undefined}
         tokenCount={activeProcess?.token_count}

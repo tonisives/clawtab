@@ -217,6 +217,11 @@ export default function ProcessDetailScreen() {
     });
   }, [pane_id, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion]);
 
+  const handleContextAutoYesToggle = useCallback(() => {
+    setShowContextMenu(false);
+    handleToggleAutoYes();
+  }, [handleToggleAutoYes]);
+
   const handleSend = useCallback(
     (text: string) => {
       const send = getWsSend();
@@ -416,10 +421,14 @@ export default function ProcessDetailScreen() {
                   position={menuPos}
                   onClose={() => setShowContextMenu(false)}
                   items={isAlive ? [
+                    { type: "item", label: autoYesActive ? "Disable auto-yes" : "Enable auto-yes", onPress: handleContextAutoYesToggle, color: autoYesActive ? colors.warning : colors.accent },
+                    { type: "separator" },
                     { type: "item", label: isPinned ? "Unpin" : "Pin", onPress: () => { togglePin(pinKey); setShowContextMenu(false); }, color: colors.accent },
                     { type: "separator" },
                     { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
                   ] : [
+                    { type: "item", label: autoYesActive ? "Disable auto-yes" : "Enable auto-yes", onPress: handleContextAutoYesToggle, color: autoYesActive ? colors.warning : colors.accent },
+                    { type: "separator" },
                     { type: "item", label: isPinned ? "Unpin" : "Pin", onPress: () => { togglePin(pinKey); setShowContextMenu(false); }, color: colors.accent },
                     { type: "separator" },
                     { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.success },

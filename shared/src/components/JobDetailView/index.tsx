@@ -222,6 +222,7 @@ export function JobDetailView({
   const isPaused = state === "paused";
   const scheduled = isJobScheduled(job);
   const isManual = !scheduled;
+  const showMobileAutoYesMenuItem = Platform.OS !== "web" && !!onToggleAutoYes;
 
   const [runPending, setRunPending] = useState(false);
   const [outputCollapsed, setOutputCollapsed] = useState(defaultOutputCollapsed);
@@ -666,7 +667,7 @@ export function JobDetailView({
             </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
-          {(onDuplicate || onDelete || isRunning || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (
+          {(showMobileAutoYesMenuItem || onDuplicate || onDelete || isRunning || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}
@@ -695,6 +696,10 @@ export function JobDetailView({
                   position={menuPos}
                   onClose={() => setShowSettingsMenu(false)}
                   items={[
+                    ...(showMobileAutoYesMenuItem ? [
+                      { type: "item" as const, label: autoYesActive ? "Disable auto-yes" : "Enable auto-yes", onPress: onToggleAutoYes!, color: autoYesActive ? colors.warning : colors.accent },
+                      { type: "separator" as const },
+                    ] : []),
                     ...((onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRelease) && onDuplicate ? [{ type: "separator" as const }] : []),
                     ...(onFork ? [{ type: "submenu" as const, label: "Fork Session", items: [
                       { type: "item" as const, label: "Right", onPress: () => onFork("right") },

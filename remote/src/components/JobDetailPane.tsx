@@ -76,6 +76,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   }, [slug])
   const realStatus = useJobStatus(jobName)
   const status = isDemo ? (DEMO_STATUSES[slug] ?? realStatus) : realStatus
+  const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : ""
   const { logs } = useLogs(slug)
   const runs = useRunsStore((s) => s.runs[slug]) ?? null
   const [runsLoading, setRunsLoading] = useState(false)
@@ -87,7 +88,8 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   const disableAutoYes = useNotificationStore((s) => s.disableAutoYes)
   const answerQuestion = useNotificationStore((s) => s.answerQuestion)
   const jobQuestion = questions.find((q) => q.matched_job === slug)
-  const autoYesActive = jobQuestion ? autoYesPaneIds.has(jobQuestion.pane_id) : false
+  const autoYesPaneId = jobQuestion?.pane_id ?? statusPaneId
+  const autoYesActive = !isDemo && !!autoYesPaneId && autoYesPaneIds.has(autoYesPaneId)
 
   const loadRuns = useCallback(() => {
     if (isDemo) return
@@ -113,18 +115,18 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   }, [connected, isDemo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleAutoYes = useCallback(() => {
-    if (!jobQuestion) return
-    if (autoYesPaneIds.has(jobQuestion.pane_id)) {
-      disableAutoYes(jobQuestion.pane_id)
+    if (!autoYesPaneId) return
+    if (autoYesPaneIds.has(autoYesPaneId)) {
+      disableAutoYes(autoYesPaneId)
       const send = getWsSend()
       if (send) {
         const next = new Set(autoYesPaneIds)
-        next.delete(jobQuestion.pane_id)
+        next.delete(autoYesPaneId)
         send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
       }
       return
     }
-    const title = jobQuestion.matched_job ?? jobQuestion.cwd.replace(/^\/Users\/[^/]+/, "~")
+    const title = jobQuestion?.matched_job ?? jobQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? slug
     Alert.alert(
       "Enable auto-yes?",
       `All future questions for "${title}" will be automatically accepted with "Yes". This stays active until you disable it.`,
@@ -134,29 +136,28 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
           text: "Enable",
           style: "destructive",
           onPress: () => {
-            enableAutoYes(jobQuestion.pane_id)
+            enableAutoYes(autoYesPaneId)
             const send = getWsSend()
             if (send) {
               const next = new Set(autoYesPaneIds)
-              next.add(jobQuestion.pane_id)
+              next.add(autoYesPaneId)
               send({ type: "set_auto_yes_panes", id: nextId(), pane_ids: [...next] })
             }
-            const yesOpt = findYesOption(jobQuestion)
+            const yesOpt = jobQuestion ? findYesOption(jobQuestion) : undefined
             if (yesOpt) {
               const s = getWsSend()
               if (s) s({ type: "send_input", id: nextId(), name: slug, text: yesOpt })
-              setTimeout(() => answerQuestion(jobQuestion.question_id), 1500)
+              if (jobQuestion) setTimeout(() => answerQuestion(jobQuestion.question_id), 1500)
             }
           },
         },
       ],
     )
-  }, [jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, slug])
+  }, [autoYesPaneId, jobQuestion, autoYesPaneIds, enableAutoYes, disableAutoYes, answerQuestion, slug])
 
   const loaded = useJobsStore((s) => s.loaded)
 
   // PTY streaming for running jobs
-  const statusPaneId = status?.state === "running" ? (status as any).pane_id ?? "" : ""
   const statusTmuxSession = status?.state === "running" ? (status as any).tmux_session ?? "" : ""
   const termRef = useRef<XtermLogHandle | null>(null)
   const { sendInput, sendResize, connecting: ptyConnecting, error: ptyError } = usePty(statusPaneId, statusTmuxSession, termRef)
@@ -224,7 +225,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
         options={isDemo ? undefined : jobQuestion?.options}
         questionContext={isDemo ? undefined : jobQuestion?.context_lines}
         autoYesActive={isDemo ? false : autoYesActive}
-        onToggleAutoYes={isDemo ? undefined : (jobQuestion ? handleToggleAutoYes : undefined)}
+        onToggleAutoYes={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
         renderTerminal={isRunningWithPty ? renderTerminal : undefined}
         hideMessageInput={isRunningWithPty}
         defaultOutputCollapsed
