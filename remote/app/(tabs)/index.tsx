@@ -253,6 +253,7 @@ export default function JobsScreen() {
         return false
       }
     })()
+  const isMobileWeb = Platform.OS === "web" && !isSplitView
 
   const isDemo = connected && !desktopOnline && realJobs.length === 0
   const jobs = isDemo ? DEMO_JOBS : realJobs
@@ -866,7 +867,44 @@ export default function JobsScreen() {
     [isDemo, split.handleClosePane, visibleDetectedProcesses],
   )
 
-  const searchModal = (
+  const mobileWebSearch = isMobileWeb && searchOpen ? (
+    <View style={styles.mobileWebSearchBar}>
+      <Ionicons name="search" size={18} color={colors.textMuted} />
+      <TextInput
+        ref={searchInputRef}
+        style={styles.mobileWebSearchInput}
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Filter jobs..."
+        placeholderTextColor={colors.textMuted}
+        returnKeyType="search"
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      {searchQuery.length > 0 ? (
+        <Pressable
+          onPress={clearSearch}
+          style={styles.searchClearButton}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Clear search"
+        >
+          <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+        </Pressable>
+      ) : null}
+      <Pressable
+        onPress={closeSearch}
+        style={styles.mobileWebSearchClose}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="Close search"
+      >
+        <Ionicons name="close" size={20} color={colors.text} />
+      </Pressable>
+    </View>
+  ) : null
+
+  const searchModal = !isMobileWeb ? (
     <Modal
       visible={searchOpen}
       transparent
@@ -939,11 +977,12 @@ export default function JobsScreen() {
         </Pressable>
       </KeyboardAvoidingView>
     </Modal>
-  )
+  ) : null
 
   if (!isSplitView) {
     return (
-      <>
+      <View style={styles.screenRoot}>
+        {mobileWebSearch}
         {mobileJobList}
         {searchModal}
         {demoToastVisible ? (
@@ -953,7 +992,7 @@ export default function JobsScreen() {
             </Text>
           </View>
         ) : null}
-      </>
+      </View>
     )
   }
 
@@ -1409,6 +1448,35 @@ const styles = StyleSheet.create({
   },
   searchClearButton: {
     padding: 2,
+  },
+  mobileWebSearchBar: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    zIndex: 20,
+  },
+  mobileWebSearchInput: {
+    flex: 1,
+    height: 38,
+    color: colors.text,
+    fontSize: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 0,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  mobileWebSearchClose: {
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
   },
   toast: {
     position: "absolute",

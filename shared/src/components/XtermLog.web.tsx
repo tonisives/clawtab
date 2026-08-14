@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import {
+  DARK_TERMINAL_THEME,
   getTerminalTheme,
   subscribeTerminalThemeChange,
   TERMINAL_CUSTOM_GLYPHS,
@@ -37,10 +38,12 @@ interface XtermLogProps {
   onResize?: (cols: number, rows: number) => void;
   /** Whether terminal accepts input (default true) */
   interactive?: boolean;
+  /** Use the dark app terminal even when the browser prefers a light color scheme. */
+  forceDarkTheme?: boolean;
 }
 
 export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
-  function XtermLog({ onData, onResize, interactive = true }, ref) {
+  function XtermLog({ onData, onResize, interactive = true, forceDarkTheme = false }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const termRef = useRef<Terminal | null>(null);
     const onDataRef = useRef(onData);
@@ -118,7 +121,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
     useEffect(() => {
       if (!containerRef.current) return;
       const el = containerRef.current;
-      const initialTheme = getTerminalTheme();
+      const initialTheme = forceDarkTheme ? DARK_TERMINAL_THEME : getTerminalTheme();
 
       const t = new Terminal({
         fontSize: TERMINAL_FONT_SIZE,
@@ -169,11 +172,13 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
       // Report initial size
       onResizeRef.current?.(t.cols, t.rows);
 
-      const unsubscribeTheme = subscribeTerminalThemeChange((theme) => {
-        t.options.theme = theme;
-        el.style.backgroundColor = theme.background ?? "";
-        if (t.rows > 0) t.refresh(0, t.rows - 1);
-      });
+      const unsubscribeTheme = forceDarkTheme
+        ? () => {}
+        : subscribeTerminalThemeChange((theme) => {
+            t.options.theme = theme;
+            el.style.backgroundColor = theme.background ?? "";
+            if (t.rows > 0) t.refresh(0, t.rows - 1);
+          });
 
       let dataDisposable: { dispose(): void } | null = null;
       dataDisposable = t.onData((data) => {
@@ -188,7 +193,7 @@ export const XtermLog = forwardRef<XtermLogHandle, XtermLogProps>(
         t.dispose();
         termRef.current = null;
       };
-    }, []); // mount once
+    }, [forceDarkTheme]);
 
     return (
       <div

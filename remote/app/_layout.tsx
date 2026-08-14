@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { DarkTheme, Stack, ThemeProvider, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, ActivityIndicator, Platform, Pressable, StyleSheet } from "react-native";
+import { View, ActivityIndicator, Image, Platform, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuthStore } from "../src/store/auth";
 import { useWebSocket } from "../src/hooks/useWebSocket";
@@ -14,6 +14,7 @@ import { colors } from "../src/theme/colors";
 import { NotificationsMenuButton } from "../src/components/NotificationsMenuButton";
 import { useResponsive } from "../src/hooks/useResponsive";
 import { useMobileHeaderStore } from "../src/store/mobileHeader";
+import { useJobFilterStore } from "../src/store/jobFilter";
 
 const navTheme = {
   ...DarkTheme,
@@ -34,6 +35,64 @@ function RootHeaderRight() {
     <NotificationsMenuButton variant="fluid" showDemoQuestions={false} />
   ) : (
     <NotificationsMenuButton countOnly showDemoQuestions={false} />
+  );
+}
+
+let RootHeaderIcon = () => (
+  <Image
+    source={require("../assets/icon.png")}
+    style={styles.headerIcon}
+    accessibilityLabel="ClawTab"
+  />
+);
+
+type MobileWebHeaderActionsProps = {
+  isSettingsTab: boolean;
+};
+
+let MobileWebHeaderActions = ({ isSettingsTab }: MobileWebHeaderActionsProps) => {
+  let router = useRouter();
+  let openSearch = useJobFilterStore((state) => state.openSearch);
+
+  let handleSearch = () => {
+    if (isSettingsTab) {
+      router.replace("/(tabs)");
+      setTimeout(openSearch, 80);
+      return;
+    }
+    openSearch();
+  };
+
+  let handleSectionChange = () => {
+    router.replace(isSettingsTab ? "/(tabs)" : "/settings");
+  };
+
+  return (
+    <View style={styles.mobileWebHeaderActions}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Search jobs"
+        hitSlop={8}
+        onPress={handleSearch}
+        style={styles.headerActionButton}
+      >
+        <Ionicons name="search" size={20} color={colors.text} />
+      </Pressable>
+      <NotificationsMenuButton countOnly showDemoQuestions={false} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={isSettingsTab ? "Jobs" : "Settings"}
+        hitSlop={8}
+        onPress={handleSectionChange}
+        style={styles.headerActionButton}
+      >
+        <Ionicons
+          name={isSettingsTab ? "briefcase-outline" : "settings-outline"}
+          size={20}
+          color={colors.text}
+        />
+      </Pressable>
+    </View>
   );
 }
 
@@ -84,6 +143,7 @@ export default function RootLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const init = useAuthStore((s) => s.init);
   const isSettingsTab = mobileHeaderTab === "settings";
+  const isMobileWeb = Platform.OS === "web" && !isWide && !isSplitView;
   const router = useRouter();
 
   useEffect(() => {
@@ -110,14 +170,19 @@ export default function RootLayout() {
               animation: "none",
               headerShown: !isWide && !isSplitView && !isIosPadPortrait,
               title: isSplitView ? "" : isSettingsTab ? "Settings" : "ClawTab",
-              headerLargeTitle: true,
-              headerTransparent: true,
-              headerStyle: { backgroundColor: "transparent" },
+              headerLargeTitle: !isMobileWeb,
+              headerTransparent: !isMobileWeb,
+              headerStyle: { backgroundColor: isMobileWeb ? colors.bg : "transparent" },
               headerTintColor: colors.text,
-              headerShadowVisible: false,
+              headerShadowVisible: isMobileWeb,
               headerLargeTitleStyle: styles.headerLargeTitle,
               headerTitleStyle: styles.headerTitle,
-              headerRight: isSplitView || isIosPadPortrait ? () => null : () => <RootHeaderRight />,
+              headerTitle: isMobileWeb ? () => <RootHeaderIcon /> : undefined,
+              headerRight: isSplitView || isIosPadPortrait
+                ? () => null
+                : isMobileWeb
+                  ? () => <MobileWebHeaderActions isSettingsTab={isSettingsTab} />
+                  : () => <RootHeaderRight />,
             }}
           />
           <Stack.Screen name="job/[name]" options={{ animation: "slide_from_right" }} />
@@ -183,6 +248,27 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 17,
     fontWeight: "600",
+  },
+  headerIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 7,
+  },
+  mobileWebHeaderActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginRight: 4,
+  },
+  headerActionButton: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   closeButton: {
     width: 36,

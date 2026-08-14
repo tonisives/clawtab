@@ -1,5 +1,5 @@
 import { useCallback, useEffect, type ComponentType, type PropsWithChildren } from "react";
-import { View, Text } from "react-native";
+import { Platform, View, Text } from "react-native";
 import { Tabs, usePathname, useRouter } from "expo-router";
 import { NativeTabs } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
@@ -92,7 +92,7 @@ function TabsContent({
     [openSearch, router, settingsActive],
   );
 
-  if (!isWide && !isSplitView && !isIosPadPortrait) {
+  if (Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait) {
     return (
       <View style={styles.nativeTabsFrame}>
         <NativeTabsRoot
@@ -148,7 +148,8 @@ function TabsContent({
     <Tabs
       initialRouteName="index"
       screenOptions={{
-        headerShown: !isWide && !isSplitView && !isIosPadPortrait,
+        headerShown:
+          Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait,
         headerStyle: { backgroundColor: colors.bg },
         headerTintColor: colors.text,
         headerLeft: undefined,
@@ -157,7 +158,7 @@ function TabsContent({
             <NotificationsMenuButton />
           </View>
         ),
-        tabBarStyle: isWide || isSplitView || isIosPadPortrait
+        tabBarStyle: Platform.OS === "web" || isWide || isSplitView || isIosPadPortrait
           ? { display: "none" }
           : {
               backgroundColor: colors.bg,

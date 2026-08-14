@@ -463,6 +463,7 @@ export default function ProcessDetailScreen() {
             onData={ptySendInput}
             onResize={sendResize}
             interactive
+            forceDarkTheme
           />
         </View>
         <TerminalScrollButtons

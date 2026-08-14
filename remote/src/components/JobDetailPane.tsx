@@ -181,6 +181,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
           onData={sendInput}
           onResize={sendResize}
           interactive
+          forceDarkTheme
         />
       </View>
     ),
