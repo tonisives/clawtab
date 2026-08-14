@@ -4,6 +4,8 @@ export type JobType = "binary" | "claude" | "job";
 
 export type JobSortMode = "name" | "activity" | "recent" | "added";
 
+export type LatestSortMode = "message" | "activity" | "started";
+
 export type JobListMode = "tabs" | "latest" | "jobs";
 
 export type CalendarRepeatUnit = "week";

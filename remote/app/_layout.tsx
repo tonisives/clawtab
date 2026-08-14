@@ -144,7 +144,6 @@ export default function RootLayout() {
   const init = useAuthStore((s) => s.init);
   const isSettingsTab = mobileHeaderTab === "settings";
   const isMobileWeb = Platform.OS === "web" && !isWide && !isSplitView;
-  const isNativePhone = Platform.OS !== "web" && !isWide && !isSplitView && !isIosPadPortrait;
   const router = useRouter();
 
   useEffect(() => {
@@ -171,13 +170,11 @@ export default function RootLayout() {
               animation: "none",
               headerShown: !isWide && !isSplitView && !isIosPadPortrait,
               title: isSplitView ? "" : isSettingsTab ? "Settings" : "ClawTab",
-              headerLargeTitle: !isMobileWeb && !isNativePhone,
-              headerTransparent: !isMobileWeb && !isNativePhone,
-              headerStyle: {
-                backgroundColor: isMobileWeb || isNativePhone ? colors.bg : "transparent",
-              },
+              headerLargeTitle: !isMobileWeb,
+              headerTransparent: !isMobileWeb,
+              headerStyle: { backgroundColor: isMobileWeb ? colors.bg : "transparent" },
               headerTintColor: colors.text,
-              headerShadowVisible: isMobileWeb || isNativePhone,
+              headerShadowVisible: isMobileWeb,
               headerLargeTitleStyle: styles.headerLargeTitle,
               headerTitleStyle: styles.headerTitle,
               headerTitle: isMobileWeb ? () => <RootHeaderIcon /> : undefined,

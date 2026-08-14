@@ -231,6 +231,49 @@ export const styles = StyleSheet.create({
   nativeGlobalTabsSegment: {
     marginBottom: spacing.lg,
   },
+  compactToolbarRow: {
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
+    zIndex: 10,
+  },
+  compactSegment: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    padding: 3,
+  },
+  compactSegmentButton: {
+    flex: 1,
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  compactLatestButton: {
+    flex: 1.2,
+  },
+  compactSegmentButtonActive: {
+    backgroundColor: colors.accent,
+  },
+  compactSegmentText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  compactSegmentTextActive: {
+    color: "#ffffff",
+  },
+  compactSegmentArrow: {
+    color: colors.textSecondary,
+    fontSize: 9,
+  },
   sortControl: {
     marginLeft: "auto",
   },

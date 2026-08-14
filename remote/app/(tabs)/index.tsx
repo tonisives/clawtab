@@ -59,7 +59,7 @@ import { NotificationsMenuButton } from "../../src/components/NotificationsMenuB
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
-import type { AgentEffort, RemoteJob, JobListMode, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
+import type { AgentEffort, RemoteJob, JobListMode, JobSortMode, JobStatus, AgentModelOption, LatestSortMode } from "@clawtab/shared"
 import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 import { buildModelOptions } from "../../src/lib/agentModels"
 
@@ -237,6 +237,7 @@ export default function JobsScreen() {
     readWebStringSet(HIDDEN_GROUPS_STORAGE_KEY),
   )
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
+  const [latestSortMode, setLatestSortMode] = useState<LatestSortMode>("message")
   const [listMode, setListMode] = useState<JobListMode>(() => readListMode())
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
@@ -792,6 +793,10 @@ export default function JobsScreen() {
       interactiveHiddenGroups
       onRefresh={handleRefresh}
       sortMode={sortMode}
+      latestSortMode={latestSortMode}
+      onLatestSortChange={setLatestSortMode}
+      listMode={listMode}
+      onListModeChange={handleListModeChange}
       onSelectJob={handleSelectJob}
       onSelectProcess={handleSelectProcess}
       pinnedItems={pinnedItems}
@@ -805,7 +810,7 @@ export default function JobsScreen() {
       defaultAgentModel={defaultModel}
       groupTabView={groupTabView}
       onGroupTabViewChange={handleGroupTabViewChange}
-      listMode="tabs"
+      onSetAllGroupTabView={handleSetAllGroupTabView}
       headerContent={
         <>
           {isIosPadPortrait ? <Text style={styles.portraitPageTitle}>ClawTab</Text> : null}
@@ -817,13 +822,13 @@ export default function JobsScreen() {
       emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
-      hideToolbar
+      compactMobileToolbar
       hideSearchBar
       contentContainerStyle={[
         styles.mobileListContent,
         isIosPadPortrait && { paddingBottom: insets.bottom + 96 },
       ]}
-      contentInsetAdjustmentBehavior={isIosPadPortrait ? "automatic" : "never"}
+      contentInsetAdjustmentBehavior={Platform.OS === "web" ? "never" : "automatic"}
       scrollEventThrottle={16}
       renderAsScrollRoot
     />

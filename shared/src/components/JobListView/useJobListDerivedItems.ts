@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import type { RemoteJob, JobStatus, JobSortMode } from "../../types/job";
+import type { RemoteJob, JobStatus, JobSortMode, LatestSortMode } from "../../types/job";
 import type { DetectedProcess, ProcessProvider, ShellPane } from "../../types/process";
 import { processDisplayTitle } from "../../util/format";
 import type { ListItem } from "./sign";
@@ -31,6 +31,12 @@ const processStartedTimestamp = (process: DetectedProcess): number => (
   process.session_started_at ? Date.parse(process.session_started_at) || 0 : 0
 );
 
+const processLatestTimestamp = (process: DetectedProcess, sortMode: LatestSortMode): number => {
+  if (sortMode === "message") return process._last_log_change ?? processStartedTimestamp(process);
+  if (sortMode === "activity") return process._last_activity ?? process._last_log_change ?? processStartedTimestamp(process);
+  return processStartedTimestamp(process);
+};
+
 const jobAddedTimestamp = (job: RemoteJob): number => (
   job.added_at ? Date.parse(job.added_at) || 0 : 0
 );
@@ -59,6 +65,7 @@ interface UseJobListDerivedItemsParams {
   };
   ordering: {
     jobOrder: Record<string, string[]>;
+    latestSortMode?: LatestSortMode;
     processOrder: Record<string, string[]>;
     sortMode: JobSortMode;
   };
@@ -87,7 +94,7 @@ export function useJobListDerivedItems({
   agent,
 }: UseJobListDerivedItemsParams) {
   const { detectedProcesses, jobs, shellPanes, statuses } = data;
-  const { jobOrder, processOrder, sortMode } = ordering;
+  const { jobOrder, latestSortMode, processOrder, sortMode } = ordering;
   const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, listMode, pinnedItems } = grouping;
   const { query } = filters;
   const { onRunAgent } = agent;
@@ -339,7 +346,9 @@ export function useJobListDerivedItems({
       rows.push({
         item: { kind: "process", process, inGroup: true },
         name: processDisplayTitle(process),
-        timestamp: processSortTimestamp(process, sortMode),
+        timestamp: latestSortMode
+          ? processLatestTimestamp(process, latestSortMode)
+          : processSortTimestamp(process, sortMode),
       });
     }
 
@@ -361,13 +370,13 @@ export function useJobListDerivedItems({
     }
 
     rows.sort((left, right) => (
-      sortMode === "name"
+      !latestSortMode && sortMode === "name"
         ? left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
         : right.timestamp - left.timestamp
           || left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
     ));
     return rows.map((row) => row.item);
-  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, query, sortMode, statuses]);
+  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, latestSortMode, query, sortMode, statuses]);
 
   const groupedItems = useMemo(() => {
     const result: ListItem[] = [];

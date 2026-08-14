@@ -23,6 +23,7 @@ export function useJobListView(props: JobListViewProps) {
   };
   const ordering = {
     jobOrder: props.jobOrder ?? {},
+    latestSortMode: props.latestSortMode,
     processOrder: props.processOrder ?? {},
     sortMode: props.sortMode ?? "name",
   };
@@ -136,7 +137,6 @@ export function useJobListView(props: JobListViewProps) {
     groupMenuTriggerRefs: refs.groupMenuTriggerRefs,
     handleRefresh,
     headerContent: props.headerContent,
-    hideToolbar: props.hideToolbar ?? false,
     hideSearchBar: props.hideSearchBar ?? false,
     hiddenSectionCollapsed,
     hoverSwitchTimerRef: refs.hoverSwitchTimerRef,
@@ -144,12 +144,14 @@ export function useJobListView(props: JobListViewProps) {
     groupedItems: derived.groupedItems,
     jobs: data.jobs,
     latestItemCount: derived.latestItemCount,
+    latestSortMode: props.latestSortMode,
     listMode: grouping.listMode,
     matchedProcessesByJob: derived.matchedProcessesByJob,
     onActivateWorkspace: props.onActivateWorkspace,
     onAddJob: props.onAddJob,
     onGroupTabViewChange: callbacks.onGroupTabViewChange,
     onListModeChange: props.onListModeChange,
+    onLatestSortChange: props.onLatestSortChange,
     onHideGroup: props.onHideGroup,
     onProcessRenameDraftChange: props.onProcessRenameDraftChange,
     onProcessRenameStateChange: props.onProcessRenameStateChange,
@@ -194,6 +196,7 @@ export function useJobListView(props: JobListViewProps) {
     sortMode: ordering.sortMode,
     sortOpen,
     sortTriggerRef: refs.sortTriggerRef,
+    compactMobileToolbar: props.compactMobileToolbar ?? false,
     statuses: data.statuses,
     stoppingSlugsExternal: props.stoppingSlugs,
     toggleJobPanes,

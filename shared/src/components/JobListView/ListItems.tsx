@@ -97,6 +97,37 @@ export function JobListItems({ hook }: JobListItemsProps) {
       : <View key={key} style={styles.nativeGroupedRows}>{children}</View>
   );
 
+  if (hook.listMode === "latest") {
+    const latestRows = hook.items.filter((item) => item.kind === "job" || item.kind === "process");
+    const children = latestRows.map((item, offset) => {
+      const position = groupedPosition(offset, latestRows.length);
+      if (item.kind === "job") {
+        const itemKey = `j_${item.job.slug || item.job.name}`;
+        return (
+          <JobListJobItem
+            key={itemKey}
+            hook={hook}
+            item={item}
+            itemKey={itemKey}
+            groupedPosition={position}
+          />
+        );
+      }
+      const itemKey = `p_${item.process.pane_id}`;
+      return (
+        <JobListProcessItem
+          key={itemKey}
+          hook={hook}
+          process={item.process}
+          itemKey={itemKey}
+          inGroup={item.inGroup}
+          groupedPosition={position}
+        />
+      );
+    });
+    return wrapRows("latest_items", children);
+  }
+
   while (index < hook.items.length) {
     const item = hook.items[index];
     if (item.kind === "job") {
@@ -118,7 +149,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
       const jobSlugs = jobItems.map((jobItem) => jobItem.job.slug);
       const groupKey = uniqueKey(`job_group_${group}`);
       pushToGroup(
-        hook.listMode !== "latest" && hook.wrapJobGroup
+        hook.wrapJobGroup
           ? wrapRows(groupKey, hook.wrapJobGroup(group, jobSlugs, children))
           : wrapRows(groupKey, children),
       );
@@ -145,7 +176,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
       const processPaneIds = processItems.map((processItem) => processItem.process.pane_id);
       const groupKey = uniqueKey(`process_group_${group}`);
       pushToGroup(
-        hook.listMode !== "latest" && hook.wrapProcessGroup
+        hook.wrapProcessGroup
           ? wrapRows(groupKey, hook.wrapProcessGroup(group, processPaneIds, children))
           : wrapRows(groupKey, children),
       );
