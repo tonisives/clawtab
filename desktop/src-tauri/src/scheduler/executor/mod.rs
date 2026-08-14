@@ -86,7 +86,7 @@ pub(super) fn project_window_name(job: &Job) -> String {
         Some((prefix, _)) if !prefix.is_empty() => prefix,
         _ => &job.name,
     };
-    let suffix = Utc::now().format("%Y%m%d-%H%M%S");
+    let suffix = Utc::now().format("%Y%m%d");
     format!("cwt-{}-{}", project, suffix)
 }
 
