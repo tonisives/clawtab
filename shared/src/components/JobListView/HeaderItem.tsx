@@ -15,7 +15,7 @@ interface JobListHeaderItemProps {
 }
 
 export function JobListHeaderItem({ hook, item, itemKey, index, prevWasActive }: JobListHeaderItemProps) {
-  const isCollapsed = hook.collapsedGroups.has(item.group);
+  const isCollapsed = !hook.query && hook.collapsedGroups.has(item.group);
   const allowGroupMenu = item.group !== "Shells" && (
     hook.onAddJob || (item.hidden ? hook.onUnhideGroup : hook.onHideGroup)
   );

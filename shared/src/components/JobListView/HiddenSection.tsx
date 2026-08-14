@@ -9,6 +9,8 @@ interface JobListHiddenSectionProps {
 }
 
 export function JobListHiddenSection({ hook, itemKey }: JobListHiddenSectionProps) {
+  const isCollapsed = !hook.query && hook.hiddenSectionCollapsed;
+
   return (
     <TouchableOpacity
       key={itemKey}
@@ -21,7 +23,7 @@ export function JobListHiddenSection({ hook, itemKey }: JobListHiddenSectionProp
           <View style={styles.groupHeaderTitleArea}>
             <View style={styles.groupHeaderArrowBtn}>
               <Text style={styles.groupHeaderArrow}>
-                {hook.hiddenSectionCollapsed ? "\u25B6" : "\u25BC"}
+                {isCollapsed ? "\u25B6" : "\u25BC"}
               </Text>
             </View>
             <Text style={styles.groupHeader} numberOfLines={1}>Hidden Groups</Text>

@@ -53,7 +53,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
     currentGroupKey = null;
     if (isActive) {
       const isFirst = rendered.length === 0;
-      const isCollapsed = groupKey != null && hook.collapsedGroups.has(groupKey);
+      const isCollapsed = !hook.query && groupKey != null && hook.collapsedGroups.has(groupKey);
       rendered.push(
         <View
           key={`wsgroup_${groupKey}`}

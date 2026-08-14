@@ -525,7 +525,7 @@ export function useJobListDerivedItems({
           const defaultView: "tabs" | "jobs" = !hasTabsContent && hasJobs ? "jobs" : "tabs";
           let view: "tabs" | "jobs" = persisted ?? defaultView;
           if (view === "jobs" && !hasJobs) view = "tabs";
-          const expanded = !collapsedGroups.has(entry.displayGroup);
+          const expanded = Boolean(query) || !collapsedGroups.has(entry.displayGroup);
           const tabsToggle = { group: entry.group, view, hasTabs: hasTabsContent, hasJobs, tabCount, jobCount };
           if (hasMultipleGroups || result.length > 0 || query) {
             result.push({ kind: "header", group: entry.displayGroup, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden, tabsToggle });
@@ -562,7 +562,7 @@ export function useJobListDerivedItems({
           }
         } else if (entry.type === "detected") {
           result.push({ kind: "header", group: entry.groupKey, displayGroup: entry.displayGroup, folderPath: entry.folderPath, hidden });
-          if (!collapsedGroups.has(entry.groupKey)) {
+          if (query || !collapsedGroups.has(entry.groupKey)) {
             for (const proc of entry.procs) {
               result.push({ kind: "process", process: proc });
             }
@@ -575,7 +575,7 @@ export function useJobListDerivedItems({
           }
         } else {
           result.push({ kind: "header", group: "detected", displayGroup: "Detected", hidden });
-          if (!collapsedGroups.has("detected")) {
+          if (query || !collapsedGroups.has("detected")) {
             for (const proc of entry.procs) {
               result.push({ kind: "process", process: proc });
             }
@@ -589,7 +589,7 @@ export function useJobListDerivedItems({
     // Add hidden groups section at the bottom
     if (hiddenEntries.length > 0) {
       result.push({ kind: "hidden-section" });
-      if (!hiddenSectionCollapsed) {
+      if (query || !hiddenSectionCollapsed) {
         if (interactiveHiddenGroups) {
           appendGroupEntries(hiddenEntries, true);
         } else {
@@ -612,7 +612,7 @@ export function useJobListDerivedItems({
 
     if (unmatchedShells.length > 0) {
       result.push({ kind: "header", group: "Shells", displayGroup: "Shells" });
-      if (!collapsedGroups.has("Shells")) {
+      if (query || !collapsedGroups.has("Shells")) {
         for (const shell of unmatchedShells) {
           result.push({ kind: "shell", shell });
         }
