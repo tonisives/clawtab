@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { JobSortMode, ProcessProvider } from "@clawtab/shared";
+import type { JobListMode, JobSortMode, ProcessProvider } from "@clawtab/shared";
 import type { AppSettings } from "../../../types";
 import {
   DEFAULT_SHORTCUTS,
@@ -37,6 +37,10 @@ export function useJobsTabSettings() {
   });
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<JobSortMode>("name");
+  const [listMode, setListModeState] = useState<JobListMode>(() => {
+    const value = localStorage.getItem("desktop_job_list_mode");
+    return value === "tabs" || value === "latest" || value === "jobs" ? value : "tabs";
+  });
   const [groupTabView, setGroupTabView] = useState<Record<string, "tabs" | "jobs">>(() => {
     const raw = localStorage.getItem("desktop_group_tab_view");
     if (!raw) return {};
@@ -117,6 +121,8 @@ export function useJobsTabSettings() {
   }, []);
 
   const setGroupTabViewFor = useCallback((group: string, view: "tabs" | "jobs") => {
+    setListModeState(view);
+    localStorage.setItem("desktop_job_list_mode", view);
     setGroupTabView((prev) => {
       const next = { ...prev, [group]: view };
       localStorage.setItem("desktop_group_tab_view", JSON.stringify(next));
@@ -125,12 +131,19 @@ export function useJobsTabSettings() {
   }, []);
 
   const setAllGroupTabView = useCallback((groups: string[], view: "tabs" | "jobs") => {
+    setListModeState(view);
+    localStorage.setItem("desktop_job_list_mode", view);
     setGroupTabView((prev) => {
       const next = { ...prev };
       for (const g of groups) next[g] = view;
       localStorage.setItem("desktop_group_tab_view", JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  const setListMode = useCallback((mode: JobListMode) => {
+    setListModeState(mode);
+    localStorage.setItem("desktop_job_list_mode", mode);
   }, []);
 
   const handleHideGroup = useCallback((group: string) => {
@@ -166,6 +179,8 @@ export function useJobsTabSettings() {
     pinnedItems,
     sortMode,
     setSortMode,
+    listMode,
+    setListMode,
     hiddenGroups,
     persistJobOrder,
     persistProcessOrder,

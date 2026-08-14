@@ -405,6 +405,8 @@ export function JobsSidebar({
       processOrder={processOrder}
       sortMode={sortMode}
       onSortChange={settings.setSortMode}
+      listMode={settings.listMode}
+      onListModeChange={settings.setListMode}
       onSelectJob={onSelectJob}
       onSelectProcess={onSelectProcess}
       onSelectShell={onSelectShell}

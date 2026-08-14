@@ -32,6 +32,7 @@ export function useJobListView(props: JobListViewProps) {
     hiddenGroups: props.hiddenGroups,
     hiddenSectionCollapsed,
     interactiveHiddenGroups: props.interactiveHiddenGroups,
+    listMode: props.listMode ?? "tabs",
     pinnedItems: props.pinnedItems,
   };
   const agent = {
@@ -139,11 +140,15 @@ export function useJobListView(props: JobListViewProps) {
     hiddenSectionCollapsed,
     hoverSwitchTimerRef: refs.hoverSwitchTimerRef,
     items: derived.items,
+    groupedItems: derived.groupedItems,
     jobs: data.jobs,
+    latestItemCount: derived.latestItemCount,
+    listMode: grouping.listMode,
     matchedProcessesByJob: derived.matchedProcessesByJob,
     onActivateWorkspace: props.onActivateWorkspace,
     onAddJob: props.onAddJob,
     onGroupTabViewChange: callbacks.onGroupTabViewChange,
+    onListModeChange: props.onListModeChange,
     onHideGroup: props.onHideGroup,
     onProcessRenameDraftChange: props.onProcessRenameDraftChange,
     onProcessRenameStateChange: props.onProcessRenameStateChange,

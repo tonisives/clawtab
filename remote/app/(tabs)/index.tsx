@@ -59,7 +59,7 @@ import { NotificationsMenuButton } from "../../src/components/NotificationsMenuB
 import { DEMO_JOBS, DEMO_PROCESSES, DEMO_STATUSES } from "../../src/demo/data"
 import { colors } from "@clawtab/shared"
 import { spacing } from "@clawtab/shared"
-import type { AgentEffort, RemoteJob, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
+import type { AgentEffort, RemoteJob, JobListMode, JobSortMode, JobStatus, AgentModelOption } from "@clawtab/shared"
 import type { DetectedProcess, ProcessProvider } from "@clawtab/shared"
 import { buildModelOptions } from "../../src/lib/agentModels"
 
@@ -69,6 +69,7 @@ type SidebarSection = LiquidSidebarSection | "notifications"
 const COLLAPSED_GROUPS_STORAGE_KEY = "remote_collapsed_groups"
 const HIDDEN_GROUPS_STORAGE_KEY = "remote_hidden_groups"
 const GROUP_TAB_VIEW_STORAGE_KEY = "remote_group_tab_view"
+const LIST_MODE_STORAGE_KEY = "remote_job_list_mode"
 const JOB_LIST_LOADING_PROGRESS = 0.62
 
 function isProcessProvider(value: string | undefined): value is ProcessProvider {
@@ -205,6 +206,20 @@ function saveGroupTabView(value: GroupTabView) {
   localStorage.setItem(GROUP_TAB_VIEW_STORAGE_KEY, JSON.stringify(value))
 }
 
+function readListMode(): JobListMode {
+  if (Platform.OS !== "web" || typeof localStorage === "undefined") return "tabs"
+  const value = localStorage.getItem(LIST_MODE_STORAGE_KEY)
+  return value === "tabs" || value === "latest" || value === "jobs" ? value : "tabs"
+}
+
+function saveListMode(value: JobListMode) {
+  if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+    localStorage.setItem(LIST_MODE_STORAGE_KEY, value)
+    return
+  }
+  AsyncStorage.setItem(LIST_MODE_STORAGE_KEY, value).catch(() => {})
+}
+
 export default function JobsScreen() {
   const realJobs = useJobsStore((s) => s.jobs)
   const realStatuses = useJobsStore((s) => s.statuses)
@@ -222,6 +237,7 @@ export default function JobsScreen() {
     readWebStringSet(HIDDEN_GROUPS_STORAGE_KEY),
   )
   const [sortMode, setSortMode] = useState<JobSortMode>("name")
+  const [listMode, setListMode] = useState<JobListMode>(() => readListMode())
   const [groupTabView, setGroupTabView] = useState<GroupTabView>(() => readGroupTabView())
   const [selectedJob, setSelectedJob] = useState<string | null>(() => readSelection("job"))
   const [selectedProcess, setSelectedProcess] = useState<string | null>(() =>
@@ -307,12 +323,16 @@ export default function JobsScreen() {
   useEffect(() => {
     if (Platform.OS === "web") return
     let cancelled = false
-    AsyncStorage.multiGet([COLLAPSED_GROUPS_STORAGE_KEY, HIDDEN_GROUPS_STORAGE_KEY])
+    AsyncStorage.multiGet([COLLAPSED_GROUPS_STORAGE_KEY, HIDDEN_GROUPS_STORAGE_KEY, LIST_MODE_STORAGE_KEY])
       .then((entries) => {
         if (cancelled) return
         const values = new Map(entries)
         setCollapsedGroups(parseStringSet(values.get(COLLAPSED_GROUPS_STORAGE_KEY) ?? null))
         setHiddenGroups(parseStringSet(values.get(HIDDEN_GROUPS_STORAGE_KEY) ?? null))
+        const storedListMode = values.get(LIST_MODE_STORAGE_KEY)
+        if (storedListMode === "tabs" || storedListMode === "latest" || storedListMode === "jobs") {
+          setListMode(storedListMode)
+        }
       })
       .catch(() => {})
     return () => {
@@ -376,6 +396,8 @@ export default function JobsScreen() {
   }, [])
 
   const handleGroupTabViewChange = useCallback((group: string, view: "tabs" | "jobs") => {
+    setListMode(view)
+    saveListMode(view)
     setGroupTabView((prev) => {
       const next = { ...prev, [group]: view }
       saveGroupTabView(next)
@@ -384,12 +406,19 @@ export default function JobsScreen() {
   }, [])
 
   const handleSetAllGroupTabView = useCallback((groups: string[], view: "tabs" | "jobs") => {
+    setListMode(view)
+    saveListMode(view)
     setGroupTabView((prev) => {
       const next = { ...prev }
       for (const group of groups) next[group] = view
       saveGroupTabView(next)
       return next
     })
+  }, [])
+
+  const handleListModeChange = useCallback((mode: JobListMode) => {
+    setListMode(mode)
+    saveListMode(mode)
   }, [])
 
   const handleSelectJob = useCallback(
@@ -724,6 +753,8 @@ export default function JobsScreen() {
         onRefresh={handleRefresh}
         sortMode={sortMode}
         onSortChange={setSortMode}
+        listMode={listMode}
+        onListModeChange={handleListModeChange}
         onSelectJob={handleSelectJob}
         onSelectProcess={handleSelectProcess}
         pinnedItems={pinnedItems}
@@ -762,6 +793,8 @@ export default function JobsScreen() {
       onRefresh={handleRefresh}
       sortMode={sortMode}
       onSortChange={setSortMode}
+      listMode={listMode}
+      onListModeChange={handleListModeChange}
       onSelectJob={handleSelectJob}
       onSelectProcess={handleSelectProcess}
       pinnedItems={pinnedItems}
@@ -1140,6 +1173,8 @@ export default function JobsScreen() {
             onRefresh={handleRefresh}
             sortMode={sortMode}
             onSortChange={setSortMode}
+            listMode={listMode}
+            onListModeChange={handleListModeChange}
             onSelectJob={handleSelectJobWithTree}
             onSelectProcess={handleSelectProcessWithTree}
             pinnedItems={pinnedItems}
