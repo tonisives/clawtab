@@ -226,6 +226,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
           onData={sendInput}
           onResize={sendResize}
           interactive
+          forceDarkTheme
         />
       </View>
     ),

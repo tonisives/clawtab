@@ -296,6 +296,7 @@ export default function JobDetailScreen() {
             onData={sendInput}
             onResize={sendResize}
             interactive
+            forceDarkTheme
           />
           {!ptyConnecting && !ptyError ? (
             <TerminalScrollButtons

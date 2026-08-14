@@ -28,6 +28,7 @@ interface XtermLogProps {
   onResize?: (cols: number, rows: number) => void;
   /** Whether terminal accepts input (default true) */
   interactive?: boolean;
+  forceDarkTheme?: boolean;
 }
 
 function encodeTerminalInput(text: string): string {
