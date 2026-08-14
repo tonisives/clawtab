@@ -86,10 +86,7 @@ pub(super) fn project_window_name(job: &Job) -> String {
         Some((prefix, _)) if !prefix.is_empty() => prefix,
         _ => &job.name,
     };
-    let suffix = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
+    let suffix = Utc::now().format("%Y%m%d-%H%M%S");
     format!("cwt-{}-{}", project, suffix)
 }
 
