@@ -31,6 +31,8 @@ const processStartedTimestamp = (process: DetectedProcess): number => (
   process.session_started_at ? Date.parse(process.session_started_at) || 0 : 0
 );
 
+const PINNED_GROUP_KEY = "__pinned";
+
 const processLatestTimestamp = (process: DetectedProcess, sortMode: LatestSortMode): number => {
   if (sortMode === "message") return process._last_user_message ?? processStartedTimestamp(process);
   if (sortMode === "activity") return process._last_activity ?? processStartedTimestamp(process);
@@ -55,6 +57,29 @@ const compareProcessActivity = (left: DetectedProcess, right: DetectedProcess): 
     right.display_name ?? right.first_query ?? right.cwd,
   )
 );
+
+function getPinnedRows(
+  pinnedItems: string[] | undefined,
+  jobs: RemoteJob[],
+  detectedProcesses: DetectedProcess[],
+): ListItem[] {
+  if (!pinnedItems?.length) return [];
+
+  const pinnedRows: ListItem[] = [];
+  const jobsBySlug = new Map(jobs.map((job) => [job.slug, job]));
+  const processesByPaneId = new Map(detectedProcesses.map((process) => [process.pane_id, process]));
+  for (const key of pinnedItems) {
+    const [kind, id] = key.split(/:(.*)/s);
+    if (kind === "job") {
+      const job = jobsBySlug.get(id);
+      if (job) pinnedRows.push({ kind: "job", job, idx: 0 });
+    } else if (kind === "process") {
+      const process = processesByPaneId.get(id);
+      if (process) pinnedRows.push({ kind: "process", process });
+    }
+  }
+  return pinnedRows;
+}
 
 interface UseJobListDerivedItemsParams {
   data: {
@@ -364,6 +389,11 @@ export function useJobListDerivedItems({
     [detectedProcesses, inferredJobSlugByPaneId, jobs, query, statuses],
   );
 
+  const pinnedRows = useMemo(
+    () => getPinnedRows(pinnedItems, jobs, detectedProcesses),
+    [detectedProcesses, jobs, pinnedItems],
+  );
+
   const latestItems = useMemo(() => {
     const rows: Array<{ item: ListItem; name: string; timestamp: number }> = [];
 
@@ -413,28 +443,23 @@ export function useJobListDerivedItems({
         : right.timestamp - left.timestamp
           || left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
     ));
-    return rows.map((row) => row.item);
-  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, latestSortMode, query, sortMode, statuses]);
+    const result: ListItem[] = [];
+    if (pinnedRows.length > 0) {
+      result.push({ kind: "header", group: PINNED_GROUP_KEY, displayGroup: "Pinned" });
+      if (query || !collapsedGroups.has(PINNED_GROUP_KEY)) {
+        result.push(...pinnedRows);
+      }
+    }
+    result.push(...rows.map((row) => row.item));
+    return result;
+  }, [collapsedGroups, detectedProcesses, inferredJobSlugByPaneId, jobs, latestSortMode, pinnedRows, query, sortMode, statuses]);
 
   const groupedItems = useMemo(() => {
     const result: ListItem[] = [];
 
-    if (pinnedItems?.length) {
-      const pinnedRows: ListItem[] = [];
-      const jobsBySlug = new Map(jobs.map((job) => [job.slug, job]));
-      const processesByPaneId = new Map(detectedProcesses.map((process) => [process.pane_id, process]));
-      for (const key of pinnedItems) {
-        const [kind, id] = key.split(/:(.*)/s);
-        if (kind === "job") {
-          const job = jobsBySlug.get(id);
-          if (job) pinnedRows.push({ kind: "job", job, idx: 0 });
-        } else if (kind === "process") {
-          const process = processesByPaneId.get(id);
-          if (process) pinnedRows.push({ kind: "process", process });
-        }
-      }
-      if (pinnedRows.length > 0) {
-        result.push({ kind: "header", group: "__pinned", displayGroup: "Pinned" });
+    if (pinnedRows.length > 0) {
+      result.push({ kind: "header", group: PINNED_GROUP_KEY, displayGroup: "Pinned" });
+      if (query || !collapsedGroups.has(PINNED_GROUP_KEY)) {
         result.push(...pinnedRows);
       }
     }
@@ -689,14 +714,14 @@ export function useJobListDerivedItems({
     }
 
     return result;
-  }, [grouped, sortedGroupKeys, collapsedGroups, groupLatestSortMode, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, query, shellPanes, groupTabView, pinnedItems, jobs, detectedProcesses, sortMode, statuses]);
+  }, [grouped, sortedGroupKeys, collapsedGroups, groupLatestSortMode, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, matchedProcessesByGroup, matchedShellsByGroup, unmatchedProcesses, onRunAgent, query, shellPanes, groupTabView, pinnedRows, sortMode, statuses]);
 
 
   return {
     inferredJobSlugByPaneId,
     items: listMode === "latest" ? latestItems : groupedItems,
     groupedItems,
-    latestItemCount: latestItems.length,
+    latestItemCount: latestItems.filter((item) => item.kind === "job" || item.kind === "process").length,
     matchedProcessesByJob,
   };
 }

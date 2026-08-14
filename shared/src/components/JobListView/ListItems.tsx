@@ -98,6 +98,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
   );
 
   if (hook.listMode === "latest") {
+    const header = hook.items.find((item) => item.kind === "header");
     const latestRows = hook.items.filter((item) => item.kind === "job" || item.kind === "process");
     const children = latestRows.map((item, offset) => {
       const position = groupedPosition(offset, latestRows.length);
@@ -125,7 +126,12 @@ export function JobListItems({ hook }: JobListItemsProps) {
         />
       );
     });
-    return wrapRows("latest_items", children);
+    return (
+      <>
+        {header ? renderSingleItem(hook, header, `h_${header.group}`, 0, false) : null}
+        {wrapRows("latest_items", children)}
+      </>
+    );
   }
 
   while (index < hook.items.length) {
