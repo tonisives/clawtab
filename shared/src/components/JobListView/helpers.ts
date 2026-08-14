@@ -81,6 +81,7 @@ export function displayGroupName(group: string, jobs: RemoteJob[]): string {
 export function matchesProcessQuery(process: DetectedProcess, query: string): boolean {
   return matchesQuery([
     processDisplayTitle(process),
+    process.pane_id,
     process.display_name,
     process.pane_title,
     process.first_query,
