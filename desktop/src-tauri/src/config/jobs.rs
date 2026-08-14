@@ -331,13 +331,12 @@ impl JobsConfig {
             Ok(contents) => match serde_yml::from_str::<Job>(&contents) {
                 Ok(mut job) => {
                     job.slug = slug.to_string();
-                    // Migration: existing jobs with telegram_chat_id but no explicit
-                    // notify_target should default to Telegram to preserve behavior
-                    if job.telegram_chat_id.is_some() && job.notify_target == NotifyTarget::None {
-                        job.notify_target = NotifyTarget::Telegram;
-                    }
+                    let notify_target_migrated = migrate_legacy_notify_target(&mut job, &contents);
                     let agent_selection_migrated = migrate_agent_selection(&mut job);
-                    if contents.contains("job_type: folder") || agent_selection_migrated {
+                    if contents.contains("job_type: folder")
+                        || notify_target_migrated
+                        || agent_selection_migrated
+                    {
                         if let Ok(canonical) = serde_yml::to_string(&job) {
                             if let Err(e) = std::fs::write(path, canonical) {
                                 log::warn!("Failed to write migrated {}: {}", path.display(), e);
@@ -511,6 +510,25 @@ impl JobsConfig {
     }
 }
 
+fn migrate_legacy_notify_target(job: &mut Job, contents: &str) -> bool {
+    // `NotifyTarget::None` is also serde's default, so checking only the
+    // deserialized value cannot distinguish an old job that omitted the field
+    // from a user-selected explicit `notify_target: none`.
+    let has_explicit_target = serde_yml::from_str::<HashMap<String, serde_yml::Value>>(contents)
+        .map(|fields| fields.contains_key("notify_target"))
+        .unwrap_or(false);
+
+    if !has_explicit_target
+        && job.telegram_chat_id.is_some()
+        && job.notify_target == NotifyTarget::None
+    {
+        job.notify_target = NotifyTarget::Telegram;
+        return true;
+    }
+
+    false
+}
+
 /// Migrate agent selections saved by older versions of the selector.
 ///
 /// Older jobs sometimes stored the Codex/Claude effort flag inside
@@ -682,7 +700,9 @@ fn migrate_one_flat_slug_dir(jobs_dir: &std::path::Path, path: &std::path::Path)
 
 fn read_job_yaml(path: &std::path::Path) -> Option<Job> {
     let contents = std::fs::read_to_string(path).ok()?;
-    serde_yml::from_str(&contents).ok()
+    let mut job = serde_yml::from_str(&contents).ok()?;
+    migrate_legacy_notify_target(&mut job, &contents);
+    Some(job)
 }
 
 fn is_already_nested(job: &Job, path: &std::path::Path) -> bool {
@@ -1086,6 +1106,28 @@ mod tests {
         assert_eq!(job.params[0].value, None);
         assert_eq!(job.params[1].name, "bar");
         assert_eq!(job.params[1].value.as_deref(), Some("baz"));
+    }
+
+    #[test]
+    fn explicit_none_notification_target_is_preserved_with_telegram_chat() {
+        let yaml = base_yaml("params: []").replace(
+            "telegram_chat_id: null",
+            "telegram_chat_id: 123\nnotify_target: none",
+        );
+        let mut job = parse_job(&yaml);
+
+        assert!(!migrate_legacy_notify_target(&mut job, &yaml));
+        assert_eq!(job.notify_target, NotifyTarget::None);
+    }
+
+    #[test]
+    fn omitted_notification_target_migrates_to_telegram_with_telegram_chat() {
+        let yaml =
+            base_yaml("params: []").replace("telegram_chat_id: null", "telegram_chat_id: 123");
+        let mut job = parse_job(&yaml);
+
+        assert!(migrate_legacy_notify_target(&mut job, &yaml));
+        assert_eq!(job.notify_target, NotifyTarget::Telegram);
     }
 
     #[test]
