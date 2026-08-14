@@ -32,8 +32,8 @@ const processStartedTimestamp = (process: DetectedProcess): number => (
 );
 
 const processLatestTimestamp = (process: DetectedProcess, sortMode: LatestSortMode): number => {
-  if (sortMode === "message") return process._last_log_change ?? processStartedTimestamp(process);
-  if (sortMode === "activity") return process._last_activity ?? process._last_log_change ?? processStartedTimestamp(process);
+  if (sortMode === "message") return process._last_user_message ?? processStartedTimestamp(process);
+  if (sortMode === "activity") return process._last_activity ?? processStartedTimestamp(process);
   return processStartedTimestamp(process);
 };
 

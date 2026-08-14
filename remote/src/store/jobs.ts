@@ -21,6 +21,8 @@ const parsedTimestamp = (value: string | null | undefined): number => {
   return Number.isFinite(timestamp) ? timestamp : 0;
 };
 
+const semanticOutput = (value: string): string => value.replace(/\s+/g, " ").trim();
+
 interface JobsState {
   jobs: RemoteJob[];
   statuses: Record<string, JobStatus>;
@@ -81,21 +83,28 @@ export const useJobsStore = create<JobsState>((set) => ({
     const visibleProcesses = incomingProcesses.map((process) => {
       const previous = previousByPaneId.get(process.pane_id);
       const activity = state.agentActivity[process.pane_id];
-      const outputChanged = previous != null && (
-        previous.log_lines !== process.log_lines
-        || previous.last_query !== process.last_query
+      const humanMessageChanged = previous != null && previous.last_query !== process.last_query;
+      const logChanged = previous != null && previous.log_lines !== process.log_lines;
+      const meaningfulOutputChanged = previous != null && (
+        humanMessageChanged
         || previous.token_count !== process.token_count
+        || semanticOutput(previous.log_lines) !== semanticOutput(process.log_lines)
       );
-      const lastLogChange = outputChanged ? now : previous?._last_log_change ?? now;
+      const startedAt = parsedTimestamp(process.session_started_at);
+      const lastLogChange = logChanged ? now : previous?._last_log_change ?? startedAt;
+      const lastUserMessage = humanMessageChanged
+        ? now
+        : previous?._last_user_message ?? startedAt;
       const lastActivity = Math.max(
-        outputChanged ? now : 0,
+        meaningfulOutputChanged ? now : 0,
         previous?._last_activity ?? 0,
         activity?.last_activity ?? 0,
-        parsedTimestamp(process.session_started_at),
+        startedAt,
       );
       return {
         ...process,
         _last_log_change: lastLogChange,
+        _last_user_message: lastUserMessage,
         _last_activity: lastActivity,
         _agent_state: state.questionPaneIds.has(process.pane_id)
           ? "asking"
@@ -117,14 +126,23 @@ export const useJobsStore = create<JobsState>((set) => ({
   setAgentActivity: (activity) => set((state) => {
     const now = Date.now();
     const nextActivity: Record<string, StoredAgentActivity> = {};
+    const processesByPaneId = new Map(
+      state.detectedProcesses.map((process) => [process.pane_id, process]),
+    );
     for (const item of activity) {
       const previous = state.agentActivity[item.pane_id];
       const changed = !previous
         || previous.working !== item.working
         || previous.asking !== item.asking;
+      const process = processesByPaneId.get(item.pane_id);
+      const initialActivity = item.working || item.asking
+        ? now
+        : process?._last_activity ?? parsedTimestamp(process?.session_started_at);
       nextActivity[item.pane_id] = {
         ...item,
-        last_activity: changed ? now : previous.last_activity,
+        last_activity: previous && changed
+          ? now
+          : previous?.last_activity ?? initialActivity,
       };
     }
     return {
@@ -197,6 +215,7 @@ export const useJobsStore = create<JobsState>((set) => ({
               ...process,
               _agent_state: currentActivity ? "working" : undefined,
               _last_log_change: now,
+              _last_user_message: now,
               _last_activity: now,
             }
           : process

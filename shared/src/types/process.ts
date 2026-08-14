@@ -96,6 +96,8 @@ export interface DetectedProcess {
   _transient_state?: "starting" | "stopping";
   /** Timestamp (ms) when log_lines last changed, set client-side */
   _last_log_change?: number;
+  /** Timestamp (ms) when the latest human query was observed. */
+  _last_user_message?: number;
   /** Authoritative agent state received from the daemon. */
   _agent_state?: ProcessAgentState;
   /** Timestamp (ms) of the latest observed user or agent activity. */

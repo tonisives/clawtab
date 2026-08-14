@@ -84,6 +84,7 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       proc.last_query,
       proc.session_started_at,
       proc._last_log_change ?? null,
+      proc._last_user_message ?? null,
     ]));
 
   const persistCache = useCallback((nextJobs: RemoteJob[], nextStatuses: Record<string, JobStatus>) => {
@@ -131,6 +132,8 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
 
   const prevLogLinesRef = useRef<Map<string, string>>(new Map());
   const prevLastLogChangeRef = useRef<Map<string, number>>(new Map());
+  const prevQueriesRef = useRef<Map<string, string | null>>(new Map());
+  const prevUserMessagesRef = useRef<Map<string, number>>(new Map());
 
   const loadProcesses = useCallback(async () => {
     if (loadProcessesInFlightRef.current) return;
@@ -140,20 +143,33 @@ export function useJobsCore(transport: Transport, pollInterval = 5000) {
       const now = Date.now();
       const prevLogs = prevLogLinesRef.current;
       const prevChanges = prevLastLogChangeRef.current;
+      const prevQueries = prevQueriesRef.current;
+      const prevUserMessages = prevUserMessagesRef.current;
       const nextLogs = new Map<string, string>();
       const nextChanges = new Map<string, number>();
+      const nextQueries = new Map<string, string | null>();
+      const nextUserMessages = new Map<string, number>();
       for (const proc of p) {
         const oldLog = prevLogs.get(proc.pane_id);
+        const oldQuery = prevQueries.get(proc.pane_id);
+        const startedAt = proc.session_started_at ? Date.parse(proc.session_started_at) || 0 : 0;
         nextLogs.set(proc.pane_id, proc.log_lines);
+        nextQueries.set(proc.pane_id, proc.last_query);
         if (oldLog !== undefined && oldLog !== proc.log_lines) {
           proc._last_log_change = now;
         } else {
-          proc._last_log_change = prevChanges.get(proc.pane_id) ?? now;
+          proc._last_log_change = prevChanges.get(proc.pane_id) ?? startedAt;
         }
+        proc._last_user_message = oldQuery !== undefined && oldQuery !== proc.last_query
+          ? now
+          : prevUserMessages.get(proc.pane_id) ?? startedAt;
         nextChanges.set(proc.pane_id, proc._last_log_change);
+        nextUserMessages.set(proc.pane_id, proc._last_user_message);
       }
       prevLogLinesRef.current = nextLogs;
       prevLastLogChangeRef.current = nextChanges;
+      prevQueriesRef.current = nextQueries;
+      prevUserMessagesRef.current = nextUserMessages;
       setProcessesLoaded(true);
       const sig = signatureForProcesses(p);
       if (sig === processesSigRef.current) return;
