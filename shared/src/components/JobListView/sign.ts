@@ -128,6 +128,7 @@ export interface JobListViewProps {
   onSetAllGroupTabView?: (groups: string[], view: "tabs" | "jobs") => void;
   searchQuery?: string;
   onSearchQueryChange?: (query: string) => void;
+  hideToolbar?: boolean;
   hideSearchBar?: boolean;
   scrollEventThrottle?: number;
   renderAsScrollRoot?: boolean;

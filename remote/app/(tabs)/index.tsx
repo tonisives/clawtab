@@ -792,9 +792,6 @@ export default function JobsScreen() {
       interactiveHiddenGroups
       onRefresh={handleRefresh}
       sortMode={sortMode}
-      onSortChange={setSortMode}
-      listMode={listMode}
-      onListModeChange={handleListModeChange}
       onSelectJob={handleSelectJob}
       onSelectProcess={handleSelectProcess}
       pinnedItems={pinnedItems}
@@ -808,7 +805,7 @@ export default function JobsScreen() {
       defaultAgentModel={defaultModel}
       groupTabView={groupTabView}
       onGroupTabViewChange={handleGroupTabViewChange}
-      onSetAllGroupTabView={handleSetAllGroupTabView}
+      listMode="tabs"
       headerContent={
         <>
           {isIosPadPortrait ? <Text style={styles.portraitPageTitle}>ClawTab</Text> : null}
@@ -820,6 +817,7 @@ export default function JobsScreen() {
       emptyMessage={connected ? "No jobs found. Create jobs on your desktop." : "Connecting..."}
       searchQuery={searchQuery}
       onSearchQueryChange={setSearchQuery}
+      hideToolbar
       hideSearchBar
       contentContainerStyle={[
         styles.mobileListContent,

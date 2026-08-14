@@ -136,6 +136,7 @@ export function useJobListView(props: JobListViewProps) {
     groupMenuTriggerRefs: refs.groupMenuTriggerRefs,
     handleRefresh,
     headerContent: props.headerContent,
+    hideToolbar: props.hideToolbar ?? false,
     hideSearchBar: props.hideSearchBar ?? false,
     hiddenSectionCollapsed,
     hoverSwitchTimerRef: refs.hoverSwitchTimerRef,

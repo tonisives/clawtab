@@ -38,7 +38,7 @@ export function JobListScrollContent({ hook }: JobListScrollContentProps) {
       }
     >
       {hook.headerContent}
-      <JobListToolbar hook={hook} />
+      {!hook.hideToolbar && <JobListToolbar hook={hook} />}
       <JobListItems hook={hook} />
       {hook.groupMenu && (hook.onAddJob || hook.onHideGroup || hook.onUnhideGroup) && (
         <PopupMenu
