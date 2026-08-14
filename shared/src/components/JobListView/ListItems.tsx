@@ -98,38 +98,54 @@ export function JobListItems({ hook }: JobListItemsProps) {
   );
 
   if (hook.listMode === "latest") {
-    const header = hook.items.find((item) => item.kind === "header");
-    const latestRows = hook.items.filter((item) => item.kind === "job" || item.kind === "process");
-    const children = latestRows.map((item, offset) => {
-      const position = groupedPosition(offset, latestRows.length);
-      if (item.kind === "job") {
-        const itemKey = `j_${item.job.slug || item.job.name}`;
+    const header = hook.items.find(
+      (item): item is Extract<ListItem, { kind: "header" }> => item.kind === "header",
+    );
+    const latestRows = hook.items.filter(
+      (item): item is Extract<ListItem, { kind: "job" | "process" }> => (
+        item.kind === "job" || item.kind === "process"
+      ),
+    );
+    const pinnedRows = latestRows.slice(0, hook.latestPinnedItemCount);
+    const currentRows = latestRows.slice(hook.latestPinnedItemCount);
+    const renderRows = (
+      rows: Array<Extract<ListItem, { kind: "job" | "process" }>>,
+      key: string,
+    ) => {
+      if (rows.length === 0) return null;
+      const children = rows.map((item, offset) => {
+        const position = groupedPosition(offset, rows.length);
+        if (item.kind === "job") {
+          const itemKey = `j_${item.job.slug || item.job.name}`;
+          return (
+            <JobListJobItem
+              key={itemKey}
+              hook={hook}
+              item={item}
+              itemKey={itemKey}
+              groupedPosition={position}
+            />
+          );
+        }
+        const itemKey = `p_${item.process.pane_id}`;
         return (
-          <JobListJobItem
+          <JobListProcessItem
             key={itemKey}
             hook={hook}
-            item={item}
+            process={item.process}
             itemKey={itemKey}
+            inGroup={item.inGroup}
             groupedPosition={position}
           />
         );
-      }
-      const itemKey = `p_${item.process.pane_id}`;
-      return (
-        <JobListProcessItem
-          key={itemKey}
-          hook={hook}
-          process={item.process}
-          itemKey={itemKey}
-          inGroup={item.inGroup}
-          groupedPosition={position}
-        />
-      );
-    });
+      });
+      return wrapRows(key, children);
+    };
     return (
       <>
         {header ? renderSingleItem(hook, header, `h_${header.group}`, 0, false) : null}
-        {wrapRows("latest_items", children)}
+        {renderRows(pinnedRows, "latest_pinned_items")}
+        {renderRows(currentRows, "latest_items")}
       </>
     );
   }

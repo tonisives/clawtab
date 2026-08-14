@@ -146,6 +146,7 @@ export function useJobListView(props: JobListViewProps) {
     groupedItems: derived.groupedItems,
     jobs: data.jobs,
     latestItemCount: derived.latestItemCount,
+    latestPinnedItemCount: derived.latestPinnedItemCount,
     latestSortMode: props.latestSortMode,
     listMode: grouping.listMode,
     matchedProcessesByJob: derived.matchedProcessesByJob,

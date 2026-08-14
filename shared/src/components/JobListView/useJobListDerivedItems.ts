@@ -722,6 +722,9 @@ export function useJobListDerivedItems({
     items: listMode === "latest" ? latestItems : groupedItems,
     groupedItems,
     latestItemCount: latestItems.filter((item) => item.kind === "job" || item.kind === "process").length,
+    latestPinnedItemCount: pinnedRows.length > 0 && (query || !collapsedGroups.has(PINNED_GROUP_KEY))
+      ? pinnedRows.length
+      : 0,
     matchedProcessesByJob,
   };
 }
