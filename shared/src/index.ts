@@ -5,6 +5,7 @@ export type {
   JobType,
   JobStatus,
   JobSortMode,
+  JobListMode,
   JobParam,
   JobUpdate,
   CalendarRepeat,

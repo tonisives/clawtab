@@ -18,7 +18,7 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
     let totalJobs = 0;
     let allTabs = true;
     let allJobs = true;
-    for (const item of hook.items) {
+    for (const item of hook.groupedItems) {
       if (item.kind !== "header" || !item.tabsToggle) continue;
       groups.push(item.tabsToggle.group);
       totalTabs += item.tabsToggle.tabCount;
@@ -26,14 +26,30 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
       if (item.tabsToggle.view !== "tabs") allTabs = false;
       if (item.tabsToggle.view !== "jobs") allJobs = false;
     }
+    const jobProcessPaneIds = new Set(
+      [...hook.matchedProcessesByJob.values()].flatMap((processes) => (
+        processes.map((process) => process.pane_id)
+      )),
+    );
+    totalTabs = hook.detectedProcesses.filter((process) => !jobProcessPaneIds.has(process.pane_id)).length
+      + hook.shellPanes.length;
+    totalJobs = hook.jobs.length;
     return {
       groups,
-      anyHeader: groups.length > 0,
+      anyHeader: groups.length > 0 || totalTabs > 0,
       totalTabs,
       totalJobs,
-      activeView: groups.length > 0 && allTabs ? ("tabs" as const) : groups.length > 0 && allJobs ? ("jobs" as const) : null,
+      activeView: hook.listMode === "latest"
+        ? ("latest" as const)
+        : groups.length > 0 && allTabs
+          ? ("tabs" as const)
+          : groups.length > 0 && allJobs
+            ? ("jobs" as const)
+            : groups.length === 0 && totalTabs > 0
+              ? ("tabs" as const)
+              : null,
     };
-  }, [hook.items]);
+  }, [hook.detectedProcesses, hook.groupedItems, hook.jobs.length, hook.listMode, hook.matchedProcessesByJob, hook.shellPanes.length]);
 
   const handleSelectSort = useCallback((mode: typeof hook.sortMode) => {
     hook.onSortChange?.(mode);
@@ -45,11 +61,18 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
     (document.activeElement as HTMLElement)?.blur();
   }, [hook]);
 
+  const handleSelectListMode = useCallback((mode: "tabs" | "latest" | "jobs") => {
+    hook.onListModeChange?.(mode);
+    if (mode !== "latest") {
+      hook.onSetAllGroupTabView?.(globalTabsView.groups, mode);
+    }
+  }, [globalTabsView.groups, hook]);
+
   const sortableItemCount = hook.jobs.length + hook.detectedProcesses.length + hook.shellPanes.length;
   const shouldShowToolbar =
     (hook.onSortChange && sortableItemCount > 1) ||
     hook.jobs.length > 0 ||
-    (hook.onSetAllGroupTabView && globalTabsView.anyHeader);
+    (hook.onListModeChange && (globalTabsView.anyHeader || hook.latestItemCount > 0));
   if (!shouldShowToolbar) return null;
 
   const currentSortLabel = SORT_OPTIONS.find((option) => option.value === hook.sortMode)?.label ?? "Name";
@@ -106,7 +129,7 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
           )}
         </View>
       )}
-      {hook.onSetAllGroupTabView && globalTabsView.anyHeader && (
+      {hook.onListModeChange && (globalTabsView.anyHeader || hook.latestItemCount > 0) && (
         <>
           <View style={{ flexBasis: "100%", height: 0 }} />
           <View
@@ -123,14 +146,18 @@ export function JobListToolbar({ hook }: JobListToolbarProps) {
               Platform.OS !== "web" ? styles.nativeGlobalTabsSegment : null,
             ]}
           >
-            {(["tabs", "jobs"] as const).map((view) => {
+            {(["tabs", "latest", "jobs"] as const).map((view) => {
               const active = globalTabsView.activeView === view;
-              const count = view === "tabs" ? globalTabsView.totalTabs : globalTabsView.totalJobs;
-              const label = view === "tabs" ? "Tabs" : "Jobs";
+              const count = view === "tabs"
+                ? globalTabsView.totalTabs
+                : view === "latest"
+                  ? hook.latestItemCount
+                  : globalTabsView.totalJobs;
+              const label = view === "tabs" ? "Tabs" : view === "latest" ? "Latest" : "Jobs";
               return (
                 <TouchableOpacity
                   key={view}
-                  onPress={() => hook.onSetAllGroupTabView?.(globalTabsView.groups, view)}
+                  onPress={() => handleSelectListMode(view)}
                   activeOpacity={0.7}
                   style={{
                     paddingHorizontal: Platform.OS === "web" ? 10 : 12,

@@ -1,7 +1,7 @@
 import type * as React from "react";
 import type { ScrollViewProps, StyleProp, ViewStyle } from "react-native";
 
-import type { RemoteJob, JobStatus, JobSortMode } from "../../types/job";
+import type { RemoteJob, JobStatus, JobListMode, JobSortMode } from "../../types/job";
 import type { AgentEffort, AgentModelOption, DetectedProcess, ProcessProvider, ShellPane } from "../../types/process";
 
 export const IDLE_STATUS: JobStatus = { state: "idle" };
@@ -31,6 +31,8 @@ export interface JobListViewProps {
   // Sorting
   sortMode?: JobSortMode;
   onSortChange?: (mode: JobSortMode) => void;
+  listMode?: JobListMode;
+  onListModeChange?: (mode: JobListMode) => void;
   // Navigation
   onSelectJob?: (job: RemoteJob) => void;
   onSelectProcess?: (process: DetectedProcess) => void;

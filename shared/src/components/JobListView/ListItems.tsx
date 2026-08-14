@@ -19,10 +19,20 @@ interface JobListItemsProps {
 
 export function JobListItems({ hook }: JobListItemsProps) {
   if (hook.items.length === 0 && (hook.showEmpty || hook.query)) {
+    const emptyTitle = hook.query
+      ? "No matches"
+      : hook.listMode === "latest"
+        ? "No open agents"
+        : "No jobs";
+    const emptyText = hook.query
+      ? `No jobs or agents matching "${hook.searchQuery}"`
+      : hook.listMode === "latest"
+        ? "Open tabs and running jobs will appear here."
+        : hook.emptyMessage;
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyTitle}>{hook.query ? "No matches" : "No jobs"}</Text>
-        <Text style={styles.emptyText}>{hook.query ? `No jobs or groups matching "${hook.searchQuery}"` : hook.emptyMessage}</Text>
+        <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+        <Text style={styles.emptyText}>{emptyText}</Text>
       </View>
     );
   }
@@ -108,7 +118,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
       const jobSlugs = jobItems.map((jobItem) => jobItem.job.slug);
       const groupKey = uniqueKey(`job_group_${group}`);
       pushToGroup(
-        hook.wrapJobGroup
+        hook.listMode !== "latest" && hook.wrapJobGroup
           ? wrapRows(groupKey, hook.wrapJobGroup(group, jobSlugs, children))
           : wrapRows(groupKey, children),
       );
@@ -135,7 +145,7 @@ export function JobListItems({ hook }: JobListItemsProps) {
       const processPaneIds = processItems.map((processItem) => processItem.process.pane_id);
       const groupKey = uniqueKey(`process_group_${group}`);
       pushToGroup(
-        hook.wrapProcessGroup
+        hook.listMode !== "latest" && hook.wrapProcessGroup
           ? wrapRows(groupKey, hook.wrapProcessGroup(group, processPaneIds, children))
           : wrapRows(groupKey, children),
       );

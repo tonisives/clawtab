@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import type { RemoteJob, JobStatus, JobSortMode } from "../../types/job";
 import type { DetectedProcess, ProcessProvider, ShellPane } from "../../types/process";
+import { processDisplayTitle } from "../../util/format";
 import type { ListItem } from "./sign";
 import {
   displayGroupName,
@@ -25,6 +26,22 @@ const jobActivityTimestamp = (status: JobStatus | undefined): number => {
   }
   return 0;
 };
+
+const processStartedTimestamp = (process: DetectedProcess): number => (
+  process.session_started_at ? Date.parse(process.session_started_at) || 0 : 0
+);
+
+const jobAddedTimestamp = (job: RemoteJob): number => (
+  job.added_at ? Date.parse(job.added_at) || 0 : 0
+);
+
+const processSortTimestamp = (process: DetectedProcess, sortMode: JobSortMode): number => (
+  sortMode === "activity" ? processActivityTimestamp(process) : processStartedTimestamp(process)
+);
+
+const jobSortTimestamp = (job: RemoteJob, status: JobStatus | undefined, sortMode: JobSortMode): number => (
+  sortMode === "added" ? jobAddedTimestamp(job) : jobActivityTimestamp(status)
+);
 
 const compareProcessActivity = (left: DetectedProcess, right: DetectedProcess): number => (
   processActivityTimestamp(right) - processActivityTimestamp(left)
@@ -51,6 +68,7 @@ interface UseJobListDerivedItemsParams {
     hiddenGroups?: Set<string>;
     hiddenSectionCollapsed: boolean;
     interactiveHiddenGroups?: boolean;
+    listMode: "tabs" | "latest" | "jobs";
     pinnedItems?: string[];
   };
   filters: {
@@ -70,7 +88,7 @@ export function useJobListDerivedItems({
 }: UseJobListDerivedItemsParams) {
   const { detectedProcesses, jobs, shellPanes, statuses } = data;
   const { jobOrder, processOrder, sortMode } = ordering;
-  const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, pinnedItems } = grouping;
+  const { collapsedGroups, groupTabView, hiddenGroups, hiddenSectionCollapsed, interactiveHiddenGroups, listMode, pinnedItems } = grouping;
   const { query } = filters;
   const { onRunAgent } = agent;
   const inferredJobSlugByPaneId = useMemo(() => {
@@ -150,10 +168,10 @@ export function useJobListDerivedItems({
           return a.name.localeCompare(b.name);
         });
       }
-    } else if (sortMode === "activity") {
+    } else {
       for (const groupJobs of map.values()) {
         groupJobs.sort((left, right) => (
-          jobActivityTimestamp(statuses[right.slug]) - jobActivityTimestamp(statuses[left.slug])
+          jobSortTimestamp(right, statuses[right.slug], sortMode) - jobSortTimestamp(left, statuses[left.slug], sortMode)
           || left.name.localeCompare(right.name)
         ));
       }
@@ -194,8 +212,11 @@ export function useJobListDerivedItems({
       }
     }
     for (const [group, list] of map) {
-      if (sortMode === "activity") {
-        list.sort(compareProcessActivity);
+      if (sortMode !== "name") {
+        list.sort((left, right) => (
+          processSortTimestamp(right, sortMode) - processSortTimestamp(left, sortMode)
+          || compareProcessActivity(left, right)
+        ));
         continue;
       }
       const manualOrder = processOrder[group] ?? [];
@@ -239,8 +260,11 @@ export function useJobListDerivedItems({
       map.set(matchedJobSlug, list);
     }
     for (const [slug, list] of map) {
-      if (sortMode === "activity") {
-        list.sort(compareProcessActivity);
+      if (sortMode !== "name") {
+        list.sort((left, right) => (
+          processSortTimestamp(right, sortMode) - processSortTimestamp(left, sortMode)
+          || compareProcessActivity(left, right)
+        ));
         continue;
       }
       const job = jobs.find((item) => item.slug === slug);
@@ -295,7 +319,57 @@ export function useJobListDerivedItems({
     [detectedProcesses, inferredJobSlugByPaneId, jobs, query, statuses],
   );
 
-  const items = useMemo(() => {
+  const latestItems = useMemo(() => {
+    const rows: Array<{ item: ListItem; name: string; timestamp: number }> = [];
+
+    for (const process of detectedProcesses) {
+      const matchedJobSlug = inferredJobSlugByPaneId.get(process.pane_id);
+      const matchedJob = matchedJobSlug
+        ? jobs.find((job) => job.slug === matchedJobSlug)
+        : null;
+      const processMatches = !query || matchesProcessQuery(process, query);
+      const jobMatches = !query || (matchedJob && matchesQuery([
+        matchedJob.name,
+        matchedJob.slug,
+        matchedJob.path,
+        matchedJob.work_dir,
+        matchedJob.folder_path,
+      ], query));
+      if (!processMatches && !jobMatches) continue;
+      rows.push({
+        item: { kind: "process", process, inGroup: true },
+        name: processDisplayTitle(process),
+        timestamp: processSortTimestamp(process, sortMode),
+      });
+    }
+
+    const processPaneIds = new Set(detectedProcesses.map((process) => process.pane_id));
+    for (const job of jobs) {
+      const status = statuses[job.slug];
+      if (status?.state !== "running") continue;
+      const hasProcess = (status.pane_id && processPaneIds.has(status.pane_id))
+        || detectedProcesses.some((process) => inferredJobSlugByPaneId.get(process.pane_id) === job.slug);
+      if (hasProcess) continue;
+      if (query && !matchesQuery([job.name, job.slug, job.path, job.work_dir, job.folder_path], query)) {
+        continue;
+      }
+      rows.push({
+        item: { kind: "job", job, idx: 0 },
+        name: job.name,
+        timestamp: jobSortTimestamp(job, status, sortMode),
+      });
+    }
+
+    rows.sort((left, right) => (
+      sortMode === "name"
+        ? left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+        : right.timestamp - left.timestamp
+          || left.name.localeCompare(right.name, undefined, { sensitivity: "base" })
+    ));
+    return rows.map((row) => row.item);
+  }, [detectedProcesses, inferredJobSlugByPaneId, jobs, query, sortMode, statuses]);
+
+  const groupedItems = useMemo(() => {
     const result: ListItem[] = [];
 
     if (pinnedItems?.length) {
@@ -322,8 +396,11 @@ export function useJobListDerivedItems({
     const detFolderGroups: [string, DetectedProcess[]][] = [];
     const detUngrouped: DetectedProcess[] = [];
     if (unmatchedProcesses.length > 0) {
-      const orderedProcesses = sortMode === "activity"
-        ? [...unmatchedProcesses].sort(compareProcessActivity)
+      const orderedProcesses = sortMode !== "name"
+        ? [...unmatchedProcesses].sort((left, right) => (
+          processSortTimestamp(right, sortMode) - processSortTimestamp(left, sortMode)
+          || compareProcessActivity(left, right)
+        ))
         : unmatchedProcesses;
       const byFolder = new Map<string, DetectedProcess[]>();
       for (const proc of orderedProcesses) {
@@ -371,7 +448,12 @@ export function useJobListDerivedItems({
       );
       if (existing && existing.type === "job") {
         existing.procs = [...existing.procs, ...procs];
-        if (sortMode === "activity") existing.procs.sort(compareProcessActivity);
+        if (sortMode !== "name") {
+          existing.procs.sort((left, right) => (
+            processSortTimestamp(right, sortMode) - processSortTimestamp(left, sortMode)
+            || compareProcessActivity(left, right)
+          ));
+        }
       } else {
         const folderName = folder.split("/").filter(Boolean).pop() ?? folder;
         allGroups.push({
@@ -384,7 +466,7 @@ export function useJobListDerivedItems({
       }
     }
 
-    if (detUngrouped.length > 0 && sortMode === "activity") {
+    if (detUngrouped.length > 0 && sortMode !== "name") {
       allGroups.push({ type: "ungrouped", procs: detUngrouped });
     }
 
@@ -395,25 +477,28 @@ export function useJobListDerivedItems({
         const db = "displayGroup" in b ? b.displayGroup : "";
         return da.localeCompare(db, undefined, { sensitivity: "base" });
       });
-    } else if (sortMode === "activity") {
-      const groupActivityTimestamp = (entry: GroupEntry) => {
-        const processTimestamp = Math.max(0, ...entry.procs.map(processActivityTimestamp));
+    } else {
+      const groupSortTimestamp = (entry: GroupEntry) => {
+        const processTimestamp = Math.max(
+          0,
+          ...entry.procs.map((process) => processSortTimestamp(process, sortMode)),
+        );
         if (entry.type !== "job") return processTimestamp;
         const jobTimestamp = Math.max(
           0,
-          ...entry.jobs.map((job) => jobActivityTimestamp(statuses[job.slug])),
+          ...entry.jobs.map((job) => jobSortTimestamp(job, statuses[job.slug], sortMode)),
         );
         return Math.max(processTimestamp, jobTimestamp);
       };
       allGroups.sort((left, right) => (
-        groupActivityTimestamp(right) - groupActivityTimestamp(left)
+        groupSortTimestamp(right) - groupSortTimestamp(left)
         || ("displayGroup" in left ? left.displayGroup : "").localeCompare(
           "displayGroup" in right ? right.displayGroup : "",
         )
       ));
     }
 
-    if (detUngrouped.length > 0 && sortMode !== "activity") {
+    if (detUngrouped.length > 0 && sortMode === "name") {
       allGroups.push({ type: "ungrouped", procs: detUngrouped });
     }
 
@@ -540,7 +625,9 @@ export function useJobListDerivedItems({
 
   return {
     inferredJobSlugByPaneId,
-    items,
+    items: listMode === "latest" ? latestItems : groupedItems,
+    groupedItems,
+    latestItemCount: latestItems.length,
     matchedProcessesByJob,
   };
 }
