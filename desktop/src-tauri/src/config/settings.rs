@@ -211,6 +211,14 @@ pub struct AppSettings {
     pub hide_titlebar: bool,
     /// Per-pane detected process metadata overrides.
     pub process_overrides: HashMap<String, DetectedProcessOverride>,
+    /// Ordered pins shared by the daemon with desktop and Remote clients.
+    /// Keys use `job:<slug>` or `pane:<tmux-pane-id>`.
+    #[serde(default)]
+    pub pinned_items: Vec<String>,
+    /// tmux server/pane identity for pane pins, preventing recycled pane IDs
+    /// from inheriting a pin after a tmux server restart.
+    #[serde(default)]
+    pub pinned_pane_identities: HashMap<String, String>,
     /// User-configurable desktop keyboard shortcuts.
     pub shortcuts: ShortcutSettings,
     /// When false, suppresses local macOS notifications for Claude questions.
@@ -262,12 +270,40 @@ impl Default for AppSettings {
             show_tray_icon: true,
             hide_titlebar: true,
             process_overrides: HashMap::new(),
+            pinned_items: Vec::new(),
+            pinned_pane_identities: HashMap::new(),
             shortcuts: ShortcutSettings::default(),
             notify_questions_local: true,
             notify_questions_remote: true,
             auto_release_on_blur: false,
         }
     }
+}
+
+pub fn normalize_pinned_item_key(key: &str) -> Option<String> {
+    let trimmed = key.trim();
+    let (kind, value) = trimmed.split_once(':')?;
+    if value.is_empty() {
+        return None;
+    }
+    match kind {
+        "job" => Some(format!("job:{value}")),
+        "pane" | "process" | "shell" => Some(format!("pane:{value}")),
+        _ => None,
+    }
+}
+
+pub fn normalize_pinned_items(items: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for item in items {
+        let Some(key) = normalize_pinned_item_key(&item) else {
+            continue;
+        };
+        if !normalized.contains(&key) {
+            normalized.push(key);
+        }
+    }
+    normalized
 }
 
 impl AppSettings {
@@ -315,7 +351,7 @@ impl AppSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::DetectedProcessOverride;
+    use super::{normalize_pinned_items, DetectedProcessOverride};
 
     #[test]
     fn process_override_identity_rejects_recycled_panes_and_sessions() {
@@ -328,5 +364,18 @@ mod tests {
         assert!(!process_override.matches_identity("101", Some("session-a")));
         assert!(!process_override.matches_identity("100", Some("session-b")));
         assert!(!process_override.matches_identity("100", None));
+    }
+
+    #[test]
+    fn pinned_items_migrate_legacy_pane_keys_and_keep_order() {
+        assert_eq!(
+            normalize_pinned_items(vec![
+                "process:%4".into(),
+                "job:build".into(),
+                "shell:%4".into(),
+                "invalid".into(),
+            ]),
+            vec!["pane:%4", "job:build"]
+        );
     }
 }

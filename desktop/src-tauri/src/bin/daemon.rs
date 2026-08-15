@@ -320,13 +320,16 @@ fn main() {
             let pty_manager = Arc::clone(&pty_manager);
             let relay = Arc::clone(&relay_handle);
             let agent_activity = Arc::clone(&agent_activity);
+            let settings = Arc::clone(&settings);
             tokio::spawn(async move {
                 let mut last_snapshot_json = String::new();
                 let mut last_activity_json = String::new();
+                let mut last_pins_json = String::new();
                 loop {
                     if relay.lock().is_none() {
                         last_snapshot_json.clear();
                         last_activity_json.clear();
+                        last_pins_json.clear();
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                         continue;
                     }
@@ -366,6 +369,20 @@ fn main() {
                             handle.send_message(&clawtab_protocol::DesktopMessage::AgentActivity {
                                 activity,
                             });
+                        }
+                    }
+                    let pinned_items =
+                        clawtab_lib::shared_state::get_pinned_items(&settings);
+                    let pins_json = serde_json::to_string(&pinned_items).unwrap_or_default();
+                    if pins_json != last_pins_json {
+                        last_pins_json = pins_json;
+                        let guard = relay.lock();
+                        if let Some(handle) = guard.as_ref() {
+                            handle.send_message(
+                                &clawtab_protocol::DesktopMessage::PinnedItems {
+                                    items: pinned_items,
+                                },
+                            );
                         }
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -629,6 +646,59 @@ async fn handle_ipc_command(
             event_sink.emit_auto_yes_changed();
             IpcResponse::Ok
         }
+        IpcCommand::GetPinnedItems => IpcResponse::PinnedItems(
+            clawtab_lib::shared_state::get_pinned_items(settings),
+        ),
+        IpcCommand::MergePinnedItems { items } => {
+            match clawtab_lib::shared_state::merge_pinned_items(settings, items) {
+                Ok(items) => {
+                    if let Some(handle) = relay.lock().as_ref() {
+                        handle.send_message(&clawtab_protocol::DesktopMessage::PinnedItems {
+                            items: items.clone(),
+                        });
+                    }
+                    event_sink.emit_pinned_items_changed(items.clone());
+                    IpcResponse::PinnedItems(items)
+                }
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
+        IpcCommand::SetPinnedItem { key, pinned } => {
+            match clawtab_lib::shared_state::set_pinned_item(settings, &key, pinned) {
+                Ok(items) => {
+                    if let Some(handle) = relay.lock().as_ref() {
+                        handle.send_message(&clawtab_protocol::DesktopMessage::PinnedItems {
+                            items: items.clone(),
+                        });
+                    }
+                    event_sink.emit_pinned_items_changed(items.clone());
+                    IpcResponse::PinnedItems(items)
+                }
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
+        IpcCommand::SetPaneDisplayName {
+            pane_id,
+            display_name,
+        } => match clawtab_lib::shared_state::set_pane_display_name(
+            settings,
+            &pane_id,
+            display_name,
+        ) {
+            Ok(display_name) => {
+                if let Some(handle) = relay.lock().as_ref() {
+                    handle.send_message(
+                        &clawtab_protocol::DesktopMessage::PaneDisplayNameChanged {
+                            pane_id: pane_id.clone(),
+                            display_name: display_name.clone(),
+                        },
+                    );
+                }
+                event_sink.emit_pane_display_name_changed(pane_id, display_name);
+                IpcResponse::Ok
+            }
+            Err(error) => IpcResponse::Error(error),
+        },
         IpcCommand::GetActiveQuestions => {
             let qs = active_questions.lock().clone();
             IpcResponse::ActiveQuestions(qs)

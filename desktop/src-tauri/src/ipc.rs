@@ -52,6 +52,18 @@ pub enum IpcCommand {
     ToggleAutoYes {
         pane_id: String,
     },
+    GetPinnedItems,
+    MergePinnedItems {
+        items: Vec<String>,
+    },
+    SetPinnedItem {
+        key: String,
+        pinned: bool,
+    },
+    SetPaneDisplayName {
+        pane_id: String,
+        display_name: Option<String>,
+    },
     GetActiveQuestions,
     GetProviderUsage {
         provider: String,
@@ -227,6 +239,7 @@ pub enum IpcResponse {
     Jobs(Vec<JobSummary>),
     Status(std::collections::HashMap<String, crate::config::jobs::JobStatus>),
     AutoYesPanes(Vec<String>),
+    PinnedItems(Vec<String>),
     ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),
     ProviderUsage(crate::usage::ProviderUsageSnapshot),
     AgentActivity(Vec<AgentActivity>),
@@ -257,6 +270,11 @@ pub enum IpcResponse {
 pub enum IpcEvent {
     JobsChanged,
     AutoYesChanged,
+    PinnedItemsChanged(Vec<String>),
+    PaneDisplayNameChanged {
+        pane_id: String,
+        display_name: Option<String>,
+    },
     MissedCronJobs(Vec<String>),
     JobStatusChanged {
         name: String,

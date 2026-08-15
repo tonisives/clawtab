@@ -99,6 +99,8 @@ _cwtctl() {
               'auto-yes:Manage auto-yes for a pane'
               'info:Show agent session info'
               'rename:Rename an agent pane'
+              'pin:Pin an agent across ClawTab'
+              'unpin:Unpin an agent across ClawTab'
               'ai-rename:Generate a concise pane title'
               'hooks:Manage agent event hooks'
             )
@@ -120,7 +122,7 @@ _cwtctl() {
             _cwtctl_panes
           elif (( CURRENT == 4 )) && [[ $words[2] == info && $words[3] == restore-command ]]; then
             _cwtctl_panes
-          elif (( CURRENT == 3 )) && [[ $words[2] == rename || $words[2] == ai-rename ]]; then
+          elif (( CURRENT == 3 )) && [[ $words[2] == rename || $words[2] == ai-rename || $words[2] == pin || $words[2] == unpin ]]; then
             _cwtctl_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == hooks ]]; then
             local -a actions

@@ -285,7 +285,7 @@ draw_search_bar() {
 
 # Shortcuts tab items and cursor
 SHORTCUT_CURSOR=0
-SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Fork session")
+SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Pin across ClawTab" "Fork session")
 
 # Session info (loaded once)
 SESSION_ID=""
@@ -855,7 +855,8 @@ draw_shortcuts() {
         local hint=""
         if [ $i -eq 0 ]; then hint="r / R AI"; fi
         if [ $i -eq 1 ]; then hint="Y"; fi
-        if [ $i -eq 2 ]; then hint="f"; fi
+        if [ $i -eq 2 ]; then hint="p"; fi
+        if [ $i -eq 3 ]; then hint="f"; fi
 
         if [ $i -eq $SHORTCUT_CURSOR ]; then
             printf "${C_SELECTED} > %s ${C_RESET}" "$label" >&3
@@ -866,6 +867,14 @@ draw_shortcuts() {
         # Add status info
         if [ $i -eq 1 ]; then
             current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-auto-yes)
+            if [ "$current" = "1" ]; then
+                printf " ${C_CHECK_ON}ON${C_RESET}" >&3
+            else
+                printf " ${C_DIM}OFF${C_RESET}" >&3
+            fi
+        fi
+        if [ $i -eq 2 ]; then
+            current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-pinned)
             if [ "$current" = "1" ]; then
                 printf " ${C_CHECK_ON}ON${C_RESET}" >&3
             else
@@ -1139,6 +1148,17 @@ ai_rename_title() {
     fi
 }
 
+toggle_shared_pin() {
+    command -v cwtctl &>/dev/null || return 0
+    local current
+    current=$(tmux show-option -pqvt "$PANE_ID" @clawtab-pinned)
+    if [ "$current" = "1" ]; then
+        cwtctl agent unpin "$PANE_ID" >/dev/null 2>&1
+    else
+        cwtctl agent pin "$PANE_ID" >/dev/null 2>&1
+    fi
+}
+
 # Actions
 do_enter() {
     local sel_count secret_count
@@ -1157,6 +1177,12 @@ do_enter() {
                     return 0
                     ;;
                 2)
+                    toggle_shared_pin
+                    draw_shortcuts
+                    draw_status_bar
+                    return 0
+                    ;;
+                3)
                     "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
                     return 1
                     ;;
@@ -1351,6 +1377,7 @@ read_key() {
         "r") echo "shortcut_r" ;;
         "R") echo "shortcut_ai_rename" ;;
         "Y") echo "shortcut_auto_yes" ;;
+        "p") echo "shortcut_pin" ;;
         "y") read_yank_key ;;
         "f") echo "shortcut_f" ;;
         "/") echo "search" ;;
@@ -1584,6 +1611,10 @@ while true; do
             ;;
         shortcut_auto_yes)
             "$CURRENT_DIR/toggle-auto-yes.sh" "$PANE_ID"
+            if [ $TAB -eq 0 ]; then draw_shortcuts; draw_status_bar; fi
+            ;;
+        shortcut_pin)
+            toggle_shared_pin
             if [ $TAB -eq 0 ]; then draw_shortcuts; draw_status_bar; fi
             ;;
         shortcut_yank_session)

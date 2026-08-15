@@ -323,6 +323,40 @@ pub fn set_pane_title(pane_id: &str, title: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn set_pane_display_name(pane_id: &str, display_name: Option<&str>) -> Result<(), String> {
+    set_pane_title(pane_id, display_name.unwrap_or(""))?;
+    let args = match display_name {
+        Some(name) => vec!["set-option", "-pt", pane_id, "@clawtab-display-name", name],
+        None => vec!["set-option", "-pqu", "-t", pane_id, "@clawtab-display-name"],
+    };
+    let output = run(&args, "tmux::set_pane_display_name")
+        .map_err(|error| format!("Failed to persist pane display name: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "tmux error: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+pub fn set_pane_pinned(pane_id: &str, pinned: bool) -> Result<(), String> {
+    let args = if pinned {
+        vec!["set-option", "-pt", pane_id, "@clawtab-pinned", "1"]
+    } else {
+        vec!["set-option", "-pqu", "-t", pane_id, "@clawtab-pinned"]
+    };
+    let output = run(&args, "tmux::set_pane_pinned")
+        .map_err(|error| format!("Failed to update pane pin: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "tmux error: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
 /// Remove a ClawTab-managed display name from a pane that has returned to a
 /// plain shell after its agent exits.
 pub fn clear_pane_display_name(pane_id: &str) -> Result<(), String> {

@@ -153,6 +153,8 @@ export interface AppSettings {
   show_tray_icon: boolean;
   hide_titlebar: boolean;
   process_overrides: Record<string, DetectedProcessOverride>;
+  pinned_items: string[];
+  pinned_pane_identities: Record<string, string>;
   shortcuts: ShortcutSettings;
   notify_questions_local: boolean;
   notify_questions_remote: boolean;

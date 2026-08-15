@@ -14,6 +14,7 @@ import { saveJobsCache, saveQuestionsCache } from "../lib/jobCache";
 import { flushPendingAnswers, clearRegisteredSend } from "../lib/pendingAnswers";
 import type { ClientMessage, IncomingMessage } from "../types/messages";
 import { getWs, getWsSend, nextId, setWs, setWsSend } from "../lib/wsRuntime";
+import { usePinsStore } from "../store/pins";
 
 export function useWebSocket() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -154,6 +155,12 @@ export function useWebSocket() {
           break;
         case "agent_activity":
           useJobsStore.getState().setAgentActivity(msg.activity);
+          break;
+        case "pinned_items":
+          usePinsStore.getState().applySharedSnapshot(msg.items);
+          break;
+        case "pane_display_name_changed":
+          useJobsStore.getState().setProcessDisplayName(msg.pane_id, msg.display_name);
           break;
         case "settings_response":
           useJobsStore.getState().setDesktopSettings(msg.enabled_models, msg.default_provider, msg.default_model);

@@ -8,6 +8,12 @@ type SharedRelayHandle = std::sync::Arc<parking_lot::Mutex<Option<crate::relay::
 pub trait EventSink: Send + Sync {
     fn emit_jobs_changed(&self);
     fn emit_auto_yes_changed(&self);
+    fn emit_pinned_items_changed(&self, items: Vec<String>) {
+        let _ = items;
+    }
+    fn emit_pane_display_name_changed(&self, pane_id: String, display_name: Option<String>) {
+        let _ = (pane_id, display_name);
+    }
     fn emit_missed_cron_jobs(&self, jobs: Vec<String>);
     fn emit_job_status_changed(&self, name: String, status: crate::config::jobs::JobStatus) {
         let _ = (name, status);
@@ -44,6 +50,18 @@ impl EventSink for TauriEventSink {
     fn emit_auto_yes_changed(&self) {
         use tauri::Emitter;
         let _ = self.app_handle.emit("auto-yes-changed", ());
+    }
+
+    fn emit_pinned_items_changed(&self, items: Vec<String>) {
+        use tauri::Emitter;
+        let _ = self.app_handle.emit("pinned-items-changed", items);
+    }
+
+    fn emit_pane_display_name_changed(&self, pane_id: String, display_name: Option<String>) {
+        use tauri::Emitter;
+        let _ = self
+            .app_handle
+            .emit("pane-display-name-changed", (pane_id, display_name));
     }
 
     fn emit_missed_cron_jobs(&self, jobs: Vec<String>) {
@@ -108,6 +126,17 @@ impl EventSink for IpcBroadcastEventSink {
 
     fn emit_auto_yes_changed(&self) {
         self.spawn_broadcast(IpcEvent::AutoYesChanged);
+    }
+
+    fn emit_pinned_items_changed(&self, items: Vec<String>) {
+        self.spawn_broadcast(IpcEvent::PinnedItemsChanged(items));
+    }
+
+    fn emit_pane_display_name_changed(&self, pane_id: String, display_name: Option<String>) {
+        self.spawn_broadcast(IpcEvent::PaneDisplayNameChanged {
+            pane_id,
+            display_name,
+        });
     }
 
     fn emit_missed_cron_jobs(&self, jobs: Vec<String>) {
@@ -179,6 +208,16 @@ pub async fn run_daemon_event_subscription(
                         IpcEvent::AutoYesChanged => {
                             let _ = app_handle.emit("auto-yes-changed", ());
                         }
+                        IpcEvent::PinnedItemsChanged(items) => {
+                            let _ = app_handle.emit("pinned-items-changed", items);
+                        }
+                        IpcEvent::PaneDisplayNameChanged {
+                            pane_id,
+                            display_name,
+                        } => {
+                            let _ = app_handle
+                                .emit("pane-display-name-changed", (pane_id, display_name));
+                        }
                         IpcEvent::MissedCronJobs(jobs) => {
                             let _ = app_handle.emit("missed-cron-jobs", jobs);
                         }
@@ -236,5 +275,7 @@ pub struct NoopEventSink;
 impl EventSink for NoopEventSink {
     fn emit_jobs_changed(&self) {}
     fn emit_auto_yes_changed(&self) {}
+    fn emit_pinned_items_changed(&self, _items: Vec<String>) {}
+    fn emit_pane_display_name_changed(&self, _pane_id: String, _display_name: Option<String>) {}
     fn emit_missed_cron_jobs(&self, _jobs: Vec<String>) {}
 }

@@ -38,7 +38,7 @@ export function JobListProcessItem({
   const softBorder = openElsewhere && !selected;
   const marginTop = Platform.OS === "web" && groupedPosition && groupedPosition !== "single" && groupedPosition !== "first" ? -1 : undefined;
   const onPress = hook.onSelectProcess ? () => hook.onSelectProcess?.(process) : undefined;
-  const pinKey = `process:${process.pane_id}`;
+  const pinKey = `pane:${process.pane_id}`;
   const pinned = hook.pinnedItems?.includes(pinKey) ?? false;
   const onTogglePin = hook.onTogglePin ? () => hook.onTogglePin?.(pinKey) : undefined;
   const onStop = hook.onStopProcess ? () => hook.onStopProcess?.(process.pane_id) : undefined;

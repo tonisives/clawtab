@@ -36,6 +36,9 @@ cwtctl <command> [args]
 | `agent auto-yes check [pane_id]` | Check auto-yes (exit 0=on, 1=off) |
 | `agent info [pane_id]` | Show first query / session date for an agent pane |
 | `agent info restore-command [pane_id]` | Print a restore command for an agent pane |
+| `agent rename <pane_id> <title>` | Set the pane name shown on every connected surface |
+| `agent pin [pane_id]` | Pin the pane across tmux, desktop, web, and mobile; defaults to `$TMUX_PANE` |
+| `agent unpin [pane_id]` | Remove the shared pane pin; defaults to `$TMUX_PANE` |
 
 ### Daemon lifecycle commands
 

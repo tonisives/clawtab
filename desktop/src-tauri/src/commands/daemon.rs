@@ -48,3 +48,30 @@ pub fn get_daemon_logs(lines: Option<usize>) -> String {
         Err(_) => String::new(),
     }
 }
+
+#[tauri::command]
+pub async fn get_pinned_items() -> Result<Vec<String>, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::GetPinnedItems).await? {
+        crate::ipc::IpcResponse::PinnedItems(items) => Ok(items),
+        crate::ipc::IpcResponse::Error(error) => Err(error),
+        _ => Err("unexpected daemon response".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn merge_pinned_items(items: Vec<String>) -> Result<Vec<String>, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::MergePinnedItems { items }).await? {
+        crate::ipc::IpcResponse::PinnedItems(items) => Ok(items),
+        crate::ipc::IpcResponse::Error(error) => Err(error),
+        _ => Err("unexpected daemon response".into()),
+    }
+}
+
+#[tauri::command]
+pub async fn set_pinned_item(key: String, pinned: bool) -> Result<Vec<String>, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::SetPinnedItem { key, pinned }).await? {
+        crate::ipc::IpcResponse::PinnedItems(items) => Ok(items),
+        crate::ipc::IpcResponse::Error(error) => Err(error),
+        _ => Err("unexpected daemon response".into()),
+    }
+}

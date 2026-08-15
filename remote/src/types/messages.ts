@@ -38,7 +38,10 @@ export type ClientMessage =
   | { type: "unsubscribe_pty"; pane_id: string }
   | { type: "pty_input"; pane_id: string; data: string }
   | { type: "tmux_pane_key"; pane_id: string; key: string }
-  | { type: "pty_resize"; pane_id: string; cols: number; rows: number };
+  | { type: "pty_resize"; pane_id: string; cols: number; rows: number }
+  | { type: "set_pinned_item"; id: string; key: string; pinned: boolean }
+  | { type: "merge_pinned_items"; id: string; items: string[] }
+  | { type: "set_pane_display_name"; id: string; pane_id: string; display_name?: string };
 
 // Messages received from the relay (desktop responses forwarded through)
 export type DesktopMessage =
@@ -88,7 +91,12 @@ export type DesktopMessage =
   | { type: "register_push_token_ack"; id: string; success: boolean }
   | { type: "subscribe_pty_ack"; id: string; success: boolean; error?: string }
   | { type: "pty_output"; pane_id: string; data: string }
-  | { type: "pty_exit"; pane_id: string };
+  | { type: "pty_exit"; pane_id: string }
+  | { type: "pinned_items"; items: string[] }
+  | { type: "set_pinned_item_ack"; id: string; success: boolean; error?: string }
+  | { type: "merge_pinned_items_ack"; id: string; success: boolean; error?: string }
+  | { type: "pane_display_name_changed"; pane_id: string; display_name?: string }
+  | { type: "set_pane_display_name_ack"; id: string; success: boolean; error?: string };
 
 // Messages from the relay server itself
 export type ServerMessage =

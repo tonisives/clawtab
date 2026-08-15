@@ -261,6 +261,7 @@ export default function JobsScreen() {
   const searchInputRef = useRef<TextInput>(null)
   const searchAnimation = useRef(new Animated.Value(0)).current
   const pinnedItems = usePinsStore((s) => s.pinnedItems)
+  const sharedPinsActive = usePinsStore((s) => s.sharedActive)
   const hydratePins = usePinsStore((s) => s.hydrate)
   const togglePin = usePinsStore((s) => s.togglePin)
   const glassAvailable =
@@ -395,6 +396,19 @@ export default function JobsScreen() {
         return
       }
       useJobsStore.getState().removeDetectedProcess(paneId)
+    })
+  }, [])
+
+  const handleSaveProcessName = useCallback((process: DetectedProcess, name: string) => {
+    const send = getWsSend()
+    if (!send) return
+    const displayName = name.trim()
+    useJobsStore.getState().setProcessDisplayName(process.pane_id, displayName || undefined)
+    send({
+      type: "set_pane_display_name",
+      id: nextId(),
+      pane_id: process.pane_id,
+      display_name: displayName || undefined,
     })
   }, [])
 
@@ -683,6 +697,7 @@ export default function JobsScreen() {
       selected?: boolean | string
       softBorder?: boolean
       onStop?: () => void
+      onSaveName?: (name: string) => void
       onTogglePin?: () => void
       pinned?: boolean
       autoYesActive?: boolean
@@ -768,6 +783,7 @@ export default function JobsScreen() {
         onTogglePin={togglePin}
         onStopJob={isDemo ? undefined : handleStopJob}
         onStopProcess={isDemo ? undefined : handleStopProcess}
+        onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
         stoppingSlugs={stoppingJobSlugs}
         onRunAgent={runAgentHandler}
         agentModelOptions={agentModelOptions}
@@ -811,6 +827,7 @@ export default function JobsScreen() {
       onTogglePin={togglePin}
       onStopJob={isDemo ? undefined : handleStopJob}
       onStopProcess={isDemo ? undefined : handleStopProcess}
+      onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
       stoppingSlugs={stoppingJobSlugs}
       onRunAgent={runAgentHandler}
       agentModelOptions={agentModelOptions}
@@ -1204,6 +1221,7 @@ export default function JobsScreen() {
             onTogglePin={togglePin}
             onStopJob={isDemo ? undefined : handleStopJob}
             onStopProcess={isDemo ? undefined : handleStopProcess}
+            onSaveProcessName={!isDemo && sharedPinsActive ? handleSaveProcessName : undefined}
             stoppingSlugs={stoppingJobSlugs}
             selectedItems={split.selectedItems}
             focusedItemKey={split.focusedItemKey}

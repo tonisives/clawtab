@@ -73,7 +73,7 @@ function getPinnedRows(
     if (kind === "job") {
       const job = jobsBySlug.get(id);
       if (job) pinnedRows.push({ kind: "job", job, idx: 0 });
-    } else if (kind === "process") {
+    } else if (kind === "pane") {
       const process = processesByPaneId.get(id);
       if (process) pinnedRows.push({ kind: "process", process });
     }

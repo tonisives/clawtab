@@ -208,7 +208,7 @@ export function JobsSidebar({
   const renderDraggableProcessCard = useCallback(
     (props: { process: DetectedProcess; sortGroup: string; onPress?: () => void; inGroup?: boolean; selected?: string | boolean; softBorder?: boolean; onStop?: () => void; onRename?: () => void; onSaveName?: (name: string) => void; autoYesActive?: boolean; marginTop?: number; dataProcessId?: string; startRenameSignal?: number; onRenameDraftChange?: (value: string | null) => void; onRenameStateChange?: (editing: boolean) => void; renameShortcutHint?: string; agentLabel?: string | null; groupedPosition?: GroupedRowPosition }) => {
       const target = moveToWorkspaceForCwd(props.process.cwd, props.process.matched_group);
-      const pinKey = `process:${props.process.pane_id}`;
+      const pinKey = `pane:${props.process.pane_id}`;
       return (
         <DraggableProcessCard
           {...props}
@@ -226,7 +226,7 @@ export function JobsSidebar({
   const renderDraggableShellCard = useCallback(
     (props: { shell: ShellPane; onPress?: () => void; selected?: boolean | string; softBorder?: boolean; onStop?: () => void; onRename?: () => void; renameShortcutHint?: string; groupedPosition?: GroupedRowPosition }) => {
       const target = moveToWorkspaceForCwd(props.shell.cwd, props.shell.matched_group);
-      const pinKey = `shell:${props.shell.pane_id}`;
+      const pinKey = `pane:${props.shell.pane_id}`;
       return (
         <DraggableShellCard
           {...props}
@@ -333,7 +333,7 @@ export function JobsSidebar({
             <PinOverlay onUnpin={() => settings.togglePin(key)} />
           </div>,
         );
-      } else if (kind === "process") {
+      } else if (kind === "pane" && procByPaneId.has(id)) {
         const proc = procByPaneId.get(id);
         if (!proc) continue;
         const rawColor = split.selectedItems?.get(id) ?? split.selectedItems?.get(`_term_${id}`);
@@ -355,7 +355,7 @@ export function JobsSidebar({
             <PinOverlay onUnpin={() => settings.togglePin(key)} />
           </div>,
         );
-      } else if (kind === "shell") {
+      } else if (kind === "pane") {
         const shell = shellByPaneId.get(id);
         if (!shell) continue;
         const termKey = `_term_${id}`;

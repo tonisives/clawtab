@@ -115,7 +115,7 @@ export default function ProcessDetailScreen() {
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
   const hydratePins = usePinsStore((s) => s.hydrate);
   const togglePin = usePinsStore((s) => s.togglePin);
-  const pinKey = `process:${pane_id}`;
+  const pinKey = `pane:${pane_id}`;
   const isPinned = pinnedItems.includes(pinKey);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)

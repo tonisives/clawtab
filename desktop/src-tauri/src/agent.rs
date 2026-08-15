@@ -292,6 +292,8 @@ fn write_cli_help(out: &mut String) {
     out.push_str("cwtctl jobs restart <group>/<name> # Restart a job\n");
     out.push_str("cwtctl agent auto-yes [toggle|check] [pane_id] # Manage auto-yes\n");
     out.push_str("cwtctl agent info [pane_id] # Show agent session info\n");
+    out.push_str("cwtctl agent pin [pane_id] # Pin this agent across desktop, web, and mobile\n");
+    out.push_str("cwtctl agent unpin [pane_id] # Remove the shared pin\n");
     out.push_str("cwtctl pane open [pane_id] # Open a tmux pane in ClawTab\n");
     out.push_str("cwtctl daemon ping    # Check if ClawTab daemon is running\n");
     out.push_str("```\n");

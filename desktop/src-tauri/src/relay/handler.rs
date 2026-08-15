@@ -99,7 +99,7 @@ async fn dispatch_sync(
     if let Some(resp) = dispatch_job_msg(&msg, jobs_config, ctx, event_sink).await {
         return Some(resp);
     }
-    if let Some(resp) = dispatch_process_msg(&msg, &ctx.history) {
+    if let Some(resp) = dispatch_process_msg(&msg, ctx, event_sink) {
         return Some(resp);
     }
     dispatch_pty_msg(msg, ctx, pty_manager, event_sink)
@@ -236,8 +236,10 @@ async fn dispatch_job_msg(
 
 fn dispatch_process_msg(
     msg: &ClientMessage,
-    history: &Arc<Mutex<HistoryStore>>,
+    ctx: &JobContext,
+    event_sink: &dyn EventSink,
 ) -> Option<DesktopMessage> {
+    let history = &ctx.history;
     match msg {
         ClientMessage::GetRunHistory { id, name, limit } => {
             let runs = get_run_history(name, *limit, history);
@@ -274,6 +276,66 @@ fn dispatch_process_msg(
         ClientMessage::StopDetectedProcess { id, pane_id } => {
             let result = crate::tmux::kill_pane(pane_id);
             Some(DesktopMessage::StopDetectedProcessAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
+        }
+        ClientMessage::SetPinnedItem { id, key, pinned } => {
+            let result = crate::shared_state::set_pinned_item(&ctx.settings, key, *pinned);
+            if let Ok(items) = &result {
+                if let Some(handle) = ctx.relay.lock().as_ref() {
+                    handle.send_message(&DesktopMessage::PinnedItems {
+                        items: items.clone(),
+                    });
+                }
+                event_sink.emit_pinned_items_changed(items.clone());
+            }
+            Some(DesktopMessage::SetPinnedItemAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
+        }
+        ClientMessage::MergePinnedItems { id, items } => {
+            let result = crate::shared_state::merge_pinned_items(&ctx.settings, items.clone());
+            if let Ok(items) = &result {
+                if let Some(handle) = ctx.relay.lock().as_ref() {
+                    handle.send_message(&DesktopMessage::PinnedItems {
+                        items: items.clone(),
+                    });
+                }
+                event_sink.emit_pinned_items_changed(items.clone());
+            }
+            Some(DesktopMessage::MergePinnedItemsAck {
+                id: id.clone(),
+                success: result.is_ok(),
+                error: result.err(),
+            })
+        }
+        ClientMessage::SetPaneDisplayName {
+            id,
+            pane_id,
+            display_name,
+        } => {
+            let result = crate::shared_state::set_pane_display_name(
+                &ctx.settings,
+                pane_id,
+                display_name.clone(),
+            );
+            if let Ok(display_name) = &result {
+                if let Some(handle) = ctx.relay.lock().as_ref() {
+                    handle.send_message(&DesktopMessage::PaneDisplayNameChanged {
+                        pane_id: pane_id.clone(),
+                        display_name: display_name.clone(),
+                    });
+                }
+                event_sink.emit_pane_display_name_changed(
+                    pane_id.clone(),
+                    display_name.clone(),
+                );
+            }
+            Some(DesktopMessage::SetPaneDisplayNameAck {
                 id: id.clone(),
                 success: result.is_ok(),
                 error: result.err(),
