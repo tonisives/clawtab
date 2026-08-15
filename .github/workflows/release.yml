@@ -74,9 +74,11 @@ jobs:
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
             arch: 'aarch64'
+            target: 'aarch64-apple-darwin'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
             arch: 'x64'
+            target: 'x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
     defaults:
@@ -117,6 +119,7 @@ jobs:
         run: pnpm tauri build ${{ matrix.args }}
         env:
           CI: true
+          CLAWTAB_TARGET_TRIPLE: ${{ matrix.target }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -244,6 +247,18 @@ jobs:
               --sign "$APPLE_SIGNING_IDENTITY" \
               "$NESTED_DAEMON_APP"
           fi
+
+          CWTCTL_BIN="${{ steps.find-app.outputs.app_path }}/Contents/Resources/cwtctl"
+          if [ ! -f "$CWTCTL_BIN" ]; then
+            echo "Expected bundled cwtctl at $CWTCTL_BIN" >&2
+            exit 1
+          fi
+          echo "Signing bundled cwtctl"
+          chmod +x "$CWTCTL_BIN"
+          codesign --force --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            "$CWTCTL_BIN"
+          codesign --verify --strict "$CWTCTL_BIN"
 
           codesign --deep --force --options runtime \
             --timestamp \

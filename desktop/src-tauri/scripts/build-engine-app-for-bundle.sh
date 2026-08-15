@@ -19,8 +19,38 @@ export CARGO_TARGET_DIR
 
 cd "$SRC_TAURI_DIR"
 
+# The Tauri app can be cross-compiled, so do not let the helper binaries fall
+# back to the runner's native architecture. The release workflow supplies the
+# exact triple; the Tauri architecture variable keeps local cross-builds safe.
+TARGET_TRIPLE="${CLAWTAB_TARGET_TRIPLE:-${TAURI_ENV_TARGET_TRIPLE:-}}"
+if [[ -z "$TARGET_TRIPLE" ]]; then
+  case "${TAURI_ENV_ARCH:-}" in
+    aarch64|arm64)
+      TARGET_TRIPLE="aarch64-apple-darwin"
+      ;;
+    x86_64|amd64)
+      TARGET_TRIPLE="x86_64-apple-darwin"
+      ;;
+  esac
+fi
+
+CARGO_BUILD_ARGS=(
+  build
+  --release
+  --bin clawtab-daemon
+  --bin clawtab-hook
+  --bin cwtctl
+  --no-default-features
+)
+if [[ -n "$TARGET_TRIPLE" ]]; then
+  CARGO_BUILD_ARGS+=(--target "$TARGET_TRIPLE")
+  echo "[engine-bundle] target: $TARGET_TRIPLE"
+else
+  echo "[engine-bundle] target: cargo host"
+fi
+
 echo "[engine-bundle] building daemon, hook helper, and cwtctl (release, no default features)"
-cargo build --release --bin clawtab-daemon --bin clawtab-hook --bin cwtctl --no-default-features
+cargo "${CARGO_BUILD_ARGS[@]}"
 
 # rust-analyzer / shared target dir sometimes puts output under a hashed
 # workspace subfolder (e.g. src-tauri-79532e). Pick the freshest copy.
@@ -28,10 +58,17 @@ find_release_binary() {
   local name="$1"
   local candidate
   local newest=""
-  local -a candidates=(
-    "$CARGO_TARGET_DIR/release/$name"
-    "$CARGO_TARGET_DIR"/*/release/"$name"
-  )
+  local -a candidates=()
+
+  if [[ -n "$TARGET_TRIPLE" ]]; then
+    candidates+=(
+      "$CARGO_TARGET_DIR/$TARGET_TRIPLE/release/$name"
+      "$CARGO_TARGET_DIR"/*/"$TARGET_TRIPLE"/release/"$name"
+    )
+  else
+    candidates+=("$CARGO_TARGET_DIR/release/$name")
+    candidates+=("$CARGO_TARGET_DIR"/*/release/"$name")
+  fi
 
   for candidate in "${candidates[@]}"; do
     if [[ -f "$candidate" ]] && { [[ -z "$newest" ]] || [[ "$candidate" -nt "$newest" ]]; }; then
