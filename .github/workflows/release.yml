@@ -236,9 +236,15 @@ jobs:
           NESTED_DAEMON_APP="${{ steps.find-app.outputs.app_path }}/Contents/Resources/ClawTab Daemon.app"
           if [ -d "$NESTED_DAEMON_APP" ]; then
             echo "Signing nested daemon app at: $NESTED_DAEMON_APP"
+            NESTED_DAEMON_MAIN="$NESTED_DAEMON_APP/Contents/MacOS/ClawTab Daemon"
+
+            # codesign resolves the CFBundleExecutable path to its enclosing
+            # app bundle. Sign sibling helper executables first, then sign the
+            # bundle itself to sign the main executable and seal the app.
             for nested_executable in "$NESTED_DAEMON_APP/Contents/MacOS/"*; do
               [ -f "$nested_executable" ] || continue
               chmod +x "$nested_executable"
+              [ "$nested_executable" = "$NESTED_DAEMON_MAIN" ] && continue
               codesign --force --options runtime --timestamp \
                 --sign "$APPLE_SIGNING_IDENTITY" \
                 "$nested_executable"
@@ -246,6 +252,7 @@ jobs:
             codesign --force --options runtime --timestamp \
               --sign "$APPLE_SIGNING_IDENTITY" \
               "$NESTED_DAEMON_APP"
+            codesign --verify --deep --strict "$NESTED_DAEMON_APP"
           fi
 
           CWTCTL_BIN="${{ steps.find-app.outputs.app_path }}/Contents/Resources/cwtctl"
