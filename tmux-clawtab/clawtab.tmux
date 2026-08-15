@@ -52,6 +52,13 @@ tmux bind-key "$sidebar_key" run-shell "$CURRENT_DIR/scripts/sidebar-launcher.sh
 listener_command="$(printf '%q' "$CURRENT_DIR/scripts/agent-status-listener.sh") --replace"
 tmux run-shell -b "$listener_command"
 
+# When entering a window, prefer a pane with an active question. The helper
+# intentionally does nothing otherwise, preserving tmux's remembered active
+# pane for that window.
+priority_pane_script="$CURRENT_DIR/scripts/select-priority-pane.sh"
+tmux set-hook -g 'after-select-window[110]' \
+    "run-shell '$priority_pane_script \"#{window_id}\"'"
+
 # Append auto-yes indicator to pane-border-format (right-aligned)
 # Uses pane option @clawtab-auto-yes for instant toggle feedback (no shell cache delay)
 current_border=$(tmux show-option -gqv pane-border-format)

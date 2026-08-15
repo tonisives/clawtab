@@ -122,6 +122,10 @@ clear_activity_options() {
         tmux set-window-option -q -t "$window_id" @clawtab-agent-working-next 0 2>/dev/null || true
         tmux set-window-option -q -t "$window_id" @clawtab-agent-question-next 0 2>/dev/null || true
     done
+    tmux list-panes -a -F '#{pane_id}' 2>/dev/null | while IFS= read -r pane_id; do
+        [ -n "$pane_id" ] || continue
+        tmux set-option -pqu -t "$pane_id" @clawtab-agent-asking 2>/dev/null || true
+    done
 }
 
 clear_agent_pane_title() {
@@ -156,7 +160,7 @@ apply_snapshot() {
         '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring)] | @tsv' \
         2>/dev/null >>"$ACTIVITY_TSV" || return 1
 
-    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}' \
+    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}' \
         >"$PANE_STATE_FILE" 2>/dev/null || return 1
 
     awk -F '\t' 'BEGIN { OFS = "\t" }
@@ -174,6 +178,7 @@ apply_snapshot() {
             window = field[2]
             panes[pane] = 1
             pane_current[pane] = (field[3] == "1")
+            pane_asking_current[pane] = (field[7] == "1")
             windows[window] = 1
             if (!(window in window_initialized)) {
                 window_initialized[window] = 1
@@ -190,8 +195,10 @@ apply_snapshot() {
         END {
             for (pane in panes) {
                 wanted = desired_pane[pane] ? 1 : 0
-                if (pane_current[pane] != wanted) {
-                    print "pane", pane, wanted
+                working = desired_working[pane] ? 1 : 0
+                asking = desired_asking[pane] ? 1 : 0
+                if (pane_current[pane] != wanted || pane_asking_current[pane] != asking) {
+                    print "pane", pane, wanted, working, asking
                 }
             }
             for (window in windows) {
@@ -215,7 +222,9 @@ apply_snapshot() {
                 elif [ -x "$PANE_BORDER_CACHE_SCRIPT" ]; then
                     "$PANE_BORDER_CACHE_SCRIPT" "$target" >/dev/null 2>&1 &
                 fi
-                tmux set-option -pq -t "$target" @clawtab-agent-pane-present "$first" 2>/dev/null || true
+                tmux set-option -pq -t "$target" @clawtab-agent-pane-present "$first" \
+                    \; set-option -pq -t "$target" @clawtab-agent-asking "$third" \
+                    2>/dev/null || true
                 ;;
             window)
                 tmux set-window-option -q -t "$target" @clawtab-agent-present "$first" \
