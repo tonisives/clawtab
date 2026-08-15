@@ -44,6 +44,8 @@ pub struct Hub {
     last_detected_processes: HashMap<Uuid, Vec<DetectedProcess>>,
     /// Last authoritative per-pane agent activity snapshot per user.
     last_agent_activity: HashMap<Uuid, Vec<AgentActivity>>,
+    /// Last authoritative shared pin order per workspace owner.
+    last_pinned_items: HashMap<Uuid, Vec<String>>,
 }
 
 impl Hub {
@@ -58,6 +60,7 @@ impl Hub {
             last_auto_yes_panes: HashMap::new(),
             last_detected_processes: HashMap::new(),
             last_agent_activity: HashMap::new(),
+            last_pinned_items: HashMap::new(),
         }
     }
 
@@ -186,6 +189,15 @@ impl Hub {
                 &conn.tx,
                 &DesktopMessage::AgentActivity {
                     activity: activity.clone(),
+                },
+            );
+        }
+
+        if let Some(items) = self.last_pinned_items.get(&user_id) {
+            send_serialized(
+                &conn.tx,
+                &DesktopMessage::PinnedItems {
+                    items: items.clone(),
                 },
             );
         }
@@ -339,6 +351,10 @@ impl Hub {
         self.last_agent_activity.insert(user_id, activity);
     }
 
+    pub fn set_cached_pinned_items(&mut self, user_id: Uuid, items: Vec<String>) {
+        self.last_pinned_items.insert(user_id, items);
+    }
+
     pub fn cached_agent_activity(
         &self,
         user_id: Uuid,
@@ -481,6 +497,8 @@ mod tests {
             cwd: "/tmp".to_string(),
             version: String::new(),
             provider: "codex".to_string(),
+            model_id: None,
+            agent_effort: None,
             can_fork_session: false,
             can_send_skills: false,
             can_inject_secrets: false,
@@ -552,6 +570,38 @@ mod tests {
         assert!(first.contains("desktop_status"), "got {first}");
         let second = mobile_rx.try_recv().unwrap_or_default();
         assert!(second.contains("claude_questions"), "got {second}");
+    }
+
+    #[test]
+    fn owner_mobile_replays_shared_pins() {
+        let mut hub = Hub::new();
+        let owner = Uuid::new_v4();
+        hub.set_cached_pinned_items(owner, vec!["pane:%7".into(), "job:build".into()]);
+
+        let (tx, mut rx) = mk_channel();
+        hub.add_mobile(
+            owner,
+            MobileConnection {
+                connection_id: Uuid::new_v4(),
+                tx,
+            },
+        );
+
+        let pins = rx.try_recv().unwrap_or_default();
+        assert!(pins.contains("pinned_items"), "got {pins}");
+        assert!(pins.contains("pane:%7"), "got {pins}");
+    }
+
+    #[test]
+    fn guest_replay_does_not_include_owner_pins() {
+        let mut hub = Hub::new();
+        let owner = Uuid::new_v4();
+        hub.set_cached_pinned_items(owner, vec!["pane:%7".into()]);
+
+        let (tx, mut rx) = mk_channel();
+        hub.replay_desktop_state_to(owner, &tx, None);
+
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]

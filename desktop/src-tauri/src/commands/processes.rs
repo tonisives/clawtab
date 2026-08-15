@@ -543,11 +543,22 @@ fn build_detected_process(
 }
 
 #[tauri::command]
-pub fn set_detected_process_display_name(
+pub async fn set_detected_process_display_name(
     state: State<'_, AppState>,
     pane_id: String,
     display_name: Option<String>,
 ) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::SetPaneDisplayName {
+        pane_id: pane_id.clone(),
+        display_name: display_name.clone(),
+    })
+    .await
+    {
+        Ok(crate::ipc::IpcResponse::Ok) => {}
+        Ok(crate::ipc::IpcResponse::Error(error)) => return Err(error),
+        Ok(_) => return Err("unexpected daemon response".into()),
+        Err(_) => {}
+    }
     set_process_display_name(&state, pane_id, display_name)
 }
 
@@ -703,6 +714,8 @@ fn persist_process_overrides(
     if settings.relay.is_none() {
         settings.relay = on_disk.relay;
     }
+    settings.pinned_items = on_disk.pinned_items;
+    settings.pinned_pane_identities = on_disk.pinned_pane_identities;
     settings.process_overrides = overrides;
     settings.save()
 }

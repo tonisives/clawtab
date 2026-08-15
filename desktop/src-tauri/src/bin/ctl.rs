@@ -37,6 +37,8 @@ fn print_usage() {
     eprintln!("  agent info [pane_id]                      Show agent session info");
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
+    eprintln!("  agent pin [pane_id]                       Pin an agent across ClawTab");
+    eprintln!("  agent unpin [pane_id]                     Unpin an agent across ClawTab");
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
     eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
     eprintln!();
@@ -83,6 +85,8 @@ fn print_agent_usage() {
     eprintln!("  agent info [pane_id]                      Show agent session info");
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
+    eprintln!("  agent pin [pane_id]                       Pin an agent across ClawTab");
+    eprintln!("  agent unpin [pane_id]                     Unpin an agent across ClawTab");
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
     eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
 }
@@ -90,7 +94,7 @@ fn print_agent_usage() {
 fn is_agent_subcommand(command: &str) -> bool {
     matches!(
         command,
-        "auto-yes" | "info" | "rename" | "ai-rename" | "hooks"
+        "auto-yes" | "info" | "rename" | "ai-rename" | "hooks" | "pin" | "unpin"
     )
 }
 
@@ -183,7 +187,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    if !agent_scope && matches!(command, "auto-yes" | "pane-info" | "rename" | "ai-rename") {
+    if !agent_scope && matches!(command, "auto-yes" | "pane-info" | "rename" | "ai-rename" | "pin" | "unpin") {
         eprintln!(
             "Agent commands are under the agent namespace: cwtctl agent {}",
             if command == "pane-info" {
@@ -392,6 +396,22 @@ async fn main() {
             println!("ok");
             return;
         }
+        "pin" | "unpin" => {
+            if args.len() > 3 {
+                eprintln!("Usage: cwtctl agent {} [pane_id]", command);
+                std::process::exit(1);
+            }
+            let pane_id = args.get(2).cloned().unwrap_or_else(|| {
+                env::var("TMUX_PANE").unwrap_or_else(|_| {
+                    eprintln!("Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly.");
+                    std::process::exit(1);
+                })
+            });
+            Target::Daemon(IpcCommand::SetPinnedItem {
+                key: format!("pane:{pane_id}"),
+                pinned: command == "pin",
+            })
+        }
         "ai-rename" => {
             if args.len() != 3 {
                 eprintln!("Usage: cwtctl agent ai-rename <pane_id>");
@@ -510,6 +530,9 @@ async fn main() {
                 println!("pong");
             }
             IpcResponse::Ok => {
+                println!("ok");
+            }
+            IpcResponse::PinnedItems(_) => {
                 println!("ok");
             }
             IpcResponse::Jobs(jobs) => {
@@ -1067,6 +1090,18 @@ async fn save_pane_display_name(pane_id: &str, display_name: Option<String>) -> 
             "failed to persist tmux pane title: {}",
             String::from_utf8_lossy(&option_output.stderr).trim()
         ));
+    }
+
+    match ipc::send_command(IpcCommand::SetPaneDisplayName {
+        pane_id: pane_id.to_string(),
+        display_name: display_name.clone(),
+    })
+    .await
+    {
+        Ok(IpcResponse::Ok) => return Ok(()),
+        Ok(IpcResponse::Error(error)) => return Err(error),
+        Ok(_) => return Err("unexpected daemon response".into()),
+        Err(_) => {}
     }
 
     match ipc::send_desktop_command(DesktopIpcCommand::RenamePane {

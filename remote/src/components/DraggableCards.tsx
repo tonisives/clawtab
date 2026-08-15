@@ -129,6 +129,7 @@ export function DraggableProcessCard({
   selected,
   softBorder,
   onStop,
+  onSaveName,
   onTogglePin,
   pinned,
   autoYesActive,
@@ -140,6 +141,7 @@ export function DraggableProcessCard({
   selected?: boolean | string
   softBorder?: boolean
   onStop?: () => void
+  onSaveName?: (name: string) => void
   onTogglePin?: () => void
   pinned?: boolean
   autoYesActive?: boolean
@@ -155,6 +157,7 @@ export function DraggableProcessCard({
           selected={selected}
           softBorder={softBorder}
           onStop={onStop}
+          onSaveName={onSaveName}
           onTogglePin={onTogglePin}
           pinned={pinned}
           autoYesActive={autoYesActive}
@@ -183,6 +186,7 @@ export function DraggableProcessCard({
         selected={selected}
         softBorder={softBorder}
         onStop={onStop}
+        onSaveName={onSaveName}
         onTogglePin={onTogglePin}
         pinned={pinned}
         autoYesActive={autoYesActive}

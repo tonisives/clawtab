@@ -136,6 +136,21 @@ pub enum ClientMessage {
         id: String,
         pane_ids: Vec<String>,
     },
+    SetPinnedItem {
+        id: String,
+        key: String,
+        pinned: bool,
+    },
+    MergePinnedItems {
+        id: String,
+        items: Vec<String>,
+    },
+    SetPaneDisplayName {
+        id: String,
+        pane_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
+    },
     GetNotificationHistory {
         id: String,
         limit: u32,
@@ -324,6 +339,33 @@ pub enum DesktopMessage {
     /// Desktop pushes which pane_ids have auto-yes enabled (synced to mobile)
     AutoYesPanes {
         pane_ids: Vec<String>,
+    },
+    /// Authoritative ordered pins shared by all owner clients.
+    PinnedItems {
+        items: Vec<String>,
+    },
+    SetPinnedItemAck {
+        id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    MergePinnedItemsAck {
+        id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    PaneDisplayNameChanged {
+        pane_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display_name: Option<String>,
+    },
+    SetPaneDisplayNameAck {
+        id: String,
+        success: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     /// Ack for subscribe_pty
     SubscribePtyAck {

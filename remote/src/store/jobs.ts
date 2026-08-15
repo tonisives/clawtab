@@ -44,6 +44,7 @@ interface JobsState {
   markProcessActivity: (paneId: string) => void;
   upsertDetectedProcess: (process: DetectedProcess) => void;
   removeDetectedProcess: (paneId: string) => void;
+  setProcessDisplayName: (paneId: string, displayName?: string) => void;
   hydrateFromCache: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   setDesktopSettings: (enabledModels: Record<string, string[]>, defaultProvider: string, defaultModel?: string) => void;
 }
@@ -242,6 +243,15 @@ export const useJobsStore = create<JobsState>((set) => ({
         processesLoaded: true,
       };
     }),
+
+  setProcessDisplayName: (paneId, displayName) =>
+    set((state) => ({
+      detectedProcesses: state.detectedProcesses.map((process) =>
+        process.pane_id === paneId
+          ? { ...process, display_name: displayName || undefined }
+          : process,
+      ),
+    })),
 
   hydrateFromCache: (jobs, statuses) =>
     set((state) => {

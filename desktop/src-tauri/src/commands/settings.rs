@@ -27,6 +27,8 @@ pub fn set_settings(
     let on_disk = AppSettings::load();
     let telegram = settings.telegram.clone().or(on_disk.telegram);
     let relay = settings.relay.clone().or(on_disk.relay);
+    let pinned_items = on_disk.pinned_items.clone();
+    let pinned_pane_identities = on_disk.pinned_pane_identities.clone();
     *settings = new_settings;
     if settings.telegram.is_none() {
         settings.telegram = telegram;
@@ -34,6 +36,8 @@ pub fn set_settings(
     if settings.relay.is_none() {
         settings.relay = relay;
     }
+    settings.pinned_items = pinned_items;
+    settings.pinned_pane_identities = pinned_pane_identities;
     settings.save()?;
     *state.process_overrides.lock() = settings.process_overrides.clone();
 

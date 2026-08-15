@@ -17,6 +17,7 @@ mod cwt;
 pub mod daemon;
 mod debug_spawn;
 pub mod events;
+pub mod shared_state;
 #[cfg(feature = "desktop")]
 mod focus;
 pub mod history;
@@ -933,6 +934,9 @@ pub fn run() {
             commands::daemon::daemon_uninstall,
             commands::daemon::daemon_restart,
             commands::daemon::get_daemon_logs,
+            commands::daemon::get_pinned_items,
+            commands::daemon::merge_pinned_items,
+            commands::daemon::set_pinned_item,
         ])
         .setup(move |app| {
             setup_app(

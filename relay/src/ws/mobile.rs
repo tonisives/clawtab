@@ -197,6 +197,24 @@ async fn handle_message(
         return;
     };
 
+    if target != user_id
+        && matches!(
+            msg,
+            ClientMessage::SetPinnedItem { .. }
+                | ClientMessage::MergePinnedItems { .. }
+                | ClientMessage::SetPaneDisplayName { .. }
+        )
+    {
+        let error = ServerMessage::Error {
+            id: extract_id(&msg),
+            code: error_codes::UNAUTHORIZED.into(),
+            message: "only the workspace owner can change shared pins or pane names".into(),
+        };
+        let hub = state.hub.read().await;
+        hub.broadcast_to_mobiles(user_id, &error);
+        return;
+    }
+
     if let ClientMessage::DetectProcesses { id } = &msg {
         let cached = {
             let hub = state.hub.read().await;
@@ -482,6 +500,9 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::AnswerQuestion { id, .. }
         | ClientMessage::SetAutoYesPanes { id, .. }
         | ClientMessage::GetNotificationHistory { id, .. }
+        | ClientMessage::SetPinnedItem { id, .. }
+        | ClientMessage::MergePinnedItems { id, .. }
+        | ClientMessage::SetPaneDisplayName { id, .. }
         | ClientMessage::SubscribePty { id, .. } => Some(id.clone()),
         ClientMessage::UnsubscribeLogs { .. }
         | ClientMessage::UnsubscribePty { .. }

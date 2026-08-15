@@ -9,6 +9,18 @@ import {
   type ShortcutSettings,
 } from "../../../shortcuts";
 
+const normalizePin = (key: string) => {
+  const [kind, ...rest] = key.split(":");
+  const id = rest.join(":");
+  if (!id) return null;
+  if (kind === "job") return `job:${id}`;
+  if (kind === "pane" || kind === "process" || kind === "shell") return `pane:${id}`;
+  return null;
+};
+
+const normalizePins = (items: string[]) =>
+  [...new Set(items.map(normalizePin).filter((item): item is string => item != null))];
+
 export function useJobsTabSettings() {
   const [shortcutSettings, setShortcutSettings] = useState<ShortcutSettings>(DEFAULT_SHORTCUTS);
   const [defaultProvider, setDefaultProvider] = useState<ProcessProvider>("claude");
@@ -30,7 +42,9 @@ export function useJobsTabSettings() {
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+      return Array.isArray(parsed)
+        ? normalizePins(parsed.filter((x): x is string => typeof x === "string"))
+        : [];
     } catch {
       return [];
     }
@@ -80,6 +94,27 @@ export function useJobsTabSettings() {
     };
   }, []);
 
+  useEffect(() => {
+    const localItems = pinnedItems;
+    const migrated = localStorage.getItem("desktop_shared_pins_migrated_v1") === "1";
+    const load = migrated || localItems.length === 0
+      ? invoke<string[]>("get_pinned_items")
+      : invoke<string[]>("merge_pinned_items", { items: localItems });
+    load.then((items) => {
+      const normalized = normalizePins(items);
+      setPinnedItems(normalized);
+      localStorage.setItem("desktop_pinned_items", JSON.stringify(normalized));
+      localStorage.setItem("desktop_shared_pins_migrated_v1", "1");
+    }).catch(() => {});
+
+    const unlistenPromise = listen<string[]>("pinned-items-changed", (event) => {
+      const normalized = normalizePins(event.payload);
+      setPinnedItems(normalized);
+      localStorage.setItem("desktop_pinned_items", JSON.stringify(normalized));
+    });
+    return () => { unlistenPromise.then((unlisten) => unlisten()); };
+  }, []); // Local pins are read once and merged into the daemon's authoritative order.
+
   // Init group/job order from settings
   useEffect(() => {
     invoke<AppSettings>("get_settings").then((s) => {
@@ -108,14 +143,22 @@ export function useJobsTabSettings() {
   }, []);
 
   const persistPinnedItems = useCallback((next: string[]) => {
-    setPinnedItems(next);
-    localStorage.setItem("desktop_pinned_items", JSON.stringify(next));
+    const normalized = normalizePins(next);
+    setPinnedItems(normalized);
+    localStorage.setItem("desktop_pinned_items", JSON.stringify(normalized));
+    invoke<string[]>("merge_pinned_items", { items: normalized }).catch(() => {});
   }, []);
 
   const togglePin = useCallback((key: string) => {
+    const normalizedKey = normalizePin(key);
+    if (!normalizedKey) return;
     setPinnedItems((prev) => {
-      const next = prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key];
+      const pinned = !prev.includes(normalizedKey);
+      const next = pinned ? [...prev, normalizedKey] : prev.filter((k) => k !== normalizedKey);
       localStorage.setItem("desktop_pinned_items", JSON.stringify(next));
+      invoke<string[]>("set_pinned_item", { key: normalizedKey, pinned })
+        .then((items) => setPinnedItems(normalizePins(items)))
+        .catch(() => setPinnedItems(prev));
       return next;
     });
   }, []);

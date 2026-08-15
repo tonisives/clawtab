@@ -240,6 +240,17 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
                 );
             }
         }
+        DesktopMessage::PinnedItems { items } => {
+            let mut hub = state.hub.write().await;
+            hub.set_cached_pinned_items(user_id, items.clone());
+            hub.send_raw_to_mobiles(user_id, text);
+        }
+        DesktopMessage::PaneDisplayNameChanged { .. } => {
+            // Owners can rename panes. Guests receive the new name through the
+            // next filtered process snapshot, never through an unfiltered event.
+            let hub = state.hub.read().await;
+            hub.send_raw_to_mobiles(user_id, text);
+        }
         DesktopMessage::TriggerResult {
             trigger_id,
             status,
