@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native"
+import { View, Text, StyleSheet, ActivityIndicator, Alert, TouchableOpacity } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore, useJob, useJobStatus } from "../store/jobs"
 import { useRunsStore } from "../store/runs"
@@ -90,6 +90,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
   const jobQuestion = questions.find((q) => q.matched_job === slug)
   const autoYesPaneId = jobQuestion?.pane_id ?? statusPaneId
   const autoYesActive = !isDemo && !!autoYesPaneId && autoYesPaneIds.has(autoYesPaneId)
+  const canToggleAutoYes = !isDemo && !!autoYesPaneId
 
   const loadRuns = useCallback(() => {
     if (isDemo) return
@@ -210,7 +211,15 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
-        <StatusBadge status={status} />
+        <TouchableOpacity
+          onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
+          disabled={!canToggleAutoYes}
+          activeOpacity={0.6}
+          accessibilityRole={canToggleAutoYes ? "button" : undefined}
+          accessibilityLabel={canToggleAutoYes ? (autoYesActive ? "Disable auto-yes" : "Enable auto-yes") : "Status"}
+        >
+          <StatusBadge status={status} colorOverride={autoYesActive ? colors.warning : undefined} />
+        </TouchableOpacity>
       </View>
       <JobDetailView
         transport={isDemo ? demoTransport : wsTransport}

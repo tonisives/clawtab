@@ -14,7 +14,7 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
-import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
@@ -122,17 +122,21 @@ export default function ProcessDetailScreen() {
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
   const tmuxSession = (process ?? lastProcess)?.tmux_session ?? paneQuestion?.tmux_session ?? "";
 
-  const displayName = (process ?? lastProcess)
-    ? (process ?? lastProcess)!.cwd.replace(/^\/Users\/[^/]+/, "~")
+  const activeProcess = process ?? lastProcess;
+  const displayName = activeProcess
+    ? activeProcess.cwd.replace(/^\/Users\/[^/]+/, "~")
     : paneQuestion?.cwd.replace(/^\/Users\/[^/]+/, "~") ?? pane_id;
-  const headerTitle = (process ?? lastProcess)
-    ? compactPath((process ?? lastProcess)!.cwd)
+  const headerTitle = activeProcess
+    ? compactPath(activeProcess.cwd)
     : paneQuestion?.cwd
       ? compactPath(paneQuestion.cwd)
       : pane_id;
-
-  const activeProcess = process ?? lastProcess;
   const headerKind = activeProcess ? kindForProcess(activeProcess) : "claude";
+  const [showLatestQuery, setShowLatestQuery] = useState(false);
+  const firstQuery = activeProcess?.first_query ?? null;
+  const lastQuery = activeProcess?.last_query ?? null;
+  const hasQueryToggle = !!firstQuery && !!lastQuery && firstQuery !== lastQuery;
+  const titleBarText = showLatestQuery && lastQuery ? lastQuery : firstQuery ?? headerTitle;
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
@@ -331,6 +335,13 @@ export default function ProcessDetailScreen() {
   const closeContextMenu = useCallback(() => {
     setShowContextMenu(false);
   }, []);
+  const handleHeaderTitlePress = useCallback(() => {
+    if (showContextMenu) {
+      closeContextMenu();
+      return;
+    }
+    if (hasQueryToggle) setShowLatestQuery((value) => !value);
+  }, [closeContextMenu, hasQueryToggle, showContextMenu]);
   const openContextMenu = useCallback(
     (e?: any) => {
       if (Platform.OS !== "web") {
@@ -398,13 +409,19 @@ export default function ProcessDetailScreen() {
           headerBackButtonDisplayMode: "minimal",
           headerTitle: () => (
             <HeaderTitleWithIcon
-              title={headerTitle}
+              title={titleBarText}
               icon={<JobKindIcon kind={headerKind} size={26} bare />}
-              onPress={showContextMenu ? closeContextMenu : undefined}
+              onPress={hasQueryToggle || showContextMenu ? handleHeaderTitlePress : undefined}
+              accessibilityLabel={hasQueryToggle ? (showLatestQuery ? "Show first query" : "Show latest query") : undefined}
             />
           ),
           headerRight: () => (
             <View ref={contextMenuRef} style={styles.headerRightSlot}>
+              <HeaderStatusDot
+                color={autoYesActive ? colors.warning : isAlive ? colors.statusRunning : colors.statusIdle}
+                onPress={isAlive || autoYesActive ? handleToggleAutoYes : undefined}
+                accessibilityLabel={isAlive || autoYesActive ? (autoYesActive ? "Disable auto-yes" : "Enable auto-yes") : "Status"}
+              />
               <TouchableOpacity
                 ref={contextButtonRef}
                 style={styles.contextBtn}
@@ -649,8 +666,10 @@ const styles = StyleSheet.create({
   headerRightSlot: {
     position: "relative",
     zIndex: 9999,
-    width: 36,
+    width: 76,
     height: 36,
+    flexDirection: "row",
+    gap: 4,
     alignItems: "center",
     justifyContent: "center",
   },

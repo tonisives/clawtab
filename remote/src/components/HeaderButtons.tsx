@@ -17,14 +17,26 @@ export function HeaderBackButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-export function HeaderStatusDot({ color }: { color: string }) {
+export function HeaderStatusDot({
+  color,
+  onPress,
+  accessibilityLabel = "Status",
+}: {
+  color: string;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+}) {
   return (
-    <View
-      accessibilityRole="image"
+    <Pressable
+      accessibilityRole={onPress ? "button" : "image"}
+      accessibilityLabel={accessibilityLabel}
+      disabled={!onPress}
+      onPress={onPress}
+      hitSlop={8}
       style={styles.statusButton}
     >
       <View style={[styles.statusDot, { backgroundColor: color }]} />
-    </View>
+    </Pressable>
   );
 }
 
@@ -32,10 +44,12 @@ export function HeaderTitleWithIcon({
   title,
   icon,
   onPress,
+  accessibilityLabel,
 }: {
   title: string;
   icon: ReactNode;
   onPress?: () => void;
+  accessibilityLabel?: string;
 }) {
   const content = (
     <>
@@ -48,6 +62,7 @@ export function HeaderTitleWithIcon({
   return (
     <Pressable
       accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={accessibilityLabel}
       disabled={!onPress}
       onPress={onPress}
       style={styles.titleGroup}

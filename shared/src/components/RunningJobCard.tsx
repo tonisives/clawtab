@@ -108,7 +108,7 @@ export const RunningJobCard = memo(function RunningJobCard({
                   <Text style={styles.moreBtnText}>{"\u2026"}</Text>
                 </TouchableOpacity>
               ) : null}
-              {stopping ? <View style={styles.stoppingDot} /> : <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} />}
+              {stopping ? <View style={styles.stoppingDot} /> : <StatusBadge status={{ state: "running", started_at: "", run_id: "" }} colorOverride={autoYesActive ? colors.warning : undefined} />}
               {autoYesActive && !stopping ? <View style={styles.autoYesDot} /> : null}
             </View>
           </View>

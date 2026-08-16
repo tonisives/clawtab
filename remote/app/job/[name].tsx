@@ -360,7 +360,13 @@ export default function JobDetailScreen() {
               icon={<JobKindIcon kind={kindForJob(job)} size={26} bare />}
             />
           ),
-          headerRight: () => <HeaderStatusDot color={statusColor(status)} />,
+          headerRight: () => (
+            <HeaderStatusDot
+              color={autoYesActive ? colors.warning : statusColor(status)}
+              onPress={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
+              accessibilityLabel={isDemo || !autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
+            />
+          ),
         }}
       />
       {isDemo && <DemoBanner />}

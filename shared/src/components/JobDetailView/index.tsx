@@ -448,7 +448,7 @@ export function JobDetailView({
               </TouchableOpacity>
             ) : null}
             <Text style={styles.jobName}>{job.name}</Text>
-            <StatusBadge status={status} />
+            <StatusBadge status={status} colorOverride={autoYesActive ? colors.warning : undefined} />
           </View>
           {onEditTitle ? (
             <TouchableOpacity onPress={onEditTitle} activeOpacity={0.6} style={styles.titleEditBtn}>

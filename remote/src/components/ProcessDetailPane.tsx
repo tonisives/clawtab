@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from "react"
-import { View, Text, StyleSheet, ActivityIndicator } from "react-native"
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
@@ -106,10 +106,15 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   if (process) lastProcessRef.current = process
   const lastProcess = lastProcessRef.current
   const activeProcess = process ?? lastProcess
+  const [showLatestQuery, setShowLatestQuery] = useState(false)
+  const firstQuery = activeProcess?.first_query ?? null
+  const lastQuery = activeProcess?.last_query ?? null
+  const hasQueryToggle = !!firstQuery && !!lastQuery && firstQuery !== lastQuery
 
   const displayName = activeProcess
     ? activeProcess.cwd.replace(/^\/Users\/[^/]+/, "~")
     : paneId
+  const titleText = showLatestQuery && lastQuery ? lastQuery : firstQuery ?? displayName
 
   const [logs, setLogs] = useState(process?.log_lines ?? "")
   const [logsLoaded, setLogsLoaded] = useState(!!process)
@@ -197,6 +202,10 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
     })
   }, [paneId, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion])
 
+  const handleTitlePress = useCallback(() => {
+    if (hasQueryToggle) setShowLatestQuery((value) => !value)
+  }, [hasQueryToggle])
+
   const handleStopped = useCallback(() => {
     useJobsStore.getState().removeDetectedProcess(paneId)
     onClose()
@@ -269,12 +278,30 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   const syntheticStatus: JobStatus = isAlive
     ? { state: "running", run_id: "", started_at: new Date().toISOString(), pane_id: paneId }
     : { state: "idle" }
+  const canToggleAutoYes = isAlive || !!paneQuestion || autoYesActive
 
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
-        <StatusBadge status={syntheticStatus} />
+        <TouchableOpacity
+          style={styles.titleButton}
+          onPress={handleTitlePress}
+          disabled={!hasQueryToggle}
+          activeOpacity={0.7}
+          accessibilityRole={hasQueryToggle ? "button" : undefined}
+          accessibilityLabel={hasQueryToggle ? (showLatestQuery ? "Show first query" : "Show latest query") : undefined}
+        >
+          <Text style={styles.title} numberOfLines={1}>{titleText}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
+          disabled={!canToggleAutoYes}
+          activeOpacity={0.6}
+          accessibilityRole={canToggleAutoYes ? "button" : undefined}
+          accessibilityLabel={canToggleAutoYes ? (autoYesActive ? "Disable auto-yes" : "Enable auto-yes") : "Status"}
+        >
+          <StatusBadge status={syntheticStatus} colorOverride={autoYesActive ? colors.warning : undefined} />
+        </TouchableOpacity>
       </View>
       <JobDetailView
         transport={transport}
@@ -320,6 +347,11 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "600",
     flex: 1,
+    marginRight: spacing.sm,
+  },
+  titleButton: {
+    flex: 1,
+    minWidth: 0,
     marginRight: spacing.sm,
   },
   center: {

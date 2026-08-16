@@ -90,7 +90,7 @@ export function ProcessCard({
   const agentStatusStyle = effectiveAgentState === "asking"
     ? styles.statusIconQuestion
     : effectiveAgentState === "working"
-      ? styles.statusIconWorking
+      ? autoYesActive ? styles.statusIconAutoYesWorking : styles.statusIconWorking
       : styles.statusIconFinished;
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -396,6 +396,9 @@ const styles = StyleSheet.create({
   },
   statusIconWorking: {
     color: "#64d2ff",
+  },
+  statusIconAutoYesWorking: {
+    color: colors.warning,
   },
   statusIconQuestion: {
     color: colors.warning,

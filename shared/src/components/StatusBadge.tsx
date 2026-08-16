@@ -19,8 +19,8 @@ if (isWeb && typeof document !== "undefined") {
   }
 }
 
-export function StatusBadge({ status }: { status: JobStatus }) {
-  const color = statusColor(status);
+export function StatusBadge({ status, colorOverride }: { status: JobStatus; colorOverride?: string }) {
+  const color = colorOverride ?? statusColor(status);
   const label = statusLabel(status);
   const running = status.state === "running";
 
