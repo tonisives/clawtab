@@ -34,18 +34,22 @@ impl PtyManager {
         if self.window_size_options.contains_key(session) {
             return;
         }
-        match crate::tmux::get_session_window_size(session) {
-            Ok(value) => {
-                self.window_size_options.insert(session.to_string(), value);
-            }
+        let value = match crate::tmux::get_session_window_size(session) {
+            Ok(value) => value,
             Err(error) => {
                 log::warn!(
                     "failed to read tmux session {} window-size option: {}",
                     session,
                     error
                 );
+                // We are about to mutate the option. If tmux cannot report
+                // the previous value, the safest cleanup is to return to the
+                // session's inherited/global setting rather than leave the
+                // session permanently in manual mode.
+                None
             }
-        }
+        };
+        self.window_size_options.insert(session.to_string(), value);
     }
 
     fn stop_viewer(&mut self, viewer: PaneViewer) {
@@ -66,6 +70,12 @@ impl PtyManager {
             .any(|active| active.tmux_session == session);
         if !has_active_viewer {
             if let Some(original) = self.window_size_options.remove(&session) {
+                // resize-window switches the session to manual sizing. Refit
+                // the window against the remaining attached session before
+                // restoring the previous option so the terminal is full-sized
+                // immediately, even when Alacritty changed size while the
+                // viewer was active.
+                let _ = crate::tmux::resize_window_to_largest_session(&viewer.window_id);
                 if let Err(error) =
                     crate::tmux::restore_session_window_size(&session, original.as_deref())
                 {
@@ -217,6 +227,16 @@ impl PtyManager {
         if cols == 0 || rows == 0 {
             return Ok(());
         }
+
+        let session = self
+            .sessions
+            .get(pane_id)
+            .map(|viewer| viewer.tmux_session.clone())
+            .ok_or_else(|| format!("No viewer for pane {}", pane_id))?;
+        // Keep the restore record adjacent to every operation that can switch
+        // tmux's window-size option to manual. This also covers a viewer that
+        // started before its first non-zero resize event.
+        self.remember_window_size_option(&session);
 
         let viewer = self
             .sessions

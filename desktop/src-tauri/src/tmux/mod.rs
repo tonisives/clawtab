@@ -1214,6 +1214,18 @@ pub fn resize_window(window_id: &str, cols: u16, rows: u16) -> Result<(), String
     )
 }
 
+/// `resize-window -A -t <window_id>`.
+///
+/// This intentionally runs before restoring `window-size`: `resize-window`
+/// records a manual size, while restoring the session option makes subsequent
+/// client resizes automatic again.
+pub fn resize_window_to_largest_session(window_id: &str) -> Result<(), String> {
+    run_ok(
+        &["resize-window", "-A", "-t", window_id],
+        "tmux::resize_window_to_largest_session",
+    )
+}
+
 /// Return the session-local `window-size` value, or `None` when it inherits the
 /// server default.
 pub fn get_session_window_size(session: &str) -> Result<Option<String>, String> {

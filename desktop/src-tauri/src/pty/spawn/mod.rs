@@ -60,6 +60,12 @@ pub(super) fn run(
         spawn_started.elapsed().as_millis()
     );
 
+    // Capture the option before creating the grouped view session. User tmux
+    // hooks run while that session is created and may change window-size;
+    // the restore record must describe the real session before any viewer
+    // setup has happened.
+    manager.remember_window_size_option(&captured.session);
+
     let view_session = view_session::create_view_session(
         pane_id,
         &captured.session,
@@ -75,7 +81,6 @@ pub(super) fn run(
 
     // Resize the captured window to match the viewport so content reflows.
     if cols > 0 && rows > 0 {
-        manager.remember_window_size_option(&captured.session);
         let _ = crate::tmux::resize_window(&captured.window_id, cols, rows);
     }
 
