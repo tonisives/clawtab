@@ -23,12 +23,13 @@ import { DEMO_JOBS, DEMO_STATUSES, DEMO_LOGS, DEMO_RUNS, isDemoJob } from "../..
 import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
+import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { colors } from "@clawtab/shared";
 import type { Transport } from "@clawtab/shared";
 import type { RemoteJob, RunRecord } from "@clawtab/shared";
 import { buildModelOptions } from "../../src/lib/agentModels";
 
-const KEYBOARD_EXTRA_CLEARANCE = 18;
+const KEYBOARD_EXTRA_CLEARANCE = 10;
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const TERMINAL_BG = "#1c1c1e";
 const AGENT_PROVIDERS: ProcessProvider[] = ["claude", "codex", "opencode", "antigravity"];
@@ -195,36 +196,18 @@ export default function JobDetailScreen() {
   } = usePty(statusPaneId, statusTmuxSession, termRef);
   const isRunningWithPty = !!statusPaneId && !!statusTmuxSession && !isDemo;
   const [copyModeActive, setCopyModeActive] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
-  const terminalMenuOpenRef = useRef(false);
-  useEffect(() => {
-    terminalMenuOpenRef.current = terminalMenuOpen;
-  }, [terminalMenuOpen]);
-
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    const show = Keyboard.addListener("keyboardWillShow", (event) => {
-      const keyboardHeight = event.endCoordinates?.height ?? 0;
-      setKeyboardVisible(true);
-      setKeyboardHeight(keyboardHeight);
-      termRef.current?.setVisualOffset(Math.max(0, keyboardHeight + KEYBOARD_TOOLBAR_HEIGHT + KEYBOARD_EXTRA_CLEARANCE));
-    });
-    const hide = Keyboard.addListener("keyboardWillHide", () => {
-      if (terminalMenuOpenRef.current) {
-        setTimeout(() => termRef.current?.focus(), 0);
-        return;
-      }
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-      termRef.current?.setVisualOffset(0);
-    });
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
+  const {
+    keyboardVisible,
+    keyboardHeight,
+    terminalSurfaceRef,
+    handleTerminalLayout,
+  } = useTerminalKeyboard({
+    termRef,
+    menuOpen: terminalMenuOpen,
+    toolbarHeight: KEYBOARD_TOOLBAR_HEIGHT,
+    extraClearance: KEYBOARD_EXTRA_CLEARANCE,
+  });
 
   const sendTmuxPaneKey = useCallback(
     (key: string) => {
@@ -292,13 +275,15 @@ export default function JobDetailScreen() {
           ) : null}
         </View>
         <View style={[styles.terminalFrame, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
-          <XtermLog
-            ref={termRef}
-            onData={sendInput}
-            onResize={sendResize}
-            interactive
-            forceDarkTheme
-          />
+          <View ref={terminalSurfaceRef} style={styles.terminalSurface} onLayout={handleTerminalLayout}>
+            <XtermLog
+              ref={termRef}
+              onData={sendInput}
+              onResize={sendResize}
+              interactive
+              forceDarkTheme
+            />
+          </View>
           {!ptyConnecting && !ptyError ? (
             <TerminalScrollButtons
               onScrollUp={() => scrollTerminal("up")}
@@ -310,7 +295,7 @@ export default function JobDetailScreen() {
         </View>
       </View>
     ),
-    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom],
+    [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom, handleTerminalLayout],
   );
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
@@ -573,6 +558,10 @@ const styles = StyleSheet.create({
     minHeight: 0,
     position: "relative",
     backgroundColor: TERMINAL_BG,
+  },
+  terminalSurface: {
+    flex: 1,
+    minHeight: 0,
   },
   keyboardToolbar: {
     position: "absolute",
