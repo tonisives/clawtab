@@ -60,11 +60,11 @@ pub(super) fn run(
         spawn_started.elapsed().as_millis()
     );
 
-    // Capture the option before creating the grouped view session. User tmux
-    // hooks run while that session is created and may change window-size;
-    // the restore record must describe the real session before any viewer
-    // setup has happened.
-    manager.remember_window_size_option(&captured.session);
+    // Capture the option on the exact window before creating the grouped view
+    // session. User tmux hooks run while that session is created and may change
+    // window-size; the restore record must not depend on whichever window is
+    // current in the real session when the viewer later disconnects.
+    manager.remember_window_size_option(&captured.window_id);
 
     let view_session = view_session::create_view_session(
         pane_id,
@@ -109,7 +109,6 @@ pub(super) fn run(
             writer: attached.writer,
             master: attached.master,
             window_id: captured.window_id,
-            tmux_session: captured.session,
             view_session,
             attach_generation,
             native_cols,

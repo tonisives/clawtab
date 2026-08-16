@@ -21,8 +21,6 @@ pub(super) struct PaneViewer {
     pub(super) master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     /// Captured window id (@...) in the original session.
     pub(super) window_id: String,
-    /// Original tmux session whose `window-size` option is changed by resize-window.
-    pub(super) tmux_session: String,
     /// Ephemeral grouped view session (clawtab-view-N); killed on stop.
     pub(super) view_session: String,
     /// Monotonic attachment generation for this pane viewer.

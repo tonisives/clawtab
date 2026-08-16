@@ -1226,29 +1226,27 @@ pub fn resize_window_to_largest_session(window_id: &str) -> Result<(), String> {
     )
 }
 
-/// Return the session-local `window-size` value, or `None` when it inherits the
-/// server default.
-pub fn get_session_window_size(session: &str) -> Result<Option<String>, String> {
+/// Return the target window's `window-size` value.
+pub fn get_window_size_option(window_id: &str) -> Result<Option<String>, String> {
     let value = run_capture(
-        &["show-options", "-qv", "-t", session, "window-size"],
-        "tmux::get_session_window_size",
+        &["show-options", "-qv", "-t", window_id, "window-size"],
+        "tmux::get_window_size_option",
     )?;
     let value = value.trim();
     Ok((!value.is_empty()).then(|| value.to_string()))
 }
 
-/// Restore a session-local `window-size` value captured by
-/// [`get_session_window_size`].
-pub fn restore_session_window_size(session: &str, value: Option<&str>) -> Result<(), String> {
+/// Restore the exact window captured by [`get_window_size_option`].
+pub fn restore_window_size_option(window_id: &str, value: Option<&str>) -> Result<(), String> {
     if let Some(value) = value {
         run_ok(
-            &["set-option", "-t", session, "window-size", value],
-            "tmux::restore_session_window_size::set",
+            &["set-option", "-t", window_id, "window-size", value],
+            "tmux::restore_window_size_option::set",
         )
     } else {
         run_ok(
-            &["set-option", "-qu", "-t", session, "window-size"],
-            "tmux::restore_session_window_size::unset",
+            &["set-option", "-qu", "-t", window_id, "window-size"],
+            "tmux::restore_window_size_option::unset",
         )
     }
 }

@@ -14,7 +14,7 @@ import { getWsSend, nextId } from "../../src/lib/wsRuntime";
 import { registerRequest } from "../../src/lib/useRequestMap";
 import { usePty } from "../../src/hooks/usePty";
 import { useDemoPty } from "../../src/hooks/useDemoPty";
-import { HeaderStatusDot, HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
+import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
@@ -132,11 +132,10 @@ export default function ProcessDetailScreen() {
       ? compactPath(paneQuestion.cwd)
       : pane_id;
   const headerKind = activeProcess ? kindForProcess(activeProcess) : "claude";
-  const [showLatestQuery, setShowLatestQuery] = useState(false);
+  const [showQueryDetails, setShowQueryDetails] = useState(true);
   const firstQuery = activeProcess?.first_query ?? null;
   const lastQuery = activeProcess?.last_query ?? null;
-  const hasQueryToggle = !!firstQuery && !!lastQuery && firstQuery !== lastQuery;
-  const titleBarText = showLatestQuery && lastQuery ? lastQuery : firstQuery ?? headerTitle;
+  const hasQueryDetails = !!firstQuery || !!lastQuery;
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
@@ -340,8 +339,8 @@ export default function ProcessDetailScreen() {
       closeContextMenu();
       return;
     }
-    if (hasQueryToggle) setShowLatestQuery((value) => !value);
-  }, [closeContextMenu, hasQueryToggle, showContextMenu]);
+    if (hasQueryDetails) setShowQueryDetails((value) => !value);
+  }, [closeContextMenu, hasQueryDetails, showContextMenu]);
   const openContextMenu = useCallback(
     (e?: any) => {
       if (Platform.OS !== "web") {
@@ -409,19 +408,14 @@ export default function ProcessDetailScreen() {
           headerBackButtonDisplayMode: "minimal",
           headerTitle: () => (
             <HeaderTitleWithIcon
-              title={titleBarText}
+              title={headerTitle}
               icon={<JobKindIcon kind={headerKind} size={26} bare />}
-              onPress={hasQueryToggle || showContextMenu ? handleHeaderTitlePress : undefined}
-              accessibilityLabel={hasQueryToggle ? (showLatestQuery ? "Show first query" : "Show latest query") : undefined}
+              onPress={hasQueryDetails || showContextMenu ? handleHeaderTitlePress : undefined}
+              accessibilityLabel={hasQueryDetails ? (showQueryDetails ? "Hide query details" : "Show query details") : undefined}
             />
           ),
           headerRight: () => (
             <View ref={contextMenuRef} style={styles.headerRightSlot}>
-              <HeaderStatusDot
-                color={autoYesActive ? colors.warning : isAlive ? colors.statusRunning : colors.statusIdle}
-                onPress={isAlive || autoYesActive ? handleToggleAutoYes : undefined}
-                accessibilityLabel={isAlive || autoYesActive ? (autoYesActive ? "Disable auto-yes" : "Enable auto-yes") : "Status"}
-              />
               <TouchableOpacity
                 ref={contextButtonRef}
                 style={styles.contextBtn}
@@ -456,7 +450,7 @@ export default function ProcessDetailScreen() {
           ),
         }}
       />
-      {activeProcess?.first_query && (
+      {showQueryDetails && activeProcess?.first_query && (
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Query</Text>
           <Text style={styles.queryText} numberOfLines={1}>
@@ -464,7 +458,7 @@ export default function ProcessDetailScreen() {
           </Text>
         </View>
       )}
-      {activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
+      {showQueryDetails && activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
         <View style={styles.queryRow}>
           <Text style={styles.queryLabel}>Latest</Text>
           <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={1}>
@@ -666,10 +660,8 @@ const styles = StyleSheet.create({
   headerRightSlot: {
     position: "relative",
     zIndex: 9999,
-    width: 76,
+    width: 36,
     height: 36,
-    flexDirection: "row",
-    gap: 4,
     alignItems: "center",
     justifyContent: "center",
   },

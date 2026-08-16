@@ -106,15 +106,14 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   if (process) lastProcessRef.current = process
   const lastProcess = lastProcessRef.current
   const activeProcess = process ?? lastProcess
-  const [showLatestQuery, setShowLatestQuery] = useState(false)
+  const [showQueryDetails, setShowQueryDetails] = useState(true)
   const firstQuery = activeProcess?.first_query ?? null
   const lastQuery = activeProcess?.last_query ?? null
-  const hasQueryToggle = !!firstQuery && !!lastQuery && firstQuery !== lastQuery
+  const hasQueryDetails = !!firstQuery || !!lastQuery
 
   const displayName = activeProcess
     ? activeProcess.cwd.replace(/^\/Users\/[^/]+/, "~")
     : paneId
-  const titleText = showLatestQuery && lastQuery ? lastQuery : firstQuery ?? displayName
 
   const [logs, setLogs] = useState(process?.log_lines ?? "")
   const [logsLoaded, setLogsLoaded] = useState(!!process)
@@ -203,8 +202,8 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   }, [paneId, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion])
 
   const handleTitlePress = useCallback(() => {
-    if (hasQueryToggle) setShowLatestQuery((value) => !value)
-  }, [hasQueryToggle])
+    if (hasQueryDetails) setShowQueryDetails((value) => !value)
+  }, [hasQueryDetails])
 
   const handleStopped = useCallback(() => {
     useJobsStore.getState().removeDetectedProcess(paneId)
@@ -278,30 +277,20 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   const syntheticStatus: JobStatus = isAlive
     ? { state: "running", run_id: "", started_at: new Date().toISOString(), pane_id: paneId }
     : { state: "idle" }
-  const canToggleAutoYes = isAlive || !!paneQuestion || autoYesActive
-
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}
-          disabled={!hasQueryToggle}
+          disabled={!hasQueryDetails}
           activeOpacity={0.7}
-          accessibilityRole={hasQueryToggle ? "button" : undefined}
-          accessibilityLabel={hasQueryToggle ? (showLatestQuery ? "Show first query" : "Show latest query") : undefined}
+          accessibilityRole={hasQueryDetails ? "button" : undefined}
+          accessibilityLabel={hasQueryDetails ? (showQueryDetails ? "Hide query details" : "Show query details") : undefined}
         >
-          <Text style={styles.title} numberOfLines={1}>{titleText}</Text>
+          <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
-          disabled={!canToggleAutoYes}
-          activeOpacity={0.6}
-          accessibilityRole={canToggleAutoYes ? "button" : undefined}
-          accessibilityLabel={canToggleAutoYes ? (autoYesActive ? "Disable auto-yes" : "Enable auto-yes") : "Status"}
-        >
-          <StatusBadge status={syntheticStatus} colorOverride={autoYesActive ? colors.warning : undefined} />
-        </TouchableOpacity>
+        <StatusBadge status={syntheticStatus} />
       </View>
       <JobDetailView
         transport={transport}
@@ -318,9 +307,9 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
         questionContext={paneQuestion?.context_lines}
         autoYesActive={autoYesActive}
         onToggleAutoYes={handleToggleAutoYes}
-        firstQuery={activeProcess?.first_query ?? undefined}
-        lastQuery={activeProcess?.last_query ?? undefined}
-        tokenCount={activeProcess?.token_count}
+        firstQuery={showQueryDetails ? activeProcess?.first_query ?? undefined : undefined}
+        lastQuery={showQueryDetails ? activeProcess?.last_query ?? undefined : undefined}
+        tokenCount={showQueryDetails ? activeProcess?.token_count : undefined}
         renderTerminal={isAlive ? renderTerminal : undefined}
         hideMessageInput={isAlive}
       />
