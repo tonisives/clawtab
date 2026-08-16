@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
 
 type QueryLabelProps = {
@@ -8,70 +7,27 @@ type QueryLabelProps = {
 };
 
 export function QueryLabel({ shortLabel, fullLabel }: QueryLabelProps) {
-  const [tooltipVisible, setTooltipVisible] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-  }, []);
-
-  const showTooltip = useCallback(() => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setTooltipVisible(true);
-    timeoutRef.current = setTimeout(() => {
-      setTooltipVisible(false);
-      timeoutRef.current = null;
-    }, 1800);
-  }, []);
-
   return (
     <View style={styles.container}>
-      <Pressable
-        onPress={showTooltip}
-        accessibilityRole="button"
+      <Text
+        style={styles.label}
         accessibilityLabel={fullLabel}
-        hitSlop={4}
         {...(Platform.OS === "web" ? { title: fullLabel } as any : {})}
       >
-        <Text style={styles.label}>{shortLabel}</Text>
-      </Pressable>
-      {tooltipVisible && (
-        <View pointerEvents="none" style={styles.tooltip}>
-          <Text style={styles.tooltipText}>{fullLabel}</Text>
-        </View>
-      )}
+        {shortLabel}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    width: 16,
+    width: 12,
     flexShrink: 0,
-    position: "relative",
   },
   label: {
     color: colors.textMuted,
     fontSize: 11,
     fontWeight: "600",
   },
-  tooltip: {
-    position: "absolute",
-    bottom: "100%",
-    left: 0,
-    marginBottom: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 4,
-    zIndex: 100,
-    elevation: 100,
-  },
-  tooltipText: {
-    color: colors.text,
-    fontSize: 11,
-    whiteSpace: "nowrap",
-  } as any,
 });

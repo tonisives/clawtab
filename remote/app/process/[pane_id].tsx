@@ -436,20 +436,28 @@ export default function ProcessDetailScreen() {
         }}
       />
       {showQueryDetails && activeProcess?.first_query && (
-        <View style={styles.queryRow}>
+        <TouchableOpacity
+          style={styles.queryRow}
+          onPress={() => setShowPaneOverview(true)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Open pane overview for query"
+        >
           <QueryLabel shortLabel="q" fullLabel="Query" />
-          <TouchableOpacity style={styles.queryTextButton} onPress={() => setShowPaneOverview(true)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Query">
-            <Text style={styles.queryText} numberOfLines={1} ellipsizeMode="tail">{activeProcess.first_query}</Text>
-          </TouchableOpacity>
-        </View>
+          <Text style={styles.queryText} numberOfLines={1} ellipsizeMode="tail">{activeProcess.first_query}</Text>
+        </TouchableOpacity>
       )}
       {showQueryDetails && activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
-        <View style={styles.queryRow}>
+        <TouchableOpacity
+          style={styles.queryRow}
+          onPress={() => setShowPaneOverview(true)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Open pane overview for latest query"
+        >
           <QueryLabel shortLabel="l" fullLabel="Latest" />
-          <TouchableOpacity style={styles.queryTextButton} onPress={() => setShowPaneOverview(true)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Latest">
-            <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">{activeProcess.last_query}</Text>
-          </TouchableOpacity>
-        </View>
+          <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">{activeProcess.last_query}</Text>
+        </TouchableOpacity>
       )}
 
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
@@ -522,7 +530,6 @@ export default function ProcessDetailScreen() {
         startedAt={activeProcess?.session_started_at}
         cwd={activeProcess?.cwd}
         tmuxSession={activeProcess?.tmux_session}
-        windowName={activeProcess?.window_name}
         firstQuery={activeProcess?.first_query}
         lastQuery={activeProcess?.last_query}
       />
@@ -675,7 +682,7 @@ const styles = StyleSheet.create({
   queryRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: 2,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: 5,
@@ -683,7 +690,6 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   queryText: { flex: 1, minWidth: 0, color: colors.text, fontSize: 12, fontFamily: "monospace" },
-  queryTextButton: { flex: 1, minWidth: 0 },
   terminalContainer: {
     flex: 1,
     minHeight: 0,

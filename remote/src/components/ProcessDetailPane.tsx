@@ -319,7 +319,6 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
           startedAt: activeProcess?.session_started_at,
           cwd: activeProcess?.cwd,
           tmuxSession: activeProcess?.tmux_session,
-          windowName: activeProcess?.window_name,
           firstQuery: activeProcess?.first_query,
           lastQuery: activeProcess?.last_query,
         }}

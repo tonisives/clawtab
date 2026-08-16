@@ -765,25 +765,33 @@ export function JobDetailView({
 
       {/* Query info for running jobs */}
       {isRunning && (firstQuery || tokenLabel) ? (
-        <View style={styles.queryRow}>
+        <Pressable
+          style={styles.queryRow}
+          onPress={paneOverview ? () => setShowPaneOverview(true) : undefined}
+          disabled={!paneOverview}
+          accessibilityRole={paneOverview ? "button" : undefined}
+          accessibilityLabel={paneOverview ? "Open pane overview for query" : "Query"}
+        >
           <QueryLabel shortLabel="q" fullLabel="Query" />
-          <Pressable style={styles.queryLineButton} onPress={paneOverview ? () => setShowPaneOverview(true) : undefined} disabled={!paneOverview} accessibilityRole={paneOverview ? "button" : undefined} accessibilityLabel="Query">
-            <Text style={styles.queryLine} numberOfLines={1} ellipsizeMode="tail">{firstQuery ?? ""}</Text>
-          </Pressable>
+          <Text style={styles.queryLine} numberOfLines={1} ellipsizeMode="tail">{firstQuery ?? ""}</Text>
           {tokenLabel ? (
             <Text style={[styles.tokenCount, { color: tokenColor }]} numberOfLines={1}>
               {tokenLabel}
             </Text>
           ) : null}
-        </View>
+        </Pressable>
       ) : null}
       {isRunning && lastQuery && lastQuery !== firstQuery ? (
-        <View style={styles.queryRow}>
+        <Pressable
+          style={styles.queryRow}
+          onPress={paneOverview ? () => setShowPaneOverview(true) : undefined}
+          disabled={!paneOverview}
+          accessibilityRole={paneOverview ? "button" : undefined}
+          accessibilityLabel={paneOverview ? "Open pane overview for latest query" : "Latest query"}
+        >
           <QueryLabel shortLabel="l" fullLabel="Latest" />
-          <Pressable style={styles.queryLineButton} onPress={paneOverview ? () => setShowPaneOverview(true) : undefined} disabled={!paneOverview} accessibilityRole={paneOverview ? "button" : undefined} accessibilityLabel="Latest">
-            <Text style={styles.queryLineDim} numberOfLines={1} ellipsizeMode="tail">{lastQuery}</Text>
-          </Pressable>
-        </View>
+          <Text style={styles.queryLineDim} numberOfLines={1} ellipsizeMode="tail">{lastQuery}</Text>
+        </Pressable>
       ) : null}
 
       {/* Live Output */}

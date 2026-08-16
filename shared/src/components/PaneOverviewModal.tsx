@@ -1,6 +1,7 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
+import { formatTime, timeAgo } from "../util/format";
 
 const MAX_QUERY_CHARS = 640;
 
@@ -9,7 +10,6 @@ export type PaneOverviewData = {
   startedAt?: string | null;
   cwd?: string | null;
   tmuxSession?: string | null;
-  windowName?: string | null;
   firstQuery?: string | null;
   lastQuery?: string | null;
 };
@@ -22,7 +22,7 @@ type PaneOverviewModalProps = PaneOverviewData & {
 function formatStartedAt(value?: string | null): string {
   if (!value) return "-";
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : value;
+  return Number.isFinite(date.getTime()) ? `${formatTime(value)} (${timeAgo(value)})` : value;
 }
 
 function limitQuery(value?: string | null): string {
@@ -64,8 +64,10 @@ export function PaneOverviewModal({ visible, onClose, ...pane }: PaneOverviewMod
         <View style={styles.card}>
           <View style={styles.header}>
             <View style={styles.headerText}>
-              <Text style={styles.title}>Pane overview</Text>
-              <Text style={styles.subtitle} numberOfLines={1}>{pane.cwd || pane.paneId}</Text>
+              <View style={styles.titleRow}>
+                <Text style={styles.title} numberOfLines={1}>{pane.cwd || "Pane overview"}</Text>
+                <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
+              </View>
             </View>
             <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close pane overview" hitSlop={8}>
               <Text style={styles.close}>Close</Text>
@@ -73,13 +75,10 @@ export function PaneOverviewModal({ visible, onClose, ...pane }: PaneOverviewMod
           </View>
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-            <DetailRow label="Pane" value={pane.paneId} monospace />
             <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
-            <DetailRow label="Directory" value={pane.cwd ?? "-"} monospace />
             <DetailRow label="Session" value={pane.tmuxSession ?? "-"} monospace />
-            <DetailRow label="Window" value={pane.windowName ?? "-"} />
             <QueryBlock label="First query" value={pane.firstQuery} />
-            <QueryBlock label="Latest" value={latestQuery} />
+            <QueryBlock label="Latest query" value={latestQuery} />
           </ScrollView>
         </View>
       </View>
@@ -117,16 +116,24 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     minWidth: 0,
-    gap: 3,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.sm,
+    minWidth: 0,
   },
   title: {
+    flex: 1,
+    minWidth: 0,
     color: colors.text,
     fontSize: 17,
     fontWeight: "600",
   },
-  subtitle: {
+  paneIdTitle: {
     color: colors.textMuted,
-    fontSize: 11,
+    flexShrink: 0,
+    fontSize: 12,
     fontFamily: "monospace",
   },
   close: {
