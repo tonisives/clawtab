@@ -18,6 +18,7 @@ import { HeaderTitleWithIcon } from "../../src/components/HeaderButtons";
 import { LoadingBar } from "../../src/components/LoadingBar";
 import { useDetailBack } from "../../src/hooks/useDetailBack";
 import { useResponsive } from "../../src/hooks/useResponsive";
+import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
 
@@ -108,10 +109,7 @@ export default function ProcessDetailScreen() {
   const contextButtonRef = useRef<any>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [copyModeActive, setCopyModeActive] = useState(false);
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
-  const terminalMenuOpenRef = useRef(false);
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
   const hydratePins = usePinsStore((s) => s.hydrate);
   const togglePin = usePinsStore((s) => s.togglePin);
@@ -143,6 +141,17 @@ export default function ProcessDetailScreen() {
   const termRef = useRef<XtermLogHandle | null>(null);
   const keyboardDismissRef = useRef<TextInput | null>(null);
   const {
+    keyboardVisible,
+    keyboardHeight,
+    terminalSurfaceRef,
+    handleTerminalLayout,
+  } = useTerminalKeyboard({
+    termRef,
+    menuOpen: terminalMenuOpen,
+    toolbarHeight: KEYBOARD_TOOLBAR_HEIGHT,
+    extraClearance: KEYBOARD_EXTRA_CLEARANCE,
+  });
+  const {
     sendInput: ptySendInput,
     sendResize,
     connecting: ptyConnecting,
@@ -151,35 +160,8 @@ export default function ProcessDetailScreen() {
   } = usePty(pane_id, tmuxSession, termRef);
   useDemoPty(pane_id, !!demoProcess);
   useEffect(() => {
-    terminalMenuOpenRef.current = terminalMenuOpen;
-  }, [terminalMenuOpen]);
-
-  useEffect(() => {
     hydratePins();
   }, [hydratePins]);
-
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    const show = Keyboard.addListener("keyboardWillShow", (event) => {
-      const keyboardHeight = event.endCoordinates?.height ?? 0;
-      setKeyboardVisible(true);
-      setKeyboardHeight(keyboardHeight);
-      termRef.current?.setVisualOffset(Math.max(0, keyboardHeight + KEYBOARD_TOOLBAR_HEIGHT + KEYBOARD_EXTRA_CLEARANCE));
-    });
-    const hide = Keyboard.addListener("keyboardWillHide", () => {
-      if (terminalMenuOpenRef.current) {
-        setTimeout(() => termRef.current?.focus(), 0);
-        return;
-      }
-      setKeyboardVisible(false);
-      setKeyboardHeight(0);
-      termRef.current?.setVisualOffset(0);
-    });
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
 
   const options = paneQuestion?.options ?? [];
 
@@ -470,7 +452,11 @@ export default function ProcessDetailScreen() {
       )}
 
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
-        <View style={[styles.terminalSurface, terminalLoading && ptyHasOutput && styles.terminalSurfaceDimmed]}>
+        <View
+          ref={terminalSurfaceRef}
+          style={[styles.terminalSurface, terminalLoading && ptyHasOutput && styles.terminalSurfaceDimmed]}
+          onLayout={handleTerminalLayout}
+        >
           <XtermLog
             ref={termRef}
             onData={ptySendInput}
