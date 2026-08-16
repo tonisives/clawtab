@@ -1,7 +1,7 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
-import { formatTime, timeAgo } from "../util/format";
+import { compactPath, formatTime, timeAgo } from "../util/format";
 
 const MAX_QUERY_CHARS = 640;
 
@@ -14,9 +14,21 @@ export type PaneOverviewData = {
   lastQuery?: string | null;
 };
 
+export type PaneOverviewActions = {
+  autoYesActive?: boolean;
+  onToggleAutoYes?: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+  onStop?: () => void;
+  stopping?: boolean;
+  onStart?: () => void;
+  starting?: boolean;
+};
+
 type PaneOverviewModalProps = PaneOverviewData & {
   visible: boolean;
   onClose: () => void;
+  actions?: PaneOverviewActions;
 };
 
 function formatStartedAt(value?: string | null): string {
@@ -54,8 +66,9 @@ function QueryBlock({ label, value }: { label: string; value?: string | null }) 
   );
 }
 
-export function PaneOverviewModal({ visible, onClose, ...pane }: PaneOverviewModalProps) {
+export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOverviewModalProps) {
   const latestQuery = pane.lastQuery && pane.lastQuery !== pane.firstQuery ? pane.lastQuery : null;
+  const title = pane.cwd ? compactPath(pane.cwd) : "Pane overview";
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -64,19 +77,76 @@ export function PaneOverviewModal({ visible, onClose, ...pane }: PaneOverviewMod
         <View style={styles.card}>
           <View style={styles.header}>
             <View style={styles.headerText}>
-              <View style={styles.titleRow}>
-                <Text style={styles.title} numberOfLines={1}>{pane.cwd || "Pane overview"}</Text>
-                <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
-              </View>
+              <Text style={styles.title} numberOfLines={1}>{title}</Text>
+              <Text style={styles.sessionTitle} numberOfLines={1}>{pane.tmuxSession || "-"}</Text>
+              <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
             </View>
-            <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close pane overview" hitSlop={8}>
+            <Pressable
+              style={styles.closeButton}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close pane overview"
+              hitSlop={8}
+            >
               <Text style={styles.close}>Close</Text>
             </Pressable>
           </View>
 
           <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+            {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
+              <View style={styles.actions}>
+                {actions.onToggleAutoYes ? (
+                  <Pressable
+                    style={[styles.actionButton, actions.autoYesActive && styles.actionButtonActive]}
+                    onPress={actions.onToggleAutoYes}
+                    accessibilityRole="button"
+                    accessibilityLabel={actions.autoYesActive ? "Disable auto yes" : "Enable auto yes"}
+                  >
+                    <Text style={[styles.actionText, actions.autoYesActive && styles.actionTextActive]}>
+                      {actions.autoYesActive ? "Auto ON" : "Auto Yes"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {actions.onTogglePin ? (
+                  <Pressable
+                    style={[styles.actionButton, actions.isPinned && styles.actionButtonActive]}
+                    onPress={actions.onTogglePin}
+                    accessibilityRole="button"
+                    accessibilityLabel={actions.isPinned ? "Unpin pane" : "Pin pane"}
+                  >
+                    <Text style={[styles.actionText, actions.isPinned && styles.actionTextActive]}>
+                      {actions.isPinned ? "Unpin" : "Pin"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {actions.onStop ? (
+                  <Pressable
+                    style={[styles.actionButton, styles.stopButton]}
+                    onPress={actions.onStop}
+                    disabled={actions.stopping}
+                    accessibilityRole="button"
+                    accessibilityLabel="Stop process"
+                  >
+                    <Text style={[styles.actionText, styles.stopText]}>
+                      {actions.stopping ? "Stopping..." : "Stop"}
+                    </Text>
+                  </Pressable>
+                ) : actions.onStart ? (
+                  <Pressable
+                    style={[styles.actionButton, styles.startButton]}
+                    onPress={actions.onStart}
+                    disabled={actions.starting}
+                    accessibilityRole="button"
+                    accessibilityLabel="Start process"
+                  >
+                    <Text style={[styles.actionText, styles.startText]}>
+                      {actions.starting ? "Starting..." : "Start"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
             <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
-            <DetailRow label="Session" value={pane.tmuxSession ?? "-"} monospace />
             <QueryBlock label="First query" value={pane.firstQuery} />
             <QueryBlock label="Latest query" value={latestQuery} />
           </ScrollView>
@@ -106,7 +176,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: spacing.md,
     padding: spacing.lg,
@@ -117,24 +187,70 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: spacing.sm,
-    minWidth: 0,
-  },
   title: {
-    flex: 1,
-    minWidth: 0,
     color: colors.text,
     fontSize: 17,
     fontWeight: "600",
   },
+  sessionTitle: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontFamily: "monospace",
+    marginTop: 2,
+  },
   paneIdTitle: {
     color: colors.textMuted,
-    flexShrink: 0,
     fontSize: 12,
     fontFamily: "monospace",
+    marginTop: 1,
+  },
+  closeButton: {
+    minHeight: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: spacing.md,
+  },
+  actions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  actionButton: {
+    minHeight: 34,
+    paddingHorizontal: spacing.md,
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.bg,
+  },
+  actionButtonActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentBg,
+  },
+  stopButton: {
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerBg,
+  },
+  startButton: {
+    borderColor: colors.success,
+    backgroundColor: colors.successBg,
+  },
+  actionText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  actionTextActive: {
+    color: colors.accent,
+  },
+  stopText: {
+    color: colors.danger,
+  },
+  startText: {
+    color: colors.success,
   },
   close: {
     color: colors.accent,

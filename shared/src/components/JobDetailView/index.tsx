@@ -21,7 +21,7 @@ import { defaultAgentEffort, isSyntheticAgentModel } from "../../types/process";
 import type { JobUpdate } from "../../types/job";
 import { StatusBadge } from "../StatusBadge";
 import { QueryLabel } from "../QueryLabel";
-import { PaneOverviewModal, type PaneOverviewData } from "../PaneOverviewModal";
+import { PaneOverviewModal, type PaneOverviewActions, type PaneOverviewData } from "../PaneOverviewModal";
 import { ReadOnlyXterm } from "../ReadOnlyXterm";
 import { MessageInput } from "../MessageInput";
 import { ParamsDialog } from "../ParamsDialog";
@@ -124,6 +124,9 @@ export interface JobDetailViewProps {
   lastQuery?: string;
   tokenCount?: number | null;
   paneOverview?: PaneOverviewData;
+  paneOverviewActions?: PaneOverviewActions;
+  paneOverviewVisible?: boolean;
+  onPaneOverviewVisibleChange?: (visible: boolean) => void;
   onEditTitle?: () => void;
   // Pane actions (desktop only, for running jobs/processes with a tmux pane)
   onFork?: (direction: "right" | "down") => void;
@@ -199,6 +202,9 @@ export function JobDetailView({
   lastQuery,
   tokenCount,
   paneOverview,
+  paneOverviewActions,
+  paneOverviewVisible: paneOverviewVisibleProp,
+  onPaneOverviewVisibleChange,
   onEditTitle,
   onFork,
   onSplitPane,
@@ -238,7 +244,12 @@ export function JobDetailView({
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [showDuplicateMenu, setShowDuplicateMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  const [showPaneOverview, setShowPaneOverview] = useState(false);
+  const [internalPaneOverviewVisible, setInternalPaneOverviewVisible] = useState(false);
+  const showPaneOverview = paneOverviewVisibleProp ?? internalPaneOverviewVisible;
+  const setShowPaneOverview = useCallback((visible: boolean) => {
+    onPaneOverviewVisibleChange?.(visible);
+    if (paneOverviewVisibleProp === undefined) setInternalPaneOverviewVisible(visible);
+  }, [onPaneOverviewVisibleChange, paneOverviewVisibleProp]);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const dupMenuRef = useRef<View>(null);
   const settingsMenuRef = useRef<View>(null);
@@ -949,6 +960,7 @@ export function JobDetailView({
           <PaneOverviewModal
             visible={showPaneOverview}
             onClose={() => setShowPaneOverview(false)}
+            actions={paneOverviewActions}
             {...paneOverview}
           />
         )}
@@ -1090,6 +1102,7 @@ export function JobDetailView({
         <PaneOverviewModal
           visible={showPaneOverview}
           onClose={() => setShowPaneOverview(false)}
+          actions={paneOverviewActions}
           {...paneOverview}
         />
       )}

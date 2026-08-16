@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, Keyboard, TextInput } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Keyboard, TextInput } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, PaneOverviewModal, QueryLabel, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, PaneOverviewModal, XtermLog, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -103,11 +103,6 @@ export default function ProcessDetailScreen() {
   if (process) lastProcessRef.current = process;
   const lastProcess = lastProcessRef.current;
   const [stopping, setStopping] = useState(false);
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const contextMenuRef = useRef<View>(null);
-  const contextDropdownRef = useRef<View>(null);
-  const contextButtonRef = useRef<any>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [copyModeActive, setCopyModeActive] = useState(false);
   const [terminalMenuOpen, setTerminalMenuOpen] = useState(false);
   const pinnedItems = usePinsStore((s) => s.pinnedItems);
@@ -115,6 +110,9 @@ export default function ProcessDetailScreen() {
   const togglePin = usePinsStore((s) => s.togglePin);
   const pinKey = `pane:${pane_id}`;
   const isPinned = pinnedItems.includes(pinKey);
+  const handleTogglePin = useCallback(() => {
+    togglePin(pinKey);
+  }, [pinKey, togglePin]);
 
   // Derive tmux info from process or question (for panes not in detectedProcesses)
   const paneQuestion = questions.find((q) => q.pane_id === pane_id);
@@ -130,12 +128,6 @@ export default function ProcessDetailScreen() {
       ? compactPath(paneQuestion.cwd)
       : pane_id;
   const headerKind = activeProcess ? kindForProcess(activeProcess) : "claude";
-  const queryDetailsHidden = useJobsStore((s) => s.queryDetailsHiddenPaneIds.has(pane_id));
-  const setQueryDetailsHidden = useJobsStore((s) => s.setQueryDetailsHidden);
-  const showQueryDetails = !queryDetailsHidden;
-  const firstQuery = activeProcess?.first_query ?? null;
-  const lastQuery = activeProcess?.last_query ?? null;
-  const hasQueryDetails = !!firstQuery || !!lastQuery;
   const [showPaneOverview, setShowPaneOverview] = useState(false);
 
   // PTY streaming terminal
@@ -204,11 +196,6 @@ export default function ProcessDetailScreen() {
       }
     });
   }, [pane_id, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion]);
-
-  const handleContextAutoYesToggle = useCallback(() => {
-    setShowContextMenu(false);
-    handleToggleAutoYes();
-  }, [handleToggleAutoYes]);
 
   const handleSend = useCallback(
     (text: string) => {
@@ -316,42 +303,6 @@ export default function ProcessDetailScreen() {
   }, [lastProcess, process, starting]);
 
   const isAlive = !!process || !!paneQuestion;
-  const closeContextMenu = useCallback(() => {
-    setShowContextMenu(false);
-  }, []);
-  const handleHeaderTitlePress = useCallback(() => {
-    if (showContextMenu) {
-      closeContextMenu();
-      return;
-    }
-    if (hasQueryDetails) setQueryDetailsHidden(pane_id, showQueryDetails);
-  }, [closeContextMenu, hasQueryDetails, pane_id, setQueryDetailsHidden, showContextMenu, showQueryDetails]);
-  const openContextMenu = useCallback(
-    (e?: any) => {
-      if (Platform.OS !== "web") {
-        if (contextButtonRef.current?.measureInWindow) {
-          contextButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
-            setMenuPos({ top: y + height + 6, left: x + width });
-            setShowContextMenu(true);
-          });
-        } else {
-          setMenuPos({ top: 44, left: 12 });
-          setShowContextMenu(true);
-        }
-        return;
-      }
-
-      const node = contextButtonRef.current?.getBoundingClientRect
-        ? contextButtonRef.current
-        : (e?.currentTarget ?? e?.target);
-      if (node?.getBoundingClientRect) {
-        const rect = node.getBoundingClientRect();
-        setMenuPos({ top: rect.bottom + 4, left: rect.right });
-      }
-      setShowContextMenu((v) => !v);
-    },
-    [handleStart, handleStop, isAlive, isPinned, pinKey, starting, stopping, togglePin],
-  );
   if (waitingForData) {
     const loading = processLoadingState({ connected, desktopOnline, hasTmuxSession: !!tmuxSession });
     return (
@@ -395,71 +346,26 @@ export default function ProcessDetailScreen() {
             <HeaderTitleWithIcon
               title={headerTitle}
               icon={<JobKindIcon kind={headerKind} size={26} bare />}
-              onPress={hasQueryDetails || showContextMenu ? handleHeaderTitlePress : undefined}
-              accessibilityLabel={hasQueryDetails ? (showQueryDetails ? "Hide query details" : "Show query details") : undefined}
+              onPress={() => setShowPaneOverview(true)}
+              accessibilityLabel="Open pane overview"
             />
           ),
           headerRight: () => (
-            <View ref={contextMenuRef} style={styles.headerRightSlot}>
+            <View style={styles.headerRightSlot}>
               <TouchableOpacity
-                ref={contextButtonRef}
                 style={styles.contextBtn}
-                onPress={openContextMenu}
+                onPress={() => setShowPaneOverview(true)}
                 activeOpacity={0.6}
                 hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Open pane overview"
               >
                 <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
               </TouchableOpacity>
-              {showContextMenu && (
-                <PopupMenu
-                  dropdownRef={contextDropdownRef as any}
-                  triggerRef={contextButtonRef}
-                  position={menuPos}
-                  onClose={() => setShowContextMenu(false)}
-                  items={isAlive ? [
-                    { type: "item", label: autoYesActive ? "Disable auto-yes" : "Enable auto-yes", onPress: handleContextAutoYesToggle, color: autoYesActive ? colors.warning : colors.accent },
-                    { type: "separator" },
-                    { type: "item", label: isPinned ? "Unpin" : "Pin", onPress: () => { togglePin(pinKey); setShowContextMenu(false); }, color: colors.accent },
-                    { type: "separator" },
-                    { type: "item", label: stopping ? "Stopping..." : "Stop", onPress: handleStop, color: colors.danger },
-                  ] : [
-                    { type: "item", label: autoYesActive ? "Disable auto-yes" : "Enable auto-yes", onPress: handleContextAutoYesToggle, color: autoYesActive ? colors.warning : colors.accent },
-                    { type: "separator" },
-                    { type: "item", label: isPinned ? "Unpin" : "Pin", onPress: () => { togglePin(pinKey); setShowContextMenu(false); }, color: colors.accent },
-                    { type: "separator" },
-                    { type: "item", label: starting ? "Starting..." : "Start", onPress: handleStart, color: colors.success },
-                  ]}
-                />
-              )}
             </View>
           ),
         }}
       />
-      {showQueryDetails && activeProcess?.first_query && (
-        <TouchableOpacity
-          style={styles.queryRow}
-          onPress={() => setShowPaneOverview(true)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Open pane overview for query"
-        >
-          <QueryLabel shortLabel="q" fullLabel="Query" />
-          <Text style={styles.queryText} numberOfLines={1} ellipsizeMode="tail">{activeProcess.first_query}</Text>
-        </TouchableOpacity>
-      )}
-      {showQueryDetails && activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
-        <TouchableOpacity
-          style={styles.queryRow}
-          onPress={() => setShowPaneOverview(true)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Open pane overview for latest query"
-        >
-          <QueryLabel shortLabel="l" fullLabel="Latest" />
-          <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">{activeProcess.last_query}</Text>
-        </TouchableOpacity>
-      )}
-
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
         <View
           ref={terminalSurfaceRef}
@@ -518,8 +424,6 @@ export default function ProcessDetailScreen() {
         <OptionButtons
           options={options}
           onSend={handleSend}
-          autoYesActive={autoYesActive}
-          onToggleAutoYes={handleToggleAutoYes}
           bottomInset={insets.bottom}
         />
       )}
@@ -528,10 +432,20 @@ export default function ProcessDetailScreen() {
         onClose={() => setShowPaneOverview(false)}
         paneId={pane_id}
         startedAt={activeProcess?.session_started_at}
-        cwd={activeProcess?.cwd}
-        tmuxSession={activeProcess?.tmux_session}
+        cwd={activeProcess?.cwd ?? paneQuestion?.cwd}
+        tmuxSession={tmuxSession}
         firstQuery={activeProcess?.first_query}
         lastQuery={activeProcess?.last_query}
+        actions={{
+          autoYesActive,
+          onToggleAutoYes: handleToggleAutoYes,
+          isPinned,
+          onTogglePin: handleTogglePin,
+          onStop: isAlive ? handleStop : undefined,
+          stopping,
+          onStart: !isAlive ? handleStart : undefined,
+          starting,
+        }}
       />
     </View>
   );
@@ -679,17 +593,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: radius.sm,
   },
-  queryRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  queryText: { flex: 1, minWidth: 0, color: colors.text, fontSize: 12, fontFamily: "monospace" },
   terminalContainer: {
     flex: 1,
     minHeight: 0,

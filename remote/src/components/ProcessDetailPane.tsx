@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from "rea
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useJobsStore } from "../store/jobs"
 import { useNotificationStore } from "../store/notifications"
+import { usePinsStore } from "../store/pins"
 import { useWsStore } from "../store/ws"
 import { JobDetailView, StatusBadge, findYesOption, XtermLog, colors, spacing } from "@clawtab/shared"
 import type { XtermLogHandle } from "@clawtab/shared"
@@ -106,16 +107,20 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   if (process) lastProcessRef.current = process
   const lastProcess = lastProcessRef.current
   const activeProcess = process ?? lastProcess
-  const queryDetailsHidden = useJobsStore((s) => s.queryDetailsHiddenPaneIds.has(paneId))
-  const setQueryDetailsHidden = useJobsStore((s) => s.setQueryDetailsHidden)
-  const showQueryDetails = !queryDetailsHidden
-  const firstQuery = activeProcess?.first_query ?? null
-  const lastQuery = activeProcess?.last_query ?? null
-  const hasQueryDetails = !!firstQuery || !!lastQuery
+  const [showPaneOverview, setShowPaneOverview] = useState(false)
 
   const displayName = activeProcess
     ? activeProcess.cwd.replace(/^\/Users\/[^/]+/, "~")
     : paneId
+
+  const pinnedItems = usePinsStore((s) => s.pinnedItems)
+  const hydratePins = usePinsStore((s) => s.hydrate)
+  const togglePin = usePinsStore((s) => s.togglePin)
+  const pinKey = `pane:${paneId}`
+  const isPinned = pinnedItems.includes(pinKey)
+  const handleTogglePin = useCallback(() => {
+    togglePin(pinKey)
+  }, [pinKey, togglePin])
 
   const [logs, setLogs] = useState(process?.log_lines ?? "")
   const [logsLoaded, setLogsLoaded] = useState(!!process)
@@ -165,6 +170,10 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
 
   const questions = useNotificationStore((s) => s.questions)
   const paneQuestion = questions.find((q) => q.pane_id === paneId)
+  useEffect(() => {
+    hydratePins()
+  }, [hydratePins])
+
   const autoYesPaneIds = useNotificationStore((s) => s.autoYesPaneIds)
   const enableAutoYes = useNotificationStore((s) => s.enableAutoYes)
   const disableAutoYes = useNotificationStore((s) => s.disableAutoYes)
@@ -204,8 +213,8 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   }, [paneId, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion])
 
   const handleTitlePress = useCallback(() => {
-    if (hasQueryDetails) setQueryDetailsHidden(paneId, showQueryDetails)
-  }, [hasQueryDetails, paneId, setQueryDetailsHidden, showQueryDetails])
+    setShowPaneOverview(true)
+  }, [])
 
   const handleStopped = useCallback(() => {
     useJobsStore.getState().removeDetectedProcess(paneId)
@@ -213,6 +222,19 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   }, [paneId, onClose])
 
   const transport = useMemo(() => createProcessTransport(paneId, handleStopped), [paneId, handleStopped])
+
+  const [stopping, setStopping] = useState(false)
+  const handleStop = useCallback(() => {
+    if (stopping) return
+    confirm("Stop process", `Kill the Claude process in ${displayName}?`, async () => {
+      setStopping(true)
+      try {
+        await transport.stopJob(paneId)
+      } finally {
+        setStopping(false)
+      }
+    })
+  }, [displayName, paneId, stopping, transport])
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null)
@@ -285,10 +307,9 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}
-          disabled={!hasQueryDetails}
           activeOpacity={0.7}
-          accessibilityRole={hasQueryDetails ? "button" : undefined}
-          accessibilityLabel={hasQueryDetails ? (showQueryDetails ? "Hide query details" : "Show query details") : undefined}
+          accessibilityRole="button"
+          accessibilityLabel="Open pane overview"
         >
           <Text style={styles.title} numberOfLines={1}>{displayName}</Text>
         </TouchableOpacity>
@@ -307,11 +328,6 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
         expandOutput
         options={paneQuestion?.options}
         questionContext={paneQuestion?.context_lines}
-        autoYesActive={autoYesActive}
-        onToggleAutoYes={handleToggleAutoYes}
-        firstQuery={showQueryDetails ? activeProcess?.first_query ?? undefined : undefined}
-        lastQuery={showQueryDetails ? activeProcess?.last_query ?? undefined : undefined}
-        tokenCount={showQueryDetails ? activeProcess?.token_count : undefined}
         renderTerminal={isAlive ? renderTerminal : undefined}
         hideMessageInput={isAlive}
         paneOverview={{
@@ -322,6 +338,16 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
           firstQuery: activeProcess?.first_query,
           lastQuery: activeProcess?.last_query,
         }}
+        paneOverviewActions={{
+          autoYesActive,
+          onToggleAutoYes: handleToggleAutoYes,
+          isPinned,
+          onTogglePin: handleTogglePin,
+          onStop: isAlive ? handleStop : undefined,
+          stopping,
+        }}
+        paneOverviewVisible={showPaneOverview}
+        onPaneOverviewVisibleChange={setShowPaneOverview}
       />
     </View>
   )
