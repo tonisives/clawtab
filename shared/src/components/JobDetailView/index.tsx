@@ -21,6 +21,7 @@ import { defaultAgentEffort, isSyntheticAgentModel } from "../../types/process";
 import type { JobUpdate } from "../../types/job";
 import { StatusBadge } from "../StatusBadge";
 import { QueryLabel } from "../QueryLabel";
+import { ExpandableQueryText } from "../ExpandableQueryText";
 import { ReadOnlyXterm } from "../ReadOnlyXterm";
 import { MessageInput } from "../MessageInput";
 import { ParamsDialog } from "../ParamsDialog";
@@ -763,7 +764,7 @@ export function JobDetailView({
       {isRunning && (firstQuery || tokenLabel) ? (
         <View style={styles.queryRow}>
           <QueryLabel shortLabel="q" fullLabel="Query" />
-          <Text style={styles.queryLine} numberOfLines={1}>{firstQuery ?? ""}</Text>
+          <ExpandableQueryText text={firstQuery ?? ""} style={styles.queryLine} accessibilityLabel="Query" />
           {tokenLabel ? (
             <Text style={[styles.tokenCount, { color: tokenColor }]} numberOfLines={1}>
               {tokenLabel}
@@ -774,7 +775,7 @@ export function JobDetailView({
       {isRunning && lastQuery && lastQuery !== firstQuery ? (
         <View style={styles.queryRow}>
           <QueryLabel shortLabel="l" fullLabel="Latest" />
-          <Text style={styles.queryLineDim} numberOfLines={1}>{lastQuery}</Text>
+          <ExpandableQueryText text={lastQuery} style={styles.queryLineDim} accessibilityLabel="Latest" />
         </View>
       ) : null}
 
