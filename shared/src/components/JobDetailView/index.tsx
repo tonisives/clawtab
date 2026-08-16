@@ -20,6 +20,7 @@ import type { AgentModelOption, ProcessProvider, ShellPane } from "../../types/p
 import { defaultAgentEffort, isSyntheticAgentModel } from "../../types/process";
 import type { JobUpdate } from "../../types/job";
 import { StatusBadge } from "../StatusBadge";
+import { QueryLabel } from "../QueryLabel";
 import { ReadOnlyXterm } from "../ReadOnlyXterm";
 import { MessageInput } from "../MessageInput";
 import { ParamsDialog } from "../ParamsDialog";
@@ -761,7 +762,7 @@ export function JobDetailView({
       {/* Query info for running jobs */}
       {isRunning && (firstQuery || tokenLabel) ? (
         <View style={styles.queryRow}>
-          <Text style={styles.queryLabel}>Query</Text>
+          <QueryLabel shortLabel="q" fullLabel="Query" />
           <Text style={styles.queryLine} numberOfLines={1}>{firstQuery ?? ""}</Text>
           {tokenLabel ? (
             <Text style={[styles.tokenCount, { color: tokenColor }]} numberOfLines={1}>
@@ -772,7 +773,7 @@ export function JobDetailView({
       ) : null}
       {isRunning && lastQuery && lastQuery !== firstQuery ? (
         <View style={styles.queryRow}>
-          <Text style={styles.queryLabel}>Latest</Text>
+          <QueryLabel shortLabel="l" fullLabel="Latest" />
           <Text style={styles.queryLineDim} numberOfLines={1}>{lastQuery}</Text>
         </View>
       ) : null}

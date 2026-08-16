@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { JobKindIcon, OptionButtons, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, QueryLabel, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -436,7 +436,7 @@ export default function ProcessDetailScreen() {
       />
       {showQueryDetails && activeProcess?.first_query && (
         <View style={styles.queryRow}>
-          <Text style={styles.queryLabel}>Query</Text>
+          <QueryLabel shortLabel="q" fullLabel="Query" />
           <Text style={styles.queryText} numberOfLines={1}>
             {activeProcess.first_query}
           </Text>
@@ -444,7 +444,7 @@ export default function ProcessDetailScreen() {
       )}
       {showQueryDetails && activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
         <View style={styles.queryRow}>
-          <Text style={styles.queryLabel}>Latest</Text>
+          <QueryLabel shortLabel="l" fullLabel="Latest" />
           <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={1}>
             {activeProcess.last_query}
           </Text>
@@ -670,7 +670,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  queryLabel: { color: colors.textMuted, fontSize: 11, fontWeight: "600", width: 42 },
   queryText: { flex: 1, minWidth: 0, color: colors.text, fontSize: 12, fontFamily: "monospace" },
   terminalContainer: {
     flex: 1,

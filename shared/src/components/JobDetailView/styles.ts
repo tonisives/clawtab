@@ -112,13 +112,6 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
   },
-  queryLabel: {
-    color: colors.textMuted,
-    fontSize: 11,
-    fontWeight: "600",
-    width: 42,
-    flexShrink: 0,
-  },
   queryLine: {
     color: colors.textSecondary,
     fontSize: 12,

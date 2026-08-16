@@ -126,8 +126,11 @@ export const useJobsStore = create<JobsState>((set) => ({
     });
     const detectedProcesses = [...visibleProcesses, ...pending];
     const activePaneIds = new Set(detectedProcesses.map((process) => process.pane_id));
+    const removedPaneIds = new Set(
+      [...previousByPaneId.keys()].filter((paneId) => !activePaneIds.has(paneId)),
+    );
     const queryDetailsHiddenPaneIds = new Set(
-      [...state.queryDetailsHiddenPaneIds].filter((paneId) => activePaneIds.has(paneId)),
+      [...state.queryDetailsHiddenPaneIds].filter((paneId) => !removedPaneIds.has(paneId)),
     );
     return { detectedProcesses, queryDetailsHiddenPaneIds, processesLoaded: true };
   }),
