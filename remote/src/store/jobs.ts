@@ -35,6 +35,7 @@ interface JobsState {
   defaultModel: string | null;
   agentActivity: Record<string, StoredAgentActivity>;
   questionPaneIds: Set<string>;
+  queryDetailsHiddenPaneIds: Set<string>;
 
   setJobs: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   updateStatus: (name: string, status: JobStatus) => void;
@@ -44,6 +45,7 @@ interface JobsState {
   markProcessActivity: (paneId: string) => void;
   upsertDetectedProcess: (process: DetectedProcess) => void;
   removeDetectedProcess: (paneId: string) => void;
+  setQueryDetailsHidden: (paneId: string, hidden: boolean) => void;
   setProcessDisplayName: (paneId: string, displayName?: string) => void;
   hydrateFromCache: (jobs: RemoteJob[], statuses: Record<string, JobStatus>) => void;
   setDesktopSettings: (enabledModels: Record<string, string[]>, defaultProvider: string, defaultModel?: string) => void;
@@ -61,6 +63,7 @@ export const useJobsStore = create<JobsState>((set) => ({
   defaultModel: null,
   agentActivity: {},
   questionPaneIds: new Set(),
+  queryDetailsHiddenPaneIds: new Set(),
 
   setJobs: (jobs, statuses) => set({ jobs, statuses, loaded: true, cachedLoad: false }),
 
@@ -121,7 +124,12 @@ export const useJobsStore = create<JobsState>((set) => ({
       const startedAt = process.session_started_at ? Date.parse(process.session_started_at) : NaN;
       return Number.isFinite(startedAt) && now - startedAt < 30000;
     });
-    return { detectedProcesses: [...visibleProcesses, ...pending], processesLoaded: true };
+    const detectedProcesses = [...visibleProcesses, ...pending];
+    const activePaneIds = new Set(detectedProcesses.map((process) => process.pane_id));
+    const queryDetailsHiddenPaneIds = new Set(
+      [...state.queryDetailsHiddenPaneIds].filter((paneId) => activePaneIds.has(paneId)),
+    );
+    return { detectedProcesses, queryDetailsHiddenPaneIds, processesLoaded: true };
   }),
 
   setAgentActivity: (activity) => set((state) => {
@@ -240,8 +248,19 @@ export const useJobsStore = create<JobsState>((set) => ({
       stoppedPaneIgnoreUntil.set(paneId, Date.now() + STOPPED_PANE_IGNORE_MS);
       return {
         detectedProcesses: state.detectedProcesses.filter((process) => process.pane_id !== paneId),
+        queryDetailsHiddenPaneIds: new Set(
+          [...state.queryDetailsHiddenPaneIds].filter((hiddenPaneId) => hiddenPaneId !== paneId),
+        ),
         processesLoaded: true,
       };
+    }),
+
+  setQueryDetailsHidden: (paneId, hidden) =>
+    set((state) => {
+      const queryDetailsHiddenPaneIds = new Set(state.queryDetailsHiddenPaneIds);
+      if (hidden) queryDetailsHiddenPaneIds.add(paneId);
+      else queryDetailsHiddenPaneIds.delete(paneId);
+      return { queryDetailsHiddenPaneIds };
     }),
 
   setProcessDisplayName: (paneId, displayName) =>

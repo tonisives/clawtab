@@ -106,7 +106,9 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   if (process) lastProcessRef.current = process
   const lastProcess = lastProcessRef.current
   const activeProcess = process ?? lastProcess
-  const [showQueryDetails, setShowQueryDetails] = useState(true)
+  const queryDetailsHidden = useJobsStore((s) => s.queryDetailsHiddenPaneIds.has(paneId))
+  const setQueryDetailsHidden = useJobsStore((s) => s.setQueryDetailsHidden)
+  const showQueryDetails = !queryDetailsHidden
   const firstQuery = activeProcess?.first_query ?? null
   const lastQuery = activeProcess?.last_query ?? null
   const hasQueryDetails = !!firstQuery || !!lastQuery
@@ -202,8 +204,8 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
   }, [paneId, autoYesPaneIds, enableAutoYes, disableAutoYes, displayName, paneQuestion, answerQuestion])
 
   const handleTitlePress = useCallback(() => {
-    if (hasQueryDetails) setShowQueryDetails((value) => !value)
-  }, [hasQueryDetails])
+    if (hasQueryDetails) setQueryDetailsHidden(paneId, showQueryDetails)
+  }, [hasQueryDetails, paneId, setQueryDetailsHidden, showQueryDetails])
 
   const handleStopped = useCallback(() => {
     useJobsStore.getState().removeDetectedProcess(paneId)

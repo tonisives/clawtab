@@ -132,7 +132,9 @@ export default function ProcessDetailScreen() {
       ? compactPath(paneQuestion.cwd)
       : pane_id;
   const headerKind = activeProcess ? kindForProcess(activeProcess) : "claude";
-  const [showQueryDetails, setShowQueryDetails] = useState(true);
+  const queryDetailsHidden = useJobsStore((s) => s.queryDetailsHiddenPaneIds.has(pane_id));
+  const setQueryDetailsHidden = useJobsStore((s) => s.setQueryDetailsHidden);
+  const showQueryDetails = !queryDetailsHidden;
   const firstQuery = activeProcess?.first_query ?? null;
   const lastQuery = activeProcess?.last_query ?? null;
   const hasQueryDetails = !!firstQuery || !!lastQuery;
@@ -339,8 +341,8 @@ export default function ProcessDetailScreen() {
       closeContextMenu();
       return;
     }
-    if (hasQueryDetails) setShowQueryDetails((value) => !value);
-  }, [closeContextMenu, hasQueryDetails, showContextMenu]);
+    if (hasQueryDetails) setQueryDetailsHidden(pane_id, showQueryDetails);
+  }, [closeContextMenu, hasQueryDetails, pane_id, setQueryDetailsHidden, showContextMenu, showQueryDetails]);
   const openContextMenu = useCallback(
     (e?: any) => {
       if (Platform.OS !== "web") {
