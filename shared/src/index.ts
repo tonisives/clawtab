@@ -79,7 +79,8 @@ export type { AvailableAction } from "./util/status";
 // Components
 export { StatusBadge } from "./components/StatusBadge";
 export { QueryLabel } from "./components/QueryLabel";
-export { ExpandableQueryText } from "./components/ExpandableQueryText";
+export { PaneOverviewModal } from "./components/PaneOverviewModal";
+export type { PaneOverviewData } from "./components/PaneOverviewModal";
 export { JobCard } from "./components/JobCard";
 export { RunningJobCard } from "./components/RunningJobCard";
 export { ProcessCard } from "./components/ProcessCard";

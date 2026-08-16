@@ -21,7 +21,7 @@ import { defaultAgentEffort, isSyntheticAgentModel } from "../../types/process";
 import type { JobUpdate } from "../../types/job";
 import { StatusBadge } from "../StatusBadge";
 import { QueryLabel } from "../QueryLabel";
-import { ExpandableQueryText } from "../ExpandableQueryText";
+import { PaneOverviewModal, type PaneOverviewData } from "../PaneOverviewModal";
 import { ReadOnlyXterm } from "../ReadOnlyXterm";
 import { MessageInput } from "../MessageInput";
 import { ParamsDialog } from "../ParamsDialog";
@@ -123,6 +123,7 @@ export interface JobDetailViewProps {
   firstQuery?: string;
   lastQuery?: string;
   tokenCount?: number | null;
+  paneOverview?: PaneOverviewData;
   onEditTitle?: () => void;
   // Pane actions (desktop only, for running jobs/processes with a tmux pane)
   onFork?: (direction: "right" | "down") => void;
@@ -197,6 +198,7 @@ export function JobDetailView({
   firstQuery,
   lastQuery,
   tokenCount,
+  paneOverview,
   onEditTitle,
   onFork,
   onSplitPane,
@@ -236,6 +238,7 @@ export function JobDetailView({
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [showDuplicateMenu, setShowDuplicateMenu] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showPaneOverview, setShowPaneOverview] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const dupMenuRef = useRef<View>(null);
   const settingsMenuRef = useRef<View>(null);
@@ -764,7 +767,9 @@ export function JobDetailView({
       {isRunning && (firstQuery || tokenLabel) ? (
         <View style={styles.queryRow}>
           <QueryLabel shortLabel="q" fullLabel="Query" />
-          <ExpandableQueryText text={firstQuery ?? ""} style={styles.queryLine} accessibilityLabel="Query" />
+          <Pressable style={styles.queryLineButton} onPress={paneOverview ? () => setShowPaneOverview(true) : undefined} disabled={!paneOverview} accessibilityRole={paneOverview ? "button" : undefined} accessibilityLabel="Query">
+            <Text style={styles.queryLine} numberOfLines={1} ellipsizeMode="tail">{firstQuery ?? ""}</Text>
+          </Pressable>
           {tokenLabel ? (
             <Text style={[styles.tokenCount, { color: tokenColor }]} numberOfLines={1}>
               {tokenLabel}
@@ -775,7 +780,9 @@ export function JobDetailView({
       {isRunning && lastQuery && lastQuery !== firstQuery ? (
         <View style={styles.queryRow}>
           <QueryLabel shortLabel="l" fullLabel="Latest" />
-          <ExpandableQueryText text={lastQuery} style={styles.queryLineDim} accessibilityLabel="Latest" />
+          <Pressable style={styles.queryLineButton} onPress={paneOverview ? () => setShowPaneOverview(true) : undefined} disabled={!paneOverview} accessibilityRole={paneOverview ? "button" : undefined} accessibilityLabel="Latest">
+            <Text style={styles.queryLineDim} numberOfLines={1} ellipsizeMode="tail">{lastQuery}</Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -929,6 +936,14 @@ export function JobDetailView({
             onClose={() => setLiveZoom(false)}
           />
         )}
+
+        {paneOverview && (
+          <PaneOverviewModal
+            visible={showPaneOverview}
+            onClose={() => setShowPaneOverview(false)}
+            {...paneOverview}
+          />
+        )}
       </View>
     );
   }
@@ -1060,6 +1075,14 @@ export function JobDetailView({
           autoYesActive={autoYesActive}
           onToggleAutoYes={onToggleAutoYes}
           onClose={() => setLiveZoom(false)}
+        />
+      )}
+
+      {paneOverview && (
+        <PaneOverviewModal
+          visible={showPaneOverview}
+          onClose={() => setShowPaneOverview(false)}
+          {...paneOverview}
         />
       )}
     </View>

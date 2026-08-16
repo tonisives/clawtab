@@ -110,11 +110,15 @@ export const styles = StyleSheet.create({
   queryRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   queryLine: {
     color: colors.textSecondary,
     fontSize: 12,
+    flex: 1,
+    minWidth: 0,
+  },
+  queryLineButton: {
     flex: 1,
     minWidth: 0,
   },

@@ -314,6 +314,15 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
         tokenCount={showQueryDetails ? activeProcess?.token_count : undefined}
         renderTerminal={isAlive ? renderTerminal : undefined}
         hideMessageInput={isAlive}
+        paneOverview={{
+          paneId,
+          startedAt: activeProcess?.session_started_at,
+          cwd: activeProcess?.cwd,
+          tmuxSession: activeProcess?.tmux_session,
+          windowName: activeProcess?.window_name,
+          firstQuery: activeProcess?.first_query,
+          lastQuery: activeProcess?.last_query,
+        }}
       />
     </View>
   )

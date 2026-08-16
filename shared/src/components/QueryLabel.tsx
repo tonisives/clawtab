@@ -46,7 +46,7 @@ export function QueryLabel({ shortLabel, fullLabel }: QueryLabelProps) {
 
 const styles = StyleSheet.create({
   container: {
-    width: 20,
+    width: 16,
     flexShrink: 0,
     position: "relative",
   },

@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useJobsStore } from "../../src/store/jobs";
 import { usePinsStore } from "../../src/store/pins";
 import { useNotificationStore } from "../../src/store/notifications";
-import { ExpandableQueryText, JobKindIcon, OptionButtons, QueryLabel, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
+import { JobKindIcon, OptionButtons, PaneOverviewModal, QueryLabel, XtermLog, PopupMenu, compactPath, findYesOption, kindForProcess, colors, radius, spacing } from "@clawtab/shared";
 import type { XtermLogHandle } from "@clawtab/shared";
 import { useWsStore } from "../../src/store/ws";
 import { getWsSend, nextId } from "../../src/lib/wsRuntime";
@@ -136,6 +136,7 @@ export default function ProcessDetailScreen() {
   const firstQuery = activeProcess?.first_query ?? null;
   const lastQuery = activeProcess?.last_query ?? null;
   const hasQueryDetails = !!firstQuery || !!lastQuery;
+  const [showPaneOverview, setShowPaneOverview] = useState(false);
 
   // PTY streaming terminal
   const termRef = useRef<XtermLogHandle | null>(null);
@@ -437,13 +438,17 @@ export default function ProcessDetailScreen() {
       {showQueryDetails && activeProcess?.first_query && (
         <View style={styles.queryRow}>
           <QueryLabel shortLabel="q" fullLabel="Query" />
-          <ExpandableQueryText text={activeProcess.first_query} style={styles.queryText} accessibilityLabel="Query" />
+          <TouchableOpacity style={styles.queryTextButton} onPress={() => setShowPaneOverview(true)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Query">
+            <Text style={styles.queryText} numberOfLines={1} ellipsizeMode="tail">{activeProcess.first_query}</Text>
+          </TouchableOpacity>
         </View>
       )}
       {showQueryDetails && activeProcess?.last_query && activeProcess.last_query !== activeProcess.first_query && (
         <View style={styles.queryRow}>
           <QueryLabel shortLabel="l" fullLabel="Latest" />
-          <ExpandableQueryText text={activeProcess.last_query} style={[styles.queryText, { color: colors.textSecondary }]} accessibilityLabel="Latest" />
+          <TouchableOpacity style={styles.queryTextButton} onPress={() => setShowPaneOverview(true)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Latest">
+            <Text style={[styles.queryText, { color: colors.textSecondary }]} numberOfLines={1} ellipsizeMode="tail">{activeProcess.last_query}</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -510,6 +515,17 @@ export default function ProcessDetailScreen() {
           bottomInset={insets.bottom}
         />
       )}
+      <PaneOverviewModal
+        visible={showPaneOverview}
+        onClose={() => setShowPaneOverview(false)}
+        paneId={pane_id}
+        startedAt={activeProcess?.session_started_at}
+        cwd={activeProcess?.cwd}
+        tmuxSession={activeProcess?.tmux_session}
+        windowName={activeProcess?.window_name}
+        firstQuery={activeProcess?.first_query}
+        lastQuery={activeProcess?.last_query}
+      />
     </View>
   );
 }
@@ -659,7 +675,7 @@ const styles = StyleSheet.create({
   queryRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: spacing.xs,
     backgroundColor: colors.surface,
     paddingHorizontal: spacing.md,
     paddingVertical: 5,
@@ -667,6 +683,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   queryText: { flex: 1, minWidth: 0, color: colors.text, fontSize: 12, fontFamily: "monospace" },
+  queryTextButton: { flex: 1, minWidth: 0 },
   terminalContainer: {
     flex: 1,
     minHeight: 0,
