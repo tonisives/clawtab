@@ -326,13 +326,14 @@ export function NotificationCard({
   }
 
   if (isLast) {
-    return <View style={[styles.card, cardSizeStyle]}>{cardContent}</View>;
+    return <View style={[styles.card, !isWeb && styles.cardNative, cardSizeStyle]}>{cardContent}</View>;
   }
 
   return (
     <Animated.View
       style={[
         styles.card,
+        !isWeb && styles.cardNative,
         cardSizeStyle,
         answered && {
           opacity: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
@@ -357,6 +358,9 @@ const styles = StyleSheet.create({
     minHeight: 180,
     maxHeight: 520,
     overflow: "hidden",
+  },
+  cardNative: {
+    borderRadius: radius.lg,
   },
   cardBody: {
     flex: 1,

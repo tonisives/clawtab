@@ -338,7 +338,7 @@ export function NotificationSection({
   // If only departing cards remain, show the fly-away animation
   if (count === 0 && hasDeparting) {
     return (
-      <View style={styles.container}>
+      <View style={isWeb ? styles.container : [styles.container, styles.nativeEdgeToEdge]}>
         <View>{departing.map(renderDepartingCard)}</View>
       </View>
     );
@@ -367,7 +367,7 @@ export function NotificationSection({
     if (isWeb) {
       const isEntering = entering.has(q.question_id);
       return (
-        <View key={q.question_id} style={{ width: cardWidth || "100%" }}>
+        <View key={q.question_id} style={[styles.cardPage, { width: cardWidth || "100%" }]}>
           <div
             ref={(el: HTMLDivElement | null) => {
               if (el) cardDivRefs.current.set(q.question_id, el);
@@ -386,14 +386,14 @@ export function NotificationSection({
     }
 
     return (
-      <View key={q.question_id} style={{ width: cardWidth || "100%" }}>
-        {wrapped}
+      <View key={q.question_id} style={[styles.cardPage, { width: cardWidth || "100%" }]}>
+        <View style={styles.cardPageContentNative}>{wrapped}</View>
       </View>
     );
   };
 
   const sectionContent = (
-    <View style={styles.container}>
+    <View style={isWeb ? styles.container : [styles.container, styles.nativeEdgeToEdge]}>
       {showHeader && onToggleCollapse && (
         <TouchableOpacity
           onPress={onToggleCollapse}
@@ -445,6 +445,7 @@ export function NotificationSection({
             ref={scrollRef}
             horizontal
             pagingEnabled
+            style={styles.pager}
             scrollEnabled={count > 1 && !optionScrollActive}
             showsHorizontalScrollIndicator={false}
             onScroll={handleScroll}
@@ -495,6 +496,19 @@ export function NotificationSection({
 const styles = StyleSheet.create({
   container: {
     marginBottom: spacing.md,
+  },
+  nativeEdgeToEdge: {
+    marginHorizontal: -spacing.md,
+  },
+  pager: {
+    width: "100%",
+  },
+  cardPage: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  cardPageContentNative: {
+    marginRight: spacing.md,
   },
   headerRow: {
     flexDirection: "row",
