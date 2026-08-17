@@ -78,10 +78,13 @@ If `job_name` is not set, it defaults to `"default"`.
 Execution command sent to tmux:
 
 ```bash
-cd /projects/myapp && claude $'<context.md + job context inlined>\n\n<job.md content inlined>'
+cd /projects/myapp && claude "$(cat /tmp/clawtab-prompt-<run-id>.md)"
 ```
 
-Context from central config (shared project context and per-job context) is loaded and inlined directly into the prompt along with the `job.md` content. Secrets are injected as tmux environment variables (same as Claude jobs).
+ClawTab writes the assembled shared context, per-job context, skill references,
+and `job.md` content to a private temporary prompt file before launching the
+agent, then removes the file when the agent exits. Secrets are injected as tmux
+environment variables (same as Claude jobs).
 
 ## Tmux Monitoring
 
