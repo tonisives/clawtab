@@ -38,7 +38,7 @@ export function AutoYesBanner({ entries, onDisable, onPress, maxVisibleEntries }
           accessibilityLabel={expanded ? "Collapse auto-yes panes" : "Expand auto-yes panes"}
         >
           <Text style={styles.label} numberOfLines={1}>Auto-yes: {entries.length} panes</Text>
-          <Text style={styles.toggleText}>{expanded ? "Collapse" : "Expand"}</Text>
+          <Text style={styles.toggleChevron}>{expanded ? "\u2303" : "\u2304"}</Text>
         </TouchableOpacity>
       )}
       {(!isCollapsible || expanded) && (
@@ -116,9 +116,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "500",
   },
-  toggleText: {
+  toggleChevron: {
     color: colors.warning,
-    fontSize: 11,
+    fontSize: 20,
     fontWeight: "700",
+    lineHeight: 20,
   },
 });

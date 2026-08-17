@@ -23,8 +23,10 @@ export interface NotificationSectionProps {
   resolveJob: (q: ClaudeQuestion) => string | null;
   onNavigate: (q: ClaudeQuestion, resolvedJob: string | null) => void;
   onSendOption: (q: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => void;
-  collapsed: boolean;
-  onToggleCollapse: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+  /** Whether to render the collapsible waiting-for-input header. */
+  showHeader?: boolean;
   autoYesPaneIds?: Set<string>;
   onToggleAutoYes?: (question: ClaudeQuestion) => void;
   /** Question IDs that were auto-answered (shown briefly before dismissal) */
@@ -47,8 +49,9 @@ export function NotificationSection({
   resolveJob,
   onNavigate,
   onSendOption,
-  collapsed,
+  collapsed = false,
   onToggleCollapse,
+  showHeader = true,
   autoYesPaneIds,
   onToggleAutoYes,
   autoAnsweredIds,
@@ -391,18 +394,20 @@ export function NotificationSection({
 
   const sectionContent = (
     <View style={styles.container}>
-      <TouchableOpacity
-        onPress={onToggleCollapse}
-        style={styles.headerRow}
-        activeOpacity={0.6}
-      >
-        <Text style={styles.headerArrow}>
-          {collapsed ? "\u25B6" : "\u25BC"}
-        </Text>
-        <Text style={styles.headerText}>Waiting for input ({displayCount})</Text>
-      </TouchableOpacity>
+      {showHeader && onToggleCollapse && (
+        <TouchableOpacity
+          onPress={onToggleCollapse}
+          style={styles.headerRow}
+          activeOpacity={0.6}
+        >
+          <Text style={styles.headerArrow}>
+            {collapsed ? "\u25B6" : "\u25BC"}
+          </Text>
+          <Text style={styles.headerText}>Waiting for input ({displayCount})</Text>
+        </TouchableOpacity>
+      )}
 
-      {!collapsed && (
+      {(!showHeader || !collapsed) && (
         <View onLayout={handleLayout}>
           {count > 1 && (
             <View style={styles.navRow}>

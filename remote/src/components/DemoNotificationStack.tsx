@@ -48,8 +48,7 @@ export function DemoNotificationStack({
         resolveJob={resolveJob}
         onNavigate={handleNavigate}
         onSendOption={() => {}}
-        collapsed={false}
-        onToggleCollapse={() => {}}
+        showHeader={false}
         autoYesPaneIds={new Set()}
         onToggleAutoYes={() => {}}
         autoAnsweredIds={new Set()}

@@ -44,8 +44,6 @@ export function NotificationStack({
     (s) => s.setDeepLinkQuestionId,
   );
 
-  const [collapsed, setCollapsed] = useState(false);
-
   const processMap = new Map<string, DetectedProcess>();
   for (const proc of detectedProcesses) {
     processMap.set(proc.pane_id, proc);
@@ -275,8 +273,7 @@ export function NotificationStack({
           resolveJob={resolveJob}
           onNavigate={navigateToQuestion}
           onSendOption={handleSendOption}
-          collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((v) => !v)}
+          showHeader={false}
           autoYesPaneIds={autoYesPaneIds}
           onToggleAutoYes={handleToggleAutoYes}
           autoAnsweredIds={autoAnsweredIds}
