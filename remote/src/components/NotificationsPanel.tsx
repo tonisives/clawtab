@@ -137,6 +137,7 @@ export function NotificationsPanel({
       contentContainerStyle={[
         styles.content,
         mode === "screen" && styles.screenContent,
+        mode === "screen" && Platform.OS !== "web" && styles.nativeScreenContent,
         isDemo && styles.demoContent,
       ]}
     >
@@ -177,6 +178,9 @@ const styles = StyleSheet.create({
   screenContent: {
     padding: spacing.md,
     paddingBottom: spacing.xl,
+  },
+  nativeScreenContent: {
+    paddingBottom: 0,
   },
   demoContent: {
     minHeight: 280,

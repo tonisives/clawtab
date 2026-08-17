@@ -434,6 +434,8 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   optionRowNative: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
@@ -441,6 +443,7 @@ const styles = StyleSheet.create({
   answerOptionsNative: {
     flex: 1,
     minWidth: 0,
+    alignSelf: "stretch",
   },
   answerOptionsNativeContent: {
     flexDirection: "row",
@@ -496,7 +499,7 @@ const styles = StyleSheet.create({
     width: 92,
     minHeight: 44,
     flexShrink: 0,
-    alignSelf: "stretch",
+    alignSelf: "center",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.sm,
