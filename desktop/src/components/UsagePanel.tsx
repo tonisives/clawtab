@@ -172,7 +172,9 @@ function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapsh
         <span className={`usage-badge usage-${usage.status}`}>{usage.status}</span>
       </div>
       <div className="usage-summary">{usage.summary}</div>
-      {weekPercent != null && <UsagePaceBar usagePercent={weekPercent} />}
+      {weekPercent != null && (
+        <UsagePaceBar usagePercent={weekPercent} weekResetAt={usage.week_reset_at} />
+      )}
       {usage.entries.length > 0 && (
         <div className="usage-list">
           {usage.entries.map((entry) => (
@@ -188,12 +190,16 @@ function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapsh
   )
 }
 
-function UsagePaceBar({ usagePercent }: { usagePercent: number }) {
-  const [weekProgress, setWeekProgress] = useState(() => weekProgressPercent())
+function UsagePaceBar({ usagePercent, weekResetAt }: {
+  usagePercent: number
+  weekResetAt?: number | null
+}) {
+  const [weekProgress, setWeekProgress] = useState(() => weekProgressPercent(weekResetAt))
   const usage = clamp(usagePercent)
   const roundedUsage = Math.round(usage)
   const roundedWeek = Math.round(weekProgress)
   const delta = roundedUsage - roundedWeek
+  const paceLabel = weekResetAt != null ? "reset-based week" : "calendar week"
   const comparison = delta === 0
     ? "On pace"
     : delta > 0
@@ -201,9 +207,10 @@ function UsagePaceBar({ usagePercent }: { usagePercent: number }) {
       : `${Math.abs(delta)} pts behind week pace`
 
   useEffect(() => {
-    const timer = window.setInterval(() => setWeekProgress(weekProgressPercent()), 60_000)
+    setWeekProgress(weekProgressPercent(weekResetAt))
+    const timer = window.setInterval(() => setWeekProgress(weekProgressPercent(weekResetAt)), 60_000)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [weekResetAt])
 
   return (
     <div className="usage-pace" aria-label={`Weekly usage ${roundedUsage}%, ${comparison}`}>
@@ -216,7 +223,7 @@ function UsagePaceBar({ usagePercent }: { usagePercent: number }) {
         <div className="usage-pace-marker" style={{ left: `${usage}%` }} />
       </div>
       <div className="usage-pace-footer">
-        <span>solid: elapsed week</span>
+        <span>solid: {paceLabel}</span>
         <span className={delta > 0 ? "usage-pace-ahead" : ""}>{comparison}</span>
       </div>
     </div>
@@ -230,12 +237,20 @@ function parseUsagePercent(value: string | undefined): number | null {
   return Number.isFinite(percent) ? clamp(percent) : null
 }
 
-function weekProgressPercent(date = new Date()): number {
+function weekProgressPercent(resetAt?: number | null, date = new Date()): number {
+  const weekMs = 7 * 24 * 60 * 60 * 1000
+  const resetAtMs = typeof resetAt === "number" && Number.isFinite(resetAt)
+    ? resetAt * 1000
+    : null
+  if (resetAtMs != null) {
+    return clamp(((date.getTime() - (resetAtMs - weekMs)) / weekMs) * 100)
+  }
+
   const start = new Date(date)
   const daysSinceMonday = (start.getDay() + 6) % 7
   start.setDate(start.getDate() - daysSinceMonday)
   start.setHours(0, 0, 0, 0)
-  return clamp(((date.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) * 100)
+  return clamp(((date.getTime() - start.getTime()) / weekMs) * 100)
 }
 
 function clamp(value: number): number {

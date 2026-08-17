@@ -314,6 +314,7 @@ USAGE_TITLE=""
 USAGE_SESSION=""
 USAGE_WEEK=""
 USAGE_WEEK_PERCENT=""
+USAGE_WEEK_RESET_AT=""
 USAGE_LINE=""
 USAGE_FILE=""
 USAGE_DONE_FILE=""
@@ -492,6 +493,7 @@ prepare_usage() {
     USAGE_SESSION=""
     USAGE_WEEK=""
     USAGE_WEEK_PERCENT=""
+    USAGE_WEEK_RESET_AT=""
     USAGE_LINE=""
 
     case "$AGENT_LABEL" in
@@ -611,7 +613,19 @@ usage_percent_value() {
 }
 
 week_progress_percent() {
-    local day hour minute second elapsed
+    local reset_at now start elapsed
+    reset_at="$USAGE_WEEK_RESET_AT"
+    if [[ "$reset_at" =~ ^[0-9]+$ ]] && [ "$reset_at" -gt 0 ]; then
+        now=$(date +%s)
+        start=$((reset_at - 604800))
+        elapsed=$((now - start))
+        [ "$elapsed" -lt 0 ] && elapsed=0
+        [ "$elapsed" -gt 604800 ] && elapsed=604800
+        printf '%s' $((elapsed * 100 / 604800))
+        return
+    fi
+
+    local day hour minute second
     day=$(date '+%u')
     hour=$(date '+%H')
     minute=$(date '+%M')
@@ -630,6 +644,7 @@ finish_usage_load() {
         case "$line" in
             session=*) USAGE_SESSION="${line#session=}" ;;
             week=*) USAGE_WEEK="${line#week=}" ;;
+            week_reset_at=*) USAGE_WEEK_RESET_AT="${line#week_reset_at=}" ;;
         esac
     done <<< "$raw"
 
@@ -791,17 +806,19 @@ draw_usage_bar_legend() {
     local pace
     local delta
     local comparison="on pace"
+    local basis="calendar week"
     local text
 
     pace=$(week_progress_percent)
     delta=$((USAGE_WEEK_PERCENT - pace))
+    [ -n "$USAGE_WEEK_RESET_AT" ] && basis="reset-based week"
 
     if [ "$delta" -gt 0 ]; then
         comparison="${delta}% ahead"
     elif [ "$delta" -lt 0 ]; then
         comparison="$((-delta))% behind"
     fi
-    text="solid week ${pace}%  dotted usage ${USAGE_WEEK_PERCENT}%  ${comparison}"
+    text="solid ${basis} ${pace}%  dotted usage ${USAGE_WEEK_PERCENT}%  ${comparison}"
     draw_row_start "$row"
     printf "${C_DIM}%s${C_RESET}" "$(trim_for_row "$text" 4)" >&3
     draw_row_end "$row"

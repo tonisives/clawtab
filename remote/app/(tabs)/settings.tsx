@@ -488,7 +488,7 @@ function MobileUsageCard({
         <Text style={styles.usageCardStatus}>{usage.status}</Text>
       </View>
       {weekPercent != null ? (
-        <UsageProgressBar usagePercent={weekPercent} />
+        <UsageProgressBar usagePercent={weekPercent} resetAt={usage.week_reset_at} />
       ) : (
         <Text style={styles.usageUnavailable}>{usage.summary}</Text>
       )}

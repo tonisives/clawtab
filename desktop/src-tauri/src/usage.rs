@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Local, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDateTime, TimeZone, Utc};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use reqwest::header::{ACCEPT, AUTHORIZATION};
 use serde::Deserialize;
@@ -64,6 +64,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
                     )),
                     entries: Vec::new(),
                     week_used_percent: None,
+                    week_reset_at: None,
                 },
             },
             Ok(Err(err)) => ProviderUsageSnapshot {
@@ -76,6 +77,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
                 )),
                 entries: Vec::new(),
                 week_used_percent: None,
+                week_reset_at: None,
             },
             Err(err) => ProviderUsageSnapshot {
                 provider: "antigravity".to_string(),
@@ -84,6 +86,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
                 note: Some(format!("Connected. Task failed: {}", err)),
                 entries: Vec::new(),
                 week_used_percent: None,
+                week_reset_at: None,
             },
         }
     } else {
@@ -94,6 +97,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
             note: Some("Antigravity CLI (agy) was not found on your system.".to_string()),
             entries: Vec::new(),
             week_used_percent: None,
+            week_reset_at: None,
         }
     }
 }
@@ -323,6 +327,10 @@ fn parse_antigravity_usage_snapshot(text: &str) -> Result<ProviderUsageSnapshot,
         week_used_percent: weekly
             .as_ref()
             .map(|limit| (100 - limit.percent_remaining).clamp(0, 100) as u8),
+        week_reset_at: weekly
+            .as_ref()
+            .and_then(|limit| limit.refreshes_in.as_deref())
+            .and_then(relative_reset_epoch),
     })
 }
 
@@ -358,6 +366,11 @@ async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
                     .seven_day
                     .as_ref()
                     .map(|bucket| bucket.utilization.clamp(0.0, 100.0).round() as u8),
+                week_reset_at: usage
+                    .seven_day
+                    .as_ref()
+                    .and_then(|bucket| bucket.resets_at.as_deref())
+                    .and_then(parse_rfc3339_epoch),
             }
         }
         Err(err) => ProviderUsageSnapshot {
@@ -376,6 +389,7 @@ async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
                 },
             ],
             week_used_percent: None,
+            week_reset_at: None,
         },
     }
 }
@@ -405,6 +419,7 @@ fn fallback_codex_snapshot(rpc_err: String) -> ProviderUsageSnapshot {
             )),
             entries: Vec::new(),
             week_used_percent: None,
+            week_reset_at: None,
         },
     }
 }
@@ -634,6 +649,7 @@ fn build_codex_snapshot(
         week_used_percent: secondary
             .as_ref()
             .map(|window| window.used_percent.clamp(0, 100) as u8),
+        week_reset_at: secondary.as_ref().and_then(|window| window.resets_at),
     }
 }
 
@@ -659,6 +675,7 @@ async fn fetch_zai_snapshot(token: Option<String>) -> ProviderUsageSnapshot {
             ),
             entries: Vec::new(),
             week_used_percent: None,
+            week_reset_at: None,
         };
     };
 
@@ -671,6 +688,7 @@ async fn fetch_zai_snapshot(token: Option<String>) -> ProviderUsageSnapshot {
             note: Some(err),
             entries: Vec::new(),
             week_used_percent: None,
+            week_reset_at: None,
         },
     }
 }
@@ -754,6 +772,9 @@ async fn read_zai_quota(token: &str) -> Result<ProviderUsageSnapshot, String> {
         week_used_percent: week_limit
             .and_then(ZaiLimit::used_ratio_percent)
             .map(|value| value.clamp(0, 100) as u8),
+        week_reset_at: week_limit
+            .and_then(|limit| limit.next_reset_time)
+            .map(epoch_millis_to_seconds),
     })
 }
 
@@ -1099,6 +1120,7 @@ fn parse_codex_status_snapshot(text: &str) -> Result<ProviderUsageSnapshot, Stri
         week_used_percent: week
             .as_ref()
             .map(|limit| limit.percent_used().clamp(0, 100) as u8),
+        week_reset_at: week.as_ref().and_then(|limit| limit.reset_at),
     })
 }
 
@@ -1149,9 +1171,11 @@ fn parse_codex_status_entry(lines: &[&str], needle: &str) -> Option<CodexCliLimi
 fn parse_codex_status_line(line: &str) -> Option<CodexCliLimit> {
     let percent_left = first_percent_in(line)?;
     let reset = reset_text_from_line(line);
+    let reset_at = reset.as_deref().and_then(parse_cli_reset_epoch);
     Some(CodexCliLimit {
         percent_left,
         reset,
+        reset_at,
     })
 }
 
@@ -1189,6 +1213,73 @@ fn reset_text_from_line(line: &str) -> Option<String> {
         text = cleaned;
     }
     (!text.is_empty()).then(|| text.to_string())
+}
+
+fn parse_cli_reset_epoch(text: &str) -> Option<i64> {
+    if let Some(seconds) = parse_duration_seconds(text) {
+        return Some(Utc::now().timestamp() + seconds);
+    }
+
+    let now = Local::now();
+    let text = text.trim().trim_matches(|ch: char| {
+        ch == '(' || ch == ')' || ch == ':' || ch == '-' || ch == '|' || ch == '│'
+    });
+    let with_year = format!("{} {}", now.year(), text);
+    ["%Y %H:%M on %d %b", "%Y %H:%M on %d %B"]
+        .iter()
+        .find_map(|format| NaiveDateTime::parse_from_str(&with_year, format).ok())
+        .and_then(|naive| Local.from_local_datetime(&naive).single())
+        .and_then(|target| {
+            if target > now {
+                Some(target.timestamp())
+            } else {
+                target
+                    .with_year(now.year() + 1)
+                    .map(|next| next.timestamp())
+            }
+        })
+}
+
+fn parse_duration_seconds(text: &str) -> Option<i64> {
+    let mut total = 0_i64;
+    let mut found = false;
+
+    for token in text.to_ascii_lowercase().split_whitespace() {
+        let token = token.trim_matches(|ch: char| !ch.is_ascii_alphanumeric());
+        let split = token.find(|ch: char| !ch.is_ascii_digit());
+        let Some(split) = split else {
+            continue;
+        };
+        if split == 0 {
+            continue;
+        }
+        let Some(value) = token[..split].parse::<i64>().ok() else {
+            continue;
+        };
+        let unit = token[split..].trim_matches(|ch: char| !ch.is_ascii_alphabetic());
+        let multiplier = match unit {
+            "s" | "sec" | "secs" | "second" | "seconds" => 1,
+            "m" | "min" | "mins" | "minute" | "minutes" => 60,
+            "h" | "hr" | "hrs" | "hour" | "hours" => 60 * 60,
+            "d" | "day" | "days" => 24 * 60 * 60,
+            "w" | "week" | "weeks" => 7 * 24 * 60 * 60,
+            _ => continue,
+        };
+        total = total.checked_add(value.checked_mul(multiplier)?)?;
+        found = true;
+    }
+
+    (found && total > 0).then_some(total)
+}
+
+fn relative_reset_epoch(text: &str) -> Option<i64> {
+    parse_duration_seconds(text).map(|seconds| Utc::now().timestamp() + seconds)
+}
+
+fn parse_rfc3339_epoch(text: &str) -> Option<i64> {
+    text.parse::<DateTime<Utc>>()
+        .ok()
+        .map(|value| value.timestamp())
 }
 
 fn strip_ansi_codes(input: &str) -> String {
@@ -1376,6 +1467,14 @@ fn epoch_millis_to_human(epoch_millis: i64) -> Option<String> {
         .map(relative_time_from)
 }
 
+fn epoch_millis_to_seconds(epoch_millis: i64) -> i64 {
+    if epoch_millis < 100_000_000_000 {
+        epoch_millis
+    } else {
+        epoch_millis / 1000
+    }
+}
+
 fn format_numberish(value: f64) -> String {
     if (value.fract()).abs() < f64::EPSILON {
         format_compact_number(value)
@@ -1417,6 +1516,7 @@ fn title_case_words(input: &str) -> String {
 struct CodexCliLimit {
     percent_left: i64,
     reset: Option<String>,
+    reset_at: Option<i64>,
 }
 
 impl CodexCliLimit {
@@ -1706,6 +1806,7 @@ Weekly limit:
         assert_eq!(week.value, "51% used, reset 06:14 on 17 Apr");
         assert_eq!(snapshot.summary, "Session 62% used, Week 51% used");
         assert_eq!(snapshot.week_used_percent, Some(51));
+        assert!(snapshot.week_reset_at.is_some());
     }
 
     #[test]
@@ -1731,7 +1832,7 @@ Weekly limit:
                 "secondary": {
                     "usedPercent": 41,
                     "windowDurationMins": 10080,
-                    "resetsAt": null
+                    "resetsAt": 2000000000
                 },
                 "credits": null,
                 "individualLimit": null,
@@ -1748,8 +1849,9 @@ Weekly limit:
         assert_eq!(snapshot.summary, "Session 62% used, Week 41% used");
         assert_eq!(snapshot.entries[0].value, "Plus");
         assert_eq!(snapshot.entries[1].value, "62% used");
-        assert_eq!(snapshot.entries[2].value, "41% used");
+        assert!(snapshot.entries[2].value.starts_with("41% used, reset "));
         assert_eq!(snapshot.week_used_percent, Some(41));
+        assert_eq!(snapshot.week_reset_at, Some(2000000000));
     }
 
     #[test]
@@ -1828,6 +1930,7 @@ GEMINI MODELS
             .expect("week entry");
         assert_eq!(week.value, "78% remaining (refreshes in 152h 1m)");
         assert_eq!(snapshot.week_used_percent, Some(22));
+        assert!(snapshot.week_reset_at.is_some());
     }
 
     #[test]

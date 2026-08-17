@@ -15,6 +15,9 @@ pub struct ProviderUsageSnapshot {
     pub entries: Vec<UsageEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub week_used_percent: Option<u8>,
+    /// Unix timestamp, in seconds, for the next reset of the rolling weekly window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub week_reset_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

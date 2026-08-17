@@ -12,7 +12,14 @@ export function parseUsagePercent(value: string | null | undefined): number | nu
   return Number.isFinite(percent) ? clamp(percent) : null
 }
 
-export function weekProgressPercent(date = new Date()): number {
+export function weekProgressPercent(resetAt?: number | null, date = new Date()): number {
+  const resetAtMs = typeof resetAt === "number" && Number.isFinite(resetAt)
+    ? resetAt * 1000
+    : null
+  if (resetAtMs != null) {
+    return clamp(((date.getTime() - (resetAtMs - WEEK_MS)) / WEEK_MS) * 100)
+  }
+
   const start = new Date(date)
   const daysSinceMonday = (start.getDay() + 6) % 7
   start.setDate(start.getDate() - daysSinceMonday)
@@ -22,17 +29,20 @@ export function weekProgressPercent(date = new Date()): number {
 
 export function UsageProgressBar({
   usagePercent,
+  resetAt,
   label = "Weekly model usage",
 }: {
   usagePercent: number | null | undefined
+  resetAt?: number | null
   label?: string
 }) {
-  const [weekProgress, setWeekProgress] = useState(() => weekProgressPercent())
+  const [weekProgress, setWeekProgress] = useState(() => weekProgressPercent(resetAt))
 
   useEffect(() => {
-    const timer = setInterval(() => setWeekProgress(weekProgressPercent()), 60_000)
+    setWeekProgress(weekProgressPercent(resetAt))
+    const timer = setInterval(() => setWeekProgress(weekProgressPercent(resetAt)), 60_000)
     return () => clearInterval(timer)
-  }, [])
+  }, [resetAt])
 
   if (usagePercent == null) return null
 
@@ -40,6 +50,7 @@ export function UsageProgressBar({
   const roundedUsage = Math.round(usage)
   const roundedWeek = Math.round(weekProgress)
   const delta = roundedUsage - roundedWeek
+  const paceLabel = resetAt != null ? "reset-based week" : "calendar week"
   const comparison = delta === 0
     ? "On pace"
     : delta > 0
@@ -66,7 +77,7 @@ export function UsageProgressBar({
         />
       </View>
       <View style={styles.footer}>
-        <Text style={styles.legend}>solid: week progress {roundedWeek}%</Text>
+        <Text style={styles.legend}>solid: {paceLabel} {roundedWeek}%</Text>
         <Text style={[styles.comparison, delta > 0 && styles.ahead]}>{comparison}</Text>
       </View>
     </View>

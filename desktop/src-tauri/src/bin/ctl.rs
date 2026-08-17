@@ -916,6 +916,9 @@ fn print_provider_usage(usage: clawtab_lib::usage::ProviderUsageSnapshot) {
         let key = entry.label.to_ascii_lowercase().replace(' ', "_");
         println!("{}={}", key, entry.value);
     }
+    if let Some(reset_at) = usage.week_reset_at {
+        println!("week_reset_at={}", reset_at);
+    }
 }
 
 async fn handle_secrets_command(args: &[String]) {
