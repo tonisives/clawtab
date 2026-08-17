@@ -27,10 +27,6 @@ export function AutoYesBanner({ entries, onDisable, onPress, maxVisibleEntries }
 
   if (entries.length === 0) return null;
 
-  const visibleEntries = isCollapsible && !expanded
-    ? entries.slice(0, collapseLimit)
-    : entries;
-
   return (
     <View style={styles.container}>
       {isCollapsible && (
@@ -45,31 +41,33 @@ export function AutoYesBanner({ entries, onDisable, onPress, maxVisibleEntries }
           <Text style={styles.toggleText}>{expanded ? "Collapse" : "Expand"}</Text>
         </TouchableOpacity>
       )}
-      <ScrollView
-        style={styles.list}
-        contentContainerStyle={styles.listContent}
-        nestedScrollEnabled
-        showsVerticalScrollIndicator={visibleEntries.length > 3}
-      >
-        {visibleEntries.map((e) => (
-          <TouchableOpacity
-            key={e.paneId}
-            style={styles.row}
-            onPress={onPress ? () => onPress(e) : undefined}
-            activeOpacity={onPress ? 0.7 : 1}
-            disabled={!onPress}
-          >
-            <Text style={styles.label} numberOfLines={1}>! Auto-yes: {e.label}</Text>
+      {(!isCollapsible || expanded) && (
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={entries.length > 3}
+        >
+          {entries.map((e) => (
             <TouchableOpacity
-              style={styles.disableBtn}
-              onPress={(ev) => { ev.stopPropagation(); onDisable(e.paneId); }}
-              activeOpacity={0.6}
+              key={e.paneId}
+              style={styles.row}
+              onPress={onPress ? () => onPress(e) : undefined}
+              activeOpacity={onPress ? 0.7 : 1}
+              disabled={!onPress}
             >
-              <Text style={styles.disableBtnText}>Disable</Text>
+              <Text style={styles.label} numberOfLines={1}>! Auto-yes: {e.label}</Text>
+              <TouchableOpacity
+                style={styles.disableBtn}
+                onPress={(ev) => { ev.stopPropagation(); onDisable(e.paneId); }}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.disableBtnText}>Disable</Text>
+              </TouchableOpacity>
             </TouchableOpacity>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }

@@ -17,9 +17,16 @@ import type { NotificationDetailTarget } from "./notificationTypes";
 interface NotificationsPanelProps {
   mode: "popup" | "screen";
   onNavigateAway?: () => void;
+  detailTarget?: NotificationDetailTarget | null;
+  onDetailTargetChange?: (target: NotificationDetailTarget | null) => void;
 }
 
-export function NotificationsPanel({ mode, onNavigateAway }: NotificationsPanelProps) {
+export function NotificationsPanel({
+  mode,
+  onNavigateAway,
+  detailTarget: controlledDetailTarget,
+  onDetailTargetChange,
+}: NotificationsPanelProps) {
   const windowSize = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const questions = useNotificationStore((s) => s.questions);
@@ -28,7 +35,17 @@ export function NotificationsPanel({ mode, onNavigateAway }: NotificationsPanelP
   const connected = useWsStore((s) => s.connected);
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const isDemo = connected && !desktopOnline && realJobs.length === 0;
-  const [detailTarget, setDetailTarget] = useState<NotificationDetailTarget | null>(null);
+  const [localDetailTarget, setLocalDetailTarget] = useState<NotificationDetailTarget | null>(null);
+  const detailTarget = onDetailTargetChange !== undefined
+    ? controlledDetailTarget ?? null
+    : localDetailTarget;
+  const setDetailTarget = (target: NotificationDetailTarget | null) => {
+    if (onDetailTargetChange) {
+      onDetailTargetChange(target);
+    } else {
+      setLocalDetailTarget(target);
+    }
+  };
 
   const activeQuestionCount = useMemo(() => {
     if (isDemo) return DEMO_QUESTIONS.length;
@@ -51,19 +68,21 @@ export function NotificationsPanel({ mode, onNavigateAway }: NotificationsPanelP
   if (detailTarget) {
     return (
       <View style={styles.detailRoot}>
-        <View style={styles.detailToolbar}>
-          <Pressable
-            onPress={() => setDetailTarget(null)}
-            style={styles.detailBackButton}
-            accessibilityRole="button"
-            accessibilityLabel="Back to notifications"
-          >
-            <Ionicons name="chevron-back" size={18} color={colors.text} />
-            <Text style={styles.detailBackText}>Notifications</Text>
-          </Pressable>
-          <Text style={styles.detailTitle}>Details</Text>
-          <View style={styles.detailToolbarSpacer} />
-        </View>
+        {mode === "screen" && (
+          <View style={styles.detailToolbar}>
+            <Pressable
+              onPress={() => setDetailTarget(null)}
+              style={styles.detailBackButton}
+              accessibilityRole="button"
+              accessibilityLabel="Back to notifications"
+            >
+              <Ionicons name="chevron-back" size={18} color={colors.text} />
+              <Text style={styles.detailBackText}>Notifications</Text>
+            </Pressable>
+            <Text style={styles.detailTitle}>Details</Text>
+            <View style={styles.detailToolbarSpacer} />
+          </View>
+        )}
         <View style={styles.detailContent}>
           {detailTarget.kind === "job" ? (
             <JobDetailPane

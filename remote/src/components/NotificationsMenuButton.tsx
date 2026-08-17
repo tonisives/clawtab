@@ -10,6 +10,7 @@ import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
 import { NotificationsPanel } from "./NotificationsPanel";
+import type { NotificationDetailTarget } from "./notificationTypes";
 
 export function NotificationsMenuButton({
   hideWhenEmpty = false,
@@ -23,6 +24,7 @@ export function NotificationsMenuButton({
   showDemoQuestions?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<NotificationDetailTarget | null>(null);
   const [position, setPosition] = useState<{ top: number; right: number }>({ top: 48, right: 12 });
   const windowSize = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -41,6 +43,10 @@ export function NotificationsMenuButton({
   }, [isDemo, questions, showDemoQuestions]);
 
   const hasContent = activeQuestionCount > 0 || (!isDemo && autoYesPaneIds.size > 0);
+  const closeMenu = () => {
+    setOpen(false);
+    setDetailTarget(null);
+  };
   const popupFrame = Platform.OS === "web"
     ? {
         top: position.top,
@@ -141,21 +147,31 @@ export function NotificationsMenuButton({
         animationType={Platform.OS === "ios" ? "slide" : "fade"}
         presentationStyle={Platform.OS === "web" ? "overFullScreen" : "fullScreen"}
         statusBarTranslucent
-        onRequestClose={() => setOpen(false)}
+        onRequestClose={detailTarget ? () => setDetailTarget(null) : closeMenu}
       >
         <View style={styles.modalRoot}>
           {Platform.OS === "web" ? (
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />
           ) : null}
           <View style={[styles.popup, Platform.OS !== "web" && [styles.nativePopup, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }], isDemo && styles.demoPopup, popupFrame]}>
             <View style={styles.modalHeader}>
-              <Pressable onPress={() => setOpen(false)} style={styles.closeButton}>
-                <Ionicons name="close" size={20} color={colors.text} />
+              <Pressable
+                onPress={detailTarget ? () => setDetailTarget(null) : closeMenu}
+                style={styles.closeButton}
+                accessibilityRole="button"
+                accessibilityLabel={detailTarget ? "Back to notifications" : "Close notifications"}
+              >
+                <Ionicons name={detailTarget ? "chevron-back" : "close"} size={20} color={colors.text} />
               </Pressable>
-              <Text style={styles.title}>Notifications</Text>
+              <Text style={styles.title} numberOfLines={1}>{detailTarget ? "Details" : "Notifications"}</Text>
               <View style={styles.modalHeaderSpacer} />
             </View>
-            <NotificationsPanel mode="popup" onNavigateAway={() => setOpen(false)} />
+            <NotificationsPanel
+              mode="popup"
+              onNavigateAway={closeMenu}
+              detailTarget={detailTarget}
+              onDetailTargetChange={setDetailTarget}
+            />
           </View>
         </View>
       </Modal>
