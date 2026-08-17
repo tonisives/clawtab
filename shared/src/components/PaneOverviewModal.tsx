@@ -1,4 +1,4 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { compactPath, formatTime, timeAgo } from "../util/format";
@@ -70,100 +70,123 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
   const latestQuery = pane.lastQuery && pane.lastQuery !== pane.firstQuery ? pane.lastQuery : null;
   const title = pane.cwd ? compactPath(pane.cwd) : "Pane overview";
 
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.root}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-        <View style={styles.card}>
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.title} numberOfLines={1}>{title}</Text>
-              <View style={styles.headerMeta}>
-                <Text style={styles.sessionTitle} numberOfLines={1}>{pane.tmuxSession || "-"}</Text>
-                <Text style={styles.metaSeparator}>·</Text>
-                <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
-              </View>
+  const content = (
+    <View style={styles.root}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.card}>
+        <View style={styles.header}>
+          <View style={styles.headerText}>
+            <Text style={styles.title} numberOfLines={1}>{title}</Text>
+            <View style={styles.headerMeta}>
+              <Text style={styles.sessionTitle} numberOfLines={1}>{pane.tmuxSession || "-"}</Text>
+              <Text style={styles.metaSeparator}>·</Text>
+              <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
             </View>
-            <Pressable
-              style={styles.closeButton}
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Close pane overview"
-              hitSlop={8}
-            >
-              <Text style={styles.close}>Close</Text>
-            </Pressable>
           </View>
+          <Pressable
+            style={styles.closeButton}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close pane overview"
+            hitSlop={8}
+          >
+            <Text style={styles.close}>Close</Text>
+          </Pressable>
+        </View>
 
-          <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-            {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
-              <View style={styles.actions}>
-                <View style={styles.toggleGroup}>
-                  {actions.onToggleAutoYes ? (
-                    <View style={styles.toggleAction}>
-                      <Text style={styles.toggleLabel}>Auto Yes</Text>
-                      <Switch
-                        value={!!actions.autoYesActive}
-                        onValueChange={actions.onToggleAutoYes}
-                        trackColor={{ false: colors.borderLight, true: colors.accent }}
-                        thumbColor={colors.surface}
-                        ios_backgroundColor={colors.borderLight}
-                        accessibilityLabel="Auto Yes"
-                      />
-                    </View>
-                  ) : null}
-                  {actions.onTogglePin ? (
-                    <View style={styles.toggleAction}>
-                      <Text style={styles.toggleLabel}>Pin</Text>
-                      <Switch
-                        value={!!actions.isPinned}
-                        onValueChange={actions.onTogglePin}
-                        trackColor={{ false: colors.borderLight, true: colors.accent }}
-                        thumbColor={colors.surface}
-                        ios_backgroundColor={colors.borderLight}
-                        accessibilityLabel="Pin pane"
-                      />
-                    </View>
-                  ) : null}
-                </View>
-                {actions.onStop ? (
-                  <Pressable
-                    style={[styles.endActionButton, styles.stopButton]}
-                    onPress={actions.onStop}
-                    disabled={actions.stopping}
-                    accessibilityRole="button"
-                    accessibilityLabel="Stop process"
-                  >
-                    <Text style={[styles.actionText, styles.stopText]}>
-                      {actions.stopping ? "Stopping..." : "Stop"}
-                    </Text>
-                  </Pressable>
-                ) : actions.onStart ? (
-                  <Pressable
-                    style={[styles.endActionButton, styles.startButton]}
-                    onPress={actions.onStart}
-                    disabled={actions.starting}
-                    accessibilityRole="button"
-                    accessibilityLabel="Start process"
-                  >
-                    <Text style={[styles.actionText, styles.startText]}>
-                      {actions.starting ? "Starting..." : "Start"}
-                    </Text>
-                  </Pressable>
+        <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+          {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
+            <View style={styles.actions}>
+              <View style={styles.toggleGroup}>
+                {actions.onToggleAutoYes ? (
+                  <View style={styles.toggleAction}>
+                    <Text style={styles.toggleLabel}>Auto Yes</Text>
+                    <Switch
+                      value={!!actions.autoYesActive}
+                      onValueChange={actions.onToggleAutoYes}
+                      trackColor={{ false: colors.borderLight, true: colors.accent }}
+                      thumbColor={colors.surface}
+                      ios_backgroundColor={colors.borderLight}
+                      accessibilityLabel="Auto Yes"
+                    />
+                  </View>
+                ) : null}
+                {actions.onTogglePin ? (
+                  <View style={styles.toggleAction}>
+                    <Text style={styles.toggleLabel}>Pin</Text>
+                    <Switch
+                      value={!!actions.isPinned}
+                      onValueChange={actions.onTogglePin}
+                      trackColor={{ false: colors.borderLight, true: colors.accent }}
+                      thumbColor={colors.surface}
+                      ios_backgroundColor={colors.borderLight}
+                      accessibilityLabel="Pin pane"
+                    />
+                  </View>
                 ) : null}
               </View>
-            ) : null}
-            <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
-            <QueryBlock label="First query" value={pane.firstQuery} />
-            <QueryBlock label="Latest query" value={latestQuery} />
-          </ScrollView>
-        </View>
+              {actions.onStop ? (
+                <Pressable
+                  style={[styles.endActionButton, styles.stopButton]}
+                  onPress={actions.onStop}
+                  disabled={actions.stopping}
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop process"
+                >
+                  <Text style={[styles.actionText, styles.stopText]}>
+                    {actions.stopping ? "Stopping..." : "Stop"}
+                  </Text>
+                </Pressable>
+              ) : actions.onStart ? (
+                <Pressable
+                  style={[styles.endActionButton, styles.startButton]}
+                  onPress={actions.onStart}
+                  disabled={actions.starting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Start process"
+                >
+                  <Text style={[styles.actionText, styles.startText]}>
+                    {actions.starting ? "Starting..." : "Start"}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+          <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
+          <QueryBlock label="First query" value={pane.firstQuery} />
+          <QueryBlock label="Latest query" value={latestQuery} />
+        </ScrollView>
       </View>
+    </View>
+  );
+
+  // Native detail screens can already be presented inside a native-stack modal
+  // (for example, notification details). Avoid nesting another RN Modal there;
+  // on iOS Fabric that can repeatedly remount the modal host and hit React's
+  // maximum update-depth guard. The in-screen overlay has the same visual and
+  // interaction behavior without creating a second native presentation.
+  if (Platform.OS !== "web") {
+    if (!visible) return null;
+    return <View style={styles.nativeRoot}>{content}</View>;
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      {content}
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  nativeRoot: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 1000,
+    elevation: 1000,
+  },
   root: {
     flex: 1,
     justifyContent: "center",
