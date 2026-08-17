@@ -43,12 +43,10 @@ if ! tmux display-message -t "$PANE_ID" -p '#{pane_id}' >/dev/null 2>&1; then
     exit 1
 fi
 
-# Reuse the floating pane already attached to this agent pane.
+# Toggle the floating pane already attached to this agent pane.
 while read -r existing_pane owner_pane; do
     if [ "$owner_pane" = "$PANE_ID" ]; then
-        existing_window=$(tmux display-message -t "$existing_pane" -p '#{window_id}')
-        tmux select-window -t "$existing_window"
-        tmux select-pane -t "$existing_pane"
+        tmux kill-pane -t "$existing_pane"
         exit 0
     fi
 done < <(tmux list-panes -a -F '#{pane_id} #{@clawtab-control-for}')
