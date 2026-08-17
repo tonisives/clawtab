@@ -74,17 +74,25 @@ export function NotificationsPanel({
   const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
   const estimatedScreenHeight = Math.max(0, windowSize.height - insets.top - insets.bottom);
   const nativeScreenAvailableHeight = panelHeight > 0 ? panelHeight : estimatedScreenHeight;
-  const nativeScreenReserve = 84
-    + (activeQuestionCount > 1 ? 40 : 0)
-    + (!isDemo && autoYesPaneIds.size > 0 ? 42 : 0);
+  const cardBottomInset = Platform.OS === "web" || mode !== "screen" ? 0 : insets.bottom;
+  const nativeScreenTopReserve = (activeQuestionCount > 1 ? 36 : 0)
+    + (!isDemo && autoYesPaneIds.size > 0
+      ? autoYesPaneIds.size > 1 ? 46 : 42
+      : 0);
   const nativeScreenCardMinHeight = Math.min(
     windowSize.height,
-    Math.max(420, nativeScreenAvailableHeight - nativeScreenReserve),
+    Math.max(
+      420,
+      nativeScreenAvailableHeight
+        - spacing.md
+        - nativeScreenTopReserve
+        - spacing.md
+        - cardBottomInset,
+    ),
   );
   const nativeCardMinHeight = mode === "popup"
     ? Math.max(240, nativeAvailableHeight - 120)
     : nativeScreenCardMinHeight;
-  const cardBottomInset = Platform.OS === "web" || mode !== "screen" ? 0 : insets.bottom;
   // React Native exposes the safe-area inset, but not the device's hardware
   // screen-corner radius. 44pt is the common iPhone display corner radius.
   const cardBottomRadius = Platform.OS === "ios" && !Platform.isPad ? 44 : radius.lg;
@@ -180,7 +188,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   nativeScreenContent: {
-    paddingBottom: 0,
+    paddingBottom: spacing.md,
   },
   demoContent: {
     minHeight: 280,

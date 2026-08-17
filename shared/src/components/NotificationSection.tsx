@@ -509,6 +509,7 @@ const styles = StyleSheet.create({
   },
   nativeEdgeToEdge: {
     marginHorizontal: -spacing.md,
+    marginBottom: 0,
   },
   pager: {
     width: "100%",
