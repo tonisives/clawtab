@@ -1,4 +1,4 @@
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { compactPath, formatTime, timeAgo } from "../util/format";
@@ -78,8 +78,11 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
           <View style={styles.header}>
             <View style={styles.headerText}>
               <Text style={styles.title} numberOfLines={1}>{title}</Text>
-              <Text style={styles.sessionTitle} numberOfLines={1}>{pane.tmuxSession || "-"}</Text>
-              <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
+              <View style={styles.headerMeta}>
+                <Text style={styles.sessionTitle} numberOfLines={1}>{pane.tmuxSession || "-"}</Text>
+                <Text style={styles.metaSeparator}>·</Text>
+                <Text style={styles.paneIdTitle} numberOfLines={1}>{pane.paneId}</Text>
+              </View>
             </View>
             <Pressable
               style={styles.closeButton}
@@ -95,33 +98,37 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
           <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
             {(actions?.onToggleAutoYes || actions?.onTogglePin || actions?.onStop || actions?.onStart) ? (
               <View style={styles.actions}>
-                {actions.onToggleAutoYes ? (
-                  <Pressable
-                    style={[styles.actionButton, actions.autoYesActive && styles.actionButtonActive]}
-                    onPress={actions.onToggleAutoYes}
-                    accessibilityRole="button"
-                    accessibilityLabel={actions.autoYesActive ? "Disable auto yes" : "Enable auto yes"}
-                  >
-                    <Text style={[styles.actionText, actions.autoYesActive && styles.actionTextActive]}>
-                      {actions.autoYesActive ? "Auto ON" : "Auto Yes"}
-                    </Text>
-                  </Pressable>
-                ) : null}
-                {actions.onTogglePin ? (
-                  <Pressable
-                    style={[styles.actionButton, actions.isPinned && styles.actionButtonActive]}
-                    onPress={actions.onTogglePin}
-                    accessibilityRole="button"
-                    accessibilityLabel={actions.isPinned ? "Unpin pane" : "Pin pane"}
-                  >
-                    <Text style={[styles.actionText, actions.isPinned && styles.actionTextActive]}>
-                      {actions.isPinned ? "Unpin" : "Pin"}
-                    </Text>
-                  </Pressable>
-                ) : null}
+                <View style={styles.toggleGroup}>
+                  {actions.onToggleAutoYes ? (
+                    <View style={styles.toggleAction}>
+                      <Text style={styles.toggleLabel}>Auto Yes</Text>
+                      <Switch
+                        value={!!actions.autoYesActive}
+                        onValueChange={actions.onToggleAutoYes}
+                        trackColor={{ false: colors.borderLight, true: colors.accent }}
+                        thumbColor={colors.surface}
+                        ios_backgroundColor={colors.borderLight}
+                        accessibilityLabel="Auto Yes"
+                      />
+                    </View>
+                  ) : null}
+                  {actions.onTogglePin ? (
+                    <View style={styles.toggleAction}>
+                      <Text style={styles.toggleLabel}>Pin</Text>
+                      <Switch
+                        value={!!actions.isPinned}
+                        onValueChange={actions.onTogglePin}
+                        trackColor={{ false: colors.borderLight, true: colors.accent }}
+                        thumbColor={colors.surface}
+                        ios_backgroundColor={colors.borderLight}
+                        accessibilityLabel="Pin pane"
+                      />
+                    </View>
+                  ) : null}
+                </View>
                 {actions.onStop ? (
                   <Pressable
-                    style={[styles.actionButton, styles.stopButton]}
+                    style={[styles.endActionButton, styles.stopButton]}
                     onPress={actions.onStop}
                     disabled={actions.stopping}
                     accessibilityRole="button"
@@ -133,7 +140,7 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
                   </Pressable>
                 ) : actions.onStart ? (
                   <Pressable
-                    style={[styles.actionButton, styles.startButton]}
+                    style={[styles.endActionButton, styles.startButton]}
                     onPress={actions.onStart}
                     disabled={actions.starting}
                     accessibilityRole="button"
@@ -186,23 +193,39 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   title: {
+    flex: 1,
+    minWidth: 0,
     color: colors.text,
     fontSize: 17,
     fontWeight: "600",
   },
+  headerMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    maxWidth: "52%",
+    flexShrink: 0,
+  },
   sessionTitle: {
+    flexShrink: 1,
     color: colors.textSecondary,
     fontSize: 11,
     fontFamily: "monospace",
-    marginTop: 2,
+  },
+  metaSeparator: {
+    color: colors.textMuted,
+    fontSize: 11,
   },
   paneIdTitle: {
+    flexShrink: 0,
     color: colors.textMuted,
     fontSize: 12,
     fontFamily: "monospace",
-    marginTop: 1,
   },
   closeButton: {
     minHeight: 32,
@@ -212,12 +235,32 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingBottom: spacing.xs,
   },
-  actionButton: {
+  toggleGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    flexShrink: 1,
+  },
+  toggleAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
     minHeight: 34,
+    flexShrink: 1,
+  },
+  toggleLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  endActionButton: {
+    minHeight: 34,
+    minWidth: 58,
+    marginLeft: "auto",
     paddingHorizontal: spacing.md,
     justifyContent: "center",
     alignItems: "center",
@@ -225,10 +268,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
     backgroundColor: colors.bg,
-  },
-  actionButtonActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentBg,
   },
   stopButton: {
     borderColor: colors.danger,
@@ -242,9 +281,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     fontWeight: "600",
-  },
-  actionTextActive: {
-    color: colors.accent,
   },
   stopText: {
     color: colors.danger,
