@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import type { LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, spacing } from "@clawtab/shared";
@@ -17,6 +18,7 @@ import type { NotificationDetailTarget } from "./notificationTypes";
 interface NotificationsPanelProps {
   mode: "popup" | "screen";
   onNavigateAway?: () => void;
+  onSelectDetail?: (target: NotificationDetailTarget) => void;
   detailTarget?: NotificationDetailTarget | null;
   onDetailTargetChange?: (target: NotificationDetailTarget | null) => void;
 }
@@ -24,6 +26,7 @@ interface NotificationsPanelProps {
 export function NotificationsPanel({
   mode,
   onNavigateAway,
+  onSelectDetail,
   detailTarget: controlledDetailTarget,
   onDetailTargetChange,
 }: NotificationsPanelProps) {
@@ -36,16 +39,28 @@ export function NotificationsPanel({
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const isDemo = connected && !desktopOnline && realJobs.length === 0;
   const [localDetailTarget, setLocalDetailTarget] = useState<NotificationDetailTarget | null>(null);
+  const [panelHeight, setPanelHeight] = useState(0);
   const detailTarget = onDetailTargetChange !== undefined
     ? controlledDetailTarget ?? null
     : localDetailTarget;
-  const setDetailTarget = (target: NotificationDetailTarget | null) => {
+  const setDetailTarget = useCallback((target: NotificationDetailTarget | null) => {
+    if (target && onSelectDetail) {
+      onSelectDetail(target);
+      return;
+    }
     if (onDetailTargetChange) {
       onDetailTargetChange(target);
     } else {
       setLocalDetailTarget(target);
     }
-  };
+  }, [onDetailTargetChange, onSelectDetail]);
+
+  const handlePanelLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextHeight = event.nativeEvent.layout.height;
+    setPanelHeight((previousHeight) => (
+      Math.abs(previousHeight - nextHeight) > 1 ? nextHeight : previousHeight
+    ));
+  }, []);
 
   const activeQuestionCount = useMemo(() => {
     if (isDemo) return DEMO_QUESTIONS.length;
@@ -57,9 +72,14 @@ export function NotificationsPanel({
   const nativeTop = insets.top + 58;
   const nativeBottom = insets.bottom + 58;
   const nativeAvailableHeight = Math.max(260, windowSize.height - nativeTop - nativeBottom - 24);
+  const estimatedScreenHeight = Math.max(0, windowSize.height - insets.top - insets.bottom);
+  const nativeScreenAvailableHeight = panelHeight > 0 ? panelHeight : estimatedScreenHeight;
+  const nativeScreenReserve = 84
+    + (activeQuestionCount > 1 ? 40 : 0)
+    + (!isDemo && autoYesPaneIds.size > 0 ? 42 : 0);
   const nativeScreenCardMinHeight = Math.min(
     windowSize.height,
-    Math.max(420, windowSize.height - insets.top - insets.bottom - 132),
+    Math.max(420, nativeScreenAvailableHeight - nativeScreenReserve),
   );
   const nativeCardMinHeight = mode === "popup"
     ? Math.max(240, nativeAvailableHeight - 120)
@@ -109,6 +129,7 @@ export function NotificationsPanel({
   return (
     <ScrollView
       style={styles.scroll}
+      onLayout={handlePanelLayout}
       contentContainerStyle={[
         styles.content,
         mode === "screen" && styles.screenContent,

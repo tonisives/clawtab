@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Dimensions, Modal, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { GlassView, isGlassEffectAPIAvailable } from "expo-glass-effect";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors } from "@clawtab/shared";
@@ -25,6 +26,7 @@ export function NotificationsMenuButton({
 }) {
   const [open, setOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<NotificationDetailTarget | null>(null);
+  const router = useRouter();
   const [position, setPosition] = useState<{ top: number; right: number }>({ top: 48, right: 12 });
   const windowSize = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -62,6 +64,11 @@ export function NotificationsMenuButton({
       };
 
   const openMenu = () => {
+    if (Platform.OS !== "web") {
+      router.push("/notifications");
+      return;
+    }
+
     const screen = Dimensions.get("window");
     const node = buttonRef.current as unknown as {
       measureInWindow?: (callback: (x: number, y: number, width: number, height: number) => void) => void;

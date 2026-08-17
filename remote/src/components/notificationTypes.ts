@@ -4,6 +4,7 @@ export type NotificationDetailTarget =
   | {
       kind: "job";
       jobName: string;
+      paneId?: string;
       isDemo?: boolean;
     }
   | {

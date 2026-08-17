@@ -11,6 +11,7 @@ import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
 import type { AutoYesEntry, DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 import type { NotificationDetailTarget } from "./notificationTypes";
+import { jobRoute, processRoute } from "../lib/notificationRoutes";
 
 function syncAutoYesToRelay(paneIds: Set<string>) {
   const send = getWsSend();
@@ -24,20 +25,6 @@ interface NotificationStackProps {
   onNavigateAway?: () => void;
   onSelectDetail?: (target: NotificationDetailTarget) => void;
   maxAutoYesEntries?: number;
-}
-
-function jobRoute(jobName: string) {
-  return {
-    pathname: "/job/[name]",
-    params: { name: jobName },
-  } as const;
-}
-
-function processRoute(paneId: string) {
-  return {
-    pathname: "/process/[pane_id]",
-    params: { pane_id: paneId.replace(/%/g, "_pct_") },
-  } as const;
 }
 
 export function NotificationStack({
@@ -78,7 +65,7 @@ export function NotificationStack({
     (_q: ClaudeQuestion, jobName: string | null) => {
       if (onSelectDetail) {
         if (jobName) {
-          onSelectDetail({ kind: "job", jobName });
+          onSelectDetail({ kind: "job", jobName, paneId: _q.pane_id });
         } else {
           onSelectDetail({
             kind: "process",
@@ -225,7 +212,7 @@ export function NotificationStack({
     (entry: AutoYesEntry) => {
       if (onSelectDetail) {
         if (entry.jobSlug) {
-          onSelectDetail({ kind: "job", jobName: entry.jobSlug });
+          onSelectDetail({ kind: "job", jobName: entry.jobSlug, paneId: entry.paneId });
         } else {
           onSelectDetail({
             kind: "process",

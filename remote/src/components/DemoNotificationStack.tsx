@@ -31,7 +31,7 @@ export function DemoNotificationStack({
   const handleNavigate = (q: ClaudeQuestion, resolvedJob: string | null) => {
     if (!onSelectDetail) return;
     if (resolvedJob) {
-      onSelectDetail({ kind: "job", jobName: resolvedJob, isDemo: true });
+      onSelectDetail({ kind: "job", jobName: resolvedJob, paneId: q.pane_id, isDemo: true });
       return;
     }
     onSelectDetail({

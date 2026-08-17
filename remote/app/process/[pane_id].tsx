@@ -21,6 +21,7 @@ import { useResponsive } from "../../src/hooks/useResponsive";
 import { useTerminalKeyboard } from "../../src/hooks/useTerminalKeyboard";
 import { confirm } from "../../src/lib/platform";
 import { DEMO_PROCESSES } from "../../src/demo/data";
+import { jobRoute } from "../../src/lib/notificationRoutes";
 
 const KEYBOARD_TOOLBAR_HEIGHT = 48;
 const KEYBOARD_EXTRA_CLEARANCE = 10;
@@ -44,7 +45,7 @@ function encodeTerminalInput(text: string): string {
 }
 
 export default function ProcessDetailScreen() {
-  const { pane_id: rawPaneId } = useLocalSearchParams<{ pane_id: string }>();
+  const { pane_id: rawPaneId, source } = useLocalSearchParams<{ pane_id: string; source?: string }>();
   const router = useRouter();
   const goBack = useDetailBack("/(tabs)");
   const insets = useSafeAreaInsets();
@@ -52,6 +53,7 @@ export default function ProcessDetailScreen() {
   // Tmux pane_ids start with % (e.g. %714) which gets mangled by URL encoding.
   // We encode % as _pct_ in URLs and decode it back here.
   const pane_id = (rawPaneId ?? "").replace(/_pct_/g, "%");
+  const preserveTerminal = source === "notifications";
 
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === pane_id),
@@ -65,18 +67,18 @@ export default function ProcessDetailScreen() {
   const statuses = useJobsStore((s) => s.statuses);
   const questions = useNotificationStore((s) => s.questions);
   useEffect(() => {
-    if (process) return; // found as detected process, no redirect needed
+    if (process || preserveTerminal) return; // notification details stay on the terminal route
     const paneQuestions = questions.filter((q) => q.pane_id === pane_id);
     for (const q of paneQuestions) {
       if (q.matched_job) {
-        router.replace(`/job/${q.matched_job}`);
+        router.replace(jobRoute(q.matched_job));
         return;
       }
       for (const job of jobs) {
         if (statuses[job.name]?.state !== "running") continue;
         const dir = job.work_dir || job.path;
         if (dir && (q.cwd === dir || q.cwd.startsWith(dir + "/"))) {
-          router.replace(`/job/${job.name}`);
+          router.replace(jobRoute(job.name));
           return;
         }
       }
@@ -84,13 +86,13 @@ export default function ProcessDetailScreen() {
         for (const job of jobs) {
           if (statuses[job.name]?.state !== "running") continue;
           if (job.group === q.matched_group) {
-            router.replace(`/job/${job.name}`);
+            router.replace(jobRoute(job.name));
             return;
           }
         }
       }
     }
-  }, [process, pane_id, questions, jobs, statuses, router]);
+  }, [process, pane_id, preserveTerminal, questions, jobs, statuses, router]);
 
   const connected = useWsStore((s) => s.connected);
   const desktopOnline = useWsStore((s) => s.desktopOnline);
