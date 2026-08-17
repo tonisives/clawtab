@@ -68,6 +68,10 @@ export interface NotificationCardProps {
   /** Override the auto-reset delay (ms) for the "Sent" indicator. Default: 10000 */
   answerResetMs?: number;
   cardMinHeight?: number;
+  /** Native bottom safe-area inset reserved inside the card. */
+  cardBottomInset?: number;
+  /** Native bottom corner radius, when the card reaches the screen bottom. */
+  cardBottomRadius?: number;
   onOptionScrollBegin?: () => void;
   onOptionScrollEnd?: () => void;
 }
@@ -84,6 +88,8 @@ export function NotificationCard({
   isLast,
   answerResetMs = 10000,
   cardMinHeight,
+  cardBottomInset = 0,
+  cardBottomRadius,
   onOptionScrollBegin,
   onOptionScrollEnd,
 }: NotificationCardProps) {
@@ -160,7 +166,19 @@ export function NotificationCard({
 
   const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160);
   const cardSizeStyle = cardMinHeight
-    ? { minHeight: cardMinHeight, maxHeight: cardMinHeight }
+    ? {
+        minHeight: cardMinHeight + (!isWeb ? cardBottomInset : 0),
+        maxHeight: cardMinHeight + (!isWeb ? cardBottomInset : 0),
+      }
+    : null;
+  const cardShapeStyle = !isWeb && cardBottomRadius != null
+    ? {
+        borderBottomLeftRadius: cardBottomRadius,
+        borderBottomRightRadius: cardBottomRadius,
+      }
+    : null;
+  const nativeBottomInsetStyle = !isWeb && cardBottomInset > 0
+    ? { paddingBottom: 8 + cardBottomInset }
     : null;
   const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)));
 
@@ -220,7 +238,7 @@ export function NotificationCard({
       {optionControls}
     </ScrollView>
   ) : (
-    <View style={[styles.optionRow, styles.optionRowNative]}>
+    <View style={[styles.optionRow, styles.optionRowNative, nativeBottomInsetStyle]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -289,7 +307,7 @@ export function NotificationCard({
 
       {question.options.length > 0 && (
         showAnswered ? (
-          <View style={styles.sentRow}>
+          <View style={[styles.sentRow, nativeBottomInsetStyle]}>
             <ActivityIndicator size="small" color={autoAnswered ? colors.warning : colors.accent} />
             <Text style={styles.sentText}>{autoAnswered ? "Auto-accepted" : "Sent"}</Text>
           </View>
@@ -326,7 +344,7 @@ export function NotificationCard({
   }
 
   if (isLast) {
-    return <View style={[styles.card, !isWeb && styles.cardNative, cardSizeStyle]}>{cardContent}</View>;
+    return <View style={[styles.card, !isWeb && styles.cardNative, cardShapeStyle, cardSizeStyle]}>{cardContent}</View>;
   }
 
   return (
@@ -334,6 +352,7 @@ export function NotificationCard({
       style={[
         styles.card,
         !isWeb && styles.cardNative,
+        cardShapeStyle,
         cardSizeStyle,
         answered && {
           opacity: flyAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
@@ -420,7 +439,8 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   answerOptionsNative: {
-    width: "100%",
+    flex: 1,
+    minWidth: 0,
   },
   answerOptionsNativeContent: {
     flexDirection: "row",
@@ -473,11 +493,13 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   autoYesBtnNative: {
+    width: 92,
     minHeight: 44,
+    flexShrink: 0,
     alignSelf: "stretch",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     paddingVertical: 10,
     borderRadius: 999,
   },
@@ -490,8 +512,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   autoYesBtnTextNative: {
-    fontSize: 14,
-    lineHeight: 19,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "700",
   },
   sentRow: {

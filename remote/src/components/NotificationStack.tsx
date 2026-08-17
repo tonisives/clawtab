@@ -25,6 +25,8 @@ interface NotificationStackProps {
   onNavigateAway?: () => void;
   onSelectDetail?: (target: NotificationDetailTarget) => void;
   maxAutoYesEntries?: number;
+  cardBottomInset?: number;
+  cardBottomRadius?: number;
 }
 
 export function NotificationStack({
@@ -33,6 +35,8 @@ export function NotificationStack({
   onNavigateAway,
   onSelectDetail,
   maxAutoYesEntries,
+  cardBottomInset,
+  cardBottomRadius,
 }: NotificationStackProps) {
   const router = useRouter();
   const questions = useNotificationStore((s) => s.questions);
@@ -278,6 +282,8 @@ export function NotificationStack({
           onToggleAutoYes={handleToggleAutoYes}
           autoAnsweredIds={autoAnsweredIds}
           cardMinHeight={cardMinHeight}
+          cardBottomInset={cardBottomInset}
+          cardBottomRadius={cardBottomRadius}
         />
       )}
     </View>

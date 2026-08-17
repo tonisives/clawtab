@@ -9,12 +9,16 @@ import type { NotificationDetailTarget } from "./notificationTypes";
 interface DemoNotificationStackProps {
   embedded?: boolean;
   cardMinHeight?: number;
+  cardBottomInset?: number;
+  cardBottomRadius?: number;
   onSelectDetail?: (target: NotificationDetailTarget) => void;
 }
 
 export function DemoNotificationStack({
   embedded = false,
   cardMinHeight = 260,
+  cardBottomInset,
+  cardBottomRadius,
   onSelectDetail,
 }: DemoNotificationStackProps) {
   const [visible, setVisible] = useState(embedded);
@@ -54,6 +58,8 @@ export function DemoNotificationStack({
         autoAnsweredIds={new Set()}
         answerResetMs={1000}
         cardMinHeight={cardMinHeight}
+        cardBottomInset={cardBottomInset}
+        cardBottomRadius={cardBottomRadius}
       />
     </View>
   );

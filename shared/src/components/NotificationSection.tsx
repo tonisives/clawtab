@@ -36,6 +36,10 @@ export interface NotificationSectionProps {
   /** Optional wrapper for active question cards (for drag handles, etc.) */
   wrapQuestionCard?: (question: ClaudeQuestion, card: React.ReactNode) => React.ReactNode;
   cardMinHeight?: number;
+  /** Native bottom safe-area inset reserved inside the card. */
+  cardBottomInset?: number;
+  /** Native bottom corner radius, when the card reaches the screen bottom. */
+  cardBottomRadius?: number;
 }
 
 interface DepartingQuestion {
@@ -58,6 +62,8 @@ export function NotificationSection({
   answerResetMs,
   wrapQuestionCard,
   cardMinHeight,
+  cardBottomInset = 0,
+  cardBottomRadius,
 }: NotificationSectionProps) {
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -298,6 +304,8 @@ export function NotificationSection({
         autoAnswered={autoAnsweredIds?.has(d.question.question_id)}
         answerResetMs={answerResetMs}
         cardMinHeight={cardMinHeight}
+        cardBottomInset={cardBottomInset}
+        cardBottomRadius={cardBottomRadius}
         onOptionScrollBegin={() => setOptionScrollActive(true)}
         onOptionScrollEnd={() => setOptionScrollActive(false)}
       />
@@ -330,7 +338,7 @@ export function NotificationSection({
           ],
         }}
       >
-        {card}
+        <View style={styles.cardPageContentNative}>{card}</View>
       </Animated.View>
     );
   };
@@ -358,6 +366,8 @@ export function NotificationSection({
         isLast={count === 1}
         answerResetMs={answerResetMs}
         cardMinHeight={cardMinHeight}
+        cardBottomInset={cardBottomInset}
+        cardBottomRadius={cardBottomRadius}
         onOptionScrollBegin={() => setOptionScrollActive(true)}
         onOptionScrollEnd={() => setOptionScrollActive(false)}
       />
@@ -508,7 +518,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   cardPageContentNative: {
-    marginRight: spacing.md,
+    marginHorizontal: spacing.md,
   },
   headerRow: {
     flexDirection: "row",

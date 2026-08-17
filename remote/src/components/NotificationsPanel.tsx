@@ -4,7 +4,7 @@ import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions,
 import type { LayoutChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { colors, spacing } from "@clawtab/shared";
+import { colors, radius, spacing } from "@clawtab/shared";
 import { DEMO_QUESTIONS } from "../demo/data";
 import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
@@ -84,6 +84,10 @@ export function NotificationsPanel({
   const nativeCardMinHeight = mode === "popup"
     ? Math.max(240, nativeAvailableHeight - 120)
     : nativeScreenCardMinHeight;
+  const cardBottomInset = Platform.OS === "web" || mode !== "screen" ? 0 : insets.bottom;
+  // React Native exposes the safe-area inset, but not the device's hardware
+  // screen-corner radius. 44pt is the common iPhone display corner radius.
+  const cardBottomRadius = Platform.OS === "ios" && !Platform.isPad ? 44 : radius.lg;
 
   if (detailTarget) {
     return (
@@ -141,12 +145,16 @@ export function NotificationsPanel({
           <DemoNotificationStack
             embedded
             cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
+            cardBottomInset={cardBottomInset}
+            cardBottomRadius={cardBottomRadius}
             onSelectDetail={setDetailTarget}
           />
         ) : (
           <NotificationStack
             embedded
             cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
+            cardBottomInset={cardBottomInset}
+            cardBottomRadius={cardBottomRadius}
             onNavigateAway={onNavigateAway}
             onSelectDetail={setDetailTarget}
             maxAutoYesEntries={Platform.OS === "web" ? undefined : 1}
