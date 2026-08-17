@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Keyboard, TextInput } from "react-native";
 import { useLocalSearchParams, Stack, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
@@ -304,22 +304,53 @@ export default function ProcessDetailScreen() {
     setTimeout(() => setStarting(false), 3000);
   }, [lastProcess, process, starting]);
 
+  const openPaneOverview = useCallback(() => setShowPaneOverview(true), []);
+  const waitingHeaderOptions = useMemo(() => ({
+    headerShown: !isWide,
+    title: pane_id,
+    headerStyle: { backgroundColor: colors.bg },
+    headerTintColor: colors.text,
+    headerTitleStyle: { fontWeight: "600" as const },
+    headerBackTitle: "",
+    headerBackButtonDisplayMode: "minimal" as const,
+  }), [isWide, pane_id]);
+  const terminalHeaderOptions = useMemo(() => ({
+    headerShown: !isWide,
+    headerStyle: { backgroundColor: colors.bg },
+    headerTintColor: colors.text,
+    headerTitleStyle: { fontWeight: "600" as const },
+    headerBackTitle: "",
+    headerBackButtonDisplayMode: "minimal" as const,
+    headerTitle: () => (
+      <HeaderTitleWithIcon
+        title={headerTitle}
+        icon={<JobKindIcon kind={headerKind} size={26} bare />}
+        onPress={openPaneOverview}
+        accessibilityLabel="Open pane overview"
+      />
+    ),
+    headerRight: () => (
+      <View style={styles.headerRightSlot}>
+        <TouchableOpacity
+          style={styles.contextBtn}
+          onPress={openPaneOverview}
+          activeOpacity={0.6}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Open pane overview"
+        >
+          <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+    ),
+  }), [headerKind, headerTitle, isWide, openPaneOverview]);
+
   const isAlive = !!process || !!paneQuestion;
   if (waitingForData) {
     const loading = processLoadingState({ connected, desktopOnline, hasTmuxSession: !!tmuxSession });
     return (
       <View style={styles.container}>
-        <Stack.Screen
-          options={{
-            headerShown: !isWide,
-            title: pane_id,
-            headerStyle: { backgroundColor: colors.bg },
-            headerTintColor: colors.text,
-            headerTitleStyle: { fontWeight: "600" },
-            headerBackTitle: "",
-            headerBackButtonDisplayMode: "minimal",
-          }}
-        />
+        <Stack.Screen options={waitingHeaderOptions} />
         <View style={styles.center}>
           <LoadingBar label={loading.label} progress={loading.progress} />
         </View>
@@ -336,38 +367,7 @@ export default function ProcessDetailScreen() {
   });
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          headerShown: !isWide,
-          headerStyle: { backgroundColor: colors.bg },
-          headerTintColor: colors.text,
-          headerTitleStyle: { fontWeight: "600" },
-          headerBackTitle: "",
-          headerBackButtonDisplayMode: "minimal",
-          headerTitle: () => (
-            <HeaderTitleWithIcon
-              title={headerTitle}
-              icon={<JobKindIcon kind={headerKind} size={26} bare />}
-              onPress={() => setShowPaneOverview(true)}
-              accessibilityLabel="Open pane overview"
-            />
-          ),
-          headerRight: () => (
-            <View style={styles.headerRightSlot}>
-              <TouchableOpacity
-                style={styles.contextBtn}
-                onPress={() => setShowPaneOverview(true)}
-                activeOpacity={0.6}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Open pane overview"
-              >
-                <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-          ),
-        }}
-      />
+      <Stack.Screen options={terminalHeaderOptions} />
       <View style={[styles.terminalContainer, { paddingBottom: Math.max(12, insets.bottom + 8) }]}>
         <View
           ref={terminalSurfaceRef}
