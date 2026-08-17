@@ -2,6 +2,11 @@ use crate::agent_session::ProcessProvider;
 use crate::tmux;
 
 use super::TmuxHandle;
+use std::io::Write;
+use std::path::Path;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 
 /// Args for spawning an agent pane via tmux. Shared by Claude and Folder job types.
 pub(super) struct SpawnArgs<'a> {
@@ -42,14 +47,30 @@ pub(super) async fn spawn_agent_pane(
         return Err("tmux is not installed".to_string());
     }
 
+    let prompt_file = if provider == ProcessProvider::Shell {
+        None
+    } else {
+        Some(write_prompt_file(&prompt_content)?)
+    };
+
     if !tmux::session_exists(&tmux_session) {
-        tmux::create_session(&tmux_session)?;
+        if let Err(error) = tmux::create_session(&tmux_session) {
+            remove_prompt_file(prompt_file.as_deref());
+            return Err(error);
+        }
     }
 
     // Every spawn gets its own window - clawtab needs independent geometry
     // per tab, which tmux splits can't give us.
     let pane_id =
-        tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)?;
+        match tmux::create_window_with_cwd(&tmux_session, &window_name, Some(&work_dir), &env_vars)
+        {
+            Ok(pane_id) => pane_id,
+            Err(error) => {
+                remove_prompt_file(prompt_file.as_deref());
+                return Err(error);
+            }
+        };
 
     let send_cmd = build_send_cmd(
         provider,
@@ -57,9 +78,13 @@ pub(super) async fn spawn_agent_pane(
         &agent_command,
         model.as_deref(),
         effort.as_deref(),
+        prompt_file.as_deref(),
         &prompt_content,
     );
-    tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd)?;
+    if let Err(error) = tmux::send_keys_to_pane(&tmux_session, &pane_id, &send_cmd) {
+        remove_prompt_file(prompt_file.as_deref());
+        return Err(error);
+    }
 
     tag_pane(&pane_id, slug);
 
@@ -82,6 +107,7 @@ fn build_send_cmd(
     agent_command: &str,
     model: Option<&str>,
     effort: Option<&str>,
+    prompt_file: Option<&Path>,
     prompt_content: &str,
 ) -> String {
     let model_flag = model
@@ -93,19 +119,30 @@ fn build_send_cmd(
         .map(|value| provider.effort_flag_format(value))
         .unwrap_or_default();
     let escaped_prompt = prompt_content.replace('\'', "'\\''");
+    let prompt_arg = prompt_file
+        .map(|path| format!("\"$(cat {})\"", shell_quote(&path.display().to_string())))
+        .unwrap_or_else(|| format!("$'{}'", escaped_prompt));
+    let cleanup = prompt_file
+        .map(|path| {
+            format!(
+                "; status=$?; rm -f {}; exit $status",
+                shell_quote(&path.display().to_string())
+            )
+        })
+        .unwrap_or_default();
 
     match provider {
         ProcessProvider::Claude | ProcessProvider::Codex => format!(
-            "cd {} && {}{}{} $'{}'",
-            work_dir, agent_command, model_flag, effort_flag, escaped_prompt
+            "cd {} && {}{}{} {}{}",
+            work_dir, agent_command, model_flag, effort_flag, prompt_arg, cleanup
         ),
         ProcessProvider::Opencode => format!(
-            "cd {} && {}{}{} --prompt $'{}'",
-            work_dir, agent_command, model_flag, effort_flag, escaped_prompt
+            "cd {} && {}{}{} --prompt {}{}",
+            work_dir, agent_command, model_flag, effort_flag, prompt_arg, cleanup
         ),
         ProcessProvider::Antigravity => format!(
-            "cd {} && {}{}{} --prompt-interactive $'{}'",
-            work_dir, agent_command, model_flag, effort_flag, escaped_prompt
+            "cd {} && {}{}{} --prompt-interactive {}{}",
+            work_dir, agent_command, model_flag, effort_flag, prompt_arg, cleanup
         ),
         ProcessProvider::Shell => {
             if escaped_prompt.is_empty() {
@@ -114,6 +151,81 @@ fn build_send_cmd(
                 format!("cd {} && {}", work_dir, escaped_prompt)
             }
         }
+    }
+}
+
+/// Store the assembled prompt outside the tmux command line. tmux has a much
+/// smaller practical argument limit than the agent process, and folder jobs
+/// can combine several context files into a prompt larger than that limit.
+fn write_prompt_file(prompt_content: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::env::temp_dir().join(format!("clawtab-prompt-{}.md", uuid::Uuid::new_v4()));
+    let mut options = std::fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+
+    let mut file = options
+        .open(&path)
+        .map_err(|error| format!("Failed to create prompt file {}: {}", path.display(), error))?;
+    if let Err(error) = file
+        .write_all(prompt_content.as_bytes())
+        .and_then(|_| file.sync_all())
+    {
+        let _ = std::fs::remove_file(&path);
+        return Err(format!(
+            "Failed to write prompt file {}: {}",
+            path.display(),
+            error
+        ));
+    }
+    Ok(path)
+}
+
+fn remove_prompt_file(path: Option<&Path>) {
+    if let Some(path) = path {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_prompt_is_loaded_from_a_file() {
+        let prompt_file = Path::new("/tmp/clawtab-prompt-test.md");
+        let command = build_send_cmd(
+            ProcessProvider::Codex,
+            "/tmp/project",
+            "codex",
+            Some("gpt-5.6"),
+            Some("max"),
+            Some(prompt_file),
+            "prompt content must not be embedded",
+        );
+
+        assert!(command.contains("\"$(cat '/tmp/clawtab-prompt-test.md')\""));
+        assert!(command.contains("rm -f '/tmp/clawtab-prompt-test.md'"));
+        assert!(!command.contains("prompt content must not be embedded"));
+    }
+
+    #[test]
+    fn shell_prompt_keeps_existing_inline_behavior() {
+        let command = build_send_cmd(
+            ProcessProvider::Shell,
+            "/tmp/project",
+            "",
+            None,
+            None,
+            None,
+            "echo hello",
+        );
+
+        assert_eq!(command, "cd /tmp/project && echo hello");
     }
 }
 
