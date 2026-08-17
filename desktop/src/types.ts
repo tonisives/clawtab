@@ -189,6 +189,7 @@ export interface ProviderUsageSnapshot {
   summary: string;
   note: string | null;
   entries: UsageEntry[];
+  week_used_percent?: number | null;
 }
 
 export interface UsageSnapshot {

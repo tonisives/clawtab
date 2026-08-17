@@ -6,6 +6,7 @@ use crate::job::{
     AgentActivity, ClaudeQuestion, DetectedProcess, JobStatus, JobUpdate, RemoteJob, RunDetail,
     RunRecord,
 };
+use crate::usage::UsageSnapshot;
 
 /// Messages sent by mobile/web clients to the relay server.
 /// The relay forwards these to the appropriate desktop app.
@@ -96,6 +97,9 @@ pub enum ClientMessage {
         id: String,
     },
     GetSettings {
+        id: String,
+    },
+    GetUsage {
         id: String,
     },
     GetRunDetail {
@@ -301,6 +305,8 @@ pub enum DesktopMessage {
         default_provider: String,
         default_model: Option<String>,
     },
+    /// Response to get_usage
+    UsageResponse { id: String, usage: UsageSnapshot },
     /// Response to get_run_detail
     RunDetailResponse {
         id: String,

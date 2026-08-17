@@ -26,6 +26,7 @@ export type ClientMessage =
   | { type: "update_job"; id: string; name: string; update: JobUpdate }
   | { type: "detect_processes"; id: string }
   | { type: "get_settings"; id: string }
+  | { type: "get_usage"; id: string }
   | { type: "get_run_detail"; id: string; run_id: string }
   | { type: "get_detected_process_logs"; id: string; tmux_session: string; pane_id: string }
   | { type: "send_detected_process_input"; id: string; pane_id: string; text: string }
@@ -81,6 +82,7 @@ export type DesktopMessage =
   | { type: "detected_processes"; id: string; processes: DetectedProcess[] }
   | { type: "agent_activity"; activity: AgentActivity[] }
   | { type: "settings_response"; id: string; enabled_models: Record<string, string[]>; default_provider: string; default_model?: string }
+  | { type: "usage_response"; id: string; usage: UsageSnapshot }
   | { type: "run_detail_response"; id: string; detail?: RunDetail }
   | { type: "detected_process_logs"; id: string; logs: string }
   | { type: "send_detected_process_input_ack"; id: string; success: boolean }
@@ -114,3 +116,25 @@ export type ServerMessage =
     };
 
 export type IncomingMessage = DesktopMessage | ServerMessage;
+
+export interface UsageEntry {
+  label: string;
+  value: string;
+}
+
+export interface ProviderUsageSnapshot {
+  provider: string;
+  status: string;
+  summary: string;
+  note?: string | null;
+  entries: UsageEntry[];
+  week_used_percent?: number | null;
+}
+
+export interface UsageSnapshot {
+  refreshed_at: string;
+  claude: ProviderUsageSnapshot;
+  codex: ProviderUsageSnapshot;
+  antigravity: ProviderUsageSnapshot;
+  zai: ProviderUsageSnapshot;
+}

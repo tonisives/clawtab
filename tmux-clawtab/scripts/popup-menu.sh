@@ -313,6 +313,7 @@ USAGE_PROVIDER=""
 USAGE_TITLE=""
 USAGE_SESSION=""
 USAGE_WEEK=""
+USAGE_WEEK_PERCENT=""
 USAGE_LINE=""
 USAGE_FILE=""
 USAGE_DONE_FILE=""
@@ -490,6 +491,7 @@ prepare_usage() {
     USAGE_TITLE=""
     USAGE_SESSION=""
     USAGE_WEEK=""
+    USAGE_WEEK_PERCENT=""
     USAGE_LINE=""
 
     case "$AGENT_LABEL" in
@@ -583,6 +585,41 @@ compact_usage_value() {
     fi
 }
 
+usage_percent_value() {
+    local value="$1"
+    local percent=""
+
+    if [[ "$value" == *"% left"* ]]; then
+        local left="${value%%\% left*}"
+        if [[ "$left" =~ ^[0-9]+$ ]]; then
+            percent=$((100 - left))
+        fi
+    elif [[ "$value" == *"% remaining"* ]]; then
+        local remaining="${value%%\% remaining*}"
+        if [[ "$remaining" =~ ^[0-9]+$ ]]; then
+            percent=$((100 - remaining))
+        fi
+    elif [[ "$value" =~ ([0-9]+([.][0-9]+)?)% ]]; then
+        percent=$(printf '%.0f' "${BASH_REMATCH[1]}")
+    fi
+
+    if [[ "$percent" =~ ^[0-9]+$ ]]; then
+        [ "$percent" -gt 100 ] && percent=100
+        [ "$percent" -lt 0 ] && percent=0
+        printf '%s' "$percent"
+    fi
+}
+
+week_progress_percent() {
+    local day hour minute second elapsed
+    day=$(date '+%u')
+    hour=$(date '+%H')
+    minute=$(date '+%M')
+    second=$(date '+%S')
+    elapsed=$(( (day - 1) * 86400 + hour * 3600 + minute * 60 + second ))
+    printf '%s' $((elapsed * 100 / 604800))
+}
+
 finish_usage_load() {
     [ "$USAGE_LOADING" -eq 1 ] || return 1
     [ -f "$USAGE_DONE_FILE" ] || return 1
@@ -595,6 +632,8 @@ finish_usage_load() {
             week=*) USAGE_WEEK="${line#week=}" ;;
         esac
     done <<< "$raw"
+
+    USAGE_WEEK_PERCENT=$(usage_percent_value "$USAGE_WEEK")
 
     USAGE_LOADING=0
     rm -f "$USAGE_FILE" "$USAGE_DONE_FILE"
@@ -714,6 +753,57 @@ draw_usage_line() {
         fi
         printf "${C_NORMAL}%s${C_RESET}" "$line" >&3
     fi
+    draw_row_end "$row"
+}
+
+draw_usage_bar() {
+    local row=$1
+    local usage="$USAGE_WEEK_PERCENT"
+    local pace
+    local bar_width
+    local usage_pos
+    local pace_width
+    local i
+
+    [ -n "$usage" ] || return
+    pace=$(week_progress_percent)
+    bar_width=$((TERM_COLS - 4))
+    [ "$bar_width" -lt 10 ] && bar_width=10
+    usage_pos=$((usage * (bar_width - 1) / 100))
+    pace_width=$((pace * bar_width / 100))
+
+    draw_row_start "$row"
+    printf ' ' >&3
+    for ((i=0; i<bar_width; i++)); do
+        if [ "$i" -eq "$usage_pos" ]; then
+            printf "${C_SEARCH}┆${C_RESET}" >&3
+        elif [ "$i" -lt "$pace_width" ]; then
+            printf "${C_CHECK_ON}━${C_RESET}" >&3
+        else
+            printf "${C_DIM}─${C_RESET}" >&3
+        fi
+    done
+    draw_row_end "$row"
+}
+
+draw_usage_bar_legend() {
+    local row=$1
+    local pace
+    local delta
+    local comparison="on pace"
+    local text
+
+    pace=$(week_progress_percent)
+    delta=$((USAGE_WEEK_PERCENT - pace))
+
+    if [ "$delta" -gt 0 ]; then
+        comparison="${delta}% ahead"
+    elif [ "$delta" -lt 0 ]; then
+        comparison="$((-delta))% behind"
+    fi
+    text="solid week ${pace}%  dotted usage ${USAGE_WEEK_PERCENT}%  ${comparison}"
+    draw_row_start "$row"
+    printf "${C_DIM}%s${C_RESET}" "$(trim_for_row "$text" 4)" >&3
     draw_row_end "$row"
 }
 
@@ -843,6 +933,12 @@ draw_shortcuts() {
     if [ -n "$USAGE_LINE" ]; then
         draw_usage_line "$row"
         ((row++))
+        if [ -n "$USAGE_WEEK_PERCENT" ]; then
+            draw_usage_bar "$row"
+            ((row++))
+            draw_usage_bar_legend "$row"
+            ((row++))
+        fi
         draw_empty_row $row
         ((row++))
     fi

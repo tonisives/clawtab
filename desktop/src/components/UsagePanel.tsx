@@ -162,6 +162,9 @@ export function UsagePanel() {
 }
 
 function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapshot }) {
+  const weekEntry = usage.entries.find((entry) => entry.label.toLowerCase() === "week")
+  const weekPercent = usage.week_used_percent ?? parseUsagePercent(weekEntry?.value)
+
   return (
     <div className="usage-card">
       <div className="usage-card-header">
@@ -169,6 +172,7 @@ function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapsh
         <span className={`usage-badge usage-${usage.status}`}>{usage.status}</span>
       </div>
       <div className="usage-summary">{usage.summary}</div>
+      {weekPercent != null && <UsagePaceBar usagePercent={weekPercent} />}
       {usage.entries.length > 0 && (
         <div className="usage-list">
           {usage.entries.map((entry) => (
@@ -182,6 +186,60 @@ function UsageCard({ title, usage }: { title: string; usage: ProviderUsageSnapsh
       {usage.note && <div className="usage-note">{usage.note}</div>}
     </div>
   )
+}
+
+function UsagePaceBar({ usagePercent }: { usagePercent: number }) {
+  const [weekProgress, setWeekProgress] = useState(() => weekProgressPercent())
+  const usage = clamp(usagePercent)
+  const roundedUsage = Math.round(usage)
+  const roundedWeek = Math.round(weekProgress)
+  const delta = roundedUsage - roundedWeek
+  const comparison = delta === 0
+    ? "On pace"
+    : delta > 0
+      ? `${delta} pts ahead of week pace`
+      : `${Math.abs(delta)} pts behind week pace`
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setWeekProgress(weekProgressPercent()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="usage-pace" aria-label={`Weekly usage ${roundedUsage}%, ${comparison}`}>
+      <div className="usage-pace-header">
+        <span>Week pace {roundedWeek}%</span>
+        <strong>{roundedUsage}% used</strong>
+      </div>
+      <div className="usage-pace-track">
+        <div className="usage-pace-fill" style={{ width: `${weekProgress}%` }} />
+        <div className="usage-pace-marker" style={{ left: `${usage}%` }} />
+      </div>
+      <div className="usage-pace-footer">
+        <span>solid: elapsed week</span>
+        <span className={delta > 0 ? "usage-pace-ahead" : ""}>{comparison}</span>
+      </div>
+    </div>
+  )
+}
+
+function parseUsagePercent(value: string | undefined): number | null {
+  const match = value?.match(/(\d+(?:\.\d+)?)\s*%/)
+  if (!match) return null
+  const percent = Number(match[1])
+  return Number.isFinite(percent) ? clamp(percent) : null
+}
+
+function weekProgressPercent(date = new Date()): number {
+  const start = new Date(date)
+  const daysSinceMonday = (start.getDay() + 6) % 7
+  start.setDate(start.getDate() - daysSinceMonday)
+  start.setHours(0, 0, 0, 0)
+  return clamp(((date.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000)) * 100)
+}
+
+function clamp(value: number): number {
+  return Math.max(0, Math.min(100, value))
 }
 
 function formatLastChecked(date: Date): string {

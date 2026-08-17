@@ -105,6 +105,65 @@
   margin-bottom: 10px;
 }
 
+.usage-pace {
+  margin: 10px 0 12px;
+}
+
+.usage-pace-header,
+.usage-pace-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+
+.usage-pace-header {
+  margin-bottom: 5px;
+}
+
+.usage-pace-header strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.usage-pace-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border-light);
+}
+
+.usage-pace-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-color, #7986cb);
+}
+
+.usage-pace-marker {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 0;
+  border-left: 2px dotted var(--text-primary);
+}
+
+.usage-pace-footer {
+  margin-top: 5px;
+  color: var(--text-muted);
+}
+
+.usage-pace-footer span:last-child {
+  color: var(--warning-color);
+  font-weight: 600;
+  text-align: right;
+}
+
+.usage-pace-footer .usage-pace-ahead {
+  color: var(--danger-color);
+}
+
 .usage-list {
   display: flex;
   flex-direction: column;
