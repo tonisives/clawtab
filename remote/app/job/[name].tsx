@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, View, Text, StyleSheet, Platform, Keyboard, TouchableOpacity, TextInput } from "react-native";
 import { useLocalSearchParams, Stack } from "expo-router";
 import * as Clipboard from "expo-clipboard";
@@ -297,22 +297,44 @@ export default function JobDetailScreen() {
     ),
     [sendInput, sendResize, ptyConnecting, ptyError, scrollTerminal, exitCopyMode, copyModeActive, insets.bottom, handleTerminalLayout],
   );
+  const loadingHeaderOptions = useMemo(() => ({
+    headerShown: !isWide,
+    title: name,
+    headerStyle: { backgroundColor: colors.bg },
+    headerTintColor: colors.text,
+    headerTitleStyle: { fontWeight: "600" },
+    headerBackTitle: "",
+    headerBackButtonDisplayMode: "minimal" as const,
+  }), [isWide, name]);
+  const jobHeaderName = job?.name ?? name;
+  const jobHeaderKind = job ? kindForJob(job) : "claude";
+  const jobHeaderOptions = useMemo(() => ({
+    headerShown: !isWide,
+    headerStyle: { backgroundColor: colors.bg },
+    headerTintColor: colors.text,
+    headerTitleStyle: { fontWeight: "600" },
+    headerBackTitle: "",
+    headerBackButtonDisplayMode: "minimal" as const,
+    headerTitle: () => (
+      <HeaderTitleWithIcon
+        title={jobHeaderName}
+        icon={<JobKindIcon kind={jobHeaderKind} size={26} bare />}
+      />
+    ),
+    headerRight: () => (
+      <HeaderStatusDot
+        color={autoYesActive ? colors.warning : statusColor(status)}
+        onPress={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
+        accessibilityLabel={isDemo || !autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
+      />
+    ),
+  }), [autoYesActive, autoYesPaneId, handleToggleAutoYes, isDemo, isWide, jobHeaderKind, jobHeaderName, status]);
   if (!job) {
     // If jobs haven't loaded yet (cold start from notification), show loading state
     const waiting = !loaded || !connected;
     return (
       <View style={styles.container}>
-        <Stack.Screen
-          options={{
-            headerShown: !isWide,
-            title: name,
-            headerStyle: { backgroundColor: colors.bg },
-            headerTintColor: colors.text,
-            headerTitleStyle: { fontWeight: "600" },
-            headerBackTitle: "",
-            headerBackButtonDisplayMode: "minimal",
-          }}
-        />
+        <Stack.Screen options={loadingHeaderOptions} />
         <View style={styles.center}>
           {waiting ? (
             <>
@@ -331,29 +353,7 @@ export default function JobDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen
-        options={{
-          headerShown: !isWide,
-          headerStyle: { backgroundColor: colors.bg },
-          headerTintColor: colors.text,
-          headerTitleStyle: { fontWeight: "600" },
-          headerBackTitle: "",
-          headerBackButtonDisplayMode: "minimal",
-          headerTitle: () => (
-            <HeaderTitleWithIcon
-              title={job.name}
-              icon={<JobKindIcon kind={kindForJob(job)} size={26} bare />}
-            />
-          ),
-          headerRight: () => (
-            <HeaderStatusDot
-              color={autoYesActive ? colors.warning : statusColor(status)}
-              onPress={isDemo || !autoYesPaneId ? undefined : handleToggleAutoYes}
-              accessibilityLabel={isDemo || !autoYesPaneId ? "Status" : autoYesActive ? "Disable auto-yes" : "Enable auto-yes"}
-            />
-          ),
-        }}
-      />
+      <Stack.Screen options={jobHeaderOptions} />
       {isDemo && <DemoBanner />}
       <ContentContainer wide>
         <JobDetailView
