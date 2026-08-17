@@ -9,32 +9,10 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Local, TimeZone, Utc};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use reqwest::header::{ACCEPT, AUTHORIZATION};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::claude_usage;
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageEntry {
-    pub label: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderUsageSnapshot {
-    pub provider: String,
-    pub status: String,
-    pub summary: String,
-    pub note: Option<String>,
-    pub entries: Vec<UsageEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UsageSnapshot {
-    pub refreshed_at: String,
-    pub claude: ProviderUsageSnapshot,
-    pub codex: ProviderUsageSnapshot,
-    pub antigravity: ProviderUsageSnapshot,
-    pub zai: ProviderUsageSnapshot,
-}
+pub use clawtab_protocol::{ProviderUsageSnapshot, UsageEntry, UsageSnapshot};
 
 pub async fn fetch_usage_snapshot(zai_token: Option<String>) -> UsageSnapshot {
     let (claude, codex, antigravity, zai) = tokio::join!(
@@ -85,6 +63,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
                         err, output
                     )),
                     entries: Vec::new(),
+                    week_used_percent: None,
                 },
             },
             Ok(Err(err)) => ProviderUsageSnapshot {
@@ -96,6 +75,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
                     err
                 )),
                 entries: Vec::new(),
+                week_used_percent: None,
             },
             Err(err) => ProviderUsageSnapshot {
                 provider: "antigravity".to_string(),
@@ -103,6 +83,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
                 summary: "Active".to_string(),
                 note: Some(format!("Connected. Task failed: {}", err)),
                 entries: Vec::new(),
+                week_used_percent: None,
             },
         }
     } else {
@@ -112,6 +93,7 @@ async fn fetch_antigravity_snapshot() -> ProviderUsageSnapshot {
             summary: "Not installed".to_string(),
             note: Some("Antigravity CLI (agy) was not found on your system.".to_string()),
             entries: Vec::new(),
+            week_used_percent: None,
         }
     }
 }
@@ -338,6 +320,9 @@ fn parse_antigravity_usage_snapshot(text: &str) -> Result<ProviderUsageSnapshot,
         summary,
         note: None,
         entries,
+        week_used_percent: weekly
+            .as_ref()
+            .map(|limit| (100 - limit.percent_remaining).clamp(0, 100) as u8),
     })
 }
 
@@ -369,6 +354,10 @@ async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
                         value: usage_bucket_text(usage.seven_day.as_ref()),
                     },
                 ],
+                week_used_percent: usage
+                    .seven_day
+                    .as_ref()
+                    .map(|bucket| bucket.utilization.clamp(0.0, 100.0).round() as u8),
             }
         }
         Err(err) => ProviderUsageSnapshot {
@@ -386,6 +375,7 @@ async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
                     value: "n/a".to_string(),
                 },
             ],
+            week_used_percent: None,
         },
     }
 }
@@ -414,6 +404,7 @@ fn fallback_codex_snapshot(rpc_err: String) -> ProviderUsageSnapshot {
                 rpc_err, cli_err
             )),
             entries: Vec::new(),
+            week_used_percent: None,
         },
     }
 }
@@ -640,6 +631,9 @@ fn build_codex_snapshot(
                 value: secondary_text,
             },
         ],
+        week_used_percent: secondary
+            .as_ref()
+            .map(|window| window.used_percent.clamp(0, 100) as u8),
     }
 }
 
@@ -664,6 +658,7 @@ async fn fetch_zai_snapshot(token: Option<String>) -> ProviderUsageSnapshot {
                     .to_string(),
             ),
             entries: Vec::new(),
+            week_used_percent: None,
         };
     };
 
@@ -675,6 +670,7 @@ async fn fetch_zai_snapshot(token: Option<String>) -> ProviderUsageSnapshot {
             summary: "Usage unavailable".to_string(),
             note: Some(err),
             entries: Vec::new(),
+            week_used_percent: None,
         },
     }
 }
@@ -706,6 +702,9 @@ async fn read_zai_quota(token: &str) -> Result<ProviderUsageSnapshot, String> {
 
     let limits = data.limits.unwrap_or_default();
     let (session_token, token_limit, time_limit) = categorize_zai_limits(&limits);
+    let week_limit = limits
+        .iter()
+        .find(|limit| limit.window_minutes() == Some(7 * 24 * 60));
     let summary = zai_summary(session_token, token_limit, time_limit);
 
     let mut entries = Vec::new();
@@ -752,6 +751,9 @@ async fn read_zai_quota(token: &str) -> Result<ProviderUsageSnapshot, String> {
         summary,
         note: Some("Fetched from the z.ai quota API.".to_string()),
         entries,
+        week_used_percent: week_limit
+            .and_then(ZaiLimit::used_ratio_percent)
+            .map(|value| value.clamp(0, 100) as u8),
     })
 }
 
@@ -1094,6 +1096,9 @@ fn parse_codex_status_snapshot(text: &str) -> Result<ProviderUsageSnapshot, Stri
         ),
         note: None,
         entries,
+        week_used_percent: week
+            .as_ref()
+            .map(|limit| limit.percent_used().clamp(0, 100) as u8),
     })
 }
 
@@ -1700,6 +1705,7 @@ Weekly limit:
             .expect("week entry");
         assert_eq!(week.value, "51% used, reset 06:14 on 17 Apr");
         assert_eq!(snapshot.summary, "Session 62% used, Week 51% used");
+        assert_eq!(snapshot.week_used_percent, Some(51));
     }
 
     #[test]
@@ -1743,6 +1749,7 @@ Weekly limit:
         assert_eq!(snapshot.entries[0].value, "Plus");
         assert_eq!(snapshot.entries[1].value, "62% used");
         assert_eq!(snapshot.entries[2].value, "41% used");
+        assert_eq!(snapshot.week_used_percent, Some(41));
     }
 
     #[test]
@@ -1820,6 +1827,7 @@ GEMINI MODELS
             .find(|e| e.label == "Week")
             .expect("week entry");
         assert_eq!(week.value, "78% remaining (refreshes in 152h 1m)");
+        assert_eq!(snapshot.week_used_percent, Some(22));
     }
 
     #[test]

@@ -21,6 +21,10 @@ import * as api from "../../src/api/client"
 import { confirm, alertError, openUrl } from "../../src/lib/platform"
 import { colors } from "../../src/theme/colors"
 import { radius, spacing } from "../../src/theme/spacing"
+import { getWsSend, nextId } from "../../src/lib/wsRuntime"
+import { clearRequest, registerRequest } from "../../src/lib/useRequestMap"
+import type { ProviderUsageSnapshot, UsageSnapshot } from "../../src/types/messages"
+import { UsageProgressBar, parseUsagePercent } from "../../src/components/UsageProgressBar"
 
 type SubStatus = api.SubscriptionStatus | null
 
@@ -36,6 +40,9 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   const [sub, setSub] = useState<SubStatus>(null)
   const [subLoading, setSubLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null)
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [usageError, setUsageError] = useState<string | null>(null)
 
   const [shares, setShares] = useState<api.SharesResponse>({ shared_by_me: [], shared_with_me: [] })
   const [sharesLoading, setSharesLoading] = useState(true)
@@ -68,6 +75,40 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
       .finally(() => setSubLoading(false))
     fetchShares().finally(() => setSharesLoading(false))
   }, [userId, fetchShares])
+
+  const fetchUsage = useCallback(async () => {
+    if (!desktopOnline) {
+      setUsage(null)
+      setUsageError(null)
+      return
+    }
+    const send = getWsSend()
+    if (!send) return
+
+    const id = nextId()
+    setUsageLoading(true)
+    setUsageError(null)
+    send({ type: "get_usage", id })
+    try {
+      const response = await Promise.race([
+        registerRequest<{ usage?: UsageSnapshot; error?: string; message?: string }>(id),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 30_000)),
+      ])
+      if (!response?.usage) {
+        throw new Error(response?.error ?? response?.message ?? "Usage data is unavailable")
+      }
+      setUsage(response.usage)
+    } catch (e) {
+      clearRequest(id)
+      setUsageError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setUsageLoading(false)
+    }
+  }, [desktopOnline])
+
+  useEffect(() => {
+    void fetchUsage()
+  }, [fetchUsage])
 
   const handleManageBilling = async () => {
     setActionLoading(true)
@@ -151,12 +192,13 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
       const [newSub] = await Promise.all([
         api.getSubscriptionStatus().catch(() => null),
         fetchShares(),
+        fetchUsage(),
       ])
       if (newSub !== null) setSub(newSub)
     } finally {
       setRefreshing(false)
     }
-  }, [fetchShares])
+  }, [fetchShares, fetchUsage])
 
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [dangerExpanded, setDangerExpanded] = useState(false)
@@ -292,6 +334,48 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
               )}
             </View>
 
+            <View style={styles.section}>
+              <View style={styles.sectionHeadingRow}>
+                <Text style={styles.sectionTitle}>Model Usage</Text>
+                <Pressable
+                  onPress={() => void fetchUsage()}
+                  disabled={usageLoading || !desktopOnline}
+                  accessibilityRole="button"
+                  accessibilityLabel="Refresh model usage"
+                >
+                  <Text style={[styles.usageRefresh, (usageLoading || !desktopOnline) && styles.disabledText]}>
+                    {usageLoading ? "Refreshing..." : "Refresh"}
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={styles.usageDescription}>
+                Solid fill shows the elapsed week. The dotted marker shows model usage.
+              </Text>
+              {!desktopOnline ? (
+                <View style={styles.usageEmptyCard}>
+                  <Text style={styles.usageEmptyText}>Connect a desktop to load model usage.</Text>
+                </View>
+              ) : usageLoading && !usage ? (
+                <View style={styles.usageEmptyCard}>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                  <Text style={styles.usageEmptyText}>Loading model usage...</Text>
+                </View>
+              ) : usage ? (
+                <View style={styles.usageCards}>
+                  <MobileUsageCard title="Claude" usage={usage.claude} />
+                  <MobileUsageCard title="Codex" usage={usage.codex} />
+                  <MobileUsageCard title="Antigravity" usage={usage.antigravity} />
+                  <MobileUsageCard title="z.ai" usage={usage.zai} />
+                </View>
+              ) : (
+                <View style={styles.usageEmptyCard}>
+                  <Text style={styles.usageEmptyText}>
+                    {usageError ?? "Usage data is unavailable."}
+                  </Text>
+                </View>
+              )}
+            </View>
+
             {!subLoading && sub?.subscribed && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Subscription</Text>
@@ -387,6 +471,32 @@ export default function SettingsScreen({ inModal = false }: { inModal?: boolean 
   )
 }
 
+function MobileUsageCard({
+  title,
+  usage,
+}: {
+  title: string
+  usage: ProviderUsageSnapshot
+}) {
+  const weekEntry = usage.entries.find((entry) => entry.label.toLowerCase() === "week")
+  const weekPercent = usage.week_used_percent ?? parseUsagePercent(weekEntry?.value)
+
+  return (
+    <View style={styles.usageCard}>
+      <View style={styles.usageCardHeader}>
+        <Text style={styles.usageCardTitle}>{title}</Text>
+        <Text style={styles.usageCardStatus}>{usage.status}</Text>
+      </View>
+      {weekPercent != null ? (
+        <UsageProgressBar usagePercent={weekPercent} />
+      ) : (
+        <Text style={styles.usageUnavailable}>{usage.summary}</Text>
+      )}
+      {usage.note ? <Text style={styles.usageNote}>{usage.note}</Text> : null}
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   scrollContainer: {
     flex: 1,
@@ -408,6 +518,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   section: {
+    gap: spacing.md,
+  },
+  sectionHeadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: spacing.md,
   },
   sectionTitle: {
@@ -469,6 +585,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     maxWidth: "60%",
+  },
+  usageRefresh: {
+    color: colors.accent,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  disabledText: {
+    color: colors.textMuted,
+  },
+  usageDescription: {
+    color: colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  usageCards: {
+    gap: spacing.sm,
+  },
+  usageCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  usageCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+  },
+  usageCardTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  usageCardStatus: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  usageUnavailable: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  usageNote: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  usageEmptyCard: {
+    minHeight: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  usageEmptyText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    textAlign: "center",
   },
   offlineCard: {
     backgroundColor: colors.surface,

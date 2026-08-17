@@ -61,6 +61,7 @@ async fn dispatch_message(
     event_sink: &dyn EventSink,
 ) -> Option<DesktopMessage> {
     match msg {
+        ClientMessage::GetUsage { id } => Some(handle_get_usage(id, ctx).await),
         ClientMessage::DetectProcesses { id } => {
             let processes = crate::process_snapshot::detect_processes_snapshot(
                 jobs_config,
@@ -87,6 +88,19 @@ async fn dispatch_message(
         )),
         other => dispatch_sync(other, jobs_config, ctx, pty_manager, event_sink).await,
     }
+}
+
+async fn handle_get_usage(id: String, ctx: &JobContext) -> DesktopMessage {
+    let explicit_tokens = {
+        let secrets = ctx.secrets.lock();
+        crate::usage::ZAI_TOKEN_KEYS
+            .iter()
+            .map(|key| secrets.get(key).cloned())
+            .collect()
+    };
+    let zai_token = crate::usage::resolve_zai_token_from_sources(explicit_tokens);
+    let usage = crate::usage::fetch_usage_snapshot(zai_token).await;
+    DesktopMessage::UsageResponse { id, usage }
 }
 
 async fn dispatch_sync(

@@ -197,18 +197,24 @@ async fn handle_message(
         return;
     };
 
+    let usage_request = matches!(&msg, ClientMessage::GetUsage { .. });
     if target != user_id
-        && matches!(
-            msg,
-            ClientMessage::SetPinnedItem { .. }
-                | ClientMessage::MergePinnedItems { .. }
-                | ClientMessage::SetPaneDisplayName { .. }
-        )
+        && (usage_request
+            || matches!(
+                &msg,
+                ClientMessage::SetPinnedItem { .. }
+                    | ClientMessage::MergePinnedItems { .. }
+                    | ClientMessage::SetPaneDisplayName { .. }
+            ))
     {
         let error = ServerMessage::Error {
             id: extract_id(&msg),
             code: error_codes::UNAUTHORIZED.into(),
-            message: "only the workspace owner can change shared pins or pane names".into(),
+            message: if usage_request {
+                "only the workspace owner can view provider usage".into()
+            } else {
+                "only the workspace owner can change shared pins or pane names".into()
+            },
         };
         let hub = state.hub.read().await;
         hub.broadcast_to_mobiles(user_id, &error);
@@ -492,6 +498,7 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::UpdateJob { id, .. }
         | ClientMessage::DetectProcesses { id, .. }
         | ClientMessage::GetSettings { id, .. }
+        | ClientMessage::GetUsage { id, .. }
         | ClientMessage::GetRunDetail { id, .. }
         | ClientMessage::GetDetectedProcessLogs { id, .. }
         | ClientMessage::SendDetectedProcessInput { id, .. }
