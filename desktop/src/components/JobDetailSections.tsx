@@ -941,9 +941,6 @@ export function DesktopJobDetail({
   autoYesActive,
   onToggleAutoYes,
   autoYesShortcut,
-  firstQuery,
-  lastQuery,
-  tokenCount,
   showBackButton = false,
   hidePath = false,
   onFork,
@@ -980,9 +977,6 @@ export function DesktopJobDetail({
   autoYesActive?: boolean;
   onToggleAutoYes?: () => void;
   autoYesShortcut?: string;
-  firstQuery?: string;
-  lastQuery?: string;
-  tokenCount?: number | null;
   onFork?: (direction: "right" | "down") => void;
   onSplitPane?: (direction: "right" | "down") => void;
   onSplitRunPane?: (paneId: string, direction: "right" | "down") => void;
@@ -1089,9 +1083,6 @@ export function DesktopJobDetail({
         contentStyle={contentStyle as any}
         headerLeftInset={headerLeftInset}
         titlePath={titlePath}
-        firstQuery={firstQuery}
-        lastQuery={lastQuery}
-        tokenCount={tokenCount}
         renderTerminal={paneId && tmuxSession ? renderTerminal : undefined}
         hideMessageInput={!!(paneId && tmuxSession)}
         onFork={onFork}

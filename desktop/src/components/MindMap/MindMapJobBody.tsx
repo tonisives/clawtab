@@ -46,11 +46,6 @@ export function MindMapJobBody({
 
   const status = core.statuses[slug] ?? { state: "idle" as const };
 
-  const matchedProcess = useMemo(() => {
-    if (item.process) return item.process;
-    return core.processes.find((p) => p.matched_job === slug);
-  }, [item.process, core.processes, slug]);
-
   const groups = useMemo(
     () => [...new Set(core.jobs.map((j) => j.group || "default"))],
     [core.jobs],
@@ -100,9 +95,6 @@ export function MindMapJobBody({
       transport={transport}
       job={job}
       status={status}
-      firstQuery={matchedProcess?.first_query ?? undefined}
-      lastQuery={matchedProcess?.last_query ?? undefined}
-      tokenCount={matchedProcess?.token_count}
       onBack={onClose}
       onOpen={handleOpen}
       onDuplicate={goToJobsTab}

@@ -38,7 +38,6 @@ export function JobPane({ content, ctx }: Props) {
   }
 
   const jobQuestion = questions.find((q) => q.matched_job === job.slug);
-  const matchedProcess = core.processes.find((p) => p.matched_job === job.slug);
 
   const close = mode.kind === "leaf"
     ? () => split.handleClosePane(mode.leafId)
@@ -81,9 +80,6 @@ export function JobPane({ content, ctx }: Props) {
       transport={transport}
       job={job}
       status={core.statuses[job.slug] ?? { state: "idle" as const }}
-      firstQuery={matchedProcess?.first_query ?? undefined}
-      lastQuery={matchedProcess?.last_query ?? undefined}
-      tokenCount={matchedProcess?.token_count}
       onBack={close}
       onOpen={() => callbacks.handleOpen(job.slug)}
       onDuplicate={(group: string) => callbacks.handleDuplicate(job, group)}
