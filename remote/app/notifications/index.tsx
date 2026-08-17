@@ -1,23 +1,23 @@
 import { StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 
-import { colors } from "../src/theme/colors";
-import { NotificationsPanel } from "../src/components/NotificationsPanel";
-import type { NotificationDetailTarget } from "../src/components/notificationTypes";
-import { jobRoute, processRoute } from "../src/lib/notificationRoutes";
+import { colors } from "../../src/theme/colors";
+import { NotificationsPanel } from "../../src/components/NotificationsPanel";
+import type { NotificationDetailTarget } from "../../src/components/notificationTypes";
+import { notificationJobRoute, notificationProcessRoute } from "../../src/lib/notificationRoutes";
 
 export default function NotificationsScreen() {
   const router = useRouter();
   const handleSelectDetail = (target: NotificationDetailTarget) => {
     if (target.paneId) {
-      router.push(processRoute(target.paneId, { preserveTerminal: true }));
+      router.push(notificationProcessRoute(target.paneId));
       return;
     }
     if (target.kind === "process") {
-      router.push(processRoute(target.paneId, { preserveTerminal: true }));
+      router.push(notificationProcessRoute(target.paneId));
       return;
     }
-    router.push(jobRoute(target.jobName));
+    router.push(notificationJobRoute(target.jobName));
   };
 
   return (

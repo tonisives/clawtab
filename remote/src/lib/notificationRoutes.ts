@@ -14,3 +14,20 @@ export function processRoute(paneId: string, options?: { preserveTerminal?: bool
     },
   } as const;
 }
+
+export function notificationJobRoute(jobName: string) {
+  return {
+    pathname: "/notifications/job/[name]",
+    params: { name: jobName },
+  } as const;
+}
+
+export function notificationProcessRoute(paneId: string) {
+  return {
+    pathname: "/notifications/process/[pane_id]",
+    params: {
+      pane_id: paneId.replace(/%/g, "_pct_"),
+      source: "notifications",
+    },
+  } as const;
+}

@@ -144,7 +144,6 @@ export default function RootLayout() {
   const init = useAuthStore((s) => s.init);
   const isSettingsTab = mobileHeaderTab === "settings";
   const isMobileWeb = Platform.OS === "web" && !isWide && !isSplitView;
-  const router = useRouter();
 
   useEffect(() => {
     init();
@@ -192,24 +191,7 @@ export default function RootLayout() {
             options={{
               animation: "slide_from_bottom",
               presentation: "modal",
-              headerShown: true,
-              title: "Notifications",
-              headerStyle: { backgroundColor: colors.bg },
-              headerTintColor: colors.text,
-              headerTitleStyle: styles.headerTitle,
-              headerShadowVisible: true,
-              headerLeft: () => null,
-              headerRight: () => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Close notifications"
-                  hitSlop={12}
-                  onPress={() => router.dismiss()}
-                  style={styles.closeButton}
-                >
-                  <Ionicons name="close" size={22} color={colors.text} />
-                </Pressable>
-              ),
+              headerShown: false,
             }}
           />
         </Stack>
@@ -269,13 +251,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 18,
-    backgroundColor: colors.surface,
   },
 });
