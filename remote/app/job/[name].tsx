@@ -302,7 +302,7 @@ export default function JobDetailScreen() {
     title: name,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
-    headerTitleStyle: { fontWeight: "600" },
+    headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
   }), [isWide, name]);
@@ -312,7 +312,7 @@ export default function JobDetailScreen() {
     headerShown: !isWide,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
-    headerTitleStyle: { fontWeight: "600" },
+    headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
     headerTitle: () => (

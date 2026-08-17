@@ -310,7 +310,7 @@ export default function ProcessDetailScreen() {
     title: pane_id,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
-    headerTitleStyle: { fontWeight: "600" },
+    headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
   }), [isWide, pane_id]);
@@ -318,7 +318,7 @@ export default function ProcessDetailScreen() {
     headerShown: !isWide,
     headerStyle: { backgroundColor: colors.bg },
     headerTintColor: colors.text,
-    headerTitleStyle: { fontWeight: "600" },
+    headerTitleStyle: { fontWeight: "600" as const },
     headerBackTitle: "",
     headerBackButtonDisplayMode: "minimal" as const,
     headerTitle: () => (
