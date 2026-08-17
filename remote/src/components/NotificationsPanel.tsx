@@ -1,5 +1,6 @@
-import { useMemo } from "react";
-import { Platform, ScrollView, StyleSheet, Text, useWindowDimensions } from "react-native";
+import { useMemo, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, spacing } from "@clawtab/shared";
@@ -8,7 +9,10 @@ import { useJobsStore } from "../store/jobs";
 import { useNotificationStore } from "../store/notifications";
 import { useWsStore } from "../store/ws";
 import { DemoNotificationStack } from "./DemoNotificationStack";
+import { JobDetailPane } from "./JobDetailPane";
+import { ProcessDetailPane } from "./ProcessDetailPane";
 import { NotificationStack } from "./NotificationStack";
+import type { NotificationDetailTarget } from "./notificationTypes";
 
 interface NotificationsPanelProps {
   mode: "popup" | "screen";
@@ -24,6 +28,7 @@ export function NotificationsPanel({ mode, onNavigateAway }: NotificationsPanelP
   const connected = useWsStore((s) => s.connected);
   const desktopOnline = useWsStore((s) => s.desktopOnline);
   const isDemo = connected && !desktopOnline && realJobs.length === 0;
+  const [detailTarget, setDetailTarget] = useState<NotificationDetailTarget | null>(null);
 
   const activeQuestionCount = useMemo(() => {
     if (isDemo) return DEMO_QUESTIONS.length;
@@ -43,6 +48,45 @@ export function NotificationsPanel({ mode, onNavigateAway }: NotificationsPanelP
     ? Math.max(240, nativeAvailableHeight - 120)
     : nativeScreenCardMinHeight;
 
+  if (detailTarget) {
+    return (
+      <View style={styles.detailRoot}>
+        <View style={styles.detailToolbar}>
+          <Pressable
+            onPress={() => setDetailTarget(null)}
+            style={styles.detailBackButton}
+            accessibilityRole="button"
+            accessibilityLabel="Back to notifications"
+          >
+            <Ionicons name="chevron-back" size={18} color={colors.text} />
+            <Text style={styles.detailBackText}>Notifications</Text>
+          </Pressable>
+          <Text style={styles.detailTitle}>Details</Text>
+          <View style={styles.detailToolbarSpacer} />
+        </View>
+        <View style={styles.detailContent}>
+          {detailTarget.kind === "job" ? (
+            <JobDetailPane
+              key={`job-${detailTarget.jobName}`}
+              jobName={detailTarget.jobName}
+              isDemo={detailTarget.isDemo ?? false}
+              embedded
+              onClose={() => setDetailTarget(null)}
+            />
+          ) : (
+            <ProcessDetailPane
+              key={`process-${detailTarget.paneId}`}
+              paneId={detailTarget.paneId}
+              demoProcess={detailTarget.demoProcess}
+              embedded
+              onClose={() => setDetailTarget(null)}
+            />
+          )}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <ScrollView
       style={styles.scroll}
@@ -53,11 +97,19 @@ export function NotificationsPanel({ mode, onNavigateAway }: NotificationsPanelP
       ]}
     >
       {hasContent ? (
-        isDemo ? <DemoNotificationStack embedded /> : (
+        isDemo ? (
+          <DemoNotificationStack
+            embedded
+            cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
+            onSelectDetail={setDetailTarget}
+          />
+        ) : (
           <NotificationStack
             embedded
             cardMinHeight={Platform.OS === "web" ? undefined : nativeCardMinHeight}
             onNavigateAway={onNavigateAway}
+            onSelectDetail={setDetailTarget}
+            maxAutoYesEntries={Platform.OS === "web" ? undefined : 1}
           />
         )
       ) : (
@@ -80,6 +132,42 @@ const styles = StyleSheet.create({
   },
   demoContent: {
     minHeight: 280,
+  },
+  detailRoot: {
+    flex: 1,
+    minHeight: 0,
+  },
+  detailToolbar: {
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  detailBackButton: {
+    minWidth: 92,
+    height: 44,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  detailBackText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  detailTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  detailToolbarSpacer: {
+    width: 92,
+    height: 44,
+  },
+  detailContent: {
+    flex: 1,
+    minHeight: 0,
   },
   empty: {
     padding: spacing.md,

@@ -310,6 +310,8 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "web" ? { boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)" as any } : { elevation: 12 }),
   },
   nativePopup: {
+    flex: 1,
+    minHeight: 0,
     paddingHorizontal: 12,
     borderWidth: 0,
     borderRadius: 0,

@@ -89,9 +89,10 @@ interface ProcessDetailPaneProps {
   paneId: string
   onClose: () => void
   demoProcess?: import("@clawtab/shared").DetectedProcess
+  embedded?: boolean
 }
 
-export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetailPaneProps) {
+export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = false }: ProcessDetailPaneProps) {
   const insets = useSafeAreaInsets()
   const storeProcess = useJobsStore((s) =>
     s.detectedProcesses.find((p) => p.pane_id === paneId),
@@ -303,7 +304,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess }: ProcessDetai
     : { state: "idle" }
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <TouchableOpacity
           style={styles.titleButton}
           onPress={handleTitlePress}

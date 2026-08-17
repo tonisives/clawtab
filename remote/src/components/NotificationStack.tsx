@@ -10,6 +10,7 @@ import { NotificationSection, AutoYesBanner, findYesOption } from "@clawtab/shar
 import { colors } from "@clawtab/shared";
 import { spacing } from "@clawtab/shared";
 import type { AutoYesEntry, DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
+import type { NotificationDetailTarget } from "./notificationTypes";
 
 function syncAutoYesToRelay(paneIds: Set<string>) {
   const send = getWsSend();
@@ -21,9 +22,31 @@ interface NotificationStackProps {
   embedded?: boolean;
   cardMinHeight?: number;
   onNavigateAway?: () => void;
+  onSelectDetail?: (target: NotificationDetailTarget) => void;
+  maxAutoYesEntries?: number;
 }
 
-export function NotificationStack({ embedded = false, cardMinHeight, onNavigateAway }: NotificationStackProps) {
+function jobRoute(jobName: string) {
+  return {
+    pathname: "/job/[name]",
+    params: { name: jobName },
+  } as const;
+}
+
+function processRoute(paneId: string) {
+  return {
+    pathname: "/process/[pane_id]",
+    params: { pane_id: paneId.replace(/%/g, "_pct_") },
+  } as const;
+}
+
+export function NotificationStack({
+  embedded = false,
+  cardMinHeight,
+  onNavigateAway,
+  onSelectDetail,
+  maxAutoYesEntries,
+}: NotificationStackProps) {
   const router = useRouter();
   const questions = useNotificationStore((s) => s.questions);
   const detectedProcesses = useJobsStore((s) => s.detectedProcesses);
@@ -53,14 +76,27 @@ export function NotificationStack({ embedded = false, cardMinHeight, onNavigateA
 
   const navigateToQuestion = useCallback(
     (_q: ClaudeQuestion, jobName: string | null) => {
+      if (onSelectDetail) {
+        if (jobName) {
+          onSelectDetail({ kind: "job", jobName });
+        } else {
+          onSelectDetail({
+            kind: "process",
+            paneId: _q.pane_id,
+            demoProcess: processMap.get(_q.pane_id),
+          });
+        }
+        return;
+      }
+
       onNavigateAway?.();
       if (jobName) {
-        router.push(`/job/${jobName}`);
+        router.push(jobRoute(jobName));
       } else {
-        router.push(`/process/${_q.pane_id.replace(/%/g, "_pct_")}`);
+        router.push(processRoute(_q.pane_id));
       }
     },
-    [onNavigateAway, router],
+    [onNavigateAway, onSelectDetail, processMap, router],
   );
 
   const answerQuestion = useNotificationStore((s) => s.answerQuestion);
@@ -187,13 +223,27 @@ export function NotificationStack({ embedded = false, cardMinHeight, onNavigateA
 
   const handleAutoYesPress = useCallback(
     (entry: AutoYesEntry) => {
+      if (onSelectDetail) {
+        if (entry.jobSlug) {
+          onSelectDetail({ kind: "job", jobName: entry.jobSlug });
+        } else {
+          onSelectDetail({
+            kind: "process",
+            paneId: entry.paneId,
+            demoProcess: processMap.get(entry.paneId),
+          });
+        }
+        return;
+      }
+
+      onNavigateAway?.();
       if (entry.jobSlug) {
-        router.push(`/job/${entry.jobSlug}`);
+        router.push(jobRoute(entry.jobSlug));
       } else {
-        router.push(`/process/${entry.paneId.replace(/%/g, "_pct_")}`);
+        router.push(processRoute(entry.paneId));
       }
     },
-    [router],
+    [onNavigateAway, onSelectDetail, processMap, router],
   );
 
   const handleDisableAutoYes = useCallback(
@@ -226,7 +276,12 @@ export function NotificationStack({ embedded = false, cardMinHeight, onNavigateA
 
   return (
     <View style={[styles.container, embedded && styles.embeddedContainer]}>
-      <AutoYesBanner entries={autoYesEntries} onDisable={handleDisableAutoYes} onPress={handleAutoYesPress} />
+      <AutoYesBanner
+        entries={autoYesEntries}
+        onDisable={handleDisableAutoYes}
+        onPress={handleAutoYesPress}
+        maxVisibleEntries={maxAutoYesEntries}
+      />
       {activeQuestions.length > 0 && (
         <NotificationSection
           questions={activeQuestions}

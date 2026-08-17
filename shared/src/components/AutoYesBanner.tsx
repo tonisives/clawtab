@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colors } from "../theme/colors";
 import { spacing } from "../theme/spacing";
@@ -13,20 +14,44 @@ export interface AutoYesBannerProps {
   entries: AutoYesEntry[];
   onDisable: (paneId: string) => void;
   onPress?: (entry: AutoYesEntry) => void;
+  /** Limit the number of entries shown before the user expands the list. */
+  maxVisibleEntries?: number;
 }
 
-export function AutoYesBanner({ entries, onDisable, onPress }: AutoYesBannerProps) {
+export function AutoYesBanner({ entries, onDisable, onPress, maxVisibleEntries }: AutoYesBannerProps) {
+  const collapseLimit = maxVisibleEntries == null
+    ? entries.length
+    : Math.max(1, Math.floor(maxVisibleEntries));
+  const isCollapsible = entries.length > collapseLimit;
+  const [expanded, setExpanded] = useState(false);
+
   if (entries.length === 0) return null;
+
+  const visibleEntries = isCollapsible && !expanded
+    ? entries.slice(0, collapseLimit)
+    : entries;
 
   return (
     <View style={styles.container}>
+      {isCollapsible && (
+        <TouchableOpacity
+          style={[styles.row, styles.toggleRow]}
+          onPress={() => setExpanded((value) => !value)}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={expanded ? "Collapse auto-yes panes" : "Expand auto-yes panes"}
+        >
+          <Text style={styles.label} numberOfLines={1}>Auto-yes: {entries.length} panes</Text>
+          <Text style={styles.toggleText}>{expanded ? "Collapse" : "Expand"}</Text>
+        </TouchableOpacity>
+      )}
       <ScrollView
         style={styles.list}
         contentContainerStyle={styles.listContent}
         nestedScrollEnabled
-        showsVerticalScrollIndicator={entries.length > 3}
+        showsVerticalScrollIndicator={visibleEntries.length > 3}
       >
-        {entries.map((e) => (
+        {visibleEntries.map((e) => (
           <TouchableOpacity
             key={e.paneId}
             style={styles.row}
@@ -71,6 +96,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
+  toggleRow: {
+    marginBottom: 4,
+    backgroundColor: colors.surface,
+  },
   label: {
     color: colors.warning,
     fontSize: 12,
@@ -88,5 +117,10 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontSize: 11,
     fontWeight: "500",
+  },
+  toggleText: {
+    color: colors.warning,
+    fontSize: 11,
+    fontWeight: "700",
   },
 });

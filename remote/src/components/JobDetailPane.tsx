@@ -57,9 +57,10 @@ interface JobDetailPaneProps {
   jobName: string
   isDemo: boolean
   onClose: () => void
+  embedded?: boolean
 }
 
-export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDetailPaneProps) {
+export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose, embedded = false }: JobDetailPaneProps) {
   const insets = useSafeAreaInsets()
   const storeJob = useJob(jobName)
   const defaultAgentProvider = useJobsStore((s) => s.defaultProvider)
@@ -209,7 +210,7 @@ export function JobDetailPane({ jobName, isDemo: parentIsDemo, onClose }: JobDet
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+      <View style={[styles.header, { paddingTop: embedded ? spacing.md : insets.top + spacing.md }]}>
         <Text style={styles.title} numberOfLines={1}>{job.name}</Text>
         <TouchableOpacity
           onPress={canToggleAutoYes ? handleToggleAutoYes : undefined}
