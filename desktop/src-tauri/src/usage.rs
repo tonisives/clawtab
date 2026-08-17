@@ -396,7 +396,14 @@ async fn fetch_claude_snapshot() -> ProviderUsageSnapshot {
 
 async fn fetch_codex_snapshot() -> ProviderUsageSnapshot {
     match tokio::task::spawn_blocking(read_codex_rpc_snapshot).await {
-        Ok(Ok(snapshot)) => snapshot,
+        Ok(Ok(mut snapshot)) => {
+            if snapshot.week_reset_at.is_none() {
+                if let Ok(cli_snapshot) = read_codex_status_cli_snapshot() {
+                    snapshot.week_reset_at = cli_snapshot.week_reset_at;
+                }
+            }
+            snapshot
+        }
         Ok(Err(rpc_err)) => fallback_codex_snapshot(rpc_err),
         Err(err) => fallback_codex_snapshot(format!("Codex RPC task failed: {}", err)),
     }
