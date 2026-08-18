@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Animated,
@@ -10,70 +10,70 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   View,
-} from "react-native";
-import type { ClaudeQuestion } from "../types/process";
-import { colors } from "../theme/colors";
-import { radius, spacing } from "../theme/spacing";
-import { AnsiText, hasAnsi } from "./AnsiText";
-import { collapseSeparators, truncateLogLines } from "../util/logs";
-import { isFreetextOption } from "../util/jobs";
-import { fitPath, shortenPath } from "../util/format";
+} from "react-native"
+import type { ClaudeQuestion } from "../types/process"
+import { colors } from "../theme/colors"
+import { radius, spacing } from "../theme/spacing"
+import { AnsiText, hasAnsi } from "./AnsiText"
+import { collapseSeparators, truncateLogLines } from "../util/logs"
+import { isFreetextOption } from "../util/jobs"
+import { fitPath, shortenPath } from "../util/format"
 
-const isWeb = Platform.OS === "web";
+const isWeb = Platform.OS === "web"
 
-let measureCanvas: HTMLCanvasElement | null = null;
+let measureCanvas: HTMLCanvasElement | null = null
 function measureTextPx(text: string, font: string): number {
-  if (!isWeb || typeof document === "undefined") return text.length * 7.4;
-  if (!measureCanvas) measureCanvas = document.createElement("canvas");
-  const ctx = measureCanvas.getContext("2d");
-  if (!ctx) return text.length * 7.4;
-  ctx.font = font;
-  return ctx.measureText(text).width;
+  if (!isWeb || typeof document === "undefined") return text.length * 7.4
+  if (!measureCanvas) measureCanvas = document.createElement("canvas")
+  const ctx = measureCanvas.getContext("2d")
+  if (!ctx) return text.length * 7.4
+  ctx.font = font
+  return ctx.measureText(text).width
 }
 
 function useFittedNotificationPath(path: string): {
-  text: string;
-  onLayout: (event: LayoutChangeEvent) => void;
+  text: string
+  onLayout: (event: LayoutChangeEvent) => void
 } {
-  const [width, setWidth] = useState(0);
-  const [text, setText] = useState(() => shortenPath(path));
+  const [width, setWidth] = useState(0)
+  const [text, setText] = useState(() => shortenPath(path))
 
   useEffect(() => {
-    const font = "500 15px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-    setText(fitPath(path, width, (candidate) => measureTextPx(candidate, font)));
-  }, [path, width]);
+    const font = "500 15px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+    setText(fitPath(path, width, (candidate) => measureTextPx(candidate, font)))
+  }, [path, width])
 
   return {
     text,
     onLayout: (event: LayoutChangeEvent) => {
-      const nextWidth = event.nativeEvent.layout.width;
-      setWidth((prev) => (Math.abs(prev - nextWidth) > 1 ? nextWidth : prev));
+      const nextWidth = event.nativeEvent.layout.width
+      setWidth((prev) => (Math.abs(prev - nextWidth) > 1 ? nextWidth : prev))
     },
-  };
+  }
 }
 
 export interface NotificationCardProps {
-  question: ClaudeQuestion;
-  resolvedJob: string | null;
-  onNavigate: (question: ClaudeQuestion, resolvedJob: string | null) => void;
-  onSendOption: (question: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => void;
-  autoYesActive?: boolean;
-  onToggleAutoYes?: (question: ClaudeQuestion) => void;
+  question: ClaudeQuestion
+  resolvedJob: string | null
+  onNavigate: (question: ClaudeQuestion, resolvedJob: string | null) => void
+  onSendOption: (question: ClaudeQuestion, resolvedJob: string | null, optionNumber: string) => void
+  autoYesActive?: boolean
+  onToggleAutoYes?: (question: ClaudeQuestion) => void
   /** Card was auto-answered - show briefly then dismiss */
-  autoAnswered?: boolean;
+  autoAnswered?: boolean
   /** Called when the card starts its fly-away animation (web only) */
-  onFlyStart?: () => void;
+  onFlyStart?: () => void
   /** True when this is the only card - skip fly-away, just collapse section */
-  isLast?: boolean;
+  isLast?: boolean
   /** Override the auto-reset delay (ms) for the "Sent" indicator. Default: 10000 */
-  answerResetMs?: number;
-  cardMinHeight?: number;
+  answerResetMs?: number
+  cardMinHeight?: number
   /** Native bottom safe-area inset reserved inside the card. */
-  cardBottomInset?: number;
+  cardBottomInset?: number
   /** Native bottom corner radius, when the card reaches the screen bottom. */
-  cardBottomRadius?: number;
-  onOptionScrollBegin?: () => void;
-  onOptionScrollEnd?: () => void;
+  cardBottomRadius?: number
+  onOptionScrollBegin?: () => void
+  onOptionScrollEnd?: () => void
 }
 
 export function NotificationCard({
@@ -93,94 +93,94 @@ export function NotificationCard({
   onOptionScrollBegin,
   onOptionScrollEnd,
 }: NotificationCardProps) {
-  const { width } = useWindowDimensions();
-  const [answered, setAnswered] = useState(false);
-  const prevQuestionId = useRef(question.question_id);
-  const flyAnim = useRef(new Animated.Value(0)).current;
-  const webCardHeight = useRef(0);
-  const previewScrollRef = useRef<ScrollView>(null);
+  const { width } = useWindowDimensions()
+  const [answered, setAnswered] = useState(false)
+  const prevQuestionId = useRef(question.question_id)
+  const flyAnim = useRef(new Animated.Value(0)).current
+  const webCardHeight = useRef(0)
+  const previewScrollRef = useRef<ScrollView>(null)
 
   // Reset answered state when question changes
   useEffect(() => {
     if (question.question_id !== prevQuestionId.current) {
-      prevQuestionId.current = question.question_id;
-      setAnswered(false);
-      setFlying(false);
-      flyAnim.setValue(0);
+      prevQuestionId.current = question.question_id
+      setAnswered(false)
+      setFlying(false)
+      flyAnim.setValue(0)
     }
-  }, [question.question_id, flyAnim]);
+  }, [question.question_id, flyAnim])
 
   // Auto-reset after 10s so buttons re-appear if question persists
   useEffect(() => {
-    if (!answered) return;
+    if (!answered) return
     const timer = setTimeout(() => {
-      setAnswered(false);
-      setFlying(false);
-      flyAnim.setValue(0);
-    }, answerResetMs);
-    return () => clearTimeout(timer);
-  }, [answered, flyAnim]);
+      setAnswered(false)
+      setFlying(false)
+      flyAnim.setValue(0)
+    }, answerResetMs)
+    return () => clearTimeout(timer)
+  }, [answered, flyAnim])
 
   // Web: track "flying" state for CSS transition (after 400ms delay)
-  const [flying, setFlying] = useState(false);
+  const [flying, setFlying] = useState(false)
 
   useEffect(() => {
-    if (!answered || !isWeb) return;
+    if (!answered || !isWeb) return
     // For the last card, skip fly-away - just trigger section collapse after brief "Sent" display
     if (isLast) {
       const timer = setTimeout(() => {
-        onFlyStart?.();
-      }, 400);
-      return () => clearTimeout(timer);
+        onFlyStart?.()
+      }, 400)
+      return () => clearTimeout(timer)
     }
     const timer = setTimeout(() => {
-      setFlying(true);
-      onFlyStart?.();
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [answered]); // eslint-disable-line react-hooks/exhaustive-deps
+      setFlying(true)
+      onFlyStart?.()
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [answered]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleOptionPress = (optionNumber: string, label: string) => {
     // "Type something" options need freetext input - navigate to detail view
     if (isFreetextOption(label)) {
-      onNavigate(question, resolvedJob);
-      return;
+      onNavigate(question, resolvedJob)
+      return
     }
-    onSendOption(question, resolvedJob, optionNumber);
-    setAnswered(true);
-    setFlying(false);
+    onSendOption(question, resolvedJob, optionNumber)
+    setAnswered(true)
+    setFlying(false)
     if (!isWeb && !isLast) {
       Animated.timing(flyAnim, {
         toValue: 1,
         duration: 300,
         delay: 400,
         useNativeDriver: true,
-      }).start();
+      }).start()
     }
-  };
+  }
 
-  const showAnswered = answered || autoAnswered;
+  const showAnswered = answered || autoAnswered
 
-  const fittedPath = useFittedNotificationPath(question.cwd);
-  const title = resolvedJob ? resolvedJob : fittedPath.text;
+  const fittedPath = useFittedNotificationPath(question.cwd)
+  const title = resolvedJob ? resolvedJob : fittedPath.text
 
-  const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160);
+  const preview = truncateLogLines(collapseSeparators(question.context_lines).trim(), 160)
   const cardSizeStyle = cardMinHeight
     ? {
         minHeight: cardMinHeight + (!isWeb ? cardBottomInset : 0),
         maxHeight: cardMinHeight + (!isWeb ? cardBottomInset : 0),
       }
-    : null;
-  const cardShapeStyle = !isWeb && cardBottomRadius != null
-    ? {
-        borderBottomLeftRadius: cardBottomRadius,
-        borderBottomRightRadius: cardBottomRadius,
-      }
-    : null;
-  const nativeBottomInsetStyle = !isWeb && cardBottomInset > 0
-    ? { paddingBottom: 8 + cardBottomInset }
-    : null;
-  const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)));
+    : null
+  const cardShapeStyle =
+    !isWeb && cardBottomRadius != null
+      ? {
+          borderBottomLeftRadius: cardBottomRadius,
+          borderBottomRightRadius: cardBottomRadius,
+        }
+      : null
+  const nativeBottomInsetStyle =
+    !isWeb && cardBottomInset > 0 ? { paddingBottom: 8 + cardBottomInset } : null
+  const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)))
 
   const optionControls = (
     <>
@@ -211,7 +211,7 @@ export function NotificationCard({
         </>
       )}
     </>
-  );
+  )
   const answerOptionControls = question.options.map((opt) => (
     <TouchableOpacity
       key={opt.number}
@@ -227,7 +227,7 @@ export function NotificationCard({
         {question.input_mode === "select" ? opt.label : `${opt.number}. ${opt.label}`}
       </Text>
     </TouchableOpacity>
-  ));
+  ))
   const optionArea = isWeb ? (
     <ScrollView
       horizontal
@@ -253,7 +253,11 @@ export function NotificationCard({
       </ScrollView>
       {onToggleAutoYes && (
         <TouchableOpacity
-          style={[styles.autoYesBtn, styles.autoYesBtnNative, autoYesActive && styles.autoYesBtnActive]}
+          style={[
+            styles.autoYesBtn,
+            styles.autoYesBtnNative,
+            autoYesActive && styles.autoYesBtnActive,
+          ]}
           onPress={() => onToggleAutoYes(question)}
           activeOpacity={0.6}
         >
@@ -263,12 +267,12 @@ export function NotificationCard({
         </TouchableOpacity>
       )}
     </View>
-  );
+  )
   const previewContent = hasAnsi(preview) ? (
     <AnsiText content={preview} style={styles.logText} />
   ) : (
     <Text style={styles.logText}>{preview}</Text>
-  );
+  )
 
   const cardContent = (
     <>
@@ -305,28 +309,27 @@ export function NotificationCard({
         ) : null}
       </TouchableOpacity>
 
-      {question.options.length > 0 && (
-        showAnswered ? (
+      {question.options.length > 0 &&
+        (showAnswered ? (
           <View style={[styles.sentRow, nativeBottomInsetStyle]}>
             <ActivityIndicator size="small" color={autoAnswered ? colors.warning : colors.accent} />
             <Text style={styles.sentText}>{autoAnswered ? "Auto-accepted" : "Sent"}</Text>
           </View>
         ) : (
           optionArea
-        )
-      )}
+        ))}
     </>
-  );
+  )
 
   if (isWeb) {
     // For the last card, no fly-away - the section wrapper handles the collapse
     if (isLast) {
-      return <View style={[styles.card, cardSizeStyle]}>{cardContent}</View>;
+      return <View style={[styles.card, cardSizeStyle]}>{cardContent}</View>
     }
     return (
       <div
         ref={(el: HTMLDivElement | null) => {
-          if (el && !flying) webCardHeight.current = el.offsetHeight;
+          if (el && !flying) webCardHeight.current = el.offsetHeight
         }}
         style={{
           transition: answered
@@ -340,11 +343,15 @@ export function NotificationCard({
       >
         <View style={[styles.card, cardSizeStyle]}>{cardContent}</View>
       </div>
-    );
+    )
   }
 
   if (isLast) {
-    return <View style={[styles.card, !isWeb && styles.cardNative, cardShapeStyle, cardSizeStyle]}>{cardContent}</View>;
+    return (
+      <View style={[styles.card, !isWeb && styles.cardNative, cardShapeStyle, cardSizeStyle]}>
+        {cardContent}
+      </View>
+    )
   }
 
   return (
@@ -365,7 +372,7 @@ export function NotificationCard({
     >
       {cardContent}
     </Animated.View>
-  );
+  )
 }
 
 const styles = StyleSheet.create({
@@ -479,7 +486,7 @@ const styles = StyleSheet.create({
   },
   optionBtnTextNative: {
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 15,
     fontWeight: "700",
     textAlign: "center",
   },
@@ -496,10 +503,10 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
   },
   autoYesBtnNative: {
-    width: 92,
+    width: "100%",
     minHeight: 44,
     flexShrink: 0,
-    alignSelf: "flex-end",
+    alignSelf: "center",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: spacing.sm,
@@ -532,4 +539,4 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontSize: 12,
   },
-});
+})
