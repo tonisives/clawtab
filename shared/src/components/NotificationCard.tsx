@@ -178,8 +178,7 @@ export function NotificationCard({
           borderBottomRightRadius: cardBottomRadius,
         }
       : null
-  const nativeBottomInsetStyle =
-    !isWeb && cardBottomInset > 0 ? { paddingBottom: 8 + cardBottomInset } : null
+  const nativeActionBottomStyle = !isWeb ? { paddingBottom: spacing.md } : null
   const maxButtonWidth = Math.min(520, Math.max(240, Math.floor(width * 0.66)))
 
   const optionControls = (
@@ -238,7 +237,7 @@ export function NotificationCard({
       {optionControls}
     </ScrollView>
   ) : (
-    <View style={[styles.optionRow, styles.optionRowNative, nativeBottomInsetStyle]}>
+    <View style={[styles.optionRow, styles.optionRowNative, nativeActionBottomStyle]}>
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -311,7 +310,7 @@ export function NotificationCard({
 
       {question.options.length > 0 &&
         (showAnswered ? (
-          <View style={[styles.sentRow, nativeBottomInsetStyle]}>
+          <View style={[styles.sentRow, nativeActionBottomStyle]}>
             <ActivityIndicator size="small" color={autoAnswered ? colors.warning : colors.accent} />
             <Text style={styles.sentText}>{autoAnswered ? "Auto-accepted" : "Sent"}</Text>
           </View>
