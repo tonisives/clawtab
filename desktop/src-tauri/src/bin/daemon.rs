@@ -149,11 +149,13 @@ fn main() {
         {
             let hook_runtime = hook_runtime.clone();
             let agent_activity = Arc::clone(&agent_activity);
+            let auto_yes_panes = Arc::clone(&auto_yes_panes);
             let event_sink = Arc::clone(&event_sink);
             tokio::spawn(async move {
                 clawtab_lib::agent_hooks::run_event_watcher(
                     hook_runtime,
                     agent_activity,
+                    auto_yes_panes,
                     event_sink,
                 )
                 .await;

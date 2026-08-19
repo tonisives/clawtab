@@ -500,23 +500,31 @@ pub async fn question_detection_loop(
         let detected_panes = update_question_cache(&processes, &mut question_cache);
         evict_stale_cache_entries(&mut question_cache, &detected_panes);
 
+        // Keep detecting auto-yes questions internally so the responder can
+        // accept them, but never expose them as pending questions to clients.
         let questions: Vec<ClaudeQuestion> = question_cache
             .values()
             .map(|c| c.question.clone())
             .collect();
 
-        auto_answer_questions(&questions, &auto_yes_panes, &mut auto_answered_ids);
+        let yes_panes = auto_yes_panes.lock().clone();
+        auto_answer_questions(&questions, &yes_panes, &mut auto_answered_ids);
         retain_auto_answered_for_present(&questions, &mut auto_answered_ids);
 
-        log::debug!("[questions] storing {} active questions", questions.len());
-        let next_question_signature = serde_json::to_string(&questions).unwrap_or_default();
-        *active_questions.lock() = questions.clone();
+        let visible_questions = filter_auto_yes_questions(&questions, &yes_panes);
+        log::debug!(
+            "[questions] detected {} questions, exposing {} after auto-yes filtering",
+            questions.len(),
+            visible_questions.len()
+        );
+        let next_question_signature = serde_json::to_string(&visible_questions).unwrap_or_default();
+        *active_questions.lock() = visible_questions.clone();
         if next_question_signature != question_signature {
             question_signature = next_question_signature;
             event_sink.emit_questions_changed();
         }
 
-        let asking_panes: HashSet<String> = questions
+        let asking_panes: HashSet<String> = visible_questions
             .iter()
             .map(|question| question.pane_id.clone())
             .collect();
@@ -540,21 +548,21 @@ pub async fn question_detection_loop(
         }
 
         let settings_snapshot = settings.lock().clone();
-        let notifiable_questions = filter_visible_questions(&questions);
+        let notifiable_questions = filter_visible_questions(&visible_questions);
 
         if !local_notifications_initialized {
-            crate::notifications::mark_questions_seen(&questions, &notification_state);
+            crate::notifications::mark_questions_seen(&visible_questions, &notification_state);
             local_notifications_initialized = true;
         } else if settings_snapshot.notify_questions_local {
             crate::notifications::notify_new_questions(
                 notifier.as_ref(),
                 &notifiable_questions,
-                &questions,
+                &visible_questions,
                 &notification_state,
                 &auto_yes_panes,
             );
         } else {
-            crate::notifications::mark_questions_seen(&questions, &notification_state);
+            crate::notifications::mark_questions_seen(&visible_questions, &notification_state);
         }
 
         let apns_questions = if settings_snapshot.notify_questions_remote {
@@ -563,7 +571,7 @@ pub async fn question_detection_loop(
             Vec::new()
         };
         send_relay_questions(
-            questions.clone(),
+            visible_questions,
             apns_questions,
             &auto_yes_panes,
             &relay,
@@ -577,6 +585,17 @@ pub async fn question_detection_loop(
             () = hook_runtime.notified() => {}
         }
     }
+}
+
+fn filter_auto_yes_questions(
+    questions: &[ClaudeQuestion],
+    auto_yes_panes: &HashSet<String>,
+) -> Vec<ClaudeQuestion> {
+    questions
+        .iter()
+        .filter(|question| !auto_yes_panes.contains(&question.pane_id))
+        .cloned()
+        .collect()
 }
 
 fn filter_visible_questions(questions: &[ClaudeQuestion]) -> Vec<ClaudeQuestion> {
@@ -872,20 +891,19 @@ fn evict_stale_cache_entries(
 
 fn auto_answer_questions(
     questions: &[ClaudeQuestion],
-    auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
+    auto_yes_panes: &HashSet<String>,
     auto_answered_ids: &mut HashMap<String, u32>,
 ) {
-    let yes_panes = auto_yes_panes.lock().clone();
-    if yes_panes.is_empty() {
+    if auto_yes_panes.is_empty() {
         return;
     }
     log::debug!(
         "[questions] auto-yes panes: {:?}, questions: {}",
-        yes_panes,
+        auto_yes_panes,
         questions.len()
     );
     for q in questions {
-        if !yes_panes.contains(&q.pane_id) {
+        if !auto_yes_panes.contains(&q.pane_id) {
             log::debug!(
                 "[questions] pane {} not in auto-yes set, skipping",
                 q.pane_id
@@ -1469,10 +1487,10 @@ fn detect_question_processes(
 #[cfg(test)]
 mod tests {
     use super::{
-        find_yes_option, parse_numbered_options, parse_opencode_buttons, resolved_hook_activity,
-        ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
+        filter_auto_yes_questions, find_yes_option, parse_numbered_options, parse_opencode_buttons,
+        resolved_hook_activity, ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
     };
-    use clawtab_protocol::QuestionOption;
+    use clawtab_protocol::{ClaudeQuestion, QuestionOption};
     use std::collections::HashSet;
     use std::time::{Duration, Instant};
 
@@ -1700,6 +1718,34 @@ mod tests {
 
         let cleared = tracker.update(&[], &HashSet::new(), now);
         assert!(cleared.is_empty());
+    }
+
+    fn question_for_pane(pane_id: &str) -> ClaudeQuestion {
+        ClaudeQuestion {
+            pane_id: pane_id.to_string(),
+            cwd: "/tmp/project".to_string(),
+            tmux_session: "main".to_string(),
+            window_name: "agent".to_string(),
+            question_id: format!("{pane_id}:question"),
+            context_lines: "Question?".to_string(),
+            options: Vec::new(),
+            input_mode: "select".to_string(),
+            button_row: 0,
+            matched_group: None,
+            matched_job: None,
+        }
+    }
+
+    #[test]
+    fn auto_yes_questions_stay_internal_but_are_not_exposed() {
+        let questions = vec![question_for_pane("%1"), question_for_pane("%2")];
+        let auto_yes = HashSet::from(["%1".to_string()]);
+
+        let visible = filter_auto_yes_questions(&questions, &auto_yes);
+
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].pane_id, "%2");
+        assert_eq!(questions.len(), 2);
     }
 
     #[test]

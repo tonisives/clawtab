@@ -135,7 +135,8 @@ pub enum ClientMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         freetext: Option<String>,
     },
-    /// Tell relay which pane_ids have auto-yes enabled (suppresses push notifications)
+    /// Tell relay which pane_ids have auto-yes enabled (suppresses question
+    /// notifications and asking indicators)
     SetAutoYesPanes {
         id: String,
         pane_ids: Vec<String>,

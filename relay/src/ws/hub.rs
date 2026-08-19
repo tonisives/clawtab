@@ -36,7 +36,8 @@ pub struct Hub {
     /// Cached questions per user, replayed to newly connecting mobiles
     /// and to guests of shared workspaces.
     last_questions: HashMap<Uuid, Vec<ClaudeQuestion>>,
-    /// Pane IDs with auto-yes enabled per user (suppresses push notifications).
+    /// Pane IDs with auto-yes enabled per user (suppresses question
+    /// notifications and asking indicators).
     auto_yes_panes: HashMap<Uuid, HashSet<String>>,
     /// Raw JSON of the last AutoYesPanes message, replayed verbatim to mobiles.
     last_auto_yes_panes: HashMap<Uuid, String>,
@@ -388,10 +389,27 @@ impl Hub {
     }
 
     pub fn set_auto_yes_panes(&mut self, user_id: Uuid, pane_ids: HashSet<String>) {
+        let has_auto_yes = !pane_ids.is_empty();
         if pane_ids.is_empty() {
             self.auto_yes_panes.remove(&user_id);
         } else {
-            self.auto_yes_panes.insert(user_id, pane_ids);
+            self.auto_yes_panes.insert(user_id, pane_ids.clone());
+        }
+
+        // Do not replay a question or an asking indicator that auto-yes will
+        // handle. Once a pane is disabled, the desktop's next authoritative
+        // snapshot can restore it if the prompt is still present.
+        if has_auto_yes {
+            if let Some(questions) = self.last_questions.get_mut(&user_id) {
+                questions.retain(|question| !pane_ids.contains(&question.pane_id));
+            }
+            if let Some(activity) = self.last_agent_activity.get_mut(&user_id) {
+                for item in activity {
+                    if pane_ids.contains(&item.pane_id) {
+                        item.asking = false;
+                    }
+                }
+            }
         }
     }
 
@@ -783,6 +801,35 @@ mod tests {
 
         hub.set_auto_yes_panes(user, HashSet::new());
         assert!(!hub.is_auto_yes_pane(user, "pane-1"));
+    }
+
+    #[test]
+    fn enabling_auto_yes_clears_cached_questions_and_asking_state() {
+        let mut hub = Hub::new();
+        let user = Uuid::new_v4();
+        hub.set_cached_questions(user, vec![mk_question("pane-1"), mk_question("pane-2")]);
+        hub.set_cached_agent_activity(
+            user,
+            vec![
+                AgentActivity {
+                    pane_id: "pane-1".into(),
+                    working: false,
+                    asking: true,
+                },
+                AgentActivity {
+                    pane_id: "pane-2".into(),
+                    working: false,
+                    asking: true,
+                },
+            ],
+        );
+
+        hub.set_auto_yes_panes(user, HashSet::from(["pane-1".to_string()]));
+
+        assert_eq!(hub.last_questions[&user].len(), 1);
+        assert_eq!(hub.last_questions[&user][0].pane_id, "pane-2");
+        assert!(!hub.last_agent_activity[&user][0].asking);
+        assert!(hub.last_agent_activity[&user][1].asking);
     }
 
     #[test]

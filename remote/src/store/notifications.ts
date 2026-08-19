@@ -24,7 +24,7 @@ interface NotificationState {
   reset: () => void;
 }
 
-export const useNotificationStore = create<NotificationState>((set, get) => ({
+export const useNotificationStore = create<NotificationState>((set) => ({
   questions: [],
   deepLinkQuestionId: null,
   hasDesktopQuestions: false,
@@ -32,15 +32,17 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   autoYesPaneIds: new Set(),
 
   setQuestions: (questions) =>
-    set(() => {
-      const dismissed = get().dismissedIds;
+    set((state) => {
+      const dismissed = state.dismissedIds;
       const now = Date.now();
       // Purge stale dismissals (>10s)
       for (const [id, ts] of dismissed) {
         if (now - ts > 10000) dismissed.delete(id);
       }
       return {
-        questions: questions.filter((q) => !dismissed.has(q.question_id)),
+        questions: questions.filter((q) => (
+          !dismissed.has(q.question_id) && !state.autoYesPaneIds.has(q.pane_id)
+        )),
         hasDesktopQuestions: true,
       };
     }),
@@ -62,7 +64,11 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
       const existingIds = new Set(state.questions.map((q) => q.question_id));
       const newQuestions: ClaudeQuestion[] = items
-        .filter((item) => !item.answered && !existingIds.has(item.question_id))
+        .filter((item) => (
+          !item.answered
+          && !existingIds.has(item.question_id)
+          && !state.autoYesPaneIds.has(item.pane_id)
+        ))
         .map((item) => ({
           pane_id: item.pane_id,
           cwd: item.cwd,
@@ -82,6 +88,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
 
   injectFromNotification: (question) =>
     set((state) => {
+      if (state.autoYesPaneIds.has(question.pane_id)) {
+        return state;
+      }
       if (state.questions.some((q) => q.question_id === question.question_id)) {
         return state;
       }
@@ -91,14 +100,19 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   hydrateQuestionsFromCache: (questions) =>
     set((state) => {
       if (state.hasDesktopQuestions) return state;
-      return { questions };
+      return {
+        questions: questions.filter((q) => !state.autoYesPaneIds.has(q.pane_id)),
+      };
     }),
 
   enableAutoYes: (paneId) =>
     set((state) => {
       const next = new Set(state.autoYesPaneIds);
       next.add(paneId);
-      return { autoYesPaneIds: next };
+      return {
+        autoYesPaneIds: next,
+        questions: state.questions.filter((q) => !next.has(q.pane_id)),
+      };
     }),
 
   disableAutoYes: (paneId) =>
@@ -109,7 +123,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }),
 
   setAutoYesPanes: (paneIds) =>
-    set(() => ({ autoYesPaneIds: new Set(paneIds) })),
+    set((state) => {
+      const autoYesPaneIds = new Set(paneIds);
+      return {
+        autoYesPaneIds,
+        questions: state.questions.filter((q) => !autoYesPaneIds.has(q.pane_id)),
+      };
+    }),
 
   reset: () => set({ questions: [], hasDesktopQuestions: false, dismissedIds: new Map(), autoYesPaneIds: new Set() }),
 }));

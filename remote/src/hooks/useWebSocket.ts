@@ -16,6 +16,22 @@ import type { ClientMessage, IncomingMessage } from "../types/messages";
 import { getWs, getWsSend, nextId, setWs, setWsSend } from "../lib/wsRuntime";
 import { usePinsStore } from "../store/pins";
 
+function suppressAutoYesIndicators(paneIds: string[]) {
+  if (paneIds.length === 0) return;
+  const autoYes = new Set(paneIds);
+  const jobs = useJobsStore.getState();
+  jobs.setQuestionPanes(
+    [...jobs.questionPaneIds].filter((paneId) => !autoYes.has(paneId)),
+  );
+
+  const activity = Object.values(useJobsStore.getState().agentActivity).map((item) => ({
+    pane_id: item.pane_id,
+    working: item.working,
+    asking: autoYes.has(item.pane_id) ? false : item.asking,
+  }));
+  useJobsStore.getState().setAgentActivity(activity);
+}
+
 export function useWebSocket() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const refreshToken = useAuthStore((s) => s.refreshToken);
@@ -171,7 +187,12 @@ export function useWebSocket() {
           saveQuestionsCache(msg.questions);
           break;
         case "auto_yes_panes":
-          useNotificationStore.getState().setAutoYesPanes((msg as { pane_ids?: string[] }).pane_ids ?? []);
+          {
+            const paneIds = (msg as { pane_ids?: string[] }).pane_ids ?? [];
+            useNotificationStore.getState().setAutoYesPanes(paneIds);
+            saveQuestionsCache(useNotificationStore.getState().questions);
+            suppressAutoYesIndicators(paneIds);
+          }
           break;
         case "pty_output":
           dispatchPtyOutput((msg as any).pane_id, (msg as any).data);

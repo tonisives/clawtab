@@ -372,6 +372,7 @@ pub fn write_event(event: &HookEventV1) -> Result<(), String> {
 pub async fn run_event_watcher(
     runtime: HookRuntime,
     agent_activity: Arc<Mutex<Vec<AgentActivity>>>,
+    auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     event_sink: Arc<dyn EventSink>,
 ) {
     use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -385,7 +386,12 @@ pub async fn run_event_watcher(
         return;
     }
     replay_session_markers(&runtime);
-    process_inbox(&runtime, &agent_activity, event_sink.as_ref());
+    process_inbox(
+        &runtime,
+        &agent_activity,
+        &auto_yes_panes,
+        event_sink.as_ref(),
+    );
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let mut watcher = match RecommendedWatcher::new(
@@ -407,13 +413,19 @@ pub async fn run_event_watcher(
         return;
     }
     while rx.recv().await.is_some() {
-        process_inbox(&runtime, &agent_activity, event_sink.as_ref());
+        process_inbox(
+            &runtime,
+            &agent_activity,
+            &auto_yes_panes,
+            event_sink.as_ref(),
+        );
     }
 }
 
 fn process_inbox(
     runtime: &HookRuntime,
     agent_activity: &Arc<Mutex<Vec<AgentActivity>>>,
+    auto_yes_panes: &Arc<Mutex<HashSet<String>>>,
     event_sink: &dyn EventSink,
 ) {
     let Ok(entries) = fs::read_dir(inbox_dir()) else {
@@ -437,11 +449,13 @@ fn process_inbox(
             let mut activity = agent_activity.lock().clone();
             activity.retain(|item| item.pane_id != pane_id);
             if let Some(state) = runtime.pane_state(pane_id, event.provider) {
-                activity.push(AgentActivity {
-                    pane_id: pane_id.to_string(),
-                    working: state.state == HookAgentState::Working && state.attention.is_none(),
-                    asking: state.state == HookAgentState::Waiting || state.attention.is_some(),
-                });
+                let auto_yes = auto_yes_panes.lock().contains(pane_id);
+                activity.push(activity_from_hook_state(
+                    pane_id,
+                    state.state,
+                    state.attention,
+                    auto_yes,
+                ));
             }
             activity.sort_by(|left, right| left.pane_id.cmp(&right.pane_id));
             *agent_activity.lock() = activity.clone();
@@ -452,6 +466,19 @@ fn process_inbox(
             event.event,
             event.provider.as_str()
         );
+    }
+}
+
+fn activity_from_hook_state(
+    pane_id: &str,
+    state: HookAgentState,
+    attention: Option<HookAttention>,
+    auto_yes: bool,
+) -> AgentActivity {
+    AgentActivity {
+        pane_id: pane_id.to_string(),
+        working: state == HookAgentState::Working && attention.is_none(),
+        asking: !auto_yes && (state == HookAgentState::Waiting || attention.is_some()),
     }
 }
 
@@ -1117,8 +1144,8 @@ export const ClawTab = async () => ({{
 #[cfg(test)]
 mod tests {
     use super::{
-        install_json_hooks, remove_json_hooks, HookAgentState, HookAttention, HookEventV1,
-        HookRuntime,
+        activity_from_hook_state, install_json_hooks, remove_json_hooks, HookAgentState,
+        HookAttention, HookEventV1, HookRuntime,
     };
     use crate::agent_session::ProcessProvider;
     use serde_json::json;
@@ -1255,5 +1282,17 @@ mod tests {
             .expect("pane state");
         assert_eq!(state.state, HookAgentState::Waiting);
         assert_eq!(state.attention, Some(HookAttention::Permission));
+    }
+
+    #[test]
+    fn auto_yes_suppresses_waiting_hook_activity() {
+        let activity = activity_from_hook_state(
+            "%9",
+            HookAgentState::Waiting,
+            Some(HookAttention::Permission),
+            true,
+        );
+
+        assert!(!activity.asking);
     }
 }
