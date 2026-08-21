@@ -434,7 +434,7 @@ fn fallback_codex_snapshot(rpc_err: String) -> ProviderUsageSnapshot {
 fn read_codex_rpc_snapshot() -> Result<ProviderUsageSnapshot, String> {
     let codex_binary = resolve_codex_binary();
     let mut child = Command::new(&codex_binary)
-        .args(["-s", "read-only", "-a", "untrusted", "app-server"])
+        .args(["-s", "read-only", "-a", "never", "app-server"])
         .env("TERM", "xterm-256color")
         .env_remove("TMUX")
         .stdin(Stdio::piped())
@@ -957,7 +957,7 @@ fn run_codex_status_pty(timeout: Duration) -> Result<String, String> {
         .map_err(|err| format!("openpty: {}", err))?;
 
     let mut cmd = CommandBuilder::new(codex_binary.to_string_lossy().to_string());
-    cmd.args(["-s", "read-only", "-a", "untrusted"]);
+    cmd.args(["-s", "read-only", "-a", "never"]);
     cmd.env("TERM", "xterm-256color");
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|err| {
