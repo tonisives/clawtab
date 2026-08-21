@@ -614,7 +614,9 @@ start_usage_load() {
     load_usage_cache || true
 
     if ! command -v cwtctl &>/dev/null; then
-        USAGE_LINE="${USAGE_TITLE} usage unavailable"
+        if [ -z "$USAGE_SESSION" ] || [ -z "$USAGE_WEEK" ]; then
+            USAGE_LINE="${USAGE_TITLE} usage unavailable"
+        fi
         return
     fi
 
