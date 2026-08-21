@@ -34,7 +34,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("Agent:");
     eprintln!("  agent auto-yes [toggle|check] [pane_id]  Manage auto-yes for an agent pane");
-    eprintln!("  agent info [pane_id]                      Show agent session info");
+    eprintln!("  agent info [--fast] [pane_id]             Show agent session info");
     eprintln!("  agent info restore-command [pane_id]     Print an agent restore command");
     eprintln!("  agent rename <pane_id> <title>            Rename an agent pane");
     eprintln!("  agent pin [pane_id]                       Pin an agent across ClawTab");
@@ -288,7 +288,12 @@ async fn main() {
         "status" => Target::Daemon(IpcCommand::GetStatus),
         "info" => {
             let restore_command = args.get(2).is_some_and(|arg| arg == "restore-command");
-            let pane_arg_index = if restore_command { 3 } else { 2 };
+            let fast = args.get(2).is_some_and(|arg| arg == "--fast");
+            if restore_command && fast {
+                eprintln!("Usage: cwtctl agent info [--fast] [pane_id]");
+                std::process::exit(1);
+            }
+            let pane_arg_index = if restore_command || fast { 3 } else { 2 };
             let pane_id = if args.len() > pane_arg_index {
                 args[pane_arg_index].clone()
             } else {
@@ -311,16 +316,29 @@ async fn main() {
             let snapshot = clawtab_lib::agent_session::ProcessSnapshot::capture();
             let provider =
                 clawtab_lib::agent_session::detect_process_provider(&pane_pid, Some(&snapshot));
-            let info = clawtab_lib::agent_session::resolve_session_info_for_provider_with_cwd(
-                &pane_pid,
-                provider,
-                Some(&snapshot),
-                if pane_cwd.is_empty() {
-                    None
-                } else {
-                    Some(pane_cwd.as_str())
-                },
-            );
+            let info = if fast {
+                clawtab_lib::agent_session::resolve_session_info_for_provider_with_cwd_fast(
+                    &pane_pid,
+                    provider,
+                    Some(&snapshot),
+                    if pane_cwd.is_empty() {
+                        None
+                    } else {
+                        Some(pane_cwd.as_str())
+                    },
+                )
+            } else {
+                clawtab_lib::agent_session::resolve_session_info_for_provider_with_cwd(
+                    &pane_pid,
+                    provider,
+                    Some(&snapshot),
+                    if pane_cwd.is_empty() {
+                        None
+                    } else {
+                        Some(pane_cwd.as_str())
+                    },
+                )
+            };
             if restore_command {
                 match restore_command_for_provider(provider, info.session_id.as_deref()) {
                     Some(command) => println!("{}", command),

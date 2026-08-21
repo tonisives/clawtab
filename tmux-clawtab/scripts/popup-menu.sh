@@ -22,6 +22,14 @@ if [ -z "$PANE_ID" ]; then
     exit 1
 fi
 
+SESSION_CACHE_ROOT="${TMPDIR:-/tmp}/clawtab-session-cache"
+SESSION_CACHE_FILE=""
+SESSION_CACHE_PANE_PID=""
+SESSION_CACHE_TMP_FILE=""
+USAGE_CACHE_ROOT="${TMPDIR:-/tmp}/clawtab-usage-cache"
+USAGE_CACHE_FILE=""
+USAGE_CACHE_TMP_FILE=""
+
 AGENT_LABEL="Unsupported"
 
 set_agent_label() {
@@ -42,7 +50,7 @@ set_agent_label() {
 
 META_FILE=$(mktemp /tmp/clawtab-meta-XXXXXX)
 TITLE_FILE=""
-trap 'rm -f "$META_FILE" "$TITLE_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+trap 'rm -f "$META_FILE" "$TITLE_FILE" "$SESSION_CACHE_TMP_FILE" "$USAGE_CACHE_TMP_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # State
 TAB=0
@@ -289,7 +297,7 @@ SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Pin across ClawTab" "Fork sess
 
 # Session info (loaded once)
 SESSION_ID=""
-SESSION_RESTORE_COMMAND=""
+SESSION_PROVIDER=""
 SESSION_DISPLAY_NAME=""
 SESSION_FIRST_QUERY=""
 SESSION_LAST_QUERY=""
@@ -303,10 +311,11 @@ DATA_PANE_COMMAND_FILE=""
 DATA_SKILLS_FILE=""
 DATA_SECRETS_FILE=""
 DATA_SESSION_FILE=""
-DATA_RESTORE_FILE=""
+DATA_SESSION_DONE_FILE=""
 DATA_DONE_FILE=""
 DATA_PID=""
 DATA_LOADING=0
+DATA_SESSION_APPLIED=0
 
 # Provider usage for the current agent (loaded once when the popup opens)
 USAGE_PROVIDER=""
@@ -320,6 +329,7 @@ USAGE_FILE=""
 USAGE_DONE_FILE=""
 USAGE_PID=""
 USAGE_LOADING=0
+USAGE_STARTED=0
 
 # Agent hook setup is checked once after the pane provider has been resolved.
 HOOK_PROMPTED=0
@@ -348,11 +358,10 @@ relative_time() {
 
 load_session_info() {
     local session_file="${1:-}"
-    local restore_file="${2:-}"
     local raw=""
 
     SESSION_ID=""
-    SESSION_RESTORE_COMMAND=""
+    SESSION_PROVIDER=""
     SESSION_DISPLAY_NAME=""
     SESSION_FIRST_QUERY=""
     SESSION_LAST_QUERY=""
@@ -362,12 +371,9 @@ load_session_info() {
     if [ -n "$session_file" ] && [ -f "$session_file" ]; then
         raw=$(<"$session_file")
     fi
-    if [ -n "$restore_file" ] && [ -f "$restore_file" ]; then
-        SESSION_RESTORE_COMMAND=$(<"$restore_file")
-    fi
-
     if [ -n "$raw" ]; then
         SESSION_ID=$(echo "$raw" | grep '^session_id=' | cut -d= -f2-)
+        SESSION_PROVIDER=$(echo "$raw" | grep '^provider=' | cut -d= -f2-)
         SESSION_STARTED_AT=$(echo "$raw" | grep '^started_at=' | cut -d= -f2-)
         SESSION_DISPLAY_NAME=$(echo "$raw" | grep '^display_name=' | cut -d= -f2-)
         SESSION_FIRST_QUERY=$(echo "$raw" | grep '^first_query=' | cut -d= -f2-)
@@ -379,11 +385,58 @@ load_session_info() {
         fi
     fi
 
-    case "$SESSION_RESTORE_COMMAND" in
-        codex\ *) AGENT_LABEL="Codex" ;;
-        opencode\ *) AGENT_LABEL="OpenCode" ;;
-        claude\ *) AGENT_LABEL="Claude Code" ;;
+    case "$SESSION_PROVIDER" in
+        codex) AGENT_LABEL="Codex" ;;
+        opencode) AGENT_LABEL="OpenCode" ;;
+        claude) AGENT_LABEL="Claude Code" ;;
+        antigravity) AGENT_LABEL="Antigravity" ;;
     esac
+}
+
+prepare_session_cache() {
+    local pane_pid cache_key
+    pane_pid=$(tmux display-message -t "$PANE_ID" -p '#{pane_pid}' 2>/dev/null || true)
+    [ -n "$pane_pid" ] || return 0
+
+    mkdir -p "$SESSION_CACHE_ROOT" 2>/dev/null || return 0
+    chmod 700 "$SESSION_CACHE_ROOT" 2>/dev/null || true
+    cache_key="${PANE_ID//[^[:alnum:]_.-]/_}"
+    SESSION_CACHE_FILE="$SESSION_CACHE_ROOT/$cache_key"
+    SESSION_CACHE_PANE_PID="$pane_pid"
+}
+
+load_session_cache() {
+    [ -n "$SESSION_CACHE_FILE" ] || return 1
+    [ -s "$SESSION_CACHE_FILE" ] || return 1
+
+    local raw line cached_pane_pid=""
+    raw=$(<"$SESSION_CACHE_FILE")
+    while IFS= read -r line; do
+        case "$line" in
+            pane_pid=*) cached_pane_pid="${line#pane_pid=}"; break ;;
+        esac
+    done <<< "$raw"
+
+    [ "$cached_pane_pid" = "$SESSION_CACHE_PANE_PID" ] || return 1
+    load_session_info "$SESSION_CACHE_FILE"
+    return 0
+}
+
+cache_session_info() {
+    [ -n "$SESSION_CACHE_FILE" ] || return 0
+    [ -n "$SESSION_CACHE_PANE_PID" ] || return 0
+    [ -s "$DATA_SESSION_FILE" ] || return 0
+    grep -qE '^(session_id|started_at|first_query|last_query|display_name)=' "$DATA_SESSION_FILE" || return 0
+
+    SESSION_CACHE_TMP_FILE=$(mktemp "$SESSION_CACHE_FILE.tmp.XXXXXX" 2>/dev/null || true)
+    [ -n "$SESSION_CACHE_TMP_FILE" ] || return 0
+    {
+        printf 'pane_pid=%s\n' "$SESSION_CACHE_PANE_PID"
+        cat "$DATA_SESSION_FILE"
+    } > "$SESSION_CACHE_TMP_FILE"
+    chmod 600 "$SESSION_CACHE_TMP_FILE" 2>/dev/null || true
+    mv -f "$SESSION_CACHE_TMP_FILE" "$SESSION_CACHE_FILE"
+    SESSION_CACHE_TMP_FILE=""
 }
 
 # Word-wrap a text string into QUERY_LINES array for the current terminal width
@@ -512,12 +565,53 @@ prepare_usage() {
     esac
 
     [ -z "$USAGE_PROVIDER" ] && return
+    mkdir -p "$USAGE_CACHE_ROOT" 2>/dev/null || true
+    chmod 700 "$USAGE_CACHE_ROOT" 2>/dev/null || true
+    USAGE_CACHE_FILE="$USAGE_CACHE_ROOT/$USAGE_PROVIDER"
     USAGE_LINE="${USAGE_TITLE} usage..."
 }
 
+load_usage_cache() {
+    [ -n "$USAGE_CACHE_FILE" ] || return 1
+    [ -s "$USAGE_CACHE_FILE" ] || return 1
+
+    local raw line cached_provider=""
+    raw=$(<"$USAGE_CACHE_FILE")
+    while IFS= read -r line; do
+        case "$line" in
+            provider=*) cached_provider="${line#provider=}" ;;
+            session=*) USAGE_SESSION="${line#session=}" ;;
+            week=*) USAGE_WEEK="${line#week=}" ;;
+            week_reset_at=*) USAGE_WEEK_RESET_AT="${line#week_reset_at=}" ;;
+        esac
+    done <<< "$raw"
+
+    if [ "$cached_provider" != "$USAGE_PROVIDER" ]; then
+        USAGE_SESSION=""
+        USAGE_WEEK=""
+        USAGE_WEEK_RESET_AT=""
+        return 1
+    fi
+    USAGE_WEEK_PERCENT=$(usage_percent_value "$USAGE_WEEK")
+    if [ -n "$USAGE_SESSION" ] && [ -n "$USAGE_WEEK" ]; then
+        USAGE_LINE="${USAGE_TITLE} session $(compact_usage_value "$USAGE_SESSION" 0), week $(compact_usage_value "$USAGE_WEEK" 1)"
+        return 0
+    fi
+    return 1
+}
+
 start_usage_load() {
+    [ "$USAGE_STARTED" -eq 1 ] && return
+
+    if [ "$AGENT_LABEL" = "Unsupported" ]; then
+        local pane_command
+        pane_command=$(tmux display-message -t "$PANE_ID" -p '#{pane_current_command}' 2>/dev/null || true)
+        set_agent_label "$pane_command"
+    fi
     prepare_usage
     [ -z "$USAGE_PROVIDER" ] && return
+    USAGE_STARTED=1
+    load_usage_cache || true
 
     if ! command -v cwtctl &>/dev/null; then
         USAGE_LINE="${USAGE_TITLE} usage unavailable"
@@ -639,27 +733,51 @@ finish_usage_load() {
     [ -f "$USAGE_DONE_FILE" ] || return 1
 
     local raw line
+    local live_session=""
+    local live_week=""
+    local live_week_reset_at=""
     raw=$(<"$USAGE_FILE")
     while IFS= read -r line; do
         case "$line" in
-            session=*) USAGE_SESSION="${line#session=}" ;;
-            week=*) USAGE_WEEK="${line#week=}" ;;
-            week_reset_at=*) USAGE_WEEK_RESET_AT="${line#week_reset_at=}" ;;
+            session=*) live_session="${line#session=}" ;;
+            week=*) live_week="${line#week=}" ;;
+            week_reset_at=*) live_week_reset_at="${line#week_reset_at=}" ;;
         esac
     done <<< "$raw"
-
-    USAGE_WEEK_PERCENT=$(usage_percent_value "$USAGE_WEEK")
 
     USAGE_LOADING=0
     rm -f "$USAGE_FILE" "$USAGE_DONE_FILE"
 
-    if [ -n "$USAGE_SESSION" ] && [ -n "$USAGE_WEEK" ]; then
+    if [ -n "$live_session" ] && [ -n "$live_week" ]; then
+        USAGE_SESSION="$live_session"
+        USAGE_WEEK="$live_week"
+        USAGE_WEEK_RESET_AT="$live_week_reset_at"
+        USAGE_WEEK_PERCENT=$(usage_percent_value "$USAGE_WEEK")
         USAGE_LINE="${USAGE_TITLE} session $(compact_usage_value "$USAGE_SESSION" 0), week $(compact_usage_value "$USAGE_WEEK" 1)"
-    else
+        cache_usage_snapshot
+    elif [ -z "$USAGE_SESSION" ] || [ -z "$USAGE_WEEK" ]; then
         USAGE_LINE="${USAGE_TITLE} usage unavailable"
     fi
 
     return 0
+}
+
+cache_usage_snapshot() {
+    [ -n "$USAGE_CACHE_FILE" ] || return 0
+    [ -n "$USAGE_SESSION" ] || return 0
+    [ -n "$USAGE_WEEK" ] || return 0
+
+    USAGE_CACHE_TMP_FILE=$(mktemp "$USAGE_CACHE_FILE.tmp.XXXXXX" 2>/dev/null || true)
+    [ -n "$USAGE_CACHE_TMP_FILE" ] || return 0
+    {
+        printf 'provider=%s\n' "$USAGE_PROVIDER"
+        printf 'session=%s\n' "$USAGE_SESSION"
+        printf 'week=%s\n' "$USAGE_WEEK"
+        printf 'week_reset_at=%s\n' "$USAGE_WEEK_RESET_AT"
+    } > "$USAGE_CACHE_TMP_FILE"
+    chmod 600 "$USAGE_CACHE_TMP_FILE" 2>/dev/null || true
+    mv -f "$USAGE_CACHE_TMP_FILE" "$USAGE_CACHE_FILE"
+    USAGE_CACHE_TMP_FILE=""
 }
 
 start_data_load() {
@@ -667,9 +785,9 @@ start_data_load() {
     DATA_SKILLS_FILE=$(mktemp /tmp/clawtab-data-skills-XXXXXX)
     DATA_SECRETS_FILE=$(mktemp /tmp/clawtab-data-secrets-XXXXXX)
     DATA_SESSION_FILE=$(mktemp /tmp/clawtab-data-session-XXXXXX)
-    DATA_RESTORE_FILE=$(mktemp /tmp/clawtab-data-restore-XXXXXX)
+    DATA_SESSION_DONE_FILE=$(mktemp /tmp/clawtab-data-session-done-XXXXXX)
     DATA_DONE_FILE=$(mktemp /tmp/clawtab-data-done-XXXXXX)
-    rm -f "$DATA_DONE_FILE"
+    rm -f "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE"
 
     (
         (
@@ -690,15 +808,12 @@ start_data_load() {
 
         (
             if command -v cwtctl &>/dev/null; then
-                cwtctl agent info "$PANE_ID" 2>/dev/null
+                if ! cwtctl agent info --fast "$PANE_ID" 2>/dev/null; then
+                    cwtctl agent info "$PANE_ID" 2>/dev/null
+                fi
             fi
+            : > "$DATA_SESSION_DONE_FILE"
         ) > "$DATA_SESSION_FILE" &
-
-        (
-            if command -v cwtctl &>/dev/null; then
-                cwtctl agent info restore-command "$PANE_ID" 2>/dev/null
-            fi
-        ) > "$DATA_RESTORE_FILE" &
 
         wait
         : > "$DATA_DONE_FILE"
@@ -707,28 +822,43 @@ start_data_load() {
     DATA_LOADING=1
 }
 
-finish_data_load() {
+finish_session_load() {
     [ "$DATA_LOADING" -eq 1 ] || return 1
-    [ -f "$DATA_DONE_FILE" ] || return 1
+    [ "$DATA_SESSION_APPLIED" -eq 0 ] || return 1
+    [ -f "$DATA_SESSION_DONE_FILE" ] || return 1
 
     local pane_command=""
     if [ -f "$DATA_PANE_COMMAND_FILE" ]; then
         pane_command=$(<"$DATA_PANE_COMMAND_FILE")
     fi
     set_agent_label "$pane_command"
-    load_skills "$DATA_SKILLS_FILE"
-    load_secrets "$DATA_SECRETS_FILE"
-    load_session_info "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE"
-
-    DATA_LOADING=0
-    rm -f "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" \
-        "$DATA_RESTORE_FILE" "$DATA_DONE_FILE"
-
+    if grep -qE '^(session_id|started_at|first_query|last_query|display_name)=' "$DATA_SESSION_FILE" 2>/dev/null; then
+        load_session_info "$DATA_SESSION_FILE"
+        cache_session_info
+    fi
+    DATA_SESSION_APPLIED=1
     start_usage_load
     return 0
 }
 
+finish_data_load() {
+    [ "$DATA_LOADING" -eq 1 ] || return 1
+    [ -f "$DATA_DONE_FILE" ] || return 1
+
+    finish_session_load || true
+    load_skills "$DATA_SKILLS_FILE"
+    load_secrets "$DATA_SECRETS_FILE"
+
+    DATA_LOADING=0
+    rm -f "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" \
+        "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE"
+    return 0
+}
+
+prepare_session_cache
+load_session_cache || true
 start_data_load
+start_usage_load
 
 trim_for_row() {
     local text="$1"
@@ -1521,7 +1651,7 @@ exec 3>&1 1>/dev/null
 # Hide cursor, enable alternate screen
 tput civis 2>/dev/null >&3
 printf '\033[?1049h' >&3
-trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$DATA_PID" ]; then kill "$DATA_PID" 2>/dev/null || true; fi; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$TITLE_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_RESTORE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
+trap 'printf "\033[?1049l" >&3; tput cnorm 2>/dev/null >&3; if [ -n "$DATA_PID" ]; then kill "$DATA_PID" 2>/dev/null || true; fi; if [ -n "$USAGE_PID" ]; then kill "$USAGE_PID" 2>/dev/null || true; fi; rm -f "$META_FILE" "$TITLE_FILE" "$SESSION_CACHE_TMP_FILE" "$USAGE_CACHE_TMP_FILE" "$DATA_PANE_COMMAND_FILE" "$DATA_SKILLS_FILE" "$DATA_SECRETS_FILE" "$DATA_SESSION_FILE" "$DATA_SESSION_DONE_FILE" "$DATA_DONE_FILE" "$USAGE_FILE" "$USAGE_DONE_FILE"' EXIT
 
 # Initial draw
 draw
@@ -1529,6 +1659,16 @@ draw
 # Event loop
 max=0
 while true; do
+    if finish_session_load; then
+        draw_tabs
+        case $TAB in
+            0) draw_shortcuts ;;
+            1) draw_secrets ;;
+            2) draw_skills ;;
+        esac
+        draw_status_bar
+    fi
+
     if finish_data_load; then
         maybe_prompt_hook_install
         draw_tabs

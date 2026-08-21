@@ -194,20 +194,50 @@ pub fn resolve_session_info_for_provider_with_cwd(
     snapshot: Option<&ProcessSnapshot>,
     cwd: Option<&str>,
 ) -> SessionInfo {
+    resolve_session_info_for_provider_with_cwd_mode(pane_pid, provider, snapshot, cwd, true)
+}
+
+/// Resolve only the session identity and prompt metadata needed by lightweight
+/// clients such as the tmux modal. Provider-specific rollout details can be
+/// much larger than the session fields and are intentionally skipped here.
+pub fn resolve_session_info_for_provider_with_cwd_fast(
+    pane_pid: &str,
+    provider: Option<ProcessProvider>,
+    snapshot: Option<&ProcessSnapshot>,
+    cwd: Option<&str>,
+) -> SessionInfo {
+    resolve_session_info_for_provider_with_cwd_mode(pane_pid, provider, snapshot, cwd, false)
+}
+
+fn resolve_session_info_for_provider_with_cwd_mode(
+    pane_pid: &str,
+    provider: Option<ProcessProvider>,
+    snapshot: Option<&ProcessSnapshot>,
+    cwd: Option<&str>,
+    include_details: bool,
+) -> SessionInfo {
     let mut info = match provider {
         Some(ProcessProvider::Claude) => claude::resolve_session_info(pane_pid, snapshot),
-        Some(ProcessProvider::Codex) => codex::resolve_session_info(pane_pid, snapshot),
+        Some(ProcessProvider::Codex) => {
+            if include_details {
+                codex::resolve_session_info(pane_pid, snapshot)
+            } else {
+                codex::resolve_session_info_fast(pane_pid, snapshot)
+            }
+        }
         Some(ProcessProvider::Opencode) => opencode::resolve_session_info(pane_pid, snapshot, cwd),
         Some(ProcessProvider::Antigravity) => antigravity::resolve_session_info(pane_pid, snapshot),
         Some(ProcessProvider::Shell) | None => SessionInfo::default(),
     };
-    if info.model_id.is_none() {
-        info.model_id = provider
-            .and_then(|provider| detect_model_from_process_tree(pane_pid, provider, snapshot));
-    }
-    if info.agent_effort.is_none() {
-        info.agent_effort = provider
-            .and_then(|provider| detect_effort_from_process_tree(pane_pid, provider, snapshot));
+    if include_details {
+        if info.model_id.is_none() {
+            info.model_id = provider
+                .and_then(|provider| detect_model_from_process_tree(pane_pid, provider, snapshot));
+        }
+        if info.agent_effort.is_none() {
+            info.agent_effort = provider
+                .and_then(|provider| detect_effort_from_process_tree(pane_pid, provider, snapshot));
+        }
     }
     info
 }

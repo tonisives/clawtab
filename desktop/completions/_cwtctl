@@ -117,10 +117,15 @@ _cwtctl() {
             _cwtctl_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == info ]]; then
             local -a sub
-            sub=('restore-command:Print an agent restore command')
+            sub=(
+              '--fast:Skip expensive provider detail parsing'
+              'restore-command:Print an agent restore command'
+            )
             _describe -t subcmd 'info subcommand' sub
             _cwtctl_panes
           elif (( CURRENT == 4 )) && [[ $words[2] == info && $words[3] == restore-command ]]; then
+            _cwtctl_panes
+          elif (( CURRENT == 4 )) && [[ $words[2] == info && $words[3] == --fast ]]; then
             _cwtctl_panes
           elif (( CURRENT == 3 )) && [[ $words[2] == rename || $words[2] == ai-rename || $words[2] == pin || $words[2] == unpin ]]; then
             _cwtctl_panes

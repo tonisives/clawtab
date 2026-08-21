@@ -74,6 +74,21 @@ pub(super) fn resolve_session_info(
     pane_pid: &str,
     snapshot: Option<&ProcessSnapshot>,
 ) -> SessionInfo {
+    resolve_session_info_with_details(pane_pid, snapshot, true)
+}
+
+pub(super) fn resolve_session_info_fast(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+) -> SessionInfo {
+    resolve_session_info_with_details(pane_pid, snapshot, false)
+}
+
+fn resolve_session_info_with_details(
+    pane_pid: &str,
+    snapshot: Option<&ProcessSnapshot>,
+    include_details: bool,
+) -> SessionInfo {
     let mut info = SessionInfo::default();
 
     let codex_pid = if is_codex_process_with_snapshot(pane_pid, snapshot) {
@@ -103,15 +118,19 @@ pub(super) fn resolve_session_info(
 
     if let Some(rollout_path) = thread.rollout_path.as_deref() {
         let needs_messages = info.first_query.is_none() || info.last_query.is_none();
-        let rollout = read_codex_rollout(&PathBuf::from(rollout_path), needs_messages);
-        info.token_count = rollout.token_count;
-        info.model_id = rollout.model_id;
-        info.agent_effort = rollout.agent_effort;
-        if info.first_query.is_none() {
-            info.first_query = rollout.first;
-        }
-        if info.last_query.is_none() {
-            info.last_query = rollout.last;
+        if include_details || needs_messages {
+            let rollout = read_codex_rollout(&PathBuf::from(rollout_path), needs_messages);
+            if include_details {
+                info.token_count = rollout.token_count;
+                info.model_id = rollout.model_id;
+                info.agent_effort = rollout.agent_effort;
+            }
+            if info.first_query.is_none() {
+                info.first_query = rollout.first;
+            }
+            if info.last_query.is_none() {
+                info.last_query = rollout.last;
+            }
         }
     }
 
@@ -264,6 +283,10 @@ fn read_codex_last_query(thread_id: &str) -> Option<String> {
         }
     }
 
+    if let Some(result) = read_codex_last_query_from_tail(&path, thread_id, len) {
+        return result;
+    }
+
     let file = fs::File::open(path).ok()?;
     let reader = std::io::BufReader::new(file);
     let mut last_by_thread_id: HashMap<String, Option<String>> = HashMap::new();
@@ -298,6 +321,50 @@ fn read_codex_last_query(thread_id: &str) -> Option<String> {
         );
     }
     result
+}
+
+/// History is append-only, so the current session's latest prompt is usually
+/// in the tail. Avoid scanning every historical session on each short-lived
+/// `cwtctl agent info` process; retain the full-file fallback for old or
+/// interleaved sessions whose latest entry is outside the tail window.
+fn read_codex_last_query_from_tail(
+    path: &PathBuf,
+    thread_id: &str,
+    len: u64,
+) -> Option<Option<String>> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    const MAX_HISTORY_TAIL_BYTES: u64 = 512 * 1024;
+    let start = len.saturating_sub(MAX_HISTORY_TAIL_BYTES);
+    let mut file = fs::File::open(path).ok()?;
+    file.seek(SeekFrom::Start(start)).ok()?;
+
+    let mut bytes = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut bytes).ok()?;
+    if start > 0 {
+        let newline = bytes.iter().position(|byte| *byte == b'\n')?;
+        bytes.drain(..=newline);
+    }
+
+    let text = String::from_utf8_lossy(&bytes);
+    for line in text.lines().rev() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(session_id) = value.get("session_id").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if session_id != thread_id {
+            continue;
+        }
+        return Some(
+            value
+                .get("text")
+                .and_then(|value| value.as_str())
+                .and_then(normalize_optional_str),
+        );
+    }
+    None
 }
 
 fn read_codex_rollout(path: &PathBuf, include_messages: bool) -> CachedRollout {
@@ -547,5 +614,63 @@ fn read_codex_rollout_messages(path: &PathBuf) -> (Option<String>, Option<String
         (first, None)
     } else {
         (first, last)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_codex_last_query_from_tail;
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn reads_latest_matching_query_from_history_tail() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("history.jsonl");
+        let mut file = fs::File::create(&path).expect("history file");
+        writeln!(
+            file,
+            "{}",
+            r#"{"session_id":"other","text":"not this session"}"#
+        )
+        .expect("write history");
+        writeln!(
+            file,
+            "{}",
+            r#"{"session_id":"thread-1","text":"first prompt"}"#
+        )
+        .expect("write history");
+        writeln!(
+            file,
+            "{}",
+            r#"{"session_id":"thread-1","text":"latest prompt"}"#
+        )
+        .expect("write history");
+
+        let length = fs::metadata(&path).expect("history metadata").len();
+        assert_eq!(
+            read_codex_last_query_from_tail(&path, "thread-1", length),
+            Some(Some("latest prompt".to_string()))
+        );
+    }
+
+    #[test]
+    fn skips_malformed_history_lines_when_reading_tail() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("history.jsonl");
+        let mut file = fs::File::create(&path).expect("history file");
+        writeln!(file, "not json").expect("write history");
+        writeln!(
+            file,
+            "{}",
+            r#"{"session_id":"thread-1","text":"latest prompt"}"#
+        )
+        .expect("write history");
+
+        let length = fs::metadata(&path).expect("history metadata").len();
+        assert_eq!(
+            read_codex_last_query_from_tail(&path, "thread-1", length),
+            Some(Some("latest prompt".to_string()))
+        );
     }
 }
