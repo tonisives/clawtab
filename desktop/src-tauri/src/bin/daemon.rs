@@ -114,7 +114,23 @@ fn main() {
         Arc::new(Mutex::new(Vec::new()));
     let agent_activity: Arc<Mutex<Vec<clawtab_lib::ipc::AgentActivity>>> =
         Arc::new(Mutex::new(Vec::new()));
-    let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
+    let restored_auto_yes_panes = match clawtab_lib::tmux::auto_yes_panes_from_options() {
+        Ok(panes) => panes,
+        Err(error) => {
+            log::warn!("failed to restore auto-yes pane state: {}", error);
+            HashSet::new()
+        }
+    };
+    if let Err(error) =
+        clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&restored_auto_yes_panes)
+    {
+        log::warn!(
+            "failed to restore auto-yes terminal bell suppression: {}",
+            error
+        );
+    }
+    let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
+        Arc::new(Mutex::new(restored_auto_yes_panes));
     let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let notification_state: Arc<Mutex<clawtab_lib::notifications::NotificationState>> = Arc::new(
         Mutex::new(clawtab_lib::notifications::NotificationState::new()),

@@ -26,10 +26,10 @@ if ! out=$(cwtctl agent auto-yes toggle "$pane_id" 2>&1); then
     exit 1
 fi
 
-# Toggle pane-local option (read instantly by border format, no shell cache delay)
-current=$(tmux show-option -pqvt "$pane_id" @clawtab-auto-yes)
-if [ "$current" = "1" ]; then
-    tmux set-option -pt "$pane_id" @clawtab-auto-yes 0
-else
+# Reconcile the pane-local indicator with the daemon's authoritative state.
+# The daemon also writes this option so auto-yes survives daemon rebuilds.
+if cwtctl agent auto-yes check "$pane_id" >/dev/null 2>&1; then
     tmux set-option -pt "$pane_id" @clawtab-auto-yes 1
+else
+    tmux set-option -pqu -t "$pane_id" @clawtab-auto-yes
 fi

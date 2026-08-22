@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::process::{Command, Output};
 
 const AUTO_YES_MONITOR_BELL_ORIGINAL: &str = "@clawtab-auto-yes-monitor-bell-original";
+const AUTO_YES_PANE_OPTION: &str = "@clawtab-auto-yes";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TmuxWindow {
@@ -21,6 +22,32 @@ pub fn is_available() -> bool {
     run(&["-V"], "tmux::is_available")
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Restore daemon auto-yes state from the pane-local options that survive a
+/// daemon rebuild or restart.
+pub fn auto_yes_panes_from_options() -> Result<HashSet<String>, String> {
+    let output = run(
+        &["list-panes", "-a", "-F", "#{pane_id}\t#{@clawtab-auto-yes}"],
+        "tmux::auto_yes_panes_from_options",
+    )
+    .map_err(|e| format!("Failed to list tmux panes: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("no server running") || stderr.contains("no sessions") {
+            return Ok(HashSet::new());
+        }
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let (pane_id, enabled) = line.split_once('\t')?;
+            (enabled == "1").then(|| pane_id.to_string())
+        })
+        .collect())
 }
 
 /// Suppress background terminal bells for windows containing auto-yes panes.
@@ -53,6 +80,22 @@ pub fn sync_auto_yes_bell_monitoring(auto_yes_panes: &HashSet<String>) -> Result
         .iter()
         .filter_map(|pane_id| pane_windows.get(pane_id).cloned())
         .collect();
+
+    for pane_id in pane_windows.keys() {
+        if auto_yes_panes.contains(pane_id) {
+            run(
+                &["set-option", "-pt", pane_id, AUTO_YES_PANE_OPTION, "1"],
+                "tmux::sync_auto_yes_bell_monitoring::enable_pane",
+            )
+            .map_err(|e| format!("Failed to set auto-yes pane option: {}", e))?;
+        } else {
+            run(
+                &["set-option", "-pqu", "-t", pane_id, AUTO_YES_PANE_OPTION],
+                "tmux::sync_auto_yes_bell_monitoring::disable_pane",
+            )
+            .map_err(|e| format!("Failed to clear auto-yes pane option: {}", e))?;
+        }
+    }
 
     let format = format!(
         "#{{window_id}}\t#{{monitor-bell}}\t#{{{}}}",
