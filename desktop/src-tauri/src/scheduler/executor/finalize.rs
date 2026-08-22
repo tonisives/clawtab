@@ -79,6 +79,14 @@ fn persist_pane_id(rc: &RunCtx<'_>, handle: &TmuxHandle) {
 fn register_auto_yes(rc: &RunCtx<'_>, handle: &TmuxHandle) {
     let mut panes = rc.ctx.auto_yes_panes.lock();
     panes.insert(handle.pane_id.clone());
+    let pane_set = panes.clone();
+    drop(panes);
+    if let Err(error) = crate::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+        log::warn!(
+            "failed to sync auto-yes terminal bell suppression: {}",
+            error
+        );
+    }
     log::info!(
         "Auto-yes enabled for job '{}' pane '{}'",
         rc.job.name,

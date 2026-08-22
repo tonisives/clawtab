@@ -482,6 +482,7 @@ pub async fn question_detection_loop(
     let mut question_signature = String::new();
     let mut process_snapshot = ProcessSnapshot::capture();
     let mut process_snapshot_at = Instant::now();
+    let mut bell_synced_auto_yes_panes = HashSet::new();
 
     loop {
         if process_snapshot_at.elapsed() >= PROCESS_SNAPSHOT_INTERVAL {
@@ -508,6 +509,17 @@ pub async fn question_detection_loop(
             .collect();
 
         let yes_panes = auto_yes_panes.lock().clone();
+        if yes_panes != bell_synced_auto_yes_panes {
+            match crate::tmux::sync_auto_yes_bell_monitoring(&yes_panes) {
+                Ok(()) => bell_synced_auto_yes_panes = yes_panes.clone(),
+                Err(error) => {
+                    log::warn!(
+                        "failed to sync auto-yes terminal bell suppression: {}",
+                        error
+                    )
+                }
+            }
+        }
         auto_answer_questions(&questions, &yes_panes, &mut auto_answered_ids);
         retain_auto_answered_for_present(&questions, &mut auto_answered_ids);
 

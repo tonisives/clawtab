@@ -614,7 +614,13 @@ async fn handle_ipc_command(
         }
         IpcCommand::SetAutoYesPanes { pane_ids } => {
             let pane_set: HashSet<String> = pane_ids.iter().cloned().collect();
-            *auto_yes_panes.lock() = pane_set;
+            *auto_yes_panes.lock() = pane_set.clone();
+            if let Err(error) = clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+                log::warn!(
+                    "failed to sync auto-yes terminal bell suppression: {}",
+                    error
+                );
+            }
 
             {
                 let guard = relay.lock();
@@ -635,7 +641,14 @@ async fn handle_ipc_command(
                 panes.insert(pane_id.clone());
             }
             let pane_ids: Vec<String> = panes.iter().cloned().collect();
+            let pane_set = panes.clone();
             drop(panes);
+            if let Err(error) = clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+                log::warn!(
+                    "failed to sync auto-yes terminal bell suppression: {}",
+                    error
+                );
+            }
 
             {
                 let guard = relay.lock();

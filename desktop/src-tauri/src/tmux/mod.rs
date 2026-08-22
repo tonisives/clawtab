@@ -1,6 +1,9 @@
 use crate::debug_spawn;
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::process::{Command, Output};
+
+const AUTO_YES_MONITOR_BELL_ORIGINAL: &str = "@clawtab-auto-yes-monitor-bell-original";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TmuxWindow {
@@ -18,6 +21,114 @@ pub fn is_available() -> bool {
     run(&["-V"], "tmux::is_available")
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Suppress background terminal bells for windows containing auto-yes panes.
+/// Codex emits a terminal notification before an approval hook can answer, so
+/// tmux must stop that bell from reaching the terminal while auto-yes is active.
+/// The previous window value is restored when its last auto-yes pane is removed.
+pub fn sync_auto_yes_bell_monitoring(auto_yes_panes: &HashSet<String>) -> Result<(), String> {
+    let panes_output = run(
+        &["list-panes", "-a", "-F", "#{pane_id}\t#{window_id}"],
+        "tmux::sync_auto_yes_bell_monitoring::list_panes",
+    )
+    .map_err(|e| format!("Failed to list tmux panes: {}", e))?;
+
+    if !panes_output.status.success() {
+        let stderr = String::from_utf8_lossy(&panes_output.stderr);
+        if stderr.contains("no server running") || stderr.contains("no sessions") {
+            return Ok(());
+        }
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+
+    let pane_windows: HashMap<String, String> = String::from_utf8_lossy(&panes_output.stdout)
+        .lines()
+        .filter_map(|line| {
+            line.split_once('\t')
+                .map(|(pane_id, window_id)| (pane_id.to_string(), window_id.to_string()))
+        })
+        .collect();
+    let auto_yes_windows: HashSet<String> = auto_yes_panes
+        .iter()
+        .filter_map(|pane_id| pane_windows.get(pane_id).cloned())
+        .collect();
+
+    let format = format!(
+        "#{{window_id}}\t#{{monitor-bell}}\t#{{{}}}",
+        AUTO_YES_MONITOR_BELL_ORIGINAL
+    );
+    let windows_output = run(
+        &["list-windows", "-a", "-F", &format],
+        "tmux::sync_auto_yes_bell_monitoring::list_windows",
+    )
+    .map_err(|e| format!("Failed to list tmux windows: {}", e))?;
+    if !windows_output.status.success() {
+        return Err(format!(
+            "tmux error: {}",
+            String::from_utf8_lossy(&windows_output.stderr).trim()
+        ));
+    }
+
+    for line in String::from_utf8_lossy(&windows_output.stdout).lines() {
+        let mut fields = line.splitn(3, '\t');
+        let Some(window_id) = fields.next() else {
+            continue;
+        };
+        let monitor_bell = match fields.next().unwrap_or("1") {
+            "0" | "off" => "off",
+            _ => "on",
+        };
+        let original = fields.next().unwrap_or("");
+
+        if auto_yes_windows.contains(window_id) {
+            if original.is_empty() {
+                run(
+                    &[
+                        "set-option",
+                        "-w",
+                        "-t",
+                        window_id,
+                        AUTO_YES_MONITOR_BELL_ORIGINAL,
+                        monitor_bell,
+                    ],
+                    "tmux::sync_auto_yes_bell_monitoring::remember",
+                )
+                .map_err(|e| format!("Failed to remember monitor-bell: {}", e))?;
+            }
+            run(
+                &["set-option", "-w", "-t", window_id, "monitor-bell", "off"],
+                "tmux::sync_auto_yes_bell_monitoring::disable",
+            )
+            .map_err(|e| format!("Failed to disable monitor-bell: {}", e))?;
+        } else if !original.is_empty() {
+            run(
+                &[
+                    "set-option",
+                    "-w",
+                    "-t",
+                    window_id,
+                    "monitor-bell",
+                    original,
+                ],
+                "tmux::sync_auto_yes_bell_monitoring::restore",
+            )
+            .map_err(|e| format!("Failed to restore monitor-bell: {}", e))?;
+            run(
+                &[
+                    "set-option",
+                    "-wqu",
+                    "-t",
+                    window_id,
+                    AUTO_YES_MONITOR_BELL_ORIGINAL,
+                ],
+                "tmux::sync_auto_yes_bell_monitoring::clear_saved",
+            )
+            .map_err(|e| format!("Failed to clear saved monitor-bell: {}", e))?;
+        }
+    }
+
+    Ok(())
 }
 
 pub fn list_sessions() -> Result<Vec<String>, String> {

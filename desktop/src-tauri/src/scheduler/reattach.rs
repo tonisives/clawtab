@@ -240,6 +240,14 @@ fn restore_auto_yes(
     }
     let mut panes = auto_yes_panes.lock();
     panes.insert(pane_id.to_string());
+    let pane_set = panes.clone();
+    drop(panes);
+    if let Err(error) = crate::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+        log::warn!(
+            "failed to sync auto-yes terminal bell suppression: {}",
+            error
+        );
+    }
     log::info!(
         "Auto-yes restored for reattached job '{}' pane '{}'",
         job.name,

@@ -528,7 +528,13 @@ fn handle_set_auto_yes_panes(
 ) {
     log::info!("[handler] SetAutoYesPanes received: {:?}", pane_ids);
     let pane_set: std::collections::HashSet<String> = pane_ids.iter().cloned().collect();
-    *auto_yes_panes.lock() = pane_set;
+    *auto_yes_panes.lock() = pane_set.clone();
+    if let Err(error) = crate::tmux::sync_auto_yes_bell_monitoring(&pane_set) {
+        log::warn!(
+            "failed to sync auto-yes terminal bell suppression: {}",
+            error
+        );
+    }
     event_sink.emit_auto_yes_changed();
     let msg = DesktopMessage::AutoYesPanes { pane_ids };
     let guard = relay.lock();
