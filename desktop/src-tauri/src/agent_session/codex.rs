@@ -4,7 +4,7 @@ use super::common::{
 };
 use super::{ProcessSnapshot, SessionInfo};
 use parking_lot::Mutex;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
@@ -47,6 +47,7 @@ struct CachedSqlitePath {
 #[derive(Clone)]
 struct CachedThreadId {
     checked_at: Instant,
+    process_start_epoch: Option<i64>,
     thread_id: Option<String>,
 }
 
@@ -100,7 +101,9 @@ fn resolve_session_info_with_details(
         }
     };
 
-    let Some(thread_id) = cached_codex_thread_id_by_pid(&codex_pid) else {
+    let process_start_epoch =
+        snapshot.and_then(|snapshot| snapshot.start_epoch_for_pid(&codex_pid));
+    let Some(thread_id) = cached_codex_thread_id_by_pid(&codex_pid, process_start_epoch) else {
         return info;
     };
 
@@ -204,23 +207,39 @@ fn latest_codex_sqlite(prefix: &str) -> Option<PathBuf> {
     path
 }
 
-fn find_codex_thread_id_by_pid(pid: &str) -> Option<String> {
+fn find_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) -> Option<String> {
     let db_path = latest_codex_sqlite("logs_")?;
     let conn = Connection::open(db_path).ok()?;
-    conn.query_row(
-        "select thread_id from logs
-         where process_uuid like ?1 and thread_id is not null
-         order by ts desc, ts_nanos desc, id desc
-         limit 1",
-        [format!("pid:{}:%", pid)],
-        |row| row.get::<_, String>(0),
-    )
-    .optional()
-    .ok()
-    .flatten()
+    let process_uuid = format!("pid:{}:%", pid);
+    match process_start_epoch {
+        Some(start_epoch) => conn
+            .query_row(
+                "select thread_id from logs
+                 where process_uuid like ?1 and thread_id is not null and ts >= ?2
+                 order by ts desc, ts_nanos desc, id desc
+                 limit 1",
+                params![process_uuid, start_epoch],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .ok()
+            .flatten(),
+        None => conn
+            .query_row(
+                "select thread_id from logs
+                 where process_uuid like ?1 and thread_id is not null
+                 order by ts desc, ts_nanos desc, id desc
+                 limit 1",
+                [process_uuid],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .ok()
+            .flatten(),
+    }
 }
 
-fn cached_codex_thread_id_by_pid(pid: &str) -> Option<String> {
+fn cached_codex_thread_id_by_pid(pid: &str, process_start_epoch: Option<i64>) -> Option<String> {
     const THREAD_ID_HIT_CACHE_TTL: Duration = Duration::from_secs(300);
     const THREAD_ID_MISS_CACHE_TTL: Duration = Duration::from_secs(30);
 
@@ -231,16 +250,17 @@ fn cached_codex_thread_id_by_pid(pid: &str) -> Option<String> {
         } else {
             THREAD_ID_MISS_CACHE_TTL
         };
-        if cached.checked_at.elapsed() < ttl {
+        if cached.process_start_epoch == process_start_epoch && cached.checked_at.elapsed() < ttl {
             return cached.thread_id.clone();
         }
     }
 
-    let thread_id = find_codex_thread_id_by_pid(pid);
+    let thread_id = find_codex_thread_id_by_pid(pid, process_start_epoch);
     cache.insert(
         pid.to_string(),
         CachedThreadId {
             checked_at: Instant::now(),
+            process_start_epoch,
             thread_id: thread_id.clone(),
         },
     );
