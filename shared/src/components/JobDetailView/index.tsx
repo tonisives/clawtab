@@ -683,7 +683,7 @@ export function JobDetailView({
             </TouchableOpacity>
           ) : null}
           {/* Settings "..." menu */}
-          {(showMobileAutoYesMenuItem || onDuplicate || onDelete || isRunning || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar) && (
+          {(showMobileAutoYesMenuItem || onDuplicate || onDelete || isRunning || onFork || onSplitPane || onZoomPane || onInjectSecrets || onSearchSkills || onRevealInSidebar || !!extraMenuItems?.length) && (
             <View ref={settingsMenuRef} style={{ zIndex: 9999, ...(isWeb ? { position: "relative" as const } : {}) }}>
               <TouchableOpacity
                 ref={settingsBtnRef}

@@ -121,16 +121,13 @@ fn main() {
             HashSet::new()
         }
     };
-    if let Err(error) =
-        clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&restored_auto_yes_panes)
-    {
+    if let Err(error) = clawtab_lib::tmux::sync_auto_yes_bell_monitoring(&restored_auto_yes_panes) {
         log::warn!(
             "failed to restore auto-yes terminal bell suppression: {}",
             error
         );
     }
-    let auto_yes_panes: Arc<Mutex<HashSet<String>>> =
-        Arc::new(Mutex::new(restored_auto_yes_panes));
+    let auto_yes_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(restored_auto_yes_panes));
     let protected_panes: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
     let notification_state: Arc<Mutex<clawtab_lib::notifications::NotificationState>> = Arc::new(
         Mutex::new(clawtab_lib::notifications::NotificationState::new()),
@@ -145,6 +142,25 @@ fn main() {
     );
     let notifier: Arc<dyn clawtab_lib::notifications::Notifier> =
         Arc::new(IpcNotifier::new(event_subscribers.clone()));
+    {
+        let event_subscribers = event_subscribers.clone();
+        let relay_handle = Arc::clone(&relay_handle);
+        clawtab_lib::agent_plugins::runtime().set_observer(Arc::new(move |run| {
+            if let Some(handle) = relay_handle.lock().as_ref() {
+                handle.send_message(&clawtab_protocol::DesktopMessage::AgentActionProgress {
+                    run: run.clone(),
+                });
+            }
+            let event_subscribers = event_subscribers.clone();
+            tokio::spawn(async move {
+                ipc::broadcast_event(
+                    &event_subscribers,
+                    &clawtab_lib::ipc::IpcEvent::AgentActionProgress(run),
+                )
+                .await;
+            });
+        }));
+    }
     let hook_runtime = clawtab_lib::agent_hooks::HookRuntime::default();
 
     let ctx = clawtab_lib::job_context::JobContext {
@@ -357,6 +373,15 @@ fn main() {
                         &pty_manager,
                     )
                     .await;
+                    {
+                        let current_settings = settings.lock();
+                        for provider in processes.iter().map(|process| process.provider.as_str()) {
+                            clawtab_lib::agent_plugins::observe_detected_provider(
+                                provider,
+                                &current_settings,
+                            );
+                        }
+                    }
                     let snapshot_json = serde_json::to_string(&processes).unwrap_or_default();
                     if snapshot_json != last_snapshot_json {
                         last_snapshot_json = snapshot_json;
@@ -389,18 +414,15 @@ fn main() {
                             });
                         }
                     }
-                    let pinned_items =
-                        clawtab_lib::shared_state::get_pinned_items(&settings);
+                    let pinned_items = clawtab_lib::shared_state::get_pinned_items(&settings);
                     let pins_json = serde_json::to_string(&pinned_items).unwrap_or_default();
                     if pins_json != last_pins_json {
                         last_pins_json = pins_json;
                         let guard = relay.lock();
                         if let Some(handle) = guard.as_ref() {
-                            handle.send_message(
-                                &clawtab_protocol::DesktopMessage::PinnedItems {
-                                    items: pinned_items,
-                                },
-                            );
+                            handle.send_message(&clawtab_protocol::DesktopMessage::PinnedItems {
+                                items: pinned_items,
+                            });
                         }
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -677,9 +699,9 @@ async fn handle_ipc_command(
             event_sink.emit_auto_yes_changed();
             IpcResponse::Ok
         }
-        IpcCommand::GetPinnedItems => IpcResponse::PinnedItems(
-            clawtab_lib::shared_state::get_pinned_items(settings),
-        ),
+        IpcCommand::GetPinnedItems => {
+            IpcResponse::PinnedItems(clawtab_lib::shared_state::get_pinned_items(settings))
+        }
         IpcCommand::MergePinnedItems { items } => {
             match clawtab_lib::shared_state::merge_pinned_items(settings, items) {
                 Ok(items) => {
@@ -711,25 +733,24 @@ async fn handle_ipc_command(
         IpcCommand::SetPaneDisplayName {
             pane_id,
             display_name,
-        } => match clawtab_lib::shared_state::set_pane_display_name(
-            settings,
-            &pane_id,
-            display_name,
-        ) {
-            Ok(display_name) => {
-                if let Some(handle) = relay.lock().as_ref() {
-                    handle.send_message(
-                        &clawtab_protocol::DesktopMessage::PaneDisplayNameChanged {
-                            pane_id: pane_id.clone(),
-                            display_name: display_name.clone(),
-                        },
-                    );
+        } => {
+            match clawtab_lib::shared_state::set_pane_display_name(settings, &pane_id, display_name)
+            {
+                Ok(display_name) => {
+                    if let Some(handle) = relay.lock().as_ref() {
+                        handle.send_message(
+                            &clawtab_protocol::DesktopMessage::PaneDisplayNameChanged {
+                                pane_id: pane_id.clone(),
+                                display_name: display_name.clone(),
+                            },
+                        );
+                    }
+                    event_sink.emit_pane_display_name_changed(pane_id, display_name);
+                    IpcResponse::Ok
                 }
-                event_sink.emit_pane_display_name_changed(pane_id, display_name);
-                IpcResponse::Ok
+                Err(error) => IpcResponse::Error(error),
             }
-            Err(error) => IpcResponse::Error(error),
-        },
+        }
         IpcCommand::GetActiveQuestions => {
             let qs = active_questions.lock().clone();
             IpcResponse::ActiveQuestions(qs)
@@ -762,6 +783,37 @@ async fn handle_ipc_command(
                 }
             }
             IpcResponse::AgentActivity(activity)
+        }
+        IpcCommand::ListAgentActions { pane_id } => {
+            let settings = settings.lock().clone();
+            let (actions, session) =
+                clawtab_lib::agent_plugins::runtime().list_actions(&pane_id, &settings);
+            IpcResponse::AgentActions { actions, session }
+        }
+        IpcCommand::StartAgentAction {
+            pane_id,
+            action_id,
+            parameters,
+        } => {
+            let settings = settings.lock().clone();
+            match clawtab_lib::agent_plugins::runtime()
+                .start(pane_id, action_id, parameters, settings)
+            {
+                Ok(run) => IpcResponse::AgentActionRun(run),
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
+        IpcCommand::GetAgentActionRun { run_id } => {
+            match clawtab_lib::agent_plugins::runtime().get_run(&run_id) {
+                Some(run) => IpcResponse::AgentActionRun(run),
+                None => IpcResponse::Error("Agent action run not found".to_string()),
+            }
+        }
+        IpcCommand::CancelAgentAction { run_id } => {
+            match clawtab_lib::agent_plugins::runtime().cancel(&run_id) {
+                Ok(run) => IpcResponse::AgentActionRun(run),
+                Err(error) => IpcResponse::Error(error),
+            }
         }
         IpcCommand::ListSecretKeys => {
             let s = secrets.lock();

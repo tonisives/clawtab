@@ -110,6 +110,9 @@ async fn dispatch_sync(
     pty_manager: &SharedPtyManager,
     event_sink: &dyn EventSink,
 ) -> Option<DesktopMessage> {
+    if let Some(resp) = dispatch_agent_action_msg(&msg, ctx) {
+        return Some(resp);
+    }
     if let Some(resp) = dispatch_job_msg(&msg, jobs_config, ctx, event_sink).await {
         return Some(resp);
     }
@@ -117,6 +120,72 @@ async fn dispatch_sync(
         return Some(resp);
     }
     dispatch_pty_msg(msg, ctx, pty_manager, event_sink)
+}
+
+fn dispatch_agent_action_msg(msg: &ClientMessage, ctx: &JobContext) -> Option<DesktopMessage> {
+    match msg {
+        ClientMessage::ListAgentActions { id, pane_id } => {
+            let settings = ctx.settings.lock().clone();
+            let (actions, session) =
+                crate::agent_plugins::runtime().list_actions(pane_id, &settings);
+            Some(DesktopMessage::AgentActions {
+                id: id.clone(),
+                pane_id: pane_id.clone(),
+                actions,
+                session,
+            })
+        }
+        ClientMessage::StartAgentAction {
+            id,
+            pane_id,
+            action_id,
+            parameters,
+        } => {
+            let settings = ctx.settings.lock().clone();
+            match crate::agent_plugins::runtime().start(
+                pane_id.clone(),
+                action_id.clone(),
+                parameters.clone(),
+                settings,
+            ) {
+                Ok(run) => Some(DesktopMessage::AgentActionStarted {
+                    id: id.clone(),
+                    run: Some(run),
+                    error: None,
+                }),
+                Err(error) => Some(DesktopMessage::AgentActionStarted {
+                    id: id.clone(),
+                    run: None,
+                    error: Some(error),
+                }),
+            }
+        }
+        ClientMessage::GetAgentActionRun { id, run_id } => {
+            let run = crate::agent_plugins::runtime().get_run(run_id);
+            Some(DesktopMessage::AgentActionRun {
+                id: id.clone(),
+                error: run
+                    .is_none()
+                    .then(|| "Agent action run not found".to_string()),
+                run,
+            })
+        }
+        ClientMessage::CancelAgentAction { id, run_id } => {
+            match crate::agent_plugins::runtime().cancel(run_id) {
+                Ok(run) => Some(DesktopMessage::AgentActionRun {
+                    id: id.clone(),
+                    run: Some(run),
+                    error: None,
+                }),
+                Err(error) => Some(DesktopMessage::AgentActionRun {
+                    id: id.clone(),
+                    run: None,
+                    error: Some(error),
+                }),
+            }
+        }
+        _ => None,
+    }
 }
 
 async fn dispatch_job_msg(
@@ -344,10 +413,7 @@ fn dispatch_process_msg(
                         display_name: display_name.clone(),
                     });
                 }
-                event_sink.emit_pane_display_name_changed(
-                    pane_id.clone(),
-                    display_name.clone(),
-                );
+                event_sink.emit_pane_display_name_changed(pane_id.clone(), display_name.clone());
             }
             Some(DesktopMessage::SetPaneDisplayNameAck {
                 id: id.clone(),

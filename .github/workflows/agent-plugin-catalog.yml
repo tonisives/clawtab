@@ -1,0 +1,39 @@
+name: Agent plugin catalog
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "agent-plugins/v1/**"
+      - "scripts/build-agent-plugin-catalog.py"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cryptography
+      - name: Write signing key
+        env:
+          SIGNING_KEY: ${{ secrets.AGENT_PLUGIN_SIGNING_KEY }}
+        run: |
+          test -n "$SIGNING_KEY"
+          install -m 600 /dev/null "$RUNNER_TEMP/agent-plugin-signing-key"
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/agent-plugin-signing-key"
+      - name: Build signed catalog
+        run: |
+          python scripts/build-agent-plugin-catalog.py \
+            --source agent-plugins/v1 \
+            --output dist/agent-plugins/v1 \
+            --key "$RUNNER_TEMP/agent-plugin-signing-key"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-plugin-catalog-v1
+          path: dist/agent-plugins/v1

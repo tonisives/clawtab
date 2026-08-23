@@ -238,6 +238,23 @@ export function ModelsPanel() {
   const titleSummaryModels = titleSummaryProvider
     ? (enabledModels[titleSummaryProvider] ?? [])
     : []
+  const agentPlugins = settings.agent_plugins ?? {
+    catalog_updates_enabled: true,
+    local_plugins_enabled: false,
+    compact_presets: { codex: { model: "gpt-5.6-luna", effort: "low" } },
+  }
+  const compactPreset = agentPlugins.compact_presets.codex ?? { model: "gpt-5.6-luna", effort: "low" }
+  const updateAgentPlugins = (patch: Partial<typeof agentPlugins>) => {
+    update({ agent_plugins: { ...agentPlugins, ...patch } })
+  }
+  const updateCompactPreset = (patch: Partial<typeof compactPreset>) => {
+    updateAgentPlugins({
+      compact_presets: {
+        ...agentPlugins.compact_presets,
+        codex: { ...compactPreset, ...patch },
+      },
+    })
+  }
 
   const isDefault = (provider: ProcessProvider, modelId: string) =>
     provider === defaultProvider && modelId === defaultModel
@@ -352,6 +369,53 @@ export function ModelsPanel() {
           <span className="hint">
             The default model used when a job doesn't specify one.
           </span>
+        </div>
+      </div>
+
+      <div className="field-group">
+        <span className="field-group-title">Agent actions</span>
+        <div className="form-group">
+          <label>Cheap compact preset</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select
+              value={compactPreset.model}
+              onChange={(event) => updateCompactPreset({ model: event.target.value })}
+            >
+              {(enabledModels.codex ?? []).map((model) => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
+            <select
+              value={compactPreset.effort}
+              onChange={(event) => updateCompactPreset({ effort: event.target.value })}
+            >
+              {(["low", "medium", "high", "xhigh", "max"] as const).map((effort) => (
+                <option key={effort} value={effort}>{effort}</option>
+              ))}
+            </select>
+          </div>
+          <span className="hint">Used temporarily by Compact with cheaper model, then the original model and effort are restored.</span>
+        </div>
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={agentPlugins.catalog_updates_enabled}
+              onChange={(event) => updateAgentPlugins({ catalog_updates_enabled: event.target.checked })}
+            />
+            Update signed first-party agent actions automatically
+          </label>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={agentPlugins.local_plugins_enabled}
+              onChange={(event) => updateAgentPlugins({ local_plugins_enabled: event.target.checked })}
+            />
+            Enable local declarative agent plugins
+          </label>
+          <span className="hint">Loads local.* YAML manifests from ~/.config/clawtab/agent-plugins.</span>
         </div>
       </div>
 

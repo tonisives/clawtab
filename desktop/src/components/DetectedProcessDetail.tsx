@@ -1,9 +1,29 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared";
 import { JobDetailView, shortenPath } from "@clawtab/shared";
 import { XtermPane } from "./XtermPane";
+
+type AgentActionDescriptor = {
+  id: string;
+  title: string;
+  description: string;
+  available: boolean;
+  unavailable_reason?: string;
+  parameters: { name: string; kind: "model" | "effort"; options: string[] }[];
+};
+
+type AgentActionRun = {
+  run_id: string;
+  pane_id: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "needs_user_attention";
+  progress: string;
+  error?: string;
+};
+
+type AgentSessionData = { effort?: string };
 
 function createProcessTransport(process: DetectedProcess): Transport {
   const noopRunJob: Transport["runJob"] = async () => null;
@@ -94,6 +114,95 @@ export function DetectedProcessDetail({
   const paneQuestion = questions.find((q) => q.pane_id === process.pane_id);
 
   const transport = useMemo(() => createProcessTransport(process), [process.pane_id]);
+  const [agentActions, setAgentActions] = useState<AgentActionDescriptor[]>([]);
+  const [agentSession, setAgentSession] = useState<AgentSessionData | null>(null);
+  const [agentActionRun, setAgentActionRun] = useState<AgentActionRun | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    invoke<[AgentActionDescriptor[], AgentSessionData | null]>("list_agent_actions", {
+      paneId: process.pane_id,
+    }).then(([actions, session]) => {
+      if (active) {
+        setAgentActions(actions);
+        setAgentSession(session);
+      }
+    }).catch(() => {
+      if (active) setAgentActions([]);
+    });
+    return () => { active = false; };
+  }, [process.pane_id]);
+
+  useEffect(() => {
+    if (!agentActionRun || !["queued", "running"].includes(agentActionRun.state)) return;
+    let active = true;
+    const poll = () => {
+      invoke<AgentActionRun>("get_agent_action_run", { runId: agentActionRun.run_id })
+        .then((run) => { if (active) setAgentActionRun(run); })
+        .catch(() => {});
+    };
+    const interval = setInterval(poll, 750);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [agentActionRun?.run_id, agentActionRun?.state]);
+
+  useEffect(() => {
+    const unlisten = listen<AgentActionRun>("agent-action-progress", (event) => {
+      if (event.payload.pane_id === process.pane_id) setAgentActionRun(event.payload);
+    });
+    return () => { unlisten.then((stop) => stop()); };
+  }, [process.pane_id]);
+
+  const runAgentAction = useCallback((actionId: string, parameters: Record<string, string> = {}) => {
+    invoke<AgentActionRun>("start_agent_action", {
+      paneId: process.pane_id,
+      actionId,
+      parameters,
+    }).then(setAgentActionRun).catch((error) => {
+      setAgentActionRun({
+        run_id: "start-error",
+        pane_id: process.pane_id,
+        state: "failed",
+        progress: "Could not start action",
+        error: String(error),
+      });
+    });
+  }, [process.pane_id]);
+
+  const agentMenuItems = useMemo(() => {
+    const items: { label: string; onPress: () => void }[] = [];
+    if (agentActionRun && ["queued", "running"].includes(agentActionRun.state)) {
+      items.push({
+        label: `Agent: ${agentActionRun.progress}`,
+        onPress: () => {
+          invoke("cancel_agent_action", { runId: agentActionRun.run_id }).catch(() => {});
+        },
+      });
+      return items;
+    }
+    for (const action of agentActions.filter((candidate) => candidate.available)) {
+      const models = action.parameters.find((parameter) => parameter.kind === "model")?.options;
+      if (models?.length) {
+        for (const model of models) {
+          items.push({
+            label: `Agent: Switch to ${model}`,
+            onPress: () => runAgentAction(action.id, {
+              model,
+              ...(agentSession?.effort ? { effort: agentSession.effort } : {}),
+            }),
+          });
+        }
+      } else {
+        items.push({ label: `Agent: ${action.title}`, onPress: () => runAgentAction(action.id) });
+      }
+    }
+    if (agentActionRun?.error) {
+      items.unshift({ label: `Agent action failed: ${agentActionRun.error}`, onPress: () => {} });
+    }
+    return items;
+  }, [agentActionRun, agentActions, agentSession?.effort, runAgentAction]);
 
   const syntheticJob: RemoteJob = {
     name: displayName,
@@ -181,6 +290,7 @@ export function DetectedProcessDetail({
       onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}
       onSearchSkills={process.can_send_skills ? onSearchSkills : undefined}
       dragHandleProps={dragHandleProps}
+      extraMenuItems={agentMenuItems}
     />
   );
 }

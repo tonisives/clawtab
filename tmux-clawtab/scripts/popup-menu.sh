@@ -294,6 +294,24 @@ draw_search_bar() {
 # Shortcuts tab items and cursor
 SHORTCUT_CURSOR=0
 SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Pin across ClawTab" "Fork session")
+declare -a AGENT_ACTION_IDS
+
+load_agent_actions() {
+    AGENT_ACTION_IDS=()
+    command -v cwtctl &>/dev/null || return 0
+    local action_id title status
+    while IFS=$'\t' read -r action_id title status; do
+        [ -n "$action_id" ] || continue
+        [ "$status" = "available" ] || continue
+        case "$action_id" in
+            *.set_model) continue ;;
+        esac
+        SHORTCUT_ITEMS+=("Agent: $title")
+        AGENT_ACTION_IDS+=("$action_id")
+    done < <(cwtctl agent actions "$PANE_ID" 2>/dev/null || true)
+}
+
+load_agent_actions
 
 # Session info (loaded once)
 SESSION_ID=""
@@ -1430,6 +1448,14 @@ do_enter() {
                 3)
                     "$CURRENT_DIR/fork-session.sh" "$PANE_ID"
                     return 1
+                    ;;
+                *)
+                    local action_index=$((SHORTCUT_CURSOR - 4))
+                    local action_id="${AGENT_ACTION_IDS[$action_index]:-}"
+                    if [ -n "$action_id" ]; then
+                        cwtctl agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
+                        return 1
+                    fi
                     ;;
             esac
             return 0

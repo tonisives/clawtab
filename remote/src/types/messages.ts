@@ -1,6 +1,43 @@
 import type { AgentActivity, AgentEffort, JobUpdate } from "@clawtab/shared";
 import type { DetectedProcess, ClaudeQuestion, JobStatus, NotificationHistoryItem, RemoteJob, RunDetail, RunRecord } from "./job";
 
+export type AgentActionParameter = {
+  name: string;
+  title: string;
+  kind: "model" | "effort";
+  required: boolean;
+  options: string[];
+};
+
+export type AgentActionDescriptor = {
+  id: string;
+  title: string;
+  description: string;
+  provider: string;
+  parameters: AgentActionParameter[];
+  available: boolean;
+  unavailable_reason?: string;
+};
+
+export type AgentSessionData = {
+  provider: string;
+  session_id?: string;
+  model?: string;
+  effort?: string;
+  token_count?: number;
+};
+
+export type AgentActionRun = {
+  run_id: string;
+  pane_id: string;
+  action_id: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "needs_user_attention";
+  progress: string;
+  progress_percent: number;
+  result?: unknown;
+  error?: string;
+};
+
 // Messages sent by this client to the relay server
 export type ClientMessage =
   | { type: "list_jobs"; id: string }
@@ -42,7 +79,11 @@ export type ClientMessage =
   | { type: "pty_resize"; pane_id: string; cols: number; rows: number }
   | { type: "set_pinned_item"; id: string; key: string; pinned: boolean }
   | { type: "merge_pinned_items"; id: string; items: string[] }
-  | { type: "set_pane_display_name"; id: string; pane_id: string; display_name?: string };
+  | { type: "set_pane_display_name"; id: string; pane_id: string; display_name?: string }
+  | { type: "list_agent_actions"; id: string; pane_id: string }
+  | { type: "start_agent_action"; id: string; pane_id: string; action_id: string; parameters?: Record<string, string> }
+  | { type: "get_agent_action_run"; id: string; run_id: string }
+  | { type: "cancel_agent_action"; id: string; run_id: string };
 
 // Messages received from the relay (desktop responses forwarded through)
 export type DesktopMessage =
@@ -98,7 +139,11 @@ export type DesktopMessage =
   | { type: "set_pinned_item_ack"; id: string; success: boolean; error?: string }
   | { type: "merge_pinned_items_ack"; id: string; success: boolean; error?: string }
   | { type: "pane_display_name_changed"; pane_id: string; display_name?: string }
-  | { type: "set_pane_display_name_ack"; id: string; success: boolean; error?: string };
+  | { type: "set_pane_display_name_ack"; id: string; success: boolean; error?: string }
+  | { type: "agent_actions"; id: string; pane_id: string; actions: AgentActionDescriptor[]; session?: AgentSessionData }
+  | { type: "agent_action_started"; id: string; run?: AgentActionRun; error?: string }
+  | { type: "agent_action_run"; id: string; run?: AgentActionRun; error?: string }
+  | { type: "agent_action_progress"; run: AgentActionRun };
 
 // Messages from the relay server itself
 export type ServerMessage =

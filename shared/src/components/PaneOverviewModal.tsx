@@ -23,6 +23,27 @@ export type PaneOverviewActions = {
   stopping?: boolean;
   onStart?: () => void;
   starting?: boolean;
+  agentActions?: PaneAgentAction[];
+  agentSessionEffort?: string;
+  agentActionRun?: PaneAgentActionRun | null;
+  onRunAgentAction?: (actionId: string, parameters?: Record<string, string>) => void;
+  onCancelAgentAction?: () => void;
+};
+
+export type PaneAgentAction = {
+  id: string;
+  title: string;
+  description: string;
+  available: boolean;
+  unavailableReason?: string;
+  modelOptions?: string[];
+};
+
+export type PaneAgentActionRun = {
+  state: string;
+  progress: string;
+  progressPercent: number;
+  error?: string;
 };
 
 type PaneOverviewModalProps = PaneOverviewData & {
@@ -153,6 +174,61 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
             </View>
           ) : null}
           <DetailRow label="Started" value={formatStartedAt(pane.startedAt)} />
+          {actions?.agentActions?.length ? (
+            <View style={styles.agentActions}>
+              <Text style={styles.sectionTitle}>Agent actions</Text>
+              {actions.agentActionRun ? (
+                <View style={styles.runStatus}>
+                  <View style={styles.runStatusText}>
+                    <Text style={styles.agentActionTitle}>{actions.agentActionRun.progress}</Text>
+                    <Text style={styles.agentActionDescription}>
+                      {actions.agentActionRun.error ?? `${actions.agentActionRun.progressPercent}%`}
+                    </Text>
+                  </View>
+                  {actions.onCancelAgentAction && ["queued", "running"].includes(actions.agentActionRun.state) ? (
+                    <Pressable style={styles.compactButton} onPress={actions.onCancelAgentAction}>
+                      <Text style={styles.compactButtonText}>Cancel</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+              {actions.agentActions.map((action) => (
+                <View key={action.id} style={styles.agentAction}>
+                  <View style={styles.agentActionText}>
+                    <Text style={styles.agentActionTitle}>{action.title}</Text>
+                    <Text style={styles.agentActionDescription}>
+                      {action.unavailableReason ?? action.description}
+                    </Text>
+                  </View>
+                  {action.modelOptions?.length ? (
+                    <View style={styles.modelOptions}>
+                      {action.modelOptions.map((model) => (
+                        <Pressable
+                          key={model}
+                          style={[styles.compactButton, !action.available && styles.disabledButton]}
+                          disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
+                          onPress={() => actions.onRunAgentAction?.(action.id, {
+                            model,
+                            ...(actions.agentSessionEffort ? { effort: actions.agentSessionEffort } : {}),
+                          })}
+                        >
+                          <Text style={styles.compactButtonText}>{model}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={[styles.compactButton, !action.available && styles.disabledButton]}
+                      disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
+                      onPress={() => actions.onRunAgentAction?.(action.id)}
+                    >
+                      <Text style={styles.compactButtonText}>Run</Text>
+                    </Pressable>
+                  )}
+                </View>
+              ))}
+            </View>
+          ) : null}
           <QueryBlock label="First query" value={pane.firstQuery} />
           <QueryBlock label="Latest query" value={latestQuery} />
         </ScrollView>
@@ -279,6 +355,70 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     fontWeight: "600",
+  },
+  agentActions: {
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  agentAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  agentActionText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  agentActionTitle: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  agentActionDescription: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  compactButton: {
+    minHeight: 30,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  compactButtonText: {
+    color: colors.text,
+    fontSize: 11,
+  },
+  disabledButton: {
+    opacity: 0.4,
+  },
+  modelOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    gap: spacing.xs,
+    maxWidth: "55%",
+  },
+  runStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: colors.groupedSurface,
+    borderRadius: radius.sm,
+  },
+  runStatusText: {
+    flex: 1,
   },
   endActionButton: {
     minHeight: 34,

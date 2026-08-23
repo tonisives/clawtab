@@ -159,6 +159,13 @@ export interface AppSettings {
   notify_questions_local: boolean;
   notify_questions_remote: boolean;
   auto_release_on_blur: boolean;
+  agent_plugins: AgentPluginSettings;
+}
+
+export interface AgentPluginSettings {
+  catalog_updates_enabled: boolean;
+  local_plugins_enabled: boolean;
+  compact_presets: Record<string, { model: string; effort: string }>;
 }
 
 export interface TitleSummarySettings {

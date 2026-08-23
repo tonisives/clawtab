@@ -41,6 +41,10 @@ fn print_usage() {
     eprintln!("  agent unpin [pane_id]                     Unpin an agent across ClawTab");
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
     eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
+    eprintln!("  agent actions [pane_id] [--json]           List available agent actions");
+    eprintln!("  agent action run <id> [pane_id] [key=value ...]");
+    eprintln!("  agent action status <run_id>");
+    eprintln!("  agent action cancel <run_id>");
     eprintln!();
     eprintln!("Pane (require desktop app):");
     eprintln!(
@@ -89,12 +93,126 @@ fn print_agent_usage() {
     eprintln!("  agent unpin [pane_id]                     Unpin an agent across ClawTab");
     eprintln!("  agent ai-rename <pane_id>                  Generate a concise pane title");
     eprintln!("  agent hooks <status|install> <provider>    Manage agent event hooks");
+    eprintln!("  agent actions [pane_id] [--json]           List available agent actions");
+    eprintln!("  agent action run <id> [pane_id] [key=value ...]");
+    eprintln!("  agent action status <run_id>");
+    eprintln!("  agent action cancel <run_id>");
+}
+
+async fn handle_agent_action_command(args: &[String]) {
+    let command = args.get(1).map(String::as_str).unwrap_or("");
+    let ipc_command = if command == "actions" {
+        let pane_id = args
+            .iter()
+            .skip(2)
+            .find(|arg| !arg.starts_with('-'))
+            .cloned()
+            .or_else(|| env::var("TMUX_PANE").ok())
+            .unwrap_or_else(|| {
+                eprintln!("Error: pass pane_id or run this command inside tmux");
+                std::process::exit(1);
+            });
+        IpcCommand::ListAgentActions { pane_id }
+    } else {
+        let operation = args.get(2).map(String::as_str).unwrap_or("");
+        match operation {
+            "run" => {
+                let action_id = args.get(3).cloned().unwrap_or_else(|| {
+                    eprintln!("Usage: cwtctl agent action run <id> [pane_id] [key=value ...]");
+                    std::process::exit(1);
+                });
+                let explicit_pane = args.get(4).filter(|value| !value.contains('='));
+                let pane_id = explicit_pane
+                    .cloned()
+                    .or_else(|| env::var("TMUX_PANE").ok())
+                    .unwrap_or_else(|| {
+                        eprintln!("Error: pass pane_id or run this command inside tmux");
+                        std::process::exit(1);
+                    });
+                let parameter_start = if explicit_pane.is_some() { 5 } else { 4 };
+                let mut parameters = std::collections::HashMap::new();
+                for value in args.iter().skip(parameter_start) {
+                    let Some((key, value)) = value.split_once('=') else {
+                        eprintln!("Error: action parameters must use key=value");
+                        std::process::exit(1);
+                    };
+                    parameters.insert(key.to_string(), value.to_string());
+                }
+                IpcCommand::StartAgentAction {
+                    pane_id,
+                    action_id,
+                    parameters,
+                }
+            }
+            "status" | "cancel" => {
+                let run_id = args.get(3).cloned().unwrap_or_else(|| {
+                    eprintln!("Usage: cwtctl agent action {operation} <run_id>");
+                    std::process::exit(1);
+                });
+                if operation == "status" {
+                    IpcCommand::GetAgentActionRun { run_id }
+                } else {
+                    IpcCommand::CancelAgentAction { run_id }
+                }
+            }
+            _ => {
+                print_agent_usage();
+                std::process::exit(1);
+            }
+        }
+    };
+
+    match ipc::send_command(ipc_command).await {
+        Ok(IpcResponse::AgentActions { actions, session }) => {
+            if args.iter().any(|arg| arg == "--json") {
+                let payload = serde_json::json!({ "actions": actions, "session": session });
+                match serde_json::to_string_pretty(&payload) {
+                    Ok(json) => println!("{json}"),
+                    Err(error) => {
+                        eprintln!("Error: {error}");
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                for action in actions {
+                    let status = action.unavailable_reason.map_or_else(
+                        || "available".to_string(),
+                        |reason| format!("unavailable: {reason}"),
+                    );
+                    println!("{}\t{}\t{}", action.id, action.title, status);
+                }
+            }
+        }
+        Ok(IpcResponse::AgentActionRun(run)) => match serde_json::to_string_pretty(&run) {
+            Ok(json) => println!("{json}"),
+            Err(error) => {
+                eprintln!("Error: {error}");
+                std::process::exit(1);
+            }
+        },
+        Ok(IpcResponse::Error(error)) | Err(error) => {
+            eprintln!("Error: {error}");
+            std::process::exit(1);
+        }
+        Ok(_) => {
+            eprintln!("Error: unexpected daemon response");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn is_agent_subcommand(command: &str) -> bool {
     matches!(
         command,
-        "auto-yes" | "info" | "rename" | "ai-rename" | "hooks" | "pin" | "unpin"
+        "auto-yes"
+            | "info"
+            | "rename"
+            | "ai-rename"
+            | "hooks"
+            | "pin"
+            | "unpin"
+            | "actions"
+            | "action"
     )
 }
 
@@ -187,7 +305,12 @@ async fn main() {
         std::process::exit(1);
     }
 
-    if !agent_scope && matches!(command, "auto-yes" | "pane-info" | "rename" | "ai-rename" | "pin" | "unpin") {
+    if !agent_scope
+        && matches!(
+            command,
+            "auto-yes" | "pane-info" | "rename" | "ai-rename" | "pin" | "unpin"
+        )
+    {
         eprintln!(
             "Agent commands are under the agent namespace: cwtctl agent {}",
             if command == "pane-info" {
@@ -217,6 +340,11 @@ async fn main() {
 
     if command == "secrets" {
         handle_secrets_command(&args).await;
+        return;
+    }
+
+    if matches!(command, "actions" | "action") {
+        handle_agent_action_command(&args).await;
         return;
     }
 
@@ -421,7 +549,9 @@ async fn main() {
             }
             let pane_id = args.get(2).cloned().unwrap_or_else(|| {
                 env::var("TMUX_PANE").unwrap_or_else(|_| {
-                    eprintln!("Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly.");
+                    eprintln!(
+                        "Error: not in a tmux pane (no $TMUX_PANE). Pass pane_id explicitly."
+                    );
                     std::process::exit(1);
                 })
             });
@@ -649,6 +779,10 @@ async fn main() {
             IpcResponse::ProviderUsage(usage) => print_provider_usage(usage),
             IpcResponse::AgentActivity(_) => {
                 eprintln!("Error: agent activity is available through the tmux IPC integration");
+                std::process::exit(1);
+            }
+            IpcResponse::AgentActions { .. } | IpcResponse::AgentActionRun(_) => {
+                eprintln!("Error: unexpected agent action response");
                 std::process::exit(1);
             }
             IpcResponse::AgentIntegration(status) => {

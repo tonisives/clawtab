@@ -188,6 +188,25 @@ pub enum ClientMessage {
         cols: u32,
         rows: u32,
     },
+    ListAgentActions {
+        id: String,
+        pane_id: String,
+    },
+    StartAgentAction {
+        id: String,
+        pane_id: String,
+        action_id: String,
+        #[serde(default)]
+        parameters: crate::AgentActionParameters,
+    },
+    GetAgentActionRun {
+        id: String,
+        run_id: String,
+    },
+    CancelAgentAction {
+        id: String,
+        run_id: String,
+    },
 }
 
 /// Messages sent by the desktop app to the relay server.
@@ -298,7 +317,9 @@ pub enum DesktopMessage {
         processes: Vec<DetectedProcess>,
     },
     /// Authoritative per-pane agent state used by tmux and remote clients.
-    AgentActivity { activity: Vec<AgentActivity> },
+    AgentActivity {
+        activity: Vec<AgentActivity>,
+    },
     /// Response to get_settings
     SettingsResponse {
         id: String,
@@ -307,7 +328,10 @@ pub enum DesktopMessage {
         default_model: Option<String>,
     },
     /// Response to get_usage
-    UsageResponse { id: String, usage: UsageSnapshot },
+    UsageResponse {
+        id: String,
+        usage: UsageSnapshot,
+    },
     /// Response to get_run_detail
     RunDetailResponse {
         id: String,
@@ -402,6 +426,30 @@ pub enum DesktopMessage {
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    AgentActions {
+        id: String,
+        pane_id: String,
+        actions: Vec<crate::AgentActionDescriptor>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<crate::AgentSessionData>,
+    },
+    AgentActionStarted {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<crate::AgentActionRun>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    AgentActionRun {
+        id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<crate::AgentActionRun>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    AgentActionProgress {
+        run: crate::AgentActionRun,
+    },
 }
 
 /// Messages sent by the relay server to connected clients.
@@ -434,4 +482,44 @@ pub mod error_codes {
     pub const RATE_LIMITED: &str = "RATE_LIMITED";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
     pub const INVALID_MESSAGE: &str = "INVALID_MESSAGE";
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ClientMessage, DesktopMessage};
+    use crate::{AgentActionRun, AgentActionRunState};
+    use std::collections::HashMap;
+
+    #[test]
+    fn agent_action_request_round_trips() {
+        let message = ClientMessage::StartAgentAction {
+            id: "request-1".into(),
+            pane_id: "%7".into(),
+            action_id: "codex.set_model".into(),
+            parameters: HashMap::from([("model".into(), "gpt-5.6-luna".into())]),
+        };
+        let json = serde_json::to_string(&message).expect("serialize request");
+        assert!(json.contains("start_agent_action"));
+        assert!(serde_json::from_str::<ClientMessage>(&json).is_ok());
+    }
+
+    #[test]
+    fn progress_payload_contains_no_terminal_capture_field() {
+        let message = DesktopMessage::AgentActionProgress {
+            run: AgentActionRun {
+                run_id: "run-1".into(),
+                pane_id: "%7".into(),
+                action_id: "codex.cheap_compact".into(),
+                state: AgentActionRunState::Running,
+                progress: "Compacting context".into(),
+                progress_percent: 50,
+                result: None,
+                error: None,
+            },
+        };
+        let value = serde_json::to_value(message).expect("serialize progress");
+        assert!(value.get("capture").is_none());
+        assert!(value.get("screen").is_none());
+        assert!(value.get("draft").is_none());
+    }
 }

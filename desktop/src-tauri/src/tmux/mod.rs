@@ -644,6 +644,37 @@ pub fn send_key_to_pane(pane_id: &str, key: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn pane_pid(pane_id: &str) -> Result<String, String> {
+    let output = run(
+        &["display-message", "-p", "-t", pane_id, "#{pane_pid}"],
+        "tmux::pane_pid",
+    )
+    .map_err(|e| format!("Failed to inspect pane: {}", e))?;
+    if !output.status.success() {
+        return Err("tmux could not inspect the requested pane".to_string());
+    }
+    let pane_pid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if pane_pid.is_empty() || !pane_pid.chars().all(|ch| ch.is_ascii_digit()) {
+        return Err("tmux returned an invalid pane process id".to_string());
+    }
+    Ok(pane_pid)
+}
+
+/// Send literal text without submitting it. Agent actions use this instead of
+/// shell interpolation so plugin parameters can never become tmux commands.
+pub fn send_literal_to_pane(pane_id: &str, text: &str) -> Result<(), String> {
+    let output = run(
+        &["send-keys", "-t", pane_id, "-l", text],
+        "tmux::send_literal_to_pane",
+    )
+    .map_err(|e| format!("Failed to send literal text to pane: {}", e))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("tmux rejected literal pane input".to_string())
+    }
+}
+
 /// Send one tmux copy-mode command to a pane.
 pub fn send_copy_mode_command_to_pane(pane_id: &str, command: &str) -> Result<(), String> {
     let output = run(

@@ -15,6 +15,7 @@ import { flushPendingAnswers, clearRegisteredSend } from "../lib/pendingAnswers"
 import type { ClientMessage, IncomingMessage } from "../types/messages";
 import { getWs, getWsSend, nextId, setWs, setWsSend } from "../lib/wsRuntime";
 import { usePinsStore } from "../store/pins";
+import { dispatchAgentActionProgress } from "../lib/agentActions";
 
 function suppressAutoYesIndicators(paneIds: string[]) {
   if (paneIds.length === 0) return;
@@ -171,6 +172,9 @@ export function useWebSocket() {
           break;
         case "agent_activity":
           useJobsStore.getState().setAgentActivity(msg.activity);
+          break;
+        case "agent_action_progress":
+          dispatchAgentActionProgress(msg.run);
           break;
         case "pinned_items":
           usePinsStore.getState().applySharedSnapshot(msg.items);

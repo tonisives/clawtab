@@ -73,6 +73,21 @@ pub enum IpcCommand {
     /// This is intentionally an IPC-only command. It is consumed by the tmux
     /// plugin and is not exposed as a cwtctl subcommand.
     GetAgentActivity,
+    ListAgentActions {
+        pane_id: String,
+    },
+    StartAgentAction {
+        pane_id: String,
+        action_id: String,
+        #[serde(default)]
+        parameters: clawtab_protocol::AgentActionParameters,
+    },
+    GetAgentActionRun {
+        run_id: String,
+    },
+    CancelAgentAction {
+        run_id: String,
+    },
     /// Return hook installation state for one recognized agent provider.
     GetAgentIntegration {
         provider: crate::agent_session::ProcessProvider,
@@ -243,6 +258,11 @@ pub enum IpcResponse {
     ActiveQuestions(Vec<clawtab_protocol::ClaudeQuestion>),
     ProviderUsage(crate::usage::ProviderUsageSnapshot),
     AgentActivity(Vec<AgentActivity>),
+    AgentActions {
+        actions: Vec<clawtab_protocol::AgentActionDescriptor>,
+        session: Option<clawtab_protocol::AgentSessionData>,
+    },
+    AgentActionRun(clawtab_protocol::AgentActionRun),
     AgentIntegration(crate::agent_hooks::AgentIntegrationStatus),
     SecretKeys(Vec<String>),
     SecretValues(Vec<(String, String)>),
@@ -282,6 +302,7 @@ pub enum IpcEvent {
     },
     QuestionsChanged,
     AgentActivityChanged(Vec<AgentActivity>),
+    AgentActionProgress(clawtab_protocol::AgentActionRun),
     RelayStatusChanged(IpcRelayStatus),
     /// Daemon-originated notification request. The desktop client, when
     /// subscribed, displays this via tauri-plugin-notification. The daemon

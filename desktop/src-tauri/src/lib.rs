@@ -6,6 +6,7 @@
 mod aerospace;
 pub mod agent;
 pub mod agent_hooks;
+pub mod agent_plugins;
 pub mod agent_session;
 #[cfg(feature = "desktop")]
 mod browser;
@@ -17,7 +18,6 @@ mod cwt;
 pub mod daemon;
 mod debug_spawn;
 pub mod events;
-pub mod shared_state;
 #[cfg(feature = "desktop")]
 mod focus;
 pub mod history;
@@ -34,6 +34,7 @@ pub mod questions;
 pub mod relay;
 pub mod scheduler;
 pub mod secrets;
+pub mod shared_state;
 pub mod telegram;
 mod terminal;
 pub mod tmux;
@@ -909,6 +910,10 @@ pub fn run() {
             commands::processes::get_auto_yes_panes,
             commands::processes::set_auto_yes_panes,
             commands::processes::set_protected_panes,
+            commands::processes::list_agent_actions,
+            commands::processes::start_agent_action,
+            commands::processes::get_agent_action_run,
+            commands::processes::cancel_agent_action,
             commands::processes::set_detected_process_display_name,
             commands::processes::clear_agent_pane_title,
             commands::processes::set_detected_process_group,

@@ -240,6 +240,24 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
                 );
             }
         }
+        DesktopMessage::AgentActions { pane_id, .. } => {
+            let hub = state.hub.read().await;
+            forward_agent_message(&hub, user_id, text, &guests, pane_id);
+        }
+        DesktopMessage::AgentActionStarted { run: Some(run), .. }
+        | DesktopMessage::AgentActionRun { run: Some(run), .. }
+        | DesktopMessage::AgentActionProgress { run } => {
+            let hub = state.hub.read().await;
+            forward_agent_message(&hub, user_id, text, &guests, &run.pane_id);
+        }
+        DesktopMessage::AgentActionStarted { run: None, .. }
+        | DesktopMessage::AgentActionRun { run: None, .. } => {
+            let hub = state.hub.read().await;
+            hub.send_raw_to_mobiles(user_id, text);
+            for guest in &guests {
+                hub.send_raw_to_mobiles(guest.guest_id, text);
+            }
+        }
         DesktopMessage::PinnedItems { items } => {
             let mut hub = state.hub.write().await;
             hub.set_cached_pinned_items(user_id, items.clone());
@@ -292,6 +310,30 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
             event.clone(),
             run_id.clone(),
         );
+    }
+}
+
+fn forward_agent_message(
+    hub: &super::Hub,
+    owner_id: Uuid,
+    text: &str,
+    guests: &[SharedGuest],
+    pane_id: &str,
+) {
+    hub.send_raw_to_mobiles(owner_id, text);
+    let processes = hub.cached_detected_processes(owner_id);
+    for guest in guests {
+        let allowed = guest.allowed_groups.as_deref().is_none_or(|groups| {
+            processes.iter().any(|process| {
+                process.pane_id == pane_id
+                    && process.matched_group.as_ref().is_some_and(|group| {
+                        groups.iter().any(|allowed_group| allowed_group == group)
+                    })
+            })
+        });
+        if allowed {
+            hub.send_raw_to_mobiles(guest.guest_id, text);
+        }
     }
 }
 

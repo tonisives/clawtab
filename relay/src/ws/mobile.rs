@@ -198,6 +198,28 @@ async fn handle_message(
     };
 
     let usage_request = matches!(&msg, ClientMessage::GetUsage { .. });
+    if target != user_id {
+        if let Some(pane_id) = agent_action_pane(&msg) {
+            let cached = {
+                let hub = state.hub.read().await;
+                hub.cached_detected_processes(target)
+            };
+            let visible = filter_detected_processes_for_mobile(state, user_id, target, cached)
+                .await
+                .into_iter()
+                .any(|process| process.pane_id == pane_id);
+            if !visible {
+                let error = ServerMessage::Error {
+                    id: extract_id(&msg),
+                    code: error_codes::UNAUTHORIZED.into(),
+                    message: "this agent pane is not shared with you".into(),
+                };
+                let hub = state.hub.read().await;
+                hub.broadcast_to_mobiles(user_id, &error);
+                return;
+            }
+        }
+    }
     if target != user_id
         && (usage_request
             || matches!(
@@ -261,6 +283,14 @@ async fn handle_message(
     }
 
     hub.forward_to_desktop(target, &msg);
+}
+
+fn agent_action_pane(msg: &ClientMessage) -> Option<&str> {
+    match msg {
+        ClientMessage::ListAgentActions { pane_id, .. }
+        | ClientMessage::StartAgentAction { pane_id, .. } => Some(pane_id),
+        _ => None,
+    }
 }
 
 async fn handle_pty_unsubscribe(
@@ -510,11 +540,45 @@ fn extract_id(msg: &ClientMessage) -> Option<String> {
         | ClientMessage::SetPinnedItem { id, .. }
         | ClientMessage::MergePinnedItems { id, .. }
         | ClientMessage::SetPaneDisplayName { id, .. }
-        | ClientMessage::SubscribePty { id, .. } => Some(id.clone()),
+        | ClientMessage::SubscribePty { id, .. }
+        | ClientMessage::ListAgentActions { id, .. }
+        | ClientMessage::StartAgentAction { id, .. }
+        | ClientMessage::GetAgentActionRun { id, .. }
+        | ClientMessage::CancelAgentAction { id, .. } => Some(id.clone()),
         ClientMessage::UnsubscribeLogs { .. }
         | ClientMessage::UnsubscribePty { .. }
         | ClientMessage::PtyInput { .. }
         | ClientMessage::TmuxPaneKey { .. }
         | ClientMessage::PtyResize { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::agent_action_pane;
+    use clawtab_protocol::ClientMessage;
+    use std::collections::HashMap;
+
+    #[test]
+    fn pane_scoped_agent_requests_are_identified_for_share_authorization() {
+        let list = ClientMessage::ListAgentActions {
+            id: "one".into(),
+            pane_id: "%4".into(),
+        };
+        let start = ClientMessage::StartAgentAction {
+            id: "two".into(),
+            pane_id: "%5".into(),
+            action_id: "codex.cheap_compact".into(),
+            parameters: HashMap::new(),
+        };
+        assert_eq!(agent_action_pane(&list), Some("%4"));
+        assert_eq!(agent_action_pane(&start), Some("%5"));
+        assert_eq!(
+            agent_action_pane(&ClientMessage::GetAgentActionRun {
+                id: "three".into(),
+                run_id: "opaque-capability".into(),
+            }),
+            None
+        );
     }
 }

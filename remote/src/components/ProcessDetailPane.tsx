@@ -13,6 +13,8 @@ import { useDemoPty } from "../hooks/useDemoPty"
 import { registerRequest } from "../lib/useRequestMap"
 import { confirm } from "../lib/platform"
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared"
+import type { AgentActionDescriptor, AgentActionRun, AgentSessionData } from "../types/messages"
+import { subscribeAgentActionProgress } from "../lib/agentActions"
 
 function createProcessTransport(paneId: string, onStopped?: () => void): Transport {
   const noop = async () => {}
@@ -109,6 +111,90 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
   const lastProcess = lastProcessRef.current
   const activeProcess = process ?? lastProcess
   const [showPaneOverview, setShowPaneOverview] = useState(false)
+  const [agentActions, setAgentActions] = useState<AgentActionDescriptor[]>([])
+  const [agentSession, setAgentSession] = useState<AgentSessionData | undefined>()
+  const [agentActionRun, setAgentActionRun] = useState<AgentActionRun | null>(null)
+
+  useEffect(() => {
+    if (!showPaneOverview || !activeProcess) return
+    let active = true
+    setAgentActions([])
+    setAgentSession(undefined)
+    const loadActions = async () => {
+      const send = getWsSend()
+      if (!send) return
+      const id = nextId()
+      send({ type: "list_agent_actions", id, pane_id: paneId })
+      const response = await Promise.race([
+        registerRequest<{ actions?: AgentActionDescriptor[]; session?: AgentSessionData }>(id),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ])
+      if (active && response) {
+        setAgentActions(response.actions ?? [])
+        setAgentSession(response.session)
+      }
+    }
+    loadActions()
+    return () => { active = false }
+  }, [activeProcess, paneId, showPaneOverview])
+
+  useEffect(() => {
+    if (!agentActionRun || !["queued", "running"].includes(agentActionRun.state)) return
+    let active = true
+    const poll = async () => {
+      const send = getWsSend()
+      if (!send) return
+      const id = nextId()
+      send({ type: "get_agent_action_run", id, run_id: agentActionRun.run_id })
+      const response = await Promise.race([
+        registerRequest<{ run?: AgentActionRun }>(id),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ])
+      if (active && response?.run) setAgentActionRun(response.run)
+    }
+    const timer = setInterval(poll, 750)
+    poll()
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [agentActionRun?.run_id, agentActionRun?.state])
+
+  useEffect(() => {
+    if (!agentActionRun) return
+    return subscribeAgentActionProgress(agentActionRun.run_id, setAgentActionRun)
+  }, [agentActionRun?.run_id])
+
+  const handleRunAgentAction = useCallback(async (actionId: string, parameters: Record<string, string> = {}) => {
+    const send = getWsSend()
+    if (!send) return
+    const id = nextId()
+    send({ type: "start_agent_action", id, pane_id: paneId, action_id: actionId, parameters })
+    const response = await Promise.race([
+      registerRequest<{ run?: AgentActionRun; error?: string }>(id),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+    ])
+    if (response?.run) {
+      setAgentActionRun(response.run)
+    } else if (response?.error) {
+      setAgentActionRun({
+        run_id: "start-error",
+        pane_id: paneId,
+        action_id: actionId,
+        state: "failed",
+        progress: "Could not start action",
+        progress_percent: 100,
+        error: response.error,
+      })
+    }
+  }, [paneId])
+
+  const handleCancelAgentAction = useCallback(() => {
+    if (!agentActionRun) return
+    const send = getWsSend()
+    if (!send) return
+    send({ type: "cancel_agent_action", id: nextId(), run_id: agentActionRun.run_id })
+  }, [agentActionRun])
 
   const displayName = activeProcess
     ? activeProcess.cwd.replace(/^\/Users\/[^/]+/, "~")
@@ -346,6 +432,23 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
           onTogglePin: handleTogglePin,
           onStop: isAlive ? handleStop : undefined,
           stopping,
+          agentActions: agentActions.map((action) => ({
+            id: action.id,
+            title: action.title,
+            description: action.description,
+            available: action.available,
+            unavailableReason: action.unavailable_reason,
+            modelOptions: action.parameters.find((parameter) => parameter.kind === "model")?.options,
+          })),
+          agentSessionEffort: agentSession?.effort,
+          agentActionRun: agentActionRun ? {
+            state: agentActionRun.state,
+            progress: agentActionRun.progress,
+            progressPercent: agentActionRun.progress_percent,
+            error: agentActionRun.error,
+          } : null,
+          onRunAgentAction: handleRunAgentAction,
+          onCancelAgentAction: handleCancelAgentAction,
         }}
         paneOverviewVisible={showPaneOverview}
         onPaneOverviewVisibleChange={setShowPaneOverview}

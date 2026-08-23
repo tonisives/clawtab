@@ -230,6 +230,9 @@ pub async fn run_daemon_event_subscription(
                         IpcEvent::AgentActivityChanged(activity) => {
                             let _ = app_handle.emit("agent-activity-changed", activity);
                         }
+                        IpcEvent::AgentActionProgress(run) => {
+                            let _ = app_handle.emit("agent-action-progress", run);
+                        }
                         IpcEvent::RelayStatusChanged(status) => {
                             let _ = app_handle.emit("relay-status-changed", status);
                         }

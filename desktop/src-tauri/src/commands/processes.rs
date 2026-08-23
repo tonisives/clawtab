@@ -797,6 +797,68 @@ pub async fn set_protected_panes(
 }
 
 #[tauri::command]
+pub async fn list_agent_actions(
+    pane_id: String,
+) -> Result<
+    (
+        Vec<clawtab_protocol::AgentActionDescriptor>,
+        Option<clawtab_protocol::AgentSessionData>,
+    ),
+    String,
+> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::ListAgentActions { pane_id }).await {
+        Ok(crate::ipc::IpcResponse::AgentActions { actions, session }) => Ok((actions, session)),
+        Ok(crate::ipc::IpcResponse::Error(error)) => Err(error),
+        Ok(response) => Err(format!("Unexpected IPC response: {:?}", response)),
+        Err(error) => Err(format!("Daemon unavailable: {}", error)),
+    }
+}
+
+#[tauri::command]
+pub async fn start_agent_action(
+    pane_id: String,
+    action_id: String,
+    parameters: clawtab_protocol::AgentActionParameters,
+) -> Result<clawtab_protocol::AgentActionRun, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::StartAgentAction {
+        pane_id,
+        action_id,
+        parameters,
+    })
+    .await
+    {
+        Ok(crate::ipc::IpcResponse::AgentActionRun(run)) => Ok(run),
+        Ok(crate::ipc::IpcResponse::Error(error)) => Err(error),
+        Ok(response) => Err(format!("Unexpected IPC response: {:?}", response)),
+        Err(error) => Err(format!("Daemon unavailable: {}", error)),
+    }
+}
+
+#[tauri::command]
+pub async fn get_agent_action_run(
+    run_id: String,
+) -> Result<clawtab_protocol::AgentActionRun, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::GetAgentActionRun { run_id }).await {
+        Ok(crate::ipc::IpcResponse::AgentActionRun(run)) => Ok(run),
+        Ok(crate::ipc::IpcResponse::Error(error)) => Err(error),
+        Ok(response) => Err(format!("Unexpected IPC response: {:?}", response)),
+        Err(error) => Err(format!("Daemon unavailable: {}", error)),
+    }
+}
+
+#[tauri::command]
+pub async fn cancel_agent_action(
+    run_id: String,
+) -> Result<clawtab_protocol::AgentActionRun, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::CancelAgentAction { run_id }).await {
+        Ok(crate::ipc::IpcResponse::AgentActionRun(run)) => Ok(run),
+        Ok(crate::ipc::IpcResponse::Error(error)) => Err(error),
+        Ok(response) => Err(format!("Unexpected IPC response: {:?}", response)),
+        Err(error) => Err(format!("Daemon unavailable: {}", error)),
+    }
+}
+
+#[tauri::command]
 pub fn sigint_detected_process(pane_id: String) -> Result<(), String> {
     crate::tmux::send_sigint_to_pane(&pane_id)?;
     std::thread::sleep(std::time::Duration::from_millis(200));
