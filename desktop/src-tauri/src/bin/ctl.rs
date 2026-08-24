@@ -24,6 +24,10 @@ fn print_usage() {
     eprintln!(
         "  usage <provider>  Show local provider quota usage (claude, codex, antigravity, zai)"
     );
+    eprintln!("  plugin list [pane_id] [--json]              List available agent plugins");
+    eprintln!("  plugin <name> run [pane_id] [key=value ...]");
+    eprintln!("  plugin <name> status <run_id>");
+    eprintln!("  plugin <name> cancel <run_id>");
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret value (single key) or KEY=VALUE lines (multiple keys)");
     eprintln!(
@@ -97,6 +101,68 @@ fn print_agent_usage() {
     eprintln!("  agent action run <id> [pane_id] [key=value ...]");
     eprintln!("  agent action status <run_id>");
     eprintln!("  agent action cancel <run_id>");
+}
+
+fn print_plugin_usage() {
+    eprintln!("Usage: cwtctl plugin <name> <command> [args]");
+    eprintln!();
+    eprintln!("Commands:");
+    eprintln!("  plugin list [pane_id] [--json]                 List available agent plugins");
+    eprintln!("  plugin <name> run [pane_id] [key=value ...]    Start a plugin action");
+    eprintln!("  plugin <name> status <run_id>                  Show a plugin run");
+    eprintln!("  plugin <name> cancel <run_id>                  Cancel a plugin run");
+    eprintln!();
+    eprintln!("Plugin names accept the action suffix with '-' in place of '_'.");
+    eprintln!("For example: cwtctl plugin cheap-compact run");
+}
+
+fn plugin_name_matches_action_id(action_id: &str, plugin_name: &str) -> bool {
+    let normalized_action_id = action_id.replace('-', "_");
+    let normalized_plugin_name = plugin_name.replace('-', "_");
+    normalized_action_id == normalized_plugin_name
+        || normalized_action_id
+            .rsplit('.')
+            .next()
+            .is_some_and(|suffix| suffix == normalized_plugin_name)
+}
+
+fn resolve_plugin_action_id(
+    actions: &[clawtab_protocol::AgentActionDescriptor],
+    plugin_name: &str,
+) -> Result<String, String> {
+    let matching_ids: Vec<&str> = actions
+        .iter()
+        .filter(|action| plugin_name_matches_action_id(&action.id, plugin_name))
+        .map(|action| action.id.as_str())
+        .collect();
+    match matching_ids.as_slice() {
+        [action_id] => Ok((*action_id).to_string()),
+        [] => {
+            let available = actions
+                .iter()
+                .map(|action| action.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if available.is_empty() {
+                Err(format!("Plugin '{plugin_name}' was not found"))
+            } else {
+                Err(format!(
+                    "Plugin '{plugin_name}' was not found. Available plugins: {available}"
+                ))
+            }
+        }
+        _ => Err(format!(
+            "Plugin name '{plugin_name}' is ambiguous: {}",
+            matching_ids.join(", ")
+        )),
+    }
+}
+
+fn print_agent_action_run(run: clawtab_protocol::AgentActionRun) {
+    match serde_json::to_string_pretty(&run) {
+        Ok(json) => println!("{json}"),
+        Err(error) => exit_error(&error.to_string()),
+    }
 }
 
 async fn handle_agent_action_command(args: &[String]) {
@@ -183,19 +249,99 @@ async fn handle_agent_action_command(args: &[String]) {
                 }
             }
         }
-        Ok(IpcResponse::AgentActionRun(run)) => match serde_json::to_string_pretty(&run) {
-            Ok(json) => println!("{json}"),
-            Err(error) => {
-                eprintln!("Error: {error}");
-                std::process::exit(1);
-            }
-        },
+        Ok(IpcResponse::AgentActionRun(run)) => print_agent_action_run(run),
         Ok(IpcResponse::Error(error)) | Err(error) => {
             eprintln!("Error: {error}");
             std::process::exit(1);
         }
         Ok(_) => {
             eprintln!("Error: unexpected daemon response");
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn handle_plugin_command(args: &[String]) {
+    let plugin_name = args.get(2).map(String::as_str).unwrap_or_else(|| {
+        print_plugin_usage();
+        std::process::exit(1);
+    });
+
+    if plugin_name == "list" {
+        let mut action_args = vec![args[0].clone(), "actions".to_string()];
+        action_args.extend(args.iter().skip(3).cloned());
+        handle_agent_action_command(&action_args).await;
+        return;
+    }
+
+    let operation = args.get(3).map(String::as_str).unwrap_or_else(|| {
+        print_plugin_usage();
+        std::process::exit(1);
+    });
+    match operation {
+        "run" => {
+            let explicit_pane = args.get(4).filter(|value| !value.contains('='));
+            let pane_id = explicit_pane
+                .cloned()
+                .or_else(|| env::var("TMUX_PANE").ok())
+                .unwrap_or_else(|| {
+                    eprintln!("Error: pass pane_id or run this command inside tmux");
+                    std::process::exit(1);
+                });
+            let parameter_start = if explicit_pane.is_some() { 5 } else { 4 };
+            let mut parameters = std::collections::HashMap::new();
+            for value in args.iter().skip(parameter_start) {
+                let Some((key, value)) = value.split_once('=') else {
+                    eprintln!("Error: plugin parameters must use key=value");
+                    std::process::exit(1);
+                };
+                parameters.insert(key.to_string(), value.to_string());
+            }
+
+            let action_id = match ipc::send_command(IpcCommand::ListAgentActions {
+                pane_id: pane_id.clone(),
+            })
+            .await
+            {
+                Ok(IpcResponse::AgentActions { actions, .. }) => {
+                    resolve_plugin_action_id(&actions, plugin_name).unwrap_or_else(|error| {
+                        exit_error(&error);
+                    })
+                }
+                Ok(IpcResponse::Error(error)) | Err(error) => exit_error(&error),
+                Ok(_) => exit_error("unexpected response from daemon"),
+            };
+
+            match ipc::send_command(IpcCommand::StartAgentAction {
+                pane_id,
+                action_id,
+                parameters,
+            })
+            .await
+            {
+                Ok(IpcResponse::AgentActionRun(run)) => print_agent_action_run(run),
+                Ok(IpcResponse::Error(error)) | Err(error) => exit_error(&error),
+                Ok(_) => exit_error("unexpected response from daemon"),
+            }
+        }
+        "status" | "cancel" => {
+            let run_id = args.get(4).cloned().unwrap_or_else(|| {
+                eprintln!("Usage: cwtctl plugin {plugin_name} {operation} <run_id>");
+                std::process::exit(1);
+            });
+            let command = if operation == "status" {
+                IpcCommand::GetAgentActionRun { run_id }
+            } else {
+                IpcCommand::CancelAgentAction { run_id }
+            };
+            match ipc::send_command(command).await {
+                Ok(IpcResponse::AgentActionRun(run)) => print_agent_action_run(run),
+                Ok(IpcResponse::Error(error)) | Err(error) => exit_error(&error),
+                Ok(_) => exit_error("unexpected response from daemon"),
+            }
+        }
+        _ => {
+            print_plugin_usage();
             std::process::exit(1);
         }
     }
@@ -340,6 +486,11 @@ async fn main() {
 
     if command == "secrets" {
         handle_secrets_command(&args).await;
+        return;
+    }
+
+    if command == "plugin" {
+        handle_plugin_command(&args).await;
         return;
     }
 
@@ -1664,5 +1815,26 @@ fn daemon_logs() {
             .status();
     } else {
         eprintln!("No daemon log found at {}", stderr_log);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plugin_name_matches_action_id;
+
+    #[test]
+    fn plugin_names_match_catalog_action_suffixes() {
+        assert!(plugin_name_matches_action_id(
+            "codex.cheap_compact",
+            "cheap-compact"
+        ));
+        assert!(plugin_name_matches_action_id(
+            "codex.session_info",
+            "codex.session-info"
+        ));
+        assert!(!plugin_name_matches_action_id(
+            "codex.set_model",
+            "cheap-compact"
+        ));
     }
 }

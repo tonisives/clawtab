@@ -294,6 +294,8 @@ fn write_cli_help(out: &mut String) {
     out.push_str("cwtctl agent info [pane_id] # Show agent session info\n");
     out.push_str("cwtctl agent pin [pane_id] # Pin this agent across desktop, web, and mobile\n");
     out.push_str("cwtctl agent unpin [pane_id] # Remove the shared pin\n");
+    out.push_str("cwtctl plugin list [pane_id] # List available agent plugins\n");
+    out.push_str("cwtctl plugin <name> run [pane_id] [key=value ...] # Run an agent plugin\n");
     out.push_str("cwtctl pane open [pane_id] # Open a tmux pane in ClawTab\n");
     out.push_str("cwtctl daemon ping    # Check if ClawTab daemon is running\n");
     out.push_str("```\n");

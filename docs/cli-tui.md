@@ -39,6 +39,28 @@ cwtctl <command> [args]
 | `agent rename <pane_id> <title>` | Set the pane name shown on every connected surface |
 | `agent pin [pane_id]` | Pin the pane across tmux, desktop, web, and mobile; defaults to `$TMUX_PANE` |
 | `agent unpin [pane_id]` | Remove the shared pane pin; defaults to `$TMUX_PANE` |
+| `agent actions [pane_id] [--json]` | List the agent actions available for a pane |
+| `agent action run <id> [pane_id] [key=value ...]` | Start an action by its catalog ID |
+| `agent action status <run_id>` | Show an action run |
+| `agent action cancel <run_id>` | Cancel an action run |
+
+### Plugin commands
+
+Plugin commands resolve names from the daemon's signed action catalog. Use the
+action suffix with dashes in place of underscores, so the bundled
+`codex.cheap_compact` action is available as `cheap-compact`:
+
+```sh
+cwtctl plugin list
+cwtctl plugin cheap-compact run
+cwtctl plugin cheap-compact run %16
+cwtctl plugin set-model run %16 model=gpt-5.6 effort=high
+cwtctl plugin cheap-compact status <run_id>
+cwtctl plugin cheap-compact cancel <run_id>
+```
+
+When no pane ID is supplied, `cwtctl` uses `$TMUX_PANE`. Plugin runs return a
+JSON run record immediately; use `status` to poll the asynchronous action.
 
 ### Daemon lifecycle commands
 

@@ -106,7 +106,11 @@ cwtctl jobs run my-project/review
 cwtctl jobs status
 cwtctl agent info %16
 cwtctl agent auto-yes toggle %16
+cwtctl plugin cheap-compact run
 ```
+
+Agent plugins can also be discovered with `cwtctl plugin list`. Plugin names
+use the action suffix from the catalog, with dashes in place of underscores.
 
 For an interactive agent job, `cwtctl jobs run` waits for the daemon to publish the tmux pane and then attaches your terminal to it. If you are already inside tmux, it selects the new pane in the current client.
 

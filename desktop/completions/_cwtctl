@@ -50,6 +50,7 @@ _cwtctl() {
     'jobs:Job management'
     'usage:Show local provider quota usage'
     'agent:Agent pane controls'
+    'plugin:Run catalog agent plugins'
     'secrets:Manage secrets'
     'telegram:Send a Telegram message'
     'pane:Pane controls'
@@ -140,6 +141,33 @@ _cwtctl() {
             local -a providers
             providers=(claude codex opencode antigravity)
             compadd -a providers
+          fi
+          ;;
+        plugin)
+          if (( CURRENT == 2 )); then
+            local -a sub
+            sub=(
+              'list:List available agent plugins'
+              'cheap-compact:Compact with a cheaper model'
+              'set-model:Switch the agent model'
+              'next-model:Select the next enabled model'
+              'previous-model:Select the previous enabled model'
+              'session-info:Show agent session information'
+            )
+            _describe -t subcmd 'plugin name' sub
+          elif (( CURRENT == 3 )) && [[ $words[2] == list ]]; then
+            _cwtctl_panes
+            compadd -- --json
+          elif (( CURRENT == 3 )); then
+            local -a operations
+            operations=(
+              'run:Start the plugin action'
+              'status:Show a plugin run'
+              'cancel:Cancel a plugin run'
+            )
+            _describe -t subcmd 'plugin operation' operations
+          elif (( CURRENT == 4 )) && [[ $words[3] == run ]]; then
+            _cwtctl_panes
           fi
           ;;
         secrets)
