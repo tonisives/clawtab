@@ -82,7 +82,7 @@ tmux source-file ~/.tmux.conf
 | `prefix + f` | Fork the current agent session into a new pane |
 | `` prefix + ` `` | Open the ClawTab terminal sidebar |
 
-The floating menu has Home, Secrets, and Skills tabs. It also shows provider usage, session start time, first and latest queries, session ID, and restore context. Each agent pane can have its own floating menu, and the rest of tmux remains interactive while it is open. Opening the menu again from the same agent focuses its existing floating pane.
+The floating menu has Home, Plugins, Secrets, and Skills tabs. Plugins lists the available agent actions for the current pane and runs the selected action with Enter. It also shows provider usage, session start time, first and latest queries, session ID, and restore context. Each agent pane can have its own floating menu, and the rest of tmux remains interactive while it is open. Opening the menu again from the same agent focuses its existing floating pane.
 
 The floating menu uses 95% of its target pane by default. Customize its size or restore the original client-modal popup in `.tmux.conf`:
 

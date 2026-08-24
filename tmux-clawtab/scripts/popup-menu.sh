@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ClawTab popup - lazygit-style TUI with box-drawing borders
-# Tabs: 1=Home  2=Secrets  3=Skills
+# Tabs: 1=Home  2=Plugins  3=Secrets  4=Skills
 # Navigation: tab/S-tab switch tabs, j/k or up/down scroll, / to search
 # Actions: enter to select, space to toggle, esc to close
 
@@ -54,7 +54,7 @@ trap 'rm -f "$META_FILE" "$TITLE_FILE" "$SESSION_CACHE_TMP_FILE" "$USAGE_CACHE_T
 
 # State
 TAB=0
-TABS=("Home" "Secrets" "Skills")
+TABS=("Home" "Plugins" "Secrets" "Skills")
 CURSOR=0
 SCROLL=0
 SEARCH=""
@@ -71,6 +71,8 @@ declare -a SKILL_SELECTED
 # Data arrays
 declare -a SKILLS_LIST
 declare -a SECRETS_LIST
+declare -a PLUGIN_ITEMS
+declare -a AGENT_ACTION_IDS
 
 # Filtered indices (populated by apply_filter)
 declare -a FILTERED_INDICES
@@ -117,8 +119,9 @@ apply_filter() {
     FILTERED_INDICES=()
     local count item lower_search lower_item
     case $TAB in
-        1) count=${#SECRETS_LIST[@]} ;;
-        2) count=${#SKILLS_LIST[@]} ;;
+        1) count=${#PLUGIN_ITEMS[@]} ;;
+        2) count=${#SECRETS_LIST[@]} ;;
+        3) count=${#SKILLS_LIST[@]} ;;
         *) return ;;
     esac
 
@@ -126,6 +129,8 @@ apply_filter() {
 
     for ((i=0; i<count; i++)); do
         if [ $TAB -eq 1 ]; then
+            item="${PLUGIN_ITEMS[$i]}"
+        elif [ $TAB -eq 2 ]; then
             item="${SECRETS_LIST[$i]}"
         else
             item="${SKILLS_LIST[$i]}"
@@ -204,7 +209,7 @@ draw_empty_row() {
 # --- Tab bar (top border) ---
 draw_tabs() {
     local label_len=1  # 1 for the dash after corner
-    for i in 0 1 2; do
+    for ((i=0; i<${#TABS[@]}; i++)); do
         if [ $i -gt 0 ]; then label_len=$((label_len + 3)); fi
         label_len=$((label_len + ${#TABS[$i]} + 2))
     done
@@ -222,7 +227,7 @@ draw_tabs() {
     move_to 1 1
     clear_line
     printf "${C_BORDER}%s%s" "$BOX_TL" "$BOX_H" >&3
-    for i in 0 1 2; do
+    for ((i=0; i<${#TABS[@]}; i++)); do
         if [ $i -gt 0 ]; then
             printf "${C_BORDER} | " >&3
         fi
@@ -246,20 +251,20 @@ draw_status_bar() {
     clear_line
     printf "${C_BORDER}${BOX_BL}${BOX_H} " >&3
     case $TAB in
-        0)
+        0|1)
             printf "${C_DIM}up/down${C_RESET}${C_STATUS} navigate  ${C_DIM}enter${C_RESET}${C_STATUS} run${C_RESET}" >&3
             text_len=27
             ;;
-        1|2)
+        2|3)
             local sel_count=0
-            if [ $TAB -eq 1 ]; then
+            if [ $TAB -eq 2 ]; then
                 for s in "${SECRET_SELECTED[@]}"; do [ "$s" = "1" ] && ((sel_count++)); done
             else
                 for s in "${SKILL_SELECTED[@]}"; do [ "$s" = "1" ] && ((sel_count++)); done
             fi
             if [ $sel_count -gt 0 ]; then
                 local action="fork with secrets"
-                [ $TAB -eq 2 ] && action="send skills"
+                [ $TAB -eq 3 ] && action="send skills"
                 # "N selected - enter to ACTION"
                 printf "${C_CHECK_ON}%d selected${C_RESET}${C_STATUS} - ${C_DIM}enter${C_RESET}${C_STATUS} to %s${C_RESET}" "$sel_count" "$action" >&3
                 local num_str="$sel_count"
@@ -278,7 +283,7 @@ draw_status_bar() {
     printf "${C_BORDER} %s%s${C_RESET}" "$(hfill $fill)" "$BOX_BR" >&3
 }
 
-# Draw search bar for secrets/skills tabs (row 2)
+# Draw search bar for plugins, secrets, and skills tabs (row 2)
 draw_search_bar() {
     draw_row_start 2
     if [ $SEARCHING -eq 1 ]; then
@@ -294,9 +299,9 @@ draw_search_bar() {
 # Shortcuts tab items and cursor
 SHORTCUT_CURSOR=0
 SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Pin across ClawTab" "Fork session")
-declare -a AGENT_ACTION_IDS
 
 load_agent_actions() {
+    PLUGIN_ITEMS=()
     AGENT_ACTION_IDS=()
     command -v cwtctl &>/dev/null || return 0
     local action_id title status
@@ -306,7 +311,7 @@ load_agent_actions() {
         case "$action_id" in
             *.set_model) continue ;;
         esac
-        SHORTCUT_ITEMS+=("Agent: $title")
+        PLUGIN_ITEMS+=("Agent: $title")
         AGENT_ACTION_IDS+=("$action_id")
     done < <(cwtctl agent actions "$PANE_ID" 2>/dev/null || true)
 }
@@ -1367,11 +1372,107 @@ draw_list() {
 draw_secrets() { draw_list "secrets"; }
 draw_skills() { draw_list "skills"; }
 
+# Draw the available agent plugins for the current pane.
+draw_plugins() {
+    apply_filter
+    local count=${#FILTERED_INDICES[@]}
+    local list_start=4
+
+    draw_search_bar
+    # Mid-separator between search bar and list
+    local sep_fill=$((TERM_COLS - 2))
+    move_to 3 1; clear_line
+    printf "${C_BORDER}%s%s%s${C_RESET}" "$BOX_ML" "$(hfill $sep_fill)" "$BOX_MR" >&3
+
+    if [ $count -eq 0 ]; then
+        draw_row_start $list_start
+        if [ -n "$SEARCH" ]; then
+            printf "${C_DIM}No matches${C_RESET}" >&3
+        elif ! command -v cwtctl &>/dev/null; then
+            printf "${C_DIM}cwtctl not found${C_RESET}" >&3
+        else
+            printf "${C_DIM}No plugins available${C_RESET}" >&3
+        fi
+        draw_row_end $list_start
+        for ((r=list_start+1; r<TERM_ROWS; r++)); do
+            draw_empty_row $r
+        done
+        return
+    fi
+
+    # List fills from list_start to TERM_ROWS-2 (last content row before bottom border)
+    local visible=$((TERM_ROWS - list_start - 1))
+    # Reserve 1 row for scroll indicator if items overflow
+    if [ $count -gt $visible ]; then
+        visible=$((visible - 1))
+    fi
+    if [ $visible -lt 1 ]; then visible=1; fi
+
+    # Clamp cursor
+    if [ $CURSOR -ge $count ]; then CURSOR=$((count - 1)); fi
+    if [ $CURSOR -lt 0 ]; then CURSOR=0; fi
+
+    # Adjust scroll
+    if [ $CURSOR -lt $SCROLL ]; then
+        SCROLL=$CURSOR
+    elif [ $CURSOR -ge $((SCROLL + visible)) ]; then
+        SCROLL=$((CURSOR - visible + 1))
+    fi
+
+    local idx real_idx prefix
+    for ((i=0; i<visible; i++)); do
+        idx=$((SCROLL + i))
+        draw_row_start $((list_start + i))
+        if [ $idx -ge $count ]; then
+            draw_row_end $((list_start + i))
+            continue
+        fi
+
+        real_idx=${FILTERED_INDICES[$idx]}
+        prefix="${PLUGIN_ITEMS[$real_idx]}"
+        if [ $idx -eq $CURSOR ]; then
+            printf "${C_SELECTED} > %s ${C_RESET}" "$prefix" >&3
+        else
+            printf "${C_NORMAL}   %s ${C_RESET}" "$prefix" >&3
+        fi
+        draw_row_end $((list_start + i))
+    done
+
+    # Scroll indicator row (only if there are hidden items)
+    local next_row=$((list_start + visible))
+    if [ $count -gt $visible ]; then
+        draw_row_start $next_row
+        if [ $SCROLL -gt 0 ] && [ $((SCROLL + visible)) -lt $count ]; then
+            printf "${C_DIM}... more above and below ...${C_RESET}" >&3
+        elif [ $SCROLL -gt 0 ]; then
+            printf "${C_DIM}... more above ...${C_RESET}" >&3
+        elif [ $((SCROLL + visible)) -lt $count ]; then
+            printf "${C_DIM}... more below ...${C_RESET}" >&3
+        fi
+        draw_row_end $next_row
+        ((next_row++))
+    fi
+
+    # Fill gap between list end and bottom border
+    for ((r=next_row; r<TERM_ROWS; r++)); do
+        draw_empty_row $r
+    done
+}
+
+draw_tab_content() {
+    case $TAB in
+        0) draw_shortcuts ;;
+        1) draw_plugins ;;
+        2) draw_secrets ;;
+        3) draw_skills ;;
+    esac
+}
+
 # Get filtered item count for current tab
 tab_count() {
     case $TAB in
         0) echo 0 ;;
-        1|2) apply_filter; echo ${#FILTERED_INDICES[@]} ;;
+        1|2|3) apply_filter; echo ${#FILTERED_INDICES[@]} ;;
     esac
 }
 
@@ -1460,7 +1561,19 @@ do_enter() {
             esac
             return 0
             ;;
-        1|2)
+        1)
+            apply_filter
+            if [ ${#FILTERED_INDICES[@]} -gt 0 ]; then
+                local plugin_index=${FILTERED_INDICES[$CURSOR]}
+                local action_id="${AGENT_ACTION_IDS[$plugin_index]:-}"
+                if [ -n "$action_id" ]; then
+                    cwtctl agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
+                    return 1
+                fi
+            fi
+            return 0
+            ;;
+        2|3)
             # Count selected secrets and skills
             sel_count=0
             for s in "${SKILL_SELECTED[@]}"; do [ "$s" = "1" ] && ((sel_count++)); done
@@ -1472,10 +1585,10 @@ do_enter() {
             apply_filter
             if [ $sel_count -eq 0 ] && [ $secret_count -eq 0 ] && [ ${#FILTERED_INDICES[@]} -eq 1 ]; then
                 local auto_idx=${FILTERED_INDICES[0]}
-                if [ $TAB -eq 2 ]; then
+                if [ $TAB -eq 3 ]; then
                     SKILL_SELECTED[$auto_idx]=1
                     sel_count=1
-                elif [ $TAB -eq 1 ]; then
+                elif [ $TAB -eq 2 ]; then
                     SECRET_SELECTED[$auto_idx]=1
                     secret_count=1
                 fi
@@ -1535,6 +1648,9 @@ do_space() {
             fi
             ;;
         1)
+            # Plugins are activated with Enter and are not multi-selectable.
+            ;;
+        2)
             apply_filter
             if [ ${#FILTERED_INDICES[@]} -gt 0 ]; then
                 real_idx=${FILTERED_INDICES[$CURSOR]}
@@ -1548,7 +1664,7 @@ do_space() {
                 fi
             fi
             ;;
-        2)
+        3)
             apply_filter
             if [ ${#FILTERED_INDICES[@]} -gt 0 ]; then
                 real_idx=${FILTERED_INDICES[$CURSOR]}
@@ -1580,13 +1696,7 @@ switch_tab() {
 draw() {
     get_size
     draw_tabs
-
-    case $TAB in
-        0) draw_shortcuts ;;
-        1) draw_secrets ;;
-        2) draw_skills ;;
-    esac
-
+    draw_tab_content
     draw_status_bar
 }
 
@@ -1645,6 +1755,10 @@ read_key() {
         "j") echo "down" ;;
         "k") echo "up" ;;
         "q") echo "esc" ;;
+        "1") echo "tab1" ;;
+        "2") echo "tab2" ;;
+        "3") echo "tab3" ;;
+        "4") echo "tab4" ;;
         "r") echo "shortcut_r" ;;
         "R") echo "shortcut_ai_rename" ;;
         "Y") echo "shortcut_auto_yes" ;;
@@ -1689,32 +1803,20 @@ max=0
 while true; do
     if finish_session_load; then
         draw_tabs
-        case $TAB in
-            0) draw_shortcuts ;;
-            1) draw_secrets ;;
-            2) draw_skills ;;
-        esac
+        draw_tab_content
         draw_status_bar
     fi
 
     if finish_data_load; then
         maybe_prompt_hook_install
         draw_tabs
-        case $TAB in
-            0) draw_shortcuts ;;
-            1) draw_secrets ;;
-            2) draw_skills ;;
-        esac
+        draw_tab_content
         draw_status_bar
     fi
 
     if finish_usage_load; then
         draw_tabs
-        case $TAB in
-            0) draw_shortcuts ;;
-            1) draw_secrets ;;
-            2) draw_skills ;;
-        esac
+        draw_tab_content
         draw_status_bar
     fi
 
@@ -1746,44 +1848,36 @@ while true; do
                     CURSOR=0
                     SCROLL=0
                 fi
-                case $TAB in
-                    1) draw_secrets; draw_status_bar ;;
-                    2) draw_skills; draw_status_bar ;;
-                esac
+                draw_tab_content
+                draw_status_bar
                 ;;
             char:*)
                 SEARCH+="${search_key#char:}"
                 CURSOR=0
                 SCROLL=0
-                case $TAB in
-                    1) draw_secrets; draw_status_bar ;;
-                    2) draw_skills; draw_status_bar ;;
-                esac
+                draw_tab_content
+                draw_status_bar
                 ;;
             up)
                 SEARCHING=0
-                case $TAB in
-                    1) draw_secrets; draw_status_bar ;;
-                    2) draw_skills; draw_status_bar ;;
-                esac
+                draw_tab_content
+                draw_status_bar
                 ;;
             down)
                 SEARCHING=0
-                case $TAB in
-                    1) draw_secrets; draw_status_bar ;;
-                    2) draw_skills; draw_status_bar ;;
-                esac
+                draw_tab_content
+                draw_status_bar
                 ;;
             next_tab)
                 SEARCHING=0
                 SEARCH=""
-                switch_tab $(( (TAB + 1) % 3 ))
+                switch_tab $(( (TAB + 1) % 4 ))
                 draw
                 ;;
             prev_tab)
                 SEARCHING=0
                 SEARCH=""
-                switch_tab $(( (TAB + 2) % 3 ))
+                switch_tab $(( (TAB + 3) % 4 ))
                 draw
                 ;;
         esac
@@ -1800,12 +1894,13 @@ while true; do
         tab1) switch_tab 0; draw ;;
         tab2) switch_tab 1; draw ;;
         tab3) switch_tab 2; draw ;;
+        tab4) switch_tab 3; draw ;;
         next_tab)
-            switch_tab $(( (TAB + 1) % 3 ))
+            switch_tab $(( (TAB + 1) % 4 ))
             draw
             ;;
         prev_tab)
-            switch_tab $(( (TAB + 2) % 3 ))
+            switch_tab $(( (TAB + 3) % 4 ))
             draw
             ;;
         search)
@@ -1814,10 +1909,8 @@ while true; do
                 SEARCH=""
                 CURSOR=0
                 SCROLL=0
-                case $TAB in
-                    1) draw_secrets; draw_status_bar ;;
-                    2) draw_skills; draw_status_bar ;;
-                esac
+                draw_tab_content
+                draw_status_bar
             fi
             ;;
         up)
@@ -1835,10 +1928,8 @@ while true; do
                     else
                         CURSOR=$((max - 1))
                     fi
-                    case $TAB in
-                        1) draw_secrets; draw_status_bar ;;
-                        2) draw_skills; draw_status_bar ;;
-                    esac
+                    draw_tab_content
+                    draw_status_bar
                 fi
             fi
             ;;
@@ -1859,19 +1950,20 @@ while true; do
                         CURSOR=0
                         SCROLL=0
                     fi
-                    case $TAB in
-                        1) draw_secrets; draw_status_bar ;;
-                        2) draw_skills; draw_status_bar ;;
-                    esac
+                    draw_tab_content
+                    draw_status_bar
                 fi
             fi
             ;;
         space)
             do_space
-            case $TAB in
-                1) draw_secrets; draw_status_bar ;;
-                2) draw_skills; draw_status_bar ;;
-            esac
+            if [ $TAB -eq 0 ]; then
+                draw_tabs
+                draw_shortcuts
+            else
+                draw_tab_content
+            fi
+            draw_status_bar
             ;;
         enter)
             if ! do_enter; then
@@ -1921,10 +2013,8 @@ while true; do
                 SEARCH="${local_key#char:}"
                 CURSOR=0
                 SCROLL=0
-                case $TAB in
-                    1) draw_secrets; draw_status_bar ;;
-                    2) draw_skills; draw_status_bar ;;
-                esac
+                draw_tab_content
+                draw_status_bar
             fi
             ;;
     esac
