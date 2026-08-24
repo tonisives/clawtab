@@ -67,6 +67,8 @@ struct ProviderUiProfile {
     effort_dialog_marker: String,
     effort_labels: HashMap<String, String>,
     busy_marker: String,
+    #[serde(default)]
+    model_status_marker: Option<String>,
     selected_markers: Vec<String>,
     model_command: String,
     compact_command: String,
@@ -94,6 +96,7 @@ impl Default for ProviderUiProfile {
                 ("max".into(), "More reasoning".into()),
             ]),
             busy_marker: "esc to interrupt".into(),
+            model_status_marker: Some("Context".into()),
             selected_markers: vec!["›".into(), ">".into()],
             model_command: "/model".into(),
             compact_command: "/compact".into(),
@@ -616,7 +619,7 @@ async fn recover_previous_state(
             pane_id,
             ui,
             &CancellationToken::new(),
-            Duration::from_secs(3),
+            Duration::from_secs(12),
         )
         .await?;
         screen = private_screen_state(pane_id, ui)?;
@@ -630,9 +633,14 @@ async fn recover_previous_state(
             Some(ProcessProvider::Codex),
             None,
         );
-        if current.model_id.as_deref() != Some(model)
-            || effort.is_some_and(|value| current.agent_effort.as_deref() != Some(value))
-        {
+        let current_screen = private_capture_plain(pane_id)?;
+        let screen_matches = screen_model_status_matches(&current_screen, model, effort, ui);
+        let session_matches = current.model_id.as_deref() == Some(model)
+            && effort.is_none_or(|value| current.agent_effort.as_deref() == Some(value));
+        let needs_selection = screen_matches
+            .map(|matches| !matches)
+            .unwrap_or(!session_matches);
+        if needs_selection {
             select_model(
                 pane_id,
                 pane_pid,
@@ -1027,6 +1035,16 @@ fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
     }
     if manifest
         .ui
+        .model_status_marker
+        .as_ref()
+        .is_some_and(|marker| {
+            marker.is_empty() || marker.len() > 64 || marker.contains(['\n', '\r'])
+        })
+    {
+        return Err("Plugin contains an unsafe model status marker".into());
+    }
+    if manifest
+        .ui
         .compact_confirmation_marker
         .as_ref()
         .is_some_and(|marker| {
@@ -1178,7 +1196,7 @@ async fn select_model(
         }
     }
     wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await?;
-    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(5)).await
+    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await
 }
 
 async fn choose_visible_option(
@@ -1246,7 +1264,6 @@ async fn wait_for_model(
             return Err("Action cancelled".into());
         }
         let screen = private_capture_plain(pane_id)?;
-        let screen_state = classify_private_screen(&screen, ui);
         let info = agent_session::resolve_session_info_for_provider(
             pane_pid,
             Some(ProcessProvider::Codex),
@@ -1254,9 +1271,8 @@ async fn wait_for_model(
         );
         let session_matches = info.model_id.as_deref() == Some(model)
             && effort.is_none_or(|expected| info.agent_effort.as_deref() == Some(expected));
-        if screen_state.idle
-            && (session_matches || screen_confirms_model(&screen, model, effort, ui))
-        {
+        let screen_matches = screen_model_status_matches(&screen, model, effort, ui);
+        if screen_matches == Some(true) || (screen_matches.is_none() && session_matches) {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1270,22 +1286,45 @@ fn screen_confirms_model(
     effort: Option<&str>,
     ui: &ProviderUiProfile,
 ) -> bool {
+    screen_model_status_matches(captured, model, effort, ui) == Some(true)
+}
+
+fn screen_model_status_matches(
+    captured: &str,
+    model: &str,
+    effort: Option<&str>,
+    ui: &ProviderUiProfile,
+) -> Option<bool> {
     let model = model.to_ascii_lowercase();
     let effort = effort.map(str::to_ascii_lowercase);
     let effort_label = effort
         .as_deref()
         .and_then(|value| ui.effort_labels.get(value))
         .map(|value| value.to_ascii_lowercase());
-    strip_ansi(captured).lines().rev().take(4).any(|line| {
+    let status_marker = ui
+        .model_status_marker
+        .as_deref()
+        .unwrap_or("Context")
+        .to_ascii_lowercase();
+    let mut saw_status = false;
+    for line in strip_ansi(captured).lines().rev().take(4) {
         let lower = line.to_ascii_lowercase();
-        lower.contains(&model)
+        if !lower.contains(&status_marker) {
+            continue;
+        }
+        saw_status = true;
+        if lower.contains(&model)
             && effort.as_deref().is_none_or(|value| {
                 lower.contains(value)
                     || effort_label
                         .as_deref()
                         .is_some_and(|label| lower.contains(label))
             })
-    })
+        {
+            return Some(true);
+        }
+    }
+    saw_status.then_some(false)
 }
 
 async fn wait_until_idle(

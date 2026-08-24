@@ -17,6 +17,7 @@
       "max": "More reasoning"
     },
     "busy_marker": "esc to interrupt",
+    "model_status_marker": "Context",
     "selected_markers": ["›", ">"],
     "model_command": "/model",
     "compact_command": "/compact",
