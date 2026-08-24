@@ -610,7 +610,13 @@ async fn recover_previous_state(
     let mut screen = private_screen_state(pane_id, ui)?;
     if !screen.idle {
         let _ = crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key);
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        wait_until_idle(
+            pane_id,
+            ui,
+            &CancellationToken::new(),
+            Duration::from_secs(3),
+        )
+        .await?;
         screen = private_screen_state(pane_id, ui)?;
     }
     if !screen.idle || screen.has_draft {
@@ -1159,7 +1165,7 @@ async fn select_model(
             }
         }
     }
-    wait_for_model(pane_pid, model, effort, cancel).await?;
+    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await?;
     wait_until_idle(pane_id, ui, cancel, Duration::from_secs(5)).await
 }
 
@@ -1215,9 +1221,11 @@ fn private_capture_plain(pane_id: &str) -> Result<String, String> {
 }
 
 async fn wait_for_model(
+    pane_id: &str,
     pane_pid: &str,
     model: &str,
     effort: Option<&str>,
+    ui: &ProviderUiProfile,
     cancel: &CancellationToken,
 ) -> Result<(), String> {
     let started = Instant::now();
@@ -1225,19 +1233,47 @@ async fn wait_for_model(
         if cancel.is_cancelled() {
             return Err("Action cancelled".into());
         }
+        let screen = private_capture_plain(pane_id)?;
+        let screen_state = classify_private_screen(&screen, ui);
         let info = agent_session::resolve_session_info_for_provider(
             pane_pid,
             Some(ProcessProvider::Codex),
             None,
         );
-        if info.model_id.as_deref() == Some(model)
-            && effort.is_none_or(|expected| info.agent_effort.as_deref() == Some(expected))
+        let session_matches = info.model_id.as_deref() == Some(model)
+            && effort.is_none_or(|expected| info.agent_effort.as_deref() == Some(expected));
+        if screen_state.idle
+            && (session_matches || screen_confirms_model(&screen, model, effort, ui))
         {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     Err("Codex did not confirm the requested model and effort".into())
+}
+
+fn screen_confirms_model(
+    captured: &str,
+    model: &str,
+    effort: Option<&str>,
+    ui: &ProviderUiProfile,
+) -> bool {
+    let model = model.to_ascii_lowercase();
+    let effort = effort.map(str::to_ascii_lowercase);
+    let effort_label = effort
+        .as_deref()
+        .and_then(|value| ui.effort_labels.get(value))
+        .map(|value| value.to_ascii_lowercase());
+    strip_ansi(captured).lines().rev().take(4).any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains(&model)
+            && effort.as_deref().is_none_or(|value| {
+                lower.contains(value)
+                    || effort_label
+                        .as_deref()
+                        .is_some_and(|label| lower.contains(label))
+            })
+    })
 }
 
 async fn wait_until_idle(
@@ -1302,8 +1338,9 @@ fn ensure_empty_composer(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_private_screen, selected_option_matches, strip_ansi, validate_manifest,
-        version_matches, ActionKind, CatalogAction, PluginManifest, ProviderUiProfile,
+        classify_private_screen, screen_confirms_model, selected_option_matches, strip_ansi,
+        validate_manifest, version_matches, ActionKind, CatalogAction, PluginManifest,
+        ProviderUiProfile,
     };
 
     #[test]
@@ -1403,6 +1440,24 @@ mod tests {
 
         let working = classify_private_screen("esc to interrupt\n› \n", &ui);
         assert!(!working.idle);
+    }
+
+    #[test]
+    fn model_footer_confirms_live_selection_when_rollout_is_stale() {
+        let ui = ProviderUiProfile::default();
+        let screen = "› Ask Codex to do anything\n\ngpt-5.6-luna low · Context 96% left\n";
+        assert!(screen_confirms_model(
+            screen,
+            "gpt-5.6-luna",
+            Some("low"),
+            &ui
+        ));
+        assert!(!screen_confirms_model(
+            screen,
+            "gpt-5.6-sol",
+            Some("medium"),
+            &ui
+        ));
     }
 
     #[test]
