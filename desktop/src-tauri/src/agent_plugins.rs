@@ -1168,6 +1168,7 @@ fn strip_ansi(value: &str) -> String {
 fn submit_command(pane_id: &str, command: &str, ui: &ProviderUiProfile) -> Result<(), String> {
     if vim_normal_mode(&private_capture_plain(pane_id)?, ui) {
         crate::tmux::send_key_to_pane(pane_id, "i")?;
+        std::thread::sleep(Duration::from_millis(100));
     }
     crate::tmux::send_literal_to_pane(pane_id, command)?;
     crate::tmux::send_key_to_pane(pane_id, &ui.submit_key)
