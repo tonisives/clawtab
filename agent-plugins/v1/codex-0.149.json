@@ -6,6 +6,7 @@
   "ui": {
     "composer_marker": "›",
     "composer_placeholder": "Ask Codex to do anything",
+    "vim_normal_marker": "Vim: Normal",
     "model_dialog_marker": "Select model",
     "effort_dialog_marker": "Select Reasoning Level",
     "effort_labels": {

@@ -61,6 +61,8 @@ struct ProviderUiProfile {
     composer_marker: String,
     #[serde(default)]
     composer_placeholder: Option<String>,
+    #[serde(default)]
+    vim_normal_marker: Option<String>,
     model_dialog_marker: String,
     effort_dialog_marker: String,
     effort_labels: HashMap<String, String>,
@@ -81,6 +83,7 @@ impl Default for ProviderUiProfile {
         Self {
             composer_marker: "›".into(),
             composer_placeholder: Some("Ask Codex to do anything".into()),
+            vim_normal_marker: Some("Vim: Normal".into()),
             model_dialog_marker: "Select model".into(),
             effort_dialog_marker: "Select Reasoning Level".into(),
             effort_labels: HashMap::from([
@@ -480,8 +483,7 @@ async fn execute_codex_action(
     }
     let saved_draft = screen.draft.clone().filter(|draft| !draft.is_empty());
     if saved_draft.is_some() {
-        crate::tmux::send_key_to_pane(pane_id, &spec.ui.stash_key)?;
-        wait_until_empty_composer(pane_id, &spec.ui, cancel, Duration::from_secs(2)).await?;
+        clear_composer_draft(pane_id, &spec.ui, cancel, Duration::from_secs(2)).await?;
     }
     if cancel.is_cancelled() {
         return Err("Action cancelled".to_string());
@@ -1015,6 +1017,16 @@ fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
     }
     if manifest
         .ui
+        .vim_normal_marker
+        .as_ref()
+        .is_some_and(|marker| {
+            marker.is_empty() || marker.len() > 64 || marker.contains(['\n', '\r'])
+        })
+    {
+        return Err("Plugin contains an unsafe Vim mode marker".into());
+    }
+    if manifest
+        .ui
         .compact_confirmation_marker
         .as_ref()
         .is_some_and(|marker| {
@@ -1298,7 +1310,7 @@ async fn wait_until_idle(
     }
 }
 
-async fn wait_until_empty_composer(
+async fn clear_composer_draft(
     pane_id: &str,
     ui: &ProviderUiProfile,
     cancel: &CancellationToken,
@@ -1316,8 +1328,27 @@ async fn wait_until_empty_composer(
         if screen.idle && !screen.has_draft {
             return Ok(());
         }
+        if !screen.idle {
+            return Err("Codex left its normal composer while clearing the draft".into());
+        }
+        let captured = private_capture_plain(pane_id)?;
+        if vim_normal_mode(&captured, ui) {
+            // Codex's composer can be in Vim Normal mode, where Ctrl-U is not
+            // an editor command. dd deletes the current draft line without
+            // invoking the interrupt/exit path.
+            crate::tmux::send_key_to_pane(pane_id, "d")?;
+            crate::tmux::send_key_to_pane(pane_id, "d")?;
+        } else {
+            crate::tmux::send_key_to_pane(pane_id, &ui.stash_key)?;
+            crate::tmux::send_key_to_pane(pane_id, "C-k")?;
+        }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+fn vim_normal_mode(captured: &str, ui: &ProviderUiProfile) -> bool {
+    let marker = ui.vim_normal_marker.as_deref().unwrap_or("Vim: Normal");
+    captured.lines().any(|line| line.contains(marker))
 }
 
 fn restore_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(), String> {
@@ -1339,8 +1370,8 @@ fn ensure_empty_composer(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), St
 mod tests {
     use super::{
         classify_private_screen, screen_confirms_model, selected_option_matches, strip_ansi,
-        validate_manifest, version_matches, ActionKind, CatalogAction, PluginManifest,
-        ProviderUiProfile,
+        validate_manifest, version_matches, vim_normal_mode, ActionKind, CatalogAction,
+        PluginManifest, ProviderUiProfile,
     };
 
     #[test]
@@ -1456,6 +1487,19 @@ mod tests {
             screen,
             "gpt-5.6-sol",
             Some("medium"),
+            &ui
+        ));
+    }
+
+    #[test]
+    fn vim_normal_mode_is_detected_without_exposing_composer_text() {
+        let ui = ProviderUiProfile::default();
+        assert!(vim_normal_mode(
+            "› draft\n\ngpt-5.6-sol medium · Context 96% left · Vim: Normal\n",
+            &ui
+        ));
+        assert!(!vim_normal_mode(
+            "› draft\n\ngpt-5.6-sol medium · Context 96% left\n",
             &ui
         ));
     }
