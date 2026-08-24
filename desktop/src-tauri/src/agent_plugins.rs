@@ -59,6 +59,8 @@ struct PluginManifest {
 #[derive(Debug, Clone, Deserialize)]
 struct ProviderUiProfile {
     composer_marker: String,
+    #[serde(default)]
+    composer_placeholder: Option<String>,
     model_dialog_marker: String,
     effort_dialog_marker: String,
     effort_labels: HashMap<String, String>,
@@ -78,6 +80,7 @@ impl Default for ProviderUiProfile {
     fn default() -> Self {
         Self {
             composer_marker: "›".into(),
+            composer_placeholder: Some("Ask Codex to do anything".into()),
             model_dialog_marker: "Select model".into(),
             effort_dialog_marker: "Select Reasoning Level".into(),
             effort_labels: HashMap::from([
@@ -994,6 +997,18 @@ fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
     }
     if manifest
         .ui
+        .composer_placeholder
+        .as_ref()
+        .is_some_and(|placeholder| {
+            placeholder.is_empty()
+                || placeholder.len() > 64
+                || placeholder.chars().any(|ch| matches!(ch, '\n' | '\r'))
+        })
+    {
+        return Err("Plugin contains an unsafe composer placeholder".into());
+    }
+    if manifest
+        .ui
         .compact_confirmation_marker
         .as_ref()
         .is_some_and(|marker| {
@@ -1054,6 +1069,17 @@ fn classify_private_screen(captured: &str, ui: &ProviderUiProfile) -> PrivateScr
         trimmed
             .strip_prefix(&ui.composer_marker)
             .map(|text| text.trim().to_string())
+    });
+    let composer = composer.map(|text| {
+        if ui
+            .composer_placeholder
+            .as_deref()
+            .is_some_and(|placeholder| placeholder == text)
+        {
+            String::new()
+        } else {
+            text
+        }
     });
     let has_draft = composer.as_deref().is_some_and(|text| !text.is_empty());
     PrivateScreenState {
@@ -1357,6 +1383,12 @@ mod tests {
     #[test]
     fn composer_gate_distinguishes_idle_draft_and_dialog() {
         let ui = ProviderUiProfile::default();
+        let placeholder =
+            classify_private_screen("work complete\n\n› Ask Codex to do anything\n", &ui);
+        assert!(placeholder.idle);
+        assert!(!placeholder.has_draft);
+        assert_eq!(placeholder.draft.as_deref(), Some(""));
+
         let empty = classify_private_screen("work complete\n\n› \n", &ui);
         assert!(empty.idle);
         assert!(!empty.has_draft);
