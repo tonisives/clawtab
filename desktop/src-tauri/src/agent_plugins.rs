@@ -1307,7 +1307,7 @@ fn screen_model_status_matches(
         .unwrap_or("Context")
         .to_ascii_lowercase();
     let mut saw_status = false;
-    for line in strip_ansi(captured).lines().rev().take(4) {
+    for line in strip_ansi(captured).lines().rev() {
         let lower = line.to_ascii_lowercase();
         if !lower.contains(&status_marker) {
             continue;
@@ -1522,7 +1522,8 @@ mod tests {
     #[test]
     fn model_footer_confirms_live_selection_when_rollout_is_stale() {
         let ui = ProviderUiProfile::default();
-        let screen = "› Ask Codex to do anything\n\ngpt-5.6-luna low · Context 96% left\n";
+        let screen =
+            "› Ask Codex to do anything\n\ngpt-5.6-luna low · Context 96% left\n\n\n\n\n\n";
         assert!(screen_confirms_model(
             screen,
             "gpt-5.6-luna",
