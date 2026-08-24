@@ -1392,7 +1392,14 @@ fn vim_normal_mode(captured: &str, ui: &ProviderUiProfile) -> bool {
 
 fn restore_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(), String> {
     ensure_empty_composer(pane_id, ui)?;
+    let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(pane_id, "i")?;
+    }
     crate::tmux::send_literal_to_pane(pane_id, draft)?;
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key)?;
+    }
     Ok(())
 }
 
