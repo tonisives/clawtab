@@ -1195,8 +1195,8 @@ async fn select_model(
             }
         }
     }
-    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await?;
-    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await
+    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await?;
+    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await
 }
 
 async fn choose_visible_option(
