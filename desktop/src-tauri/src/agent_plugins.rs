@@ -1114,13 +1114,14 @@ fn private_screen_state(
 fn classify_private_screen(captured: &str, ui: &ProviderUiProfile) -> PrivateScreenState {
     let plain = strip_ansi(captured);
     let tail: Vec<&str> = plain.lines().rev().take(12).collect();
-    let in_dialog = tail.iter().any(|line| {
+    let in_dialog = plain.lines().any(|line| {
         let lower = line.to_ascii_lowercase();
         lower.contains(&ui.model_dialog_marker.to_ascii_lowercase())
             || lower.contains(&ui.effort_dialog_marker.to_ascii_lowercase())
-            || lower.contains(&ui.busy_marker.to_ascii_lowercase())
             || lower.contains("press enter to confirm")
-    });
+    }) || tail
+        .iter()
+        .any(|line| line.to_ascii_lowercase().contains(&ui.busy_marker.to_ascii_lowercase()));
     let composer = tail.iter().find_map(|line| {
         let trimmed = line.trim_start();
         trimmed
@@ -1165,6 +1166,9 @@ fn strip_ansi(value: &str) -> String {
 }
 
 fn submit_command(pane_id: &str, command: &str, ui: &ProviderUiProfile) -> Result<(), String> {
+    if vim_normal_mode(&private_capture_plain(pane_id)?, ui) {
+        crate::tmux::send_key_to_pane(pane_id, "i")?;
+    }
     crate::tmux::send_literal_to_pane(pane_id, command)?;
     crate::tmux::send_key_to_pane(pane_id, &ui.submit_key)
 }
@@ -1558,6 +1562,12 @@ mod tests {
 
         let picker = classify_private_screen("Select model\n› gpt-5.6-luna\n", &ui);
         assert!(!picker.idle);
+
+        let scrolled_picker = classify_private_screen(
+            "Select model\none\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\n› 3. gpt-5.6-luna\n",
+            &ui,
+        );
+        assert!(!scrolled_picker.idle);
 
         let working = classify_private_screen("esc to interrupt\n› \n", &ui);
         assert!(!working.idle);
