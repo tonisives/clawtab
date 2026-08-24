@@ -510,7 +510,13 @@ async fn execute_codex_action(
             )
             .await?;
             runtime.update(run_id, AgentActionRunState::Running, "Compacting context", 40, None, None);
-            ensure_empty_composer(pane_id, &spec.ui)?;
+            ensure_empty_for_action(
+                pane_id,
+                &spec.ui,
+                saved_draft.as_deref(),
+                cancel,
+            )
+            .await?;
             submit_command(pane_id, &spec.ui.compact_command, &spec.ui)?;
             confirm_compact_if_requested(pane_id, &spec.ui).await?;
             wait_until_idle(pane_id, &spec.ui, cancel, COMPACT_TIMEOUT).await?;
@@ -623,6 +629,21 @@ async fn recover_previous_state(
         )
         .await?;
         screen = private_screen_state(pane_id, ui)?;
+    }
+    if !screen.idle {
+        return Err("Codex is not at an idle composer".to_string());
+    }
+    if let Some(draft) = draft {
+        if screen.draft.as_deref() == Some(draft) {
+            clear_composer_draft(
+                pane_id,
+                ui,
+                &CancellationToken::new(),
+                Duration::from_secs(2),
+            )
+            .await?;
+            screen = private_screen_state(pane_id, ui)?;
+        }
     }
     if !screen.idle || screen.has_draft {
         return Err("Codex is not at an idle composer".to_string());
@@ -1349,6 +1370,25 @@ async fn wait_until_idle(
     }
 }
 
+async fn ensure_empty_for_action(
+    pane_id: &str,
+    ui: &ProviderUiProfile,
+    saved_draft: Option<&str>,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let screen = private_screen_state(pane_id, ui)?;
+    if screen.idle && !screen.has_draft {
+        return Ok(());
+    }
+    if screen.idle
+        && saved_draft.is_some_and(|draft| screen.draft.as_deref() == Some(draft))
+    {
+        clear_composer_draft(pane_id, ui, cancel, Duration::from_secs(2)).await?;
+        return Ok(());
+    }
+    ensure_empty_composer(pane_id, ui)
+}
+
 async fn clear_composer_draft(
     pane_id: &str,
     ui: &ProviderUiProfile,
@@ -1391,6 +1431,10 @@ fn vim_normal_mode(captured: &str, ui: &ProviderUiProfile) -> bool {
 }
 
 fn restore_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(), String> {
+    let screen = private_screen_state(pane_id, ui)?;
+    if screen.idle && screen.draft.as_deref() == Some(draft) {
+        return Ok(());
+    }
     ensure_empty_composer(pane_id, ui)?;
     let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
     if was_vim_normal {
