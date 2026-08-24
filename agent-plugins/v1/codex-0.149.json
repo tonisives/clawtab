@@ -19,7 +19,7 @@
     "model_command": "/model",
     "compact_command": "/compact",
     "compact_confirmation_marker": null,
-    "stash_key": "C-c",
+    "stash_key": "C-u",
     "cancel_key": "Escape",
     "next_key": "Down",
     "submit_key": "Enter",

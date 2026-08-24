@@ -92,7 +92,8 @@ impl Default for ProviderUiProfile {
             model_command: "/model".into(),
             compact_command: "/compact".into(),
             compact_confirmation_marker: None,
-            stash_key: "C-c".into(),
+            // Ctrl-U clears the composer without invoking Codex's interrupt/exit behavior.
+            stash_key: "C-u".into(),
             cancel_key: "Escape".into(),
             next_key: "Down".into(),
             submit_key: "Enter".into(),
@@ -165,9 +166,9 @@ impl AgentPluginRuntime {
         }
         let mut manifests = catalog_manifests(settings);
         manifests.sort_by_key(|manifest| {
-            !version.as_deref().is_some_and(|value| {
-                version_matches(value, &manifest.compatible_versions)
-            })
+            !version
+                .as_deref()
+                .is_some_and(|value| version_matches(value, &manifest.compatible_versions))
         });
         let enabled_models = settings
             .enabled_models
@@ -474,15 +475,14 @@ async fn execute_codex_action(
     if !screen.idle {
         return Err("Codex must be idle at its normal composer before running this action".into());
     }
-    let had_draft = screen.has_draft;
-    if had_draft {
+    let saved_draft = screen.draft.clone().filter(|draft| !draft.is_empty());
+    if saved_draft.is_some() {
         crate::tmux::send_key_to_pane(pane_id, &spec.ui.stash_key)?;
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        wait_until_empty_composer(pane_id, &spec.ui, cancel, Duration::from_secs(2)).await?;
     }
     if cancel.is_cancelled() {
         return Err("Action cancelled".to_string());
     }
-    let mut command_count = 0_u8;
     let attempt: Result<serde_json::Value, String> = async {
         if matches!(spec.kind, ActionKind::CheapCompact) {
             let preset = settings
@@ -492,7 +492,6 @@ async fn execute_codex_action(
                 .cloned()
                 .ok_or("No Codex compact preset is configured")?;
             runtime.update(run_id, AgentActionRunState::Running, "Switching to compact model", 15, None, None);
-            command_count += 1;
             select_model(
                 pane_id,
                 &pane_pid,
@@ -503,14 +502,12 @@ async fn execute_codex_action(
             )
             .await?;
             runtime.update(run_id, AgentActionRunState::Running, "Compacting context", 40, None, None);
-            command_count += 1;
             ensure_empty_composer(pane_id, &spec.ui)?;
             submit_command(pane_id, &spec.ui.compact_command, &spec.ui)?;
             confirm_compact_if_requested(pane_id, &spec.ui).await?;
             wait_until_idle(pane_id, &spec.ui, cancel, COMPACT_TIMEOUT).await?;
             runtime.update(run_id, AgentActionRunState::Running, "Restoring model", 80, None, None);
             let previous_model = initial.model_id.as_deref().ok_or("Could not read the current Codex model")?;
-            command_count += 1;
             select_model(
                 pane_id,
                 &pane_pid,
@@ -539,7 +536,6 @@ async fn execute_codex_action(
                 };
                 (enabled[next].clone(), initial.agent_effort.clone())
             };
-            command_count += 1;
             runtime.update(run_id, AgentActionRunState::Running, "Changing model", 35, None, None);
             select_model(
                 pane_id,
@@ -557,7 +553,7 @@ async fn execute_codex_action(
 
     match attempt {
         Ok(outcome) => {
-            if had_draft {
+            if let Some(draft) = saved_draft.as_deref() {
                 runtime.update(
                     run_id,
                     AgentActionRunState::Running,
@@ -566,7 +562,7 @@ async fn execute_codex_action(
                     None,
                     None,
                 );
-                restore_draft(pane_id, command_count.saturating_add(1), &spec.ui).map_err(|error| {
+                restore_draft(pane_id, draft, &spec.ui).map_err(|error| {
                     format!("RECOVERY_FAILED: The action completed, but the saved draft could not be restored: {error}")
                 })?;
             }
@@ -586,8 +582,7 @@ async fn execute_codex_action(
                 &pane_pid,
                 initial.model_id.as_deref(),
                 initial.agent_effort.as_deref(),
-                had_draft,
-                &mut command_count,
+                saved_draft.as_deref(),
                 &spec.ui,
             )
             .await;
@@ -606,13 +601,15 @@ async fn recover_previous_state(
     pane_pid: &str,
     model: Option<&str>,
     effort: Option<&str>,
-    had_draft: bool,
-    command_count: &mut u8,
+    draft: Option<&str>,
     ui: &ProviderUiProfile,
 ) -> Result<(), String> {
-    let _ = crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key);
-    tokio::time::sleep(Duration::from_millis(150)).await;
-    let screen = private_screen_state(pane_id, ui)?;
+    let mut screen = private_screen_state(pane_id, ui)?;
+    if !screen.idle {
+        let _ = crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key);
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        screen = private_screen_state(pane_id, ui)?;
+    }
     if !screen.idle || screen.has_draft {
         return Err("Codex is not at an idle composer".to_string());
     }
@@ -625,7 +622,6 @@ async fn recover_previous_state(
         if current.model_id.as_deref() != Some(model)
             || effort.is_some_and(|value| current.agent_effort.as_deref() != Some(value))
         {
-            *command_count = command_count.saturating_add(1);
             select_model(
                 pane_id,
                 pane_pid,
@@ -637,8 +633,8 @@ async fn recover_previous_state(
             .await?;
         }
     }
-    if had_draft {
-        restore_draft(pane_id, command_count.saturating_add(1), ui)?;
+    if let Some(draft) = draft {
+        restore_draft(pane_id, draft, ui)?;
     }
     Ok(())
 }
@@ -957,7 +953,7 @@ fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
     }) {
         return Err("Invalid action identifier".into());
     }
-    let allowed_keys = ["C-c", "Escape", "Down", "Enter", "Up"];
+    let allowed_keys = ["C-u", "Escape", "Down", "Enter", "Up"];
     let keys = [
         manifest.ui.stash_key.as_str(),
         manifest.ui.cancel_key.as_str(),
@@ -1032,6 +1028,7 @@ fn version_matches(version: &str, patterns: &[String]) -> bool {
 struct PrivateScreenState {
     idle: bool,
     has_draft: bool,
+    draft: Option<String>,
 }
 
 fn private_screen_state(
@@ -1054,11 +1051,15 @@ fn classify_private_screen(captured: &str, ui: &ProviderUiProfile) -> PrivateScr
     });
     let composer = tail.iter().find_map(|line| {
         let trimmed = line.trim_start();
-        trimmed.strip_prefix(&ui.composer_marker).map(str::trim)
+        trimmed
+            .strip_prefix(&ui.composer_marker)
+            .map(|text| text.trim().to_string())
     });
+    let has_draft = composer.as_deref().is_some_and(|text| !text.is_empty());
     PrivateScreenState {
         idle: composer.is_some() && !in_dialog,
-        has_draft: composer.is_some_and(|text| !text.is_empty()),
+        has_draft,
+        draft: composer,
     }
 }
 
@@ -1085,10 +1086,7 @@ fn submit_command(pane_id: &str, command: &str, ui: &ProviderUiProfile) -> Resul
     crate::tmux::send_key_to_pane(pane_id, &ui.submit_key)
 }
 
-async fn confirm_compact_if_requested(
-    pane_id: &str,
-    ui: &ProviderUiProfile,
-) -> Result<(), String> {
+async fn confirm_compact_if_requested(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), String> {
     let Some(marker) = ui.compact_confirmation_marker.as_deref() else {
         return Ok(());
     };
@@ -1238,11 +1236,31 @@ async fn wait_until_idle(
     }
 }
 
-fn restore_draft(pane_id: &str, history_steps: u8, ui: &ProviderUiProfile) -> Result<(), String> {
-    ensure_empty_composer(pane_id, ui)?;
-    for _ in 0..history_steps {
-        crate::tmux::send_key_to_pane(pane_id, &ui.history_key)?;
+async fn wait_until_empty_composer(
+    pane_id: &str,
+    ui: &ProviderUiProfile,
+    cancel: &CancellationToken,
+    timeout: Duration,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Action cancelled".into());
+        }
+        if started.elapsed() >= timeout {
+            return Err("Could not safely clear the Codex composer draft".into());
+        }
+        let screen = private_screen_state(pane_id, ui)?;
+        if screen.idle && !screen.has_draft {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+fn restore_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(), String> {
+    ensure_empty_composer(pane_id, ui)?;
+    crate::tmux::send_literal_to_pane(pane_id, draft)?;
     Ok(())
 }
 
@@ -1346,11 +1364,27 @@ mod tests {
         let draft = classify_private_screen("work complete\n\n› keep this text\n", &ui);
         assert!(draft.idle);
         assert!(draft.has_draft);
+        assert_eq!(draft.draft.as_deref(), Some("keep this text"));
 
         let picker = classify_private_screen("Select model\n› gpt-5.6-luna\n", &ui);
         assert!(!picker.idle);
 
         let working = classify_private_screen("esc to interrupt\n› \n", &ui);
         assert!(!working.idle);
+    }
+
+    #[test]
+    fn interrupt_cannot_be_used_to_clear_a_plugin_draft() {
+        let mut ui = ProviderUiProfile::default();
+        ui.stash_key = "C-c".into();
+        let manifest = PluginManifest {
+            schema_version: 1,
+            namespace: "local.example".into(),
+            provider: "codex".into(),
+            compatible_versions: vec!["0.149.*".into()],
+            ui,
+            actions: Vec::new(),
+        };
+        assert!(validate_manifest(&manifest).is_err());
     }
 }
