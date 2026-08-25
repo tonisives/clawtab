@@ -1307,6 +1307,7 @@ async fn wait_for_model(
     Err("Codex did not confirm the requested model and effort".into())
 }
 
+#[cfg(test)]
 fn screen_confirms_model(
     captured: &str,
     model: &str,
