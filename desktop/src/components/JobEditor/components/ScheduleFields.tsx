@@ -30,6 +30,7 @@ export function ScheduleFields({
   setWeeklyTimeAtIndex, addWeeklyTime, removeWeeklyTime,
   updateCalendarStart, updateCalendarEvery,
 }: ScheduleFieldsProps) {
+  const cron = form.cron ?? "";
   const [calendarDate, calendarTime = "09:00"] = calendarStart.split("T");
   const updateCalendarPart = (date: string, time: string) => {
     if (date && time) updateCalendarStart(`${date}T${time}`);
@@ -114,7 +115,7 @@ export function ScheduleFields({
               </div>
               {scheduleMode === "weekly" && (
                 <span className="hint" style={{ marginTop: 4, display: "block" }}>
-                  {describeCron(form.cron)}
+                  {describeCron(cron)}
                 </span>
               )}
             </div>
@@ -182,7 +183,7 @@ export function ScheduleFields({
             </label>
             <div style={{ opacity: scheduleMode === "cron" ? 1 : 0.4, pointerEvents: scheduleMode === "cron" ? "auto" : "none", paddingLeft: 24 }}>
               <CronInput
-                value={form.cron}
+                value={cron}
                 onChange={(cron) => setForm((prev) => ({ ...prev, cron, schedule: null }))}
               />
             </div>

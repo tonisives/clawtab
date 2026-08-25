@@ -14,12 +14,13 @@ interface UseScheduleStateParams {
 }
 
 export function useScheduleState({ form, setForm, isNew }: UseScheduleStateParams) {
-  const initWeekly = !isNew ? parseCronToWeekly(form.cron) : null;
+  const cron = form.cron ?? "";
+  const initWeekly = !isNew ? parseCronToWeekly(cron) : null;
   const [manualOnly, setManualOnly] = useState(
-    !isNew ? form.cron === "" && !form.schedule : false,
+    !isNew ? cron === "" && !form.schedule : false,
   );
   const [scheduleMode, setScheduleMode] = useState<"weekly" | "calendar" | "cron">(
-    form.schedule ? "calendar" : !isNew && initWeekly === null && form.cron ? "cron" : "weekly",
+    form.schedule ? "calendar" : !isNew && initWeekly === null && cron ? "cron" : "weekly",
   );
   const [weeklyDays, setWeeklyDays] = useState<string[]>(initWeekly?.days ?? ["Mon"]);
   const [weeklyTimes, setWeeklyTimes] = useState<string[]>(initWeekly?.times ?? ["09:00"]);
