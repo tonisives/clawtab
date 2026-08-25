@@ -480,10 +480,22 @@ async fn execute_codex_action(
         Some(ProcessProvider::Codex),
         None,
     );
-    let screen = private_screen_state(pane_id, &spec.ui)?;
+    let initial_capture = private_capture_plain(pane_id)?;
+    let screen = classify_private_screen(&initial_capture, &spec.ui);
     if !screen.idle {
         return Err("Codex must be idle at its normal composer before running this action".into());
     }
+    // Rollout metadata can still describe the previous turn's model. The
+    // footer is the live selection the user will return to after compacting.
+    let live_selection = live_model_selection(&initial_capture, &spec.ui);
+    let current_model = live_selection
+        .as_ref()
+        .map(|selection| selection.model.clone())
+        .or_else(|| initial.model_id.clone());
+    let current_effort = live_selection
+        .as_ref()
+        .and_then(|selection| selection.effort.clone())
+        .or_else(|| initial.agent_effort.clone());
     let saved_draft = screen.draft.clone().filter(|draft| !draft.is_empty());
     if saved_draft.is_some() {
         clear_composer_draft(pane_id, &spec.ui, cancel, Duration::from_secs(2)).await?;
@@ -519,22 +531,29 @@ async fn execute_codex_action(
             .await?;
             submit_command(pane_id, &spec.ui.compact_command, &spec.ui)?;
             confirm_compact_if_requested(pane_id, &spec.ui).await?;
+            // Codex cannot safely accept /model while /compact is working.
+            // Restore the live pre-compact selection at the first idle frame.
             wait_until_idle(pane_id, &spec.ui, cancel, COMPACT_TIMEOUT).await?;
             runtime.update(run_id, AgentActionRunState::Running, "Restoring model", 80, None, None);
-            let previous_model = initial.model_id.as_deref().ok_or("Could not read the current Codex model")?;
+            let previous_model = current_model
+                .clone()
+                .ok_or("Could not read the current Codex model")?;
+            let previous_effort = current_effort.clone();
             select_model(
                 pane_id,
                 &pane_pid,
-                previous_model,
-                initial.agent_effort.as_deref(),
+                &previous_model,
+                previous_effort.as_deref(),
                 &spec.ui,
                 cancel,
             )
             .await?;
-            Ok(serde_json::json!({"compacted": true, "model": previous_model, "effort": initial.agent_effort}))
+            Ok(serde_json::json!({"compacted": true, "model": previous_model, "effort": previous_effort}))
         } else {
             let enabled = settings.enabled_models.get("codex").cloned().unwrap_or_default();
-            let current = initial.model_id.as_deref().ok_or("Could not read the current Codex model")?;
+            let current = current_model
+                .as_deref()
+                .ok_or("Could not read the current Codex model")?;
             let (model, effort) = if matches!(spec.kind, ActionKind::SetModel) {
                 let model = parameters.get("model").ok_or("Missing model parameter")?.clone();
                 if !enabled.contains(&model) {
@@ -1103,6 +1122,12 @@ struct PrivateScreenState {
     draft: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LiveModelSelection {
+    model: String,
+    effort: Option<String>,
+}
+
 fn private_screen_state(
     pane_id: &str,
     ui: &ProviderUiProfile,
@@ -1277,6 +1302,36 @@ fn private_capture_plain(pane_id: &str) -> Result<String, String> {
     Ok(strip_ansi(&captured))
 }
 
+fn live_model_selection(captured: &str, ui: &ProviderUiProfile) -> Option<LiveModelSelection> {
+    let plain = strip_ansi(captured);
+    let status_marker = ui
+        .model_status_marker
+        .as_deref()
+        .unwrap_or("Context")
+        .to_ascii_lowercase();
+
+    plain.lines().rev().find_map(|line| {
+        let lower = line.to_ascii_lowercase();
+        let marker_start = lower.find(&status_marker)?;
+        let status_prefix = line.get(..marker_start)?.trim();
+        let mut fields = status_prefix.split_whitespace();
+        let model = fields.next()?.to_string();
+        if model.is_empty() {
+            return None;
+        }
+        let effort = fields.find_map(|field| {
+            let candidate = field.trim_matches(|ch: char| !ch.is_ascii_alphanumeric());
+            if ui.effort_labels.contains_key(candidate) {
+                return Some(candidate.to_string());
+            }
+            ui.effort_labels
+                .iter()
+                .find_map(|(key, label)| label.eq_ignore_ascii_case(candidate).then(|| key.clone()))
+        });
+        Some(LiveModelSelection { model, effort })
+    })
+}
+
 async fn wait_for_model(
     pane_id: &str,
     pane_pid: &str,
@@ -1323,36 +1378,15 @@ fn screen_model_status_matches(
     effort: Option<&str>,
     ui: &ProviderUiProfile,
 ) -> Option<bool> {
-    let model = model.to_ascii_lowercase();
-    let effort = effort.map(str::to_ascii_lowercase);
-    let effort_label = effort
-        .as_deref()
-        .and_then(|value| ui.effort_labels.get(value))
-        .map(|value| value.to_ascii_lowercase());
-    let status_marker = ui
-        .model_status_marker
-        .as_deref()
-        .unwrap_or("Context")
-        .to_ascii_lowercase();
-    let mut saw_status = false;
-    for line in strip_ansi(captured).lines().rev() {
-        let lower = line.to_ascii_lowercase();
-        if !lower.contains(&status_marker) {
-            continue;
-        }
-        saw_status = true;
-        if lower.contains(&model)
-            && effort.as_deref().is_none_or(|value| {
-                lower.contains(value)
-                    || effort_label
-                        .as_deref()
-                        .is_some_and(|label| lower.contains(label))
-            })
-        {
-            return Some(true);
-        }
-    }
-    saw_status.then_some(false)
+    let selection = live_model_selection(captured, ui)?;
+    let model_matches = selection.model.eq_ignore_ascii_case(model);
+    let effort_matches = effort.is_none_or(|expected| {
+        selection
+            .effort
+            .as_deref()
+            .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+    });
+    Some(model_matches && effort_matches)
 }
 
 async fn wait_until_idle(
@@ -1466,9 +1500,9 @@ fn ensure_empty_composer(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_private_screen, screen_confirms_model, selected_option_matches, strip_ansi,
-        validate_manifest, version_matches, vim_normal_mode, ActionKind, CatalogAction,
-        PluginManifest, ProviderUiProfile,
+        classify_private_screen, live_model_selection, screen_confirms_model,
+        selected_option_matches, strip_ansi, validate_manifest, version_matches, vim_normal_mode,
+        ActionKind, CatalogAction, LiveModelSelection, PluginManifest, ProviderUiProfile,
     };
 
     #[test]
@@ -1593,6 +1627,19 @@ mod tests {
             Some("medium"),
             &ui
         ));
+    }
+
+    #[test]
+    fn live_footer_selection_wins_over_stale_rollout_model() {
+        let ui = ProviderUiProfile::default();
+        let screen = "› draft\n\ngpt-5.6-sol low · Context 96% left · Vim: Normal\n";
+        assert_eq!(
+            live_model_selection(screen, &ui),
+            Some(LiveModelSelection {
+                model: "gpt-5.6-sol".into(),
+                effort: Some("low".into()),
+            })
+        );
     }
 
     #[test]
