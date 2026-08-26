@@ -1138,16 +1138,19 @@ fn private_screen_state(
 
 fn classify_private_screen(captured: &str, ui: &ProviderUiProfile) -> PrivateScreenState {
     let plain = strip_ansi(captured);
-    let tail: Vec<&str> = plain.lines().rev().take(12).collect();
     let in_dialog = plain.lines().any(|line| {
         let lower = line.to_ascii_lowercase();
         lower.contains(&ui.model_dialog_marker.to_ascii_lowercase())
             || lower.contains(&ui.effort_dialog_marker.to_ascii_lowercase())
             || lower.contains("press enter to confirm")
-    }) || tail
-        .iter()
-        .any(|line| line.to_ascii_lowercase().contains(&ui.busy_marker.to_ascii_lowercase()));
-    let composer = tail.iter().find_map(|line| {
+    }) || plain.lines().any(|line| {
+        line.to_ascii_lowercase()
+            .contains(&ui.busy_marker.to_ascii_lowercase())
+    });
+    // capture_pane_visible preserves the full pane height, including blank rows
+    // below Codex's footer. Scan from the bottom of the visible screen rather
+    // than assuming the composer is within a fixed number of trailing rows.
+    let composer = plain.lines().rev().find_map(|line| {
         let trimmed = line.trim_start();
         trimmed
             .strip_prefix(&ui.composer_marker)
@@ -1421,9 +1424,7 @@ async fn ensure_empty_for_action(
     if screen.idle && !screen.has_draft {
         return Ok(());
     }
-    if screen.idle
-        && saved_draft.is_some_and(|draft| screen.draft.as_deref() == Some(draft))
-    {
+    if screen.idle && saved_draft.is_some_and(|draft| screen.draft.as_deref() == Some(draft)) {
         clear_composer_draft(pane_id, ui, cancel, Duration::from_secs(2)).await?;
         return Ok(());
     }
@@ -1608,6 +1609,24 @@ mod tests {
 
         let working = classify_private_screen("esc to interrupt\n› \n", &ui);
         assert!(!working.idle);
+    }
+
+    #[test]
+    fn composer_gate_handles_blank_rows_below_codex_footer() {
+        let ui = ProviderUiProfile::default();
+        let screen = concat!(
+            "startup output\n",
+            "› previous request\n",
+            "\n",
+            "› current draft\n",
+            "\n",
+            "gpt-5.6-luna medium · Context 99% left · Vim: Insert\n",
+            "\n\n\n\n\n\n\n\n\n\n\n\n"
+        );
+        let state = classify_private_screen(screen, &ui);
+        assert!(state.idle);
+        assert!(state.has_draft);
+        assert_eq!(state.draft.as_deref(), Some("current draft"));
     }
 
     #[test]
