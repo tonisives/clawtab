@@ -2,7 +2,7 @@
   "schema_version": 1,
   "namespace": "codex",
   "provider": "codex",
-  "compatible_versions": ["0.149.*"],
+  "compatible_versions": ["0.149.*", "0.150.*"],
   "ui": {
     "composer_marker": "›",
     "composer_placeholder": "Ask Codex to do anything",

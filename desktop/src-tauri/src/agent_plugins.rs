@@ -1501,7 +1501,7 @@ fn ensure_empty_composer(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_private_screen, live_model_selection, screen_confirms_model,
+        bundled_manifest, classify_private_screen, live_model_selection, screen_confirms_model,
         selected_option_matches, strip_ansi, validate_manifest, version_matches, vim_normal_mode,
         ActionKind, CatalogAction, LiveModelSelection, PluginManifest, ProviderUiProfile,
     };
@@ -1514,7 +1514,20 @@ mod tests {
     #[test]
     fn compatibility_is_explicit() {
         assert!(version_matches("0.149.3", &["0.149.*".into()]));
-        assert!(!version_matches("0.150.0", &["0.149.*".into()]));
+        assert!(version_matches(
+            "0.150.1",
+            &["0.149.*".into(), "0.150.*".into()]
+        ));
+        assert!(!version_matches(
+            "0.151.0",
+            &["0.149.*".into(), "0.150.*".into()]
+        ));
+    }
+
+    #[test]
+    fn bundled_codex_profile_covers_current_minor_version() {
+        let manifest = bundled_manifest();
+        assert!(version_matches("0.150.1", &manifest.compatible_versions));
     }
 
     #[test]
