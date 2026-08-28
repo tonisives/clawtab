@@ -519,6 +519,7 @@ async fn execute_codex_action(
                 Some(&preset.effort),
                 &spec.ui,
                 cancel,
+                None,
             )
             .await?;
             runtime.update(run_id, AgentActionRunState::Running, "Compacting context", 40, None, None);
@@ -546,6 +547,7 @@ async fn execute_codex_action(
                 previous_effort.as_deref(),
                 &spec.ui,
                 cancel,
+                saved_draft.as_deref(),
             )
             .await?;
             Ok(serde_json::json!({"compacted": true, "model": previous_model, "effort": previous_effort}))
@@ -577,6 +579,7 @@ async fn execute_codex_action(
                 effort.as_deref(),
                 &spec.ui,
                 cancel,
+                saved_draft.as_deref(),
             )
             .await?;
             Ok(serde_json::json!({"model": model, "effort": effort}))
@@ -688,6 +691,7 @@ async fn recover_previous_state(
                 effort,
                 ui,
                 &CancellationToken::new(),
+                draft,
             )
             .await?;
         }
@@ -1224,6 +1228,7 @@ async fn select_model(
     effort: Option<&str>,
     ui: &ProviderUiProfile,
     cancel: &CancellationToken,
+    draft_after_idle: Option<&str>,
 ) -> Result<(), String> {
     ensure_empty_composer(pane_id, ui)?;
     submit_command(pane_id, &ui.model_command, ui)?;
@@ -1251,6 +1256,12 @@ async fn select_model(
         }
     }
     wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await?;
+    if let Some(draft) = draft_after_idle {
+        // The picker has closed and the composer is safe for input. Restore the
+        // draft before footer verification so it is visible at the first idle
+        // frame after Codex accepts the model change.
+        restore_draft(pane_id, draft, ui)?;
+    }
     wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await
 }
 
