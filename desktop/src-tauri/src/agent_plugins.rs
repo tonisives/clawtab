@@ -76,6 +76,8 @@ struct ProviderUiProfile {
     stash_key: String,
     cancel_key: String,
     next_key: String,
+    #[serde(default = "default_queue_key")]
+    queue_key: String,
     submit_key: String,
     history_key: String,
 }
@@ -105,10 +107,15 @@ impl Default for ProviderUiProfile {
             stash_key: "C-u".into(),
             cancel_key: "Escape".into(),
             next_key: "Down".into(),
+            queue_key: default_queue_key(),
             submit_key: "Enter".into(),
             history_key: "Up".into(),
         }
     }
+}
+
+fn default_queue_key() -> String {
+    "Tab".into()
 }
 
 #[derive(Clone)]
@@ -532,22 +539,28 @@ async fn execute_codex_action(
             .await?;
             submit_command(pane_id, &spec.ui.compact_command, &spec.ui)?;
             confirm_compact_if_requested(pane_id, &spec.ui).await?;
-            // Codex cannot safely accept /model while /compact is working.
-            // Restore the live pre-compact selection at the first idle frame.
-            wait_until_idle(pane_id, &spec.ui, cancel, COMPACT_TIMEOUT).await?;
-            runtime.update(run_id, AgentActionRunState::Running, "Restoring model", 80, None, None);
             let previous_model = current_model
                 .clone()
                 .ok_or("Could not read the current Codex model")?;
             let previous_effort = current_effort.clone();
-            select_model(
+            runtime.update(run_id, AgentActionRunState::Running, "Queueing model restore", 55, None, None);
+            queue_model_selection(
+                pane_id,
+                &spec.ui,
+                cancel,
+            )
+            .await?;
+            if let Some(draft) = saved_draft.as_deref() {
+                restore_busy_draft(pane_id, draft, &spec.ui)?;
+            }
+            runtime.update(run_id, AgentActionRunState::Running, "Waiting for compaction", 70, None, None);
+            complete_queued_model_selection(
                 pane_id,
                 &pane_pid,
                 &previous_model,
                 previous_effort.as_deref(),
                 &spec.ui,
                 cancel,
-                saved_draft.as_deref(),
             )
             .await?;
             Ok(serde_json::json!({"compacted": true, "model": previous_model, "effort": previous_effort}))
@@ -1016,11 +1029,12 @@ fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
     }) {
         return Err("Invalid action identifier".into());
     }
-    let allowed_keys = ["C-u", "Escape", "Down", "Enter", "Up"];
+    let allowed_keys = ["C-u", "Escape", "Down", "Enter", "Tab", "Up"];
     let keys = [
         manifest.ui.stash_key.as_str(),
         manifest.ui.cancel_key.as_str(),
         manifest.ui.next_key.as_str(),
+        manifest.ui.queue_key.as_str(),
         manifest.ui.submit_key.as_str(),
         manifest.ui.history_key.as_str(),
     ];
@@ -1122,6 +1136,7 @@ fn version_matches(version: &str, patterns: &[String]) -> bool {
 
 struct PrivateScreenState {
     idle: bool,
+    busy: bool,
     has_draft: bool,
     draft: Option<String>,
 }
@@ -1147,7 +1162,8 @@ fn classify_private_screen(captured: &str, ui: &ProviderUiProfile) -> PrivateScr
         lower.contains(&ui.model_dialog_marker.to_ascii_lowercase())
             || lower.contains(&ui.effort_dialog_marker.to_ascii_lowercase())
             || lower.contains("press enter to confirm")
-    }) || plain.lines().any(|line| {
+    });
+    let busy = plain.lines().any(|line| {
         line.to_ascii_lowercase()
             .contains(&ui.busy_marker.to_ascii_lowercase())
     });
@@ -1173,7 +1189,8 @@ fn classify_private_screen(captured: &str, ui: &ProviderUiProfile) -> PrivateScr
     });
     let has_draft = composer.as_deref().is_some_and(|text| !text.is_empty());
     PrivateScreenState {
-        idle: composer.is_some() && !in_dialog,
+        idle: composer.is_some() && !in_dialog && !busy,
+        busy,
         has_draft,
         draft: composer,
     }
@@ -1219,6 +1236,111 @@ async fn confirm_compact_if_requested(pane_id: &str, ui: &ProviderUiProfile) -> 
         crate::tmux::send_key_to_pane(pane_id, &ui.submit_key)?;
     }
     Ok(())
+}
+
+async fn queue_model_selection(
+    pane_id: &str,
+    ui: &ProviderUiProfile,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Action cancelled".into());
+        }
+        if started.elapsed() >= Duration::from_secs(3) {
+            return Err("Codex did not expose its composer while compacting".into());
+        }
+        let screen = private_screen_state(pane_id, ui)?;
+        if screen.busy && screen.draft.as_deref() == Some("") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    if vim_normal_mode(&private_capture_plain(pane_id)?, ui) {
+        crate::tmux::send_key_to_pane(pane_id, "i")?;
+    }
+    crate::tmux::send_literal_to_pane(pane_id, &ui.model_command)?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    crate::tmux::send_key_to_pane(pane_id, &ui.queue_key)?;
+
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Action cancelled".into());
+        }
+        if started.elapsed() >= Duration::from_secs(2) {
+            return Err("Codex did not queue the model restore".into());
+        }
+        let screen = private_screen_state(pane_id, ui)?;
+        if screen.busy && screen.draft.as_deref() == Some("") {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+fn restore_busy_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(), String> {
+    let screen = private_screen_state(pane_id, ui)?;
+    if !screen.busy || screen.draft.as_deref() != Some("") {
+        return Err("The Codex composer changed while queueing the model restore".into());
+    }
+    let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(pane_id, "i")?;
+    }
+    crate::tmux::send_literal_to_pane(pane_id, draft)?;
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key)?;
+    }
+    Ok(())
+}
+
+async fn complete_queued_model_selection(
+    pane_id: &str,
+    pane_pid: &str,
+    model: &str,
+    effort: Option<&str>,
+    ui: &ProviderUiProfile,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Action cancelled".into());
+        }
+        if started.elapsed() >= COMPACT_TIMEOUT {
+            return Err("Timed out waiting for compact and the queued model picker".into());
+        }
+        let screen = private_capture_plain(pane_id)?;
+        if screen
+            .to_ascii_lowercase()
+            .contains(&ui.model_dialog_marker.to_ascii_lowercase())
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    choose_visible_option(pane_id, model, ui, cancel).await?;
+    if let Some(effort) = effort {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        let screen = private_capture_plain(pane_id)?;
+        if screen
+            .to_ascii_lowercase()
+            .contains(&ui.effort_dialog_marker.to_ascii_lowercase())
+        {
+            let effort_label = ui
+                .effort_labels
+                .get(effort)
+                .map(String::as_str)
+                .unwrap_or(effort);
+            choose_visible_option(pane_id, effort_label, ui, cancel).await?;
+        }
+    }
+    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await?;
+    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await
 }
 
 async fn select_model(
@@ -1633,6 +1755,13 @@ mod tests {
 
         let working = classify_private_screen("esc to interrupt\n› \n", &ui);
         assert!(!working.idle);
+        assert!(working.busy);
+        assert_eq!(working.draft.as_deref(), Some(""));
+
+        let working_with_draft = classify_private_screen("esc to interrupt\n› restore now\n", &ui);
+        assert!(!working_with_draft.idle);
+        assert!(working_with_draft.busy);
+        assert_eq!(working_with_draft.draft.as_deref(), Some("restore now"));
     }
 
     #[test]
