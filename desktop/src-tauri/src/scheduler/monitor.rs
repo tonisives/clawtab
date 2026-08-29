@@ -46,6 +46,8 @@ pub struct MonitorParams {
     /// pushes a `DesktopMessage::TriggerResult` to the relay.
     pub trigger_id: Option<String>,
     pub result_file: Option<std::path::PathBuf>,
+    /// Held from admission until this monitor finishes the pane.
+    pub resource_lease: Option<crate::resource_policy::ResourceLease>,
 }
 
 fn format_elapsed(secs: u64) -> String {
@@ -487,12 +489,24 @@ fn push_trigger_result_if_any(params: &MonitorParams) {
     let Some(tid) = params.trigger_id.as_ref() else {
         return;
     };
-    let parsed = params
-        .result_file
-        .as_ref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-    crate::relay::push_trigger_result(&params.relay, tid, "succeeded", Some(0), parsed, None);
+    let collected = super::executor::collect_result_file(params.result_file.as_deref());
+    let structured_failure = matches!(collected.status, "invalid_json" | "unreadable");
+    crate::relay::push_trigger_result(
+        &params.relay,
+        tid,
+        crate::relay::TriggerResultPayload {
+            status: if structured_failure {
+                "failed".into()
+            } else {
+                "succeeded".into()
+            },
+            exit_code: Some(0),
+            result: collected.value,
+            error: collected.error,
+            result_status: Some(collected.status.into()),
+            retry_at: None,
+        },
+    );
 }
 
 pub(crate) fn save_log_file(

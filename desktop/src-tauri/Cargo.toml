@@ -62,6 +62,7 @@ serde_yml = "0.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process", "signal"] }
 cron = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
 rusqlite = { version = "0.32", features = ["bundled"] }
 log = "0.4"
 env_logger = "0.11"

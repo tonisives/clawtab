@@ -135,6 +135,8 @@ fn main() {
     let pty_manager: clawtab_lib::pty::SharedPtyManager =
         Arc::new(Mutex::new(clawtab_lib::pty::PtyManager::new()));
     let active_agents_notify = Arc::new(tokio::sync::Notify::new());
+    let resource_policies =
+        Arc::new(clawtab_lib::resource_policy::ResourcePolicyManager::from_environment());
 
     let event_subscribers = ipc::new_event_subscribers();
     let event_sink: Arc<dyn clawtab_lib::events::EventSink> = Arc::new(
@@ -173,6 +175,7 @@ fn main() {
         relay: Arc::clone(&relay_handle),
         auto_yes_panes: Arc::clone(&auto_yes_panes),
         protected_panes: Arc::clone(&protected_panes),
+        resource_policies,
         notifier: Some(Arc::clone(&notifier)),
     };
 

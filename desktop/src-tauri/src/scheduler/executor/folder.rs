@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::config::jobs::Job;
 use crate::config::settings::AppSettings;
 use crate::secrets::SecretsManager;
+use clawtab_protocol::JobPolicy;
 
 use super::params::{apply_params, collect_env_vars};
 use super::tmux_spawn::{spawn_agent_pane, SpawnArgs};
@@ -16,6 +17,7 @@ pub(super) async fn execute_folder_job(
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
+    policy: Option<JobPolicy>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     use crate::cwt::CwtFolder;
 
@@ -77,6 +79,7 @@ pub(super) async fn execute_folder_job(
     } else {
         build_folder_prompt(job, raw_prompt)
     };
+    let prompt_content = super::apply_policy_prompt(prompt_content, policy, provider);
 
     let mut env_vars = collect_env_vars(job, secrets, settings);
     if let Some(p) = result_file {
@@ -85,6 +88,7 @@ pub(super) async fn execute_folder_job(
             p.to_string_lossy().into_owned(),
         ));
     }
+    super::apply_policy_env(&mut env_vars, policy);
 
     spawn_agent_pane(SpawnArgs {
         tmux_session,

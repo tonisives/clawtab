@@ -13,8 +13,12 @@ mod params;
 mod tmux_spawn;
 
 use std::collections::{HashMap, HashSet};
+#[cfg(unix)]
+use std::io::Read;
+use std::path::Path;
 
 use chrono::Utc;
+use clawtab_protocol::JobPolicy;
 
 use crate::config::jobs::{Job, JobStatus, JobType};
 use crate::config::settings::AppSettings;
@@ -49,6 +53,11 @@ pub struct ExecuteOpts {
     /// structured result. On finish the monitor reads that file and pushes
     /// a TriggerResult to the relay.
     pub trigger_id: Option<String>,
+    /// Policy selected by an external trigger. The policy is re-applied at
+    /// the executor boundary so a caller cannot bypass prompt/env controls.
+    pub policy: Option<JobPolicy>,
+    /// Admission lease for a named machine-local resource.
+    pub resource_lease: Option<crate::resource_policy::ResourceLease>,
 }
 
 pub(super) fn resolve_agent_model(
@@ -102,6 +111,12 @@ pub async fn execute_job(
 
     let mut pane_tx = opts.pane_tx;
     let trigger_id = opts.trigger_id;
+    let policy = opts.policy;
+    let resource_lease =
+        match validate_admission(job, ctx, trigger_id.as_deref(), policy, opts.resource_lease) {
+            Ok(lease) => lease,
+            Err(()) => return,
+        };
 
     let run_id = opts
         .run_id
@@ -110,8 +125,13 @@ pub async fn execute_job(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let started_at = Utc::now().to_rfc3339();
 
-    let result_file = prepare_result_file(job, &run_id, trigger_id.as_deref());
+    let result_file = prepare_result_file(job, trigger_id.as_deref());
     let stream_log_path = prepare_stream_log(job, &run_id);
+
+    let mut resource_lease = resource_lease;
+    if let Some(lease) = resource_lease.as_mut() {
+        lease.commit();
+    }
 
     mark_running(job, ctx, &run_id, &started_at);
     insert_history_and_prune(
@@ -127,15 +147,16 @@ pub async fn execute_job(
 
     log::info!("[{}] Starting job '{}' ({})", run_id, job.name, trigger);
 
-    let result = dispatch_job(
+    let result = dispatch_job(DispatchOptions {
         job,
         ctx,
-        &run_id,
-        &started_at,
+        run_id: &run_id,
+        started_at: &started_at,
         params,
-        result_file.as_deref(),
-        stream_log_path.as_deref(),
-    )
+        result_file: result_file.as_deref(),
+        stream_log_path: stream_log_path.as_deref(),
+        policy,
+    })
     .await;
 
     let telegram_config = {
@@ -153,7 +174,148 @@ pub async fn execute_job(
         telegram_config: &telegram_config,
     };
 
-    handle_result(&rc, result, &mut pane_tx, opts.use_auto_yes).await;
+    handle_result(&rc, result, &mut pane_tx, opts.use_auto_yes, resource_lease).await;
+}
+
+fn reject_trigger(ctx: &JobContext, trigger_id: &str, message: &str) {
+    crate::relay::push_trigger_result(
+        &ctx.relay,
+        trigger_id,
+        crate::relay::TriggerResultPayload {
+            status: "rejected".into(),
+            exit_code: None,
+            result: None,
+            error: Some(message.to_string()),
+            result_status: Some("not_requested".into()),
+            retry_at: None,
+        },
+    );
+}
+
+fn validate_admission(
+    job: &Job,
+    ctx: &JobContext,
+    trigger_id: Option<&str>,
+    policy: Option<JobPolicy>,
+    resource_lease: Option<crate::resource_policy::ResourceLease>,
+) -> Result<Option<crate::resource_policy::ResourceLease>, ()> {
+    if let Some(trigger_id) = trigger_id {
+        if uuid::Uuid::parse_str(trigger_id).is_err() {
+            reject_trigger(ctx, trigger_id, "trigger id is not a valid UUID");
+            drop(resource_lease);
+            return Err(());
+        }
+    }
+    if policy.is_some() && resource_lease.is_none() {
+        if let Some(trigger_id) = trigger_id {
+            reject_trigger(ctx, trigger_id, "resource policy admission was not granted");
+        }
+        return Err(());
+    }
+    if policy.is_some() && matches!(job.job_type, JobType::Binary) {
+        if let Some(trigger_id) = trigger_id {
+            reject_trigger(
+                ctx,
+                trigger_id,
+                "resource policy is not allowed for binary jobs",
+            );
+        }
+        drop(resource_lease);
+        return Err(());
+    }
+    Ok(resource_lease)
+}
+
+/// Structured result collection is deliberately limited to the executor's
+/// own per-run path. No caller-supplied server path is ever opened here.
+#[derive(Debug)]
+pub(crate) struct CollectedResult {
+    pub status: &'static str,
+    pub value: Option<serde_json::Value>,
+    pub error: Option<String>,
+}
+
+pub(crate) fn collect_result_file(path: Option<&Path>) -> CollectedResult {
+    let Some(path) = path else {
+        return CollectedResult {
+            status: "not_requested",
+            value: None,
+            error: None,
+        };
+    };
+    let contents = match read_result_file(path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return CollectedResult {
+                status: "missing",
+                value: None,
+                error: None,
+            };
+        }
+        Err(error) => {
+            return CollectedResult {
+                status: "unreadable",
+                value: None,
+                error: Some(format!("structured result file could not be read: {error}")),
+            };
+        }
+    };
+    match serde_json::from_str(&contents) {
+        Ok(value) => CollectedResult {
+            status: "valid",
+            value: Some(value),
+            error: None,
+        },
+        Err(error) => CollectedResult {
+            status: "invalid_json",
+            value: None,
+            error: Some(format!(
+                "structured result file contains invalid JSON: {error}"
+            )),
+        },
+    }
+}
+
+fn read_result_file(path: &Path) -> std::io::Result<String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = std::fs::OpenOptions::new();
+        file.read(true).custom_flags(libc::O_NOFOLLOW);
+        let mut contents = String::new();
+        file.open(path)?.read_to_string(&mut contents)?;
+        Ok(contents)
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::read_to_string(path)
+    }
+}
+
+pub(super) fn apply_policy_env(env_vars: &mut Vec<(String, String)>, policy: Option<JobPolicy>) {
+    let Some(policy) = policy else {
+        return;
+    };
+    for (key, value) in policy.environment() {
+        env_vars.retain(|(existing_key, _)| existing_key != key);
+        env_vars.push((key.to_string(), value.to_string()));
+    }
+}
+
+pub(super) fn apply_policy_prompt(
+    prompt: String,
+    policy: Option<JobPolicy>,
+    provider: crate::agent_session::ProcessProvider,
+) -> String {
+    if provider == crate::agent_session::ProcessProvider::Shell {
+        return prompt;
+    }
+    match policy {
+        Some(policy) => format!("{prompt}\n\n{}", policy.prompt_directive()),
+        None => prompt,
+    }
 }
 
 /// Fill missing param entries from each JobParam's declared default. Returns
@@ -177,21 +339,18 @@ fn merge_param_defaults(
 /// Compute the per-run result file path and create its parent dir. Only set
 /// when the run was started by an external trigger (so the child can write a
 /// structured result the monitor can push back to the relay).
-fn prepare_result_file(
-    job: &Job,
-    run_id: &str,
-    trigger_id: Option<&str>,
-) -> Option<std::path::PathBuf> {
+fn prepare_result_file(job: &Job, trigger_id: Option<&str>) -> Option<std::path::PathBuf> {
+    let canonical_trigger_id = trigger_id.and_then(|id| uuid::Uuid::parse_str(id).ok())?;
     let path = trigger_id.and_then(|_| {
         crate::config::config_dir().map(|d| {
             if job.group == "agent" {
                 crate::agent::agent_logs_dir(&crate::agent::agent_group_from_slug(&job.slug))
-                    .join(format!("{}.json", run_id))
+                    .join(format!("{}.json", canonical_trigger_id))
             } else {
                 d.join("jobs")
                     .join(&job.slug)
                     .join("logs")
-                    .join(format!("{}.json", run_id))
+                    .join(format!("{}.json", canonical_trigger_id))
             }
         })
     })?;
@@ -316,17 +475,32 @@ fn close_pane_for_retention(pane_id: String) {
     });
 }
 
+struct DispatchOptions<'a> {
+    job: &'a Job,
+    ctx: &'a JobContext,
+    run_id: &'a str,
+    started_at: &'a str,
+    params: &'a HashMap<String, String>,
+    result_file: Option<&'a std::path::Path>,
+    stream_log_path: Option<&'a std::path::Path>,
+    policy: Option<JobPolicy>,
+}
+
 /// Run the per-type executor and normalize its return shape so the caller can
 /// match on a single result type regardless of whether the job spawned a pane.
 async fn dispatch_job(
-    job: &Job,
-    ctx: &JobContext,
-    run_id: &str,
-    started_at: &str,
-    params: &HashMap<String, String>,
-    result_file: Option<&std::path::Path>,
-    stream_log_path: Option<&std::path::Path>,
+    options: DispatchOptions<'_>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
+    let DispatchOptions {
+        job,
+        ctx,
+        run_id,
+        started_at,
+        params,
+        result_file,
+        stream_log_path,
+        policy,
+    } = options;
     match job.job_type {
         JobType::Binary => execute_binary_job(
             job,
@@ -341,10 +515,26 @@ async fn dispatch_job(
         .await
         .map(|(code, out, err)| (code, out, err, None)),
         JobType::Claude => {
-            execute_claude_job(job, &ctx.secrets, &ctx.settings, params, result_file).await
+            execute_claude_job(
+                job,
+                &ctx.secrets,
+                &ctx.settings,
+                params,
+                result_file,
+                policy,
+            )
+            .await
         }
         JobType::Job => {
-            execute_folder_job(job, &ctx.secrets, &ctx.settings, params, result_file).await
+            execute_folder_job(
+                job,
+                &ctx.secrets,
+                &ctx.settings,
+                params,
+                result_file,
+                policy,
+            )
+            .await
         }
     }
 }
@@ -356,11 +546,12 @@ async fn handle_result(
     result: Result<(Option<i32>, String, String, Option<TmuxHandle>), String>,
     pane_tx: &mut Option<tokio::sync::oneshot::Sender<(String, String)>>,
     use_auto_yes: bool,
+    resource_lease: Option<crate::resource_policy::ResourceLease>,
 ) {
     match result {
         Ok((_, _, _, Some(handle))) => {
             // monitor owns finalization for tmux jobs; drop the unused output.
-            attach_monitor(rc, handle, pane_tx, use_auto_yes);
+            attach_monitor(rc, handle, pane_tx, use_auto_yes, resource_lease);
         }
         Ok((exit_code, stdout, stderr, None)) => {
             let success = exit_code == Some(0);
@@ -375,6 +566,7 @@ async fn handle_result(
                 },
             )
             .await;
+            drop(resource_lease);
         }
         Err(e) => {
             finalize_run(
@@ -388,6 +580,55 @@ async fn handle_result(
                 },
             )
             .await;
+            drop(resource_lease);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collect_result_file;
+    use std::fs;
+
+    #[test]
+    fn structured_result_collection_reports_json_state() {
+        let directory = tempfile::tempdir().expect("temporary result directory");
+        let valid = directory.path().join("valid.json");
+        fs::write(&valid, r#"{"draft":"hello"}"#).expect("write valid result");
+        let collected = collect_result_file(Some(&valid));
+        assert_eq!(collected.status, "valid");
+        assert_eq!(collected.value.expect("parsed value")["draft"], "hello");
+
+        let invalid = directory.path().join("invalid.json");
+        fs::write(&invalid, "not-json").expect("write invalid result");
+        let collected = collect_result_file(Some(&invalid));
+        assert_eq!(collected.status, "invalid_json");
+        assert!(collected.value.is_none());
+
+        let missing = directory.path().join("missing.json");
+        let collected = collect_result_file(Some(&missing));
+        assert_eq!(collected.status, "missing");
+        assert!(collected.error.is_none());
+    }
+
+    #[test]
+    fn result_collection_without_trigger_is_explicitly_not_requested() {
+        let collected = collect_result_file(None);
+        assert_eq!(collected.status, "not_requested");
+        assert!(collected.value.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn result_collection_does_not_follow_symlinks() {
+        let directory = tempfile::tempdir().expect("temporary result directory");
+        let target = directory.path().join("target.json");
+        let link = directory.path().join("result.json");
+        fs::write(&target, r#"{"draft":"private"}"#).expect("write target result");
+        std::os::unix::fs::symlink(&target, &link).expect("create result symlink");
+
+        let collected = collect_result_file(Some(&link));
+        assert_eq!(collected.status, "unreadable");
+        assert!(collected.value.is_none());
     }
 }

@@ -1,5 +1,53 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// A named policy carried with a remote launch request.
+///
+/// This is intentionally an enum rather than an arbitrary string or map. The
+/// daemon is the enforcement boundary, so adding a policy requires adding its
+/// resource and prompt restrictions here and in the daemon.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JobPolicy {
+    #[serde(rename = "crm_social_research", alias = "crm-social-research")]
+    CrmSocialResearch,
+}
+
+impl JobPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CrmSocialResearch => "crm_social_research",
+        }
+    }
+
+    /// The named machine-local resource reserved by this policy.
+    pub fn resource_key(self) -> &'static str {
+        match self {
+            Self::CrmSocialResearch => "android-emulator",
+        }
+    }
+
+    /// This directive is appended after the job prompt so it takes precedence
+    /// over stale instructions in an existing job.md file.
+    pub fn prompt_directive(self) -> &'static str {
+        match self {
+            Self::CrmSocialResearch => {
+                "ClawTab policy: CRM social research and drafting only. Inspect and research accounts, and prepare drafts, but never follow, like, unlike, reply, repost, post, comment, send messages, or perform any other account mutation. This policy overrides any older job instructions that allow liking comments or other mutations."
+            }
+        }
+    }
+
+    /// Environment metadata lets a local workflow enforce the same policy
+    /// independently of the prompt text.
+    pub fn environment(self) -> [(&'static str, &'static str); 3] {
+        match self {
+            Self::CrmSocialResearch => [
+                ("CLAWTAB_JOB_POLICY", "crm_social_research"),
+                ("CLAWTAB_RESOURCE_KEY", "android-emulator"),
+                ("CLAWTAB_ACCOUNT_MUTATIONS", "disabled"),
+            ],
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum CalendarRepeatUnit {
@@ -27,7 +75,10 @@ pub struct JobParam {
 
 impl JobParam {
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), value: None }
+        Self {
+            name: name.into(),
+            value: None,
+        }
     }
 }
 
@@ -193,17 +244,9 @@ mod tests {
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum JobStatus {
     Idle,
-    Running {
-        run_id: String,
-        started_at: String,
-    },
-    Success {
-        last_run: String,
-    },
-    Failed {
-        last_run: String,
-        exit_code: i32,
-    },
+    Running { run_id: String, started_at: String },
+    Success { last_run: String },
+    Failed { last_run: String, exit_code: i32 },
     Paused,
 }
 

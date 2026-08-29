@@ -3,10 +3,12 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use clawtab_protocol::{ClientMessage, DesktopMessage, JobStatus as RemoteJobStatus, RemoteJob};
+use clawtab_protocol::{
+    ClientMessage, DesktopMessage, JobPolicy, JobStatus as RemoteJobStatus, RemoteJob,
+};
 
 use crate::agent_session::ProcessProvider;
-use crate::config::jobs::{JobStatus, JobsConfig};
+use crate::config::jobs::{JobStatus, JobType, JobsConfig};
 use crate::events::EventSink;
 use crate::history::HistoryStore;
 use crate::job_context::JobContext;
@@ -204,14 +206,41 @@ async fn dispatch_job_msg(
             id,
             name,
             params,
+            provider,
+            model,
+            effort,
+            policy,
             trigger_id,
         } => {
-            let result = run_job(name, params, trigger_id.clone(), jobs_config, ctx);
+            let result = run_job(
+                name,
+                params,
+                LaunchRequest {
+                    provider: provider.clone(),
+                    model: model.clone(),
+                    effort: effort.clone(),
+                    policy: *policy,
+                    trigger_id: trigger_id.clone(),
+                },
+                jobs_config,
+                ctx,
+            );
+            let status = result.as_ref().err().map(|error| error.status.clone());
+            let retry_at = result
+                .as_ref()
+                .err()
+                .and_then(|error| error.retry_at.clone());
+            let error = result.as_ref().err().map(|error| error.message.clone());
+            if let Err(error) = &result {
+                report_trigger_failure(ctx, trigger_id.as_deref(), error);
+            }
             event_sink.emit_jobs_changed();
             Some(DesktopMessage::RunJobAck {
                 id: id.clone(),
                 success: result.is_ok(),
-                error: result.err(),
+                status,
+                retry_at,
+                error,
             })
         }
         ClientMessage::PauseJob { id, name } => {
@@ -267,28 +296,43 @@ async fn dispatch_job_msg(
             provider,
             model,
             effort,
+            policy,
             trigger_id,
         } => {
             let result = run_agent(
                 prompt,
                 work_dir.as_deref(),
-                provider.as_deref(),
-                model.clone(),
-                effort.clone(),
-                trigger_id.clone(),
+                LaunchRequest {
+                    provider: provider.clone(),
+                    model: model.clone(),
+                    effort: effort.clone(),
+                    policy: *policy,
+                    trigger_id: trigger_id.clone(),
+                },
                 jobs_config,
                 ctx,
             )
             .await;
+            let status = result.as_ref().err().map(|error| error.status.clone());
+            let retry_at = result
+                .as_ref()
+                .err()
+                .and_then(|error| error.retry_at.clone());
+            let error = result.as_ref().err().map(|error| error.message.clone());
+            if let Err(error) = &result {
+                report_trigger_failure(ctx, trigger_id.as_deref(), error);
+            }
             Some(DesktopMessage::RunAgentAck {
                 id: id.clone(),
                 success: result.is_ok(),
+                status,
+                retry_at,
                 job_id: result.as_ref().ok().map(|r| r.job_id.clone()),
                 pane_id: result.as_ref().ok().and_then(|r| r.pane_id.clone()),
                 tmux_session: result.as_ref().ok().and_then(|r| r.tmux_session.clone()),
                 work_dir: result.as_ref().ok().map(|r| r.work_dir.clone()),
                 provider: result.as_ref().ok().map(|r| r.provider.clone()),
-                error: result.err(),
+                error,
             })
         }
         ClientMessage::CreateJob { id, .. } => {
@@ -652,22 +696,170 @@ fn handle_subscribe_pty(
     }
 }
 
+#[derive(Debug)]
+struct LaunchFailure {
+    status: String,
+    message: String,
+    retry_at: Option<String>,
+}
+
+impl LaunchFailure {
+    fn rejected(message: impl Into<String>) -> Self {
+        Self {
+            status: "rejected".into(),
+            message: message.into(),
+            retry_at: None,
+        }
+    }
+
+    fn from_resource(error: crate::resource_policy::ResourceRejection) -> Self {
+        Self {
+            status: error.status.into(),
+            message: error.message,
+            retry_at: error.retry_at.map(|time| time.to_rfc3339()),
+        }
+    }
+}
+
+struct LaunchRequest {
+    provider: Option<String>,
+    model: Option<String>,
+    effort: Option<String>,
+    policy: Option<JobPolicy>,
+    trigger_id: Option<String>,
+}
+
+#[derive(Debug)]
+struct ResolvedLaunchOptions {
+    provider: Option<ProcessProvider>,
+    model: Option<String>,
+    effort: Option<String>,
+}
+
+fn report_trigger_failure(ctx: &JobContext, trigger_id: Option<&str>, error: &LaunchFailure) {
+    let Some(trigger_id) = trigger_id else {
+        return;
+    };
+    crate::relay::push_trigger_result(
+        &ctx.relay,
+        trigger_id,
+        crate::relay::TriggerResultPayload {
+            status: error.status.clone(),
+            exit_code: None,
+            result: None,
+            error: Some(error.message.clone()),
+            result_status: Some("not_requested".into()),
+            retry_at: error.retry_at.clone(),
+        },
+    );
+}
+
+fn validate_trigger_id(trigger_id: Option<&str>) -> Result<(), LaunchFailure> {
+    if let Some(trigger_id) = trigger_id {
+        uuid::Uuid::parse_str(trigger_id)
+            .map_err(|_| LaunchFailure::rejected("trigger id is not a valid UUID"))?;
+    }
+    Ok(())
+}
+
+fn resolve_launch_options(
+    provider: Option<&str>,
+    model: Option<String>,
+    effort: Option<String>,
+    policy: Option<JobPolicy>,
+) -> Result<ResolvedLaunchOptions, LaunchFailure> {
+    if policy == Some(JobPolicy::CrmSocialResearch) {
+        if provider.is_some_and(|value| value != "codex") {
+            return Err(LaunchFailure::rejected(
+                "CRM social policy requires the Codex provider",
+            ));
+        }
+        if model
+            .as_deref()
+            .is_some_and(|value| value != "gpt-5.6-luna")
+        {
+            return Err(LaunchFailure::rejected(
+                "CRM social policy requires model gpt-5.6-luna",
+            ));
+        }
+        if effort
+            .as_deref()
+            .is_some_and(|value| !matches!(value, "medium" | "max"))
+        {
+            return Err(LaunchFailure::rejected(
+                "CRM social policy requires medium or max effort",
+            ));
+        }
+        return Ok(ResolvedLaunchOptions {
+            provider: Some(ProcessProvider::Codex),
+            model: Some(model.unwrap_or_else(|| "gpt-5.6-luna".into())),
+            effort: Some(effort.unwrap_or_else(|| "medium".into())),
+        });
+    }
+
+    parse_process_provider(provider)
+        .map(|provider| ResolvedLaunchOptions {
+            provider,
+            model,
+            effort,
+        })
+        .map_err(LaunchFailure::rejected)
+}
+
+fn acquire_resource(
+    ctx: &JobContext,
+    policy: Option<JobPolicy>,
+) -> Result<Option<crate::resource_policy::ResourceLease>, LaunchFailure> {
+    policy
+        .map(|policy| {
+            ctx.resource_policies
+                .try_acquire(policy)
+                .map_err(LaunchFailure::from_resource)
+        })
+        .transpose()
+}
+
 fn run_job(
     name: &str,
     params: &HashMap<String, String>,
-    trigger_id: Option<String>,
+    launch: LaunchRequest,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
-) -> Result<(), String> {
-    let job = {
+) -> Result<(), LaunchFailure> {
+    let LaunchRequest {
+        provider,
+        model,
+        effort,
+        policy,
+        trigger_id,
+    } = launch;
+    validate_trigger_id(trigger_id.as_deref())?;
+    let mut job = {
         let config = jobs_config.lock();
         config
             .jobs
             .iter()
             .find(|j| j.slug == name)
             .cloned()
-            .ok_or_else(|| format!("job not found: {}", name))?
+            .ok_or_else(|| LaunchFailure::rejected(format!("job not found: {}", name)))?
     };
+
+    if policy.is_some() && matches!(job.job_type, JobType::Binary) {
+        return Err(LaunchFailure::rejected(
+            "CRM social policy can only run agent or folder jobs",
+        ));
+    }
+    let options = resolve_launch_options(provider.as_deref(), model, effort, policy)?;
+    if options.provider.is_some() {
+        job.agent_provider = options.provider;
+    }
+    if options.model.is_some() {
+        job.agent_model = options.model;
+    }
+    if options.effort.is_some() {
+        job.agent_effort = options.effort;
+    }
+    let resource_lease = acquire_resource(ctx, policy)?;
 
     let ctx = ctx.clone();
     let params = params.clone();
@@ -685,6 +877,8 @@ fn run_job(
             &params,
             crate::scheduler::executor::ExecuteOpts {
                 trigger_id,
+                policy,
+                resource_lease,
                 ..Default::default()
             },
         )
@@ -835,21 +1029,36 @@ struct RunAgentRelayResult {
 async fn run_agent(
     prompt: &str,
     work_dir: Option<&str>,
-    provider: Option<&str>,
-    model: Option<String>,
-    effort: Option<String>,
-    trigger_id: Option<String>,
+    launch: LaunchRequest,
     jobs_config: &Arc<Mutex<JobsConfig>>,
     ctx: &JobContext,
-) -> Result<RunAgentRelayResult, String> {
+) -> Result<RunAgentRelayResult, LaunchFailure> {
+    let LaunchRequest {
+        provider,
+        model,
+        effort,
+        policy,
+        trigger_id,
+    } = launch;
+    validate_trigger_id(trigger_id.as_deref())?;
     let (s, jobs) = {
         let s = ctx.settings.lock().clone();
         let j = jobs_config.lock().jobs.clone();
         (s, j)
     };
-    let provider = parse_process_provider(provider)?;
-    let job =
-        crate::agent::build_agent_job(prompt, None, &s, &jobs, work_dir, provider, model, effort)?;
+    let options = resolve_launch_options(provider.as_deref(), model, effort, policy)?;
+    let job = crate::agent::build_agent_job(
+        prompt,
+        None,
+        &s,
+        &jobs,
+        work_dir,
+        options.provider,
+        options.model,
+        options.effort,
+    )
+    .map_err(LaunchFailure::rejected)?;
+    let resource_lease = acquire_resource(ctx, policy)?;
     let job_id = job.name.clone();
     let work_dir = job
         .work_dir
@@ -875,6 +1084,8 @@ async fn run_agent(
             crate::scheduler::executor::ExecuteOpts {
                 trigger_id,
                 pane_tx: Some(pane_tx),
+                policy,
+                resource_lease,
                 ..Default::default()
             },
         )
@@ -910,8 +1121,9 @@ fn parse_process_provider(provider: Option<&str>) -> Result<Option<ProcessProvid
 
 #[cfg(test)]
 mod tests {
-    use super::parse_process_provider;
+    use super::{parse_process_provider, resolve_launch_options};
     use crate::agent_session::ProcessProvider;
+    use clawtab_protocol::JobPolicy;
 
     #[test]
     fn parses_mobile_agent_providers() {
@@ -944,6 +1156,27 @@ mod tests {
             parse_process_provider(Some("cursor")).unwrap_err(),
             "unsupported agent provider 'cursor'"
         );
+    }
+
+    #[test]
+    fn crm_policy_resolves_safe_codex_defaults() {
+        let options = resolve_launch_options(None, None, None, Some(JobPolicy::CrmSocialResearch))
+            .expect("CRM defaults are valid");
+        assert_eq!(options.provider, Some(ProcessProvider::Codex));
+        assert_eq!(options.model.as_deref(), Some("gpt-5.6-luna"));
+        assert_eq!(options.effort.as_deref(), Some("medium"));
+    }
+
+    #[test]
+    fn crm_policy_rejects_non_codex_provider() {
+        let error = resolve_launch_options(
+            Some("claude"),
+            Some("gpt-5.6-luna".into()),
+            Some("max".into()),
+            Some(JobPolicy::CrmSocialResearch),
+        )
+        .expect_err("CRM policy must reject non-Codex providers");
+        assert_eq!(error.status, "rejected");
     }
 }
 

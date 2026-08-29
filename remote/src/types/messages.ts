@@ -38,10 +38,12 @@ export type AgentActionRun = {
   error?: string;
 };
 
+export type JobPolicy = "crm_social_research" | "crm-social-research";
+
 // Messages sent by this client to the relay server
 export type ClientMessage =
   | { type: "list_jobs"; id: string }
-  | { type: "run_job"; id: string; name: string; params?: Record<string, string> }
+  | { type: "run_job"; id: string; name: string; params?: Record<string, string>; provider?: string; model?: string; effort?: AgentEffort; policy?: JobPolicy }
   | { type: "pause_job"; id: string; name: string }
   | { type: "resume_job"; id: string; name: string }
   | { type: "stop_job"; id: string; name: string }
@@ -49,7 +51,7 @@ export type ClientMessage =
   | { type: "subscribe_logs"; id: string; name: string }
   | { type: "unsubscribe_logs"; name: string }
   | { type: "get_run_history"; id: string; name: string; limit: number }
-  | { type: "run_agent"; id: string; prompt: string; work_dir?: string; provider?: string; model?: string; effort?: AgentEffort }
+  | { type: "run_agent"; id: string; prompt: string; work_dir?: string; provider?: string; model?: string; effort?: AgentEffort; policy?: JobPolicy }
   | {
       type: "create_job";
       id: string;
@@ -101,7 +103,7 @@ export type DesktopMessage =
       statuses: Record<string, JobStatus>;
     }
   | { type: "run_history"; id: string; runs: RunRecord[] }
-  | { type: "run_job_ack"; id: string; success: boolean; error?: string }
+  | { type: "run_job_ack"; id: string; success: boolean; status?: string; retry_at?: string; error?: string }
   | { type: "pause_job_ack"; id: string; success: boolean; error?: string }
   | { type: "resume_job_ack"; id: string; success: boolean; error?: string }
   | { type: "stop_job_ack"; id: string; success: boolean; error?: string }
@@ -111,6 +113,8 @@ export type DesktopMessage =
       type: "run_agent_ack";
       id: string;
       success: boolean;
+      status?: string;
+      retry_at?: string;
       job_id?: string;
       pane_id?: string;
       tmux_session?: string;
