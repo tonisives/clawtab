@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use crate::job::{
-    AgentActivity, ClaudeQuestion, DetectedProcess, JobStatus, JobUpdate, RemoteJob, RunDetail,
-    RunRecord,
+    AgentActivity, ClaudeQuestion, DetectedProcess, JobPolicy, JobStatus, JobUpdate, RemoteJob,
+    RunDetail, RunRecord,
 };
 use crate::usage::UsageSnapshot;
 
@@ -21,6 +21,16 @@ pub enum ClientMessage {
         name: String,
         #[serde(default)]
         params: HashMap<String, String>,
+        /// Optional per-run provider override. Existing mobile/web clients may
+        /// omit it and retain the configured job provider.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        effort: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        policy: Option<JobPolicy>,
         /// When set, this run was started by a remote trigger (webhook).
         /// The desktop should use this as the run_id and produce a structured
         /// result file at logs/<trigger_id>.json.
@@ -69,6 +79,8 @@ pub enum ClientMessage {
         model: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         effort: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        policy: Option<JobPolicy>,
         /// When set, this run was started by a remote trigger (webhook).
         /// The desktop should use this as the run_id and produce a structured
         /// result file at logs/<trigger_id>.json.
@@ -246,6 +258,10 @@ pub enum DesktopMessage {
     RunJobAck {
         id: String,
         success: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_at: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
@@ -284,6 +300,10 @@ pub enum DesktopMessage {
     RunAgentAck {
         id: String,
         success: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_at: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         job_id: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -417,7 +437,7 @@ pub enum DesktopMessage {
     /// (read from logs/<trigger_id>.json on disk if produced) plus exit_code.
     TriggerResult {
         trigger_id: String,
-        /// "succeeded" | "failed"
+        /// "succeeded" | "failed" | "deferred" | "rejected" | "no_device"
         status: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         exit_code: Option<i32>,
@@ -425,6 +445,14 @@ pub enum DesktopMessage {
         result: Option<serde_json::Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+        /// `valid`, `missing`, `invalid_json`, `unreadable`, or
+        /// `not_requested`. This is explicit so a successful process without
+        /// a usable structured result is distinguishable from a valid result.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result_status: Option<String>,
+        /// Earliest retry time for a deferred/rejected policy decision.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retry_at: Option<String>,
     },
     AgentActions {
         id: String,
@@ -487,7 +515,7 @@ pub mod error_codes {
 #[cfg(test)]
 mod tests {
     use super::{ClientMessage, DesktopMessage};
-    use crate::{AgentActionRun, AgentActionRunState};
+    use crate::{AgentActionRun, AgentActionRunState, JobPolicy};
     use std::collections::HashMap;
 
     #[test]
@@ -521,5 +549,29 @@ mod tests {
         assert!(value.get("capture").is_none());
         assert!(value.get("screen").is_none());
         assert!(value.get("draft").is_none());
+    }
+
+    #[test]
+    fn crm_policy_round_trips_and_uses_the_safe_name() {
+        let message = ClientMessage::RunAgent {
+            id: "request-1".into(),
+            prompt: "research".into(),
+            work_dir: None,
+            provider: Some("codex".into()),
+            model: Some("gpt-5.6-luna".into()),
+            effort: Some("max".into()),
+            policy: Some(JobPolicy::CrmSocialResearch),
+            trigger_id: None,
+        };
+        let value = serde_json::to_value(&message).expect("serialize policy request");
+        assert_eq!(value["policy"], "crm_social_research");
+        let decoded: ClientMessage = serde_json::from_value(value).expect("decode policy request");
+        assert!(matches!(
+            decoded,
+            ClientMessage::RunAgent {
+                policy: Some(JobPolicy::CrmSocialResearch),
+                ..
+            }
+        ));
     }
 }

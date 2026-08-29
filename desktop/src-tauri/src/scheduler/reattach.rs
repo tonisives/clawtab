@@ -348,6 +348,7 @@ fn spawn_reattach_monitor(
         protected_panes: Arc::clone(&ctx.protected_panes),
         trigger_id: None,
         result_file: None,
+        resource_lease: None,
     };
     tokio::spawn(super::monitor::monitor_pane(params));
 }

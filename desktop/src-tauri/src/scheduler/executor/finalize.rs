@@ -31,6 +31,7 @@ pub(super) fn attach_monitor(
     handle: TmuxHandle,
     pane_tx: &mut Option<tokio::sync::oneshot::Sender<(String, String)>>,
     use_auto_yes: bool,
+    resource_lease: Option<crate::resource_policy::ResourceLease>,
 ) {
     publish_running_status(rc, &handle);
     notify_pane_listener(pane_tx, &handle);
@@ -44,7 +45,7 @@ pub(super) fn attach_monitor(
         register_active_agent(rc, &handle);
     }
 
-    let params = build_monitor_params(rc, handle);
+    let params = build_monitor_params(rc, handle, resource_lease);
     tokio::spawn(super::super::monitor::monitor_pane(params));
 }
 
@@ -121,7 +122,11 @@ fn register_active_agent(rc: &RunCtx<'_>, handle: &TmuxHandle) {
     ctx.active_agents_notify.notify_waiters();
 }
 
-fn build_monitor_params(rc: &RunCtx<'_>, handle: TmuxHandle) -> MonitorParams {
+fn build_monitor_params(
+    rc: &RunCtx<'_>,
+    handle: TmuxHandle,
+    resource_lease: Option<crate::resource_policy::ResourceLease>,
+) -> MonitorParams {
     let job = rc.job;
     let ctx = rc.ctx;
     let telegram = if job.notify_target == NotifyTarget::Telegram {
@@ -157,6 +162,7 @@ fn build_monitor_params(rc: &RunCtx<'_>, handle: TmuxHandle) -> MonitorParams {
         protected_panes: Arc::clone(&ctx.protected_panes),
         trigger_id: rc.trigger_id.clone(),
         result_file: rc.result_file.clone(),
+        resource_lease,
     }
 }
 
@@ -271,28 +277,25 @@ async fn dispatch_notification(rc: &RunCtx<'_>, outcome: &RunOutcome<'_>) {
 
 fn push_trigger_result(rc: &RunCtx<'_>, trigger_id: &str, outcome: &RunOutcome<'_>) {
     let relay = &rc.ctx.relay;
-    if outcome.success {
-        let parsed = rc
-            .result_file
-            .as_ref()
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-        crate::relay::push_trigger_result(
-            relay,
-            trigger_id,
-            "succeeded",
-            outcome.exit_code,
-            parsed,
-            None,
-        );
-    } else {
-        crate::relay::push_trigger_result(
-            relay,
-            trigger_id,
-            "failed",
-            outcome.exit_code.or(Some(-1)),
-            None,
-            outcome.error.map(|s| s.to_string()),
-        );
-    }
+    let collected = super::collect_result_file(rc.result_file.as_deref());
+    let structured_failure = matches!(collected.status, "invalid_json" | "unreadable");
+    let success = outcome.success && !structured_failure;
+    let error = outcome.error.map(str::to_string).or(collected.error);
+    let result = outcome.success.then_some(collected.value).flatten();
+    crate::relay::push_trigger_result(
+        relay,
+        trigger_id,
+        crate::relay::TriggerResultPayload {
+            status: if success {
+                "succeeded".into()
+            } else {
+                "failed".into()
+            },
+            exit_code: outcome.exit_code.or_else(|| (!success).then_some(-1)),
+            result,
+            error,
+            result_status: Some(collected.status.into()),
+            retry_at: None,
+        },
+    );
 }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::config::jobs::Job;
 use crate::config::settings::AppSettings;
 use crate::secrets::SecretsManager;
+use clawtab_protocol::JobPolicy;
 
 use super::params::{apply_params, collect_env_vars};
 use super::tmux_spawn::{spawn_agent_pane, SpawnArgs};
@@ -16,6 +17,7 @@ pub(super) async fn execute_claude_job(
     settings: &Arc<Mutex<AppSettings>>,
     params: &HashMap<String, String>,
     result_file: Option<&std::path::Path>,
+    policy: Option<JobPolicy>,
 ) -> Result<(Option<i32>, String, String, Option<TmuxHandle>), String> {
     let (provider, model, effort, tmux_session, work_dir, agent_command) = {
         let s = settings.lock();
@@ -49,6 +51,7 @@ pub(super) async fn execute_claude_job(
             p.to_string_lossy().into_owned(),
         ));
     }
+    super::apply_policy_env(&mut env_vars, policy);
 
     let raw_prompt = std::fs::read_to_string(&job.path)
         .map_err(|e| format!("Failed to read prompt file {}: {}", job.path, e))?;
@@ -65,6 +68,7 @@ pub(super) async fn execute_claude_job(
             .join(" ");
         format!("{}\n\n{}", skill_refs, raw_prompt)
     };
+    let prompt_content = super::apply_policy_prompt(prompt_content, policy, provider);
 
     spawn_agent_pane(SpawnArgs {
         tmux_session,

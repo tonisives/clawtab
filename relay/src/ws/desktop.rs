@@ -275,18 +275,9 @@ async fn handle_message(state: &AppState, user_id: Uuid, text: &str) {
             let hub = state.hub.read().await;
             hub.send_raw_to_mobiles(user_id, text);
         }
-        DesktopMessage::TriggerResult {
-            trigger_id,
-            status,
-            exit_code,
-            result,
-            error,
-        } => {
+        DesktopMessage::TriggerResult { .. } => {
             // Internal-only channel for the triggers service. Do NOT fan out to mobiles.
-            handle_trigger_result(
-                state, user_id, trigger_id, status, *exit_code, result, error,
-            )
-            .await;
+            handle_trigger_result(state, user_id, &msg).await;
         }
         _ => {
             let hub = state.hub.read().await;

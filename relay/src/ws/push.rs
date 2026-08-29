@@ -1,6 +1,7 @@
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use clawtab_protocol::ClaudeQuestion;
+use clawtab_protocol::{ClaudeQuestion, DesktopMessage};
 
 use crate::AppState;
 
@@ -231,25 +232,54 @@ async fn claim_job_push_slot(state: &AppState, user_id: Uuid, job_id: &str, even
 pub(super) async fn handle_trigger_result(
     state: &AppState,
     user_id: Uuid,
-    trigger_id: &str,
-    status: &str,
-    exit_code: Option<i32>,
-    result: &Option<serde_json::Value>,
-    error: &Option<String>,
+    message: &DesktopMessage,
 ) {
+    let DesktopMessage::TriggerResult {
+        trigger_id,
+        status,
+        exit_code,
+        result,
+        error,
+        result_status,
+        retry_at,
+    } = message
+    else {
+        return;
+    };
     let Ok(id) = Uuid::parse_str(trigger_id) else {
         tracing::warn!(%trigger_id, "trigger_result with malformed id");
         return;
     };
 
     let final_status = normalize_trigger_status(status);
-    let updated = update_trigger_run(state, id, user_id, final_status, exit_code, result, error).await;
+    let parsed_retry_at = retry_at.as_deref().and_then(|value| {
+        DateTime::parse_from_rfc3339(value)
+            .map(|time| time.with_timezone(&Utc))
+            .map_err(|error| {
+                tracing::warn!(%trigger_id, %error, "trigger_result has invalid retry_at");
+            })
+            .ok()
+    });
+    let updated = update_trigger_run(
+        state,
+        id,
+        user_id,
+        TriggerResultUpdate {
+            status: final_status,
+            exit_code: *exit_code,
+            result,
+            error,
+            result_status: result_status.as_deref(),
+            retry_at: parsed_retry_at,
+        },
+    )
+    .await;
     handle_trigger_update_outcome(state, id, updated).await;
 }
 
 fn normalize_trigger_status(status: &str) -> &str {
     match status {
-        "succeeded" | "failed" => status,
+        "succeeded" | "failed" | "deferred" | "rejected" | "no_device" => status,
         other => {
             tracing::warn!(%other, "trigger_result unexpected status, coercing to failed");
             "failed"
@@ -257,24 +287,34 @@ fn normalize_trigger_status(status: &str) -> &str {
     }
 }
 
+struct TriggerResultUpdate<'a> {
+    status: &'a str,
+    exit_code: Option<i32>,
+    result: &'a Option<serde_json::Value>,
+    error: &'a Option<String>,
+    result_status: Option<&'a str>,
+    retry_at: Option<DateTime<Utc>>,
+}
+
 async fn update_trigger_run(
     state: &AppState,
     id: Uuid,
     user_id: Uuid,
-    status: &str,
-    exit_code: Option<i32>,
-    result: &Option<serde_json::Value>,
-    error: &Option<String>,
+    update: TriggerResultUpdate<'_>,
 ) -> Result<sqlx::postgres::PgQueryResult, sqlx::Error> {
     sqlx::query(
         "UPDATE trigger_runs
-         SET status = $1, exit_code = $2, result = $3, error = $4, finished_at = now()
-         WHERE id = $5 AND user_id = $6 AND status NOT IN ('succeeded', 'failed', 'no_device')",
+         SET status = $1, exit_code = $2, result = $3, error = $4,
+             result_status = $5, retry_at = $6, finished_at = now()
+         WHERE id = $7 AND user_id = $8
+           AND status NOT IN ('succeeded', 'failed', 'no_device', 'deferred', 'rejected')",
     )
-    .bind(status)
-    .bind(exit_code)
-    .bind(result)
-    .bind(error)
+    .bind(update.status)
+    .bind(update.exit_code)
+    .bind(update.result)
+    .bind(update.error)
+    .bind(update.result_status)
+    .bind(update.retry_at)
     .bind(id)
     .bind(user_id)
     .execute(&state.pool)

@@ -27,5 +27,6 @@ pub struct JobContext {
     pub relay: Arc<Mutex<Option<RelayHandle>>>,
     pub auto_yes_panes: Arc<Mutex<HashSet<String>>>,
     pub protected_panes: Arc<Mutex<HashSet<String>>>,
+    pub resource_policies: Arc<crate::resource_policy::ResourcePolicyManager>,
     pub notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 }

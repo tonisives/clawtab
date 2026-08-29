@@ -116,6 +116,50 @@ The Remote panel shows the current connection state:
 
 The "Enable remote access" checkbox lets you toggle the connection without removing your configuration.
 
+## API-token trigger runs
+
+The trigger service exposes asynchronous API-token requests at
+`POST /v1/triggers/run`. A request supplies exactly one `job` or `agent` and
+may set `wait`/`timeout_ms`; the returned run can always be inspected with
+`GET /v1/triggers/:id` or waited on with `GET /v1/triggers/:id/wait`.
+
+CRM social research requests may pass `provider: "codex"`,
+`model: "gpt-5.6-luna"`, and `effort: "medium"` for normal discovery or
+`"max"` for deep enrichment. The service and the local daemon both enforce
+these allowlists. A CRM request can opt into the named policy as either
+`"crm_social_research"` or
+`{"name":"crm_social_research","resource_key":"android-emulator"}`.
+The policy defaults omitted model options to Codex, `gpt-5.6-luna`, and
+`medium`.
+
+Supply an `Idempotency-Key` header (or the matching `idempotency_key` body
+field) when a caller may retry. The key is scoped to the API user. Reusing it
+with a different request returns a conflict; reusing it with the same request
+returns the original run and never dispatches a second agent.
+
+The CRM policy is enforced in the desktop daemon immediately before executor
+launch. It exclusively reserves the local `android-emulator` resource while a
+run is active, starts a 90-minute cooldown after completion, and admits at most
+four CRM runs per calendar day. The calendar uses the IANA timezone named by
+`CLAWTAB_RESOURCE_POLICY_TIMEZONE`; it defaults to UTC. The daily window is
+the local calendar date from midnight to the next local midnight. A busy,
+cooling-down, or daily-capped request is terminally `deferred` and includes
+`retry_at`; a policy-state failure is `rejected`. Neither response launches a
+process or schedules an automatic retry.
+
+Trigger results retain the normal async status, logs, and polling behavior.
+`result_status` explicitly reports `valid`, `missing`, `invalid_json`,
+`unreadable`, or `not_requested`; only the executor-created per-run result
+file is collected, never an arbitrary caller-supplied server path.
+
+CRM prompts also receive `CLAWTAB_JOB_POLICY=crm_social_research`,
+`CLAWTAB_RESOURCE_KEY=android-emulator`, and
+`CLAWTAB_ACCOUNT_MUTATIONS=disabled`. The daemon appends a final policy
+directive to agent prompts: CRM jobs are research and drafting only and may
+not follow, like, reply, repost, post, comment, send messages, or otherwise
+mutate an account. This overrides older job-file instructions that allowed
+liking comments.
+
 ## Authentication
 
 ```mermaid

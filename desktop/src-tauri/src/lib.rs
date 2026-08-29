@@ -32,6 +32,7 @@ pub mod process_snapshot;
 pub mod pty;
 pub mod questions;
 pub mod relay;
+pub mod resource_policy;
 pub mod scheduler;
 pub mod secrets;
 pub mod shared_state;
