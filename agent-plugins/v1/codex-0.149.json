@@ -25,7 +25,6 @@
     "stash_key": "C-u",
     "cancel_key": "Escape",
     "next_key": "Down",
-    "queue_key": "Tab",
     "submit_key": "Enter",
     "history_key": "Up"
   },

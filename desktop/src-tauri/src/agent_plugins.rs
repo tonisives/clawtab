@@ -16,7 +16,6 @@ use crate::agent_session::{self, ProcessProvider};
 use crate::config::settings::AppSettings;
 
 const RUN_RETENTION: Duration = Duration::from_secs(15 * 60);
-const COMPACT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const MODEL_VERIFY_TIMEOUT: Duration = Duration::from_secs(12);
 const CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 const CATALOG_BASE_URL: &str = "https://cdn.clawtab.cc/agent-plugins/v1";
@@ -76,8 +75,6 @@ struct ProviderUiProfile {
     stash_key: String,
     cancel_key: String,
     next_key: String,
-    #[serde(default = "default_queue_key")]
-    queue_key: String,
     submit_key: String,
     history_key: String,
 }
@@ -107,15 +104,10 @@ impl Default for ProviderUiProfile {
             stash_key: "C-u".into(),
             cancel_key: "Escape".into(),
             next_key: "Down".into(),
-            queue_key: default_queue_key(),
             submit_key: "Enter".into(),
             history_key: "Up".into(),
         }
     }
-}
-
-fn default_queue_key() -> String {
-    "Tab".into()
 }
 
 #[derive(Clone)]
@@ -518,6 +510,10 @@ async fn execute_codex_action(
                 .get("codex")
                 .cloned()
                 .ok_or("No Codex compact preset is configured")?;
+            let previous_model = current_model
+                .clone()
+                .ok_or("Could not read the current Codex model")?;
+            let previous_effort = current_effort.clone();
             runtime.update(run_id, AgentActionRunState::Running, "Switching to compact model", 15, None, None);
             select_model(
                 pane_id,
@@ -539,28 +535,22 @@ async fn execute_codex_action(
             .await?;
             submit_command(pane_id, &spec.ui.compact_command, &spec.ui)?;
             confirm_compact_if_requested(pane_id, &spec.ui).await?;
-            let previous_model = current_model
-                .clone()
-                .ok_or("Could not read the current Codex model")?;
-            let previous_effort = current_effort.clone();
-            runtime.update(run_id, AgentActionRunState::Running, "Queueing model restore", 55, None, None);
-            queue_model_selection(
-                pane_id,
-                &spec.ui,
-                cancel,
-            )
-            .await?;
-            if let Some(draft) = saved_draft.as_deref() {
-                restore_busy_draft(pane_id, draft, &spec.ui)?;
-            }
-            runtime.update(run_id, AgentActionRunState::Running, "Waiting for compaction", 70, None, None);
-            complete_queued_model_selection(
+            runtime.update(
+                run_id,
+                AgentActionRunState::Running,
+                "Restoring model",
+                55,
+                None,
+                None,
+            );
+            select_model_during_turn(
                 pane_id,
                 &pane_pid,
                 &previous_model,
                 previous_effort.as_deref(),
                 &spec.ui,
                 cancel,
+                saved_draft.as_deref(),
             )
             .await?;
             Ok(serde_json::json!({"compacted": true, "model": previous_model, "effort": previous_effort}))
@@ -601,22 +591,7 @@ async fn execute_codex_action(
     .await;
 
     match attempt {
-        Ok(outcome) => {
-            if let Some(draft) = saved_draft.as_deref() {
-                runtime.update(
-                    run_id,
-                    AgentActionRunState::Running,
-                    "Restoring draft",
-                    95,
-                    None,
-                    None,
-                );
-                restore_draft(pane_id, draft, &spec.ui).map_err(|error| {
-                    format!("RECOVERY_FAILED: The action completed, but the saved draft could not be restored: {error}")
-                })?;
-            }
-            Ok(outcome)
-        }
+        Ok(outcome) => Ok(outcome),
         Err(action_error) => {
             runtime.update(
                 run_id,
@@ -704,7 +679,7 @@ async fn recover_previous_state(
                 effort,
                 ui,
                 &CancellationToken::new(),
-                draft,
+                None,
             )
             .await?;
         }
@@ -1029,12 +1004,11 @@ fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
     }) {
         return Err("Invalid action identifier".into());
     }
-    let allowed_keys = ["C-u", "Escape", "Down", "Enter", "Tab", "Up"];
+    let allowed_keys = ["C-u", "Escape", "Down", "Enter", "Up"];
     let keys = [
         manifest.ui.stash_key.as_str(),
         manifest.ui.cancel_key.as_str(),
         manifest.ui.next_key.as_str(),
-        manifest.ui.queue_key.as_str(),
         manifest.ui.submit_key.as_str(),
         manifest.ui.history_key.as_str(),
     ];
@@ -1238,111 +1212,6 @@ async fn confirm_compact_if_requested(pane_id: &str, ui: &ProviderUiProfile) -> 
     Ok(())
 }
 
-async fn queue_model_selection(
-    pane_id: &str,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-) -> Result<(), String> {
-    let started = Instant::now();
-    loop {
-        if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
-        }
-        if started.elapsed() >= Duration::from_secs(3) {
-            return Err("Codex did not expose its composer while compacting".into());
-        }
-        let screen = private_screen_state(pane_id, ui)?;
-        if screen.busy && screen.draft.as_deref() == Some("") {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-
-    if vim_normal_mode(&private_capture_plain(pane_id)?, ui) {
-        crate::tmux::send_key_to_pane(pane_id, "i")?;
-    }
-    crate::tmux::send_literal_to_pane(pane_id, &ui.model_command)?;
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    crate::tmux::send_key_to_pane(pane_id, &ui.queue_key)?;
-
-    let started = Instant::now();
-    loop {
-        if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
-        }
-        if started.elapsed() >= Duration::from_secs(2) {
-            return Err("Codex did not queue the model restore".into());
-        }
-        let screen = private_screen_state(pane_id, ui)?;
-        if screen.busy && screen.draft.as_deref() == Some("") {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-}
-
-fn restore_busy_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(), String> {
-    let screen = private_screen_state(pane_id, ui)?;
-    if !screen.busy || screen.draft.as_deref() != Some("") {
-        return Err("The Codex composer changed while queueing the model restore".into());
-    }
-    let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
-    if was_vim_normal {
-        crate::tmux::send_key_to_pane(pane_id, "i")?;
-    }
-    crate::tmux::send_literal_to_pane(pane_id, draft)?;
-    if was_vim_normal {
-        crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key)?;
-    }
-    Ok(())
-}
-
-async fn complete_queued_model_selection(
-    pane_id: &str,
-    pane_pid: &str,
-    model: &str,
-    effort: Option<&str>,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-) -> Result<(), String> {
-    let started = Instant::now();
-    loop {
-        if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
-        }
-        if started.elapsed() >= COMPACT_TIMEOUT {
-            return Err("Timed out waiting for compact and the queued model picker".into());
-        }
-        let screen = private_capture_plain(pane_id)?;
-        if screen
-            .to_ascii_lowercase()
-            .contains(&ui.model_dialog_marker.to_ascii_lowercase())
-        {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-
-    choose_visible_option(pane_id, model, ui, cancel).await?;
-    if let Some(effort) = effort {
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        let screen = private_capture_plain(pane_id)?;
-        if screen
-            .to_ascii_lowercase()
-            .contains(&ui.effort_dialog_marker.to_ascii_lowercase())
-        {
-            let effort_label = ui
-                .effort_labels
-                .get(effort)
-                .map(String::as_str)
-                .unwrap_or(effort);
-            choose_visible_option(pane_id, effort_label, ui, cancel).await?;
-        }
-    }
-    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await?;
-    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await
-}
-
 async fn select_model(
     pane_id: &str,
     pane_pid: &str,
@@ -1353,6 +1222,43 @@ async fn select_model(
     draft_after_idle: Option<&str>,
 ) -> Result<(), String> {
     ensure_empty_composer(pane_id, ui)?;
+    open_model_picker_and_select(pane_id, model, effort, ui, cancel).await?;
+    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await?;
+    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await?;
+    if let Some(draft) = draft_after_idle {
+        // Keep the draft out of Codex's composer until the footer confirms the
+        // requested model. Pressing Enter before that confirmation would submit
+        // the draft with the previous model.
+        restore_draft(pane_id, draft, ui)?;
+    }
+    Ok(())
+}
+
+async fn select_model_during_turn(
+    pane_id: &str,
+    pane_pid: &str,
+    model: &str,
+    effort: Option<&str>,
+    ui: &ProviderUiProfile,
+    cancel: &CancellationToken,
+    draft: Option<&str>,
+) -> Result<(), String> {
+    wait_until_busy(pane_id, ui, cancel, Duration::from_secs(3)).await?;
+    open_model_picker_and_select(pane_id, model, effort, ui, cancel).await?;
+    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await?;
+    if let Some(draft) = draft {
+        restore_draft_after_model_change(pane_id, draft, ui)?;
+    }
+    Ok(())
+}
+
+async fn open_model_picker_and_select(
+    pane_id: &str,
+    model: &str,
+    effort: Option<&str>,
+    ui: &ProviderUiProfile,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
     submit_command(pane_id, &ui.model_command, ui)?;
     tokio::time::sleep(Duration::from_millis(250)).await;
     if let Err(error) = choose_visible_option(pane_id, model, ui, cancel).await {
@@ -1377,14 +1283,7 @@ async fn select_model(
             }
         }
     }
-    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await?;
-    if let Some(draft) = draft_after_idle {
-        // The picker has closed and the composer is safe for input. Restore the
-        // draft before footer verification so it is visible at the first idle
-        // frame after Codex accepts the model change.
-        restore_draft(pane_id, draft, ui)?;
-    }
-    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await
+    Ok(())
 }
 
 async fn choose_visible_option(
@@ -1547,6 +1446,31 @@ async fn wait_until_idle(
     }
 }
 
+async fn wait_until_busy(
+    pane_id: &str,
+    ui: &ProviderUiProfile,
+    cancel: &CancellationToken,
+    timeout: Duration,
+) -> Result<(), String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Action cancelled".into());
+        }
+        if started.elapsed() >= timeout {
+            return Err("Codex did not enter its busy state after /compact".into());
+        }
+        let screen = private_screen_state(pane_id, ui)?;
+        if screen.busy {
+            if screen.draft.as_deref() != Some("") {
+                return Err("The Codex composer changed while compacting".into());
+            }
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 async fn ensure_empty_for_action(
     pane_id: &str,
     ui: &ProviderUiProfile,
@@ -1611,6 +1535,29 @@ fn restore_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(
         return Ok(());
     }
     ensure_empty_composer(pane_id, ui)?;
+    let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(pane_id, "i")?;
+    }
+    crate::tmux::send_literal_to_pane(pane_id, draft)?;
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key)?;
+    }
+    Ok(())
+}
+
+fn restore_draft_after_model_change(
+    pane_id: &str,
+    draft: &str,
+    ui: &ProviderUiProfile,
+) -> Result<(), String> {
+    let screen = private_screen_state(pane_id, ui)?;
+    if screen.idle {
+        return restore_draft(pane_id, draft, ui);
+    }
+    if !screen.busy || screen.draft.as_deref() != Some("") {
+        return Err("The Codex composer changed while restoring the model".into());
+    }
     let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
     if was_vim_normal {
         crate::tmux::send_key_to_pane(pane_id, "i")?;
