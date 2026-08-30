@@ -1651,9 +1651,9 @@ mod tests {
             "0.150.1",
             &["0.149.*".into(), "0.150.*".into()]
         ));
-        assert!(!version_matches(
+        assert!(version_matches(
             "0.151.0",
-            &["0.149.*".into(), "0.150.*".into()]
+            &["0.149.*".into(), "0.150.*".into(), "0.151.*".into()]
         ));
     }
 
@@ -1661,6 +1661,7 @@ mod tests {
     fn bundled_codex_profile_covers_current_minor_version() {
         let manifest = bundled_manifest();
         assert!(version_matches("0.150.1", &manifest.compatible_versions));
+        assert!(version_matches("0.151.0", &manifest.compatible_versions));
     }
 
     #[test]
