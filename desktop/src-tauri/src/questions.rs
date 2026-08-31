@@ -211,9 +211,9 @@ fn should_capture_question_screen(
     hook_state: Option<&HookPaneState>,
 ) -> bool {
     hook_state.is_none_or(|state| {
-        state.state == HookAgentState::Waiting
+        provider == ProcessProvider::Codex
+            || state.state == HookAgentState::Waiting
             || state.attention.is_some()
-            || (provider == ProcessProvider::Codex && state.state == HookAgentState::Idle)
     })
 }
 
@@ -1876,7 +1876,7 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
     }
 
     #[test]
-    fn captures_idle_codex_for_terminal_only_questions() {
+    fn captures_codex_for_terminal_only_questions() {
         let idle = HookPaneState {
             state: HookAgentState::Idle,
             attention: None,
@@ -1892,7 +1892,7 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
             ProcessProvider::Codex,
             Some(&idle)
         ));
-        assert!(!should_capture_question_screen(
+        assert!(should_capture_question_screen(
             ProcessProvider::Codex,
             Some(&working)
         ));
