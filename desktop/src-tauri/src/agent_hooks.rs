@@ -232,14 +232,14 @@ impl HookRuntime {
         provider: ProcessProvider,
         snapshot: &ProcessSnapshot,
     ) {
-        let mut candidate_pids = HashSet::from([pane_pid.to_string()]);
-        for child in snapshot.child_pids(pane_pid) {
-            candidate_pids.insert(child.clone());
-            candidate_pids.extend(snapshot.child_pids(child).iter().cloned());
-        }
-        let changed: Vec<HookEventV1> = {
+        let candidate_pids = snapshot.process_tree_pids(pane_pid);
+        let (changed, removed): (Vec<HookEventV1>, Vec<String>) = {
             let mut sessions = self.sessions.lock();
-            sessions
+            let removed = stale_process_session_keys(&sessions, pane_id, provider, &candidate_pids);
+            for key in &removed {
+                sessions.remove(key);
+            }
+            let changed = sessions
                 .values_mut()
                 .filter(|event| {
                     event.provider == provider
@@ -252,8 +252,12 @@ impl HookRuntime {
                     event.pane_id = Some(pane_id.to_string());
                     event.clone()
                 })
-                .collect()
+                .collect();
+            (changed, removed)
         };
+        for key in removed {
+            let _ = fs::remove_file(sessions_dir().join(format!("{}.json", key)));
+        }
         for event in changed {
             persist_session_event(&event);
         }
@@ -274,6 +278,25 @@ impl HookRuntime {
         drop(sessions);
         self.notify.notify_waiters();
     }
+}
+
+fn stale_process_session_keys(
+    sessions: &HashMap<String, HookEventV1>,
+    pane_id: &str,
+    provider: ProcessProvider,
+    live_process_ids: &HashSet<String>,
+) -> Vec<String> {
+    sessions
+        .iter()
+        .filter(|(_, event)| {
+            event.provider == provider
+                && event.pane_id.as_deref() == Some(pane_id)
+                && event
+                    .process_id
+                    .is_some_and(|process_id| !live_process_ids.contains(&process_id.to_string()))
+        })
+        .map(|(key, _)| key.clone())
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1144,11 +1167,12 @@ export const ClawTab = async () => ({{
 #[cfg(test)]
 mod tests {
     use super::{
-        activity_from_hook_state, install_json_hooks, remove_json_hooks, HookAgentState,
-        HookAttention, HookEventV1, HookRuntime,
+        activity_from_hook_state, install_json_hooks, remove_json_hooks,
+        stale_process_session_keys, HookAgentState, HookAttention, HookEventV1, HookRuntime,
     };
     use crate::agent_session::ProcessProvider;
     use serde_json::json;
+    use std::collections::HashSet;
     use std::fs;
 
     #[test]
@@ -1282,6 +1306,49 @@ mod tests {
             .expect("pane state");
         assert_eq!(state.state, HookAgentState::Waiting);
         assert_eq!(state.attention, Some(HookAttention::Permission));
+    }
+
+    #[test]
+    fn stale_process_state_does_not_override_current_idle_session() {
+        let runtime = HookRuntime::default();
+        for (session_id, process_id, occurred_at_ms, state) in [
+            ("old-working", 41, 10, HookAgentState::Working),
+            ("current-idle", 42, 20, HookAgentState::Idle),
+        ] {
+            runtime.apply(HookEventV1 {
+                version: 1,
+                provider: ProcessProvider::Codex,
+                event: "test".to_string(),
+                session_id: session_id.to_string(),
+                pane_id: Some("%9".to_string()),
+                process_id: Some(process_id),
+                cwd: None,
+                occurred_at_ms,
+                state,
+                attention: None,
+                pending_tool: None,
+                ended: false,
+            });
+        }
+
+        let live_process_ids = HashSet::from(["42".to_string()]);
+        let stale_keys = stale_process_session_keys(
+            &runtime.sessions.lock(),
+            "%9",
+            ProcessProvider::Codex,
+            &live_process_ids,
+        );
+        {
+            let mut sessions = runtime.sessions.lock();
+            for key in stale_keys {
+                sessions.remove(&key);
+            }
+        }
+
+        let state = runtime
+            .pane_state("%9", ProcessProvider::Codex)
+            .expect("current pane state");
+        assert_eq!(state.state, HookAgentState::Idle);
     }
 
     #[test]

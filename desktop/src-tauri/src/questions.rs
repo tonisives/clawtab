@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use clawtab_protocol::{ClaudeQuestion, QuestionOption};
 
-use crate::agent_hooks::{HookAgentState, HookRuntime};
+use crate::agent_hooks::{HookAgentState, HookPaneState, HookRuntime};
 use crate::agent_session::{detect_process_provider, ProcessProvider, ProcessSnapshot};
 use crate::config::jobs::{JobStatus, JobsConfig};
 use crate::config::settings::AppSettings;
@@ -84,6 +84,12 @@ fn strip_ansi(text: &str) -> String {
 /// (contains prompt indicators like navigation hints or approval text.)
 pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
     let text = &strip_ansi(text);
+    let is_codex_plan_confirmation = text
+        .lines()
+        .rev()
+        .filter(|line| !line.trim().is_empty())
+        .take(12)
+        .any(|line| line.to_lowercase().contains("press enter to confirm"));
     let lines: Vec<&str> = text.lines().collect();
     let tail = if lines.len() > 30 {
         &lines[lines.len() - 30..]
@@ -106,6 +112,11 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
                 if number_str.chars().all(|c| c.is_ascii_digit()) {
                     let mut label = rest[dot_pos + 2..].trim().to_string();
                     if !label.is_empty() {
+                        if is_codex_plan_confirmation {
+                            if let Some(description_start) = label.find("  ") {
+                                label.truncate(description_start);
+                            }
+                        }
                         // Truncate long labels (e.g. "Yes, and don't ask again: mkdir -p ...")
                         if label.len() > 60 {
                             let mut end = 60;
@@ -179,6 +190,7 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
             || lower.contains("to navigate")
             || lower.contains("tab to amend")
             || lower.contains("esc to cancel")
+            || lower.contains("press enter to confirm")
         {
             return true;
         }
@@ -188,6 +200,17 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
     joined.contains("would you like to run the following command")
         || joined.contains("would you like to run this command")
         || joined.contains("yes, proceed (y)")
+}
+
+fn should_capture_question_screen(
+    provider: ProcessProvider,
+    hook_state: Option<&HookPaneState>,
+) -> bool {
+    hook_state.is_none_or(|state| {
+        state.state == HookAgentState::Waiting
+            || state.attention.is_some()
+            || (provider == ProcessProvider::Codex && state.state == HookAgentState::Idle)
+    })
 }
 
 /// Check whether stripped terminal output looks like an opencode select-box prompt.
@@ -1442,9 +1465,7 @@ fn detect_question_processes(
         let cursor_y = cursor_y.parse().unwrap_or_default();
         let hook_state = hook_runtime.pane_state(pane_id, provider);
         let hook_backed = hook_state.is_some();
-        let should_capture = hook_state.as_ref().is_none_or(|state| {
-            state.state == HookAgentState::Waiting || state.attention.is_some()
-        });
+        let should_capture = should_capture_question_screen(provider, hook_state.as_ref());
         if should_capture {
             capture_requests.push((results.len(), pane_id.to_string(), pane_height, cursor_y));
         }
@@ -1500,8 +1521,10 @@ fn detect_question_processes(
 mod tests {
     use super::{
         filter_auto_yes_questions, find_yes_option, parse_numbered_options, parse_opencode_buttons,
-        resolved_hook_activity, ActivityTracker, DetectedAgent, HookAgentState, ProcessProvider,
+        resolved_hook_activity, should_capture_question_screen, ActivityTracker, DetectedAgent,
+        HookAgentState, ProcessProvider,
     };
+    use crate::agent_hooks::HookPaneState;
     use clawtab_protocol::{ClaudeQuestion, QuestionOption};
     use std::collections::HashSet;
     use std::time::{Duration, Instant};
@@ -1808,6 +1831,55 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
         assert_eq!(options[0].label, "Yes, proceed (y)");
         assert_eq!(options[1].number, "2");
         assert_eq!(options[2].number, "3");
+    }
+
+    #[test]
+    fn parses_codex_plan_mode_confirmation() {
+        let text = r#"
+• Proposed Plan
+
+  Replace the score with measured evidence.
+
+  Implement this plan?
+
+› 1. Yes, implement this plan          Switch to Default and start coding.
+  2. Yes, clear context and implement  Fresh thread.
+  3. No, stay in Plan mode             Continue planning with the model.
+
+  Press enter to confirm or esc to go back
+"#;
+
+        let options = parse_numbered_options(text);
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].label, "Yes, implement this plan");
+        assert_eq!(options[2].label, "No, stay in Plan mode");
+    }
+
+    #[test]
+    fn captures_idle_codex_for_terminal_only_questions() {
+        let idle = HookPaneState {
+            state: HookAgentState::Idle,
+            attention: None,
+            updated_at_ms: 1,
+        };
+        let working = HookPaneState {
+            state: HookAgentState::Working,
+            attention: None,
+            updated_at_ms: 2,
+        };
+
+        assert!(should_capture_question_screen(
+            ProcessProvider::Codex,
+            Some(&idle)
+        ));
+        assert!(!should_capture_question_screen(
+            ProcessProvider::Codex,
+            Some(&working)
+        ));
+        assert!(!should_capture_question_screen(
+            ProcessProvider::Claude,
+            Some(&idle)
+        ));
     }
 
     #[test]
