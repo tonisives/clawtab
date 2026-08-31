@@ -14,6 +14,7 @@ DAEMON_SOCKET="/tmp/clawtab.sock"
 EVENT_SOCKET="/tmp/clawtab-events.sock"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PANE_BORDER_CACHE_SCRIPT="$SCRIPT_DIR/pane-border-cache.sh"
+ADVANCE_QUESTION_PANE_SCRIPT="$SCRIPT_DIR/advance-question-pane.sh"
 
 tmux_server_socket="$(tmux display-message -p '#{socket_path}' 2>/dev/null || true)"
 tmux_server_pid="$(tmux display-message -p '#{pid}' 2>/dev/null || true)"
@@ -160,7 +161,7 @@ apply_snapshot() {
         '.AgentActivity[]? | [.pane_id, (.working | tostring), (.asking | tostring)] | @tsv' \
         2>/dev/null >>"$ACTIVITY_TSV" || return 1
 
-    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}' \
+    tmux list-panes -a -F '#{pane_id}|||#{window_id}|||#{@clawtab-agent-pane-present}|||#{@clawtab-agent-present}|||#{@clawtab-agent-working}|||#{@clawtab-agent-question}|||#{@clawtab-agent-asking}|||#{pane_active}' \
         >"$PANE_STATE_FILE" 2>/dev/null || return 1
 
     awk -F '\t' 'BEGIN { OFS = "\t" }
@@ -179,6 +180,7 @@ apply_snapshot() {
             panes[pane] = 1
             pane_current[pane] = (field[3] == "1")
             pane_asking_current[pane] = (field[7] == "1")
+            pane_active[pane] = (field[8] == "1")
             windows[window] = 1
             if (!(window in window_initialized)) {
                 window_initialized[window] = 1
@@ -200,6 +202,10 @@ apply_snapshot() {
                 if (pane_current[pane] != wanted || pane_asking_current[pane] != asking) {
                     print "pane", pane, wanted, working, asking
                 }
+                if (pane_active[pane] && pane_asking_current[pane] && !asking &&
+                    !(window in advance_pane)) {
+                    advance_pane[window] = pane
+                }
             }
             for (window in windows) {
                 present = window_present[window] ? 1 : 0
@@ -209,6 +215,11 @@ apply_snapshot() {
                     window_working_current[window] != working ||
                     window_asking_current[window] != asking) {
                     print "window", window, present, working, asking
+                }
+            }
+            for (window in advance_pane) {
+                if (window_asking[window]) {
+                    print "advance", window, advance_pane[window]
                 }
             }
         }
@@ -231,6 +242,12 @@ apply_snapshot() {
                     \; set-window-option -q -t "$target" @clawtab-agent-working "$second" \
                     \; set-window-option -q -t "$target" @clawtab-agent-question "$third" \
                     2>/dev/null || true
+                ;;
+            advance)
+                if [ -x "$ADVANCE_QUESTION_PANE_SCRIPT" ]; then
+                    "$ADVANCE_QUESTION_PANE_SCRIPT" "$target" "$first" \
+                        >/dev/null 2>&1 || true
+                fi
                 ;;
         esac
     done <"$OPTION_CHANGES_FILE"
