@@ -1320,9 +1320,73 @@ async fn open_model_picker_and_select(
                 let _ = crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key);
                 return Err(error);
             }
+            confirm_max_effort_if_requested(pane_id, effort, ui, cancel).await?;
         }
     }
     Ok(())
+}
+
+async fn confirm_max_effort_if_requested(
+    pane_id: &str,
+    effort: &str,
+    ui: &ProviderUiProfile,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    if !effort.eq_ignore_ascii_case("max") {
+        return Ok(());
+    }
+
+    // Codex asks for an explicit choice after selecting the maximum reasoning
+    // level. Wait for that prompt to render so a normal composer never
+    // receives the confirmation key as draft text.
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(2) {
+        if cancel.is_cancelled() {
+            return Err("Action cancelled".into());
+        }
+        let screen = private_capture_plain(pane_id)?;
+        if classify_private_screen(&screen, ui).idle {
+            return Ok(());
+        }
+        if effort_confirmation_visible(&screen, ui) {
+            crate::tmux::send_key_to_pane(pane_id, "1")?;
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Ok(())
+}
+
+fn effort_confirmation_visible(captured: &str, ui: &ProviderUiProfile) -> bool {
+    let plain = strip_ansi(captured);
+    let lower = plain.to_ascii_lowercase();
+    if lower.contains("are you sure")
+        || lower.contains("press enter to confirm")
+        || lower.contains("confirm")
+    {
+        return true;
+    }
+
+    let mentions_max_effort = lower.contains("maximum reasoning")
+        || lower.contains("max reasoning")
+        || lower.contains("more reasoning")
+        || lower.lines().any(|line| {
+            line.split(|character: char| !character.is_ascii_alphanumeric())
+                .any(|word| word == "max")
+        })
+        || ui
+            .effort_labels
+            .get("max")
+            .is_some_and(|label| lower.contains(&label.to_ascii_lowercase()));
+    let has_yes = lower.lines().any(|line| {
+        line.split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|word| word == "yes")
+    });
+    let has_no = lower.lines().any(|line| {
+        line.split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|word| word == "no")
+    });
+    mentions_max_effort && has_yes && has_no
 }
 
 async fn choose_visible_option(
@@ -1620,10 +1684,10 @@ fn ensure_empty_composer(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), St
 #[cfg(test)]
 mod tests {
     use super::{
-        bundled_manifest, classify_private_screen, live_model_selection, screen_confirms_model,
-        selected_option_matches, strip_ansi, validate_action_parameters, validate_manifest,
-        version_matches, vim_normal_mode, ActionKind, CatalogAction, LiveModelSelection,
-        PluginManifest, ProviderUiProfile,
+        bundled_manifest, classify_private_screen, effort_confirmation_visible,
+        live_model_selection, screen_confirms_model, selected_option_matches, strip_ansi,
+        validate_action_parameters, validate_manifest, version_matches, vim_normal_mode,
+        ActionKind, CatalogAction, LiveModelSelection, PluginManifest, ProviderUiProfile,
     };
     use clawtab_protocol::{AgentActionDescriptor, AgentActionParameter, AgentActionParameterKind};
     use std::collections::HashMap;
@@ -1838,6 +1902,24 @@ mod tests {
             screen,
             "gpt-5.6-sol",
             Some("medium"),
+            &ui
+        ));
+    }
+
+    #[test]
+    fn max_effort_confirmation_requires_a_max_prompt_and_yes_no_choices() {
+        let ui = ProviderUiProfile::default();
+        assert!(effort_confirmation_visible(
+            "Are you sure you want to use more reasoning?\n› 1. Yes\n  2. No\n",
+            &ui
+        ));
+        assert!(effort_confirmation_visible("Press Enter to confirm\n", &ui));
+        assert!(!effort_confirmation_visible(
+            "› Ask Codex to do anything\n\ngpt-5.6-luna max · Context 96% left\n",
+            &ui
+        ));
+        assert!(!effort_confirmation_visible(
+            "Select Reasoning Level\n› 1. Low\n  2. Medium\n",
             &ui
         ));
     }
