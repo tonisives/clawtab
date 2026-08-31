@@ -89,7 +89,10 @@ pub fn parse_numbered_options(text: &str) -> Vec<QuestionOption> {
         .rev()
         .filter(|line| !line.trim().is_empty())
         .take(12)
-        .any(|line| line.to_lowercase().contains("press enter to confirm"));
+        .any(|line| {
+            let lower = line.to_lowercase();
+            lower.contains("press enter to confirm") || lower.contains("implement this plan?")
+        });
     let lines: Vec<&str> = text.lines().collect();
     let tail = if lines.len() > 30 {
         &lines[lines.len() - 30..]
@@ -191,6 +194,7 @@ fn has_interactive_prompt_indicator(text: &str) -> bool {
             || lower.contains("tab to amend")
             || lower.contains("esc to cancel")
             || lower.contains("press enter to confirm")
+            || lower.contains("implement this plan?")
         {
             return true;
         }
@@ -1847,6 +1851,22 @@ $ curl -s https://boards-api.greenhouse.io/v1/boards/slack/jobs | sed -n '1,40p'
   3. No, stay in Plan mode             Continue planning with the model.
 
   Press enter to confirm or esc to go back
+"#;
+
+        let options = parse_numbered_options(text);
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].label, "Yes, implement this plan");
+        assert_eq!(options[2].label, "No, stay in Plan mode");
+    }
+
+    #[test]
+    fn parses_codex_plan_confirmation_without_cursor_hint() {
+        let text = r#"
+  Implement this plan?
+
+› 1. Yes, implement this plan          Switch to Default and start coding.
+  2. Yes, clear context and implement  Fresh thread.
+  3. No, stay in Plan mode             Continue planning with the model.
 "#;
 
         let options = parse_numbered_options(text);
