@@ -5,7 +5,7 @@ mod common;
 mod opencode;
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -151,6 +151,21 @@ impl ProcessSnapshot {
 
     pub fn child_pids(&self, pid: &str) -> &[String] {
         self.children.get(pid).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    pub fn process_tree_pids(&self, root_pid: &str) -> HashSet<String> {
+        let mut process_ids = HashSet::from([root_pid.to_string()]);
+        let mut pending = vec![root_pid];
+
+        while let Some(pid) = pending.pop() {
+            for child in self.child_pids(pid) {
+                if process_ids.insert(child.clone()) {
+                    pending.push(child);
+                }
+            }
+        }
+
+        process_ids
     }
 
     pub fn start_epoch_for_pid(&self, pid: &str) -> Option<i64> {
@@ -382,5 +397,30 @@ fn provider_for_command(command: Option<&str>) -> Option<ProcessProvider> {
         Some(ProcessProvider::Claude)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessSnapshot;
+
+    #[test]
+    fn process_tree_pids_include_all_descendants() {
+        let mut snapshot = ProcessSnapshot::default();
+        snapshot
+            .children
+            .insert("10".to_string(), vec!["11".to_string()]);
+        snapshot
+            .children
+            .insert("11".to_string(), vec!["12".to_string()]);
+        snapshot
+            .children
+            .insert("12".to_string(), vec!["13".to_string()]);
+
+        let process_ids = snapshot.process_tree_pids("10");
+
+        assert_eq!(process_ids.len(), 4);
+        assert!(process_ids.contains("10"));
+        assert!(process_ids.contains("13"));
     }
 }
