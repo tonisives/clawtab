@@ -12,7 +12,12 @@ type AgentActionDescriptor = {
   description: string;
   available: boolean;
   unavailable_reason?: string;
-  parameters: { name: string; kind: "model" | "effort"; options: string[] }[];
+  parameters: {
+    name: string;
+    kind: "model" | "effort";
+    required: boolean;
+    options: string[];
+  }[];
 };
 
 type AgentActionRun = {
@@ -23,7 +28,6 @@ type AgentActionRun = {
   error?: string;
 };
 
-type AgentSessionData = { effort?: string };
 
 function createProcessTransport(process: DetectedProcess): Transport {
   const noopRunJob: Transport["runJob"] = async () => null;
@@ -115,17 +119,15 @@ export function DetectedProcessDetail({
 
   const transport = useMemo(() => createProcessTransport(process), [process.pane_id]);
   const [agentActions, setAgentActions] = useState<AgentActionDescriptor[]>([]);
-  const [agentSession, setAgentSession] = useState<AgentSessionData | null>(null);
   const [agentActionRun, setAgentActionRun] = useState<AgentActionRun | null>(null);
 
   useEffect(() => {
     let active = true;
-    invoke<[AgentActionDescriptor[], AgentSessionData | null]>("list_agent_actions", {
+    invoke<[AgentActionDescriptor[], unknown]>("list_agent_actions", {
       paneId: process.pane_id,
-    }).then(([actions, session]) => {
+    }).then(([actions]) => {
       if (active) {
         setAgentActions(actions);
-        setAgentSession(session);
       }
     }).catch(() => {
       if (active) setAgentActions([]);
@@ -183,16 +185,26 @@ export function DetectedProcessDetail({
       return items;
     }
     for (const action of agentActions.filter((candidate) => candidate.available)) {
-      const models = action.parameters.find((parameter) => parameter.kind === "model")?.options;
+      const modelParameter = action.parameters.find((parameter) => parameter.kind === "model");
+      const effortParameter = action.parameters.find((parameter) => parameter.kind === "effort");
+      const models = modelParameter?.options;
+      const efforts = effortParameter?.options ?? [];
       if (models?.length) {
+        if (effortParameter?.required && efforts.length === 0) continue;
         for (const model of models) {
-          items.push({
-            label: `Agent: Switch to ${model}`,
-            onPress: () => runAgentAction(action.id, {
-              model,
-              ...(agentSession?.effort ? { effort: agentSession.effort } : {}),
-            }),
-          });
+          if (efforts.length) {
+            for (const effort of efforts) {
+              items.push({
+                label: `Agent: Switch to ${model} (${effort})`,
+                onPress: () => runAgentAction(action.id, { model, effort }),
+              });
+            }
+          } else {
+            items.push({
+              label: `Agent: Switch to ${model}`,
+              onPress: () => runAgentAction(action.id, { model }),
+            });
+          }
         }
       } else {
         items.push({ label: `Agent: ${action.title}`, onPress: () => runAgentAction(action.id) });
@@ -202,7 +214,7 @@ export function DetectedProcessDetail({
       items.unshift({ label: `Agent action failed: ${agentActionRun.error}`, onPress: () => {} });
     }
     return items;
-  }, [agentActionRun, agentActions, agentSession?.effort, runAgentAction]);
+  }, [agentActionRun, agentActions, runAgentAction]);
 
   const syntheticJob: RemoteJob = {
     name: displayName,

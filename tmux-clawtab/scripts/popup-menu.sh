@@ -308,9 +308,6 @@ load_agent_actions() {
     while IFS=$'\t' read -r action_id title status; do
         [ -n "$action_id" ] || continue
         [ "$status" = "available" ] || continue
-        case "$action_id" in
-            *.set_model) continue ;;
-        esac
         PLUGIN_ITEMS+=("Agent: $title")
         AGENT_ACTION_IDS+=("$action_id")
     done < <(cwtctl agent actions "$PANE_ID" 2>/dev/null || true)
@@ -1523,6 +1520,78 @@ toggle_shared_pin() {
     fi
 }
 
+agent_action_options() {
+    local action_id="$1"
+    local parameter_kind="$2"
+    local actions_json
+    command -v jq &>/dev/null || return 1
+    actions_json=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || return 1
+    printf '%s' "$actions_json" | jq -r \
+        --arg action_id "$action_id" \
+        --arg parameter_kind "$parameter_kind" \
+        '.actions[] | select(.id == $action_id and .available == true) | .parameters[] | select(.kind == $parameter_kind) | .options[]'
+}
+
+select_agent_option() {
+    local prompt="$1"
+    shift
+    [ "$#" -gt 0 ] || return 1
+    tput cnorm 2>/dev/null >&3
+    local selected
+    selected=$(printf '%s\n' "$@" | fzf --prompt="$prompt" --reverse --no-info)
+    local result=$?
+    tput civis 2>/dev/null >&3
+    [ "$result" -eq 0 ] || return 1
+    printf '%s' "$selected"
+}
+
+run_agent_action_from_menu() {
+    local action_id="$1"
+    if [[ "$action_id" != *.set_model ]]; then
+        cwtctl agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
+        return 1
+    fi
+
+    if ! command -v jq &>/dev/null || ! command -v fzf &>/dev/null; then
+        tmux display-message "ClawTab: jq and fzf are required to choose model and effort"
+        draw
+        return 0
+    fi
+
+    local -a models efforts
+    models=()
+    efforts=()
+    local option model effort
+    while IFS= read -r option; do
+        [ -n "$option" ] && models+=("$option")
+    done < <(agent_action_options "$action_id" "model")
+    while IFS= read -r option; do
+        [ -n "$option" ] && efforts+=("$option")
+    done < <(agent_action_options "$action_id" "effort")
+
+    if [ "${#models[@]}" -eq 0 ] || [ "${#efforts[@]}" -eq 0 ]; then
+        tmux display-message "ClawTab: no model and effort options are available"
+        draw
+        return 0
+    fi
+
+    if ! model=$(select_agent_option "model> " "${models[@]}"); then
+        draw
+        return 0
+    fi
+    if ! effort=$(select_agent_option "effort> " "${efforts[@]}"); then
+        draw
+        return 0
+    fi
+
+    if ! cwtctl agent action run "$action_id" "$PANE_ID" "model=$model" "effort=$effort" >/dev/null 2>&1; then
+        tmux display-message "ClawTab: could not start model switch"
+        draw
+        return 0
+    fi
+    return 1
+}
+
 # Actions
 do_enter() {
     local sel_count secret_count
@@ -1567,8 +1636,8 @@ do_enter() {
                 local plugin_index=${FILTERED_INDICES[$CURSOR]}
                 local action_id="${AGENT_ACTION_IDS[$plugin_index]:-}"
                 if [ -n "$action_id" ]; then
-                    cwtctl agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
-                    return 1
+                    run_agent_action_from_menu "$action_id"
+                    return $?
                 fi
             fi
             return 0

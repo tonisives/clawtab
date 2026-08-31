@@ -112,14 +112,12 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
   const activeProcess = process ?? lastProcess
   const [showPaneOverview, setShowPaneOverview] = useState(false)
   const [agentActions, setAgentActions] = useState<AgentActionDescriptor[]>([])
-  const [agentSession, setAgentSession] = useState<AgentSessionData | undefined>()
   const [agentActionRun, setAgentActionRun] = useState<AgentActionRun | null>(null)
 
   useEffect(() => {
     if (!showPaneOverview || !activeProcess) return
     let active = true
     setAgentActions([])
-    setAgentSession(undefined)
     const loadActions = async () => {
       const send = getWsSend()
       if (!send) return
@@ -131,7 +129,6 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
       ])
       if (active && response) {
         setAgentActions(response.actions ?? [])
-        setAgentSession(response.session)
       }
     }
     loadActions()
@@ -439,8 +436,8 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
             available: action.available,
             unavailableReason: action.unavailable_reason,
             modelOptions: action.parameters.find((parameter) => parameter.kind === "model")?.options,
+            effortOptions: action.parameters.find((parameter) => parameter.kind === "effort")?.options,
           })),
-          agentSessionEffort: agentSession?.effort,
           agentActionRun: agentActionRun ? {
             state: agentActionRun.state,
             progress: agentActionRun.progress,

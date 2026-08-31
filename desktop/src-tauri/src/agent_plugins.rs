@@ -241,7 +241,7 @@ impl AgentPluginRuntime {
                             name: "effort".into(),
                             title: "Reasoning effort".into(),
                             kind: AgentActionParameterKind::Effort,
-                            required: false,
+                            required: true,
                             options: vec![
                                 "low".into(),
                                 "medium".into(),
@@ -285,6 +285,7 @@ impl AgentPluginRuntime {
                 .unavailable_reason
                 .unwrap_or_else(|| "Action is unavailable".to_string()));
         }
+        validate_action_parameters(&action, &parameters)?;
         let version = provider_version(ProcessProvider::Codex)
             .ok_or_else(|| "Could not determine the Codex version".to_string())?;
         let spec = resolve_execution_spec(&action_id, &version, &settings)
@@ -564,7 +565,14 @@ async fn execute_codex_action(
                 if !enabled.contains(&model) {
                     return Err("The requested model is not enabled in ClawTab settings".into());
                 }
-                (model, parameters.get("effort").cloned())
+                let effort = parameters
+                    .get("effort")
+                    .ok_or("Missing effort parameter")?
+                    .clone();
+                if !spec.ui.effort_labels.contains_key(&effort) {
+                    return Err("The requested reasoning effort is not supported by Codex".into());
+                }
+                (model, Some(effort))
             } else {
                 let index = enabled.iter().position(|model| model == current).unwrap_or(0);
                 let next = if matches!(spec.kind, ActionKind::PreviousModel) {
@@ -767,6 +775,37 @@ fn resolve_execution_spec(
         }
     }
     None
+}
+
+fn validate_action_parameters(
+    action: &AgentActionDescriptor,
+    parameters: &AgentActionParameters,
+) -> Result<(), String> {
+    for name in parameters.keys() {
+        if !action
+            .parameters
+            .iter()
+            .any(|parameter| parameter.name == *name)
+        {
+            return Err(format!("Unknown action parameter: {name}"));
+        }
+    }
+    for parameter in &action.parameters {
+        let Some(value) = parameters.get(&parameter.name) else {
+            if parameter.required {
+                return Err(format!("Missing {} parameter", parameter.name));
+            }
+            continue;
+        };
+        if value.trim().is_empty() {
+            return Err(format!("{} parameter cannot be empty", parameter.name));
+        }
+        if !parameter.options.is_empty() && !parameter.options.iter().any(|option| option == value)
+        {
+            return Err(format!("Invalid {} parameter", parameter.name));
+        }
+    }
+    Ok(())
 }
 
 fn catalog_cache_dir() -> Option<PathBuf> {
@@ -1582,9 +1621,12 @@ fn ensure_empty_composer(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), St
 mod tests {
     use super::{
         bundled_manifest, classify_private_screen, live_model_selection, screen_confirms_model,
-        selected_option_matches, strip_ansi, validate_manifest, version_matches, vim_normal_mode,
-        ActionKind, CatalogAction, LiveModelSelection, PluginManifest, ProviderUiProfile,
+        selected_option_matches, strip_ansi, validate_action_parameters, validate_manifest,
+        version_matches, vim_normal_mode, ActionKind, CatalogAction, LiveModelSelection,
+        PluginManifest, ProviderUiProfile,
     };
+    use clawtab_protocol::{AgentActionDescriptor, AgentActionParameter, AgentActionParameterKind};
+    use std::collections::HashMap;
 
     #[test]
     fn strips_terminal_control_sequences_without_exposing_capture() {
@@ -1609,6 +1651,57 @@ mod tests {
         let manifest = bundled_manifest();
         assert!(version_matches("0.150.1", &manifest.compatible_versions));
         assert!(version_matches("0.151.0", &manifest.compatible_versions));
+    }
+
+    #[test]
+    fn set_model_parameters_require_a_valid_model_and_effort() {
+        let action = AgentActionDescriptor {
+            id: "codex.set_model".into(),
+            title: "Switch model".into(),
+            description: String::new(),
+            provider: "codex".into(),
+            parameters: vec![
+                AgentActionParameter {
+                    name: "model".into(),
+                    title: "Model".into(),
+                    kind: AgentActionParameterKind::Model,
+                    required: true,
+                    options: vec!["gpt-5.6-sol".into()],
+                },
+                AgentActionParameter {
+                    name: "effort".into(),
+                    title: "Reasoning effort".into(),
+                    kind: AgentActionParameterKind::Effort,
+                    required: true,
+                    options: vec!["low".into(), "medium".into()],
+                },
+            ],
+            available: true,
+            unavailable_reason: None,
+        };
+
+        assert!(validate_action_parameters(
+            &action,
+            &HashMap::from([(String::from("model"), String::from("gpt-5.6-sol"))])
+        )
+        .is_err());
+        assert!(validate_action_parameters(
+            &action,
+            &HashMap::from([
+                (String::from("model"), String::from("gpt-5.6-sol")),
+                (String::from("effort"), String::from("medium")),
+            ])
+        )
+        .is_ok());
+        assert!(validate_action_parameters(
+            &action,
+            &HashMap::from([
+                (String::from("model"), String::from("gpt-5.6-sol")),
+                (String::from("effort"), String::from("medium")),
+                (String::from("unexpected"), String::from("value")),
+            ])
+        )
+        .is_err());
     }
 
     #[test]

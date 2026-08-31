@@ -524,7 +524,10 @@ mod tests {
             id: "request-1".into(),
             pane_id: "%7".into(),
             action_id: "codex.set_model".into(),
-            parameters: HashMap::from([("model".into(), "gpt-5.6-luna".into())]),
+            parameters: HashMap::from([
+                ("model".into(), "gpt-5.6-luna".into()),
+                ("effort".into(), "medium".into()),
+            ]),
         };
         let json = serde_json::to_string(&message).expect("serialize request");
         assert!(json.contains("start_agent_action"));

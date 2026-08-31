@@ -37,8 +37,8 @@
     },
     {
       "id": "codex.set_model",
-      "title": "Switch model",
-      "description": "Changes model and reasoning effort while preserving the current draft.",
+      "title": "Switch model and effort",
+      "description": "Changes the model and reasoning effort while preserving the current draft.",
       "kind": "set_model"
     },
     {

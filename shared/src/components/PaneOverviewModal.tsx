@@ -24,7 +24,6 @@ export type PaneOverviewActions = {
   onStart?: () => void;
   starting?: boolean;
   agentActions?: PaneAgentAction[];
-  agentSessionEffort?: string;
   agentActionRun?: PaneAgentActionRun | null;
   onRunAgentAction?: (actionId: string, parameters?: Record<string, string>) => void;
   onCancelAgentAction?: () => void;
@@ -37,6 +36,7 @@ export type PaneAgentAction = {
   available: boolean;
   unavailableReason?: string;
   modelOptions?: string[];
+  effortOptions?: string[];
 };
 
 export type PaneAgentActionRun = {
@@ -201,21 +201,40 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
                     </Text>
                   </View>
                   {action.modelOptions?.length ? (
-                    <View style={styles.modelOptions}>
-                      {action.modelOptions.map((model) => (
-                        <Pressable
-                          key={model}
-                          style={[styles.compactButton, !action.available && styles.disabledButton]}
-                          disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
-                          onPress={() => actions.onRunAgentAction?.(action.id, {
-                            model,
-                            ...(actions.agentSessionEffort ? { effort: actions.agentSessionEffort } : {}),
-                          })}
-                        >
-                          <Text style={styles.compactButtonText}>{model}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
+                    action.effortOptions?.length ? (
+                      <View style={styles.modelChoices}>
+                        {action.modelOptions.map((model) => (
+                          <View key={model} style={styles.modelChoice}>
+                            <Text style={styles.modelChoiceLabel} numberOfLines={1}>{model}</Text>
+                            <View style={styles.modelOptions}>
+                              {action.effortOptions?.map((effort) => (
+                                <Pressable
+                                  key={`${model}-${effort}`}
+                                  style={[styles.compactButton, !action.available && styles.disabledButton]}
+                                  disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
+                                  onPress={() => actions.onRunAgentAction?.(action.id, { model, effort })}
+                                >
+                                  <Text style={styles.compactButtonText}>{effort}</Text>
+                                </Pressable>
+                              ))}
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <View style={styles.modelOptions}>
+                        {action.modelOptions.map((model) => (
+                          <Pressable
+                            key={model}
+                            style={[styles.compactButton, !action.available && styles.disabledButton]}
+                            disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
+                            onPress={() => actions.onRunAgentAction?.(action.id, { model })}
+                          >
+                            <Text style={styles.compactButtonText}>{model}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )
                   ) : (
                     <Pressable
                       style={[styles.compactButton, !action.available && styles.disabledButton]}
@@ -408,6 +427,24 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     gap: spacing.xs,
     maxWidth: "55%",
+  },
+  modelChoices: {
+    flex: 1,
+    alignItems: "flex-end",
+    gap: spacing.xs,
+  },
+  modelChoice: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: spacing.xs,
+    maxWidth: "100%",
+  },
+  modelChoiceLabel: {
+    color: colors.textMuted,
+    fontSize: 10,
+    flexShrink: 1,
+    maxWidth: "42%",
   },
   runStatus: {
     flexDirection: "row",
