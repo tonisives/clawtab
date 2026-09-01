@@ -1,32 +1,9 @@
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import type { ClaudeQuestion, DetectedProcess, RemoteJob, ShellPane, Transport, JobStatus } from "@clawtab/shared";
 import { JobDetailView, processDisplayTitle, shortenPath } from "@clawtab/shared";
 import { XtermPane } from "./XtermPane";
-
-type AgentActionDescriptor = {
-  id: string;
-  title: string;
-  description: string;
-  available: boolean;
-  unavailable_reason?: string;
-  parameters: {
-    name: string;
-    kind: "model" | "effort";
-    required: boolean;
-    options: string[];
-  }[];
-};
-
-type AgentActionRun = {
-  run_id: string;
-  pane_id: string;
-  state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "needs_user_attention";
-  progress: string;
-  error?: string;
-};
 
 type TmuxPaneTarget =
   | { kind: "process"; process: DetectedProcess }
@@ -186,112 +163,6 @@ export function TmuxPaneDetail({
   );
 
   const process = target.kind === "process" ? target.process : null;
-  const isProcessTarget = target.kind === "process";
-
-  const [agentActions, setAgentActions] = useState<AgentActionDescriptor[]>([]);
-  const [agentActionRun, setAgentActionRun] = useState<AgentActionRun | null>(null);
-
-  useEffect(() => {
-    if (!isProcessTarget) {
-      setAgentActions([]);
-      setAgentActionRun(null);
-      return;
-    }
-    let active = true;
-    setAgentActions([]);
-    invoke<[AgentActionDescriptor[], unknown]>("list_agent_actions", { paneId })
-      .then(([actions]) => {
-        if (active) setAgentActions(actions);
-      })
-      .catch(() => {
-        if (active) setAgentActions([]);
-      });
-    return () => { active = false; };
-  }, [isProcessTarget, paneId]);
-
-  useEffect(() => {
-    if (!agentActionRun || !["queued", "running"].includes(agentActionRun.state)) return;
-    let active = true;
-    const poll = () => {
-      invoke<AgentActionRun>("get_agent_action_run", { runId: agentActionRun.run_id })
-        .then((run) => { if (active) setAgentActionRun(run); })
-        .catch(() => {});
-    };
-    const interval = setInterval(poll, 750);
-    poll();
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [agentActionRun?.run_id, agentActionRun?.state]);
-
-  useEffect(() => {
-    if (!isProcessTarget) return;
-    const unlisten = listen<AgentActionRun>("agent-action-progress", (event) => {
-      if (event.payload.pane_id === paneId) setAgentActionRun(event.payload);
-    });
-    return () => { unlisten.then((stop) => stop()).catch(() => {}); };
-  }, [isProcessTarget, paneId]);
-
-  const runAgentAction = useCallback((actionId: string, parameters: Record<string, string> = {}) => {
-    invoke<AgentActionRun>("start_agent_action", {
-      paneId,
-      actionId,
-      parameters,
-    }).then(setAgentActionRun).catch((error) => {
-      setAgentActionRun({
-        run_id: "start-error",
-        pane_id: paneId,
-        state: "failed",
-        progress: "Could not start action",
-        error: String(error),
-      });
-    });
-  }, [paneId]);
-
-  const agentMenuItems = useMemo(() => {
-    if (!isProcessTarget) return [];
-    const items: { label: string; onPress: () => void }[] = [];
-    if (agentActionRun && ["queued", "running"].includes(agentActionRun.state)) {
-      items.push({
-        label: `Agent: ${agentActionRun.progress}`,
-        onPress: () => {
-          invoke("cancel_agent_action", { runId: agentActionRun.run_id }).catch(() => {});
-        },
-      });
-      return items;
-    }
-    for (const action of agentActions.filter((candidate) => candidate.available)) {
-      const modelParameter = action.parameters.find((parameter) => parameter.kind === "model");
-      const effortParameter = action.parameters.find((parameter) => parameter.kind === "effort");
-      const models = modelParameter?.options;
-      const efforts = effortParameter?.options ?? [];
-      if (models?.length) {
-        if (effortParameter?.required && efforts.length === 0) continue;
-        for (const model of models) {
-          if (efforts.length) {
-            for (const effort of efforts) {
-              items.push({
-                label: `Agent: Switch to ${model} (${effort})`,
-                onPress: () => runAgentAction(action.id, { model, effort }),
-              });
-            }
-          } else {
-            items.push({
-              label: `Agent: Switch to ${model}`,
-              onPress: () => runAgentAction(action.id, { model }),
-            });
-          }
-        }
-      } else {
-        items.push({ label: `Agent: ${action.title}`, onPress: () => runAgentAction(action.id) });
-      }
-    }
-    if (agentActionRun?.error) {
-      items.unshift({ label: `Agent action failed: ${agentActionRun.error}`, onPress: () => {} });
-    }
-    return items;
-  }, [agentActionRun, agentActions, isProcessTarget, runAgentAction]);
 
   const debugMenuItems = useMemo(() => [
     {
@@ -359,7 +230,7 @@ export function TmuxPaneDetail({
       onSearchSkills={process?.can_send_skills ? onSearchSkills : undefined}
       dragHandleProps={dragHandleProps}
       headerActionsBeforeClose={headerActionsBeforeClose}
-      extraMenuItems={[...agentMenuItems, ...debugMenuItems]}
+      extraMenuItems={debugMenuItems}
     />
   );
 }
