@@ -859,6 +859,42 @@ pub async fn cancel_agent_action(
 }
 
 #[tauri::command]
+pub async fn list_installed_plugins(
+) -> Result<Vec<crate::agent_plugins::InstalledPluginSummary>, String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::ListInstalledPlugins).await {
+        Ok(crate::ipc::IpcResponse::InstalledPlugins(plugins)) => Ok(plugins),
+        Ok(crate::ipc::IpcResponse::Error(error)) => Err(error),
+        Ok(response) => Err(format!("Unexpected IPC response: {:?}", response)),
+        Err(error) => Err(format!("Daemon unavailable: {}", error)),
+    }
+}
+
+#[tauri::command]
+pub async fn approve_plugin(plugin_id: String, fingerprint: String) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::ApprovePlugin {
+        plugin_id,
+        fingerprint,
+    })
+    .await
+    {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(error)) => Err(error),
+        Ok(response) => Err(format!("Unexpected IPC response: {:?}", response)),
+        Err(error) => Err(format!("Daemon unavailable: {}", error)),
+    }
+}
+
+#[tauri::command]
+pub async fn revoke_plugin(plugin_id: String) -> Result<(), String> {
+    match crate::ipc::send_command(crate::ipc::IpcCommand::RevokePlugin { plugin_id }).await {
+        Ok(crate::ipc::IpcResponse::Ok) => Ok(()),
+        Ok(crate::ipc::IpcResponse::Error(error)) => Err(error),
+        Ok(response) => Err(format!("Unexpected IPC response: {:?}", response)),
+        Err(error) => Err(format!("Daemon unavailable: {}", error)),
+    }
+}
+
+#[tauri::command]
 pub fn sigint_detected_process(pane_id: String) -> Result<(), String> {
     crate::tmux::send_sigint_to_pane(&pane_id)?;
     std::thread::sleep(std::time::Duration::from_millis(200));

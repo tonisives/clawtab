@@ -1,4 +1,7 @@
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { AgentActionFormModal } from "./AgentActionFormModal";
+import type { AgentActionDescriptor } from "../types/agentPlugin";
 import { colors } from "../theme/colors";
 import { radius, spacing } from "../theme/spacing";
 import { compactPath, formatTime, timeAgo } from "../util/format";
@@ -23,21 +26,13 @@ export type PaneOverviewActions = {
   stopping?: boolean;
   onStart?: () => void;
   starting?: boolean;
-  agentActions?: PaneAgentAction[];
+  agentActions?: AgentActionDescriptor[];
   agentActionRun?: PaneAgentActionRun | null;
   onRunAgentAction?: (actionId: string, parameters?: Record<string, string>) => void;
   onCancelAgentAction?: () => void;
 };
 
-export type PaneAgentAction = {
-  id: string;
-  title: string;
-  description: string;
-  available: boolean;
-  unavailableReason?: string;
-  modelOptions?: string[];
-  effortOptions?: string[];
-};
+export type PaneAgentAction = AgentActionDescriptor;
 
 export type PaneAgentActionRun = {
   state: string;
@@ -52,21 +47,21 @@ type PaneOverviewModalProps = PaneOverviewData & {
   actions?: PaneOverviewActions;
 };
 
-function formatStartedAt(value?: string | null): string {
+const formatStartedAt = (value?: string | null): string => {
   if (!value) return "-";
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? `${formatTime(value)} (${timeAgo(value)})` : value;
-}
+};
 
-function limitQuery(value?: string | null): string {
+const limitQuery = (value?: string | null): string => {
   const query = value?.trim() ?? "";
   if (!query) return "-";
   if (query.length <= MAX_QUERY_CHARS) return query;
   const side = Math.floor((MAX_QUERY_CHARS - 7) / 2);
   return `${query.slice(0, side).trimEnd()}\n...\n${query.slice(-side).trimStart()}`;
-}
+};
 
-function DetailRow({ label, value, monospace = false }: { label: string; value: string; monospace?: boolean }) {
+const DetailRow = ({ label, value, monospace = false }: { label: string; value: string; monospace?: boolean }) => {
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
@@ -75,9 +70,9 @@ function DetailRow({ label, value, monospace = false }: { label: string; value: 
       </Text>
     </View>
   );
-}
+};
 
-function QueryBlock({ label, value }: { label: string; value?: string | null }) {
+const QueryBlock = ({ label, value }: { label: string; value?: string | null }) => {
   if (!value?.trim()) return null;
   return (
     <View style={styles.queryBlock}>
@@ -85,15 +80,42 @@ function QueryBlock({ label, value }: { label: string; value?: string | null }) 
       <Text style={styles.queryValue} selectable>{limitQuery(value)}</Text>
     </View>
   );
-}
+};
 
-export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOverviewModalProps) {
+export const PaneOverviewModal = ({ visible, onClose, actions, ...pane }: PaneOverviewModalProps) => {
   const latestQuery = pane.lastQuery && pane.lastQuery !== pane.firstQuery ? pane.lastQuery : null;
   const title = pane.cwd ? compactPath(pane.cwd) : "Pane overview";
+  const [selectedAgentAction, setSelectedAgentAction] = useState<AgentActionDescriptor | null>(null);
+  const actionRunActive = !!actions?.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state);
+
+  useEffect(() => {
+    if (!visible) setSelectedAgentAction(null);
+  }, [visible]);
+
+  const handleClose = () => {
+    setSelectedAgentAction(null);
+    onClose();
+  };
+
+  const handleAgentActionPress = (action: AgentActionDescriptor) => {
+    if (!action.available || actionRunActive || !actions?.onRunAgentAction) return;
+    if (action.parameters.length === 0) {
+      actions.onRunAgentAction(action.id);
+      return;
+    }
+    setSelectedAgentAction(action);
+  };
+
+  const handleAgentActionSubmit = (parameters: Record<string, string>) => {
+    if (!selectedAgentAction) return;
+    const actionId = selectedAgentAction.id;
+    setSelectedAgentAction(null);
+    actions?.onRunAgentAction?.(actionId, parameters);
+  };
 
   const content = (
     <View style={styles.root}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
       <View style={styles.card}>
         <View style={styles.header}>
           <View style={styles.headerText}>
@@ -106,7 +128,7 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
           </View>
           <Pressable
             style={styles.closeButton}
-            onPress={onClose}
+            onPress={handleClose}
             accessibilityRole="button"
             accessibilityLabel="Close pane overview"
             hitSlop={8}
@@ -192,66 +214,49 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
                   ) : null}
                 </View>
               ) : null}
-              {actions.agentActions.map((action) => (
-                <View key={action.id} style={styles.agentAction}>
-                  <View style={styles.agentActionText}>
-                    <Text style={styles.agentActionTitle}>{action.title}</Text>
-                    <Text style={styles.agentActionDescription}>
-                      {action.unavailableReason ?? action.description}
-                    </Text>
-                  </View>
-                  {action.modelOptions?.length ? (
-                    action.effortOptions?.length ? (
-                      <View style={styles.modelChoices}>
-                        {action.modelOptions.map((model) => (
-                          <View key={model} style={styles.modelChoice}>
-                            <Text style={styles.modelChoiceLabel} numberOfLines={1}>{model}</Text>
-                            <View style={styles.modelOptions}>
-                              {action.effortOptions?.map((effort) => (
-                                <Pressable
-                                  key={`${model}-${effort}`}
-                                  style={[styles.compactButton, !action.available && styles.disabledButton]}
-                                  disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
-                                  onPress={() => actions.onRunAgentAction?.(action.id, { model, effort })}
-                                >
-                                  <Text style={styles.compactButtonText}>{effort}</Text>
-                                </Pressable>
-                              ))}
-                            </View>
-                          </View>
-                        ))}
+              {actions.agentActions.map((action) => {
+                const actionDisabled = !action.available || actionRunActive || !actions.onRunAgentAction;
+                const actionButtonLabel = !action.available
+                  ? "Unavailable"
+                  : action.parameters.length > 0
+                    ? "Configure"
+                    : "Run";
+                return (
+                  <View key={action.id} style={styles.agentAction}>
+                    <View style={styles.agentActionText}>
+                      <View style={styles.agentActionHeading}>
+                        <Text style={styles.agentActionTitle}>{action.title}</Text>
+                        {action.plugin_name ? <Text style={styles.agentActionPlugin}>{action.plugin_name}</Text> : null}
                       </View>
-                    ) : (
-                      <View style={styles.modelOptions}>
-                        {action.modelOptions.map((model) => (
-                          <Pressable
-                            key={model}
-                            style={[styles.compactButton, !action.available && styles.disabledButton]}
-                            disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
-                            onPress={() => actions.onRunAgentAction?.(action.id, { model })}
-                          >
-                            <Text style={styles.compactButtonText}>{model}</Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    )
-                  ) : (
+                      <Text style={[styles.agentActionDescription, !action.available && styles.unavailableDescription]}>
+                        {action.unavailable_reason ?? action.description}
+                      </Text>
+                    </View>
                     <Pressable
-                      style={[styles.compactButton, !action.available && styles.disabledButton]}
-                      disabled={!action.available || !!actions.agentActionRun && ["queued", "running"].includes(actions.agentActionRun.state)}
-                      onPress={() => actions.onRunAgentAction?.(action.id)}
+                      style={[styles.compactButton, actionDisabled && styles.disabledButton]}
+                      disabled={actionDisabled}
+                      onPress={() => handleAgentActionPress(action)}
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: actionDisabled }}
                     >
-                      <Text style={styles.compactButtonText}>Run</Text>
+                      <Text style={styles.compactButtonText}>{actionButtonLabel}</Text>
                     </Pressable>
-                  )}
-                </View>
-              ))}
+                  </View>
+                );
+              })}
             </View>
           ) : null}
           <QueryBlock label="First query" value={pane.firstQuery} />
           <QueryBlock label="Latest query" value={latestQuery} />
         </ScrollView>
       </View>
+      <AgentActionFormModal
+        action={selectedAgentAction}
+        visible={selectedAgentAction !== null}
+        onClose={() => setSelectedAgentAction(null)}
+        onSubmit={handleAgentActionSubmit}
+        submitting={actionRunActive}
+      />
     </View>
   );
 
@@ -266,11 +271,11 @@ export function PaneOverviewModal({ visible, onClose, actions, ...pane }: PaneOv
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       {content}
     </Modal>
   );
-}
+};
 
 const styles = StyleSheet.create({
   nativeRoot: {
@@ -388,7 +393,7 @@ const styles = StyleSheet.create({
   },
   agentAction: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: spacing.sm,
     paddingVertical: spacing.xs,
   },
@@ -396,15 +401,28 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  agentActionHeading: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: spacing.sm,
+  },
   agentActionTitle: {
     color: colors.text,
     fontSize: 12,
     fontWeight: "600",
   },
+  agentActionPlugin: {
+    color: colors.textMuted,
+    fontSize: 10,
+    flexShrink: 1,
+  },
   agentActionDescription: {
     color: colors.textMuted,
     fontSize: 11,
     marginTop: 2,
+  },
+  unavailableDescription: {
+    color: colors.danger,
   },
   compactButton: {
     minHeight: 30,
@@ -420,31 +438,6 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.4,
-  },
-  modelOptions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "flex-end",
-    gap: spacing.xs,
-    maxWidth: "55%",
-  },
-  modelChoices: {
-    flex: 1,
-    alignItems: "flex-end",
-    gap: spacing.xs,
-  },
-  modelChoice: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: spacing.xs,
-    maxWidth: "100%",
-  },
-  modelChoiceLabel: {
-    color: colors.textMuted,
-    fontSize: 10,
-    flexShrink: 1,
-    maxWidth: "42%",
   },
   runStatus: {
     flexDirection: "row",

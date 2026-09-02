@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -8,124 +9,117 @@ use clawtab_protocol::{
     AgentActionRun, AgentActionRunState, AgentSessionData,
 };
 use parking_lot::Mutex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent_session::{self, ProcessProvider};
 use crate::config::settings::AppSettings;
 
 const RUN_RETENTION: Duration = Duration::from_secs(15 * 60);
+const DEFAULT_TIMEOUT_SECONDS: u64 = 10 * 60;
+const MAX_TIMEOUT_SECONDS: u64 = 60 * 60;
+const MAX_CAPTURE_BYTES: usize = 64 * 1024;
+const MAX_RESULT_BYTES: usize = 64 * 1024;
 const MODEL_VERIFY_TIMEOUT: Duration = Duration::from_secs(12);
-const CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
-const CATALOG_BASE_URL: &str = "https://cdn.clawtab.cc/agent-plugins/v1";
-// Dedicated agent-catalog verification key. It is intentionally independent
-// of the desktop updater key so either trust root can be rotated separately.
-const CATALOG_PUBLIC_KEY: [u8; 32] = [
-    0x40, 0xca, 0x3a, 0xe3, 0xbe, 0x47, 0x40, 0x2f, 0x4d, 0x31, 0x0d, 0x9e, 0xff, 0x69, 0x91, 0x7d,
-    0x20, 0xd0, 0x87, 0xd0, 0x64, 0xed, 0x39, 0x55, 0xd4, 0x0f, 0x80, 0x6d, 0x2d, 0x49, 0xc4, 0x42,
+const ALLOWED_CAPABILITIES: [&str; 5] = [
+    "agent.read",
+    "pane.input",
+    "agent.wait",
+    "agent.model",
+    "composer.draft",
 ];
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum ActionKind {
-    CheapCompact,
-    SetModel,
-    NextModel,
-    PreviousModel,
-    SessionInfo,
-}
-
 #[derive(Debug, Clone, Deserialize)]
-struct CatalogAction {
-    id: String,
-    title: String,
-    description: String,
-    kind: ActionKind,
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PluginManifest {
     schema_version: u32,
-    namespace: String,
-    provider: String,
-    compatible_versions: Vec<String>,
-    #[serde(default)]
-    ui: ProviderUiProfile,
-    actions: Vec<CatalogAction>,
+    id: String,
+    name: String,
+    version: String,
+    actions: Vec<PluginAction>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct ProviderUiProfile {
-    composer_marker: String,
+#[serde(deny_unknown_fields)]
+struct PluginAction {
+    id: String,
+    title: String,
     #[serde(default)]
-    composer_placeholder: Option<String>,
+    description: String,
+    command: Vec<String>,
+    activation: PluginActivation,
     #[serde(default)]
-    vim_normal_marker: Option<String>,
-    model_dialog_marker: String,
-    effort_dialog_marker: String,
-    effort_labels: HashMap<String, String>,
-    busy_marker: String,
+    capabilities: Vec<String>,
     #[serde(default)]
-    model_status_marker: Option<String>,
-    selected_markers: Vec<String>,
-    model_command: String,
-    compact_command: String,
-    compact_confirmation_marker: Option<String>,
-    stash_key: String,
-    cancel_key: String,
-    next_key: String,
-    submit_key: String,
-    history_key: String,
+    parameters: Vec<PluginParameter>,
+    #[serde(default = "default_timeout_seconds")]
+    timeout_seconds: u64,
 }
 
-impl Default for ProviderUiProfile {
-    fn default() -> Self {
-        Self {
-            composer_marker: "›".into(),
-            composer_placeholder: Some("Ask Codex to do anything".into()),
-            vim_normal_marker: Some("Vim: Normal".into()),
-            model_dialog_marker: "Select model".into(),
-            effort_dialog_marker: "Select Reasoning Level".into(),
-            effort_labels: HashMap::from([
-                ("low".into(), "Low".into()),
-                ("medium".into(), "Medium".into()),
-                ("high".into(), "High".into()),
-                ("xhigh".into(), "Extra high".into()),
-                ("max".into(), "More reasoning".into()),
-            ]),
-            busy_marker: "esc to interrupt".into(),
-            model_status_marker: Some("Context".into()),
-            selected_markers: vec!["›".into(), ">".into()],
-            model_command: "/model".into(),
-            compact_command: "/compact".into(),
-            compact_confirmation_marker: None,
-            // Ctrl-U clears the composer without invoking Codex's interrupt/exit behavior.
-            stash_key: "C-u".into(),
-            cancel_key: "Escape".into(),
-            next_key: "Down".into(),
-            submit_key: "Enter".into(),
-            history_key: "Up".into(),
-        }
-    }
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginActivation {
+    providers: Vec<String>,
+    #[serde(default)]
+    versions: Vec<String>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginParameter {
+    name: String,
+    title: String,
+    #[serde(default)]
+    description: Option<String>,
+    kind: AgentActionParameterKind,
+    #[serde(default)]
+    required: bool,
+    #[serde(default)]
+    default_value: Option<String>,
+    #[serde(default)]
+    placeholder: Option<String>,
+    #[serde(default)]
+    options: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct LoadedPlugin {
+    root: PathBuf,
+    manifest: PluginManifest,
+    fingerprint: String,
+    validation_error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
 struct ExecutionSpec {
-    kind: ActionKind,
-    ui: ProviderUiProfile,
+    plugin: LoadedPlugin,
+    action: PluginAction,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct SignedCatalogIndex {
-    schema_version: u32,
-    plugins: Vec<SignedCatalogEntry>,
+#[derive(Debug, Clone)]
+struct BaselineState {
+    model: Option<String>,
+    effort: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct SignedCatalogEntry {
-    file: String,
-    sha256: String,
+#[derive(Debug, Clone)]
+struct HostRun {
+    token: String,
+    plugin_id: String,
+    action_id: String,
+    pane_id: String,
+    pane_pid: String,
+    provider: ProcessProvider,
+    provider_version: Option<String>,
+    working_directory: String,
+    parameters: AgentActionParameters,
+    capabilities: HashSet<String>,
+    baseline: BaselineState,
+    stashed_draft: Option<String>,
+    model_changed: bool,
 }
 
 #[derive(Clone)]
@@ -133,13 +127,105 @@ struct StoredRun {
     run: AgentActionRun,
     updated_at: Instant,
     cancel: CancellationToken,
+    host: HostRun,
+}
+
+type RunObserver = Arc<dyn Fn(AgentActionRun) + Send + Sync>;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledPluginSummary {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub fingerprint: String,
+    pub trusted: bool,
+    pub actions: Vec<String>,
+    pub commands: Vec<Vec<String>>,
+    pub capabilities: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginRunContext {
+    pub plugin_id: String,
+    pub action_id: String,
+    pub run_id: String,
+    pub pane_id: String,
+    pub provider: String,
+    pub provider_version: Option<String>,
+    pub working_directory: String,
+    pub parameters: AgentActionParameters,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginAgentState {
+    pub provider: String,
+    pub idle: bool,
+    pub busy: bool,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub draft_present: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginHostCommand {
+    pub token: String,
+    pub request: PluginHostRequest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PluginHostRequest {
+    Context,
+    Progress {
+        message: String,
+        percent: u8,
+    },
+    SetResult {
+        value: serde_json::Value,
+    },
+    AgentSession,
+    AgentState,
+    PaneSendText {
+        text: String,
+    },
+    PaneSendKey {
+        key: String,
+    },
+    PaneSubmitText {
+        text: String,
+    },
+    AgentWaitState {
+        state: String,
+        timeout_ms: u64,
+    },
+    AgentSelectModel {
+        model: String,
+        effort: Option<String>,
+    },
+    AgentRestoreBaseline,
+    ComposerStash,
+    ComposerRestore,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PluginHostResponse {
+    Ok,
+    Context { context: PluginRunContext },
+    Session { session: AgentSessionData },
+    State { state: PluginAgentState },
+    Composer { had_draft: bool },
+    Error { error: String },
 }
 
 #[derive(Default)]
 pub struct AgentPluginRuntime {
     runs: Mutex<HashMap<String, StoredRun>>,
+    tokens: Mutex<HashMap<String, String>>,
     active_panes: Mutex<HashSet<String>>,
-    observer: Mutex<Option<Arc<dyn Fn(AgentActionRun) + Send + Sync>>>,
+    observer: Mutex<Option<RunObserver>>,
 }
 
 pub fn runtime() -> &'static Arc<AgentPluginRuntime> {
@@ -147,14 +233,8 @@ pub fn runtime() -> &'static Arc<AgentPluginRuntime> {
     RUNTIME.get_or_init(|| Arc::new(AgentPluginRuntime::default()))
 }
 
-pub fn observe_detected_provider(provider: &str, settings: &AppSettings) {
-    if provider == "codex" && settings.agent_plugins.catalog_updates_enabled {
-        maybe_schedule_catalog_refresh();
-    }
-}
-
 impl AgentPluginRuntime {
-    pub fn set_observer(&self, observer: Arc<dyn Fn(AgentActionRun) + Send + Sync>) {
+    pub fn set_observer(&self, observer: RunObserver) {
         *self.observer.lock() = Some(observer);
     }
 
@@ -163,109 +243,102 @@ impl AgentPluginRuntime {
         pane_id: &str,
         settings: &AppSettings,
     ) -> (Vec<AgentActionDescriptor>, Option<AgentSessionData>) {
-        let context = pane_context(pane_id);
-        let provider = context.as_ref().map(|value| value.0);
-        let version = provider.and_then(provider_version);
-        let session = context
-            .as_ref()
-            .map(|(provider, pane_pid)| session_data(*provider, pane_pid));
-        if provider.is_some() && settings.agent_plugins.catalog_updates_enabled {
-            maybe_schedule_catalog_refresh();
+        let Some((provider, pane_pid)) = pane_context(pane_id) else {
+            return (Vec::new(), None);
+        };
+        let version = provider_version(provider);
+        let session = Some(session_data(provider, &pane_pid));
+        let trusted = load_trust_store();
+        let actions = discover_plugins()
+            .into_iter()
+            .filter_map(Result::ok)
+            .flat_map(|plugin| {
+                let plugin_trusted = plugin.validation_error.is_none()
+                    && trusted.get(&plugin.manifest.id) == Some(&plugin.fingerprint);
+                plugin
+                    .manifest
+                    .actions
+                    .clone()
+                    .into_iter()
+                    .filter(|action| activation_matches(action, provider, version.as_deref()))
+                    .map(move |action| {
+                        descriptor(&plugin, action, provider, settings, plugin_trusted)
+                    })
+            })
+            .collect();
+        (actions, session)
+    }
+
+    pub fn list_installed_plugins(&self) -> Vec<InstalledPluginSummary> {
+        let trusted = load_trust_store();
+        discover_plugins()
+            .into_iter()
+            .map(|result| match result {
+                Ok(plugin) => {
+                    let mut capabilities = plugin
+                        .manifest
+                        .actions
+                        .iter()
+                        .flat_map(|action| action.capabilities.clone())
+                        .collect::<Vec<_>>();
+                    capabilities.sort();
+                    capabilities.dedup();
+                    InstalledPluginSummary {
+                        id: plugin.manifest.id.clone(),
+                        name: plugin.manifest.name.clone(),
+                        version: plugin.manifest.version.clone(),
+                        fingerprint: plugin.fingerprint.clone(),
+                        trusted: plugin.validation_error.is_none()
+                            && trusted.get(&plugin.manifest.id) == Some(&plugin.fingerprint),
+                        actions: plugin
+                            .manifest
+                            .actions
+                            .iter()
+                            .map(|action| full_action_id(&plugin.manifest.id, &action.id))
+                            .collect(),
+                        commands: plugin
+                            .manifest
+                            .actions
+                            .iter()
+                            .map(|action| action.command.clone())
+                            .collect(),
+                        capabilities,
+                        error: plugin.validation_error,
+                    }
+                }
+                Err((id, error)) => InstalledPluginSummary {
+                    id,
+                    name: String::new(),
+                    version: String::new(),
+                    fingerprint: String::new(),
+                    trusted: false,
+                    actions: Vec::new(),
+                    commands: Vec::new(),
+                    capabilities: Vec::new(),
+                    error: Some(error),
+                },
+            })
+            .collect()
+    }
+
+    pub fn approve_plugin(&self, plugin_id: &str, fingerprint: &str) -> Result<(), String> {
+        let plugin = discover_plugins()
+            .into_iter()
+            .filter_map(Result::ok)
+            .find(|plugin| plugin.validation_error.is_none() && plugin.manifest.id == plugin_id)
+            .ok_or_else(|| format!("Plugin not found: {plugin_id}"))?;
+        if plugin.fingerprint != fingerprint {
+            return Err("Plugin changed before approval; refresh and review it again".into());
         }
-        let mut manifests = catalog_manifests(settings);
-        manifests.sort_by_key(|manifest| {
-            !version
-                .as_deref()
-                .is_some_and(|value| version_matches(value, &manifest.compatible_versions))
-        });
-        let enabled_models = settings
-            .enabled_models
-            .get("codex")
-            .cloned()
-            .unwrap_or_default();
-        let mut descriptors = Vec::new();
-        let mut seen_action_ids = HashSet::new();
-        for manifest in manifests {
-            let manifest_error = validate_manifest(&manifest).err();
-            let compatible = version
-                .as_deref()
-                .is_some_and(|value| version_matches(value, &manifest.compatible_versions));
-            for action in manifest.actions {
-                if !seen_action_ids.insert(action.id.clone()) {
-                    continue;
-                }
-                let mut unavailable_reason = manifest_error.clone();
-                if unavailable_reason.is_none()
-                    && provider.map(ProcessProvider::as_str) != Some(manifest.provider.as_str())
-                {
-                    unavailable_reason =
-                        Some("This action does not support the detected agent".into());
-                }
-                if unavailable_reason.is_none() && !compatible {
-                    unavailable_reason = Some(match version.as_deref() {
-                        Some(value) => {
-                            format!("Codex {value} is not covered by this action catalog")
-                        }
-                        None => "Could not determine the agent version".to_string(),
-                    });
-                }
-                if unavailable_reason.is_none()
-                    && matches!(action.kind, ActionKind::CheapCompact)
-                    && settings
-                        .agent_plugins
-                        .compact_presets
-                        .get("codex")
-                        .is_none_or(|preset| !enabled_models.contains(&preset.model))
-                {
-                    unavailable_reason = Some("Enable the configured compact model first".into());
-                }
-                if unavailable_reason.is_none()
-                    && matches!(
-                        action.kind,
-                        ActionKind::NextModel | ActionKind::PreviousModel
-                    )
-                    && enabled_models.len() < 2
-                {
-                    unavailable_reason = Some("Enable at least two Codex models first".into());
-                }
-                let parameters = if matches!(action.kind, ActionKind::SetModel) {
-                    vec![
-                        AgentActionParameter {
-                            name: "model".into(),
-                            title: "Model".into(),
-                            kind: AgentActionParameterKind::Model,
-                            required: true,
-                            options: enabled_models.clone(),
-                        },
-                        AgentActionParameter {
-                            name: "effort".into(),
-                            title: "Reasoning effort".into(),
-                            kind: AgentActionParameterKind::Effort,
-                            required: true,
-                            options: vec![
-                                "low".into(),
-                                "medium".into(),
-                                "high".into(),
-                                "xhigh".into(),
-                                "max".into(),
-                            ],
-                        },
-                    ]
-                } else {
-                    Vec::new()
-                };
-                descriptors.push(AgentActionDescriptor {
-                    id: action.id,
-                    title: action.title,
-                    description: action.description,
-                    provider: manifest.provider.clone(),
-                    parameters,
-                    available: unavailable_reason.is_none(),
-                    unavailable_reason,
-                });
-            }
-        }
-        (descriptors, session)
+        let mut trusted = load_trust_store();
+        trusted.insert(plugin_id.to_string(), fingerprint.to_string());
+        save_trust_store(&trusted)
+    }
+
+    pub fn revoke_plugin(&self, plugin_id: &str) -> Result<(), String> {
+        let mut trusted = load_trust_store();
+        trusted.remove(plugin_id);
+        save_trust_store(&trusted)
     }
 
     pub fn start(
@@ -275,54 +348,74 @@ impl AgentPluginRuntime {
         parameters: AgentActionParameters,
         settings: AppSettings,
     ) -> Result<AgentActionRun, String> {
-        let (actions, _) = self.list_actions(&pane_id, &settings);
-        let action = actions
-            .into_iter()
-            .find(|candidate| candidate.id == action_id)
-            .ok_or_else(|| format!("Unknown agent action: {action_id}"))?;
-        if !action.available {
-            return Err(action
-                .unavailable_reason
-                .unwrap_or_else(|| "Action is unavailable".to_string()));
+        let (provider, pane_pid) = pane_context(&pane_id)
+            .ok_or_else(|| "No supported agent is running in this pane".to_string())?;
+        let version = provider_version(provider);
+        let spec = resolve_execution_spec(&action_id, provider, version.as_deref())?;
+        let trusted = load_trust_store();
+        if trusted.get(&spec.plugin.manifest.id) != Some(&spec.plugin.fingerprint) {
+            return Err("Approve this plugin in ClawTab settings before running it".into());
         }
-        validate_action_parameters(&action, &parameters)?;
-        let version = provider_version(ProcessProvider::Codex)
-            .ok_or_else(|| "Could not determine the Codex version".to_string())?;
-        let spec = resolve_execution_spec(&action_id, &version, &settings)
-            .ok_or_else(|| "The action has no validated execution profile".to_string())?;
+        validate_command(&spec.plugin.root, &spec.action.command)?;
+        let parameters = validate_parameters(&spec.action, parameters, provider, &settings)?;
         {
             let mut panes = self.active_panes.lock();
             if !panes.insert(pane_id.clone()) {
-                return Err("Another agent action is already running in this pane".to_string());
+                return Err("Another agent action is already running in this pane".into());
             }
         }
+
         self.prune_runs();
         let run_id = uuid::Uuid::new_v4().to_string();
+        let token = format!(
+            "{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        );
         let cancel = CancellationToken::new();
+        let session = session_data(provider, &pane_pid);
+        let host = HostRun {
+            token: token.clone(),
+            plugin_id: spec.plugin.manifest.id.clone(),
+            action_id: action_id.clone(),
+            pane_id: pane_id.clone(),
+            pane_pid,
+            provider,
+            provider_version: version,
+            working_directory: pane_working_directory(&pane_id).unwrap_or_default(),
+            parameters: parameters.clone(),
+            capabilities: spec.action.capabilities.iter().cloned().collect(),
+            baseline: BaselineState {
+                model: session.model.clone(),
+                effort: session.effort.clone(),
+            },
+            stashed_draft: None,
+            model_changed: false,
+        };
         let run = AgentActionRun {
             run_id: run_id.clone(),
             pane_id: pane_id.clone(),
-            action_id: action_id.clone(),
+            action_id,
             state: AgentActionRunState::Queued,
-            progress: "Queued".to_string(),
+            progress: "Queued".into(),
             progress_percent: 0,
             result: None,
             error: None,
         };
+        self.tokens.lock().insert(token, run_id.clone());
         self.runs.lock().insert(
             run_id.clone(),
             StoredRun {
                 run: run.clone(),
                 updated_at: Instant::now(),
                 cancel: cancel.clone(),
+                host,
             },
         );
         self.notify(run.clone());
         let runtime = Arc::clone(self);
         tokio::spawn(async move {
-            runtime
-                .execute(run_id, pane_id, parameters, settings, spec, cancel)
-                .await;
+            runtime.execute(run_id, spec, cancel).await;
         });
         Ok(run)
     }
@@ -348,93 +441,224 @@ impl AgentPluginRuntime {
         Ok(stored.run)
     }
 
-    async fn execute(
+    pub async fn host_call(
         &self,
-        run_id: String,
-        pane_id: String,
-        parameters: AgentActionParameters,
-        settings: AppSettings,
-        spec: ExecutionSpec,
-        cancel: CancellationToken,
-    ) {
-        self.update(
-            &run_id,
-            AgentActionRunState::Running,
-            "Checking agent state",
-            5,
-            None,
-            None,
-        );
-        let result = execute_codex_action(
-            self,
-            &run_id,
-            &pane_id,
-            &parameters,
-            &settings,
-            &spec,
-            &cancel,
-        )
-        .await;
-        match result {
-            Ok(value) if cancel.is_cancelled() => self.update(
-                &run_id,
-                AgentActionRunState::Cancelled,
-                "Cancelled",
-                100,
-                Some(value),
-                None,
-            ),
-            Ok(value) => self.update(
-                &run_id,
-                AgentActionRunState::Succeeded,
-                "Complete",
-                100,
-                Some(value),
-                None,
-            ),
-            Err(error) => {
-                let needs_attention = error.starts_with("RECOVERY_FAILED:");
-                let message = error
-                    .trim_start_matches("RECOVERY_FAILED:")
-                    .trim()
-                    .to_string();
-                self.update(
-                    &run_id,
-                    if needs_attention {
-                        AgentActionRunState::NeedsUserAttention
-                    } else if cancel.is_cancelled() {
-                        AgentActionRunState::Cancelled
-                    } else {
-                        AgentActionRunState::Failed
-                    },
-                    if needs_attention {
-                        "Needs attention"
-                    } else {
-                        "Stopped"
-                    },
-                    100,
-                    None,
-                    Some(message),
-                );
+        token: &str,
+        request: PluginHostRequest,
+    ) -> Result<PluginHostResponse, String> {
+        let run_id = self
+            .tokens
+            .lock()
+            .get(token)
+            .cloned()
+            .ok_or_else(|| "Plugin run token is invalid or expired".to_string())?;
+        let stored = self
+            .runs
+            .lock()
+            .get(&run_id)
+            .cloned()
+            .ok_or_else(|| "Plugin run no longer exists".to_string())?;
+        if stored.host.token != token || stored.run.state.is_terminal() {
+            return Err("Plugin run token is invalid or expired".into());
+        }
+
+        match request {
+            PluginHostRequest::Context => Ok(PluginHostResponse::Context {
+                context: PluginRunContext {
+                    plugin_id: stored.host.plugin_id,
+                    action_id: stored.host.action_id,
+                    run_id,
+                    pane_id: stored.host.pane_id,
+                    provider: stored.host.provider.as_str().into(),
+                    provider_version: stored.host.provider_version,
+                    working_directory: stored.host.working_directory,
+                    parameters: stored.host.parameters,
+                },
+            }),
+            PluginHostRequest::Progress { message, percent } => {
+                validate_progress(&message, percent)?;
+                self.update_progress(&run_id, &message, percent);
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::SetResult { value } => {
+                if serde_json::to_vec(&value)
+                    .map_err(|error| error.to_string())?
+                    .len()
+                    > MAX_RESULT_BYTES
+                {
+                    return Err("Plugin result is too large".into());
+                }
+                self.set_result(&run_id, value);
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::AgentSession => {
+                require_capability(&stored.host, "agent.read")?;
+                validate_bound_pane(&stored.host)?;
+                Ok(PluginHostResponse::Session {
+                    session: session_data(stored.host.provider, &stored.host.pane_pid),
+                })
+            }
+            PluginHostRequest::AgentState => {
+                require_capability(&stored.host, "agent.read")?;
+                validate_bound_pane(&stored.host)?;
+                Ok(PluginHostResponse::State {
+                    state: agent_state(&stored.host)?,
+                })
+            }
+            PluginHostRequest::PaneSendText { text } => {
+                require_capability(&stored.host, "pane.input")?;
+                validate_bound_pane(&stored.host)?;
+                validate_input(&text)?;
+                crate::tmux::send_literal_to_pane(&stored.host.pane_id, &text)?;
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::PaneSendKey { key } => {
+                require_capability(&stored.host, "pane.input")?;
+                validate_bound_pane(&stored.host)?;
+                validate_key(&key)?;
+                crate::tmux::send_key_to_pane(&stored.host.pane_id, &key)?;
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::PaneSubmitText { text } => {
+                require_capability(&stored.host, "pane.input")?;
+                validate_bound_pane(&stored.host)?;
+                validate_input(&text)?;
+                submit_text(&stored.host.pane_id, stored.host.provider, &text)?;
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::AgentWaitState { state, timeout_ms } => {
+                require_capability(&stored.host, "agent.wait")?;
+                validate_bound_pane(&stored.host)?;
+                wait_for_state(
+                    &stored.host,
+                    &state,
+                    Duration::from_millis(timeout_ms.min(60_000)),
+                    &stored.cancel,
+                )
+                .await?;
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::AgentSelectModel { model, effort } => {
+                require_capability(&stored.host, "agent.model")?;
+                validate_bound_pane(&stored.host)?;
+                validate_model_value(&model)?;
+                if let Some(value) = effort.as_deref() {
+                    validate_effort(value)?;
+                }
+                select_model(&stored.host, &model, effort.as_deref(), &stored.cancel).await?;
+                if let Some(run) = self.runs.lock().get_mut(&run_id) {
+                    run.host.model_changed = true;
+                }
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::AgentRestoreBaseline => {
+                require_capability(&stored.host, "agent.model")?;
+                validate_bound_pane(&stored.host)?;
+                restore_baseline(&stored.host, &stored.cancel).await?;
+                if let Some(run) = self.runs.lock().get_mut(&run_id) {
+                    run.host.model_changed = false;
+                }
+                Ok(PluginHostResponse::Ok)
+            }
+            PluginHostRequest::ComposerStash => {
+                require_capability(&stored.host, "composer.draft")?;
+                validate_bound_pane(&stored.host)?;
+                let draft = stash_draft(&stored.host)?;
+                let had_draft = draft.is_some();
+                if let Some(run) = self.runs.lock().get_mut(&run_id) {
+                    run.host.stashed_draft = draft;
+                }
+                Ok(PluginHostResponse::Composer { had_draft })
+            }
+            PluginHostRequest::ComposerRestore => {
+                require_capability(&stored.host, "composer.draft")?;
+                validate_bound_pane(&stored.host)?;
+                restore_stashed_draft(&stored.host)?;
+                if let Some(run) = self.runs.lock().get_mut(&run_id) {
+                    run.host.stashed_draft = None;
+                }
+                Ok(PluginHostResponse::Ok)
             }
         }
-        self.active_panes.lock().remove(&pane_id);
     }
 
-    fn update(
-        &self,
-        run_id: &str,
-        state: AgentActionRunState,
-        progress: &str,
-        progress_percent: u8,
-        result: Option<serde_json::Value>,
-        error: Option<String>,
-    ) {
+    async fn execute(&self, run_id: String, spec: ExecutionSpec, cancel: CancellationToken) {
+        self.update_progress(&run_id, "Starting plugin", 5);
+        let host = match self.runs.lock().get(&run_id).cloned() {
+            Some(stored) => stored.host,
+            None => return,
+        };
+        let result = run_plugin_process(&spec, &host, &cancel).await;
+        let cancelled = cancel.is_cancelled();
+        cancel.cancel();
+        let latest_host = self
+            .runs
+            .lock()
+            .get(&run_id)
+            .map(|stored| stored.host.clone())
+            .unwrap_or_else(|| host.clone());
+        if result.is_err() || cancelled {
+            self.update_progress(&run_id, "Recovering previous state", 90);
+            if let Err(recovery_error) = recover_host_state(&latest_host).await {
+                self.finish(
+                    &run_id,
+                    AgentActionRunState::NeedsUserAttention,
+                    Some(format!(
+                        "Plugin stopped and recovery failed: {recovery_error}"
+                    )),
+                );
+                self.cleanup_run(&run_id, &latest_host);
+                return;
+            }
+        }
+        match result {
+            Ok(()) if cancelled => self.finish(&run_id, AgentActionRunState::Cancelled, None),
+            Ok(()) => self.finish(&run_id, AgentActionRunState::Succeeded, None),
+            Err(error) if cancelled => {
+                self.finish(&run_id, AgentActionRunState::Cancelled, Some(error))
+            }
+            Err(error) => self.finish(&run_id, AgentActionRunState::Failed, Some(error)),
+        }
+        self.cleanup_run(&run_id, &latest_host);
+    }
+
+    fn update_progress(&self, run_id: &str, progress: &str, percent: u8) {
+        let updated = if let Some(stored) = self.runs.lock().get_mut(run_id) {
+            stored.run.state = AgentActionRunState::Running;
+            stored.run.progress = progress.to_string();
+            stored.run.progress_percent = percent;
+            stored.updated_at = Instant::now();
+            Some(stored.run.clone())
+        } else {
+            None
+        };
+        if let Some(run) = updated {
+            self.notify(run);
+        }
+    }
+
+    fn set_result(&self, run_id: &str, value: serde_json::Value) {
+        let updated = if let Some(stored) = self.runs.lock().get_mut(run_id) {
+            stored.run.result = Some(value);
+            stored.updated_at = Instant::now();
+            Some(stored.run.clone())
+        } else {
+            None
+        };
+        if let Some(run) = updated {
+            self.notify(run);
+        }
+    }
+
+    fn finish(&self, run_id: &str, state: AgentActionRunState, error: Option<String>) {
         let updated = if let Some(stored) = self.runs.lock().get_mut(run_id) {
             stored.run.state = state;
-            stored.run.progress = progress.to_string();
-            stored.run.progress_percent = progress_percent;
-            stored.run.result = result;
+            stored.run.progress = if stored.run.state == AgentActionRunState::Succeeded {
+                "Complete".into()
+            } else {
+                "Stopped".into()
+            };
+            stored.run.progress_percent = 100;
             stored.run.error = error;
             stored.updated_at = Instant::now();
             Some(stored.run.clone())
@@ -446,9 +670,17 @@ impl AgentPluginRuntime {
         }
     }
 
+    fn cleanup_run(&self, run_id: &str, host: &HostRun) {
+        self.tokens.lock().remove(&host.token);
+        self.active_panes.lock().remove(&host.pane_id);
+        if let Some(stored) = self.runs.lock().get_mut(run_id) {
+            stored.cancel.cancel();
+            stored.updated_at = Instant::now();
+        }
+    }
+
     fn notify(&self, run: AgentActionRun) {
-        let observer = self.observer.lock().clone();
-        if let Some(observer) = observer {
+        if let Some(observer) = self.observer.lock().clone() {
             observer(run);
         }
     }
@@ -460,328 +692,385 @@ impl AgentPluginRuntime {
     }
 }
 
-async fn execute_codex_action(
-    runtime: &AgentPluginRuntime,
-    run_id: &str,
-    pane_id: &str,
-    parameters: &AgentActionParameters,
-    settings: &AppSettings,
-    spec: &ExecutionSpec,
-    cancel: &CancellationToken,
-) -> Result<serde_json::Value, String> {
-    let (_, pane_pid) =
-        pane_context(pane_id).ok_or("No supported agent is running in this pane")?;
-    if matches!(spec.kind, ActionKind::SessionInfo) {
-        return serde_json::to_value(session_data(ProcessProvider::Codex, &pane_pid))
-            .map_err(|error| error.to_string());
-    }
-    let initial = agent_session::resolve_session_info_for_provider(
-        &pane_pid,
-        Some(ProcessProvider::Codex),
-        None,
-    );
-    let initial_capture = private_capture_plain(pane_id)?;
-    let screen = classify_private_screen(&initial_capture, &spec.ui);
-    if !screen.idle {
-        return Err("Codex must be idle at its normal composer before running this action".into());
-    }
-    // Rollout metadata can still describe the previous turn's model. The
-    // footer is the live selection the user will return to after compacting.
-    let live_selection = live_model_selection(&initial_capture, &spec.ui);
-    let current_model = live_selection
-        .as_ref()
-        .map(|selection| selection.model.clone())
-        .or_else(|| initial.model_id.clone());
-    let current_effort = live_selection
-        .as_ref()
-        .and_then(|selection| selection.effort.clone())
-        .or_else(|| initial.agent_effort.clone());
-    let saved_draft = screen.draft.clone().filter(|draft| !draft.is_empty());
-    if saved_draft.is_some() {
-        clear_composer_draft(pane_id, &spec.ui, cancel, Duration::from_secs(2)).await?;
-    }
-    if cancel.is_cancelled() {
-        return Err("Action cancelled".to_string());
-    }
-    let attempt: Result<serde_json::Value, String> = async {
-        if matches!(spec.kind, ActionKind::CheapCompact) {
-            let preset = settings
-                .agent_plugins
-                .compact_presets
-                .get("codex")
-                .cloned()
-                .ok_or("No Codex compact preset is configured")?;
-            let previous_model = current_model
-                .clone()
-                .ok_or("Could not read the current Codex model")?;
-            let previous_effort = current_effort.clone();
-            runtime.update(run_id, AgentActionRunState::Running, "Switching to compact model", 15, None, None);
-            select_model(
-                pane_id,
-                &pane_pid,
-                &preset.model,
-                Some(&preset.effort),
-                &spec.ui,
-                cancel,
-                None,
-            )
-            .await?;
-            runtime.update(run_id, AgentActionRunState::Running, "Compacting context", 40, None, None);
-            ensure_empty_for_action(
-                pane_id,
-                &spec.ui,
-                saved_draft.as_deref(),
-                cancel,
-            )
-            .await?;
-            submit_command(pane_id, &spec.ui.compact_command, &spec.ui)?;
-            confirm_compact_if_requested(pane_id, &spec.ui).await?;
-            runtime.update(
-                run_id,
-                AgentActionRunState::Running,
-                "Restoring model",
-                55,
-                None,
-                None,
-            );
-            select_model_during_turn(
-                pane_id,
-                &pane_pid,
-                &previous_model,
-                previous_effort.as_deref(),
-                &spec.ui,
-                cancel,
-                saved_draft.as_deref(),
-            )
-            .await?;
-            Ok(serde_json::json!({"compacted": true, "model": previous_model, "effort": previous_effort}))
-        } else {
-            let enabled = settings.enabled_models.get("codex").cloned().unwrap_or_default();
-            let current = current_model
-                .as_deref()
-                .ok_or("Could not read the current Codex model")?;
-            let (model, effort) = if matches!(spec.kind, ActionKind::SetModel) {
-                let model = parameters.get("model").ok_or("Missing model parameter")?.clone();
-                if !enabled.contains(&model) {
-                    return Err("The requested model is not enabled in ClawTab settings".into());
-                }
-                let effort = parameters
-                    .get("effort")
-                    .ok_or("Missing effort parameter")?
-                    .clone();
-                if !spec.ui.effort_labels.contains_key(&effort) {
-                    return Err("The requested reasoning effort is not supported by Codex".into());
-                }
-                (model, Some(effort))
-            } else {
-                let index = enabled.iter().position(|model| model == current).unwrap_or(0);
-                let next = if matches!(spec.kind, ActionKind::PreviousModel) {
-                    (index + enabled.len() - 1) % enabled.len()
-                } else {
-                    (index + 1) % enabled.len()
-                };
-                (enabled[next].clone(), initial.agent_effort.clone())
-            };
-            runtime.update(run_id, AgentActionRunState::Running, "Changing model", 35, None, None);
-            select_model(
-                pane_id,
-                &pane_pid,
-                &model,
-                effort.as_deref(),
-                &spec.ui,
-                cancel,
-                saved_draft.as_deref(),
-            )
-            .await?;
-            Ok(serde_json::json!({"model": model, "effort": effort}))
-        }
-    }
-    .await;
-
-    match attempt {
-        Ok(outcome) => Ok(outcome),
-        Err(action_error) => {
-            runtime.update(
-                run_id,
-                AgentActionRunState::Running,
-                "Recovering previous state",
-                90,
-                None,
-                None,
-            );
-            let recovery = recover_previous_state(
-                pane_id,
-                &pane_pid,
-                initial.model_id.as_deref(),
-                initial.agent_effort.as_deref(),
-                saved_draft.as_deref(),
-                &spec.ui,
-            )
-            .await;
-            match recovery {
-                Ok(()) => Err(action_error),
-                Err(recovery_error) => Err(format!(
-                    "RECOVERY_FAILED: {action_error}. Automatic recovery also failed: {recovery_error}"
-                )),
-            }
-        }
-    }
+fn default_timeout_seconds() -> u64 {
+    DEFAULT_TIMEOUT_SECONDS
 }
 
-async fn recover_previous_state(
-    pane_id: &str,
-    pane_pid: &str,
-    model: Option<&str>,
-    effort: Option<&str>,
-    draft: Option<&str>,
-    ui: &ProviderUiProfile,
-) -> Result<(), String> {
-    let mut screen = private_screen_state(pane_id, ui)?;
-    if !screen.idle {
-        let _ = crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key);
-        wait_until_idle(
-            pane_id,
-            ui,
-            &CancellationToken::new(),
-            Duration::from_secs(12),
+fn plugin_root() -> Option<PathBuf> {
+    crate::config::config_dir().map(|path| path.join("agent-plugins"))
+}
+
+fn trust_store_path() -> Option<PathBuf> {
+    crate::config::config_dir().map(|path| path.join("plugin-trust.json"))
+}
+
+fn discover_plugins() -> Vec<Result<LoadedPlugin, (String, String)>> {
+    let Some(root) = plugin_root() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut directories = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    directories.sort();
+    directories.into_iter().map(load_plugin).collect()
+}
+
+fn load_plugin(root: PathBuf) -> Result<LoadedPlugin, (String, String)> {
+    let folder_id = root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("invalid")
+        .to_string();
+    let manifest_path = root.join("plugin.yaml");
+    let bytes = std::fs::read(&manifest_path).map_err(|error| {
+        (
+            folder_id.clone(),
+            format!("Could not read plugin.yaml: {error}"),
         )
-        .await?;
-        screen = private_screen_state(pane_id, ui)?;
+    })?;
+    if bytes.len() > 256 * 1024 {
+        return Err((folder_id, "plugin.yaml is larger than 256 KiB".into()));
     }
-    if !screen.idle {
-        return Err("Codex is not at an idle composer".to_string());
+    let manifest: PluginManifest = serde_yml::from_slice(&bytes)
+        .map_err(|error| (folder_id.clone(), format!("Invalid plugin.yaml: {error}")))?;
+    let validation_error = if manifest.id != folder_id {
+        Some(format!("Plugin directory must be named {}", manifest.id))
+    } else {
+        validate_manifest(&manifest, &root).err()
+    };
+    let fingerprint = plugin_fingerprint(&root, &manifest, &bytes)
+        .map_err(|error| (manifest.id.clone(), error))?;
+    Ok(LoadedPlugin {
+        root,
+        manifest,
+        fingerprint,
+        validation_error,
+    })
+}
+
+fn validate_manifest(manifest: &PluginManifest, root: &Path) -> Result<(), String> {
+    if manifest.schema_version != 2 {
+        return Err("Unsupported plugin schema; expected schema_version 2".into());
     }
-    if let Some(draft) = draft {
-        if screen.draft.as_deref() == Some(draft) {
-            clear_composer_draft(
-                pane_id,
-                ui,
-                &CancellationToken::new(),
-                Duration::from_secs(2),
-            )
-            .await?;
-            screen = private_screen_state(pane_id, ui)?;
-        }
-    }
-    if !screen.idle || screen.has_draft {
-        return Err("Codex is not at an idle composer".to_string());
-    }
-    if let Some(model) = model {
-        let current = agent_session::resolve_session_info_for_provider(
-            pane_pid,
-            Some(ProcessProvider::Codex),
-            None,
+    if !valid_plugin_id(&manifest.id) {
+        return Err(
+            "Plugin id must start with local. and contain only safe identifier characters".into(),
         );
-        let current_screen = private_capture_plain(pane_id)?;
-        let screen_matches = screen_model_status_matches(&current_screen, model, effort, ui);
-        let session_matches = current.model_id.as_deref() == Some(model)
-            && effort.is_none_or(|value| current.agent_effort.as_deref() == Some(value));
-        let needs_selection = screen_matches
-            .map(|matches| !matches)
-            .unwrap_or(!session_matches);
-        if needs_selection {
-            select_model(
-                pane_id,
-                pane_pid,
-                model,
-                effort,
-                ui,
-                &CancellationToken::new(),
-                None,
-            )
-            .await?;
-        }
     }
-    if let Some(draft) = draft {
-        restore_draft(pane_id, draft, ui)?;
+    if manifest.name.trim().is_empty() || manifest.name.len() > 96 {
+        return Err("Plugin name is missing or too long".into());
+    }
+    if manifest.version.trim().is_empty() || manifest.version.len() > 64 {
+        return Err("Plugin version is missing or too long".into());
+    }
+    if manifest.actions.is_empty() || manifest.actions.len() > 64 {
+        return Err("Plugin must define between 1 and 64 actions".into());
+    }
+    let mut action_ids = HashSet::new();
+    for action in &manifest.actions {
+        if !safe_id(&action.id) || action.id.contains('.') || !action_ids.insert(&action.id) {
+            return Err(format!("Invalid or duplicate action id: {}", action.id));
+        }
+        if action.title.trim().is_empty() || action.title.len() > 96 {
+            return Err(format!("Action {} has an invalid title", action.id));
+        }
+        if action.description.len() > 512 {
+            return Err(format!("Action {} description is too long", action.id));
+        }
+        validate_command(root, &action.command)?;
+        if action.activation.providers.is_empty()
+            || action
+                .activation
+                .providers
+                .iter()
+                .any(|provider| ProcessProvider::from_name(provider).is_none())
+        {
+            return Err(format!(
+                "Action {} has invalid provider activation",
+                action.id
+            ));
+        }
+        if action
+            .activation
+            .versions
+            .iter()
+            .any(|version| !valid_version_pattern(version))
+        {
+            return Err(format!(
+                "Action {} has an invalid version activation",
+                action.id
+            ));
+        }
+        if action.timeout_seconds == 0 || action.timeout_seconds > MAX_TIMEOUT_SECONDS {
+            return Err(format!(
+                "Action {} timeout must be between 1 and 3600 seconds",
+                action.id
+            ));
+        }
+        if action
+            .capabilities
+            .iter()
+            .any(|capability| !ALLOWED_CAPABILITIES.contains(&capability.as_str()))
+        {
+            return Err(format!(
+                "Action {} requests an unknown capability",
+                action.id
+            ));
+        }
+        validate_parameter_schema(action)?;
     }
     Ok(())
 }
 
-fn pane_context(pane_id: &str) -> Option<(ProcessProvider, String)> {
-    let pane_pid = crate::tmux::pane_pid(pane_id).ok()?;
-    let snapshot = agent_session::ProcessSnapshot::capture();
-    let provider = agent_session::detect_process_provider(&pane_pid, Some(&snapshot))?;
-    Some((provider, pane_pid))
+fn validate_parameter_schema(action: &PluginAction) -> Result<(), String> {
+    if action.parameters.len() > 32 {
+        return Err(format!("Action {} has too many parameters", action.id));
+    }
+    let mut names = HashSet::new();
+    for parameter in &action.parameters {
+        if !safe_id(&parameter.name)
+            || parameter.name.contains('.')
+            || !names.insert(&parameter.name)
+        {
+            return Err(format!(
+                "Action {} has an invalid parameter name",
+                action.id
+            ));
+        }
+        if parameter.title.trim().is_empty() || parameter.title.len() > 96 {
+            return Err(format!("Parameter {} has an invalid title", parameter.name));
+        }
+        if parameter
+            .description
+            .as_ref()
+            .is_some_and(|value| value.len() > 512)
+            || parameter
+                .placeholder
+                .as_ref()
+                .is_some_and(|value| value.len() > 256)
+        {
+            return Err(format!("Parameter {} text is too long", parameter.name));
+        }
+        if parameter.options.len() > 128
+            || parameter.options.iter().any(|option| option.len() > 256)
+        {
+            return Err(format!("Parameter {} has invalid options", parameter.name));
+        }
+        if matches!(parameter.kind, AgentActionParameterKind::Choice)
+            && parameter.options.is_empty()
+        {
+            return Err(format!(
+                "Choice parameter {} requires options",
+                parameter.name
+            ));
+        }
+        if let Some(default) = parameter.default_value.as_deref() {
+            validate_parameter_value(parameter, default)?;
+        }
+    }
+    Ok(())
 }
 
-fn session_data(provider: ProcessProvider, pane_pid: &str) -> AgentSessionData {
-    let info = agent_session::resolve_session_info_for_provider(pane_pid, Some(provider), None);
-    AgentSessionData {
-        provider: provider.as_str().to_string(),
-        session_id: info.session_id,
-        model: info.model_id,
-        effort: info.agent_effort,
-        token_count: info.token_count,
+fn validate_command(root: &Path, command: &[String]) -> Result<(), String> {
+    let Some(program) = command.first() else {
+        return Err("Plugin command cannot be empty".into());
+    };
+    if command.len() > 32
+        || command
+            .iter()
+            .any(|argument| argument.is_empty() || argument.len() > 4096 || argument.contains('\0'))
+    {
+        return Err("Plugin command contains invalid arguments".into());
+    }
+    if program.contains('/') {
+        let path = resolve_plugin_path(root, program)?;
+        if !path.is_file() {
+            return Err(format!("Plugin executable does not exist: {program}"));
+        }
+    }
+    Ok(())
+}
+
+fn resolve_plugin_path(root: &Path, value: &str) -> Result<PathBuf, String> {
+    let candidate = if Path::new(value).is_absolute() {
+        PathBuf::from(value)
+    } else {
+        root.join(value)
+    };
+    if Path::new(value).is_absolute() {
+        return Ok(candidate);
+    }
+    let normalized = candidate
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve plugin path {value}: {error}"))?;
+    let normalized_root = root
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve plugin directory: {error}"))?;
+    if !normalized.starts_with(normalized_root) {
+        return Err("Plugin command escapes its package directory".into());
+    }
+    Ok(normalized)
+}
+
+fn plugin_fingerprint(
+    root: &Path,
+    manifest: &PluginManifest,
+    manifest_bytes: &[u8],
+) -> Result<String, String> {
+    let mut digest = Sha256::new();
+    digest.update(manifest_bytes);
+    let mut files = manifest
+        .actions
+        .iter()
+        .flat_map(|action| action.command.iter())
+        .filter_map(|argument| {
+            if Path::new(argument).is_absolute() {
+                return None;
+            }
+            resolve_plugin_path(root, argument)
+                .ok()
+                .filter(|path| path.is_file())
+        })
+        .collect::<Vec<_>>();
+    files.sort();
+    files.dedup();
+    for file in files {
+        let bytes = std::fs::read(&file)
+            .map_err(|error| format!("Could not fingerprint {}: {error}", file.display()))?;
+        digest.update(
+            file.strip_prefix(root)
+                .unwrap_or(&file)
+                .to_string_lossy()
+                .as_bytes(),
+        );
+        digest.update(bytes);
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn load_trust_store() -> HashMap<String, String> {
+    trust_store_path()
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn save_trust_store(store: &HashMap<String, String>) -> Result<(), String> {
+    let path = trust_store_path()
+        .ok_or_else(|| "Could not resolve ClawTab config directory".to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create config directory: {error}"))?;
+    }
+    let bytes = serde_json::to_vec_pretty(store).map_err(|error| error.to_string())?;
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, bytes)
+        .map_err(|error| format!("Could not write plugin trust store: {error}"))?;
+    std::fs::rename(&temporary, path)
+        .map_err(|error| format!("Could not activate plugin trust store: {error}"))
+}
+
+fn descriptor(
+    plugin: &LoadedPlugin,
+    action: PluginAction,
+    provider: ProcessProvider,
+    settings: &AppSettings,
+    trusted: bool,
+) -> AgentActionDescriptor {
+    let unavailable_reason = if let Some(error) = plugin.validation_error.clone() {
+        Some(format!("Invalid plugin: {error}"))
+    } else if trusted {
+        validate_command(&plugin.root, &action.command).err()
+    } else {
+        Some("Approve this plugin in ClawTab settings before running it".into())
+    };
+    AgentActionDescriptor {
+        id: full_action_id(&plugin.manifest.id, &action.id),
+        plugin_id: plugin.manifest.id.clone(),
+        plugin_name: plugin.manifest.name.clone(),
+        title: action.title,
+        description: action.description,
+        provider: provider.as_str().into(),
+        parameters: action
+            .parameters
+            .into_iter()
+            .map(|parameter| parameter_descriptor(parameter, provider, settings))
+            .collect(),
+        available: unavailable_reason.is_none(),
+        unavailable_reason,
     }
 }
 
-fn provider_version(provider: ProcessProvider) -> Option<String> {
-    let output = std::process::Command::new(provider.binary_name())
-        .arg("--version")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+fn parameter_descriptor(
+    parameter: PluginParameter,
+    provider: ProcessProvider,
+    settings: &AppSettings,
+) -> AgentActionParameter {
+    let options = match parameter.kind {
+        AgentActionParameterKind::Model if parameter.options.is_empty() => settings
+            .enabled_models
+            .get(provider.as_str())
+            .cloned()
+            .unwrap_or_default(),
+        AgentActionParameterKind::Effort if parameter.options.is_empty() => {
+            vec![
+                "low".into(),
+                "medium".into(),
+                "high".into(),
+                "xhigh".into(),
+                "max".into(),
+            ]
+        }
+        _ => parameter.options,
+    };
+    AgentActionParameter {
+        name: parameter.name,
+        title: parameter.title,
+        description: parameter.description,
+        kind: parameter.kind,
+        required: parameter.required,
+        default_value: parameter.default_value,
+        placeholder: parameter.placeholder,
+        options,
     }
-    String::from_utf8_lossy(&output.stdout)
-        .split_whitespace()
-        .find(|part| part.chars().next().is_some_and(|ch| ch.is_ascii_digit()))
-        .map(|value| value.to_string())
-}
-
-fn bundled_manifest() -> PluginManifest {
-    serde_json::from_str(include_str!("../../../agent-plugins/v1/codex-0.149.json")).unwrap_or_else(
-        |_| PluginManifest {
-            schema_version: 0,
-            namespace: "invalid".into(),
-            provider: "invalid".into(),
-            compatible_versions: Vec::new(),
-            ui: ProviderUiProfile::default(),
-            actions: Vec::new(),
-        },
-    )
-}
-
-fn catalog_manifests(settings: &AppSettings) -> Vec<PluginManifest> {
-    let mut manifests = load_verified_cached_manifests();
-    manifests.push(bundled_manifest());
-    if settings.agent_plugins.local_plugins_enabled {
-        manifests.extend(load_local_manifests());
-    }
-    manifests
 }
 
 fn resolve_execution_spec(
     action_id: &str,
-    version: &str,
-    settings: &AppSettings,
-) -> Option<ExecutionSpec> {
-    for manifest in catalog_manifests(settings) {
-        if validate_manifest(&manifest).is_err()
-            || !version_matches(version, &manifest.compatible_versions)
-        {
-            continue;
-        }
-        if let Some(action) = manifest
-            .actions
-            .iter()
-            .find(|action| action.id == action_id)
-        {
-            return Some(ExecutionSpec {
-                kind: action.kind,
-                ui: manifest.ui,
-            });
-        }
-    }
-    None
+    provider: ProcessProvider,
+    version: Option<&str>,
+) -> Result<ExecutionSpec, String> {
+    discover_plugins()
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|plugin| plugin.validation_error.is_none())
+        .find_map(|plugin| {
+            plugin
+                .manifest
+                .actions
+                .iter()
+                .find(|action| {
+                    full_action_id(&plugin.manifest.id, &action.id) == action_id
+                        && activation_matches(action, provider, version)
+                })
+                .cloned()
+                .map(|action| ExecutionSpec { plugin, action })
+        })
+        .ok_or_else(|| format!("Unknown or inactive plugin action: {action_id}"))
 }
 
-fn validate_action_parameters(
-    action: &AgentActionDescriptor,
-    parameters: &AgentActionParameters,
-) -> Result<(), String> {
-    for name in parameters.keys() {
+fn validate_parameters(
+    action: &PluginAction,
+    mut values: AgentActionParameters,
+    provider: ProcessProvider,
+    settings: &AppSettings,
+) -> Result<AgentActionParameters, String> {
+    for name in values.keys() {
         if !action
             .parameters
             .iter()
@@ -791,351 +1080,80 @@ fn validate_action_parameters(
         }
     }
     for parameter in &action.parameters {
-        let Some(value) = parameters.get(&parameter.name) else {
+        if !values.contains_key(&parameter.name) {
+            if let Some(default) = parameter.default_value.clone() {
+                values.insert(parameter.name.clone(), default);
+            }
+        }
+        let Some(value) = values.get(&parameter.name) else {
             if parameter.required {
                 return Err(format!("Missing {} parameter", parameter.name));
             }
             continue;
         };
-        if value.trim().is_empty() {
-            return Err(format!("{} parameter cannot be empty", parameter.name));
-        }
-        if !parameter.options.is_empty() && !parameter.options.iter().any(|option| option == value)
-        {
+        validate_parameter_value(parameter, value)?;
+        let options = match parameter.kind {
+            AgentActionParameterKind::Model if parameter.options.is_empty() => settings
+                .enabled_models
+                .get(provider.as_str())
+                .cloned()
+                .unwrap_or_default(),
+            AgentActionParameterKind::Effort if parameter.options.is_empty() => {
+                vec![
+                    "low".into(),
+                    "medium".into(),
+                    "high".into(),
+                    "xhigh".into(),
+                    "max".into(),
+                ]
+            }
+            _ => parameter.options.clone(),
+        };
+        if !options.is_empty() && !options.iter().any(|option| option == value) {
             return Err(format!("Invalid {} parameter", parameter.name));
         }
     }
-    Ok(())
+    Ok(values)
 }
 
-fn catalog_cache_dir() -> Option<PathBuf> {
-    crate::config::config_dir().map(|path| path.join("agent-plugin-catalog-v1"))
-}
-
-fn maybe_schedule_catalog_refresh() {
-    static LAST_ATTEMPT: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
-    let attempts = LAST_ATTEMPT.get_or_init(|| Mutex::new(None));
+fn validate_parameter_value(parameter: &PluginParameter, value: &str) -> Result<(), String> {
+    if value.len() > 4096 || value.contains('\0') {
+        return Err(format!(
+            "Parameter {} is too large or invalid",
+            parameter.name
+        ));
+    }
+    if parameter.required && value.trim().is_empty() {
+        return Err(format!("Parameter {} cannot be empty", parameter.name));
+    }
+    if matches!(parameter.kind, AgentActionParameterKind::Boolean)
+        && !matches!(value, "true" | "false")
     {
-        let mut last_attempt = attempts.lock();
-        if last_attempt.is_some_and(|attempt| attempt.elapsed() < CATALOG_REFRESH_INTERVAL) {
-            return;
-        }
-        *last_attempt = Some(Instant::now());
+        return Err(format!(
+            "Parameter {} must be true or false",
+            parameter.name
+        ));
     }
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    handle.spawn(async {
-        if let Err(error) = refresh_catalog().await {
-            log::warn!("Agent plugin catalog refresh failed: {}", error);
-        }
-    });
-}
-
-async fn refresh_catalog() -> Result<(), String> {
-    let cache_dir = catalog_cache_dir().ok_or("Could not determine the catalog cache directory")?;
-    std::fs::create_dir_all(&cache_dir)
-        .map_err(|error| format!("Could not create the catalog cache: {error}"))?;
-    let etag = std::fs::read_to_string(cache_dir.join("etag")).ok();
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|error| format!("Could not initialize catalog HTTP client: {error}"))?;
-    let mut request = client.get(format!("{CATALOG_BASE_URL}/index.json"));
-    if let Some(etag) = etag.as_deref() {
-        request = request.header(reqwest::header::IF_NONE_MATCH, etag.trim());
-    }
-    let response = request
-        .send()
-        .await
-        .map_err(|error| format!("Index request failed: {error}"))?;
-    if response.status() == reqwest::StatusCode::NOT_MODIFIED {
-        return Ok(());
-    }
-    if !response.status().is_success() {
-        return Err(format!("Index request returned {}", response.status()));
-    }
-    let response_etag = response
-        .headers()
-        .get(reqwest::header::ETAG)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_string);
-    let index_bytes = response
-        .bytes()
-        .await
-        .map_err(|error| format!("Could not read the catalog index: {error}"))?;
-    let signature_text = client
-        .get(format!("{CATALOG_BASE_URL}/index.json.sig"))
-        .send()
-        .await
-        .map_err(|error| format!("Signature request failed: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("Signature request failed: {error}"))?
-        .text()
-        .await
-        .map_err(|error| format!("Could not read the catalog signature: {error}"))?;
-    verify_catalog_signature(&index_bytes, signature_text.trim())?;
-    let index: SignedCatalogIndex = serde_json::from_slice(&index_bytes)
-        .map_err(|error| format!("Catalog index is invalid: {error}"))?;
-    validate_catalog_index(&index)?;
-
-    for entry in &index.plugins {
-        let bytes = client
-            .get(format!("{CATALOG_BASE_URL}/{}", entry.file))
-            .send()
-            .await
-            .map_err(|error| format!("Plugin request failed: {error}"))?
-            .error_for_status()
-            .map_err(|error| format!("Plugin request failed: {error}"))?
-            .bytes()
-            .await
-            .map_err(|error| format!("Could not read a plugin manifest: {error}"))?;
-        if sha256_hex(&bytes) != entry.sha256.to_ascii_lowercase() {
-            return Err(format!("Hash verification failed for {}", entry.file));
-        }
-        let manifest: PluginManifest = serde_json::from_slice(&bytes)
-            .map_err(|error| format!("Plugin manifest is invalid: {error}"))?;
-        validate_manifest(&manifest)?;
-        atomic_write(&cache_dir.join(&entry.file), &bytes)?;
-    }
-    atomic_write(&cache_dir.join("index.json"), &index_bytes)?;
-    atomic_write(
-        &cache_dir.join("index.json.sig"),
-        signature_text.trim().as_bytes(),
-    )?;
-    if let Some(etag) = response_etag {
-        atomic_write(&cache_dir.join("etag"), etag.as_bytes())?;
+    if matches!(parameter.kind, AgentActionParameterKind::Choice)
+        && !parameter.options.iter().any(|option| option == value)
+    {
+        return Err(format!("Invalid {} parameter", parameter.name));
     }
     Ok(())
 }
 
-fn validate_catalog_index(index: &SignedCatalogIndex) -> Result<(), String> {
-    if index.schema_version != 1 || index.plugins.len() > 32 {
-        return Err("Unsupported catalog index".to_string());
-    }
-    if index.plugins.iter().any(|entry| {
-        entry.file.is_empty()
-            || entry.file.len() > 128
-            || !entry.file.ends_with(".json")
-            || !entry
-                .file
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
-            || entry.sha256.len() != 64
-            || !entry.sha256.chars().all(|ch| ch.is_ascii_hexdigit())
-    }) {
-        return Err("Catalog index contains an unsafe entry".to_string());
-    }
-    Ok(())
-}
-
-fn load_verified_cached_manifests() -> Vec<PluginManifest> {
-    let Some(cache_dir) = catalog_cache_dir() else {
-        return Vec::new();
-    };
-    let Ok(index_bytes) = std::fs::read(cache_dir.join("index.json")) else {
-        return Vec::new();
-    };
-    let Ok(signature) = std::fs::read_to_string(cache_dir.join("index.json.sig")) else {
-        return Vec::new();
-    };
-    if verify_catalog_signature(&index_bytes, signature.trim()).is_err() {
-        return Vec::new();
-    }
-    let Ok(index) = serde_json::from_slice::<SignedCatalogIndex>(&index_bytes) else {
-        return Vec::new();
-    };
-    if validate_catalog_index(&index).is_err() {
-        return Vec::new();
-    }
-    index
-        .plugins
-        .into_iter()
-        .filter_map(|entry| {
-            let bytes = std::fs::read(cache_dir.join(entry.file)).ok()?;
-            if sha256_hex(&bytes) != entry.sha256.to_ascii_lowercase() {
-                return None;
-            }
-            let manifest = serde_json::from_slice::<PluginManifest>(&bytes).ok()?;
-            validate_manifest(&manifest).ok()?;
-            Some(manifest)
-        })
-        .collect()
-}
-
-fn verify_catalog_signature(index_bytes: &[u8], signature_text: &str) -> Result<(), String> {
-    use base64::Engine;
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-
-    let signature_bytes = base64::engine::general_purpose::STANDARD
-        .decode(signature_text)
-        .map_err(|_| "Catalog signature is not valid base64".to_string())?;
-    let signature = Signature::from_slice(&signature_bytes)
-        .map_err(|_| "Catalog signature has an invalid length".to_string())?;
-    let verifying_key = VerifyingKey::from_bytes(&CATALOG_PUBLIC_KEY)
-        .map_err(|_| "The embedded catalog public key is invalid".to_string())?;
-    verifying_key
-        .verify(index_bytes, &signature)
-        .map_err(|_| "Catalog signature verification failed".to_string())
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
+fn activation_matches(
+    action: &PluginAction,
+    provider: ProcessProvider,
+    version: Option<&str>,
+) -> bool {
+    action
+        .activation
+        .providers
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut temporary = path.to_path_buf();
-    temporary.set_extension(format!(
-        "{}.tmp",
-        path.extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("file")
-    ));
-    std::fs::write(&temporary, bytes)
-        .map_err(|error| format!("Could not write catalog cache: {error}"))?;
-    std::fs::rename(&temporary, path)
-        .map_err(|error| format!("Could not activate catalog cache: {error}"))
-}
-
-fn load_local_manifests() -> Vec<PluginManifest> {
-    let Some(config_dir) = crate::config::config_dir() else {
-        return Vec::new();
-    };
-    let directory = config_dir.join("agent-plugins");
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            matches!(
-                path.extension().and_then(|value| value.to_str()),
-                Some("yaml" | "yml")
-            )
-        })
-        .filter_map(|path| std::fs::read_to_string(path).ok())
-        .filter_map(|contents| serde_yml::from_str(&contents).ok())
-        .filter(|manifest: &PluginManifest| manifest.namespace.starts_with("local."))
-        .collect()
-}
-
-fn validate_manifest(manifest: &PluginManifest) -> Result<(), String> {
-    if manifest.schema_version != 1 {
-        return Err("Unsupported plugin schema".into());
-    }
-    if manifest.provider != "codex" {
-        return Err("Only Codex plugins are supported in this release".into());
-    }
-    if manifest.namespace != "codex" && !manifest.namespace.starts_with("local.") {
-        return Err("Invalid plugin namespace".into());
-    }
-    if manifest.actions.iter().any(|action| {
-        !action.id.starts_with(&format!("{}.", manifest.namespace))
-            || action.id.len() > 96
-            || !action
-                .id
-                .chars()
-                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
-    }) {
-        return Err("Invalid action identifier".into());
-    }
-    let allowed_keys = ["C-u", "Escape", "Down", "Enter", "Up"];
-    let keys = [
-        manifest.ui.stash_key.as_str(),
-        manifest.ui.cancel_key.as_str(),
-        manifest.ui.next_key.as_str(),
-        manifest.ui.submit_key.as_str(),
-        manifest.ui.history_key.as_str(),
-    ];
-    if keys.iter().any(|key| !allowed_keys.contains(key)) {
-        return Err("Plugin requests a key outside the safe allowlist".into());
-    }
-    let commands = [&manifest.ui.model_command, &manifest.ui.compact_command];
-    if commands.iter().any(|command| {
-        command.len() > 32
-            || !command.starts_with('/')
-            || !command
-                .chars()
-                .all(|ch| ch.is_ascii_lowercase() || ch == '/' || ch == '-')
-    }) {
-        return Err("Plugin contains an unsafe slash command".into());
-    }
-    let markers = [
-        &manifest.ui.composer_marker,
-        &manifest.ui.model_dialog_marker,
-        &manifest.ui.effort_dialog_marker,
-        &manifest.ui.busy_marker,
-    ];
-    if markers
-        .iter()
-        .any(|marker| marker.is_empty() || marker.len() > 64 || marker.contains(['\n', '\r']))
-        || manifest.ui.selected_markers.is_empty()
-        || manifest
-            .ui
-            .selected_markers
-            .iter()
-            .any(|marker| marker.is_empty() || marker.len() > 4 || marker.contains(['\n', '\r']))
-    {
-        return Err("Plugin contains an unsafe screen marker".into());
-    }
-    if manifest
-        .ui
-        .composer_placeholder
-        .as_ref()
-        .is_some_and(|placeholder| {
-            placeholder.is_empty()
-                || placeholder.len() > 64
-                || placeholder.chars().any(|ch| matches!(ch, '\n' | '\r'))
-        })
-    {
-        return Err("Plugin contains an unsafe composer placeholder".into());
-    }
-    if manifest
-        .ui
-        .vim_normal_marker
-        .as_ref()
-        .is_some_and(|marker| {
-            marker.is_empty() || marker.len() > 64 || marker.contains(['\n', '\r'])
-        })
-    {
-        return Err("Plugin contains an unsafe Vim mode marker".into());
-    }
-    if manifest
-        .ui
-        .model_status_marker
-        .as_ref()
-        .is_some_and(|marker| {
-            marker.is_empty() || marker.len() > 64 || marker.contains(['\n', '\r'])
-        })
-    {
-        return Err("Plugin contains an unsafe model status marker".into());
-    }
-    if manifest
-        .ui
-        .compact_confirmation_marker
-        .as_ref()
-        .is_some_and(|marker| {
-            marker.is_empty()
-                || marker.len() > 64
-                || marker.chars().any(|ch| matches!(ch, '\n' | '\r'))
-        })
-    {
-        return Err("Plugin contains an unsafe confirmation marker".into());
-    }
-    let allowed_efforts = ["low", "medium", "high", "xhigh", "max"];
-    if manifest.ui.effort_labels.iter().any(|(effort, label)| {
-        !allowed_efforts.contains(&effort.as_str())
-            || label.is_empty()
-            || label.len() > 32
-            || label.chars().any(|ch| matches!(ch, '\n' | '\r'))
-    }) {
-        return Err("Plugin contains an unsafe effort label".into());
-    }
-    Ok(())
+        .any(|candidate| candidate == provider.as_str())
+        && (action.activation.versions.is_empty()
+            || version.is_some_and(|value| version_matches(value, &action.activation.versions)))
 }
 
 fn version_matches(version: &str, patterns: &[String]) -> bool {
@@ -1147,352 +1165,489 @@ fn version_matches(version: &str, patterns: &[String]) -> bool {
     })
 }
 
-struct PrivateScreenState {
-    idle: bool,
-    busy: bool,
-    has_draft: bool,
-    draft: Option<String>,
+fn valid_version_pattern(value: &str) -> bool {
+    let exact = value.strip_suffix(".*").unwrap_or(value);
+    !exact.is_empty()
+        && exact.split('.').all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '-')
+        })
+        && !exact.contains('*')
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LiveModelSelection {
-    model: String,
-    effort: Option<String>,
+fn full_action_id(plugin_id: &str, action_id: &str) -> String {
+    format!("{plugin_id}.{action_id}")
 }
 
-fn private_screen_state(
-    pane_id: &str,
-    ui: &ProviderUiProfile,
-) -> Result<PrivateScreenState, String> {
-    let (captured, _) = crate::tmux::capture_pane_visible(pane_id)?;
-    Ok(classify_private_screen(&captured, ui))
+fn safe_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 96
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
 }
 
-fn classify_private_screen(captured: &str, ui: &ProviderUiProfile) -> PrivateScreenState {
-    let plain = strip_ansi(captured);
-    let in_dialog = plain.lines().any(|line| {
-        let lower = line.to_ascii_lowercase();
-        lower.contains(&ui.model_dialog_marker.to_ascii_lowercase())
-            || lower.contains(&ui.effort_dialog_marker.to_ascii_lowercase())
-            || lower.contains("press enter to confirm")
-    });
-    let busy = plain.lines().any(|line| {
-        line.to_ascii_lowercase()
-            .contains(&ui.busy_marker.to_ascii_lowercase())
-    });
-    // capture_pane_visible preserves the full pane height, including blank rows
-    // below Codex's footer. Scan from the bottom of the visible screen rather
-    // than assuming the composer is within a fixed number of trailing rows.
-    let composer = plain.lines().rev().find_map(|line| {
-        let trimmed = line.trim_start();
-        trimmed
-            .strip_prefix(&ui.composer_marker)
-            .map(|text| text.trim().to_string())
-    });
-    let composer = composer.map(|text| {
-        if ui
-            .composer_placeholder
-            .as_deref()
-            .is_some_and(|placeholder| placeholder == text)
-        {
+fn valid_plugin_id(value: &str) -> bool {
+    let Some(suffix) = value.strip_prefix("local.") else {
+        return false;
+    };
+    !suffix.is_empty()
+        && suffix.split('.').all(|part| {
+            !part.is_empty()
+                && part.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+                })
+        })
+}
+
+async fn run_plugin_process(
+    spec: &ExecutionSpec,
+    host: &HostRun,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let mut command = Command::new(resolve_program(&spec.plugin.root, &spec.action.command[0])?);
+    command
+        .args(&spec.action.command[1..])
+        .current_dir(&spec.plugin.root)
+        .env_clear()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    copy_safe_environment(&mut command);
+    command
+        .env("CLAWTAB_PLUGIN_ID", &host.plugin_id)
+        .env("CLAWTAB_ACTION_ID", &host.action_id)
+        .env(
+            "CLAWTAB_RUN_ID",
+            run_id_for_token(&host.token).unwrap_or_default(),
+        )
+        .env("CLAWTAB_PANE_ID", &host.pane_id)
+        .env("CLAWTAB_PROVIDER", host.provider.as_str())
+        .env(
+            "CLAWTAB_AGENT_VERSION",
+            host.provider_version.as_deref().unwrap_or(""),
+        )
+        .env("CLAWTAB_WORKING_DIRECTORY", &host.working_directory)
+        .env(
+            "CLAWTAB_PARAMETERS_JSON",
+            serde_json::to_string(&host.parameters).map_err(|error| error.to_string())?,
+        )
+        .env("CLAWTAB_PLUGIN_TOKEN", &host.token)
+        .env(
+            "CLAWTAB_PLUGIN_SOCKET",
+            crate::ipc::plugin_host_socket_path(),
+        )
+        .env("CLAWTAB_CLI", cwtctl_path());
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setpgid(0, 0) == 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        });
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("Could not start plugin: {error}"))?;
+    let process_id = child
+        .id()
+        .ok_or_else(|| "Plugin process has no PID".to_string())?;
+    let stdout_task = child
+        .stdout
+        .take()
+        .map(|stdout| tokio::spawn(read_bounded(stdout)));
+    let stderr_task = child
+        .stderr
+        .take()
+        .map(|stderr| tokio::spawn(read_bounded(stderr)));
+    let timeout = Duration::from_secs(spec.action.timeout_seconds);
+    let status = tokio::select! {
+        result = child.wait() => result.map_err(|error| format!("Could not wait for plugin: {error}"))?,
+        () = cancel.cancelled() => {
+            terminate_process_group(process_id, &mut child).await;
+            return Err("Plugin cancelled".into());
+        }
+        () = tokio::time::sleep(timeout) => {
+            terminate_process_group(process_id, &mut child).await;
+            return Err(format!("Plugin timed out after {} seconds", spec.action.timeout_seconds));
+        }
+    };
+    let stdout = join_capture(stdout_task).await;
+    let stderr = join_capture(stderr_task).await;
+    if status.success() {
+        Ok(())
+    } else {
+        let detail = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        let detail = redact_internal_values(detail, &host.token);
+        let suffix = if detail.is_empty() {
             String::new()
         } else {
-            text
-        }
-    });
-    let has_draft = composer.as_deref().is_some_and(|text| !text.is_empty());
-    PrivateScreenState {
-        idle: composer.is_some() && !in_dialog && !busy,
-        busy,
-        has_draft,
-        draft: composer,
+            format!(": {detail}")
+        };
+        Err(format!(
+            "Plugin exited with {}{suffix}",
+            status
+                .code()
+                .map_or_else(|| "a signal".into(), |code| code.to_string())
+        ))
     }
 }
 
-fn strip_ansi(value: &str) -> String {
-    let mut result = String::with_capacity(value.len());
-    let mut chars = value.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
-            chars.next();
-            for code in chars.by_ref() {
-                if ('@'..='~').contains(&code) {
-                    break;
-                }
-            }
-        } else if ch != '\r' {
-            result.push(ch);
-        }
-    }
-    result
+fn redact_internal_values(value: &str, token: &str) -> String {
+    value.replace(token, "[REDACTED_PLUGIN_TOKEN]").replace(
+        crate::ipc::plugin_host_socket_path()
+            .to_string_lossy()
+            .as_ref(),
+        "[REDACTED_PLUGIN_SOCKET]",
+    )
 }
 
-fn submit_command(pane_id: &str, command: &str, ui: &ProviderUiProfile) -> Result<(), String> {
-    if vim_normal_mode(&private_capture_plain(pane_id)?, ui) {
+fn run_id_for_token(token: &str) -> Option<String> {
+    runtime().tokens.lock().get(token).cloned()
+}
+
+fn resolve_program(root: &Path, value: &str) -> Result<PathBuf, String> {
+    if value.contains('/') {
+        resolve_plugin_path(root, value)
+    } else {
+        Ok(PathBuf::from(value))
+    }
+}
+
+fn copy_safe_environment(command: &mut Command) {
+    for key in ["PATH", "HOME", "USER", "SHELL", "LANG", "TMPDIR"] {
+        if let Ok(value) = std::env::var(key) {
+            command.env(key, value);
+        }
+    }
+    for (key, value) in std::env::vars().filter(|(key, _)| key.starts_with("LC_")) {
+        command.env(key, value);
+    }
+}
+
+fn cwtctl_path() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("cwtctl")))
+        .filter(|path| path.is_file())
+        .unwrap_or_else(|| PathBuf::from("cwtctl"))
+}
+
+async fn read_bounded<R: AsyncRead + Unpin>(mut reader: R) -> Vec<u8> {
+    let mut output = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let count = match reader.read(&mut buffer).await {
+            Ok(0) | Err(_) => break,
+            Ok(count) => count,
+        };
+        if output.len() < MAX_CAPTURE_BYTES {
+            let remaining = MAX_CAPTURE_BYTES - output.len();
+            output.extend_from_slice(&buffer[..count.min(remaining)]);
+        }
+    }
+    output
+}
+
+async fn join_capture(task: Option<tokio::task::JoinHandle<Vec<u8>>>) -> String {
+    match task {
+        Some(task) => String::from_utf8_lossy(&task.await.unwrap_or_default()).to_string(),
+        None => String::new(),
+    }
+}
+
+async fn terminate_process_group(process_id: u32, child: &mut tokio::process::Child) {
+    unsafe {
+        libc::kill(-(process_id as i32), libc::SIGTERM);
+    }
+    if tokio::time::timeout(Duration::from_secs(2), child.wait())
+        .await
+        .is_err()
+    {
+        unsafe {
+            libc::kill(-(process_id as i32), libc::SIGKILL);
+        }
+        let _ = child.wait().await;
+    }
+}
+
+fn pane_context(pane_id: &str) -> Option<(ProcessProvider, String)> {
+    let pane_pid = crate::tmux::pane_pid(pane_id).ok()?;
+    let snapshot = agent_session::ProcessSnapshot::capture();
+    let provider = agent_session::detect_process_provider(&pane_pid, Some(&snapshot))?;
+    Some((provider, pane_pid))
+}
+
+fn pane_working_directory(pane_id: &str) -> Option<String> {
+    crate::tmux::get_pane_path(pane_id).ok()
+}
+
+fn session_data(provider: ProcessProvider, pane_pid: &str) -> AgentSessionData {
+    let info = agent_session::resolve_session_info_for_provider(pane_pid, Some(provider), None);
+    AgentSessionData {
+        provider: provider.as_str().into(),
+        session_id: info.session_id,
+        model: info.model_id,
+        effort: info.agent_effort,
+        token_count: info.token_count,
+    }
+}
+
+fn provider_version(provider: ProcessProvider) -> Option<String> {
+    if provider == ProcessProvider::Shell {
+        return None;
+    }
+    let output = std::process::Command::new(provider.binary_name())
+        .arg("--version")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .split_whitespace()
+        .find(|part| {
+            part.chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_digit())
+        })
+        .map(str::to_string)
+}
+
+fn validate_bound_pane(host: &HostRun) -> Result<(), String> {
+    let (provider, pane_pid) = pane_context(&host.pane_id)
+        .ok_or_else(|| "The target pane no longer hosts a supported agent".to_string())?;
+    if provider != host.provider || pane_pid != host.pane_pid {
+        return Err("The target pane process changed during the plugin run".into());
+    }
+    Ok(())
+}
+
+fn require_capability(host: &HostRun, capability: &str) -> Result<(), String> {
+    if host.capabilities.contains(capability) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Plugin did not declare required capability: {capability}"
+        ))
+    }
+}
+
+fn validate_progress(message: &str, percent: u8) -> Result<(), String> {
+    if message.trim().is_empty() || message.len() > 160 || message.contains(['\n', '\r']) {
+        return Err("Progress message is invalid".into());
+    }
+    if percent > 99 {
+        return Err("Plugin progress percent must be between 0 and 99".into());
+    }
+    Ok(())
+}
+
+fn validate_input(value: &str) -> Result<(), String> {
+    if value.len() > 16 * 1024 || value.contains('\0') {
+        Err("Pane input is too large or invalid".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_key(key: &str) -> Result<(), String> {
+    if key.is_empty()
+        || key.len() > 32
+        || !key
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        Err("Pane key is invalid".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_model_value(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+    {
+        Err("Model value is invalid".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_effort(value: &str) -> Result<(), String> {
+    if matches!(value, "low" | "medium" | "high" | "xhigh" | "max") {
+        Ok(())
+    } else {
+        Err("Reasoning effort is invalid".into())
+    }
+}
+
+fn agent_state(host: &HostRun) -> Result<PluginAgentState, String> {
+    let session = session_data(host.provider, &host.pane_pid);
+    if host.provider != ProcessProvider::Codex {
+        return Ok(PluginAgentState {
+            provider: host.provider.as_str().into(),
+            idle: true,
+            busy: false,
+            model: session.model,
+            effort: session.effort,
+            draft_present: false,
+        });
+    }
+    let state = codex_screen_state(&host.pane_id)?;
+    Ok(PluginAgentState {
+        provider: host.provider.as_str().into(),
+        idle: state.idle,
+        busy: state.busy,
+        model: session.model,
+        effort: session.effort,
+        draft_present: state
+            .draft
+            .as_deref()
+            .is_some_and(|draft| !draft.is_empty()),
+    })
+}
+
+fn submit_text(pane_id: &str, provider: ProcessProvider, text: &str) -> Result<(), String> {
+    if provider == ProcessProvider::Codex && codex_vim_normal_mode(&capture_plain(pane_id)?) {
         crate::tmux::send_key_to_pane(pane_id, "i")?;
         std::thread::sleep(Duration::from_millis(100));
     }
-    crate::tmux::send_literal_to_pane(pane_id, command)?;
+    crate::tmux::send_literal_to_pane(pane_id, text)?;
     std::thread::sleep(Duration::from_millis(100));
-    crate::tmux::send_key_to_pane(pane_id, &ui.submit_key)
+    crate::tmux::send_key_to_pane(pane_id, "Enter")
 }
 
-async fn confirm_compact_if_requested(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), String> {
-    let Some(marker) = ui.compact_confirmation_marker.as_deref() else {
-        return Ok(());
-    };
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    if private_capture_plain(pane_id)?
-        .to_ascii_lowercase()
-        .contains(&marker.to_ascii_lowercase())
-    {
-        crate::tmux::send_key_to_pane(pane_id, &ui.submit_key)?;
+async fn wait_for_state(
+    host: &HostRun,
+    target: &str,
+    timeout: Duration,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    if !matches!(target, "idle" | "busy") {
+        return Err("State must be idle or busy".into());
     }
-    Ok(())
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        validate_bound_pane(host)?;
+        let state = agent_state(host)?;
+        if (target == "idle" && state.idle) || (target == "busy" && state.busy) {
+            return Ok(());
+        }
+        if started.elapsed() >= timeout {
+            return Err(format!("Timed out waiting for agent state {target}"));
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
 }
 
 async fn select_model(
-    pane_id: &str,
-    pane_pid: &str,
+    host: &HostRun,
     model: &str,
     effort: Option<&str>,
-    ui: &ProviderUiProfile,
     cancel: &CancellationToken,
-    draft_after_idle: Option<&str>,
 ) -> Result<(), String> {
-    ensure_empty_composer(pane_id, ui)?;
-    open_model_picker_and_select(pane_id, model, effort, ui, cancel).await?;
-    wait_until_idle(pane_id, ui, cancel, Duration::from_secs(12)).await?;
-    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await?;
-    if let Some(draft) = draft_after_idle {
-        // Keep the draft out of Codex's composer until the footer confirms the
-        // requested model. Pressing Enter before that confirmation would submit
-        // the draft with the previous model.
-        restore_draft(pane_id, draft, ui)?;
+    if host.provider != ProcessProvider::Codex {
+        return Err("Model selection is currently implemented only for Codex".into());
     }
-    Ok(())
-}
-
-async fn select_model_during_turn(
-    pane_id: &str,
-    pane_pid: &str,
-    model: &str,
-    effort: Option<&str>,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-    draft: Option<&str>,
-) -> Result<(), String> {
-    wait_until_busy(pane_id, ui, cancel, Duration::from_secs(3)).await?;
-    open_model_picker_and_select(pane_id, model, effort, ui, cancel).await?;
-    wait_for_model(pane_id, pane_pid, model, effort, ui, cancel).await?;
-    if let Some(draft) = draft {
-        restore_draft_after_model_change(pane_id, draft, ui)?;
+    if host.baseline.model.is_none() || effort.is_some() && host.baseline.effort.is_none() {
+        return Err("Codex baseline model and effort could not be determined safely".into());
     }
-    Ok(())
-}
-
-async fn open_model_picker_and_select(
-    pane_id: &str,
-    model: &str,
-    effort: Option<&str>,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-) -> Result<(), String> {
-    submit_command(pane_id, &ui.model_command, ui)?;
+    let state = codex_screen_state(&host.pane_id)?;
+    if !state.idle
+        || state
+            .draft
+            .as_deref()
+            .is_some_and(|draft| !draft.is_empty())
+    {
+        return Err("Codex must be idle with an empty composer before changing model".into());
+    }
+    submit_text(&host.pane_id, host.provider, "/model")?;
     tokio::time::sleep(Duration::from_millis(250)).await;
-    if let Err(error) = choose_visible_option(pane_id, model, ui, cancel).await {
-        let _ = crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key);
-        return Err(error);
-    }
+    choose_codex_option(&host.pane_id, model, cancel).await?;
     if let Some(effort) = effort {
         tokio::time::sleep(Duration::from_millis(150)).await;
-        let screen = private_capture_plain(pane_id)?;
-        if screen
-            .to_ascii_lowercase()
-            .contains(&ui.effort_dialog_marker.to_ascii_lowercase())
-        {
-            let effort_label = ui
-                .effort_labels
-                .get(effort)
-                .map(String::as_str)
-                .unwrap_or(effort);
-            if let Err(error) = choose_visible_option(pane_id, effort_label, ui, cancel).await {
-                let _ = crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key);
-                return Err(error);
-            }
-            confirm_max_effort_if_requested(pane_id, effort, ui, cancel).await?;
+        if capture_plain(&host.pane_id)?.contains("Select Reasoning Level") {
+            choose_codex_option(&host.pane_id, effort_label(effort), cancel).await?;
         }
     }
-    Ok(())
+    wait_for_model(host, model, effort, cancel).await
 }
 
-async fn confirm_max_effort_if_requested(
-    pane_id: &str,
-    effort: &str,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-) -> Result<(), String> {
-    if !effort.eq_ignore_ascii_case("max") {
-        return Ok(());
-    }
-
-    // Codex asks for an explicit choice after selecting the maximum reasoning
-    // level. Wait for that prompt to render so a normal composer never
-    // receives the confirmation key as draft text.
-    let started = Instant::now();
-    while started.elapsed() < Duration::from_secs(2) {
-        if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
-        }
-        let screen = private_capture_plain(pane_id)?;
-        if classify_private_screen(&screen, ui).idle {
-            return Ok(());
-        }
-        if effort_confirmation_visible(&screen, ui) {
-            crate::tmux::send_key_to_pane(pane_id, "1")?;
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    Ok(())
-}
-
-fn effort_confirmation_visible(captured: &str, ui: &ProviderUiProfile) -> bool {
-    let plain = strip_ansi(captured);
-    let lower = plain.to_ascii_lowercase();
-    if lower.contains("are you sure")
-        || lower.contains("press enter to confirm")
-        || lower.contains("confirm")
-    {
-        return true;
-    }
-
-    let mentions_max_effort = lower.contains("maximum reasoning")
-        || lower.contains("max reasoning")
-        || lower.contains("more reasoning")
-        || lower.lines().any(|line| {
-            line.split(|character: char| !character.is_ascii_alphanumeric())
-                .any(|word| word == "max")
-        })
-        || ui
-            .effort_labels
-            .get("max")
-            .is_some_and(|label| lower.contains(&label.to_ascii_lowercase()));
-    let has_yes = lower.lines().any(|line| {
-        line.split(|character: char| !character.is_ascii_alphanumeric())
-            .any(|word| word == "yes")
-    });
-    let has_no = lower.lines().any(|line| {
-        line.split(|character: char| !character.is_ascii_alphanumeric())
-            .any(|word| word == "no")
-    });
-    mentions_max_effort && has_yes && has_no
-}
-
-async fn choose_visible_option(
+async fn choose_codex_option(
     pane_id: &str,
     target: &str,
-    ui: &ProviderUiProfile,
     cancel: &CancellationToken,
 ) -> Result<(), String> {
     for _ in 0..32 {
         if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
+            return Err("Plugin cancelled".into());
         }
-        let screen = private_capture_plain(pane_id)?;
+        let screen = capture_plain(pane_id)?;
         let target_lower = target.to_ascii_lowercase();
-        let selected = screen
+        if screen
             .lines()
-            .any(|line| selected_option_matches(line, &target_lower, &ui.selected_markers));
-        if selected {
-            crate::tmux::send_key_to_pane(pane_id, &ui.submit_key)?;
+            .any(|line| selected_option_matches(line, &target_lower))
+        {
+            crate::tmux::send_key_to_pane(pane_id, "Enter")?;
             return Ok(());
         }
-        crate::tmux::send_key_to_pane(pane_id, &ui.next_key)?;
+        crate::tmux::send_key_to_pane(pane_id, "Down")?;
         tokio::time::sleep(Duration::from_millis(45)).await;
     }
-    Err("Could not safely select the requested option".into())
+    Err("Could not safely select the requested Codex option".into())
 }
 
-fn selected_option_matches(line: &str, target_lower: &str, markers: &[String]) -> bool {
+fn selected_option_matches(line: &str, target: &str) -> bool {
     let trimmed = line.trim_start();
-    let Some(marker) = markers.iter().find(|marker| trimmed.starts_with(*marker)) else {
+    let Some(marker) = ["›", ">"]
+        .into_iter()
+        .find(|marker| trimmed.starts_with(marker))
+    else {
         return false;
     };
     let mut option = trimmed[marker.len()..].trim_start();
     if let Some((ordinal, rest)) = option.split_once('.') {
-        if !ordinal.is_empty() && ordinal.chars().all(|ch| ch.is_ascii_digit()) {
+        if !ordinal.is_empty() && ordinal.chars().all(|character| character.is_ascii_digit()) {
             option = rest.trim_start();
         }
     }
-    let option_lower = option.to_lowercase();
-    let Some(remainder) = option_lower.strip_prefix(target_lower) else {
-        return false;
-    };
-    remainder.is_empty()
-        || remainder.starts_with(char::is_whitespace)
-        || remainder.starts_with('(')
-        || remainder.starts_with('…')
-}
-
-fn private_capture_plain(pane_id: &str) -> Result<String, String> {
-    let (captured, _) = crate::tmux::capture_pane_visible(pane_id)?;
-    Ok(strip_ansi(&captured))
-}
-
-fn live_model_selection(captured: &str, ui: &ProviderUiProfile) -> Option<LiveModelSelection> {
-    let plain = strip_ansi(captured);
-    let status_marker = ui
-        .model_status_marker
-        .as_deref()
-        .unwrap_or("Context")
-        .to_ascii_lowercase();
-
-    plain.lines().rev().find_map(|line| {
-        let lower = line.to_ascii_lowercase();
-        let marker_start = lower.find(&status_marker)?;
-        let status_prefix = line.get(..marker_start)?.trim();
-        let mut fields = status_prefix.split_whitespace();
-        let model = fields.next()?.to_string();
-        if model.is_empty() {
-            return None;
-        }
-        let effort = fields.find_map(|field| {
-            let candidate = field.trim_matches(|ch: char| !ch.is_ascii_alphanumeric());
-            if ui.effort_labels.contains_key(candidate) {
-                return Some(candidate.to_string());
-            }
-            ui.effort_labels
-                .iter()
-                .find_map(|(key, label)| label.eq_ignore_ascii_case(candidate).then(|| key.clone()))
-        });
-        Some(LiveModelSelection { model, effort })
+    let option_lower = option.to_ascii_lowercase();
+    option_lower.strip_prefix(target).is_some_and(|remainder| {
+        remainder.is_empty()
+            || remainder.starts_with(char::is_whitespace)
+            || remainder.starts_with('(')
+            || remainder.starts_with('…')
     })
 }
 
 async fn wait_for_model(
-    pane_id: &str,
-    pane_pid: &str,
+    host: &HostRun,
     model: &str,
     effort: Option<&str>,
-    ui: &ProviderUiProfile,
     cancel: &CancellationToken,
 ) -> Result<(), String> {
     let started = Instant::now();
     while started.elapsed() < MODEL_VERIFY_TIMEOUT {
         if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
+            return Err("Plugin cancelled".into());
         }
-        let screen = private_capture_plain(pane_id)?;
-        let info = agent_session::resolve_session_info_for_provider(
-            pane_pid,
-            Some(ProcessProvider::Codex),
-            None,
-        );
-        let session_matches = info.model_id.as_deref() == Some(model)
-            && effort.is_none_or(|expected| info.agent_effort.as_deref() == Some(expected));
-        let screen_matches = screen_model_status_matches(&screen, model, effort, ui);
-        if screen_matches == Some(true) || (screen_matches.is_none() && session_matches) {
+        let session = session_data(host.provider, &host.pane_pid);
+        if session.model.as_deref() == Some(model)
+            && effort.is_none_or(|expected| session.effort.as_deref() == Some(expected))
+        {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -1500,468 +1655,237 @@ async fn wait_for_model(
     Err("Codex did not confirm the requested model and effort".into())
 }
 
-#[cfg(test)]
-fn screen_confirms_model(
-    captured: &str,
-    model: &str,
-    effort: Option<&str>,
-    ui: &ProviderUiProfile,
-) -> bool {
-    screen_model_status_matches(captured, model, effort, ui) == Some(true)
+fn effort_label(effort: &str) -> &str {
+    match effort {
+        "low" => "Low",
+        "medium" => "Medium",
+        "high" => "High",
+        "xhigh" => "Extra high",
+        "max" => "More reasoning",
+        value => value,
+    }
 }
 
-fn screen_model_status_matches(
-    captured: &str,
-    model: &str,
-    effort: Option<&str>,
-    ui: &ProviderUiProfile,
-) -> Option<bool> {
-    let selection = live_model_selection(captured, ui)?;
-    let model_matches = selection.model.eq_ignore_ascii_case(model);
-    let effort_matches = effort.is_none_or(|expected| {
-        selection
-            .effort
+async fn restore_baseline(host: &HostRun, cancel: &CancellationToken) -> Result<(), String> {
+    let Some(model) = host.baseline.model.as_deref() else {
+        return Ok(());
+    };
+    select_model(host, model, host.baseline.effort.as_deref(), cancel).await
+}
+
+fn stash_draft(host: &HostRun) -> Result<Option<String>, String> {
+    if host.provider != ProcessProvider::Codex {
+        return Ok(None);
+    }
+    let state = codex_screen_state(&host.pane_id)?;
+    if !state.idle {
+        return Err("Codex must be idle before stashing its draft".into());
+    }
+    let draft = state.draft.filter(|draft| !draft.is_empty());
+    if draft.is_some() {
+        crate::tmux::send_key_to_pane(&host.pane_id, "C-u")?;
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Ok(draft)
+}
+
+fn restore_stashed_draft(host: &HostRun) -> Result<(), String> {
+    let Some(draft) = host.stashed_draft.as_deref() else {
+        return Ok(());
+    };
+    let state = codex_screen_state(&host.pane_id)?;
+    if !state.idle
+        || state
+            .draft
             .as_deref()
-            .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+            .is_some_and(|value| !value.is_empty())
+    {
+        return Err("Codex composer is not empty; draft was not restored".into());
+    }
+    crate::tmux::send_literal_to_pane(&host.pane_id, draft)
+}
+
+async fn recover_host_state(host: &HostRun) -> Result<(), String> {
+    validate_bound_pane(host)?;
+    let cancel = CancellationToken::new();
+    if host.model_changed {
+        restore_baseline(host, &cancel).await?;
+    }
+    restore_stashed_draft(host)
+}
+
+struct CodexScreenState {
+    idle: bool,
+    busy: bool,
+    draft: Option<String>,
+}
+
+fn codex_screen_state(pane_id: &str) -> Result<CodexScreenState, String> {
+    let screen = capture_plain(pane_id)?;
+    let in_dialog = screen.contains("Select model")
+        || screen.contains("Select Reasoning Level")
+        || screen
+            .to_ascii_lowercase()
+            .contains("press enter to confirm");
+    let busy = screen.to_ascii_lowercase().contains("esc to interrupt");
+    let draft = screen.lines().rev().find_map(|line| {
+        line.trim_start()
+            .strip_prefix('›')
+            .map(|value| value.trim().to_string())
     });
-    Some(model_matches && effort_matches)
-}
-
-async fn wait_until_idle(
-    pane_id: &str,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-    timeout: Duration,
-) -> Result<(), String> {
-    let started = Instant::now();
-    loop {
-        if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
-        }
-        if started.elapsed() >= timeout {
-            return Err("Timed out waiting for Codex to return to its composer".into());
-        }
-        if started.elapsed() > Duration::from_millis(500) && private_screen_state(pane_id, ui)?.idle
-        {
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-}
-
-async fn wait_until_busy(
-    pane_id: &str,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-    timeout: Duration,
-) -> Result<(), String> {
-    let started = Instant::now();
-    loop {
-        if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
-        }
-        if started.elapsed() >= timeout {
-            return Err("Codex did not enter its busy state after /compact".into());
-        }
-        let screen = private_screen_state(pane_id, ui)?;
-        if screen.busy {
-            if screen.draft.as_deref() != Some("") {
-                return Err("The Codex composer changed while compacting".into());
-            }
-            return Ok(());
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-}
-
-async fn ensure_empty_for_action(
-    pane_id: &str,
-    ui: &ProviderUiProfile,
-    saved_draft: Option<&str>,
-    cancel: &CancellationToken,
-) -> Result<(), String> {
-    let screen = private_screen_state(pane_id, ui)?;
-    if screen.idle && !screen.has_draft {
-        return Ok(());
-    }
-    if screen.idle && saved_draft.is_some_and(|draft| screen.draft.as_deref() == Some(draft)) {
-        clear_composer_draft(pane_id, ui, cancel, Duration::from_secs(2)).await?;
-        return Ok(());
-    }
-    ensure_empty_composer(pane_id, ui)
-}
-
-async fn clear_composer_draft(
-    pane_id: &str,
-    ui: &ProviderUiProfile,
-    cancel: &CancellationToken,
-    timeout: Duration,
-) -> Result<(), String> {
-    let started = Instant::now();
-    loop {
-        if cancel.is_cancelled() {
-            return Err("Action cancelled".into());
-        }
-        if started.elapsed() >= timeout {
-            return Err("Could not safely clear the Codex composer draft".into());
-        }
-        let screen = private_screen_state(pane_id, ui)?;
-        if screen.idle && !screen.has_draft {
-            return Ok(());
-        }
-        if !screen.idle {
-            return Err("Codex left its normal composer while clearing the draft".into());
-        }
-        let captured = private_capture_plain(pane_id)?;
-        if vim_normal_mode(&captured, ui) {
-            // Codex's composer can be in Vim Normal mode, where Ctrl-U is not
-            // an editor command. dd deletes the current draft line without
-            // invoking the interrupt/exit path.
-            crate::tmux::send_key_to_pane(pane_id, "d")?;
-            crate::tmux::send_key_to_pane(pane_id, "d")?;
+    let draft = draft.map(|value| {
+        if value == "Ask Codex to do anything" {
+            String::new()
         } else {
-            crate::tmux::send_key_to_pane(pane_id, &ui.stash_key)?;
-            crate::tmux::send_key_to_pane(pane_id, "C-k")?;
+            value
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    });
+    Ok(CodexScreenState {
+        idle: draft.is_some() && !in_dialog && !busy,
+        busy,
+        draft,
+    })
 }
 
-fn vim_normal_mode(captured: &str, ui: &ProviderUiProfile) -> bool {
-    let marker = ui.vim_normal_marker.as_deref().unwrap_or("Vim: Normal");
-    captured.lines().any(|line| line.contains(marker))
+fn codex_vim_normal_mode(screen: &str) -> bool {
+    screen.lines().any(|line| line.contains("Vim: Normal"))
 }
 
-fn restore_draft(pane_id: &str, draft: &str, ui: &ProviderUiProfile) -> Result<(), String> {
-    let screen = private_screen_state(pane_id, ui)?;
-    if screen.idle && screen.draft.as_deref() == Some(draft) {
-        return Ok(());
-    }
-    ensure_empty_composer(pane_id, ui)?;
-    let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
-    if was_vim_normal {
-        crate::tmux::send_key_to_pane(pane_id, "i")?;
-    }
-    crate::tmux::send_literal_to_pane(pane_id, draft)?;
-    if was_vim_normal {
-        crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key)?;
-    }
-    Ok(())
+fn capture_plain(pane_id: &str) -> Result<String, String> {
+    let (captured, _) = crate::tmux::capture_pane_visible(pane_id)?;
+    Ok(strip_ansi(&captured))
 }
 
-fn restore_draft_after_model_change(
-    pane_id: &str,
-    draft: &str,
-    ui: &ProviderUiProfile,
-) -> Result<(), String> {
-    let screen = private_screen_state(pane_id, ui)?;
-    if screen.idle {
-        return restore_draft(pane_id, draft, ui);
+fn strip_ansi(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut characters = value.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '\u{1b}' && characters.peek() == Some(&'[') {
+            characters.next();
+            for code in characters.by_ref() {
+                if ('@'..='~').contains(&code) {
+                    break;
+                }
+            }
+        } else if character != '\r' {
+            result.push(character);
+        }
     }
-    if !screen.busy || screen.draft.as_deref() != Some("") {
-        return Err("The Codex composer changed while restoring the model".into());
-    }
-    let was_vim_normal = vim_normal_mode(&private_capture_plain(pane_id)?, ui);
-    if was_vim_normal {
-        crate::tmux::send_key_to_pane(pane_id, "i")?;
-    }
-    crate::tmux::send_literal_to_pane(pane_id, draft)?;
-    if was_vim_normal {
-        crate::tmux::send_key_to_pane(pane_id, &ui.cancel_key)?;
-    }
-    Ok(())
-}
-
-fn ensure_empty_composer(pane_id: &str, ui: &ProviderUiProfile) -> Result<(), String> {
-    let screen = private_screen_state(pane_id, ui)?;
-    if screen.idle && !screen.has_draft {
-        Ok(())
-    } else {
-        Err("The composer changed while the action was running".to_string())
-    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::{
-        bundled_manifest, classify_private_screen, effort_confirmation_visible,
-        live_model_selection, screen_confirms_model, selected_option_matches, strip_ansi,
-        validate_action_parameters, validate_manifest, version_matches, vim_normal_mode,
-        ActionKind, CatalogAction, LiveModelSelection, PluginManifest, ProviderUiProfile,
+        load_plugin, redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
+        valid_version_pattern, version_matches,
     };
-    use clawtab_protocol::{AgentActionDescriptor, AgentActionParameter, AgentActionParameterKind};
-    use std::collections::HashMap;
 
     #[test]
-    fn strips_terminal_control_sequences_without_exposing_capture() {
-        assert_eq!(strip_ansi("\u{1b}[31m› draft\u{1b}[0m\r\n"), "› draft\n");
+    fn version_patterns_support_exact_and_series_matches() {
+        assert!(version_matches("0.151.2", &["0.151.*".into()]));
+        assert!(version_matches("0.151.2", &["0.151.2".into()]));
+        assert!(!version_matches("0.152.0", &["0.151.*".into()]));
     }
 
     #[test]
-    fn compatibility_is_explicit() {
-        assert!(version_matches("0.149.3", &["0.149.*".into()]));
-        assert!(version_matches(
-            "0.150.1",
-            &["0.149.*".into(), "0.150.*".into()]
-        ));
-        assert!(version_matches(
-            "0.151.0",
-            &["0.149.*".into(), "0.150.*".into(), "0.151.*".into()]
-        ));
+    fn version_patterns_reject_embedded_wildcards_and_empty_parts() {
+        assert!(valid_version_pattern("0.151.*"));
+        assert!(valid_version_pattern("0.151.2-beta"));
+        assert!(!valid_version_pattern("0.*.2"));
+        assert!(!valid_version_pattern("0..151"));
     }
 
     #[test]
-    fn bundled_codex_profile_covers_current_minor_version() {
-        let manifest = bundled_manifest();
-        assert!(version_matches("0.150.1", &manifest.compatible_versions));
-        assert!(version_matches("0.151.0", &manifest.compatible_versions));
+    fn plugin_ids_require_nonempty_local_namespace_segments() {
+        assert!(valid_plugin_id("local.example"));
+        assert!(valid_plugin_id("local.my-plugin.actions"));
+        assert!(!valid_plugin_id("example"));
+        assert!(!valid_plugin_id("local."));
+        assert!(!valid_plugin_id("local.example..actions"));
     }
 
     #[test]
-    fn set_model_parameters_require_a_valid_model_and_effort() {
-        let action = AgentActionDescriptor {
-            id: "codex.set_model".into(),
-            title: "Switch model".into(),
-            description: String::new(),
-            provider: "codex".into(),
-            parameters: vec![
-                AgentActionParameter {
-                    name: "model".into(),
-                    title: "Model".into(),
-                    kind: AgentActionParameterKind::Model,
-                    required: true,
-                    options: vec!["gpt-5.6-sol".into()],
-                },
-                AgentActionParameter {
-                    name: "effort".into(),
-                    title: "Reasoning effort".into(),
-                    kind: AgentActionParameterKind::Effort,
-                    required: true,
-                    options: vec!["low".into(), "medium".into()],
-                },
-            ],
-            available: true,
-            unavailable_reason: None,
-        };
-
-        assert!(validate_action_parameters(
-            &action,
-            &HashMap::from([(String::from("model"), String::from("gpt-5.6-sol"))])
+    fn local_manifest_loads_and_fingerprint_changes_with_executable() {
+        let temporary = tempfile::tempdir().expect("temporary directory should be created");
+        let root = temporary.path().join("local.example");
+        fs::create_dir(&root).expect("plugin directory should be created");
+        fs::write(root.join("run.sh"), "#!/bin/sh\nexit 0\n")
+            .expect("plugin executable should be written");
+        fs::write(
+            root.join("plugin.yaml"),
+            r#"schema_version: 2
+id: local.example
+name: Example
+version: 1.0.0
+actions:
+  - id: summarize
+    title: Summarize
+    command: ["./run.sh"]
+    activation:
+      providers: [codex]
+"#,
         )
-        .is_err());
-        assert!(validate_action_parameters(
-            &action,
-            &HashMap::from([
-                (String::from("model"), String::from("gpt-5.6-sol")),
-                (String::from("effort"), String::from("medium")),
-            ])
-        )
-        .is_ok());
-        assert!(validate_action_parameters(
-            &action,
-            &HashMap::from([
-                (String::from("model"), String::from("gpt-5.6-sol")),
-                (String::from("effort"), String::from("medium")),
-                (String::from("unexpected"), String::from("value")),
-            ])
-        )
-        .is_err());
+        .expect("manifest should be written");
+
+        let first = load_plugin(root.clone()).expect("valid plugin should load");
+        fs::write(root.join("run.sh"), "#!/bin/sh\nexit 1\n")
+            .expect("plugin executable should be updated");
+        let second = load_plugin(root).expect("updated plugin should load");
+
+        assert_ne!(first.fingerprint, second.fingerprint);
     }
 
     #[test]
-    fn picker_selection_requires_an_exact_option_boundary() {
-        let markers = vec!["›".to_string(), ">".to_string()];
-        assert!(selected_option_matches(
-            "› 5. gpt-5.4 (current)",
-            "gpt-5.4",
-            &markers
-        ));
+    fn parsed_invalid_manifest_keeps_metadata_for_review() {
+        let temporary = tempfile::tempdir().expect("temporary directory should be created");
+        let root = temporary.path().join("wrong-directory");
+        fs::create_dir(&root).expect("plugin directory should be created");
+        fs::write(
+            root.join("plugin.yaml"),
+            r#"schema_version: 2
+id: local.example
+name: Example
+version: 1.0.0
+actions:
+  - id: summarize
+    title: Summarize
+    command: ["sh"]
+    activation:
+      providers: [codex]
+"#,
+        )
+        .expect("manifest should be written");
+
+        let plugin = load_plugin(root).expect("parsed plugin should remain discoverable");
+
+        assert_eq!(plugin.manifest.name, "Example");
+        assert!(plugin.validation_error.is_some());
+    }
+
+    #[test]
+    fn selected_option_requires_a_selected_marker() {
+        assert!(selected_option_matches("› 1. gpt-5.6-luna", "gpt-5.6-luna"));
         assert!(!selected_option_matches(
-            "› 6. gpt-5.4-mini",
-            "gpt-5.4",
-            &markers
-        ));
-        assert!(!selected_option_matches(
-            "› 4. Extra high",
-            "high",
-            &markers
-        ));
-        assert!(selected_option_matches(
-            "› 5. More reasoning… (current)",
-            "more reasoning",
-            &markers
+            "  1. gpt-5.6-luna",
+            "gpt-5.6-luna"
         ));
     }
 
     #[test]
-    fn local_namespace_cannot_shadow_first_party_actions() {
-        let manifest = PluginManifest {
-            schema_version: 1,
-            namespace: "local.example".into(),
-            provider: "codex".into(),
-            compatible_versions: vec!["0.149.*".into()],
-            ui: ProviderUiProfile::default(),
-            actions: vec![CatalogAction {
-                id: "codex.set_model".into(),
-                title: "Bad".into(),
-                description: String::new(),
-                kind: ActionKind::SetModel,
-            }],
-        };
-        assert!(validate_manifest(&manifest).is_err());
+    fn terminal_escape_sequences_are_removed() {
+        assert_eq!(strip_ansi("\u{1b}[31mhello\u{1b}[0m\r"), "hello");
     }
 
     #[test]
-    fn declarative_profile_rejects_unapproved_keys() {
-        let mut ui = ProviderUiProfile::default();
-        ui.next_key = "run-shell".into();
-        let manifest = PluginManifest {
-            schema_version: 1,
-            namespace: "local.example".into(),
-            provider: "codex".into(),
-            compatible_versions: vec!["0.149.*".into()],
-            ui,
-            actions: vec![CatalogAction {
-                id: "local.example.next".into(),
-                title: "Next".into(),
-                description: String::new(),
-                kind: ActionKind::NextModel,
-            }],
-        };
-        assert!(validate_manifest(&manifest).is_err());
-    }
-
-    #[test]
-    fn composer_gate_distinguishes_idle_draft_and_dialog() {
-        let ui = ProviderUiProfile::default();
-        let placeholder =
-            classify_private_screen("work complete\n\n› Ask Codex to do anything\n", &ui);
-        assert!(placeholder.idle);
-        assert!(!placeholder.has_draft);
-        assert_eq!(placeholder.draft.as_deref(), Some(""));
-
-        let empty = classify_private_screen("work complete\n\n› \n", &ui);
-        assert!(empty.idle);
-        assert!(!empty.has_draft);
-
-        let draft = classify_private_screen("work complete\n\n› keep this text\n", &ui);
-        assert!(draft.idle);
-        assert!(draft.has_draft);
-        assert_eq!(draft.draft.as_deref(), Some("keep this text"));
-
-        let picker = classify_private_screen("Select model\n› gpt-5.6-luna\n", &ui);
-        assert!(!picker.idle);
-
-        let scrolled_picker = classify_private_screen(
-            "Select model\none\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\n› 3. gpt-5.6-luna\n",
-            &ui,
+    fn internal_plugin_credentials_are_redacted_from_failures() {
+        let output = redact_internal_values(
+            "token=secret-token socket=/tmp/clawtab/plugin-host.sock",
+            "secret-token",
         );
-        assert!(!scrolled_picker.idle);
-
-        let working = classify_private_screen("esc to interrupt\n› \n", &ui);
-        assert!(!working.idle);
-        assert!(working.busy);
-        assert_eq!(working.draft.as_deref(), Some(""));
-
-        let working_with_draft = classify_private_screen("esc to interrupt\n› restore now\n", &ui);
-        assert!(!working_with_draft.idle);
-        assert!(working_with_draft.busy);
-        assert_eq!(working_with_draft.draft.as_deref(), Some("restore now"));
-    }
-
-    #[test]
-    fn composer_gate_handles_blank_rows_below_codex_footer() {
-        let ui = ProviderUiProfile::default();
-        let screen = concat!(
-            "startup output\n",
-            "› previous request\n",
-            "\n",
-            "› current draft\n",
-            "\n",
-            "gpt-5.6-luna medium · Context 99% left · Vim: Insert\n",
-            "\n\n\n\n\n\n\n\n\n\n\n\n"
-        );
-        let state = classify_private_screen(screen, &ui);
-        assert!(state.idle);
-        assert!(state.has_draft);
-        assert_eq!(state.draft.as_deref(), Some("current draft"));
-    }
-
-    #[test]
-    fn model_footer_confirms_live_selection_when_rollout_is_stale() {
-        let ui = ProviderUiProfile::default();
-        let screen =
-            "› Ask Codex to do anything\n\ngpt-5.6-luna low · Context 96% left\n\n\n\n\n\n";
-        assert!(screen_confirms_model(
-            screen,
-            "gpt-5.6-luna",
-            Some("low"),
-            &ui
-        ));
-        assert!(!screen_confirms_model(
-            screen,
-            "gpt-5.6-sol",
-            Some("medium"),
-            &ui
-        ));
-    }
-
-    #[test]
-    fn max_effort_confirmation_requires_a_max_prompt_and_yes_no_choices() {
-        let ui = ProviderUiProfile::default();
-        assert!(effort_confirmation_visible(
-            "Are you sure you want to use more reasoning?\n› 1. Yes\n  2. No\n",
-            &ui
-        ));
-        assert!(effort_confirmation_visible("Press Enter to confirm\n", &ui));
-        assert!(!effort_confirmation_visible(
-            "› Ask Codex to do anything\n\ngpt-5.6-luna max · Context 96% left\n",
-            &ui
-        ));
-        assert!(!effort_confirmation_visible(
-            "Select Reasoning Level\n› 1. Low\n  2. Medium\n",
-            &ui
-        ));
-    }
-
-    #[test]
-    fn live_footer_selection_wins_over_stale_rollout_model() {
-        let ui = ProviderUiProfile::default();
-        let screen = "› draft\n\ngpt-5.6-sol low · Context 96% left · Vim: Normal\n";
-        assert_eq!(
-            live_model_selection(screen, &ui),
-            Some(LiveModelSelection {
-                model: "gpt-5.6-sol".into(),
-                effort: Some("low".into()),
-            })
-        );
-    }
-
-    #[test]
-    fn vim_normal_mode_is_detected_without_exposing_composer_text() {
-        let ui = ProviderUiProfile::default();
-        assert!(vim_normal_mode(
-            "› draft\n\ngpt-5.6-sol medium · Context 96% left · Vim: Normal\n",
-            &ui
-        ));
-        assert!(!vim_normal_mode(
-            "› draft\n\ngpt-5.6-sol medium · Context 96% left\n",
-            &ui
-        ));
-    }
-
-    #[test]
-    fn interrupt_cannot_be_used_to_clear_a_plugin_draft() {
-        let mut ui = ProviderUiProfile::default();
-        ui.stash_key = "C-c".into();
-        let manifest = PluginManifest {
-            schema_version: 1,
-            namespace: "local.example".into(),
-            provider: "codex".into(),
-            compatible_versions: vec!["0.149.*".into()],
-            ui,
-            actions: Vec::new(),
-        };
-        assert!(validate_manifest(&manifest).is_err());
+        assert!(!output.contains("secret-token"));
+        assert!(!output.contains("/tmp/clawtab/plugin-host.sock"));
     }
 }

@@ -568,7 +568,7 @@ mod tests {
         let start = ClientMessage::StartAgentAction {
             id: "two".into(),
             pane_id: "%5".into(),
-            action_id: "codex.cheap_compact".into(),
+            action_id: "local.example.summarize_session".into(),
             parameters: HashMap::new(),
         };
         assert_eq!(agent_action_pane(&list), Some("%4"));

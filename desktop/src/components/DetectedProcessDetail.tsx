@@ -1,24 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
+import type { AgentActionDescriptor, DetectedProcess, ClaudeQuestion } from "@clawtab/shared";
 import type { Transport, RemoteJob, JobStatus } from "@clawtab/shared";
-import { JobDetailView, shortenPath } from "@clawtab/shared";
+import { AgentActionFormModal, JobDetailView, shortenPath } from "@clawtab/shared";
 import { XtermPane } from "./XtermPane";
-
-type AgentActionDescriptor = {
-  id: string;
-  title: string;
-  description: string;
-  available: boolean;
-  unavailable_reason?: string;
-  parameters: {
-    name: string;
-    kind: "model" | "effort";
-    required: boolean;
-    options: string[];
-  }[];
-};
 
 type AgentActionRun = {
   run_id: string;
@@ -120,6 +106,7 @@ export function DetectedProcessDetail({
   const transport = useMemo(() => createProcessTransport(process), [process.pane_id]);
   const [agentActions, setAgentActions] = useState<AgentActionDescriptor[]>([]);
   const [agentActionRun, setAgentActionRun] = useState<AgentActionRun | null>(null);
+  const [agentActionForm, setAgentActionForm] = useState<AgentActionDescriptor | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -173,8 +160,25 @@ export function DetectedProcessDetail({
     });
   }, [process.pane_id]);
 
+  const openAgentAction = useCallback((action: AgentActionDescriptor) => {
+    if (!action.available || agentActionRun && ["queued", "running"].includes(agentActionRun.state)) return;
+    if (action.parameters.length === 0) {
+      runAgentAction(action.id);
+      return;
+    }
+    setAgentActionForm(action);
+  }, [agentActionRun, runAgentAction]);
+
+  const submitAgentAction = useCallback((parameters: Record<string, string>) => {
+    if (!agentActionForm) return;
+    const actionId = agentActionForm.id;
+    setAgentActionForm(null);
+    runAgentAction(actionId, parameters);
+  }, [agentActionForm, runAgentAction]);
+
   const agentMenuItems = useMemo(() => {
-    const items: { label: string; onPress: () => void }[] = [];
+    const items: { label: string; onPress: () => void; disabled?: boolean; hint?: string }[] = [];
+    const actionRunActive = !!agentActionRun && ["queued", "running"].includes(agentActionRun.state);
     if (agentActionRun && ["queued", "running"].includes(agentActionRun.state)) {
       items.push({
         label: `Agent: ${agentActionRun.progress}`,
@@ -182,39 +186,20 @@ export function DetectedProcessDetail({
           invoke("cancel_agent_action", { runId: agentActionRun.run_id }).catch(() => {});
         },
       });
-      return items;
     }
-    for (const action of agentActions.filter((candidate) => candidate.available)) {
-      const modelParameter = action.parameters.find((parameter) => parameter.kind === "model");
-      const effortParameter = action.parameters.find((parameter) => parameter.kind === "effort");
-      const models = modelParameter?.options;
-      const efforts = effortParameter?.options ?? [];
-      if (models?.length) {
-        if (effortParameter?.required && efforts.length === 0) continue;
-        for (const model of models) {
-          if (efforts.length) {
-            for (const effort of efforts) {
-              items.push({
-                label: `Agent: Switch to ${model} (${effort})`,
-                onPress: () => runAgentAction(action.id, { model, effort }),
-              });
-            }
-          } else {
-            items.push({
-              label: `Agent: Switch to ${model}`,
-              onPress: () => runAgentAction(action.id, { model }),
-            });
-          }
-        }
-      } else {
-        items.push({ label: `Agent: ${action.title}`, onPress: () => runAgentAction(action.id) });
-      }
+    for (const action of agentActions) {
+      items.push({
+        label: `Agent: ${action.plugin_name ? `${action.plugin_name}: ` : ""}${action.title}`,
+        hint: action.unavailable_reason ?? action.description,
+        disabled: !action.available || actionRunActive,
+        onPress: () => openAgentAction(action),
+      });
     }
     if (agentActionRun?.error) {
-      items.unshift({ label: `Agent action failed: ${agentActionRun.error}`, onPress: () => {} });
+      items.unshift({ label: `Agent action failed: ${agentActionRun.error}`, onPress: () => {}, disabled: true });
     }
     return items;
-  }, [agentActionRun, agentActions, runAgentAction]);
+  }, [agentActionRun, agentActions, openAgentAction]);
 
   const syntheticJob: RemoteJob = {
     name: displayName,
@@ -271,38 +256,47 @@ export function DetectedProcessDetail({
   );
 
   return (
-    <JobDetailView
-      transport={wrappedTransport}
-      job={syntheticJob}
-      status={syntheticStatus}
-      logs=""
-      runs={[]}
-      runsLoading={false}
-      onBack={onBack}
-      showBackButton={showBackButton}
-      hidePath={hidePath}
-      onOpen={handleOpen}
-      hideRuns
-      expandOutput
-      containerStyle={{ backgroundColor: "var(--bg-primary)", borderRadius: 0 } as any}
-      contentStyle={contentStyle as any}
-      titlePath={titlePath}
-      options={paneQuestion?.options}
-      questionContext={paneQuestion?.context_lines}
-      autoYesActive={autoYesActive}
-      onToggleAutoYes={onToggleAutoYes}
-      renderTerminal={renderTerminal}
-      hideMessageInput
-      firstQuery={process.first_query ?? undefined}
-      lastQuery={process.last_query ?? undefined}
-      tokenCount={process.token_count}
-      onFork={process.can_fork_session ? onFork : undefined}
-      onSplitPane={onSplitPane}
-      onZoomPane={onZoomPane}
-      onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}
-      onSearchSkills={process.can_send_skills ? onSearchSkills : undefined}
-      dragHandleProps={dragHandleProps}
-      extraMenuItems={agentMenuItems}
-    />
+    <>
+      <JobDetailView
+        transport={wrappedTransport}
+        job={syntheticJob}
+        status={syntheticStatus}
+        logs=""
+        runs={[]}
+        runsLoading={false}
+        onBack={onBack}
+        showBackButton={showBackButton}
+        hidePath={hidePath}
+        onOpen={handleOpen}
+        hideRuns
+        expandOutput
+        containerStyle={{ backgroundColor: "var(--bg-primary)", borderRadius: 0 } as any}
+        contentStyle={contentStyle as any}
+        titlePath={titlePath}
+        options={paneQuestion?.options}
+        questionContext={paneQuestion?.context_lines}
+        autoYesActive={autoYesActive}
+        onToggleAutoYes={onToggleAutoYes}
+        renderTerminal={renderTerminal}
+        hideMessageInput
+        firstQuery={process.first_query ?? undefined}
+        lastQuery={process.last_query ?? undefined}
+        tokenCount={process.token_count}
+        onFork={process.can_fork_session ? onFork : undefined}
+        onSplitPane={onSplitPane}
+        onZoomPane={onZoomPane}
+        onInjectSecrets={process.can_inject_secrets ? onInjectSecrets : undefined}
+        onSearchSkills={process.can_send_skills ? onSearchSkills : undefined}
+        dragHandleProps={dragHandleProps}
+        extraMenuItems={agentMenuItems}
+      />
+      <AgentActionFormModal
+        action={agentActionForm}
+        visible={agentActionForm !== null}
+        onClose={() => setAgentActionForm(null)}
+        onSubmit={submitAgentAction}
+        submitting={!!agentActionRun && ["queued", "running"].includes(agentActionRun.state)}
+      />
+    </>
   );
 }

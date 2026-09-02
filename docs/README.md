@@ -16,13 +16,14 @@ ClawTab is a macOS desktop app for scheduling and managing automated jobs -- she
 5. [Telegram](./telegram.md) -- Notifications and agent mode
 6. [CLI & TUI](./cli-tui.md) -- Command-line and terminal UI
 7. [Vim / Tmux Navigation](./vim-tmux-navigation.md) -- Share Ctrl-hjkl across vim, tmux, and ClawTab panes
+8. [Local Executable Plugins](./agent-plugins.md) -- Add trusted local actions for agent panes
 
 ### Remote Access
-8. [Remote Access](./remote.md) -- Control jobs from your phone via relay server
-9. [Workspace Sharing](./sharing.md) -- Share your workspace with colleagues
-10. [Self-Hosted Deployment](./deploy.md) -- Run your own relay, PostgreSQL, and frontend
+9. [Remote Access](./remote.md) -- Control jobs from your phone via relay server
+10. [Workspace Sharing](./sharing.md) -- Share your workspace with colleagues
+11. [Self-Hosted Deployment](./deploy.md) -- Run your own relay, PostgreSQL, and frontend
 
 ### Reference
-11. [Architecture](./architecture.md) -- System design, execution flow, IPC
-12. [Project Layout](./project-layout.md) -- Repository structure (relay, mobile, protocol)
-13. [File Reference](./file-reference.md) -- Config paths, schemas, log locations
+12. [Architecture](./architecture.md) -- System design, execution flow, IPC
+13. [Project Layout](./project-layout.md) -- Repository structure (relay, mobile, protocol)
+14. [File Reference](./file-reference.md) -- Config paths, schemas, log locations

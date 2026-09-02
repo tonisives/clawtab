@@ -540,7 +540,7 @@ mod tests {
             run: AgentActionRun {
                 run_id: "run-1".into(),
                 pane_id: "%7".into(),
-                action_id: "codex.cheap_compact".into(),
+                action_id: "local.example.summarize_session".into(),
                 state: AgentActionRunState::Running,
                 progress: "Compacting context".into(),
                 progress_percent: 50,

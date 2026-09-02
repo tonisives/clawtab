@@ -3,6 +3,7 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use clawtab_lib::agent_plugins::{PluginHostCommand, PluginHostRequest, PluginHostResponse};
 use clawtab_lib::config::jobs::JobStatus;
 use clawtab_lib::ipc::{self, DesktopIpcCommand, IpcCommand, IpcResponse, PaneDirection};
 
@@ -28,6 +29,9 @@ fn print_usage() {
     eprintln!("  plugin <name> run [pane_id] [key=value ...]");
     eprintln!("  plugin <name> status <run_id>");
     eprintln!("  plugin <name> cancel <run_id>");
+    eprintln!("  plugin installed [--json]");
+    eprintln!("  plugin approve <plugin_id> <fingerprint>");
+    eprintln!("  plugin revoke <plugin_id>");
     eprintln!("  secrets           List secret key names");
     eprintln!("  secrets get <k1> [k2 ...]  Get secret value (single key) or KEY=VALUE lines (multiple keys)");
     eprintln!(
@@ -111,9 +115,14 @@ fn print_plugin_usage() {
     eprintln!("  plugin <name> run [pane_id] [key=value ...]    Start a plugin action");
     eprintln!("  plugin <name> status <run_id>                  Show a plugin run");
     eprintln!("  plugin <name> cancel <run_id>                  Cancel a plugin run");
+    eprintln!("  plugin installed [--json]                      List installed local plugins");
+    eprintln!(
+        "  plugin approve <plugin_id> <fingerprint>        Trust the reviewed plugin package"
+    );
+    eprintln!("  plugin revoke <plugin_id>                       Revoke plugin trust");
     eprintln!();
     eprintln!("Plugin names accept the action suffix with '-' in place of '_'.");
-    eprintln!("For example: cwtctl plugin cheap-compact run");
+    eprintln!("For example: cwtctl plugin summarize-session run");
 }
 
 fn plugin_name_matches_action_id(action_id: &str, plugin_name: &str) -> bool {
@@ -274,6 +283,75 @@ async fn handle_plugin_command(args: &[String]) {
         return;
     }
 
+    if plugin_name == "host" {
+        handle_plugin_host_command(args).await;
+        return;
+    }
+
+    if plugin_name == "installed" {
+        match ipc::send_command(IpcCommand::ListInstalledPlugins).await {
+            Ok(IpcResponse::InstalledPlugins(plugins)) => {
+                if args.iter().any(|argument| argument == "--json") {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&plugins).unwrap_or_else(|error| {
+                            exit_error(&error.to_string());
+                        })
+                    );
+                } else {
+                    for plugin in plugins {
+                        let status = plugin.error.map_or_else(
+                            || {
+                                if plugin.trusted {
+                                    "trusted".to_string()
+                                } else {
+                                    "approval required".to_string()
+                                }
+                            },
+                            |error| format!("invalid: {error}"),
+                        );
+                        println!("{}\t{}\t{}", plugin.id, plugin.version, status);
+                    }
+                }
+            }
+            Ok(IpcResponse::Error(error)) | Err(error) => exit_error(&error),
+            Ok(_) => exit_error("unexpected response from daemon"),
+        }
+        return;
+    }
+
+    if matches!(plugin_name, "approve" | "revoke") {
+        let plugin_id = args.get(3).cloned().unwrap_or_else(|| {
+            eprintln!(
+                "Usage: cwtctl plugin {plugin_name} <plugin_id>{}",
+                if plugin_name == "approve" {
+                    " <fingerprint>"
+                } else {
+                    ""
+                }
+            );
+            std::process::exit(1);
+        });
+        let command = if plugin_name == "approve" {
+            let fingerprint = args.get(4).cloned().unwrap_or_else(|| {
+                eprintln!("Usage: cwtctl plugin approve <plugin_id> <fingerprint>");
+                std::process::exit(1);
+            });
+            IpcCommand::ApprovePlugin {
+                plugin_id,
+                fingerprint,
+            }
+        } else {
+            IpcCommand::RevokePlugin { plugin_id }
+        };
+        match ipc::send_command(command).await {
+            Ok(IpcResponse::Ok) => println!("ok"),
+            Ok(IpcResponse::Error(error)) | Err(error) => exit_error(&error),
+            Ok(_) => exit_error("unexpected response from daemon"),
+        }
+        return;
+    }
+
     let operation = args.get(3).map(String::as_str).unwrap_or_else(|| {
         print_plugin_usage();
         std::process::exit(1);
@@ -345,6 +423,90 @@ async fn handle_plugin_command(args: &[String]) {
             std::process::exit(1);
         }
     }
+}
+
+async fn handle_plugin_host_command(args: &[String]) {
+    let token = env::var("CLAWTAB_PLUGIN_TOKEN").unwrap_or_else(|_| {
+        exit_error("plugin host commands are available only inside an active plugin run")
+    });
+    let operation = args
+        .get(3)
+        .map(String::as_str)
+        .unwrap_or_else(|| exit_error("missing plugin host operation"));
+    let request = match operation {
+        "context" => PluginHostRequest::Context,
+        "progress" => {
+            let percent = args
+                .get(4)
+                .and_then(|value| value.parse::<u8>().ok())
+                .unwrap_or_else(|| {
+                    exit_error("usage: cwtctl plugin host progress <percent> <message>")
+                });
+            let message = args.get(5..).unwrap_or_default().join(" ");
+            PluginHostRequest::Progress { message, percent }
+        }
+        "result" => {
+            let raw = read_host_text(args.get(4..).unwrap_or_default());
+            let value = serde_json::from_str(&raw).unwrap_or_else(|error| {
+                exit_error(&format!("plugin result must be JSON: {error}"))
+            });
+            PluginHostRequest::SetResult { value }
+        }
+        "session" => PluginHostRequest::AgentSession,
+        "state" => PluginHostRequest::AgentState,
+        "send-text" => PluginHostRequest::PaneSendText {
+            text: read_host_text(args.get(4..).unwrap_or_default()),
+        },
+        "send-key" => PluginHostRequest::PaneSendKey {
+            key: args
+                .get(4)
+                .cloned()
+                .unwrap_or_else(|| exit_error("missing pane key")),
+        },
+        "submit-text" => PluginHostRequest::PaneSubmitText {
+            text: read_host_text(args.get(4..).unwrap_or_default()),
+        },
+        "wait-state" => PluginHostRequest::AgentWaitState {
+            state: args
+                .get(4)
+                .cloned()
+                .unwrap_or_else(|| exit_error("missing agent state")),
+            timeout_ms: args
+                .get(5)
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(30_000),
+        },
+        "select-model" => PluginHostRequest::AgentSelectModel {
+            model: args
+                .get(4)
+                .cloned()
+                .unwrap_or_else(|| exit_error("missing model")),
+            effort: args.get(5).cloned(),
+        },
+        "restore-baseline" => PluginHostRequest::AgentRestoreBaseline,
+        "stash" => PluginHostRequest::ComposerStash,
+        "restore" => PluginHostRequest::ComposerRestore,
+        _ => exit_error("unknown plugin host operation"),
+    };
+    let command = PluginHostCommand { token, request };
+    match ipc::send_plugin_host_command(command).await {
+        Ok(PluginHostResponse::Error { error }) | Err(error) => exit_error(&error),
+        Ok(response) => println!(
+            "{}",
+            serde_json::to_string(&response).unwrap_or_else(|error| exit_error(&error.to_string()))
+        ),
+    }
+}
+
+fn read_host_text(arguments: &[String]) -> String {
+    if !arguments.is_empty() {
+        return arguments.join(" ");
+    }
+    let mut value = String::new();
+    io::stdin()
+        .read_to_string(&mut value)
+        .unwrap_or_else(|error| exit_error(&format!("could not read plugin input: {error}")));
+    value
 }
 
 fn is_agent_subcommand(command: &str) -> bool {
@@ -932,7 +1094,9 @@ async fn main() {
                 eprintln!("Error: agent activity is available through the tmux IPC integration");
                 std::process::exit(1);
             }
-            IpcResponse::AgentActions { .. } | IpcResponse::AgentActionRun(_) => {
+            IpcResponse::AgentActions { .. }
+            | IpcResponse::AgentActionRun(_)
+            | IpcResponse::InstalledPlugins(_) => {
                 eprintln!("Error: unexpected agent action response");
                 std::process::exit(1);
             }
@@ -1823,18 +1987,18 @@ mod tests {
     use super::plugin_name_matches_action_id;
 
     #[test]
-    fn plugin_names_match_catalog_action_suffixes() {
+    fn plugin_names_match_local_action_suffixes() {
         assert!(plugin_name_matches_action_id(
-            "codex.cheap_compact",
-            "cheap-compact"
+            "local.example.summarize_session",
+            "summarize-session"
         ));
         assert!(plugin_name_matches_action_id(
-            "codex.session_info",
-            "codex.session-info"
+            "local.example.session_info",
+            "local.example.session-info"
         ));
         assert!(!plugin_name_matches_action_id(
-            "codex.set_model",
-            "cheap-compact"
+            "local.example.set_model",
+            "summarize-session"
         ));
     }
 }

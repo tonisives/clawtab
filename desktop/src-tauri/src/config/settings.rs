@@ -154,42 +154,6 @@ pub struct TitleSummarySettings {
     pub effort: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AgentPluginCompactPreset {
-    pub model: String,
-    pub effort: String,
-}
-
-impl Default for AgentPluginCompactPreset {
-    fn default() -> Self {
-        Self {
-            model: "gpt-5.6-luna".to_string(),
-            effort: "low".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AgentPluginSettings {
-    pub catalog_updates_enabled: bool,
-    pub local_plugins_enabled: bool,
-    pub compact_presets: HashMap<String, AgentPluginCompactPreset>,
-}
-
-impl Default for AgentPluginSettings {
-    fn default() -> Self {
-        let mut compact_presets = HashMap::new();
-        compact_presets.insert("codex".to_string(), AgentPluginCompactPreset::default());
-        Self {
-            catalog_updates_enabled: true,
-            local_plugins_enabled: false,
-            compact_presets,
-        }
-    }
-}
-
 impl Default for TitleSummarySettings {
     fn default() -> Self {
         Self {
@@ -269,9 +233,6 @@ pub struct AppSettings {
     /// the ClawTab app loses focus, and re-capture when it regains focus.
     #[serde(default)]
     pub auto_release_on_blur: bool,
-    /// Safe, daemon-owned agent action catalog and provider presets.
-    #[serde(default)]
-    pub agent_plugins: AgentPluginSettings,
 }
 
 fn default_true() -> bool {
@@ -315,7 +276,6 @@ impl Default for AppSettings {
             notify_questions_local: true,
             notify_questions_remote: true,
             auto_release_on_blur: false,
-            agent_plugins: AgentPluginSettings::default(),
         }
     }
 }

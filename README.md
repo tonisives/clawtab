@@ -82,7 +82,7 @@ tmux source-file ~/.tmux.conf
 | `prefix + f` | Fork the current agent session into a new pane |
 | `` prefix + ` `` | Open the ClawTab terminal sidebar |
 
-The floating menu has Home, Plugins, Secrets, and Skills tabs. Plugins lists the available agent actions for the current pane and runs the selected action with Enter. It also shows provider usage, session start time, first and latest queries, session ID, and restore context. Each agent pane can have its own floating menu, and the rest of tmux remains interactive while it is open. Opening the menu again from the same agent focuses its existing floating pane.
+The floating menu has Home, Plugins, Secrets, and Skills tabs. Plugins lists matching actions from installed local plugins for the current pane and runs the selected action with Enter. ClawTab installs no agent actions by default. It also shows provider usage, session start time, first and latest queries, session ID, and restore context. Each agent pane can have its own floating menu, and the rest of tmux remains interactive while it is open. Opening the menu again from the same agent focuses its existing floating pane.
 
 The floating menu uses 95% of its target pane by default. Customize its size or restore the original client-modal popup in `.tmux.conf`:
 
@@ -106,14 +106,17 @@ cwtctl jobs run my-project/review
 cwtctl jobs status
 cwtctl agent info %16
 cwtctl agent auto-yes toggle %16
-cwtctl plugin cheap-compact run
-cwtctl plugin set-model run %16 model=gpt-5.6-sol effort=medium
+cwtctl plugin installed --json
+cwtctl plugin list
+cwtctl plugin <name> run [pane_id] [key=value ...]
 ```
 
-Agent plugins can also be discovered with `cwtctl plugin list`. Plugin names
-use the action suffix from the catalog, with dashes in place of underscores.
-The Plugins tab exposes the same `set-model` action with model and effort
-selectors, and restores any draft after the switch.
+Agent actions are optional local executables. ClawTab installs none by default.
+Plugin packages are hot-discovered from
+`~/.config/clawtab/agent-plugins/<plugin-id>/plugin.yaml`; edits do not require
+a daemon restart. Plugin names can use a unique action suffix, with dashes in
+place of underscores. See [Local Executable Plugins](./docs/agent-plugins.md)
+for the package format, host commands, and approval flow.
 
 For an interactive agent job, `cwtctl jobs run` waits for the daemon to publish the tmux pane and then attaches your terminal to it. If you are already inside tmux, it selects the new pane in the current client.
 

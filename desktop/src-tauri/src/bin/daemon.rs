@@ -207,6 +207,22 @@ fn main() {
             });
         }
 
+        // Run-scoped IPC for local executable plugins.
+        tokio::spawn(async move {
+            let handler = move |command: clawtab_lib::agent_plugins::PluginHostCommand| async move {
+                match clawtab_lib::agent_plugins::runtime()
+                    .host_call(&command.token, command.request)
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(error) => clawtab_lib::agent_plugins::PluginHostResponse::Error { error },
+                }
+            };
+            if let Err(error) = ipc::start_plugin_host_server(handler).await {
+                log::error!("Plugin host IPC server error: {}", error);
+            }
+        });
+
         // IPC server
         {
             let jobs_config = Arc::clone(&jobs_config);
@@ -376,15 +392,6 @@ fn main() {
                         &pty_manager,
                     )
                     .await;
-                    {
-                        let current_settings = settings.lock();
-                        for provider in processes.iter().map(|process| process.provider.as_str()) {
-                            clawtab_lib::agent_plugins::observe_detected_provider(
-                                provider,
-                                &current_settings,
-                            );
-                        }
-                    }
                     let snapshot_json = serde_json::to_string(&processes).unwrap_or_default();
                     if snapshot_json != last_snapshot_json {
                         last_snapshot_json = snapshot_json;
@@ -815,6 +822,22 @@ async fn handle_ipc_command(
         IpcCommand::CancelAgentAction { run_id } => {
             match clawtab_lib::agent_plugins::runtime().cancel(&run_id) {
                 Ok(run) => IpcResponse::AgentActionRun(run),
+                Err(error) => IpcResponse::Error(error),
+            }
+        }
+        IpcCommand::ListInstalledPlugins => IpcResponse::InstalledPlugins(
+            clawtab_lib::agent_plugins::runtime().list_installed_plugins(),
+        ),
+        IpcCommand::ApprovePlugin {
+            plugin_id,
+            fingerprint,
+        } => match clawtab_lib::agent_plugins::runtime().approve_plugin(&plugin_id, &fingerprint) {
+            Ok(()) => IpcResponse::Ok,
+            Err(error) => IpcResponse::Error(error),
+        },
+        IpcCommand::RevokePlugin { plugin_id } => {
+            match clawtab_lib::agent_plugins::runtime().revoke_plugin(&plugin_id) {
+                Ok(()) => IpcResponse::Ok,
                 Err(error) => IpcResponse::Error(error),
             }
         }

@@ -73,6 +73,9 @@ declare -a SKILLS_LIST
 declare -a SECRETS_LIST
 declare -a PLUGIN_ITEMS
 declare -a AGENT_ACTION_IDS
+declare -a AGENT_ACTION_AVAILABLE
+declare -a AGENT_ACTION_UNAVAILABLE_REASONS
+AGENT_ACTIONS_JSON=""
 
 # Filtered indices (populated by apply_filter)
 declare -a FILTERED_INDICES
@@ -300,17 +303,68 @@ draw_search_bar() {
 SHORTCUT_CURSOR=0
 SHORTCUT_ITEMS=("Rename title" "Toggle auto-yes" "Pin across ClawTab" "Fork session")
 
+append_agent_action() {
+    local action_id="$1"
+    local title="$2"
+    local available="$3"
+    local unavailable_reason="${4:-}"
+
+    [ -n "$action_id" ] || return 0
+    if [ "$available" = "true" ]; then
+        PLUGIN_ITEMS+=("Agent: $title")
+        AGENT_ACTION_AVAILABLE+=("true")
+        AGENT_ACTION_UNAVAILABLE_REASONS+=("")
+    else
+        [ -n "$unavailable_reason" ] || unavailable_reason="unavailable"
+        PLUGIN_ITEMS+=("Agent: $title [disabled: $unavailable_reason]")
+        AGENT_ACTION_AVAILABLE+=("false")
+        AGENT_ACTION_UNAVAILABLE_REASONS+=("$unavailable_reason")
+    fi
+    AGENT_ACTION_IDS+=("$action_id")
+}
+
 load_agent_actions() {
     PLUGIN_ITEMS=()
     AGENT_ACTION_IDS=()
+    AGENT_ACTION_AVAILABLE=()
+    AGENT_ACTION_UNAVAILABLE_REASONS=()
+    AGENT_ACTIONS_JSON=""
     command -v cwtctl &>/dev/null || return 0
-    local action_id title status
-    while IFS=$'\t' read -r action_id title status; do
-        [ -n "$action_id" ] || continue
-        [ "$status" = "available" ] || continue
-        PLUGIN_ITEMS+=("Agent: $title")
-        AGENT_ACTION_IDS+=("$action_id")
-    done < <(cwtctl agent actions "$PANE_ID" 2>/dev/null || true)
+
+    if ! command -v jq &>/dev/null; then
+        local action_id title status available unavailable_reason
+        while IFS=$'\t' read -r action_id title status; do
+            [ -n "$action_id" ] || continue
+            if [ "$status" = "available" ]; then
+                available="true"
+                unavailable_reason=""
+            else
+                available="false"
+                unavailable_reason="${status#unavailable: }"
+            fi
+            append_agent_action "$action_id" "$title" "$available" "$unavailable_reason"
+        done < <(cwtctl agent actions "$PANE_ID" 2>/dev/null || true)
+        return 0
+    fi
+
+    local actions_json
+    actions_json=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || return 0
+    if ! printf '%s' "$actions_json" | jq -e '.actions | type == "array"' >/dev/null 2>&1; then
+        return 0
+    fi
+    AGENT_ACTIONS_JSON="$actions_json"
+
+    local action_id title available unavailable_reason
+    while IFS=$'\t' read -r action_id title available unavailable_reason; do
+        append_agent_action "$action_id" "$title" "$available" "$unavailable_reason"
+    done < <(
+        printf '%s' "$actions_json" |
+            jq -r '.actions[]? |
+                [(.id // ""), (.title // ""),
+                 (if .available == true then "true" else "false" end),
+                 (.unavailable_reason // "")] |
+                @tsv'
+    )
 }
 
 load_agent_actions
@@ -1369,7 +1423,7 @@ draw_list() {
 draw_secrets() { draw_list "secrets"; }
 draw_skills() { draw_list "skills"; }
 
-# Draw the available agent plugins for the current pane.
+# Draw the agent plugins for the current pane.
 draw_plugins() {
     apply_filter
     local count=${#FILTERED_INDICES[@]}
@@ -1427,7 +1481,13 @@ draw_plugins() {
 
         real_idx=${FILTERED_INDICES[$idx]}
         prefix="${PLUGIN_ITEMS[$real_idx]}"
-        if [ $idx -eq $CURSOR ]; then
+        if [ "${AGENT_ACTION_AVAILABLE[$real_idx]:-false}" != "true" ]; then
+            if [ $idx -eq $CURSOR ]; then
+                printf "${C_SELECTED} > ${C_DIM}%s ${C_RESET}" "$prefix" >&3
+            else
+                printf "${C_DIM}   %s ${C_RESET}" "$prefix" >&3
+            fi
+        elif [ $idx -eq $CURSOR ]; then
             printf "${C_SELECTED} > %s ${C_RESET}" "$prefix" >&3
         else
             printf "${C_NORMAL}   %s ${C_RESET}" "$prefix" >&3
@@ -1520,72 +1580,281 @@ toggle_shared_pin() {
     fi
 }
 
-agent_action_options() {
-    local action_id="$1"
-    local parameter_kind="$2"
-    local actions_json
-    command -v jq &>/dev/null || return 1
-    actions_json=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || return 1
-    printf '%s' "$actions_json" | jq -r \
-        --arg action_id "$action_id" \
-        --arg parameter_kind "$parameter_kind" \
-        '.actions[] | select(.id == $action_id and .available == true) | .parameters[] | select(.kind == $parameter_kind) | .options[]'
-}
-
 select_agent_option() {
     local prompt="$1"
     shift
+    local header=""
+    if [ "${1:-}" = "--header" ]; then
+        header="${2:-}"
+        shift 2
+    fi
     [ "$#" -gt 0 ] || return 1
     tput cnorm 2>/dev/null >&3
+    local -a fzf_args
+    fzf_args=("--prompt=$prompt" --reverse --no-info)
+    [ -n "$header" ] && fzf_args+=("--header=$header")
     local selected
-    selected=$(printf '%s\n' "$@" | fzf --prompt="$prompt" --reverse --no-info)
+    selected=$(printf '%s\n' "$@" | fzf "${fzf_args[@]}")
     local result=$?
     tput civis 2>/dev/null >&3
     [ "$result" -eq 0 ] || return 1
     printf '%s' "$selected"
 }
 
-run_agent_action_from_menu() {
+agent_action_is_available() {
     local action_id="$1"
-    if [[ "$action_id" != *.set_model ]]; then
-        cwtctl agent action run "$action_id" "$PANE_ID" >/dev/null 2>&1 || true
-        return 1
+    local i
+    for ((i=0; i<${#AGENT_ACTION_IDS[@]}; i++)); do
+        if [ "${AGENT_ACTION_IDS[$i]}" = "$action_id" ]; then
+            [ "${AGENT_ACTION_AVAILABLE[$i]:-false}" = "true" ]
+            return
+        fi
+    done
+    return 1
+}
+
+agent_value_is_blank() {
+    local value="$1"
+    [ -z "${value//[[:space:]]/}" ]
+}
+
+agent_parameter_prompt() {
+    local title="$1"
+    local description="$2"
+    local placeholder="$3"
+
+    tput cnorm 2>/dev/null >&3
+    printf "\r\033[2K${C_HEADER}%s${C_RESET}" "$title" >&3
+    if [ -n "$description" ]; then
+        printf " ${C_DIM}%s${C_RESET}" "$description" >&3
+    fi
+    if [ -n "$placeholder" ]; then
+        printf " ${C_DIM}[%s]${C_RESET}" "$placeholder" >&3
+    fi
+    printf " ${C_SEARCH}>${C_RESET} " >&3
+}
+
+select_agent_parameter() {
+    local title="$1"
+    local description="$2"
+    local default_value="$3"
+    shift 3
+
+    local -a ordered_options
+    ordered_options=()
+    if [ -n "$default_value" ]; then
+        ordered_options+=("$default_value")
     fi
 
-    if ! command -v jq &>/dev/null || ! command -v fzf &>/dev/null; then
+    local option
+    for option in "$@"; do
+        [ "$option" = "$default_value" ] && continue
+        ordered_options+=("$option")
+    done
+
+    if [ -n "$description" ]; then
+        select_agent_option "$title> " --header "$description" "${ordered_options[@]}"
+    else
+        select_agent_option "$title> " "${ordered_options[@]}"
+    fi
+}
+
+collect_agent_parameter() {
+    local parameter_json="$1"
+    local parameter_input_fd="${2:-}"
+    local title description default_value placeholder required kind
+    title=$(printf '%s' "$parameter_json" | jq -r '.title // .name // "Parameter"')
+    description=$(printf '%s' "$parameter_json" | jq -r '.description // ""')
+    default_value=$(printf '%s' "$parameter_json" | jq -r '.default_value // ""')
+    placeholder=$(printf '%s' "$parameter_json" | jq -r '.placeholder // ""')
+    required=$(printf '%s' "$parameter_json" | jq -r 'if .required == true then "true" else "false" end')
+    kind=$(printf '%s' "$parameter_json" | jq -r '.kind // ""')
+
+    local value=""
+    local -a options
+    options=()
+
+    case "$kind" in
+        string)
+            agent_parameter_prompt "$title" "$description" "$placeholder"
+            if [ "$parameter_input_fd" = "4" ]; then
+                IFS= read -r value <&4
+            elif [ -t 0 ] && [ -r /dev/tty ]; then
+                IFS= read -r value </dev/tty
+            else
+                IFS= read -r value
+            fi
+            local read_status=$?
+            tput civis 2>/dev/null >&3
+            [ "$read_status" -eq 0 ] || return 1
+            if [ -z "$value" ] && [ -n "$default_value" ]; then
+                value="$default_value"
+            fi
+            ;;
+        boolean)
+            options=("true" "false")
+            if ! value=$(select_agent_parameter "$title" "$description" "$default_value" "${options[@]}"); then
+                return 1
+            fi
+            ;;
+        choice|model|effort)
+            while IFS= read -r option; do
+                options+=("$option")
+            done < <(printf '%s' "$parameter_json" | jq -r '.options[]?')
+
+            if [ "${#options[@]}" -eq 0 ]; then
+                if [ -n "$default_value" ]; then
+                    value="$default_value"
+                elif [ "$required" = "true" ]; then
+                    return 2
+                else
+                    return 0
+                fi
+            else
+                if ! value=$(select_agent_parameter "$title" "$description" "$default_value" "${options[@]}"); then
+                    return 1
+                fi
+            fi
+            ;;
+        *)
+            return 3
+            ;;
+    esac
+
+    printf '%s' "$value"
+}
+
+run_agent_action_from_menu() {
+    local action_id="$1"
+    agent_action_is_available "$action_id" || return 0
+
+    if ! command -v jq &>/dev/null; then
         tmux display-message "ClawTab: jq and fzf are required to choose model and effort"
         draw
         return 0
     fi
 
-    local -a models efforts
-    models=()
-    efforts=()
-    local option model effort
-    while IFS= read -r option; do
-        [ -n "$option" ] && models+=("$option")
-    done < <(agent_action_options "$action_id" "model")
-    while IFS= read -r option; do
-        [ -n "$option" ] && efforts+=("$option")
-    done < <(agent_action_options "$action_id" "effort")
+    if [ -z "$AGENT_ACTIONS_JSON" ]; then
+        AGENT_ACTIONS_JSON=$(cwtctl agent actions "$PANE_ID" --json 2>/dev/null) || {
+            draw
+            return 0
+        }
+    fi
 
-    if [ "${#models[@]}" -eq 0 ] || [ "${#efforts[@]}" -eq 0 ]; then
-        tmux display-message "ClawTab: no model and effort options are available"
+    local action_json parameter_count
+    action_json=$(printf '%s' "$AGENT_ACTIONS_JSON" | jq -c \
+        --arg action_id "$action_id" \
+        '[.actions[]? | select(.id == $action_id and .available == true)] | .[0] // empty') || {
+        draw
+        return 0
+    }
+    [ -n "$action_json" ] || return 0
+
+    parameter_count=$(printf '%s' "$action_json" | jq -r '(.parameters // []) | length') || {
+        draw
+        return 0
+    }
+
+    local -a run_args
+    run_args=("$action_id" "$PANE_ID")
+    if [ "$parameter_count" -eq 0 ]; then
+        cwtctl agent action run "${run_args[@]}" >/dev/null 2>&1 || true
+        return 1
+    fi
+
+    local has_model=0 has_effort=0 picker_count=0 unsupported_kind=0 kind
+    while IFS= read -r kind; do
+        case "$kind" in
+            model) has_model=1; picker_count=$((picker_count + 1)) ;;
+            effort) has_effort=1; picker_count=$((picker_count + 1)) ;;
+            choice|boolean) picker_count=$((picker_count + 1)) ;;
+            string) ;;
+            *) unsupported_kind=1 ;;
+        esac
+    done < <(printf '%s' "$action_json" | jq -r '.parameters[]?.kind // ""')
+
+    if [ "$unsupported_kind" -eq 1 ]; then
+        tmux display-message "ClawTab: unsupported action parameter"
         draw
         return 0
     fi
 
-    if ! model=$(select_agent_option "model> " "${models[@]}"); then
-        draw
-        return 0
+    if [ "$has_model" -eq 1 ] || [ "$has_effort" -eq 1 ]; then
+        local missing_model_effort_options
+        missing_model_effort_options=$(printf '%s' "$action_json" | jq -r '
+            any(.parameters[]?;
+                (.kind == "model" or .kind == "effort") and
+                ((.options // []) | length == 0) and
+                ((.default_value // "") == ""))')
+        if [ "$missing_model_effort_options" = "true" ]; then
+            tmux display-message "ClawTab: no model and effort options are available"
+            draw
+            return 0
+        fi
     fi
-    if ! effort=$(select_agent_option "effort> " "${efforts[@]}"); then
+
+    if [ "$picker_count" -gt 0 ] && ! command -v fzf &>/dev/null; then
+        if [ "$has_model" -eq 1 ] || [ "$has_effort" -eq 1 ]; then
+            tmux display-message "ClawTab: jq and fzf are required to choose model and effort"
+        else
+            tmux display-message "ClawTab: fzf is required to choose action parameters"
+        fi
         draw
         return 0
     fi
 
-    if ! cwtctl agent action run "$action_id" "$PANE_ID" "model=$model" "effort=$effort" >/dev/null 2>&1; then
-        tmux display-message "ClawTab: could not start model switch"
+    local parameter_json name title required value parameter_status run_arg
+    exec 4<&0
+    while IFS= read -r parameter_json; do
+        [ -n "$parameter_json" ] || continue
+        name=$(printf '%s' "$parameter_json" | jq -r '.name // ""')
+        title=$(printf '%s' "$parameter_json" | jq -r '.title // .name // "Parameter"')
+        required=$(printf '%s' "$parameter_json" | jq -r 'if .required == true then "true" else "false" end')
+
+        if value=$(collect_agent_parameter "$parameter_json" 4); then
+            :
+        else
+            parameter_status=$?
+            case "$parameter_status" in
+                2)
+                    tmux display-message "ClawTab: no options are available for this action parameter"
+                    ;;
+                3)
+                    tmux display-message "ClawTab: unsupported action parameter"
+                    ;;
+                4)
+                    tmux display-message "ClawTab: required action parameter is missing"
+                    ;;
+                *)
+                    exec 4<&-
+                    draw
+                    return 0
+                    ;;
+            esac
+            exec 4<&-
+            draw
+            return 0
+        fi
+
+        if [ "$required" = "true" ] && agent_value_is_blank "$value"; then
+            tmux display-message "ClawTab: required action parameter is missing"
+            exec 4<&-
+            draw
+            return 0
+        fi
+        if [ -n "$value" ]; then
+            printf -v run_arg '%s=%s' "$name" "$value"
+            run_args+=("$run_arg")
+        fi
+    done < <(printf '%s' "$action_json" | jq -c '.parameters[]?')
+    exec 4<&-
+
+    if ! cwtctl agent action run "${run_args[@]}" >/dev/null 2>&1; then
+        if [ "$has_model" -eq 1 ] && [ "$has_effort" -eq 1 ]; then
+            tmux display-message "ClawTab: could not start model switch"
+        else
+            tmux display-message "ClawTab: could not start plugin action"
+        fi
         draw
         return 0
     fi

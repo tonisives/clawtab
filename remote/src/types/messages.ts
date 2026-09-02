@@ -1,23 +1,7 @@
-import type { AgentActivity, AgentEffort, JobUpdate } from "@clawtab/shared";
+import type { AgentActionDescriptor, AgentActivity, AgentEffort, JobUpdate } from "@clawtab/shared";
 import type { DetectedProcess, ClaudeQuestion, JobStatus, NotificationHistoryItem, RemoteJob, RunDetail, RunRecord } from "./job";
 
-export type AgentActionParameter = {
-  name: string;
-  title: string;
-  kind: "model" | "effort";
-  required: boolean;
-  options: string[];
-};
-
-export type AgentActionDescriptor = {
-  id: string;
-  title: string;
-  description: string;
-  provider: string;
-  parameters: AgentActionParameter[];
-  available: boolean;
-  unavailable_reason?: string;
-};
+export type { AgentActionDescriptor, AgentActionParameter, AgentActionParameterKind } from "@clawtab/shared";
 
 export type AgentSessionData = {
   provider: string;

@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { AGENT_EFFORT_OPTIONS, isSyntheticAgentModel } from "@clawtab/shared"
 import type { ProcessProvider } from "@clawtab/shared"
-import type { AppSettings } from "../types"
+import type { AppSettings, InstalledPluginSummary } from "../types"
 import {
   labelForProvider,
   labelForProviderModel,
 } from "./JobEditor/utils"
 
-interface ModelEntry {
+type ModelEntry = {
   provider: ProcessProvider
   modelId: string
   displayName: string
@@ -18,10 +18,10 @@ interface ModelEntry {
 
 const PROVIDERS_WITH_MODELS: ProcessProvider[] = ["claude", "codex", "antigravity"]
 
-function buildAllModels(
+let buildAllModels = (
   enabledModels: Record<string, string[]>,
   apiModels: Record<ProcessProvider, [string, string][]>,
-): ModelEntry[] {
+): ModelEntry[] => {
   const entries: ModelEntry[] = []
   const enabledSets: Record<string, Set<string>> = {}
   for (const [provider, list] of Object.entries(enabledModels)) {
@@ -59,10 +59,10 @@ function buildAllModels(
 }
 
 /** Group OpenCode model IDs by their provider prefix (e.g. "opencode", "amazon-bedrock", "zai") */
-function groupOpencodeModels(
+let groupOpencodeModels = (
   models: string[],
   enabledSet: Set<string>,
-): { namespace: string; models: { id: string; name: string; enabled: boolean }[] }[] {
+): { namespace: string; models: { id: string; name: string; enabled: boolean }[] }[] => {
   const groups = new Map<string, { id: string; name: string; enabled: boolean }[]>()
   for (const id of models) {
     const slashIdx = id.indexOf("/")
@@ -75,7 +75,254 @@ function groupOpencodeModels(
   return Array.from(groups.entries()).map(([namespace, models]) => ({ namespace, models }))
 }
 
-export function ModelsPanel() {
+type LocalPluginAction = "approve" | "revoke"
+
+type PendingLocalPluginAction = {
+  pluginId: string
+  action: LocalPluginAction
+}
+
+type LocalPluginCardProps = {
+  plugin: InstalledPluginSummary
+  reviewed: boolean
+  pendingAction: PendingLocalPluginAction | null
+  onReview: (pluginId: string) => void
+  onApprove: (plugin: InstalledPluginSummary) => void
+  onRevoke: (pluginId: string) => void
+}
+
+let shortenFingerprint = (fingerprint: string): string => {
+  if (fingerprint.length <= 16) return fingerprint
+  return `${fingerprint.slice(0, 8)}...${fingerprint.slice(-8)}`
+}
+
+let LocalPluginCard = ({
+  plugin,
+  reviewed,
+  pendingAction,
+  onReview,
+  onApprove,
+  onRevoke,
+}: LocalPluginCardProps) => {
+  let isPending = pendingAction?.pluginId === plugin.id
+  let isApproving = isPending && pendingAction?.action === "approve"
+  let isRevoking = isPending && pendingAction?.action === "revoke"
+  let statusClass = plugin.error
+    ? "status-failed"
+    : plugin.trusted
+      ? "status-success"
+      : "status-paused"
+  let statusLabel = plugin.error ? "Invalid" : plugin.trusted ? "Trusted" : "Untrusted"
+
+  let handleReview = () => onReview(plugin.id)
+  let handleApprove = () => onApprove(plugin)
+  let handleRevoke = () => onRevoke(plugin.id)
+
+  return (
+    <article className="local-plugin-card">
+      <div className="local-plugin-header">
+        <div className="local-plugin-heading">
+          <strong className="local-plugin-name">{plugin.name || plugin.id || "Invalid plugin"}</strong>
+          <span className="local-plugin-id">{plugin.id}</span>
+        </div>
+        <div className="local-plugin-actions">
+          <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
+          {!plugin.error && !plugin.trusted && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handleReview}
+              disabled={pendingAction !== null}
+              aria-expanded={reviewed}
+            >
+              {reviewed ? "Close review" : "Review and approve"}
+            </button>
+          )}
+          {plugin.trusted && (
+            <button
+              className="btn btn-danger btn-sm"
+              onClick={handleRevoke}
+              disabled={pendingAction !== null}
+            >
+              {isRevoking ? "Revoking..." : "Revoke"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <dl className="local-plugin-metadata">
+        <div>
+          <dt>Package ID</dt>
+          <dd className="local-plugin-value">{plugin.id}</dd>
+        </div>
+        <div>
+          <dt>Version</dt>
+          <dd className="local-plugin-value">{plugin.version}</dd>
+        </div>
+        <div>
+          <dt>Fingerprint</dt>
+          <dd className="local-plugin-value" title={plugin.fingerprint}>
+            {shortenFingerprint(plugin.fingerprint)}
+          </dd>
+        </div>
+        <div>
+          <dt>Action IDs</dt>
+          <dd className="local-plugin-value">
+            {plugin.actions.length > 0 ? plugin.actions.join(", ") : "None declared"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="local-plugin-access">
+        <div className="local-plugin-access-group">
+          <span className="local-plugin-label">Commands</span>
+          {plugin.commands.length > 0 ? (
+            <ul className="local-plugin-command-list">
+              {plugin.commands.map((command, index) => (
+                <li key={`${plugin.id}-command-${index}`}>
+                  <code className="local-plugin-command">
+                    {command.length > 0 ? JSON.stringify(command) : "(empty command)"}
+                  </code>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="local-plugin-value">None declared</span>
+          )}
+        </div>
+        <div className="local-plugin-access-group">
+          <span className="local-plugin-label">Capabilities</span>
+          <span className="local-plugin-value">
+            {plugin.capabilities.length > 0 ? plugin.capabilities.join(", ") : "None declared"}
+          </span>
+        </div>
+      </div>
+
+      {plugin.error && (
+        <p className="local-plugin-error" role="alert">
+          Validation error: {plugin.error}
+        </p>
+      )}
+
+      {reviewed && !plugin.error && !plugin.trusted && (
+        <div className="local-plugin-review">
+          <p className="local-plugin-review-description">
+            Review the commands and capabilities above before approving this plugin.
+          </p>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleApprove}
+            disabled={pendingAction !== null}
+          >
+            {isApproving ? "Approving..." : "Approve plugin"}
+          </button>
+        </div>
+      )}
+    </article>
+  )
+}
+
+let LocalExecutablePlugins = () => {
+  let [installedPlugins, setInstalledPlugins] = useState<InstalledPluginSummary[]>([])
+  let [installedPluginsLoading, setInstalledPluginsLoading] = useState(true)
+  let [installedPluginsError, setInstalledPluginsError] = useState<string | null>(null)
+  let [pluginActionError, setPluginActionError] = useState<string | null>(null)
+  let [reviewedPluginId, setReviewedPluginId] = useState<string | null>(null)
+  let [pendingAction, setPendingAction] = useState<PendingLocalPluginAction | null>(null)
+
+  let loadInstalledPlugins = useCallback(async () => {
+    setInstalledPluginsLoading(true)
+    setInstalledPluginsError(null)
+    try {
+      let plugins = await invoke<InstalledPluginSummary[]>("list_installed_plugins")
+      setInstalledPlugins(plugins)
+    } catch {
+      setInstalledPluginsError("Unable to load local executable plugins.")
+    } finally {
+      setInstalledPluginsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadInstalledPlugins()
+  }, [loadInstalledPlugins])
+
+  let handleReview = (pluginId: string) => {
+    setPluginActionError(null)
+    setReviewedPluginId((currentPluginId) => (
+      currentPluginId === pluginId ? null : pluginId
+    ))
+  }
+
+  let handleApprove = async (plugin: InstalledPluginSummary) => {
+    if (plugin.error || plugin.trusted || reviewedPluginId !== plugin.id) return
+    setPendingAction({ pluginId: plugin.id, action: "approve" })
+    setPluginActionError(null)
+    try {
+      await invoke("approve_plugin", {
+        pluginId: plugin.id,
+        fingerprint: plugin.fingerprint,
+      })
+      setReviewedPluginId(null)
+      await loadInstalledPlugins()
+    } catch {
+      setPluginActionError(`Unable to approve ${plugin.name}.`)
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  let handleRevoke = async (pluginId: string) => {
+    let plugin = installedPlugins.find((entry) => entry.id === pluginId)
+    if (!plugin?.trusted) return
+    setPendingAction({ pluginId, action: "revoke" })
+    setPluginActionError(null)
+    try {
+      await invoke("revoke_plugin", { pluginId })
+      setReviewedPluginId(null)
+      await loadInstalledPlugins()
+    } catch {
+      setPluginActionError(`Unable to revoke ${plugin.name}.`)
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  return (
+    <div className="field-group local-plugins-group">
+      <span className="field-group-title">Local executable plugins</span>
+      <p className="local-plugins-description">
+        Discovery location: <code>~/.config/clawtab/agent-plugins</code>. Package metadata is shown independently of trust or activation state.
+      </p>
+      {installedPluginsError && (
+        <p className="local-plugin-error" role="alert">{installedPluginsError}</p>
+      )}
+      {pluginActionError && (
+        <p className="local-plugin-error" role="alert">{pluginActionError}</p>
+      )}
+      {installedPluginsLoading && installedPlugins.length === 0 ? (
+        <p className="local-plugin-empty">Loading local executable plugins...</p>
+      ) : installedPlugins.length === 0 ? (
+        <p className="local-plugin-empty">No local executable plugins found.</p>
+      ) : (
+        <div className="local-plugin-list">
+          {installedPlugins.map((plugin) => (
+            <LocalPluginCard
+              key={`${plugin.id}-${plugin.fingerprint}`}
+              plugin={plugin}
+              reviewed={reviewedPluginId === plugin.id}
+              pendingAction={pendingAction}
+              onReview={handleReview}
+              onApprove={handleApprove}
+              onRevoke={handleRevoke}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export let ModelsPanel = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [customModelInput, setCustomModelInput] = useState<Record<string, string>>({})
   const [claudeApiModels, setClaudeApiModels] = useState<[string, string][]>([])
@@ -238,23 +485,6 @@ export function ModelsPanel() {
   const titleSummaryModels = titleSummaryProvider
     ? (enabledModels[titleSummaryProvider] ?? [])
     : []
-  const agentPlugins = settings.agent_plugins ?? {
-    catalog_updates_enabled: true,
-    local_plugins_enabled: false,
-    compact_presets: { codex: { model: "gpt-5.6-luna", effort: "low" } },
-  }
-  const compactPreset = agentPlugins.compact_presets.codex ?? { model: "gpt-5.6-luna", effort: "low" }
-  const updateAgentPlugins = (patch: Partial<typeof agentPlugins>) => {
-    update({ agent_plugins: { ...agentPlugins, ...patch } })
-  }
-  const updateCompactPreset = (patch: Partial<typeof compactPreset>) => {
-    updateAgentPlugins({
-      compact_presets: {
-        ...agentPlugins.compact_presets,
-        codex: { ...compactPreset, ...patch },
-      },
-    })
-  }
 
   const isDefault = (provider: ProcessProvider, modelId: string) =>
     provider === defaultProvider && modelId === defaultModel
@@ -372,52 +602,7 @@ export function ModelsPanel() {
         </div>
       </div>
 
-      <div className="field-group">
-        <span className="field-group-title">Agent actions</span>
-        <div className="form-group">
-          <label>Cheap compact preset</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <select
-              value={compactPreset.model}
-              onChange={(event) => updateCompactPreset({ model: event.target.value })}
-            >
-              {(enabledModels.codex ?? []).map((model) => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
-            <select
-              value={compactPreset.effort}
-              onChange={(event) => updateCompactPreset({ effort: event.target.value })}
-            >
-              {(["low", "medium", "high", "xhigh", "max"] as const).map((effort) => (
-                <option key={effort} value={effort}>{effort}</option>
-              ))}
-            </select>
-          </div>
-          <span className="hint">Used temporarily by Compact with cheaper model, then the original model and effort are restored.</span>
-        </div>
-        <div className="form-group">
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={agentPlugins.catalog_updates_enabled}
-              onChange={(event) => updateAgentPlugins({ catalog_updates_enabled: event.target.checked })}
-            />
-            Update signed first-party agent actions automatically
-          </label>
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={agentPlugins.local_plugins_enabled}
-              onChange={(event) => updateAgentPlugins({ local_plugins_enabled: event.target.checked })}
-            />
-            Enable local declarative agent plugins
-          </label>
-          <span className="hint">Loads local.* YAML manifests from ~/.config/clawtab/agent-plugins.</span>
-        </div>
-      </div>
+      <LocalExecutablePlugins />
 
       <div className="field-group">
         <span className="field-group-title">AI pane titles</span>

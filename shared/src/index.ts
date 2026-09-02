@@ -30,6 +30,11 @@ export type {
   AgentEffortOption,
   AgentSelection,
 } from "./types/process";
+export type {
+  AgentActionDescriptor,
+  AgentActionParameter,
+  AgentActionParameterKind,
+} from "./types/agentPlugin";
 export { AGENT_EFFORT_OPTIONS, CURRENT_AGENT_MODEL_OPTIONS, defaultAgentEffort, isSyntheticAgentModel } from "./types/process";
 export type { PaneContent, SplitNode, SplitTreeState, SplitDirection } from "./types/splitTree";
 export type { Transport } from "./transport";
@@ -81,6 +86,8 @@ export { StatusBadge } from "./components/StatusBadge";
 export { QueryLabel } from "./components/QueryLabel";
 export { PaneOverviewModal } from "./components/PaneOverviewModal";
 export type { PaneOverviewActions, PaneOverviewData } from "./components/PaneOverviewModal";
+export { AgentActionFormModal } from "./components/AgentActionFormModal";
+export type { AgentActionFormModalProps } from "./components/AgentActionFormModal";
 export { JobCard } from "./components/JobCard";
 export { RunningJobCard } from "./components/RunningJobCard";
 export { ProcessCard } from "./components/ProcessCard";

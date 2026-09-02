@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -6,6 +8,7 @@ use tokio::sync::Semaphore;
 
 const MAX_CONCURRENT_IPC_CONNECTIONS: usize = 64;
 const IPC_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const PLUGIN_HOST_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(65);
 const IPC_ACCEPT_ERROR_BACKOFF: std::time::Duration = std::time::Duration::from_millis(100);
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -15,6 +18,10 @@ pub fn daemon_socket_path() -> PathBuf {
 
 pub fn daemon_event_socket_path() -> PathBuf {
     PathBuf::from("/tmp/clawtab-events.sock")
+}
+
+pub fn plugin_host_socket_path() -> PathBuf {
+    PathBuf::from("/tmp/clawtab/plugin-host.sock")
 }
 
 pub fn desktop_socket_path() -> PathBuf {
@@ -87,6 +94,14 @@ pub enum IpcCommand {
     },
     CancelAgentAction {
         run_id: String,
+    },
+    ListInstalledPlugins,
+    ApprovePlugin {
+        plugin_id: String,
+        fingerprint: String,
+    },
+    RevokePlugin {
+        plugin_id: String,
     },
     /// Return hook installation state for one recognized agent provider.
     GetAgentIntegration {
@@ -263,6 +278,7 @@ pub enum IpcResponse {
         session: Option<clawtab_protocol::AgentSessionData>,
     },
     AgentActionRun(clawtab_protocol::AgentActionRun),
+    InstalledPlugins(Vec<crate::agent_plugins::InstalledPluginSummary>),
     AgentIntegration(crate::agent_hooks::AgentIntegrationStatus),
     SecretKeys(Vec<String>),
     SecretValues(Vec<(String, String)>),
@@ -360,7 +376,11 @@ pub async fn broadcast_event(subs: &EventSubscribers, event: &IpcEvent) -> usize
 /// the command and response types, so the same loop serves both the daemon
 /// socket (`IpcCommand` -> `IpcResponse`) and the desktop socket
 /// (`DesktopIpcCommand` -> `IpcResponse`).
-async fn run_server<C, R, F, Fut>(path: PathBuf, handler: F) -> Result<(), String>
+async fn run_server<C, R, F, Fut>(
+    path: PathBuf,
+    request_timeout: std::time::Duration,
+    handler: F,
+) -> Result<(), String>
 where
     C: serde::de::DeserializeOwned + Send + 'static,
     R: serde::Serialize + Send + 'static,
@@ -371,6 +391,9 @@ where
 
     let listener =
         UnixListener::bind(&path).map_err(|e| format!("Failed to bind socket: {}", e))?;
+    #[cfg(unix)]
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("Failed to secure socket: {}", e))?;
 
     log::info!("IPC server listening on {:?}", path);
 
@@ -388,7 +411,7 @@ where
                 let handler = handler.clone();
                 tokio::spawn(async move {
                     let result = tokio::time::timeout(
-                        IPC_REQUEST_TIMEOUT,
+                        request_timeout,
                         handle_client::<C, R, F, Fut>(stream, handler),
                     )
                     .await;
@@ -404,7 +427,7 @@ where
                                 log::error!("Error handling IPC client: {}", e);
                             }
                         }
-                        Err(_) => log::warn!("IPC request timed out after 30s"),
+                        Err(_) => log::warn!("IPC request timed out after {:?}", request_timeout),
                     }
                     drop(permit);
                 });
@@ -423,7 +446,8 @@ where
     F: Fn(IpcCommand) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = IpcResponse> + Send + 'static,
 {
-    run_server::<IpcCommand, IpcResponse, _, _>(daemon_socket_path(), handler).await
+    run_server::<IpcCommand, IpcResponse, _, _>(daemon_socket_path(), IPC_REQUEST_TIMEOUT, handler)
+        .await
 }
 
 pub async fn start_desktop_ipc_server<F, Fut>(handler: F) -> Result<(), String>
@@ -431,7 +455,30 @@ where
     F: Fn(DesktopIpcCommand) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = IpcResponse> + Send + 'static,
 {
-    run_server::<DesktopIpcCommand, IpcResponse, _, _>(desktop_socket_path(), handler).await
+    run_server::<DesktopIpcCommand, IpcResponse, _, _>(
+        desktop_socket_path(),
+        IPC_REQUEST_TIMEOUT,
+        handler,
+    )
+    .await
+}
+
+pub async fn start_plugin_host_server<F, Fut>(handler: F) -> Result<(), String>
+where
+    F: Fn(crate::agent_plugins::PluginHostCommand) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = crate::agent_plugins::PluginHostResponse> + Send + 'static,
+{
+    run_server::<
+        crate::agent_plugins::PluginHostCommand,
+        crate::agent_plugins::PluginHostResponse,
+        _,
+        _,
+    >(
+        plugin_host_socket_path(),
+        PLUGIN_HOST_REQUEST_TIMEOUT,
+        handler,
+    )
+    .await
 }
 
 /// Start the event-push server. Clients connect, the daemon pushes newline-
@@ -552,6 +599,23 @@ pub async fn send_command(cmd: IpcCommand) -> Result<IpcResponse, String> {
 
 pub async fn send_desktop_command(cmd: DesktopIpcCommand) -> Result<IpcResponse, String> {
     send(desktop_socket_path(), cmd).await
+}
+
+pub async fn send_plugin_host_command(
+    command: crate::agent_plugins::PluginHostCommand,
+) -> Result<crate::agent_plugins::PluginHostResponse, String> {
+    let socket_path = std::env::var_os("CLAWTAB_PLUGIN_SOCKET")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            "Plugin host socket is unavailable outside an active plugin run".to_string()
+        })?;
+    tokio::time::timeout(
+        PLUGIN_HOST_REQUEST_TIMEOUT,
+        send_inner(socket_path, command),
+    )
+    .await
+    .map_err(|_| "Plugin host IPC request timed out after 65s".to_string())?
 }
 
 /// Connect to the daemon's event server. Returns a reader yielding newline-

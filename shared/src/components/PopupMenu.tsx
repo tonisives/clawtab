@@ -46,7 +46,7 @@ function PortalWeb({ children }: { children: ReactNode }) {
 }
 
 export type PopupMenuItem =
-  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean; icon?: ReactNode; hint?: string }
+  | { type: "item"; label: string; onPress: () => void; color?: string; active?: boolean; icon?: ReactNode; hint?: string; disabled?: boolean }
   | { type: "separator" }
   | { type: "submenu"; label: string; items: PopupMenuItem[] };
 
@@ -71,12 +71,17 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
   showDivider?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
+  const disabled = item.type === "item" && item.disabled === true;
   const webProps = isWeb ? {
     onMouseEnter: () => {
-      setHovered(true);
-      onHover?.();
+      if (!disabled) {
+        setHovered(true);
+        onHover?.();
+      }
     },
-    onMouseLeave: () => setHovered(false),
+    onMouseLeave: () => {
+      if (!disabled) setHovered(false);
+    },
   } : {};
 
   const isSubmenu = item.type === "submenu";
@@ -92,9 +97,12 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
         active && styles.itemActive,
         highlighted && styles.itemHover,
         hovered && styles.itemHover,
+        disabled && styles.itemDisabled,
       ]}
-      onPress={onPress}
-      activeOpacity={0.6}
+      onPress={disabled ? undefined : onPress}
+      disabled={disabled}
+      activeOpacity={disabled ? 1 : 0.6}
+      accessibilityState={{ disabled }}
       {...webProps}
     >
       <View style={styles.itemRow}>
@@ -106,6 +114,7 @@ function HoverableItem({ item, onPress, highlighted = false, onHover, showDivide
             styles.itemText,
             active && styles.itemTextActive,
             color ? { color } : null,
+            disabled && styles.itemTextDisabled,
           ]} numberOfLines={1}>
             {item.label}
           </Text>
@@ -132,7 +141,9 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
 
   const activeItems = submenu ? submenu.items : items;
   const actionableIndexes = activeItems
-    .map((item, index) => (item.type === "separator" ? -1 : index))
+    .map((item, index) => (
+      item.type === "separator" || item.type === "item" && item.disabled ? -1 : index
+    ))
     .filter((index) => index >= 0);
 
   useEffect(() => {
@@ -280,6 +291,7 @@ export function PopupMenu({ items, position, onClose, dropdownRef, triggerRef, a
   const activateIndex = (index: number) => {
     const item = activeItems[index];
     if (!item || item.type === "separator") return;
+    if (item.type === "item" && item.disabled) return;
     if (item.type === "submenu") {
       setSubmenu({ label: item.label, items: item.items });
       return;
@@ -479,6 +491,9 @@ const styles = StyleSheet.create({
   itemHover: {
     backgroundColor: colors.surfaceHover,
   },
+  itemDisabled: {
+    opacity: 0.5,
+  },
   itemRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -517,6 +532,9 @@ const styles = StyleSheet.create({
   itemTextActive: {
     color: colors.accent,
     fontWeight: "600",
+  },
+  itemTextDisabled: {
+    color: colors.textMuted,
   },
   submenuArrow: {
     color: colors.textMuted,

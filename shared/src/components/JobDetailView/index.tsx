@@ -158,7 +158,13 @@ export interface JobDetailViewProps {
   onUpdateJob?: (patch: JobUpdate) => void | Promise<void>;
   editHeaderFields?: boolean;
   showHeaderAgent?: boolean;
-  extraMenuItems?: { label: string; onPress: () => void }[];
+  extraMenuItems?: {
+    label: string;
+    onPress: () => void;
+    color?: string;
+    hint?: string;
+    disabled?: boolean;
+  }[];
 }
 
 export function JobDetailView({
@@ -730,7 +736,7 @@ export function JobDetailView({
                     ...(onSearchSkills ? [{ type: "item" as const, label: "Send Skill", onPress: () => onSearchSkills() }] : []),
                     ...(onRelease ? [{ type: "item" as const, label: "Release", onPress: () => onRelease() }] : []),
                     ...(onRevealInSidebar ? [{ type: "item" as const, label: "Reveal in Sidebar", onPress: () => onRevealInSidebar() }] : []),
-                    ...(extraMenuItems?.length ? [{ type: "separator" as const }, ...extraMenuItems.map((it) => ({ type: "item" as const, label: it.label, onPress: it.onPress }))] : []),
+                    ...(extraMenuItems?.length ? [{ type: "separator" as const }, ...extraMenuItems.map((it) => ({ type: "item" as const, ...it }))] : []),
                     ...(isRunning && !sigintPending && transport.sigintJob ? [{ type: "item" as const, label: "Send C-c", onPress: () => handleAction("sigint") }] : []),
                     ...(isRunning && !sigintPending ? [{ type: "item" as const, label: "Stop", onPress: () => handleAction("stop"), color: colors.danger }] : []),
                     ...(onDelete && !isRunning ? [{ type: "separator" as const }, { type: "item" as const, label: "Delete", onPress: () => onDelete(), color: colors.danger }] : []),

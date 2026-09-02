@@ -260,3 +260,157 @@
   color: var(--danger-color);
   font-size: 12px;
 }
+
+.local-plugins-description {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.local-plugin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.local-plugin-card {
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.local-plugin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.local-plugin-heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.local-plugin-name {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.local-plugin-id,
+.local-plugin-value {
+  overflow-wrap: anywhere;
+}
+
+.local-plugin-id {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.local-plugin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.local-plugin-metadata {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 16px;
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.local-plugin-metadata dt,
+.local-plugin-label {
+  margin-bottom: 3px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.local-plugin-metadata dd,
+.local-plugin-value {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.local-plugin-access {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.local-plugin-access-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.local-plugin-command-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.local-plugin-command {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-family: "SF Mono", "Menlo", "Monaco", monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.local-plugin-error {
+  margin: 10px 0 0;
+  color: var(--danger-color);
+  font-size: 12px;
+}
+
+.local-plugin-review {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.local-plugin-review-description,
+.local-plugin-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .local-plugin-header,
+  .local-plugin-review {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .local-plugin-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .local-plugin-access {
+    grid-template-columns: 1fr;
+  }
+}

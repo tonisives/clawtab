@@ -429,15 +429,7 @@ export function ProcessDetailPane({ paneId, onClose, demoProcess, embedded = fal
           onTogglePin: handleTogglePin,
           onStop: isAlive ? handleStop : undefined,
           stopping,
-          agentActions: agentActions.map((action) => ({
-            id: action.id,
-            title: action.title,
-            description: action.description,
-            available: action.available,
-            unavailableReason: action.unavailable_reason,
-            modelOptions: action.parameters.find((parameter) => parameter.kind === "model")?.options,
-            effortOptions: action.parameters.find((parameter) => parameter.kind === "effort")?.options,
-          })),
+          agentActions,
           agentActionRun: agentActionRun ? {
             state: agentActionRun.state,
             progress: agentActionRun.progress,
