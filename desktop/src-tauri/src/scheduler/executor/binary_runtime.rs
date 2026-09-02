@@ -91,7 +91,7 @@ pub fn reattach_running_binary_jobs(jobs_config: &JobsConfig) -> HashMap<String,
     for job in jobs_config
         .jobs
         .iter()
-        .filter(|job| matches!(job.job_type, JobType::Binary))
+        .filter(|job| can_reattach_job(job.enabled, &job.job_type))
     {
         let Some(state) = read_state(&job.slug) else {
             continue;
@@ -106,7 +106,7 @@ pub fn reattach_running_binary_jobs(jobs_config: &JobsConfig) -> HashMap<String,
     for job in jobs_config
         .jobs
         .iter()
-        .filter(|job| matches!(job.job_type, JobType::Binary))
+        .filter(|job| can_reattach_job(job.enabled, &job.job_type))
     {
         if statuses.contains_key(&job.slug) {
             continue;
@@ -123,6 +123,10 @@ pub fn reattach_running_binary_jobs(jobs_config: &JobsConfig) -> HashMap<String,
         }
     }
     statuses
+}
+
+fn can_reattach_job(enabled: bool, job_type: &JobType) -> bool {
+    enabled && matches!(job_type, JobType::Binary)
 }
 
 fn status_from_state(state: BinaryRuntimeState) -> JobStatus {
@@ -174,7 +178,7 @@ fn discover_external_state(slug: &str, job: Option<&Job>) -> Option<BinaryRuntim
             continue;
         }
         let matches_job_dir = !job_dir.is_empty() && row.command.contains(&job_dir);
-        let matches_job_path = !job_path.is_empty() && row.command.contains(&job_path);
+        let matches_job_path = command_matches_job_path(row.command, &job_path);
         if !matches_job_dir && !matches_job_path {
             continue;
         }
@@ -187,6 +191,45 @@ fn discover_external_state(slug: &str, job: Option<&Job>) -> Option<BinaryRuntim
         });
     }
     None
+}
+
+fn command_matches_job_path(command: &str, job_path: &str) -> bool {
+    let job_path = job_path.trim();
+    if job_path.is_empty() {
+        return false;
+    }
+
+    if std::path::Path::new(job_path).components().count() > 1 {
+        return command.match_indices(job_path).any(|(start, matched)| {
+            let before = command[..start].chars().next_back();
+            let after = command[start + matched.len()..].chars().next();
+            is_argument_boundary(before) && is_argument_boundary(after)
+        });
+    }
+
+    let Some(executable) = first_command_argument(command) else {
+        return false;
+    };
+    std::path::Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        == Some(job_path)
+}
+
+fn first_command_argument(command: &str) -> Option<&str> {
+    let command = command.trim_start();
+    let first = command.chars().next()?;
+    if first == '\'' || first == '"' {
+        let quoted = &command[first.len_utf8()..];
+        let end = quoted.find(first)?;
+        return Some(&quoted[..end]);
+    }
+    command.split_whitespace().next()
+}
+
+fn is_argument_boundary(character: Option<char>) -> bool {
+    character
+        .is_none_or(|character| character.is_whitespace() || character == '\'' || character == '"')
 }
 
 struct PsRow<'a> {
@@ -240,4 +283,41 @@ fn kill_process_group(state: &BinaryRuntimeState) -> Result<(), String> {
         "Failed to stop {} process group {}: {}",
         state.slug, pgid, err
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{can_reattach_job, command_matches_job_path};
+    use crate::config::jobs::JobType;
+
+    #[test]
+    fn disabled_binary_jobs_are_not_reattached() {
+        assert!(!can_reattach_job(false, &JobType::Binary));
+        assert!(can_reattach_job(true, &JobType::Binary));
+        assert!(!can_reattach_job(true, &JobType::Claude));
+    }
+
+    #[test]
+    fn bare_job_path_only_matches_the_process_executable() {
+        assert!(command_matches_job_path("echo hello", "echo"));
+        assert!(command_matches_job_path("/bin/echo hello", "echo"));
+        assert!(!command_matches_job_path("/bin/sh -c 'echo hello'", "echo"));
+        assert!(!command_matches_job_path("/tmp/echo-worker", "echo"));
+    }
+
+    #[test]
+    fn explicit_job_path_matches_a_complete_process_argument() {
+        assert!(command_matches_job_path(
+            "/bin/sh /opt/clawtab/jobs/example/run.sh",
+            "/opt/clawtab/jobs/example/run.sh"
+        ));
+        assert!(command_matches_job_path(
+            "'/opt/clawtab/jobs/example/run.sh' --watch",
+            "/opt/clawtab/jobs/example/run.sh"
+        ));
+        assert!(!command_matches_job_path(
+            "/opt/clawtab/jobs/example/run.sh.backup",
+            "/opt/clawtab/jobs/example/run.sh"
+        ));
+    }
 }
