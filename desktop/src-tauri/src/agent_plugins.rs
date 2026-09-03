@@ -545,10 +545,13 @@ impl AgentPluginRuntime {
                 if let Some(value) = effort.as_deref() {
                     validate_effort(value)?;
                 }
-                select_model(&stored.host, &model, effort.as_deref(), &stored.cancel).await?;
                 if let Some(run) = self.runs.lock().get_mut(&run_id) {
+                    // The terminal UI can change before the model verification
+                    // query observes it. Mark the run before selecting so a
+                    // failed verification still triggers baseline recovery.
                     run.host.model_changed = true;
                 }
+                select_model(&stored.host, &model, effort.as_deref(), &stored.cancel).await?;
                 Ok(PluginHostResponse::Ok)
             }
             PluginHostRequest::AgentRestoreBaseline => {
@@ -1644,15 +1647,61 @@ async fn wait_for_model(
         if cancel.is_cancelled() {
             return Err("Plugin cancelled".into());
         }
+        let screen = capture_plain(&host.pane_id)?;
+        let screen_matches = live_model_selection(&screen).map(|selection| {
+            selection.model.eq_ignore_ascii_case(model)
+                && effort.is_none_or(|expected| {
+                    selection
+                        .effort
+                        .as_deref()
+                        .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+                })
+        });
         let session = session_data(host.provider, &host.pane_pid);
-        if session.model.as_deref() == Some(model)
-            && effort.is_none_or(|expected| session.effort.as_deref() == Some(expected))
-        {
+        let confirmed = screen_matches.unwrap_or_else(|| {
+            session.model.as_deref() == Some(model)
+                && effort.is_none_or(|expected| session.effort.as_deref() == Some(expected))
+        });
+        if confirmed {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     Err("Codex did not confirm the requested model and effort".into())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LiveModelSelection {
+    model: String,
+    effort: Option<String>,
+}
+
+fn live_model_selection(captured: &str) -> Option<LiveModelSelection> {
+    captured.lines().rev().find_map(|line| {
+        let lower = line.to_ascii_lowercase();
+        let marker_start = lower.find("context")?;
+        let prefix = line.get(..marker_start)?.trim();
+        let mut fields = prefix.split_whitespace();
+        let model = fields.next()?.to_string();
+        if !valid_model_footer_value(&model) {
+            return None;
+        }
+        let effort = fields.find_map(|field| {
+            let candidate =
+                field.trim_matches(|character: char| !character.is_ascii_alphanumeric());
+            matches!(candidate, "low" | "medium" | "high" | "xhigh" | "max")
+                .then(|| candidate.to_string())
+        });
+        Some(LiveModelSelection { model, effort })
+    })
+}
+
+fn valid_model_footer_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
 }
 
 fn effort_label(effort: &str) -> &str {
@@ -1683,7 +1732,13 @@ fn stash_draft(host: &HostRun) -> Result<Option<String>, String> {
     }
     let draft = state.draft.filter(|draft| !draft.is_empty());
     if draft.is_some() {
-        crate::tmux::send_key_to_pane(&host.pane_id, "C-u")?;
+        let screen = capture_plain(&host.pane_id)?;
+        if codex_vim_normal_mode(&screen) {
+            crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
+            crate::tmux::send_key_to_pane(&host.pane_id, "d")?;
+        } else {
+            crate::tmux::send_key_to_pane(&host.pane_id, "C-u")?;
+        }
         std::thread::sleep(Duration::from_millis(100));
     }
     Ok(draft)
@@ -1702,7 +1757,16 @@ fn restore_stashed_draft(host: &HostRun) -> Result<(), String> {
     {
         return Err("Codex composer is not empty; draft was not restored".into());
     }
-    crate::tmux::send_literal_to_pane(&host.pane_id, draft)
+    let screen = capture_plain(&host.pane_id)?;
+    let was_vim_normal = codex_vim_normal_mode(&screen);
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(&host.pane_id, "i")?;
+    }
+    crate::tmux::send_literal_to_pane(&host.pane_id, draft)?;
+    if was_vim_normal {
+        crate::tmux::send_key_to_pane(&host.pane_id, "Escape")?;
+    }
+    Ok(())
 }
 
 async fn recover_host_state(host: &HostRun) -> Result<(), String> {
@@ -1779,8 +1843,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        load_plugin, redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
-        valid_version_pattern, version_matches,
+        live_model_selection, load_plugin, redact_internal_values, selected_option_matches,
+        strip_ansi, valid_plugin_id, valid_version_pattern, version_matches,
     };
 
     #[test]
@@ -1872,6 +1936,27 @@ actions:
             "  1. gpt-5.6-luna",
             "gpt-5.6-luna"
         ));
+    }
+
+    #[test]
+    fn live_footer_selection_overrides_stale_session_metadata() {
+        assert_eq!(
+            live_model_selection(
+                "› Ask Codex to do anything\n\ngpt-5.6-luna low · Context 96% left · Vim: Insert\n"
+            ),
+            Some(super::LiveModelSelection {
+                model: "gpt-5.6-luna".into(),
+                effort: Some("low".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn live_footer_selection_ignores_unrelated_context_lines() {
+        assert_eq!(
+            live_model_selection("Context is available\n› draft\n"),
+            None
+        );
     }
 
     #[test]
