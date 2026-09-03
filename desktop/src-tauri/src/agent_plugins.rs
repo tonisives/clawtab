@@ -1594,13 +1594,8 @@ async fn select_model(
         return Err("Codex baseline model and effort could not be determined safely".into());
     }
     let state = codex_screen_state(&host.pane_id)?;
-    if !state.idle
-        || state
-            .draft
-            .as_deref()
-            .is_some_and(|draft| !draft.is_empty())
-    {
-        return Err("Codex must be idle with an empty composer before changing model".into());
+    if state.draft.as_deref().is_none_or(|draft| !draft.is_empty()) {
+        return Err("Codex must have an empty composer before changing model".into());
     }
     submit_text(&host.pane_id, host.provider, "/model")?;
     tokio::time::sleep(Duration::from_millis(250)).await;
@@ -1817,12 +1812,7 @@ fn restore_stashed_draft(host: &HostRun) -> Result<(), String> {
         return Ok(());
     };
     let state = codex_screen_state(&host.pane_id)?;
-    if !state.idle
-        || state
-            .draft
-            .as_deref()
-            .is_some_and(|value| !value.is_empty())
-    {
+    if state.draft.as_deref().is_none_or(|value| !value.is_empty()) {
         return Err("Codex composer is not empty; draft was not restored".into());
     }
     let screen = capture_plain(&host.pane_id)?;
