@@ -1585,8 +1585,39 @@ async fn select_model(
         if capture_plain(&host.pane_id)?.contains("Select Reasoning Level") {
             choose_codex_option(&host.pane_id, effort_label(effort), cancel).await?;
         }
+        if effort == "max" {
+            confirm_max_effort_if_requested(&host.pane_id, cancel).await?;
+        }
     }
     wait_for_model(host, model, effort, cancel).await
+}
+
+async fn confirm_max_effort_if_requested(
+    pane_id: &str,
+    cancel: &CancellationToken,
+) -> Result<(), String> {
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(2) {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        let screen = capture_plain(pane_id)?;
+        let lower = screen.to_ascii_lowercase();
+        if lower.contains("advanced reasoning")
+            || lower.contains("consumes usage limits faster")
+            || lower.contains("press enter to confirm")
+        {
+            crate::tmux::send_key_to_pane(pane_id, "Enter")?;
+            return Ok(());
+        }
+        if live_model_selection(&screen)
+            .is_some_and(|selection| selection.effort.as_deref() == Some("max"))
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Ok(())
 }
 
 async fn choose_codex_option(
