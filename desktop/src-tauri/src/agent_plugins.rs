@@ -99,7 +99,7 @@ struct ExecutionSpec {
     action: PluginAction,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct BaselineState {
     model: Option<String>,
     effort: Option<String>,
@@ -373,7 +373,7 @@ impl AgentPluginRuntime {
             uuid::Uuid::new_v4().simple()
         );
         let cancel = CancellationToken::new();
-        let session = session_data(provider, &pane_pid);
+        let baseline = initial_baseline(provider, &pane_id, &pane_pid);
         let host = HostRun {
             token: token.clone(),
             plugin_id: spec.plugin.manifest.id.clone(),
@@ -385,10 +385,7 @@ impl AgentPluginRuntime {
             working_directory: pane_working_directory(&pane_id).unwrap_or_default(),
             parameters: parameters.clone(),
             capabilities: spec.action.capabilities.iter().cloned().collect(),
-            baseline: BaselineState {
-                model: session.model.clone(),
-                effort: session.effort.clone(),
-            },
+            baseline,
             stashed_draft: None,
             model_changed: false,
         };
@@ -1402,6 +1399,34 @@ fn session_data(provider: ProcessProvider, pane_pid: &str) -> AgentSessionData {
     }
 }
 
+fn initial_baseline(provider: ProcessProvider, pane_id: &str, pane_pid: &str) -> BaselineState {
+    let session = session_data(provider, pane_pid);
+    let live = if provider == ProcessProvider::Codex {
+        capture_plain(pane_id)
+            .ok()
+            .and_then(|screen| live_footer_selection(&screen))
+    } else {
+        None
+    };
+    baseline_from_session(session, live)
+}
+
+fn baseline_from_session(
+    session: AgentSessionData,
+    live: Option<LiveModelSelection>,
+) -> BaselineState {
+    live.map_or(
+        BaselineState {
+            model: session.model,
+            effort: session.effort,
+        },
+        |selection| BaselineState {
+            model: Some(selection.model),
+            effort: selection.effort,
+        },
+    )
+}
+
 fn provider_version(provider: ProcessProvider) -> Option<String> {
     if provider == ProcessProvider::Shell {
         return None;
@@ -1708,28 +1733,35 @@ struct LiveModelSelection {
 }
 
 fn live_model_selection(captured: &str) -> Option<LiveModelSelection> {
-    captured.lines().rev().find_map(|line| {
-        let lower = line.to_ascii_lowercase();
-        let prefix = if let Some(marker_start) = lower.find("context") {
-            line.get(..marker_start)?.trim()
-        } else {
+    live_footer_selection(captured).or_else(|| {
+        captured.lines().rev().find_map(|line| {
+            let lower = line.to_ascii_lowercase();
             let marker = "model changed to ";
             let marker_start = lower.find(marker)?;
-            line.get(marker_start + marker.len()..)?.trim()
-        };
-        let mut fields = prefix.split_whitespace();
-        let model = fields.next()?.to_string();
-        if !valid_model_footer_value(&model) {
-            return None;
-        }
-        let effort = fields.find_map(|field| {
-            let candidate =
-                field.trim_matches(|character: char| !character.is_ascii_alphanumeric());
-            matches!(candidate, "low" | "medium" | "high" | "xhigh" | "max")
-                .then(|| candidate.to_string())
-        });
-        Some(LiveModelSelection { model, effort })
+            parse_live_model_prefix(line.get(marker_start + marker.len()..)?.trim())
+        })
     })
+}
+
+fn live_footer_selection(captured: &str) -> Option<LiveModelSelection> {
+    captured.lines().rev().find_map(|line| {
+        let marker_start = line.to_ascii_lowercase().find("context")?;
+        parse_live_model_prefix(line.get(..marker_start)?.trim())
+    })
+}
+
+fn parse_live_model_prefix(prefix: &str) -> Option<LiveModelSelection> {
+    let mut fields = prefix.split_whitespace();
+    let model = fields.next()?.to_string();
+    if !valid_model_footer_value(&model) {
+        return None;
+    }
+    let effort = fields.find_map(|field| {
+        let candidate = field.trim_matches(|character: char| !character.is_ascii_alphanumeric());
+        matches!(candidate, "low" | "medium" | "high" | "xhigh" | "max")
+            .then(|| candidate.to_string())
+    });
+    Some(LiveModelSelection { model, effort })
 }
 
 fn valid_model_footer_value(value: &str) -> bool {
@@ -1878,9 +1910,12 @@ fn strip_ansi(value: &str) -> String {
 mod tests {
     use std::fs;
 
+    use clawtab_protocol::AgentSessionData;
+
     use super::{
-        live_model_selection, load_plugin, redact_internal_values, selected_option_matches,
-        strip_ansi, valid_plugin_id, valid_version_pattern, version_matches,
+        baseline_from_session, live_model_selection, load_plugin, redact_internal_values,
+        selected_option_matches, strip_ansi, valid_plugin_id, valid_version_pattern,
+        version_matches, BaselineState, LiveModelSelection,
     };
 
     #[test]
@@ -1984,6 +2019,31 @@ actions:
                 model: "gpt-5.6-luna".into(),
                 effort: Some("low".into()),
             })
+        );
+    }
+
+    #[test]
+    fn plugin_baseline_prefers_the_live_footer_over_session_metadata() {
+        let session = AgentSessionData {
+            provider: "codex".into(),
+            session_id: None,
+            model: Some("gpt-5.6-luna".into()),
+            effort: Some("max".into()),
+            token_count: None,
+        };
+
+        assert_eq!(
+            baseline_from_session(
+                session,
+                Some(LiveModelSelection {
+                    model: "gpt-5.6-sol".into(),
+                    effort: Some("medium".into()),
+                }),
+            ),
+            BaselineState {
+                model: Some("gpt-5.6-sol".into()),
+                effort: Some("medium".into()),
+            }
         );
     }
 
