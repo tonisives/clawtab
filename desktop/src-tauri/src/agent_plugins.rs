@@ -1710,8 +1710,13 @@ struct LiveModelSelection {
 fn live_model_selection(captured: &str) -> Option<LiveModelSelection> {
     captured.lines().rev().find_map(|line| {
         let lower = line.to_ascii_lowercase();
-        let marker_start = lower.find("context")?;
-        let prefix = line.get(..marker_start)?.trim();
+        let prefix = if let Some(marker_start) = lower.find("context") {
+            line.get(..marker_start)?.trim()
+        } else {
+            let marker = "model changed to ";
+            let marker_start = lower.find(marker)?;
+            line.get(marker_start + marker.len()..)?.trim()
+        };
         let mut fields = prefix.split_whitespace();
         let model = fields.next()?.to_string();
         if !valid_model_footer_value(&model) {
@@ -1987,6 +1992,17 @@ actions:
         assert_eq!(
             live_model_selection("Context is available\n› draft\n"),
             None
+        );
+    }
+
+    #[test]
+    fn live_model_change_log_confirms_transient_selection() {
+        assert_eq!(
+            live_model_selection("• Model changed to gpt-5.6-luna low\n"),
+            Some(super::LiveModelSelection {
+                model: "gpt-5.6-luna".into(),
+                effort: Some("low".into()),
+            })
         );
     }
 
