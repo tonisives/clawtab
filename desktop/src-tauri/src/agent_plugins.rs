@@ -1476,15 +1476,18 @@ fn session_data(provider: ProcessProvider, pane_pid: &str) -> AgentSessionData {
 }
 
 fn initial_baseline(provider: ProcessProvider, pane_id: &str, pane_pid: &str) -> BaselineState {
-    let session = session_data(provider, pane_pid);
-    let live = if provider == ProcessProvider::Codex {
-        capture_plain(pane_id)
+    if provider == ProcessProvider::Codex {
+        if let Some(live) = capture_plain(pane_id)
             .ok()
             .and_then(|screen| live_footer_selection(&screen))
-    } else {
-        None
-    };
-    baseline_from_session(session, live)
+        {
+            return BaselineState {
+                model: Some(live.model),
+                effort: live.effort,
+            };
+        }
+    }
+    baseline_from_session(session_data(provider, pane_pid), None)
 }
 
 fn baseline_from_session(
@@ -1624,10 +1627,8 @@ fn agent_state(host: &HostRun) -> Result<PluginAgentState, String> {
 fn submit_text(pane_id: &str, provider: ProcessProvider, text: &str) -> Result<(), String> {
     if provider == ProcessProvider::Codex && codex_vim_normal_mode(&capture_plain(pane_id)?) {
         crate::tmux::send_key_to_pane(pane_id, "i")?;
-        std::thread::sleep(Duration::from_millis(100));
     }
     crate::tmux::send_literal_to_pane(pane_id, text)?;
-    std::thread::sleep(Duration::from_millis(100));
     crate::tmux::send_key_to_pane(pane_id, "Enter")
 }
 
@@ -1854,20 +1855,22 @@ async fn wait_for_model(
             return Err("Plugin cancelled".into());
         }
         let screen = capture_plain(&host.pane_id)?;
-        let screen_matches = live_model_selection(&screen).map(|selection| {
-            selection.model.eq_ignore_ascii_case(model)
-                && effort.is_none_or(|expected| {
-                    selection
-                        .effort
-                        .as_deref()
-                        .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
-                })
-        });
-        let session = session_data(host.provider, &host.pane_pid);
-        let confirmed = screen_matches.unwrap_or_else(|| {
-            session.model.as_deref() == Some(model)
-                && effort.is_none_or(|expected| session.effort.as_deref() == Some(expected))
-        });
+        let confirmed = live_model_selection(&screen).map_or_else(
+            || {
+                let session = session_data(host.provider, &host.pane_pid);
+                session.model.as_deref() == Some(model)
+                    && effort.is_none_or(|expected| session.effort.as_deref() == Some(expected))
+            },
+            |selection| {
+                selection.model.eq_ignore_ascii_case(model)
+                    && effort.is_none_or(|expected| {
+                        selection
+                            .effort
+                            .as_deref()
+                            .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+                    })
+            },
+        );
         if confirmed {
             return Ok(());
         }
