@@ -803,6 +803,24 @@ pub fn capture_pane_visible(pane_id: &str) -> Result<(String, u16), String> {
     Ok((String::from_utf8_lossy(&output.stdout).to_string(), height))
 }
 
+/// Capture only the currently visible pane text with one tmux invocation.
+///
+/// Callers that do not need the pane height should prefer this over
+/// `capture_pane_visible`, which also queries pane dimensions. This matters for
+/// latency-sensitive TUI control loops where each capture launches tmux.
+pub fn capture_pane_visible_text(pane_id: &str) -> Result<String, String> {
+    let output = run(
+        &["capture-pane", "-t", pane_id, "-p", "-e", "-J"],
+        "tmux::capture_pane_visible_text",
+    )
+    .map_err(|error| format!("Failed to capture pane: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("tmux error: {}", stderr.trim()));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
 /// Send a mouse click (press + release) to a pane at the given column and row.
 /// Coordinates are 0-indexed from the top-left of the pane.
 /// Uses SGR mouse encoding which modern TUI apps (opencode, etc.) understand.

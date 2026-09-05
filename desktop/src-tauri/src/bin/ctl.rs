@@ -25,6 +25,7 @@ fn print_usage() {
     eprintln!(
         "  usage <provider>  Show local provider quota usage (claude, codex, antigravity, zai)"
     );
+    eprintln!("  codex set-model <model> <effort> [pane_id]");
     eprintln!("  plugin list [pane_id] [--json]              List available agent plugins");
     eprintln!("  plugin <name> run [pane_id] [key=value ...]");
     eprintln!("  plugin <name> status <run_id>");
@@ -123,6 +124,55 @@ fn print_plugin_usage() {
     eprintln!();
     eprintln!("Plugin names accept the action suffix with '-' in place of '_'.");
     eprintln!("For example: cwtctl plugin summarize-session run");
+}
+
+fn print_codex_usage() {
+    eprintln!("Usage: cwtctl codex set-model <model> <effort> [pane_id]");
+    eprintln!();
+    eprintln!("Changes the live Codex model while preserving the composer draft.");
+    eprintln!("pane_id defaults to $TMUX_PANE when omitted.");
+}
+
+async fn handle_codex_command(args: &[String]) {
+    if matches!(
+        args.get(2).map(String::as_str),
+        Some("help" | "-h" | "--help")
+    ) {
+        print_codex_usage();
+        return;
+    }
+    if args.get(2).map(String::as_str) != Some("set-model") || !(5..=6).contains(&args.len()) {
+        print_codex_usage();
+        std::process::exit(1);
+    }
+    let model = args[3].clone();
+    let effort = args[4].clone();
+    let pane_id = args
+        .get(5)
+        .cloned()
+        .or_else(|| env::var("TMUX_PANE").ok())
+        .unwrap_or_else(|| {
+            eprintln!("Error: pass pane_id or run this command inside tmux");
+            std::process::exit(1);
+        });
+
+    match ipc::send_command(IpcCommand::SetCodexModel {
+        pane_id,
+        model: model.clone(),
+        effort: effort.clone(),
+    })
+    .await
+    {
+        Ok(IpcResponse::Ok) => println!("Switched to {model} ({effort})"),
+        Ok(IpcResponse::Error(error)) | Err(error) => {
+            eprintln!("Error: {error}");
+            std::process::exit(1);
+        }
+        Ok(_) => {
+            eprintln!("Error: unexpected daemon response");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn plugin_name_matches_action_id(action_id: &str, plugin_name: &str) -> bool {
@@ -648,6 +698,11 @@ async fn main() {
 
     if command == "secrets" {
         handle_secrets_command(&args).await;
+        return;
+    }
+
+    if command == "codex" {
+        handle_codex_command(&args).await;
         return;
     }
 

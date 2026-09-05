@@ -168,6 +168,14 @@ cwtctl plugin <name> cancel <run_id>
 
 When `pane_id` is omitted, `cwtctl` uses `$TMUX_PANE`. `<name>` can be a full action ID or a unique action suffix, with dashes and underscores treated equivalently. Runs return a JSON record immediately. Use `status` to poll the run.
 
+Codex model switching also has a first-class command for latency-sensitive local integrations:
+
+```sh
+cwtctl codex set-model <model> <effort> [pane_id]
+```
+
+The command waits for the live Codex TUI to confirm the selection and preserves any composer draft. It does not launch an external plugin process. If `pane_id` is omitted, it uses `$TMUX_PANE`.
+
 ## Small Bash example
 
 This package declares one Codex-only action with no parameters. The action submits literal text through standard input, so the note is not exposed in a process argument. It reports a JSON result the same way.

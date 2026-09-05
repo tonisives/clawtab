@@ -95,6 +95,11 @@ pub enum IpcCommand {
     CancelAgentAction {
         run_id: String,
     },
+    SetCodexModel {
+        pane_id: String,
+        model: String,
+        effort: String,
+    },
     ListInstalledPlugins,
     ApprovePlugin {
         plugin_id: String,

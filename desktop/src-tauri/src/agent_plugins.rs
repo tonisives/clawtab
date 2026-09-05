@@ -24,6 +24,9 @@ const MAX_TIMEOUT_SECONDS: u64 = 60 * 60;
 const MAX_CAPTURE_BYTES: usize = 64 * 1024;
 const MAX_RESULT_BYTES: usize = 64 * 1024;
 const MODEL_VERIFY_TIMEOUT: Duration = Duration::from_secs(12);
+const CODEX_MENU_READY_TIMEOUT: Duration = Duration::from_secs(2);
+const CODEX_MENU_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const MODEL_VERIFY_POLL_INTERVAL: Duration = Duration::from_millis(40);
 const ALLOWED_CAPABILITIES: [&str; 5] = [
     "agent.read",
     "pane.input",
@@ -436,6 +439,79 @@ impl AgentPluginRuntime {
             stored.cancel.cancel();
         }
         Ok(stored.run)
+    }
+
+    /// Change a Codex model without launching an external plugin process.
+    ///
+    /// This keeps the same draft preservation and recovery guarantees as the
+    /// `agent.model`/`composer.draft` plugin host calls while giving local
+    /// integrations such as Hammerspoon a lower-latency first-class command.
+    pub async fn set_codex_model(
+        &self,
+        pane_id: String,
+        model: String,
+        effort: String,
+    ) -> Result<(), String> {
+        validate_model_value(&model)?;
+        validate_effort(&effort)?;
+        let (provider, pane_pid) = pane_context(&pane_id)
+            .ok_or_else(|| "No supported agent is running in this pane".to_string())?;
+        if provider != ProcessProvider::Codex {
+            return Err("The target pane is not running Codex".into());
+        }
+
+        let baseline = initial_baseline(provider, &pane_id, &pane_pid);
+        if baseline.model.as_deref() == Some(model.as_str())
+            && baseline.effort.as_deref() == Some(effort.as_str())
+        {
+            return Ok(());
+        }
+
+        {
+            let mut panes = self.active_panes.lock();
+            if !panes.insert(pane_id.clone()) {
+                return Err("Another agent action is already running in this pane".into());
+            }
+        }
+
+        let mut host = HostRun {
+            token: String::new(),
+            plugin_id: "clawtab".into(),
+            action_id: "codex.set-model".into(),
+            pane_id: pane_id.clone(),
+            pane_pid,
+            provider,
+            provider_version: None,
+            working_directory: pane_working_directory(&pane_id).unwrap_or_default(),
+            parameters: AgentActionParameters::default(),
+            capabilities: HashSet::new(),
+            baseline,
+            stashed_draft: None,
+            model_changed: false,
+        };
+        let cancel = CancellationToken::new();
+        let result = async {
+            host.stashed_draft = stash_draft(&host)?;
+            host.model_changed = true;
+            select_model(&host, &model, Some(&effort), &cancel).await?;
+            restore_stashed_draft(&host)?;
+            host.stashed_draft = None;
+            host.model_changed = false;
+            Ok(())
+        }
+        .await;
+
+        let result = match result {
+            Ok(()) => Ok(()),
+            Err(error) => match recover_host_state(&host).await {
+                Ok(()) => Err(error),
+                Err(recovery_error) => Err(format!(
+                    "Model switch failed ({error}); restoring the previous state also failed ({recovery_error})"
+                )),
+            },
+        };
+        self.active_panes.lock().remove(&pane_id);
+        result
     }
 
     pub async fn host_call(
@@ -1598,18 +1674,42 @@ async fn select_model(
         return Err("Codex must have an empty composer before changing model".into());
     }
     submit_text(&host.pane_id, host.provider, "/model")?;
-    tokio::time::sleep(Duration::from_millis(250)).await;
     choose_codex_option(&host.pane_id, model, cancel).await?;
     if let Some(effort) = effort {
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        if capture_plain(&host.pane_id)?.contains("Select Reasoning Level") {
+        if wait_for_codex_reasoning_menu(host, model, cancel).await? {
             choose_codex_option(&host.pane_id, effort_label(effort), cancel).await?;
-        }
-        if effort == "max" {
-            confirm_max_effort_if_requested(&host.pane_id, cancel).await?;
+            if effort == "max" {
+                confirm_max_effort_if_requested(&host.pane_id, cancel).await?;
+            }
         }
     }
     wait_for_model(host, model, effort, cancel).await
+}
+
+async fn wait_for_codex_reasoning_menu(
+    host: &HostRun,
+    model: &str,
+    cancel: &CancellationToken,
+) -> Result<bool, String> {
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        let screen = capture_plain(&host.pane_id)?;
+        if screen.contains("Select Reasoning Level") {
+            return Ok(true);
+        }
+        if live_model_selection(&screen)
+            .is_some_and(|selection| selection.model.eq_ignore_ascii_case(model))
+        {
+            return Ok(false);
+        }
+        if started.elapsed() >= CODEX_MENU_READY_TIMEOUT {
+            return Err("Codex did not show a reasoning picker or confirm the model".into());
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
 }
 
 async fn confirm_max_effort_if_requested(
@@ -1645,12 +1745,41 @@ async fn choose_codex_option(
     target: &str,
     cancel: &CancellationToken,
 ) -> Result<(), String> {
+    let target_lower = target.to_ascii_lowercase();
+    let started = Instant::now();
+    loop {
+        if cancel.is_cancelled() {
+            return Err("Plugin cancelled".into());
+        }
+        let screen = capture_plain(pane_id)?;
+        if screen
+            .lines()
+            .any(|line| selected_option_matches(line, &target_lower))
+        {
+            crate::tmux::send_key_to_pane(pane_id, "Enter")?;
+            return Ok(());
+        }
+        if let Some(shortcut) = codex_option_shortcut(&screen, &target_lower) {
+            crate::tmux::send_key_to_pane(pane_id, &shortcut)?;
+            return Ok(());
+        }
+        if codex_menu_ready(&screen) {
+            break;
+        }
+        if started.elapsed() >= CODEX_MENU_READY_TIMEOUT {
+            return Err("Codex option picker did not appear".into());
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
+
+    // Very small panes can hide the requested option. Retain directional
+    // navigation as a compatibility fallback, but use numeric shortcuts for
+    // the normal case so the menu needs only one capture.
     for _ in 0..32 {
         if cancel.is_cancelled() {
             return Err("Plugin cancelled".into());
         }
         let screen = capture_plain(pane_id)?;
-        let target_lower = target.to_ascii_lowercase();
         if screen
             .lines()
             .any(|line| selected_option_matches(line, &target_lower))
@@ -1659,9 +1788,31 @@ async fn choose_codex_option(
             return Ok(());
         }
         crate::tmux::send_key_to_pane(pane_id, "Down")?;
-        tokio::time::sleep(Duration::from_millis(45)).await;
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
     }
     Err("Could not safely select the requested Codex option".into())
+}
+
+fn codex_menu_ready(screen: &str) -> bool {
+    screen
+        .to_ascii_lowercase()
+        .contains("press enter to confirm or esc to go back")
+}
+
+fn codex_option_shortcut(screen: &str, target: &str) -> Option<String> {
+    screen.lines().find_map(|line| {
+        let trimmed = line.trim_start();
+        let option = ["›", ">"]
+            .into_iter()
+            .find_map(|marker| trimmed.strip_prefix(marker))
+            .unwrap_or(trimmed)
+            .trim_start();
+        let (ordinal, label) = option.split_once('.')?;
+        if ordinal.len() != 1 || !matches!(ordinal.as_bytes().first(), Some(b'1'..=b'9')) {
+            return None;
+        }
+        option_text_matches(label.trim_start(), target).then(|| ordinal.to_string())
+    })
 }
 
 fn selected_option_matches(line: &str, target: &str) -> bool {
@@ -1678,6 +1829,10 @@ fn selected_option_matches(line: &str, target: &str) -> bool {
             option = rest.trim_start();
         }
     }
+    option_text_matches(option, target)
+}
+
+fn option_text_matches(option: &str, target: &str) -> bool {
     let option_lower = option.to_ascii_lowercase();
     option_lower.strip_prefix(target).is_some_and(|remainder| {
         remainder.is_empty()
@@ -1716,7 +1871,7 @@ async fn wait_for_model(
         if confirmed {
             return Ok(());
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(MODEL_VERIFY_POLL_INTERVAL).await;
     }
     Err("Codex did not confirm the requested model and effort".into())
 }
@@ -1874,7 +2029,7 @@ fn codex_vim_normal_mode(screen: &str) -> bool {
 }
 
 fn capture_plain(pane_id: &str) -> Result<String, String> {
-    let (captured, _) = crate::tmux::capture_pane_visible(pane_id)?;
+    let captured = crate::tmux::capture_pane_visible_text(pane_id)?;
     Ok(strip_ansi(&captured))
 }
 
@@ -1903,9 +2058,9 @@ mod tests {
     use clawtab_protocol::AgentSessionData;
 
     use super::{
-        baseline_from_session, live_model_selection, load_plugin, redact_internal_values,
-        selected_option_matches, strip_ansi, valid_plugin_id, valid_version_pattern,
-        version_matches, BaselineState, LiveModelSelection,
+        baseline_from_session, codex_option_shortcut, live_model_selection, load_plugin,
+        redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
+        valid_version_pattern, version_matches, BaselineState, LiveModelSelection,
     };
 
     #[test]
@@ -1997,6 +2152,28 @@ actions:
             "  1. gpt-5.6-luna",
             "gpt-5.6-luna"
         ));
+    }
+
+    #[test]
+    fn codex_option_shortcut_finds_model_and_effort_ordinals() {
+        let model_menu = "  2. gpt-5.6-sol (current)\n  4. gpt-5.6-luna  Fast model";
+        let effort_menu = "  4. Extra high\n  5. More reasoning…";
+
+        assert_eq!(
+            codex_option_shortcut(model_menu, "gpt-5.6-luna").as_deref(),
+            Some("4")
+        );
+        assert_eq!(
+            codex_option_shortcut(effort_menu, "more reasoning").as_deref(),
+            Some("5")
+        );
+    }
+
+    #[test]
+    fn codex_option_shortcut_rejects_partial_labels_and_multi_digit_options() {
+        let menu = "  1. gpt-5.6-lunatic\n  10. gpt-5.6-luna";
+
+        assert_eq!(codex_option_shortcut(menu, "gpt-5.6-luna"), None);
     }
 
     #[test]

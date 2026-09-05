@@ -825,6 +825,17 @@ async fn handle_ipc_command(
                 Err(error) => IpcResponse::Error(error),
             }
         }
+        IpcCommand::SetCodexModel {
+            pane_id,
+            model,
+            effort,
+        } => match clawtab_lib::agent_plugins::runtime()
+            .set_codex_model(pane_id, model, effort)
+            .await
+        {
+            Ok(()) => IpcResponse::Ok,
+            Err(error) => IpcResponse::Error(error),
+        },
         IpcCommand::ListInstalledPlugins => IpcResponse::InstalledPlugins(
             clawtab_lib::agent_plugins::runtime().list_installed_plugins(),
         ),
