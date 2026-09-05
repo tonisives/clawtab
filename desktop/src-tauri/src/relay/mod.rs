@@ -17,6 +17,8 @@ use crate::pty::SharedPtyManager;
 pub use crate::process_snapshot::detect_processes_snapshot;
 
 const RELAY_SEND_TIMEOUT: Duration = Duration::from_secs(10);
+const RELAY_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const RELAY_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Relay connection state, shared via Arc<Mutex<..>> in AppState.
 pub struct RelayHandle {
@@ -163,7 +165,10 @@ pub async fn check_subscription_http(
     access_token: &str,
     refresh_token: &str,
 ) -> Result<(bool, Option<String>, Option<String>), String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(RELAY_HTTP_TIMEOUT)
+        .build()
+        .map_err(|e| format!("Failed to build relay HTTP client: {e}"))?;
     let url = format!("{}/subscription/status", server_url.trim_end_matches('/'));
 
     let resp = client
@@ -362,8 +367,13 @@ async fn attempt_session(
     event_sink: &dyn crate::events::EventSink,
     backoff: &mut Duration,
 ) -> SessionOutcome {
-    match tokio_tungstenite::connect_async(full_ws_url).await {
-        Ok((ws_stream, _)) => {
+    match tokio::time::timeout(
+        RELAY_CONNECT_TIMEOUT,
+        tokio_tungstenite::connect_async(full_ws_url),
+    )
+    .await
+    {
+        Ok(Ok((ws_stream, _))) => {
             log::info!("Relay: connected");
             *backoff = Duration::from_secs(1);
             *relay_sub_required.lock() = false;
@@ -421,7 +431,7 @@ async fn attempt_session(
             log::info!("Relay: connection lost, reconnecting in {:?}", backoff);
             SessionOutcome::Retry
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             let err_str = e.to_string();
             log::error!("Relay: connect failed: {}", err_str);
             if err_str.contains("403") {
@@ -429,6 +439,13 @@ async fn attempt_session(
                 *relay_sub_required.lock() = true;
                 return SessionOutcome::Done;
             }
+            SessionOutcome::Retry
+        }
+        Err(_) => {
+            log::warn!(
+                "Relay: connection attempt timed out after {:?}",
+                RELAY_CONNECT_TIMEOUT
+            );
             SessionOutcome::Retry
         }
     }

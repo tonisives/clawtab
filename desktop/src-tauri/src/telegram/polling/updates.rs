@@ -1,10 +1,44 @@
 //! Talks to the Telegram getUpdates HTTP endpoint and primes the long-poll
 //! offset on startup.
 
+use std::fmt;
+
 use super::lock_or_log;
 use super::AgentState;
 use crate::telegram::telegram_request_error;
 use crate::telegram::types::{TelegramResponse, Update};
+
+#[derive(Debug)]
+pub(super) struct GetUpdatesError {
+    message: String,
+    timeout: bool,
+}
+
+impl GetUpdatesError {
+    pub(super) fn is_timeout(&self) -> bool {
+        self.timeout
+    }
+
+    fn request(operation: &str, error: &reqwest::Error) -> Self {
+        Self {
+            message: telegram_request_error(operation, error),
+            timeout: error.is_timeout(),
+        }
+    }
+
+    fn api(message: String) -> Self {
+        Self {
+            message,
+            timeout: false,
+        }
+    }
+}
+
+impl fmt::Display for GetUpdatesError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
 
 /// Eat any pending updates from a previous instance so we don't replay them,
 /// and capture the offset to use for the first real long-poll. Returns `None`
@@ -34,7 +68,7 @@ pub(super) async fn get_updates(
     bot_token: &str,
     offset: Option<i64>,
     timeout_secs: u64,
-) -> Result<Vec<Update>, String> {
+) -> Result<Vec<Update>, GetUpdatesError> {
     let client = reqwest::Client::new();
     let url = format!("https://api.telegram.org/bot{}/getUpdates", bot_token);
 
@@ -53,18 +87,18 @@ pub(super) async fn get_updates(
         .timeout(std::time::Duration::from_secs(timeout_secs + 5))
         .send()
         .await
-        .map_err(|e| telegram_request_error("getUpdates", &e))?;
+        .map_err(|e| GetUpdatesError::request("getUpdates", &e))?;
 
     let body: TelegramResponse<Vec<Update>> = resp
         .json()
         .await
-        .map_err(|e| telegram_request_error("decode getUpdates response", &e))?;
+        .map_err(|e| GetUpdatesError::request("decode getUpdates response", &e))?;
 
     if !body.ok {
         let desc = body
             .description
             .unwrap_or_else(|| "unknown error".to_string());
-        return Err(format!("Telegram API error: {}", desc));
+        return Err(GetUpdatesError::api(format!("Telegram API error: {desc}")));
     }
 
     Ok(body.result.unwrap_or_default())

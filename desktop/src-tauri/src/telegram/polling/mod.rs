@@ -67,7 +67,11 @@ pub async fn start_polling(state: AgentState) {
                 }
             }
             Err(e) => {
-                log::error!("Telegram polling error: {}", e);
+                if e.is_timeout() {
+                    log::warn!("Telegram polling timed out; retrying");
+                } else {
+                    log::error!("Telegram polling error: {}", e);
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
