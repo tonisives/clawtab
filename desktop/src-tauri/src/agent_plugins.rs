@@ -2046,9 +2046,21 @@ fn live_model_selection(captured: &str) -> Option<LiveModelSelection> {
 }
 
 fn live_footer_selection(captured: &str) -> Option<LiveModelSelection> {
-    captured.lines().rev().find_map(|line| {
-        let marker_start = line.to_ascii_lowercase().find("context")?;
-        parse_live_model_prefix(line.get(..marker_start)?.trim())
+    let lines: Vec<_> = captured.lines().collect();
+    let composer = lines.iter().rposition(|line| codex_composer_line(line));
+    let footer = composer.map_or(lines.as_slice(), |index| &lines[index + 1..]);
+    footer.iter().rev().find_map(|line| {
+        let lower = line.to_ascii_lowercase();
+        let marker = lower.find("context").or_else(|| lower.find("vim:"));
+        // A footer can omit both context usage and the Vim indicator.
+        // Unmarked lines must consist of exactly the model and effort.
+        let prefix = marker.map_or(line.trim(), |index| line[..index].trim());
+        if marker.is_none() && (composer.is_none() || prefix.split_whitespace().count() != 2) {
+            return None;
+        }
+        let selection = parse_live_model_prefix(prefix)?;
+        selection.effort.as_ref()?;
+        Some(selection)
     })
 }
 
@@ -2513,6 +2525,30 @@ actions:
     fn live_footer_selection_ignores_unrelated_context_lines() {
         assert_eq!(
             live_model_selection("Context is available\n› draft\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn live_footer_without_context_is_detected() {
+        for footer in [
+            "gpt-5.6-sol medium                  Vim: Insert",
+            "gpt-5.6-sol medium                  Vim: Normal",
+            "gpt-5.6-sol medium",
+        ] {
+            let screen = format!(
+                "Old medium context in transcript\n› Ask Codex to do anything\n\n  {footer}\n"
+            );
+            assert_eq!(
+                super::live_footer_selection(&screen),
+                Some(LiveModelSelection {
+                    model: "gpt-5.6-sol".into(),
+                    effort: Some("medium".into()),
+                })
+            );
+        }
+        assert_eq!(
+            super::live_footer_selection("old-model high context\n› draft\n"),
             None
         );
     }
