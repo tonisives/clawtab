@@ -461,7 +461,11 @@ impl AgentPluginRuntime {
             return Err("The target pane is not running Codex".into());
         }
 
-        let baseline = initial_baseline(provider, &pane_id, &pane_pid);
+        let cancel = CancellationToken::new();
+        let baseline = wait_for_initial_baseline(provider, &pane_id, &pane_pid, &cancel).await;
+        if baseline.model.is_none() || baseline.effort.is_none() {
+            return Err("Codex baseline model and effort could not be determined safely".into());
+        }
         if baseline.model.as_deref() == Some(model.as_str())
             && baseline.effort.as_deref() == Some(effort.as_str())
         {
@@ -490,7 +494,6 @@ impl AgentPluginRuntime {
             stashed_draft: None,
             model_changed: false,
         };
-        let cancel = CancellationToken::new();
         let result = async {
             host.stashed_draft = draft_to_stash(&host)?;
             clear_stashed_draft(&host, &cancel).await?;
@@ -1493,6 +1496,26 @@ fn initial_baseline(provider: ProcessProvider, pane_id: &str, pane_pid: &str) ->
         }
     }
     baseline_from_session(session_data(provider, pane_pid), None)
+}
+
+async fn wait_for_initial_baseline(
+    provider: ProcessProvider,
+    pane_id: &str,
+    pane_pid: &str,
+    cancel: &CancellationToken,
+) -> BaselineState {
+    let started = Instant::now();
+    loop {
+        let baseline = initial_baseline(provider, pane_id, pane_pid);
+        if provider != ProcessProvider::Codex
+            || baseline.model.is_some() && baseline.effort.is_some()
+            || cancel.is_cancelled()
+            || started.elapsed() >= CODEX_INPUT_READY_TIMEOUT
+        {
+            return baseline;
+        }
+        tokio::time::sleep(CODEX_MENU_POLL_INTERVAL).await;
+    }
 }
 
 fn baseline_from_session(
