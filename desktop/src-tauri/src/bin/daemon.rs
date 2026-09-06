@@ -829,10 +829,15 @@ async fn handle_ipc_command(
             pane_id,
             model,
             effort,
-        } => match clawtab_lib::agent_plugins::runtime()
-            .set_codex_model(pane_id, model, effort)
-            .await
-        {
+        } => match {
+            let tracked_working = agent_activity
+                .lock()
+                .iter()
+                .any(|item| item.pane_id == pane_id && item.working);
+            clawtab_lib::agent_plugins::runtime()
+                .set_codex_model(pane_id, model, effort, tracked_working)
+                .await
+        } {
             Ok(()) => IpcResponse::Ok,
             Err(error) => IpcResponse::Error(error),
         },

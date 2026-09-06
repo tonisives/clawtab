@@ -452,6 +452,7 @@ impl AgentPluginRuntime {
         pane_id: String,
         model: String,
         effort: String,
+        tracked_working: bool,
     ) -> Result<(), String> {
         validate_model_value(&model)?;
         validate_effort(&effort)?;
@@ -495,7 +496,7 @@ impl AgentPluginRuntime {
             model_changed: false,
         };
         let result = async {
-            host.stashed_draft = draft_to_stash(&host)?;
+            host.stashed_draft = draft_to_stash(&host, tracked_working)?;
             clear_stashed_draft(&host, &cancel).await?;
             host.model_changed = true;
             select_model(&host, &model, Some(&effort), &cancel).await?;
@@ -644,7 +645,7 @@ impl AgentPluginRuntime {
             PluginHostRequest::ComposerStash => {
                 require_capability(&stored.host, "composer.draft")?;
                 validate_bound_pane(&stored.host)?;
-                let draft = draft_to_stash(&stored.host)?;
+                let draft = draft_to_stash(&stored.host, false)?;
                 let had_draft = draft.is_some();
                 if let Some(run) = self.runs.lock().get_mut(&run_id) {
                     run.host.stashed_draft.clone_from(&draft);
@@ -2091,15 +2092,15 @@ async fn restore_baseline(host: &HostRun, cancel: &CancellationToken) -> Result<
     select_model(host, model, host.baseline.effort.as_deref(), cancel).await
 }
 
-fn draft_to_stash(host: &HostRun) -> Result<Option<String>, String> {
+fn draft_to_stash(host: &HostRun, tracked_working: bool) -> Result<Option<String>, String> {
     if host.provider != ProcessProvider::Codex {
         return Ok(None);
     }
     let screen = capture_plain(&host.pane_id)?;
-    codex_draft_to_stash(&screen)
+    codex_draft_to_stash(&screen, tracked_working)
 }
 
-fn codex_draft_to_stash(screen: &str) -> Result<Option<String>, String> {
+fn codex_draft_to_stash(screen: &str, tracked_working: bool) -> Result<Option<String>, String> {
     if codex_active_model_dialog(&screen) {
         return Err("Codex already has a model dialog open".into());
     }
@@ -2110,7 +2111,7 @@ fn codex_draft_to_stash(screen: &str) -> Result<Option<String>, String> {
     if draft.is_empty() {
         return Ok(None);
     }
-    if codex_busy_screen(screen) {
+    if tracked_working || codex_busy_screen(screen) {
         return Err(
             "Codex is working and its follow-up composer contains text; model was not changed"
                 .into(),
@@ -2461,12 +2462,13 @@ actions:
             "• Working (2s • esc to interrupt)\n› Ask Codex to do anything\n\nVim: Insert";
         let idle_with_draft = "› keep this draft\n\nVim: Insert";
 
-        assert!(codex_draft_to_stash(busy_with_draft).is_err());
-        assert_eq!(codex_draft_to_stash(busy_without_draft), Ok(None));
+        assert!(codex_draft_to_stash(busy_with_draft, false).is_err());
+        assert_eq!(codex_draft_to_stash(busy_without_draft, false), Ok(None));
         assert_eq!(
-            codex_draft_to_stash(idle_with_draft),
+            codex_draft_to_stash(idle_with_draft, false),
             Ok(Some("keep this draft".into()))
         );
+        assert!(codex_draft_to_stash(idle_with_draft, true).is_err());
     }
 
     #[test]
