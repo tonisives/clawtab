@@ -2096,6 +2096,10 @@ fn draft_to_stash(host: &HostRun) -> Result<Option<String>, String> {
         return Ok(None);
     }
     let screen = capture_plain(&host.pane_id)?;
+    codex_draft_to_stash(&screen)
+}
+
+fn codex_draft_to_stash(screen: &str) -> Result<Option<String>, String> {
     if codex_active_model_dialog(&screen) {
         return Err("Codex already has a model dialog open".into());
     }
@@ -2105,6 +2109,12 @@ fn draft_to_stash(host: &HostRun) -> Result<Option<String>, String> {
         .to_string();
     if draft.is_empty() {
         return Ok(None);
+    }
+    if codex_busy_screen(screen) {
+        return Err(
+            "Codex is working and its follow-up composer contains text; model was not changed"
+                .into(),
+        );
     }
     Ok(Some(draft))
 }
@@ -2237,13 +2247,17 @@ struct CodexScreenState {
 fn codex_screen_state(pane_id: &str) -> Result<CodexScreenState, String> {
     let screen = capture_plain(pane_id)?;
     let in_dialog = codex_active_model_dialog(&screen);
-    let busy = screen.to_ascii_lowercase().contains("esc to interrupt");
+    let busy = codex_busy_screen(&screen);
     let draft = codex_composer_draft(&screen);
     Ok(CodexScreenState {
         idle: draft.is_some() && !in_dialog && !busy,
         busy,
         draft,
     })
+}
+
+fn codex_busy_screen(screen: &str) -> bool {
+    screen.to_ascii_lowercase().contains("esc to interrupt")
 }
 
 fn codex_vim_normal_mode(screen: &str) -> bool {
@@ -2304,9 +2318,9 @@ mod tests {
 
     use super::{
         baseline_from_session, codex_active_model_dialog, codex_composer_draft,
-        codex_option_shortcut, live_model_selection, load_plugin, redact_internal_values,
-        selected_option_matches, strip_ansi, valid_plugin_id, valid_version_pattern,
-        version_matches, BaselineState, LiveModelSelection,
+        codex_draft_to_stash, codex_option_shortcut, live_model_selection, load_plugin,
+        redact_internal_values, selected_option_matches, strip_ansi, valid_plugin_id,
+        valid_version_pattern, version_matches, BaselineState, LiveModelSelection,
     };
 
     #[test]
@@ -2437,6 +2451,22 @@ actions:
             "› Ask Codex to do anything\n\n  Select Model and Effort\n› 2. gpt-5.6-sol (current)";
 
         assert_eq!(codex_composer_draft(screen).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn codex_draft_stashing_rejects_text_during_an_active_turn() {
+        let busy_with_draft =
+            "• Working (2s • esc to interrupt)\n› keep this follow-up\n\nVim: Insert";
+        let busy_without_draft =
+            "• Working (2s • esc to interrupt)\n› Ask Codex to do anything\n\nVim: Insert";
+        let idle_with_draft = "› keep this draft\n\nVim: Insert";
+
+        assert!(codex_draft_to_stash(busy_with_draft).is_err());
+        assert_eq!(codex_draft_to_stash(busy_without_draft), Ok(None));
+        assert_eq!(
+            codex_draft_to_stash(idle_with_draft),
+            Ok(Some("keep this draft".into()))
+        );
     }
 
     #[test]
